@@ -2,6 +2,19 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import type { ConversationFile } from "../../lib/cave-conversations.ts";
+import {
+  buildFamiliarExecutionAnalytics,
+  EXECUTION_ATTEMPT_SCHEMA_VERSION,
+  normalizeExecutionAttemptSnapshot,
+  type ExecutionAttemptSnapshotV1,
+} from "../../lib/familiar-execution-analytics.ts";
+import { backfillFamiliarExecutionAttempts } from "../../lib/server/familiar-execution-analytics-backfill.ts";
+import {
+  deterministicExecutionAttemptId,
+  projectConversationExecutionAttempts,
+} from "../../lib/server/familiar-execution-analytics-projection.ts";
+import { serializeExecutionAttemptLedgerRecord } from "../../lib/server/familiar-execution-analytics-store.ts";
 
 const root = process.cwd();
 const apiRoot = path.join(root, "src", "app", "api");
@@ -87,6 +100,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars/[id]/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", pathGuard: true },
   { route: "/familiars/[id]/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/familiars/[id]/execution-analytics", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/self-report", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
@@ -382,6 +396,11 @@ const routeFiles = walkRoutes(apiRoot);
 const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
+assert.equal(
+  actualRoutes.some((route) => route.startsWith("/client/v1")),
+  false,
+  "Phase 0 must not expose /api/client/v1 routes before the public contract foundation is wired",
+);
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
 
 for (const contract of contracts) {
@@ -868,9 +887,309 @@ for (const contract of contracts) {
   );
 }
 
+{
+  const privateMarker = "PRIVATE-CONTENT-MUST-NOT-SURVIVE";
+  const snapshot = normalizeExecutionAttemptSnapshot({
+    schemaVersion: EXECUTION_ATTEMPT_SCHEMA_VERSION,
+    attemptId: "ea1_privacy",
+    familiarId: "cody",
+    sessionId: "session-private",
+    turnId: "turn-private",
+    attemptNumber: 1,
+    execution: {
+      kind: "assistant-response",
+      origin: "chat",
+      prompt: privateMarker,
+      cwd: `/private/${privateMarker}`,
+    },
+    harness: { id: "claude", version: "1.2.3", binaryPath: privateMarker },
+    models: {
+      requested: { kind: "model", id: "anthropic/claude-sonnet" },
+      forwarded: "claude-sonnet",
+      confirmed: "claude-sonnet",
+      response: privateMarker,
+    },
+    timing: {
+      completedAt: "2026-08-18T09:00:00.000Z",
+      durationMs: 1200,
+      rawEvent: privateMarker,
+    },
+    usage: { inputTokens: 10, outputTokens: 20, rawPayload: privateMarker },
+    costUsd: 0,
+    outcome: { status: "error", error: privateMarker },
+    tools: [{
+      name: "shell",
+      status: "error",
+      durationMs: 100,
+      input: privateMarker,
+      output: privateMarker,
+      path: `/private/${privateMarker}`,
+    }],
+    provenance: {
+      source: "live",
+      sourceSchema: "execution-attempt-v1",
+      capturedAt: "2026-08-18T09:00:00.000Z",
+      rawPayload: privateMarker,
+    },
+    coverage: { knownFields: ["tools"], arbitrary: privateMarker },
+    prompt: privateMarker,
+    response: privateMarker,
+    errorText: privateMarker,
+    path: `/private/${privateMarker}`,
+  });
+  assert.ok(snapshot, "metadata-only snapshots should accept the versioned allowlist");
+  const serialized = serializeExecutionAttemptLedgerRecord(snapshot);
+  assert.ok(serialized, "valid snapshots should serialize into a ledger record");
+  assert.doesNotMatch(
+    serialized,
+    new RegExp(privateMarker),
+    "snapshot normalization must discard prompt/response text, payloads, paths, and arbitrary errors",
+  );
+  assert.deepEqual(
+    snapshot.tools,
+    [{ name: "shell", status: "error", durationMs: 100 }],
+    "tools retain only name, status, and duration",
+  );
+  assert.equal(snapshot.costUsd, 0, "a known zero cost remains distinct from missing cost");
+}
+
+{
+  const conversation: ConversationFile = {
+    sessionId: "session-deterministic",
+    familiarId: "cody",
+    harness: "claude-code",
+    origin: "chat",
+    createdAt: "2026-08-18T08:00:00.000Z",
+    updatedAt: "2026-08-18T09:00:00.000Z",
+    turns: [
+      {
+        id: "user-secret",
+        role: "user",
+        text: "private prompt",
+        createdAt: "2026-08-18T08:00:00.000Z",
+      },
+      {
+        id: "assistant-result",
+        role: "assistant",
+        text: "private response",
+        reasoning: "private reasoning",
+        createdAt: "2026-08-18T08:00:05.000Z",
+        durationMs: 5000,
+        usage: { inputTokens: 11, outputTokens: 7 },
+        costUsd: 0.02,
+        tools: [{
+          id: "tool-1",
+          name: "shell",
+          input: "private tool input",
+          output: "private tool output",
+          status: "ok",
+          durationMs: 800,
+        }],
+        responseMetadata: {
+          familiarId: "cody",
+          harness: "claude-code",
+          model: "anthropic/claude-sonnet",
+          runtime: "local",
+          requestedModel: "anthropic/claude-sonnet",
+          forwardedModel: "claude-sonnet",
+          confirmedModel: "claude-sonnet",
+          requestedControls: { reasoning: "high" },
+          forwardedControls: { reasoning: "high" },
+          appliedControls: { reasoning: "high" },
+        },
+      },
+    ],
+  };
+  const first = projectConversationExecutionAttempts(conversation);
+  const second = projectConversationExecutionAttempts(conversation);
+  assert.deepEqual(first, second, "conversation projection must be deterministic");
+  assert.equal(first.length, 1);
+  assert.equal(
+    first[0].attemptId,
+    deterministicExecutionAttemptId({
+      familiarId: "cody",
+      sessionId: "session-deterministic",
+      turnId: "assistant-result",
+      attemptNumber: 1,
+    }),
+  );
+  assert.deepEqual(
+    first[0].harness,
+    { id: "claude" },
+    "historical projection canonicalizes the harness id without inventing a current version",
+  );
+  assert.equal("version" in (first[0].harness ?? {}), false);
+  assert.doesNotMatch(JSON.stringify(first[0]), /private prompt|private response|private reasoning|private tool/);
+
+  const deps = {
+    listConversations: async () => [{
+      sessionId: conversation.sessionId,
+      familiarId: conversation.familiarId,
+      harness: conversation.harness,
+      updatedAt: conversation.updatedAt,
+    }],
+    loadConversation: async () => conversation,
+  };
+  const initial = await backfillFamiliarExecutionAttempts({
+    familiarId: "cody",
+    existing: [],
+    dependencies: deps,
+  });
+  const replay = await backfillFamiliarExecutionAttempts({
+    familiarId: "cody",
+    existing: initial.attempts,
+    dependencies: deps,
+  });
+  assert.equal(initial.toAppend.length, 1);
+  assert.equal(replay.toAppend.length, 0, "replaying the same conversation must dedupe");
+  assert.deepEqual(replay.attempts, initial.attempts);
+}
+
+{
+  function attempt(
+    attemptId: string,
+    completedAt: string,
+    extras: Record<string, unknown> = {},
+  ): ExecutionAttemptSnapshotV1 {
+    const value = normalizeExecutionAttemptSnapshot({
+      schemaVersion: EXECUTION_ATTEMPT_SCHEMA_VERSION,
+      attemptId,
+      familiarId: "cody",
+      sessionId: `session-${attemptId}`,
+      turnId: `turn-${attemptId}`,
+      attemptNumber: 1,
+      execution: { kind: "assistant-response", origin: "chat" },
+      timing: { completedAt },
+      outcome: { status: "succeeded" },
+      provenance: {
+        source: "live",
+        sourceSchema: "execution-attempt-v1",
+        capturedAt: completedAt,
+      },
+      coverage: { knownFields: [] },
+      ...extras,
+    });
+    assert.ok(value);
+    return value;
+  }
+
+  const attempts = [
+    attempt("recent-known", "2026-08-17T10:00:00.000Z", {
+      harness: { id: "claude", version: "1.0.0" },
+      models: { confirmed: "claude-sonnet" },
+      timing: { completedAt: "2026-08-17T10:00:00.000Z", durationMs: 1000 },
+      usage: { inputTokens: 10, outputTokens: 20 },
+      costUsd: 0,
+      tools: [],
+    }),
+    attempt("recent-missing", "2026-08-16T10:00:00.000Z"),
+    attempt("old", "2026-06-01T10:00:00.000Z", {
+      outcome: { status: "error" },
+      timing: { completedAt: "2026-06-01T10:00:00.000Z", durationMs: 3000 },
+    }),
+  ];
+  const analytics = buildFamiliarExecutionAnalytics({
+    familiarId: "cody",
+    attempts,
+    now: new Date("2026-08-18T10:00:00.000Z"),
+    recentLimit: 1,
+  });
+  assert.equal(analytics.windows["7d"].attempts, 2);
+  assert.equal(analytics.windows.all.attempts, 3);
+  assert.deepEqual(
+    analytics.windows.all.coverage.duration,
+    { known: 2, total: 3, ratio: 2 / 3 },
+  );
+  assert.deepEqual(
+    analytics.windows.all.coverage.cost,
+    { known: 1, total: 3, ratio: 1 / 3 },
+  );
+  assert.equal(analytics.windows.all.costUsd, 0);
+  assert.deepEqual(
+    analytics.windows.all.coverage.harnessVersion,
+    { known: 1, total: 3, ratio: 1 / 3 },
+  );
+  assert.equal(analytics.recentAttempts.length, 1, "recent attempts are bounded");
+  assert.equal(
+    "cacheReadTokens" in analytics.recentAttempts[0],
+    false,
+    "an unknown recent-attempt metric remains absent",
+  );
+  assert.deepEqual(
+    Object.keys(analytics).sort(),
+    ["backfill", "generatedAt", "recentAttempts", "windows"],
+    "the analytics domain object contains only the response contract",
+  );
+}
+
+{
+  const routeSource = readFileSync(
+    path.join(apiRoot, "familiars", "[id]", "execution-analytics", "route.ts"),
+    "utf8",
+  );
+  const source = readFileSync(
+    path.join(root, "src", "lib", "server", "familiar-execution-analytics-source.ts"),
+    "utf8",
+  );
+  const projection = readFileSync(
+    path.join(root, "src", "lib", "server", "familiar-execution-analytics-projection.ts"),
+    "utf8",
+  );
+  assert.match(
+    routeSource,
+    /if \(!isValidFamiliarId\(id\)\)[\s\S]*?"path not allowed"[\s\S]*?status: 403/,
+    "/familiars/[id]/execution-analytics validates the familiar id before storage access",
+  );
+  assert.match(
+    routeSource,
+    /Math\.max\(0, Math\.min\(100, parsed\)\)/,
+    "/familiars/[id]/execution-analytics bounds recent attempts",
+  );
+  assert.match(
+    routeSource,
+    /__setFamiliarExecutionAnalyticsSourceForTests/,
+    "/familiars/[id]/execution-analytics exposes the established route test override",
+  );
+  assert.match(
+    routeSource,
+    /analytics: \{\s*generatedAt: analytics\.generatedAt,\s*windows: analytics\.windows,\s*recentAttempts: analytics\.recentAttempts,\s*backfill: analytics\.backfill,\s*\}/,
+    "/familiars/[id]/execution-analytics returns the exact public analytics shape",
+  );
+  assert.match(
+    source,
+    /listConversations[\s\S]*loadConversation[\s\S]*backfillFamiliarExecutionAttempts/,
+    "analytics source backfills from Cave-owned conversation files",
+  );
+  assert.match(
+    source,
+    /appendAttempts\(args\.familiarId, backfill\.toAppend\)[\s\S]*?\.catch\(\(\) => 0\)/,
+    "derived ledger persistence is best-effort",
+  );
+  assert.doesNotMatch(
+    projection,
+    /turn\.text|turn\.reasoning|tool\.input|tool\.output|conversation\.runtime|conversation\.branch|conversation\.prUrl/,
+    "conversation projection must not copy content, tool payloads, paths, or PR data",
+  );
+}
+
 // The test:api npm script delegates to scripts/run-tests.mjs; assert this
 // suite is listed in that runner's manifest so it actually runs in CI.
 const runnerSource = readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8");
 assert.match(runnerSource, /api-contracts\.test\.ts/, "scripts/run-tests.mjs must list this API contract suite");
+assert.match(
+  runnerSource,
+  /src\/lib\/server\/client-v1\/contract\.test\.ts/,
+  "scripts/run-tests.mjs must list the public client v1 contract suite",
+);
+assert.match(
+  runnerSource,
+  /scripts\/export-client-v1-contract\.test\.mjs/,
+  "scripts/run-tests.mjs must list the public client v1 exporter suite",
+);
+assert.match(
+  runnerSource,
+  /SUITE_PREFLIGHTS[\s\S]*api:\s*\[[\s\S]*\["scripts\/export-client-v1-contract\.mjs", "--check"\]/,
+  "scripts/run-tests.mjs must read-only check the public client v1 contract fixture before API tests",
+);
 
 console.log(`api-contracts.test.ts: ${contracts.length} route contracts passed`);

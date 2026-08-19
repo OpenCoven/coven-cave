@@ -39,8 +39,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>/,
-  "the top bar row leads with the nav toggle before the rendered top bar",
+  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">[\s\S]*?<span className="shell-window-titlebar__title">Coven<\/span>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>/,
+  "the native title strip precedes the functional toolbar and its nav toggle",
 );
 // `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
 // bare region on DIRECT presses on the attributed element, so empty chrome
@@ -53,7 +53,12 @@ assert.match(
 assert.equal(
   shell.match(/<div className="shell-top" data-tauri-drag-region="deep">/g)?.length,
   1,
-  "the hydration-stable shell should expose one deep Tauri drag region on the titlebar container",
+  "the hydration-stable shell should expose one deep Tauri drag region on the toolbar container",
+);
+assert.equal(
+  shell.match(/<div className="shell-window-titlebar" data-tauri-drag-region="deep"/g)?.length,
+  1,
+  "the hydration-stable shell should expose one dedicated native title strip",
 );
 assert.doesNotMatch(
   shell,
@@ -136,7 +141,7 @@ assert.match(
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar,\s*\.shell-top \.menu-bar__group,\s*\.shell-top \.top-bar__lead,\s*\.shell-top \.top-bar__actions\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
+  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-window-titlebar,\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar,\s*\.shell-top \.menu-bar__group,\s*\.shell-top \.top-bar__lead,\s*\.shell-top \.top-bar__actions\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
   "macOS Tauri titlebar mode should keep the full rendered top-bar band draggable, including inert layout wrappers",
 );
 assert.doesNotMatch(
@@ -251,62 +256,12 @@ assert.doesNotMatch(
 );
 
 
-// ── Dia-style traffic lights follow the side panel (cave-9ja2) ──────────────
+// ── Native traffic lights stay with the dedicated title strip ───────────────
 {
   const tauriSetup = readFileSync(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
-  assert.match(
-    shell,
-    /const navPeekVisible = navPeekEnabled && navPeeking;/,
-    "traffic-light visibility is fed by the synchronously gated visible-peek state",
-  );
-  assert.match(
-    shell,
-    /const trafficLightsVisible = navOpen \|\| navPeekVisible \|\| isMobile;/,
-    "lights show whenever the panel is open, visibly hover-peeked, or the layout is mobile",
-  );
-  assert.match(
-    shell,
-    /invoke\("set_traffic_lights_visible", \{ visible \}\)/,
-    "the shell drives the native buttons through the app command",
-  );
-  // Title-bar fit contract: the 78px inset is released only AFTER the native
-  // hide is confirmed — marking "hidden" optimistically slid the nav toggle +
-  // history chevrons under still-visible lights when the command failed.
-  assert.match(
-    shell,
-    /applyNative\(false\)\s*\.then\(\(\) => \{\s*if \(!cancelled\) root\.dataset\.trafficLights = "hidden";/,
-    "the root attribute flips to hidden only once the native hide resolves",
-  );
-  assert.match(
-    shell,
-    /\.catch\(\(\) => \{[\s\S]{0,220}?if \(!cancelled\) root\.dataset\.trafficLights = "visible";/,
-    "a failed native hide keeps the inset reserved for the still-visible lights",
-  );
-  assert.match(
-    shell,
-    /window\.addEventListener\("focus", onFocus\)/,
-    "focus re-asserts the hidden state after AppKit re-shows the buttons",
-  );
-  assert.match(
-    css,
-    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-top \{[\s\S]*?padding-left: var\(--space-3\);/,
-    "hiding the lights releases the 78px title-bar inset",
-  );
-  assert.match(
-    tauriSetup,
-    /fn set_traffic_lights_visible\(window: tauri::WebviewWindow, visible: bool\)/,
-    "the Rust command exists",
-  );
-  assert.match(
-    tauriSetup,
-    /standardWindowButton: kind/,
-    "the command toggles NSWindow's standard buttons",
-  );
-  assert.match(
-    tauriSetup,
-    /shell_pick_directory,\s*set_traffic_lights_visible,/,
-    "the command is registered with the invoke handler",
-  );
+  assert.doesNotMatch(shell, /set_traffic_lights_visible/, "the workspace no longer hides native window controls with the siderail");
+  assert.doesNotMatch(tauriSetup, /set_traffic_lights_visible/, "the retired traffic-light mutation command is removed");
+  assert.doesNotMatch(css, /data-traffic-lights="hidden"/, "title-strip geometry no longer depends on hidden native controls");
 }
 
 // ── Title-bar fit is comprehensive (cave-i7wf follow-up) ────────────────────
@@ -328,17 +283,17 @@ assert.doesNotMatch(
     /dataset\.tauriTitlebar =/,
     "the workspace shell no longer sets the marker — it must survive shell unmount",
   );
-  assert.match(
-    shell,
-    /if \(!isMacDesktopShell\(\)\) return;/,
-    "the lights effect detects the platform directly instead of racing the marker mount",
-  );
-  // The shell-top reserve applies at every width (a sub-1024 window put the
-  // mobile top-bar's controls under the lights when it was media-gated).
+  // The dedicated title strip reserves the traffic-light inset while the
+  // functional toolbar beneath it uses ordinary app padding.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{\s*padding-left: var\(--titlebar-lights-inset\);\s*\}/,
-    "the shell-top lights inset is not desktop-media-gated",
+    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,240}?padding: 0 var\(--space-3\) 0 var\(--titlebar-lights-inset\);/,
+    "the native title strip reserves the traffic-light inset",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,180}?padding-left: var\(--space-3\);/,
+    "the functional toolbar starts at the normal app inset below native chrome",
   );
   // Full-window route bands reserve the same inset…
   for (const band of ["settings-shell__header", "dr-topbar", "fa-topbar"]) {
@@ -359,8 +314,8 @@ assert.doesNotMatch(
   // and no-backdrop-filter fallbacks.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
-    "the native shell titlebar carries subtle glass",
+    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the native identity strip carries subtle glass",
   );
   const dashboardCss = readFileSync(new URL("../styles/dashboard.css", import.meta.url), "utf8");
   assert.match(

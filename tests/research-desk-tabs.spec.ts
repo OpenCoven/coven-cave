@@ -683,12 +683,13 @@ test.describe("research desk tabs", () => {
     await expect(desk.locator(".research-desk-stepper__track")).not.toContainText("Trigger");
 
     // Checkpoint mission is selected (first unarchived) → checkpoint action
-    // bar: Continue (i2/4) + Finish now on the left, Cancel/Archive on the right.
+    // bar: Continue to iteration 2 of 4 + Finish now on the left, Cancel/Archive
+    // on the right.
     await expect(desk.locator("#research-mission-title")).toHaveText(CHECKPOINT_MISSION.title);
     const actions = desk.locator(".research-mission-actions");
     // Continue's accessible name is its full-consequence aria-label, so match
-    // the visible i2/4 text instead of the role name.
-    const continueButton = actions.locator("button", { hasText: "Continue (i2/4)" });
+    // the visible iteration text instead of the role name.
+    const continueButton = actions.locator("button", { hasText: "Continue to iteration 2 of 4" });
     await expect(continueButton).toBeVisible();
     await expect(continueButton).toHaveAttribute("aria-label", /start iteration 2 of 4/);
     await expect(actions.getByRole("button", { name: "Finish now" })).toBeVisible();
@@ -717,7 +718,7 @@ test.describe("research desk tabs", () => {
     await expect(railTabs.getByRole("tab", { name: /^Sources/ })).toHaveAttribute("aria-selected", "true");
     const sourcesPane = desk.getByRole("tabpanel", { name: /^Sources/ });
     await expect(sourcesPane.getByRole("button", { name: /^Vendor benchmarks blog/ })).toBeVisible();
-    await expect(sourcesPane.getByRole("button", { name: "Verify next pass" })).toBeVisible();
+    await expect(sourcesPane.getByRole("button", { name: "Verify next iteration" })).toBeVisible();
 
     // Toggling shows the artifacts in the same pane — one list at a time, both
     // complete, with no second copy stacked below.

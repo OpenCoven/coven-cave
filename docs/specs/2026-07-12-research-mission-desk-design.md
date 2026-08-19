@@ -352,6 +352,9 @@ Autoresearch is a series of finite iterations, not one immortal process.
 - When reported cumulative cost reaches `maxSpendUsd`, the mission pauses.
 - If cost is unavailable and `stopWhenCostUnavailable` is true, the mission
   pauses before the next iteration with “Cost unavailable; approve continuation.”
+  Approval is explicit and applies to one iteration only; the policy remains
+  enabled for the following pass. A blocked attempt never downgrades an already
+  completed mission.
 - A complete decision disables the linked automation and publishes final
   artifacts.
 

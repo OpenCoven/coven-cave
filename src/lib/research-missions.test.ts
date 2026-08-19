@@ -23,6 +23,7 @@ import {
   RESEARCH_MODEL_MAX_LENGTH,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
   RESEARCH_TITLE_MAX_LENGTH,
+  nextResearchIterationNumber,
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
@@ -1012,7 +1013,7 @@ test("Continue is labeled with its real consequence", () => {
     { iterations: [{ number: 1, status: "checkpoint" }], bounds, startedAt },
     tenMinutesIn,
   );
-  assert.equal(withinPlan.label, "Continue (i2/3)");
+  assert.equal(withinPlan.label, "Continue to iteration 2 of 3");
   assert.equal(withinPlan.gated, false);
   // Even ungated, the sentence is a request, not a promise — the runner
   // re-checks its stop gates with live clocks.
@@ -1029,10 +1030,21 @@ test("Continue is labeled with its real consequence", () => {
     },
     tenMinutesIn,
   );
-  assert.equal(beyond.label, "Continue (i2/1)");
+  assert.equal(beyond.label, "Iteration limit reached");
   assert.equal(beyond.gated, true);
   assert.match(beyond.description, /past the planned 1/);
   assert.match(beyond.description, /iteration limit/);
+
+  assert.equal(
+    nextResearchIterationNumber({
+      iterations: [
+        { number: 1, status: "completed" },
+        { number: 3, status: "checkpoint" },
+      ],
+    }),
+    4,
+    "the next iteration follows the latest persisted iteration number, not the array length",
+  );
 });
 
 test("Continue reports every runner stop gate, not just the iteration limit", () => {
@@ -1071,7 +1083,28 @@ test("Continue reports every runner stop gate, not just the iteration limit", ()
     Date.parse("2026-07-15T00:10:00Z"),
   );
   assert.equal(noCost.gated, true);
+  assert.equal(noCost.costApprovalRequired, true);
+  assert.match(noCost.label, /Continue with unreported cost/);
   assert.match(noCost.description, /finished without reporting cost/);
+
+  const spendBeforeApproval = researchContinueLabel(
+    {
+      iterations: [
+        { number: 1, status: "checkpoint" as const, finishedAt: "2026-07-15T00:05:00Z", costUsd: 5 },
+        { number: 2, status: "checkpoint" as const, finishedAt: "2026-07-15T00:10:00Z" },
+      ],
+      bounds: {
+        ...bounds,
+        maxIterations: 3,
+        maxSpendUsd: 5,
+        stopWhenCostUnavailable: true,
+      },
+      startedAt,
+    },
+    Date.parse("2026-07-15T00:10:00Z"),
+  );
+  assert.equal(spendBeforeApproval.costApprovalRequired, false);
+  assert.match(spendBeforeApproval.description, /reported spend has reached/);
 });
 
 // --- bound readings: a bar only where a denominator exists -----------------

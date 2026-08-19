@@ -38,7 +38,6 @@ struct SlashCommand: Identifiable, Hashable {
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
         case openBoard             // switch to the Tasks destination
-        case openTerminal          // switch to the Terminal destination
         case sendAsPrompt          // /run /codex /claude — send the args as a message
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
@@ -147,9 +146,6 @@ enum SlashCatalog {
                      description: "Create a reminder — on the desktop for now.",
                      argPlaceholder: "when + text", section: .view,
                      availability: .desktopOnly, action: .desktopOnly("Reminders")),
-        SlashCommand(name: "/terminal", aliases: ["/comux"], hint: "Terminal",
-                     description: "Open the Terminal.",
-                     section: .view, availability: .native, action: .openTerminal),
         SlashCommand(name: "/attach", hint: "open session",
                      description: "Open a daemon session by id — desktop for now.",
                      argPlaceholder: "session-id", section: .view,

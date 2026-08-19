@@ -4,6 +4,12 @@ import { parse } from "yaml";
 export const RECOVERY_GRACE_MS = 15 * 60 * 1000;
 export const RECOVERY_COOLDOWN_MS = 60 * 60 * 1000;
 
+/** That head's ci.yml cannot be dispatched by anyone. Routine; not an alarm. */
+export const NOT_DISPATCHABLE = "workflow_not_dispatchable";
+
+/** That head's guard contract is ambiguous, so it is never dispatched. Alarm. */
+export const CONTRACT_PARTIAL = "workflow_contract_partial";
+
 const WORKFLOW_FILE = "ci.yml";
 const MAX_PULL_PAGES = 10;
 const EXPECTED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
@@ -43,6 +49,11 @@ export async function runCiRecovery({
   const pulls = await listOpenPulls(context);
   const eligible = [];
   const skipped = [];
+  // Set when a candidate was dropped for a reason a human should look at — a
+  // misconfigured guard contract or a REST failure — rather than a routine
+  // "nothing to do". The scan still recovers everything else; this only decides
+  // whether the process exits non-zero at the end.
+  let degraded = false;
 
   for (const rawPull of pulls) {
     const pull = parsePull(rawPull);
@@ -52,8 +63,18 @@ export async function runCiRecovery({
       continue;
     }
 
-    const runs = await listWorkflowRuns(context, pull.sha);
-    const decision = await decideRecovery(context, runs, now);
+    let decision;
+    try {
+      const runs = await listWorkflowRuns(context, pull.sha);
+      decision = await decideRecovery(context, runs, now);
+    } catch (cause) {
+      // One unreadable pull request is one unreadable pull request. Letting it
+      // propagate ended the whole scan, so every OTHER open PR with missing CI
+      // stayed missing until someone noticed by hand.
+      skipped.push({ number: pull.number, reason: failureReason(cause) });
+      degraded = true;
+      continue;
+    }
     if (!decision.recover) {
       skipped.push({ number: pull.number, reason: decision.reason });
       continue;
@@ -73,15 +94,23 @@ export async function runCiRecovery({
     // Complete every candidate read before the first mutation. A later REST
     // failure must never leave the repository with a partially applied scan.
     for (const recovery of eligible) {
-      const current = await getPull(context, recovery.number);
-      const drift = dispatchSkipReason(current, recovery, repository, now);
-      if (drift) {
-        skipped.push({ number: recovery.number, reason: drift });
+      let contract;
+      try {
+        const current = await getPull(context, recovery.number);
+        const drift = dispatchSkipReason(current, recovery, repository, now);
+        if (drift) {
+          skipped.push({ number: recovery.number, reason: drift });
+          continue;
+        }
+        contract = await inspectRecoveryDispatch(context, recovery.sha);
+      } catch (cause) {
+        skipped.push({ number: recovery.number, reason: failureReason(cause) });
+        degraded = true;
         continue;
       }
-      const contract = await inspectRecoveryDispatch(context, recovery.sha);
       if (!contract.dispatchable) {
-        skipped.push({ number: recovery.number, reason: "workflow_not_dispatchable" });
+        skipped.push({ number: recovery.number, reason: contract.reason });
+        if (contract.reason === CONTRACT_PARTIAL) degraded = true;
         continue;
       }
       dispatchable.push({ recovery, supportsExpectedSha: contract.supportsExpectedSha });
@@ -90,7 +119,15 @@ export async function runCiRecovery({
 
   const recoveries = apply ? [] : eligible.map((recovery) => ({ ...recovery, dispatched: false }));
   for (const { recovery, supportsExpectedSha } of dispatchable) {
-    await dispatchWorkflow(context, recovery.ref, recovery.sha, supportsExpectedSha);
+    try {
+      await dispatchWorkflow(context, recovery.ref, recovery.sha, supportsExpectedSha);
+    } catch (cause) {
+      // A refused dispatch is that PR's problem. Throwing here abandoned every
+      // dispatch still queued behind it.
+      skipped.push({ number: recovery.number, reason: failureReason(cause) });
+      degraded = true;
+      continue;
+    }
     recoveries.push({ ...recovery, dispatched: true });
   }
 
@@ -99,6 +136,7 @@ export async function runCiRecovery({
     scanned: pulls.length,
     recoveries,
     skipped,
+    degraded,
   };
   for (const recovery of recoveries) {
     log(
@@ -115,7 +153,8 @@ export async function runCiRecovery({
   log(
     `CI recovery: ${result.scanned} open PR${result.scanned === 1 ? "" : "s"} scanned; ` +
       `${recoveries.length} ${apply ? "dispatched" : "eligible"}` +
-      `${skipped.length > 0 ? `; ${skipped.length} skipped` : ""}.`,
+      `${skipped.length > 0 ? `; ${skipped.length} skipped` : ""}` +
+      `${degraded ? "; needs attention" : ""}.`,
   );
   return result;
 }
@@ -292,14 +331,23 @@ async function workflowJobCount(context, runId) {
 /** Inspect the CI workflow at an exact head and decide how it may be dispatched.
  *
  *  Three outcomes, and keeping them distinct is the whole point:
- *  - `{dispatchable: false}` — that head's ci.yml has no `workflow_dispatch`
- *    trigger, so it cannot be dispatched by anyone. A permanent fact about the
- *    branch, not an ambiguity, so the caller skips this candidate and continues.
+ *  - `{dispatchable: false, reason: NOT_DISPATCHABLE}` — that head's ci.yml has
+ *    no `workflow_dispatch` trigger, so it cannot be dispatched by anyone. A
+ *    permanent fact about the branch, not an ambiguity, so the caller skips
+ *    this candidate and continues.
  *  - `{dispatchable: true, supportsExpectedSha}` — dispatch it, with the SHA
  *    guard when the head carries the complete guarded contract.
- *  - throws — the guard contract is only PARTIALLY configured. That one stays
- *    fatal: we cannot tell whether the exact-SHA guard will be honoured, so a
- *    dispatch might silently test a different commit than the one we checked.
+ *  - `{dispatchable: false, reason: CONTRACT_PARTIAL}` — the guard contract is
+ *    only PARTIALLY configured. We cannot tell whether the exact-SHA guard will
+ *    be honoured, so a dispatch might silently test a different commit than the
+ *    one we checked: THIS head is never dispatched, and that safety property is
+ *    unchanged. What changed is blast radius. It used to throw, which killed
+ *    the whole apply — so a single un-rebased branch carrying an older ci.yml
+ *    shape disabled recovery for every other open pull request, which is the
+ *    exact failure already fixed for the un-dispatchable case (cave-qibp6).
+ *    Observed twice in ten days: runs 31393882802 (2026-08-10) and 31618670601
+ *    (2026-08-12) aborted on this path. The scan now finishes, recovers
+ *    everything else, and exits non-zero so the misconfiguration stays visible.
  */
 async function inspectRecoveryDispatch(context, sha) {
   const url =
@@ -333,7 +381,7 @@ async function inspectRecoveryDispatch(context, sha) {
     // WHOLE apply — so a single stale branch whose ci.yml predates dispatch
     // support disabled recovery for every other PR in the repository
     // (cave-qibp6: #4646 blocked #4643 and #4641, and nothing was dispatched).
-    return { dispatchable: false, supportsExpectedSha: false };
+    return { dispatchable: false, reason: NOT_DISPATCHABLE, supportsExpectedSha: false };
   }
   const inputs = workflow?.on?.workflow_dispatch?.inputs;
   const expectedInput =
@@ -369,7 +417,7 @@ async function inspectRecoveryDispatch(context, sha) {
   const hasGuardedProtocolMarker =
     hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
   if (hasGuardedProtocolMarker) {
-    throw new Error("CI workflow recovery contract was partially configured");
+    return { dispatchable: false, reason: CONTRACT_PARTIAL, supportsExpectedSha: false };
   }
   return { dispatchable: true, supportsExpectedSha: false };
 }
@@ -516,8 +564,17 @@ function isPullInventoryUrl(value, context) {
   }
 }
 
-function requiredEnv(env, name) {
-  const value = env[name]?.trim();
+/** Render a per-candidate failure as a one-line skip reason.
+ *
+ * Kept on one line because these are printed one per line, and a multi-line
+ * reason would break a log a human scans for what was dropped.
+ */
+function failureReason(cause) {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return `error: ${message.replace(/\s+/g, " ").trim() || "unknown failure"}`;
+}
+
+function requiredEnv(env, name) {  const value = env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
 }
@@ -557,6 +614,10 @@ if (isDirectRun) {
         log: options.json ? () => {} : console.log,
       });
       if (options.json) console.log(JSON.stringify(result, null, 2));
+      // Every recoverable PR has already been dispatched by this point. A
+      // non-zero exit reports the candidates that were dropped for a reason a
+      // human should fix; it no longer means recovery was skipped.
+      if (result.degraded) process.exitCode = 1;
     }
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);

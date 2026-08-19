@@ -1,5 +1,9 @@
 # iOS Chat Familiars-First Implementation Plan
 
+> **Completed historical implementation plan.** The supporting IA remains
+> relevant, but current priorities are consolidated in
+> [`../../ios-current-direction.md`](../../ios-current-direction.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the iOS Chats home an iMessage-style list of familiars, open a familiar's chat in one tap, and move session selection into the config popover.
