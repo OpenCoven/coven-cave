@@ -28,8 +28,33 @@ async function gotoApp(page: Page) {
       { timeout: 30_000, message: "Workspace global shortcuts should be interactive" },
     )
     .toBe(true);
-  await page.keyboard.press("Escape");
-  await expect(palette).toBeHidden();
+  // Getting the palette shut again is setup, not the assertion under test —
+  // every test below is about the shortcuts sheet, and nothing here covers the
+  // palette's own Escape behavior. A one-shot press therefore made an
+  // incidental step a failure mode for all three.
+  //
+  // It is a swallowed key rather than a slow one, which is why retrying the
+  // assertion could not recover it: `useFocusTrap` attaches its Escape listener
+  // and moves focus in the SAME post-paint effect, and the handler no-ops
+  // unless its trap is topmost — so a press that lands a beat early is dropped,
+  // not queued, and `toBeHidden` then polls a palette that will never close.
+  // That is how main run 32303914004 held it visible through the whole 5s
+  // window and failed outright rather than flaking to a pass (cave-i1c).
+  //
+  // So wait for the trap's observable half — focus inside the dialog, the guard
+  // right-chat-panel.spec.ts already uses — and then press until it actually
+  // closes, mirroring the open poll above. Both loops stop on the first press
+  // that takes effect, so neither sends a stray key.
+  await expect(palette.locator(":focus")).toHaveCount(1);
+  await expect
+    .poll(
+      async () => {
+        await page.keyboard.press("Escape");
+        return palette.isVisible();
+      },
+      { timeout: 15_000, message: "Command palette should close on Escape" },
+    )
+    .toBe(false);
 }
 
 // The sheet is a Modal labelled via its breadcrumb header (aria-labelledby),
