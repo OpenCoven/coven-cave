@@ -30,6 +30,7 @@ const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
 const linkedTasks = await read("apps/ios/CovenCave/CovenCave/Views/LinkedTasksSheet.swift");
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
+const chatChrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
 const globalSearch = await read(
   "apps/ios/CovenCave/CovenCave/Views/GlobalSearchView.swift",
@@ -188,10 +189,19 @@ assert.doesNotMatch(root, /TerminalView|PtyTerminal|case \.terminal/,
   "the connected shell cannot mount the retired iOS terminal");
 assert.match(
   home,
-  /Text\("Chats"\)[\s\S]{0,120}\.font\(\.system\(size: 32, weight: \.semibold, design: \.serif\)\)/,
+  /EditorialSurfaceTitle\(\s*title: "Chats",\s*detail: visibleConversationLabel,\s*large: true/,
   "the Chats title uses the restrained editorial hierarchy",
 );
-assert.match(home, /visibleConversationCount/, "the Chats title reports useful conversation context");
+assert.match(
+  chatChrome,
+  /struct EditorialSurfaceTitle[\s\S]*?design: \.serif/,
+  "primary destination titles share one editorial component",
+);
+assert.match(home, /visibleConversationLabel/, "the Chats title names its conversation context");
+assert.match(tasks, /EditorialSurfaceTitle\(title: "Tasks", detail: visibleTaskLabel\)/,
+  "Tasks shares the editorial primary-surface hierarchy");
+assert.match(settings, /EditorialSurfaceTitle\(title: "Settings"\)/,
+  "Settings shares the editorial primary-surface hierarchy");
 assert.match(
   home,
   /--ui-preview-chats-home/,
@@ -199,8 +209,8 @@ assert.match(
 );
 assert.match(
   home,
-  /private var homeSearchBar[\s\S]*?\.glass\(\.elevated, cornerRadius: 24\)/,
-  "the Chats footer is a floating search dock instead of a full-width slab",
+  /private var homeSearchBar[\s\S]*?frame\(maxWidth: sizeClass == \.regular \? 560 : \.infinity\)/,
+  "the floating Chats dock adapts to regular-width layouts",
 );
 assert.match(
   home,
@@ -212,6 +222,10 @@ assert.doesNotMatch(
   /private var homeSearchBar[\s\S]*?glassChrome\(\.bottom\)/,
   "the Chats footer no longer paints an edge-to-edge chrome bar",
 );
+assert.match(home, /private var lowDensityActions[\s\S]*?"New chat"[\s\S]*?"All familiars"/,
+  "low-density Chats lists offer truthful next actions without restoring recents");
+assert.match(home, /ViewThatFits\(in: \.horizontal\)/,
+  "familiar rows protect name and timestamp hierarchy at large text sizes");
 assert.match(
   settings,
   /Section\("Community"\) \{\s*HStack\(spacing: 0\)/,
@@ -220,10 +234,20 @@ assert.match(
 for (const label of ["Discord", "X", "Docs", "Podcast", "Blog"]) {
   assert.match(
     settings,
-    new RegExp(`communityLink\\("${label}"|communityLink\\(\\s*"${label}"`),
+    new RegExp(`iconShelfLink\\("${label}"|iconShelfLink\\(\\s*"${label}"`),
     `Community keeps an accessible ${label} icon`,
   );
 }
+assert.match(
+  settings,
+  /private var legalSection[\s\S]*?HStack\(spacing: 0\)[\s\S]*?Terms of Service[\s\S]*?Privacy/,
+  "Legal presents its destinations as one icon shelf",
+);
+assert.match(
+  settings,
+  /private func iconShelfLink[\s\S]*?\.frame\(maxWidth: \.infinity, minHeight: 52\)/,
+  "Community and Legal shelf controls share a full-width row-height contract",
+);
 assert.match(
   settings,
   /LabeledContent\("Status"\) \{\s*HStack\(spacing: 10\)[\s\S]*?arrow\.clockwise/,

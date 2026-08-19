@@ -30,10 +30,14 @@ When these disagree with an older iOS note or plan, the order above wins.
 - The native iOS Terminal, PTY transport, xterm WebView, terminal composer,
   slash-command route, generated bundle, and tests are retired. Desktop and web
   terminal surfaces are unaffected.
-- Chats uses an editorial serif title, a visible conversation count, one
-  contextual Projects action, and a floating search/New Chat dock.
+- Chats, Tasks, and Settings share one editorial title language while retaining
+  the controls and navigation behavior specific to each destination.
+- Chats names its visible conversation count, protects familiar previews at
+  accessibility sizes, offers truthful shortcuts when the list is sparse, and
+  uses a floating search/New Chat dock that compacts in landscape and caps its
+  width on iPad.
 - Settings presents Community as one icon row and Connection status plus
-  re-check as one row.
+  re-check as one row. Legal links share the same concise icon-shelf pattern.
 - The open drawer preserves spatial context by presenting the live destination
   as a rounded, offset page.
 - Theme values come from `ChromePalette`; Dynamic Type, VoiceOver, Reduce
@@ -52,26 +56,9 @@ When these disagree with an older iOS note or plan, the order above wins.
 
 ## Next visual improvements
 
-The 2026-08-19 iPhone 16 Pro simulator pass identified these next candidates:
-
-1. **Refine familiar-row rhythm.** Protect the preview from clipping at large
-   accessibility sizes and tighten the relationship between name, timestamp,
-   presence, preview, and divider.
-2. **Unify primary-surface headers.** Bring Tasks and Settings closer to the
-   Chats editorial hierarchy while keeping each surface's real controls and
-   native navigation behavior.
-3. **Make the floating Chats dock adaptive.** Reduce its footprint in landscape
-   and regular-width split views while preserving keyboard and safe-area
-   behavior.
-4. **Clarify the title count.** Keep the compact badge, but make its visual and
-   accessibility meaning unmistakably "conversations" rather than an unlabeled
-   status number.
-5. **Use low-density space deliberately.** When only one familiar is present,
-   offer truthful, context-aware next actions without reintroducing a global
-   recent-thread feed.
-
-These are candidates, not permission to bypass a Bead, design review, or the
-protected pull-request path.
+The five candidates from the 2026-08-19 simulator pass are implemented. No
+additional visual queue is active; further work must begin with fresh simulator
+evidence and a current Bead rather than resuming an older plan.
 
 ## Historical-document policy
 

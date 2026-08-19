@@ -49,6 +49,9 @@ struct SettingsView: View {
                     }
                     .accessibilityLabel("Open navigation")
                 }
+                ToolbarItem(placement: .principal) {
+                    EditorialSurfaceTitle(title: "Settings")
+                }
             }
             .onAppear {
                 pushMode = (app.publishedMode ?? (chrome.colorScheme == .light ? "light" : "dark")) == "light" ? .light : .dark
@@ -329,15 +332,15 @@ struct SettingsView: View {
     private var communitySection: some View {
         Section("Community") {
             HStack(spacing: 0) {
-                communityLink(
+                iconShelfLink(
                     "Discord",
                     systemImage: "bubble.left.and.bubble.right.fill",
                     url: "https://discord.gg/opencoven"
                 )
-                communityLink("X", systemImage: "at", url: "https://x.com/OpenCvn")
-                communityLink("Docs", systemImage: "book.closed.fill", url: "https://docs.opencoven.ai")
-                communityLink("Podcast", systemImage: "waveform", url: "https://pod.opencoven.ai")
-                communityLink("Blog", systemImage: "text.page.fill", url: "https://mind.opencoven.ai")
+                iconShelfLink("X", systemImage: "at", url: "https://x.com/OpenCvn")
+                iconShelfLink("Docs", systemImage: "book.closed.fill", url: "https://docs.opencoven.ai")
+                iconShelfLink("Podcast", systemImage: "waveform", url: "https://pod.opencoven.ai")
+                iconShelfLink("Blog", systemImage: "text.page.fill", url: "https://mind.opencoven.ai")
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
@@ -346,8 +349,20 @@ struct SettingsView: View {
 
     private var legalSection: some View {
         Section {
-            linkRow("Terms of Service", value: "opencoven.ai/terms", url: "https://opencoven.ai/terms")
-            linkRow("Privacy", value: "opencoven.ai/privacy", url: "https://opencoven.ai/privacy")
+            HStack(spacing: 0) {
+                iconShelfLink(
+                    "Terms of Service",
+                    systemImage: "doc.text.fill",
+                    url: "https://opencoven.ai/terms"
+                )
+                iconShelfLink(
+                    "Privacy",
+                    systemImage: "hand.raised.fill",
+                    url: "https://opencoven.ai/privacy"
+                )
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
         } header: {
             Text("Legal")
         } footer: {
@@ -360,21 +375,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func linkRow(_ label: String, value: String, url: String) -> some View {
-        if let destination = URL(string: url) {
-            Link(destination: destination) {
-                LabeledContent(label) {
-                    Label(value, systemImage: "arrow.up.right")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .foregroundStyle(.primary)
-        }
-    }
-
-    @ViewBuilder
-    private func communityLink(_ label: String, systemImage: String, url: String) -> some View {
+    private func iconShelfLink(_ label: String, systemImage: String, url: String) -> some View {
         if let destination = URL(string: url) {
             Link(destination: destination) {
                 Image(systemName: systemImage)
@@ -385,10 +386,10 @@ struct SettingsView: View {
                         chrome.bgElevated,
                         in: RoundedRectangle(cornerRadius: 13, style: .continuous)
                     )
-                    .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .accessibilityLabel(label)
             .accessibilityHint("Opens \(label)")
         }
