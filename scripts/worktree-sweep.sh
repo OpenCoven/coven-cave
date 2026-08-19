@@ -147,11 +147,12 @@ echo "[sweep] repo HEAD: $(git rev-parse --short HEAD 2>/dev/null) on $(git rev-
 echo "[sweep] registered worktrees: $before"
 echo "[sweep] --- lifecycle apply output follows ---"
 # The lifecycle command performs its own complete inventory and retires only
-# cleanup-ready units. --max-retire limits destructive local retirements; the
-# command may make a few additional bounded non-mutating attempts to reach
-# safe candidates behind blocks. The explicit override is audited by the
-# command; the local maintenance plane remains enforced. Keep the blast radius
-# bounded.
+# cleanup-ready units. --max-retire limits the number of local retirements per
+# run; the command may make additional attempts that can still include
+# destructive steps (e.g. ignored-path cleanup, worktree removal) before
+# reporting a unit as partially retired or blocked. The explicit override is
+# audited by the command; the local maintenance plane remains enforced. Keep
+# the blast radius bounded.
 pnpm beads:worktrees:apply --allow-unenforced-planes --max-retire 3
 status=$?
 
