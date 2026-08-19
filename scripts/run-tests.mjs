@@ -744,6 +744,7 @@ export const SUITES = {
     "src/lib/stop-phrase.test.ts",
     "src/lib/use-prompt-enhance.test.ts",
     "src/lib/reply-recommendation.test.ts",
+    "src/lib/agentic-recommendations.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/code-lang.test.ts",
     "src/lib/shiki-highlighter.test.ts",
