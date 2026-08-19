@@ -639,8 +639,13 @@ test.describe("familiar work queue (PR control tower)", () => {
       r.fulfill({ json: { ok: true, data: [{ id: "cave-aa1", title: "T", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty"] }] } }),
     );
     await page.goto("/");
-    await page.waitForTimeout(500);
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })));
+    await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+      );
+      await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
     await page.waitForSelector(".fwq-lane", { timeout: 45_000 });
     await expect(page.locator(".fwq-attention")).toHaveCount(0);
   });
