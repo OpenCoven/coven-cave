@@ -16,6 +16,7 @@ import {
 import { buildResearchMissionFlow } from "../research-mission-flow.ts";
 import {
   allowedResearchActions,
+  nextResearchIterationNumber,
   RESEARCH_COST_UNAVAILABLE_STOP_REASON,
   RESEARCH_DIRECTION_MAX_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
@@ -891,7 +892,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         lastError: stopReason,
       });
     }
-    const number = mission.iterations.length + 1;
+    const number = nextResearchIterationNumber(mission);
     const timestamp = deps.now().toISOString();
     const workingArtifact = mission.artifacts[0]?.state === "rejected" ? {
       ...mission.artifacts[0],
@@ -1404,7 +1405,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     }
 
     const timestamp = deps.now().toISOString();
-    const number = mission.iterations.length + 1;
+    const number = nextResearchIterationNumber(mission);
     let status: ResearchMission["status"] = control.decision === "complete" ? "completed" : "checkpoint";
     let stopReason = control.decision === "complete" ? "Research marked complete" : null;
     let reconciled: ResearchMission = {

@@ -25,10 +25,10 @@ type Props = {
    * content and never its own tabs.
    */
   tab: ResearchOutputTab;
-  /** One line of run context above the visible pane (pass state, bound progress). */
+  /** One line of run context above the visible pane (iteration state, bound progress). */
   hint?: ReactNode;
   /**
-   * Checkpoint triage: offer Keep / Reject / Verify next pass on the sources
+   * Checkpoint triage: offer Keep / Reject / Verify next iteration on the sources
    * still awaiting a verdict, alongside the always-available status control.
    */
   triage?: boolean;
@@ -43,8 +43,13 @@ const SOURCE_STATUSES: ResearchSourceRef["status"][] = [
   "rejected",
 ];
 
-/** Appended to a source note so "verify next pass" survives into the next run. */
-export const VERIFY_NOTE = "Verify next pass";
+/** Appended to a source note so the verification request survives the next run. */
+export const VERIFY_NOTE = "Verify next iteration";
+const LEGACY_VERIFY_NOTE = "Verify next pass";
+
+function hasVerificationRequest(note: string | undefined): boolean {
+  return [VERIFY_NOTE, LEGACY_VERIFY_NOTE].some((marker) => (note ?? "").includes(marker));
+}
 
 export function ResearchEvidenceLedger({
   mission,
@@ -299,9 +304,9 @@ export function ResearchEvidenceLedger({
                 {source.id === latestSourceId ? (
                   <span className="sr-only">Most recently added</span>
                 ) : null}
-                {/* Checkpoint triage: the verdicts the pass is actually waiting
-                    on, as one-tap buttons. The status control below stays for
-                    revisiting any source at any time. */}
+                {/* Checkpoint triage: the verdicts the iteration is actually
+                    waiting on, as one-tap buttons. The status control below
+                    stays for revisiting any source at any time. */}
                 {triage && (source.status === "candidate" || source.status === "conflicting") ? (
                   <div className="research-desk-delta__actions">
                     <Button
@@ -332,7 +337,7 @@ export function ResearchEvidenceLedger({
                       <Button
                         size="xs"
                         variant="ghost"
-                        disabled={busy || (source.note ?? "").includes(VERIFY_NOTE)}
+                        disabled={busy || hasVerificationRequest(source.note)}
                         onClick={() => void act({
                           action: "update-source",
                           sourceId: source.id,
@@ -342,7 +347,7 @@ export function ResearchEvidenceLedger({
                           },
                         })}
                       >
-                        Verify next pass
+                        Verify next iteration
                       </Button>
                     ) : null}
                   </div>
