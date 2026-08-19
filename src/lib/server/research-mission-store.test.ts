@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before } from "node:test";
 import test from "node:test";
 import {
+  mkdtemp,
   mkdir,
   readFile,
   rm,
@@ -9,6 +10,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ResearchMission } from "../research-missions.ts";
 import {
@@ -392,7 +394,7 @@ test("loadResearchMission backfills standard artifact refs on legacy missions", 
 });
 
 test("loadResearchMission repairs a completed mission downgraded by the missing-cost gate", async (t) => {
-  const legacyRoot = await mkdtemp(path.join(os.tmpdir(), "research-store-cost-pause-"));
+  const legacyRoot = await mkdtemp(path.join(tmpdir(), "research-store-cost-pause-"));
   const previousRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
   process.env.COVEN_RESEARCH_MISSIONS_DIR = legacyRoot;
   t.after(async () => {
