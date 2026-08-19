@@ -118,10 +118,15 @@ export type ClientV1Error = {
 
 export type ClientV1SuccessEnvelope<TData extends ClientV1Record = ClientV1Record> = ClientV1EnvelopeBase & {
   data: TData;
+  // Excludes `error` at the type level so success and error envelopes stay a
+  // precise discriminated union instead of both accepting either field via
+  // ClientV1Record's string index signature.
+  error?: never;
 };
 
 export type ClientV1ErrorEnvelope = ClientV1EnvelopeBase & {
   error: ClientV1Error;
+  data?: never;
 };
 
 export type ClientV1ContractManifest = {
