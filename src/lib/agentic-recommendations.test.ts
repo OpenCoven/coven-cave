@@ -183,6 +183,32 @@ for (const [index, label] of safeEvidenceLabels.entries()) {
   })]))[0]!;
   assert.equal(parsed.evidenceRefs[0]?.label, label, "safe evidence text survives strict parsing");
 }
+const gitCommitOid = "0123456789abcdef0123456789abcdef01234567";
+const safeGitHubCommitEvidence = parseAgenticRecommendationsOutput(output([recommendation({
+  id: "safe-github-commit-evidence",
+  evidenceRefs: [{ id: gitCommitOid, kind: "github", label: `Commit SHA ${gitCommitOid}` }],
+})]))[0]!;
+assert.equal(
+  safeGitHubCommitEvidence.evidenceRefs[0]?.id,
+  gitCommitOid,
+  "an exact Git OID is safe GitHub evidence",
+);
+expectRejected(
+  output([recommendation({
+    id: `ghp_${"a".repeat(36)}`,
+    evidenceRefs: [{ id: `ghp_${"a".repeat(36)}`, kind: "github", label: `Commit SHA ${gitCommitOid}` }],
+  })]),
+  "secret_evidence",
+);
+for (const secretText of [`Bearer ${"a".repeat(32)}`, `ghp_${"a".repeat(36)}`]) {
+  expectRejected(
+    output([recommendation({
+      id: "safe-github-commit-with-extra-text",
+      evidenceRefs: [{ id: gitCommitOid, kind: "github", label: `Commit SHA ${gitCommitOid}; ${secretText}` }],
+    })]),
+    "secret_evidence",
+  );
+}
 expectRejected(
   output([recommendation({
     id: "unscoped-hex-evidence",
@@ -332,6 +358,24 @@ assert.deepEqual(
     { id: "blocked-last", ordinal: 3 },
   ],
   "model-claimed verified data receives the proposal tier instead of bypassing review",
+);
+assert.equal(
+  isAutoApplyAllowed(ranked[0]!),
+  true,
+  "ranking preserves the private verifier stamp for unchanged verified recommendations",
+);
+const reranked = rankAgenticRecommendations(ranked);
+assert.equal(
+  isAutoApplyAllowed(reranked[0]!),
+  true,
+  "reranking preserves the trusted verification tier",
+);
+assert.equal(reranked[0]?.ordinal, 1, "reranking keeps trusted recommendations in the verified tier");
+const rankedForgedVerified = rankAgenticRecommendations([forgedVerified]);
+assert.equal(
+  isAutoApplyAllowed(rankedForgedVerified[0]!),
+  false,
+  "a manually constructed verified lookalike remains untrusted after ranking",
 );
 assert.doesNotMatch(JSON.stringify(ranked), /confidence/i, "the contract never emits numeric confidence");
 

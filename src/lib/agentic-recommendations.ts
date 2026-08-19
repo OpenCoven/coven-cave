@@ -159,6 +159,8 @@ const MAX_CONTEXT_BYTES = 16 * 1024;
 const MAX_CONTEXT_DEPTH = 16;
 const MAX_CONTEXT_ENTRIES = 256;
 const ID_RE = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
+const GIT_OID_RE = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
+const EXPLICIT_GITHUB_COMMIT_OID_RE = /(\b(?:commit|sha(?:256)?)\b[\s:="']+)(?:[a-f0-9]{40}|[a-f0-9]{64})\b/gi;
 const FINGERPRINT_RE = /^ctx-v1-[0-9a-f]{32}$/;
 const agenticSurfaces = new Set<string>(AGENTIC_SURFACES);
 const evidenceKinds = new Set<string>(AGENTIC_EVIDENCE_KINDS);
@@ -197,6 +199,14 @@ function isBoundedString(value: unknown, max = MAX_TEXT_CHARS): value is string 
 
 function isValidId(value: unknown): value is string {
   return isBoundedString(value, MAX_ID_CHARS) && ID_RE.test(value);
+}
+
+function isGitOid(value: unknown): value is string {
+  return typeof value === "string" && GIT_OID_RE.test(value);
+}
+
+function isValidEvidenceId(value: unknown): value is string {
+  return isValidId(value) || isGitOid(value);
 }
 
 function asSurface(value: unknown): AgenticSurface {
@@ -325,11 +335,11 @@ function parseEvidenceRefs(value: unknown): AgenticEvidenceRef[] {
   if (!Array.isArray(value) || value.length > MAX_EVIDENCE_REFS) parseError("invalid_evidence");
   return value.map((entry) => {
     if (!isRecord(entry) || !hasExactKeys(entry, ["id", "kind", "label"])) parseError("invalid_evidence");
-    if (!isValidId(entry.id) || !isBoundedString(entry.label)) parseError("invalid_evidence");
+    if (!isValidEvidenceId(entry.id) || !isBoundedString(entry.label)) parseError("invalid_evidence");
     const kind = asEvidenceKind(entry.kind);
     if (
-      (containsSecretText(entry.id) || containsSecretText(entry.label))
-      && !isExplicitGithubCommitEvidence(kind, entry.label)
+      (!isGitOid(entry.id) && containsSecretText(entry.id))
+      || containsSecretText(stripExplicitGithubCommitOids(kind, entry.label))
     ) {
       parseError("secret_evidence");
     }
@@ -337,11 +347,10 @@ function parseEvidenceRefs(value: unknown): AgenticEvidenceRef[] {
   });
 }
 
-function isExplicitGithubCommitEvidence(kind: AgenticEvidenceKind, label: string): boolean {
-  return (
-    kind === "github"
-    && /\b(?:commit|sha(?:256)?)\b[\s:="']+(?:[a-f0-9]{40}|[a-f0-9]{64})\b/i.test(label)
-  );
+function stripExplicitGithubCommitOids(kind: AgenticEvidenceKind, label: string): string {
+  return kind === "github"
+    ? label.replace(EXPLICIT_GITHUB_COMMIT_OID_RE, "$1")
+    : label;
 }
 
 function hasPassedVerificationChecks(verification: Pick<AgenticVerification, "status" | "checks">): boolean {
@@ -513,7 +522,16 @@ export function rankAgenticRecommendations<TPayload extends AgenticPayload>(
       ordinal += 1;
       previousTier = tier;
     }
-    return { ...recommendation, ordinal };
+    const ranked = { ...recommendation, ordinal };
+    if (
+      trustedVerifiedRecommendations.has(recommendation)
+      && ranked.payload === recommendation.payload
+      && ranked.verification === recommendation.verification
+      && ranked.application === recommendation.application
+    ) {
+      trustedVerifiedRecommendations.add(ranked);
+    }
+    return ranked;
   });
 }
 
