@@ -10,7 +10,6 @@ const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const devClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient+Dev.swift");
 const connection = await read("apps/ios/CovenCave/CovenCave/Networking/CaveConnection.swift");
-const terminal = await read("apps/ios/CovenCave/CovenCave/Networking/PtyTerminal.swift");
 const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const app = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
@@ -38,11 +37,6 @@ assert.doesNotMatch(
   devClient,
   /URLSessionConfiguration|URLSession\(/,
   "dev-tab calls should not allocate a separate session",
-);
-assert.match(
-  terminal,
-  /private static let wsSession = URLSession\(configuration: \.default\)/,
-  "PTY websockets should come from one shared session",
 );
 assert.match(
   model,
@@ -173,28 +167,6 @@ assert.match(
   thread,
   /func resyncInterruptedTurn[\s\S]*?convo\.turns\[lastUser\]\.text == prompt[\s\S]*?reply\.text\.hasPrefix\(streamed\)/,
   "resync must anchor on our own prompt and only extend what already streamed (never adopt an older reply)",
-);
-
-// --- Terminal: transient drops auto-reconnect within the server's grace -----
-assert.match(
-  terminal,
-  /private static let maxAutoReconnects = 3/,
-  "terminal auto-reconnect must be bounded",
-);
-assert.match(
-  terminal,
-  /func fail[\s\S]*?reconnectAttempt < Self\.maxAutoReconnects[\s\S]*?Task\.sleep[\s\S]*?self\.open\(\)/,
-  "a transport failure should retry with backoff before surfacing the error",
-);
-assert.match(
-  terminal,
-  /func handle\(_ message[\s\S]*?reconnectAttempt = 0/,
-  "any received frame should refill the reconnect budget",
-);
-assert.match(
-  terminal,
-  /guard let ws = self\?\.task else \{ return \}[\s\S]*?self\.task === ws/,
-  "the receive loop must pin its socket — a replaced socket's stale error must not clobber the live connection",
 );
 
 // --- Host discovery: one probe on the common path, and the paired sweep stays

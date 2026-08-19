@@ -41,6 +41,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 - [`mobile-tailscale.md`](mobile-tailscale.md) — exposing the browser surface to a phone over Tailscale Serve, including tokenless tailnet-device access
 - [`mobile-memory.md`](mobile-memory.md) — the read-only iOS client of the canonical-memory API
+- [`ios-current-direction.md`](ios-current-direction.md) — the canonical native iOS product shape, active priorities, and historical-plan boundary
 
 ### Chat, familiars, and tasks
 

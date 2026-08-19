@@ -1,5 +1,9 @@
 # Coven Cave — Native iOS Rebuild Plan
 
+> **Historical foundation.** Do not use this document as the current priority
+> queue. The canonical active direction is
+> [`ios-current-direction.md`](ios-current-direction.md).
+
 > Status: **DRAFT / Phase 0 (recon + design)** — started 2026-06-20.
 > Owner: this is a multi-phase arc. Each phase ships independently and is verifiable on its own.
 > **Trust model revised 2026-07-17 (#3310):** the tokenless tailnet-trust design below was

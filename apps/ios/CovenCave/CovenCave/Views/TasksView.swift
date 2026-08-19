@@ -80,6 +80,10 @@ struct TasksView: View {
         !statusFilter.isEmpty || !priorityFilter.isEmpty || !familiarFilter.isEmpty
     }
 
+    private var visibleTaskLabel: String {
+        filtered.count == 1 ? "1 task" : "\(filtered.count) tasks"
+    }
+
     var body: some View {
         NavigationSplitView {
             content
@@ -92,6 +96,9 @@ struct TasksView: View {
                             Image(systemName: "line.3.horizontal")
                         }
                         .accessibilityLabel("Open navigation")
+                    }
+                    ToolbarItem(placement: .principal) {
+                        EditorialSurfaceTitle(title: "Tasks", detail: visibleTaskLabel)
                     }
                     ToolbarItem(placement: .topBarTrailing) { filterMenu }
                     ToolbarItem(placement: .topBarTrailing) {
