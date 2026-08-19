@@ -184,6 +184,11 @@ assert.match(
 );
 assert.match(
   src,
+  /className="board-agentic-enhance__panel focus-ring"/,
+  "programmatic focus on the recommendation panel remains visibly indicated",
+);
+assert.match(
+  src,
   /mutationSequenceRef/,
   "proposal mutations carry a monotonic sequence for stale response safety",
 );

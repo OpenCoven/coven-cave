@@ -1558,7 +1558,7 @@ function BoardAgenticEnhanceSection({ card, onCardReplaced }: BoardAgenticEnhanc
         <section
           id="board-agentic-enhance-panel"
           ref={panelRef}
-          className="board-agentic-enhance__panel"
+          className="board-agentic-enhance__panel focus-ring"
           role="region"
           aria-label="Enhance recommendations"
           tabIndex={-1}
