@@ -1,0 +1,203 @@
+.rd-scopebar,
+.rd-workbench-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+
+.rd-scopebar {
+  min-height: var(--space-10);
+  flex: none;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-card);
+}
+
+.rd-scopebar-title,
+.rd-workbench-subject,
+.rd-verdict-state {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.rd-scopebar-title strong,
+.rd-workbench-subject > strong {
+  overflow: hidden;
+  margin: 0;
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-scopebar-title strong {
+  font-size: var(--text-md);
+}
+
+.rd-workbench-subject > strong {
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+
+.rd-scopebar-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-workbench-head {
+  min-height: var(--space-12);
+  flex: none;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-panel);
+}
+
+.rd-workbench-subject {
+  flex: 1;
+}
+
+.rd-workbench-lineage {
+  display: flex;
+  min-width: 0;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.rd-workbench-lineage span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-workbench-stats,
+.rd-workbench-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rd-progress-label {
+  color: var(--text-secondary);
+}
+
+.rd-layout {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns:
+    var(--rd-queue-width)
+    minmax(0, 1fr)
+    var(--rd-evidence-width);
+  gap: var(--space-2);
+  transition: grid-template-columns var(--duration-slow)
+    var(--ease-emphasized);
+}
+
+.rd-layout[data-queue-collapsed="true"] {
+  grid-template-columns:
+    var(--space-10)
+    minmax(0, 1fr)
+    var(--rd-evidence-width);
+}
+
+.rd-layout:not([data-evidence-open="true"]) {
+  grid-template-columns: var(--rd-queue-width) minmax(0, 1fr);
+}
+
+.rd-layout[data-queue-collapsed="true"]:not([data-evidence-open="true"]) {
+  grid-template-columns: var(--space-10) minmax(0, 1fr);
+}
+
+.rd-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.rd-mobile-tabs {
+  display: none;
+}
+
+.rd-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+}
+
+.rd-shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.rd-shortcut-row kbd {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.rd-checkpoints {
+  flex: none;
+  padding: var(--space-2) var(--space-3);
+}
+
+.rd-cp-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.rd-cp-list {
+  display: flex;
+  max-height: calc(var(--space-12) * 2);
+  gap: var(--space-2);
+  overflow: auto;
+  padding-top: var(--space-2);
+}
+
+.rd-cp-pill {
+  display: flex;
+  min-width: calc(var(--space-12) * 3);
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+
+.rd-cp-name {
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.rd-cp-date,
+.rd-cp-summary {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
