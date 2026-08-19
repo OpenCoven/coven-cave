@@ -22,8 +22,11 @@ import {
   renderClientV1ContractFixture,
   sortClientV1JsonKeys,
   type ClientV1Cursor,
+  type ClientV1ErrorEnvelope,
   type ClientV1Identity,
   type ClientV1Revision,
+  type ClientV1StatusRecord,
+  type ClientV1SuccessEnvelope,
 } from "./contract.ts";
 import {
   clientV1Error,
@@ -33,6 +36,28 @@ import {
   clientV1SuccessResponse,
   httpStatusForClientV1ErrorCode,
 } from "./responses.ts";
+
+// Type-only compile-time assertions: the public envelope types must form a
+// precise discriminated union. Without `error?: never` / `data?: never`,
+// ClientV1Record's string index signature would let `error` and `data`
+// type-check on either envelope, so `Equal` here would resolve to `false` and
+// `Assert` would fail to compile.
+type Equal<Actual, Expected> =
+  (<Value>() => Value extends Actual ? 1 : 2) extends
+  (<Value>() => Value extends Expected ? 1 : 2)
+    ? (<Value>() => Value extends Expected ? 1 : 2) extends
+      (<Value>() => Value extends Actual ? 1 : 2)
+      ? true
+      : false
+    : false;
+type Assert<Condition extends true> = Condition;
+
+export type ClientV1SuccessEnvelopeExcludesErrorIsExact = Assert<
+  Equal<ClientV1SuccessEnvelope<ClientV1StatusRecord>["error"], undefined>
+>;
+export type ClientV1ErrorEnvelopeExcludesDataIsExact = Assert<
+  Equal<ClientV1ErrorEnvelope["data"], undefined>
+>;
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
