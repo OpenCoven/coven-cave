@@ -2,8 +2,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Grimoire launcher ("Memories Prototype" redesign) — source pins for the
-// React wiring; the pure derivations behind the tiles are behaviorally
+// Threaded Memories launcher — source pins for the React wiring; pure
+// recency/search/capture derivations are behaviorally
 // tested in src/lib/grimoire-launcher-data.test.ts.
 
 const launcher = await readFile(new URL("./grimoire-launcher.tsx", import.meta.url), "utf8");
@@ -29,14 +29,26 @@ assert.match(
   "the launcher sees the same scan-or-local graph as the canvas, narrowed by the same familiar scope",
 );
 
-// ── Header: centered segmented tabs + contextual dashed New stitch pill ─────
+// ── Header: Library / Journal / Relations with a bounded action budget ──────
 
-assert.match(view, /className="focus-ring grimoire-tab"[\s\S]{0,60}>\s*Knowledge/, "the docs tab is labeled Knowledge");
+assert.match(view, /className="focus-ring grimoire-tab"[\s\S]{0,60}>\s*Library/, "the docs tab is labeled Library");
 assert.match(view, /className="focus-ring grimoire-tab"[\s\S]{0,60}>\s*Relations/, "the graph tab is labeled Relations");
 assert.match(
   view,
-  /\{view === "docs" \? \(\s*<>\s*<button[\s\S]{0,220}grimoire-newstitch/,
-  "the New stitch pill is contextual to the Knowledge tab",
+  /\{view === "docs" \? \(\s*<button[\s\S]{0,260}grimoire-newstitch/,
+  "the New stitch control is contextual to the Library tab",
+);
+assert.match(view, /<OverflowMenu[\s\S]*?ariaLabel="More Memories actions"/, "Weaves and Blank entry move to overflow");
+assert.match(
+  view,
+  /<Link\s+href="\/weaves"\s+role="menuitem"[\s\S]*?>\s*<span>Weaves<\/span>\s*<\/Link>/,
+  "Weaves remains a real route link inside overflow",
+);
+assert.match(view, /<PopoverItem[\s\S]*?>\s*Blank entry\s*</, "Blank entry remains reachable in overflow");
+assert.doesNotMatch(
+  view,
+  /ariaLabel="Journal"/,
+  "Library navigator no longer duplicates the top-level Journal destination",
 );
 
 // Both header verbs stay on one line and share the Search documents input's
@@ -48,13 +60,8 @@ const launcherCss = await readFile(
 );
 assert.match(
   launcherCss,
-  /\.grimoire-newstitch \{[^}]*flex: none;[^}]*white-space: nowrap;[^}]*border-radius: var\(--radius-control\);/,
+  /\.grimoire-newstitch \{[^}]*flex: none;[^}]*border-radius: var\(--radius-control\);[^}]*white-space: nowrap;/,
   "New stitch keeps control radius (matching the search input) and never wraps",
-);
-assert.match(
-  view,
-  /shrink-0[^"]*whitespace-nowrap[^"]*rounded-\[var\(--radius-control\)\][^>]*>\s*<Icon name="ph:plus"[\s\S]{0,80}Blank entry/,
-  "Blank entry matches the search input's control radius and never wraps",
 );
 
 // ── Stitch prefill: capture/template opens re-key the intake mount ──────────
@@ -73,34 +80,25 @@ assert.match(
 // ── Launcher internals ───────────────────────────────────────────────────────
 
 assert.match(launcher, /buildLauncherItems\(\{ knowledge, memory, journal \}\)/, "the recency pool derives from the loaded corpora");
-assert.match(launcher, /detectLauncherCapture\(query\)/, "the search field doubles as a URL capture intake");
+assert.match(launcher, /detectLauncherCapture\(captureValue\)/, "URL capture has its own explicit Weave field");
 assert.match(launcher, /onNewStitch\(\{ pinUrl: capture\.url \}\)/, "a detected URL pins into a new stitch");
 assert.match(launcher, /STITCH_PATTERNS\.map\(/, "the new-stitch row offers the shared stitch patterns");
-assert.match(launcher, /onNewStitch\(\{ patternId: p\.id \}\)/, "template tiles preselect their pattern");
-assert.match(launcher, /journalStreakDays\(journal\.map\(\(j\) => j\.date\)/, "the journal tile shows the reflection streak");
+assert.match(launcher, /onNewStitch\(\{ patternId: pattern\.id \}\)/, "template tiles preselect their pattern");
 assert.match(launcher, /launcherGraphCounts\(graph\)/, "the graph tiles count nodes/edges/detached from the doc graph");
+assert.match(launcher, /aria-labelledby="memories-continue"/);
+assert.match(launcher, /aria-labelledby="memories-recall"/);
+assert.match(launcher, /aria-labelledby="memories-weave"/);
+assert.match(launcher, /className="gl-thread"/, "the functional memory thread connects all three sections");
+assert.doesNotMatch(launcher, /gl-banner|gl-bento|gl-week/, "aurora and bento dashboard are removed");
 
-// ── The detached stat is scope-relative, and says so (cave-c4pzv) ────────────
-// `graph` arrives already scoped (grimoire-view passes scopedGraph), and
-// scopeDocGraph recomputes degree from the SCOPED edge set. So a doc that is
-// well-linked coven-wide, but whose links all land on memory owned by a
-// non-selected familiar, drops to degree 0 and was counted as "detached docs
-// with no links" — a claim about the DOC made from a scope-relative value.
-// The number stays scoped (its neighbours on the card are, and clicking through
-// opens the scoped graph where exactly these nodes are visible); the sentence
-// is what gets qualified.
 assert.match(
   launcher,
   /scopeLabel\?: string \| null/,
   "the launcher knows whether a familiar scope is active",
 );
-assert.match(
-  launcher,
-  /\{scopeLabel \? "detached docs with no links in this scope" : "detached docs with no links"\}/,
-  "the detached copy is qualified under a scope and unchanged in All",
-);
-assert.match(launcher, /aria-label="Search all documents or paste a URL"/, "the big search is labelled");
-assert.match(launcher, /suppressHydrationWarning/, "the client-clock date line is hydration-safe");
+assert.doesNotMatch(launcher, /detached docs/, "the home no longer shows a statistic that cannot open its exact set");
+assert.match(launcher, /aria-label="Search memories"/, "Recall owns the visible search");
+assert.match(launcher, /aria-label="URL to capture"/, "Weave owns a separate URL input");
 assert.ok(!/\bfetch\(/.test(launcher), "the launcher fetches nothing — it renders what the view loaded");
 
 console.log("grimoire-launcher.test: ok");

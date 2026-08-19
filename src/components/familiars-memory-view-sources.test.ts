@@ -31,6 +31,11 @@ assert.match(
   /Runtime memory/,
   "FamiliarsMemoryView should separately count runtime memory files",
 );
+assert.match(
+  source,
+  /const memorySourceSummary = `Coven origin \$\{fileSourceCounts\.covenOrigin\}; External runtimes \$\{fileSourceCounts\.externalHarnesses\}; Runtime memory \$\{fileSourceCounts\.runtimeMemory\}`/,
+  "the compact filter trigger exposes all three truthful source counts",
+);
 
 assert.match(
   source,

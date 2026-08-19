@@ -1,16 +1,5 @@
 "use client";
 
-/**
- * Grimoire launcher — the Memories surface's Knowledge home screen
- * ("Memories Prototype" redesign): an aurora banner, one big search that
- * doubles as a URL intake, and a bento of live entry points into the corpus.
- *
- * Shown by grimoire-view when the Knowledge tab has no open tabs; all data
- * (knowledge/memory/journal/graph) is what the view already loaded — this
- * component fetches nothing. Pure derivations live in
- * src/lib/grimoire-launcher-data.ts (unit-tested there).
- */
-
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
@@ -19,11 +8,8 @@ import type { DocGraph } from "@/lib/grimoire-graph";
 import {
   buildLauncherItems,
   detectLauncherCapture,
-  journalStreakDays,
   launcherGraphCounts,
-  launcherWeekStats,
   searchLauncherItems,
-  topMemoryRoot,
   type LauncherDocRef,
   type LauncherItem,
   type LauncherJournalInput,
@@ -31,16 +17,54 @@ import {
   type LauncherMemoryInput,
 } from "@/lib/grimoire-launcher-data";
 
-/** One-line template hooks, after the prototype's new-stitch row. */
 const PATTERN_HOOKS: Record<string, string> = {
-  "decision-record": "Why we chose it",
-  "how-to": "Steps that work",
-  glossary: "Terms, pinned down",
-  "api-contract": "Inputs & promises",
+  "decision-record": "Record a choice and its tradeoffs",
+  "how-to": "Keep steps that work",
+  glossary: "Define a shared vocabulary",
+  "api-contract": "Pin inputs and promises",
 };
 
 function Marker({ marker }: { marker: LauncherItem["marker"] }) {
   return <span aria-hidden className={`gl-marker gl-marker-${marker}`} />;
+}
+
+function MemoryRow({
+  item,
+  nowMs,
+  journalTitle,
+  onOpen,
+}: {
+  item: LauncherItem;
+  nowMs: number;
+  journalTitle: (date: string) => string;
+  onOpen: (ref: LauncherDocRef) => void;
+}) {
+  const title =
+    item.ref.kind === "journal"
+      ? `Journal — ${journalTitle(item.ref.date)}`
+      : item.title;
+  return (
+    <button
+      type="button"
+      className="gl-memory-row focus-ring"
+      onClick={() => onOpen(item.ref)}
+    >
+      <Marker marker={item.marker} />
+      <span className="gl-memory-row__body">
+        <span className="gl-memory-row__title">{title}</span>
+        {item.excerpt ? (
+          <span className="gl-memory-row__excerpt">{item.excerpt}</span>
+        ) : null}
+        <span className="gl-memory-row__meta">
+          {item.kindLabel}
+          {item.modifiedMs !== null
+            ? ` · ${relativeTime(new Date(item.modifiedMs).toISOString(), nowMs)}`
+            : ""}
+        </span>
+      </span>
+      <Icon name="ph:caret-right" width={11} aria-hidden />
+    </button>
+  );
 }
 
 export function GrimoireLauncher({
@@ -49,6 +73,8 @@ export function GrimoireLauncher({
   journal,
   graph,
   scopeLabel,
+  query,
+  onQueryChange,
   journalTitle,
   onOpen,
   onNewStitch,
@@ -60,11 +86,9 @@ export function GrimoireLauncher({
   memory: LauncherMemoryInput[];
   journal: LauncherJournalInput[];
   graph: DocGraph | null;
-  /** Who the shell's familiar multiselect has narrowed memory to, if anyone.
-   *  `graph` arrives ALREADY scoped, so every stat derived from it is
-   *  scope-relative; this is what lets the copy say so (cave-c4pzv). */
   scopeLabel?: string | null;
-  /** Prefs-formatted journal day label (grimoire-view's journalDayLabel). */
+  query: string;
+  onQueryChange: (query: string) => void;
   journalTitle: (date: string) => string;
   onOpen: (ref: LauncherDocRef) => void;
   onNewStitch: (opts?: { patternId?: string; pinUrl?: string }) => void;
@@ -72,251 +96,219 @@ export function GrimoireLauncher({
   onShowJournal: () => void;
   onShowGraph: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  // One clock per mount: stable stats, no re-render drift.
+  const [captureValue, setCaptureValue] = useState("");
   const [nowMs] = useState(() => Date.now());
-
   const items = useMemo(
     () => buildLauncherItems({ knowledge, memory, journal }),
     [knowledge, memory, journal],
   );
-  const results = useMemo(() => searchLauncherItems(items, query), [items, query]);
-  const capture = useMemo(() => detectLauncherCapture(query), [query]);
-  const week = useMemo(
-    () => launcherWeekStats(items, journal, nowMs),
-    [items, journal, nowMs],
+  const results = useMemo(
+    () =>
+      query.trim()
+        ? searchLauncherItems(items, query)
+        : items.slice(1, 6),
+    [items, query],
   );
-  const streak = useMemo(() => {
-    const d = new Date(nowMs);
-    const todayIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    return journalStreakDays(journal.map((j) => j.date), todayIso);
-  }, [journal, nowMs]);
+  const capture = useMemo(
+    () => detectLauncherCapture(captureValue),
+    [captureValue],
+  );
   const graphCounts = useMemo(() => launcherGraphCounts(graph), [graph]);
-  const topRoot = useMemo(() => topMemoryRoot(memory), [memory]);
+  const continueItems = items.slice(0, 1);
 
-  const hero = items[0] ?? null;
-  // Five small recents: hero(2×2) + week(1×2) + 5 + the five fixed cards + tip
-  // fill the 4-column bento to a clean 16-cell rectangle (prototype layout);
-  // four left a ragged 15-cell final row.
-  const smallRecents = items.slice(1, 6);
-  const latestMemory = useMemo(
-    () => items.find((i) => i.ref.kind === "memory") ?? null,
-    [items],
-  );
-
-  const displayTitle = (item: LauncherItem) =>
-    item.ref.kind === "journal" ? `Journal — ${journalTitle(item.ref.date)}` : item.title;
-
-  const dateLine = useMemo(() => {
-    const d = new Date(nowMs);
-    const weekday = d.toLocaleDateString(undefined, { weekday: "long" });
-    const monthDay = d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
-    return `${weekday} · ${monthDay}`;
-  }, [nowMs]);
-
-  const searching = query.trim().length > 0;
+  const captureUrl = () => {
+    if (!capture) return;
+    onNewStitch({ pinUrl: capture.url });
+  };
 
   return (
     <div className="gl-root">
       <div className="gl-col">
-        <div className="gl-banner" aria-hidden>
-          <span className="gl-orb gl-orb-1" />
-          <span className="gl-orb gl-orb-2" />
-          <span className="gl-sheen" />
-        </div>
+        <header className="gl-intro">
+          <p className="gl-intro__eyebrow">Threaded reading room</p>
+          <h2>Continue what matters. Recall it when needed. Weave it forward.</h2>
+          <p>
+            {items.length === 0
+              ? "Your durable knowledge will gather here."
+              : `${items.length.toLocaleString()} ${items.length === 1 ? "document" : "documents"} across stitches, familiar memory, and journal.`}
+          </p>
+        </header>
 
-        <section aria-label="Search and capture" className="gl-panel">
-          <span className="gl-chip">Continue where you left off</span>
-          <span className="gl-meta" suppressHydrationWarning>
-            {dateLine} · {items.length.toLocaleString()} {items.length === 1 ? "document" : "documents"}
-          </span>
-          <div className="gl-search">
-            <Icon name="ph:magnifying-glass" width={14} aria-hidden />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && query) setQuery("");
-                if (e.key === "Enter") {
-                  if (capture) onNewStitch({ pinUrl: capture.url });
-                  else if (results[0]) onOpen(results[0].ref);
-                }
-              }}
-              placeholder="Search all documents — or paste a URL to capture it…"
-              aria-label="Search all documents or paste a URL"
-            />
-          </div>
+        <div className="gl-sequence">
+          <span className="gl-thread" aria-hidden />
 
-          {searching ? (
-            <div className="gl-results" aria-label="Search results">
-              {capture ? (
-                <>
-                  <button type="button" className="gl-capture" onClick={() => onNewStitch({ pinUrl: capture.url })}>
-                    <Icon name="ph:push-pin" width={13} aria-hidden />
-                    <span className="gl-result-title">{capture.label}</span>
-                    <span className="gl-result-kind">
-                      {capture.flavor === "github" ? "GitHub" : capture.flavor === "llms" ? "llms.txt" : "Web page"}
-                    </span>
-                  </button>
-                  <button type="button" className="gl-result" onClick={() => onNewStitch()}>
-                    <Icon name="ph:plus" width={12} aria-hidden />
-                    <span className="gl-result-title">Start an empty stitch instead</span>
-                  </button>
-                </>
-              ) : results.length === 0 ? (
-                <p className="gl-empty-results">No documents match — press ⏎ after pasting a URL to capture it, or sew a new stitch.</p>
-              ) : (
-                results.map((item) => (
-                  <button key={item.key} type="button" className="gl-result" onClick={() => onOpen(item.ref)}>
-                    <Marker marker={item.marker} />
-                    <span className="gl-result-title">{displayTitle(item)}</span>
-                    <span className="gl-result-kind">
-                      {item.kindLabel}
-                      {item.modifiedMs !== null
-                        ? ` · ${relativeTime(new Date(item.modifiedMs).toISOString(), nowMs)}`
-                        : ""}
-                    </span>
-                  </button>
+          <section className="gl-stage" aria-labelledby="memories-continue">
+            <span className="gl-stage__knot" aria-hidden />
+            <div className="gl-stage__header">
+              <div>
+                <p className="gl-stage__index">01</p>
+                <h3 id="memories-continue">Continue</h3>
+                <p>Return to recent reading and editing.</p>
+              </div>
+              {journal.length > 0 ? (
+                <button type="button" className="gl-quiet-action focus-ring" onClick={onShowJournal}>
+                  Open Journal
+                </button>
+              ) : null}
+            </div>
+            <div className="gl-stage__content">
+              {continueItems.length > 0 ? (
+                continueItems.map((item) => (
+                  <MemoryRow
+                    key={item.key}
+                    item={item}
+                    nowMs={nowMs}
+                    journalTitle={journalTitle}
+                    onOpen={onOpen}
+                  />
                 ))
+              ) : (
+                <div className="gl-empty">
+                  <p>No memories yet.</p>
+                  <button type="button" className="gl-primary-action focus-ring" onClick={() => onNewStitch()}>
+                    <Icon name="ph:plus" width={12} aria-hidden />
+                    New stitch
+                  </button>
+                </div>
               )}
             </div>
-          ) : null}
-        </section>
+          </section>
 
-        {!searching ? (
-          <section aria-label="Knowledge overview" className="gl-bento">
-            {hero ? (
-              <button type="button" className="gl-card gl-hero" onClick={() => onOpen(hero.ref)}>
-                <span className="gl-kicker">Most recent</span>
-                <span className="gl-card-title">{displayTitle(hero)}</span>
-                <span className="gl-card-line">
-                  <Marker marker={hero.marker} />
-                  {hero.kindLabel}
-                  {hero.modifiedMs !== null
-                    ? ` · edited ${relativeTime(new Date(hero.modifiedMs).toISOString(), nowMs)}`
-                    : ""}
-                </span>
-                {hero.excerpt ? <span className="gl-hero-excerpt">{hero.excerpt}</span> : null}
-              </button>
-            ) : (
-              <button type="button" className="gl-card gl-hero" onClick={() => onNewStitch()}>
-                <span className="gl-kicker">Getting started</span>
-                <span className="gl-card-title">No documents yet</span>
-                <span className="gl-card-sub">Pin sources and sew your first stitch — it lands here.</span>
-              </button>
-            )}
-
-            <div className="gl-card gl-week">
-              <span className="gl-shine" aria-hidden />
-              <span className="gl-kicker">This week</span>
-              <span className="gl-week-row">
-                <span className="gl-stat">{week.filesTouched}</span>
-                <span>files touched</span>
-              </span>
-              <span className="gl-week-row">
-                <span className="gl-stat">{week.reflections}</span>
-                <span>reflections written</span>
-              </span>
-              <span className="gl-week-row">
-                <span className="gl-stat">{knowledge.length}</span>
-                <span>stitches total</span>
-              </span>
+          <section className="gl-stage" aria-labelledby="memories-recall">
+            <span className="gl-stage__knot" aria-hidden />
+            <div className="gl-stage__header">
+              <div>
+                <p className="gl-stage__index">02</p>
+                <h3 id="memories-recall">Recall</h3>
+                <p>
+                  Search stitches and {scopeLabel ? `${scopeLabel}'s familiar memory` : "familiar memory"}.
+                </p>
+              </div>
             </div>
-
-            {smallRecents.map((item) => (
-              <button key={item.key} type="button" className="gl-card" onClick={() => onOpen(item.ref)}>
-                <span className="gl-card-line">
-                  <Marker marker={item.marker} />
-                  <span className="gl-line-title">{displayTitle(item)}</span>
+            <div className="gl-stage__content">
+              <label className="gl-field">
+                <span>Search memories</span>
+                <span className="gl-search">
+                  <Icon name="ph:magnifying-glass" width={14} aria-hidden />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(event) => onQueryChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && query) onQueryChange("");
+                      if (event.key === "Enter" && results[0]) onOpen(results[0].ref);
+                    }}
+                    placeholder="Search memories…"
+                    aria-label="Search memories"
+                  />
+                  {query ? (
+                    <button
+                      type="button"
+                      className="gl-search__clear focus-ring"
+                      aria-label="Clear search"
+                      onClick={() => onQueryChange("")}
+                    >
+                      <Icon name="ph:x-bold" width={10} aria-hidden />
+                    </button>
+                  ) : null}
                 </span>
-                <span className="gl-card-sub">
-                  {item.kindLabel}
-                  {item.modifiedMs !== null
-                    ? ` · ${relativeTime(new Date(item.modifiedMs).toISOString(), nowMs)}`
-                    : ""}
-                </span>
-              </button>
-            ))}
-
-            {/* The count comes off the SCOPED graph, same as the nodes/edges
-                stats beside it, and clicking through lands in the scoped graph
-                where exactly these nodes are visible. So under a familiar scope
-                the number is scope-relative and the old flat "with no links"
-                claim was false: a doc linked coven-wide, but only to memory
-                owned by a non-selected familiar, drops to degree 0 here
-                (cave-c4pzv). Keep the number consistent with its neighbours and
-                its own click-through; qualify the sentence instead. */}
-            <button type="button" className="gl-card gl-detached" onClick={onShowGraph}>
-              <span className="gl-stat">{graphCounts.detached}</span>
-              <span className="gl-card-sub">
-                {scopeLabel ? "detached docs with no links in this scope" : "detached docs with no links"}
-              </span>
-              <span className="gl-arrow">weave them in →</span>
-            </button>
-
-            <button type="button" className="gl-card" onClick={onShowJournal}>
-              <span className="gl-stat">{streak > 0 ? `${streak}-day` : "No"}</span>
-              <span className="gl-card-sub">journal streak</span>
-              <span className="gl-arrow">
-                {week.reflections} reflection{week.reflections === 1 ? "" : "s"} this week →
-              </span>
-            </button>
-
-            <button type="button" className="gl-card" onClick={onShowGraph}>
-              <span className="gl-stat">{graphCounts.nodes.toLocaleString()}</span>
-              <span className="gl-card-sub">nodes in the graph</span>
-              <span className="gl-arrow">{graphCounts.edges.toLocaleString()} connections woven →</span>
-            </button>
-
-            <button
-              type="button"
-              className="gl-card"
-              onClick={() => (latestMemory ? onOpen(latestMemory.ref) : onNewStitch())}
-            >
-              <span className="gl-stat">{memory.length.toLocaleString()}</span>
-              <span className="gl-card-sub">memory files</span>
-              <span className="gl-arrow">
-                {topRoot ? `${topRoot.count.toLocaleString()} from ${topRoot.label} →` : "agents write these →"}
-              </span>
-            </button>
-
-            <div className="gl-card">
-              <span className="gl-kicker">Tip</span>
-              <span className="gl-card-sub">
-                Link docs with [[wiki-links]] — connected stitches surface each other here and in Relations.
-              </span>
+              </label>
+              <div className="gl-results" aria-live="polite">
+                {results.length > 0 ? (
+                  results.map((item) => (
+                    <MemoryRow
+                      key={item.key}
+                      item={item}
+                      nowMs={nowMs}
+                      journalTitle={journalTitle}
+                      onOpen={onOpen}
+                    />
+                  ))
+                ) : (
+                  <p className="gl-empty-results">
+                    {query
+                      ? `No memories match “${query}”. Clear the search or start a new stitch.`
+                      : "Search for a memory or open the recent document above."}
+                  </p>
+                )}
+              </div>
             </div>
+          </section>
 
-            <div className="gl-newrow">
-              <span className="gl-chip">New stitch</span>
-              <button
-                type="button"
-                className="gl-template gl-template-primary"
-                onClick={() => onNewStitch()}
-              >
+          <section className="gl-stage" aria-labelledby="memories-weave">
+            <span className="gl-stage__knot" aria-hidden />
+            <div className="gl-stage__header">
+              <div>
+                <p className="gl-stage__index">03</p>
+                <h3 id="memories-weave">Weave</h3>
+                <p>Capture a source or start a durable entry.</p>
+              </div>
+              <button type="button" className="gl-primary-action focus-ring" onClick={() => onNewStitch()}>
                 <Icon name="ph:plus" width={12} aria-hidden />
-                <span className="gl-template-name">Blank stitch</span>
+                New stitch
               </button>
-              {STITCH_PATTERNS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="gl-template"
-                  title={p.description}
-                  onClick={() => onNewStitch({ patternId: p.id })}
-                >
-                  <span className="gl-template-name">{p.name}</span>
-                  <span className="gl-template-sub">{PATTERN_HOOKS[p.id] ?? p.description}</span>
+            </div>
+            <div className="gl-stage__content gl-weave">
+              <label className="gl-field">
+                <span>Capture a URL</span>
+                <span className="gl-capture">
+                  <input
+                    type="url"
+                    value={captureValue}
+                    onChange={(event) => setCaptureValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") captureUrl();
+                    }}
+                    placeholder="https://example.com/article"
+                    aria-label="URL to capture"
+                    aria-invalid={captureValue.trim() !== "" && !capture}
+                  />
+                  <button
+                    type="button"
+                    className="gl-capture__action focus-ring"
+                    onClick={captureUrl}
+                    disabled={!capture}
+                  >
+                    <Icon name="ph:push-pin" width={12} aria-hidden />
+                    Capture
+                  </button>
+                </span>
+              </label>
+              {captureValue.trim() !== "" && !capture ? (
+                <p className="gl-field__hint" role="status">
+                  Enter a complete http or https URL.
+                </p>
+              ) : null}
+              <div className="gl-template-list" aria-label="Stitch templates">
+                {STITCH_PATTERNS.map((pattern) => (
+                  <button
+                    key={pattern.id}
+                    type="button"
+                    className="gl-template focus-ring"
+                    onClick={() => onNewStitch({ patternId: pattern.id })}
+                  >
+                    <span>{pattern.name}</span>
+                    <small>{PATTERN_HOOKS[pattern.id] ?? pattern.description}</small>
+                  </button>
+                ))}
+                <button type="button" className="gl-template focus-ring" onClick={onBlankEntry}>
+                  <span>Blank entry</span>
+                  <small>Write directly in the editor</small>
                 </button>
-              ))}
-              <button type="button" className="gl-template" onClick={onBlankEntry}>
-                <span className="gl-template-name">Blank entry</span>
-                <span className="gl-template-sub">Write by hand</span>
+              </div>
+              <button type="button" className="gl-relations focus-ring" onClick={onShowGraph}>
+                <Icon name="ph:path" width={13} aria-hidden />
+                <span>
+                  Review relations
+                  {graphCounts.nodes > 0
+                    ? ` · ${graphCounts.nodes.toLocaleString()} documents connected by ${graphCounts.edges.toLocaleString()} links`
+                    : ""}
+                </span>
+                <Icon name="ph:caret-right" width={11} aria-hidden />
               </button>
             </div>
           </section>
-        ) : null}
+        </div>
       </div>
     </div>
   );

@@ -4,6 +4,8 @@
 // a DOM, and so a corrupt or hand-edited stored value has exactly one place
 // that decides what to do with it.
 
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";
+
 export const READER_TEXT_SCALE_STORAGE_KEY = "cave:reader:text-scale";
 
 // Five steps, with the shipped size at index 2 so the control has equal travel
@@ -28,6 +30,14 @@ export function scaleLabel(index: number): string {
   return `${Math.round(scaleForIndex(index) * 100)}%`;
 }
 
+export function applyReadingSize(index: number): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.style.setProperty(
+    "--cave-reading-size-scale",
+    String(scaleForIndex(index)),
+  );
+}
+
 /**
  * Parse a stored value into a step index.
  *
@@ -49,6 +59,13 @@ export function parseStoredScaleIndex(raw: string | null | undefined): number {
  * WKWebView where storage can be partitioned.
  */
 export function loadScaleIndex(storage?: Pick<Storage, "getItem"> | null): number {
+  if (storage === undefined) {
+    const preferences = readAppPreferences();
+    const central = clampScaleIndex(preferences.appearance.reading.size);
+    if (preferences.initialized || central !== READER_TEXT_SCALE_DEFAULT_INDEX) {
+      return central;
+    }
+  }
   const store = storage ?? safeLocalStorage();
   if (!store) return READER_TEXT_SCALE_DEFAULT_INDEX;
   try {
@@ -63,10 +80,20 @@ export function saveScaleIndex(
   index: number,
   storage?: Pick<Storage, "setItem"> | null,
 ): void {
+  const normalized = clampScaleIndex(index);
+  if (storage === undefined) {
+    updateAppPreferences({
+      appearance: {
+        reading: {
+          size: normalized as 0 | 1 | 2 | 3 | 4,
+        },
+      },
+    });
+  }
   const store = storage ?? safeLocalStorage();
   if (!store) return;
   try {
-    store.setItem(READER_TEXT_SCALE_STORAGE_KEY, String(clampScaleIndex(index)));
+    store.setItem(READER_TEXT_SCALE_STORAGE_KEY, String(normalized));
   } catch {
     // Quota or a partitioned store — the size still applies for this session.
   }

@@ -124,6 +124,12 @@ test("cleanup and file actions narrow by discriminant", () => {
 
 test("overview and partial canonical failure remain visible without disabling files", () => {
   assert.match(memoryView, /<CanonicalMemoryOverviewPanel/);
+  assert.match(memoryView, /aria-expanded=\{overviewOpen\}/);
+  assert.match(
+    memoryView,
+    /overviewState\.state === "ready"[\s\S]*?<CanonicalMemoryOverviewPanel[\s\S]*?overviewState\.state === "loading"[\s\S]*?Loading canonical overview[\s\S]*?overviewState\.state === "error"[\s\S]*?Couldn't load canonical overview/,
+    "the compact disclosure preserves ready, loading, and error presentation",
+  );
   assert.match(memoryView, /canonicalState\.state === "error"/);
   assert.match(memoryView, /overviewState\.state === "error"/);
   assert.match(memoryView, /filesState\.state === "error"/);

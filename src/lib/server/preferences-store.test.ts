@@ -44,11 +44,22 @@ try {
   assert.deepEqual(recovered.appearance.theme.tokens, { "--bg-base": "#120d0a" });
   await assert.rejects(readFile(preferencesFile), { code: "ENOENT" }, "SSR recovery must not create authority early");
 
+  const oldDiskShape = schema.createDefaultPreferences(true);
+  delete oldDiskShape.appearance.reading.size;
+  await writeFile(preferencesFile, JSON.stringify(oldDiskShape), "utf8");
+  const migratedDisk = await store.loadPreferences();
+  assert.equal(
+    migratedDisk.appearance.reading.size,
+    1,
+    "an initialized preferences file from before reader sizing normalizes to the canonical default",
+  );
+  await rm(preferencesFile, { force: true });
+
   const initialized = await store.patchPreferences({
     appearance: {
       fonts: { serif: "eb-garamond", sans: "source-sans-3", mono: "source-code-pro" },
       screenScale: 125,
-      reading: { leading: "relaxed", tracking: "wide" },
+      reading: { size: 3, leading: "relaxed", tracking: "wide" },
       datetime: { clock: "24h", date: "ddmm", density: "verbose" },
       cornerRadius: "round",
       backdrop: { enabled: true, intensity: 63, matchAccent: false },
@@ -59,6 +70,12 @@ try {
   assert.equal(initialized.initialized, true);
   assert.equal(initialized.revision, 1);
   assert.equal(initialized.appearance.theme.id, "ember", "legacy theme survives richer first patch");
+  assert.equal(initialized.appearance.reading.size, 3, "non-default reader size persists on initialization");
+  assert.equal(
+    JSON.parse(await readFile(preferencesFile, "utf8")).appearance.reading.size,
+    3,
+    "the server writes reader size into the canonical disk snapshot",
+  );
 
   const concurrent = await Promise.all([
     store.patchPreferences({ appearance: { reading: { align: "justify" } } }),
@@ -100,6 +117,7 @@ try {
     { appearance: { reading: { width: "medium" } } },
     { appearance: { reading: { weight: "medium" } } },
     { appearance: { reading: { hyphens: "off" } } },
+    { appearance: { reading: { size: 4 } } },
     { appearance: { datetime: { clock: "12h" } } },
     { appearance: { datetime: { date: "off" } } },
     { appearance: { datetime: { density: "compact" } } },
@@ -140,6 +158,7 @@ try {
   assert.equal(afterCrossProcess.revision, 6 + crossProcessPatches.length);
   assert.equal(afterCrossProcess.appearance.screenScale, 150);
   assert.deepEqual(afterCrossProcess.appearance.reading, {
+    size: 4,
     leading: "compact",
     tracking: "wider",
     align: "left",
@@ -178,6 +197,7 @@ try {
   const malformed = await store.loadPreferences();
   assert.equal(malformed.initialized, false);
   assert.equal(malformed.appearance.theme.id, "coven");
+  assert.equal(malformed.appearance.reading.size, 1);
   const repaired = await store.patchPreferences({ phone: { mobileMode: false } });
   assert.equal(repaired.initialized, true);
   assert.equal(repaired.phone.mobileMode, false);
@@ -227,7 +247,9 @@ try {
   const defaults = await store.patchPreferences({});
   assert.equal(defaults.initialized, true);
   assert.equal(defaults.revision, 1);
-  assert.equal(JSON.parse(await readFile(preferencesFile, "utf8")).initialized, true);
+  const defaultDisk = JSON.parse(await readFile(preferencesFile, "utf8"));
+  assert.equal(defaultDisk.initialized, true);
+  assert.equal(defaultDisk.appearance.reading.size, 1);
 
   console.log("preferences-store.test.ts: ok");
 } finally {

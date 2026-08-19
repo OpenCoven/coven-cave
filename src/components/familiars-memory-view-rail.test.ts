@@ -18,8 +18,8 @@ assert.match(
 // Generic fallback still present.
 assert.match(
   source,
-  /"Search memory\.\.\."/,
-  "Generic placeholder fallback 'Search memory...' must remain",
+  /"Search memory…"/,
+  "Generic placeholder uses the canonical ellipsis",
 );
 
 // The standalone <span aria-label="Locked to familiar"> must be gone.

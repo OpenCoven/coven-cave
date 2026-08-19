@@ -6,26 +6,29 @@ const source = [
   await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
 ].join("\n");
 
-// ───────── Task 7: inline stats row ─────────
+// ───────── Compact scope/status row + filter counts ─────────
 
 assert.match(
   source,
-  /data-testid="memory-stats-inline"/,
-  "Inline stats row must be marked with data-testid='memory-stats-inline'",
+  />\s*Familiar Memory\s*</,
+  "The compact scope row keeps the surface title",
 );
+assert.match(source, /\{selectedFamiliar\?\.display_name \?\? "No familiar selected"\}/, "the scope row names its familiar");
+assert.match(source, /Canonical \$\{overviewState\.value\.verification\.state\}/, "canonical verification remains visible");
 
 assert.doesNotMatch(
   source,
-  /grid gap-2 sm:grid-cols-2 lg:grid-cols-4/,
-  "Old four-card stats grid must be removed",
+  /memory-stats-inline|data-testid="memory-masthead"/,
+  "the expanded statistics masthead remains removed",
 );
+assert.match(source, /aria-controls=\{overviewPanelId\}/, "canonical overview is reachable from the compact status row");
+assert.match(source, /<CanonicalMemoryOverviewPanel overview=\{overviewState\.value\}/, "the full canonical overview remains available on demand");
 
-for (const label of ["Familiar memories", "Coven origin", "External runtimes", "Runtime memory"]) {
-  assert.ok(source.includes(label), `Inline stats row must keep label: ${label}`);
+for (const label of ["Coven origin", "External runtimes", "Runtime memory"]) {
+  assert.ok(source.includes(label), `Filter popover must keep source option: ${label}`);
 }
 
-// The file-source chips count the selected familiar's scoped file pool.
-assert.match(source, />\s*Sources\s*</, "File-source chips are grouped under a scoped 'Sources' label");
+// The source options count the selected familiar's scoped file pool.
 assert.match(
   source,
   /familiarScopedFiles\.filter\(\s*\(entry\) => entry\.sourceKind === "coven-origin",?\s*\)/,

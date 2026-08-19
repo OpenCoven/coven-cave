@@ -4,6 +4,7 @@ import "./globals.css";
 import { SidecarAuthBridge } from "@/components/security/sidecar-auth-bridge";
 import { SidecarAuthMonitor } from "@/components/security/sidecar-auth-monitor";
 import { ScreenMagnificationController } from "@/components/screen-magnification-controller";
+import { ReadingSizeController } from "@/components/reading-size-controller";
 import { ReadingLeadingController } from "@/components/reading-leading-controller";
 import { ReadingTrackingController } from "@/components/reading-tracking-controller";
 import { ReadingAlignController } from "@/components/reading-align-controller";
@@ -92,6 +93,7 @@ export default function RootLayout({
             <PreferencesBootstrapController />
             <SidecarAuthMonitor />
             <ScreenMagnificationController />
+            <ReadingSizeController />
             <ReadingLeadingController />
             <ReadingTrackingController />
             <ReadingAlignController />

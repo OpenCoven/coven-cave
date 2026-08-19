@@ -3,9 +3,12 @@
 import {
   Fragment,
   createElement,
+  useState,
   type ReactNode,
 } from "react";
 import { parse, type Block, type TextSpan } from "@create-markdown/core";
+import { copyText } from "@/lib/clipboard";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 type CanonicalMemoryMarkdownProps = {
   content: string;
@@ -64,24 +67,122 @@ function renderListItem(block: Block, key: string): ReactNode {
   );
 }
 
+export function ReaderCodeBlock({
+  code,
+  language,
+}: {
+  code: string;
+  language?: string;
+}) {
+  const { announce } = useAnnouncer();
+  const [wrap, setWrap] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const ok = await copyText(code);
+    setCopied(ok);
+    announce(ok ? "Code copied." : "Code could not be copied.", ok ? "polite" : "assertive");
+    if (ok) window.setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div
+      className="document-reader__code-frame document-reader__wide-block"
+      data-wrap={wrap}
+    >
+      <div className="document-reader__code-toolbar">
+        <span className="document-reader__code-language">
+          {language || "Plain text"}
+        </span>
+        <button
+          type="button"
+          className="document-reader__code-action focus-ring"
+          aria-label="Copy code"
+          onClick={() => void copy()}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+        <button
+          type="button"
+          className="document-reader__code-action focus-ring"
+          aria-label="Wrap code"
+          aria-pressed={wrap}
+          onClick={() => setWrap((current) => !current)}
+        >
+          Wrap
+        </button>
+      </div>
+      <pre>
+        <code {...(language ? { "data-language": language } : {})}>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+export function ReaderTable({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: string[][];
+}) {
+  return (
+    <div
+      className="document-reader__table-frame document-reader__wide-block focus-ring"
+      role="region"
+      aria-label="Scrollable table"
+      tabIndex={0}
+    >
+      <table>
+        <thead>
+          <tr>
+            {headers.map((header, index) => (
+              <th key={`header:${index}`} scope="col">
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`row:${rowIndex}`}>
+              {row.map((cell, cellIndex) => (
+                <td key={`cell:${rowIndex}:${cellIndex}`}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function renderBlockNode(block: Block, key: string): ReactNode {
   const children = block.children.map((child, index) =>
     renderBlockNode(child, `${key}:child:${index}`)
   );
   switch (block.type) {
     case "paragraph":
-      return createElement("p", { key }, renderInline(block.content, key), children);
+      return createElement(
+        "p",
+        { key, className: "document-reader__paragraph" },
+        renderInline(block.content, key),
+        children,
+      );
     case "heading": {
       const level = propsOf(block).level;
       const tag = typeof level === "number" && level >= 1 && level <= 6
         ? `h${level}`
         : "h2";
-      return createElement(tag, { key }, renderInline(block.content, key), children);
+      return createElement(
+        tag,
+        { key, className: "document-reader__nested-heading" },
+        renderInline(block.content, key),
+        children,
+      );
     }
     case "bulletList":
       return createElement(
         "ul",
-        { key },
+        { key, className: "document-reader__list document-reader__list--unordered" },
         block.children.map((child, index) =>
           renderListItem(child, `${key}:item:${index}`)
         ),
@@ -89,7 +190,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
     case "numberedList":
       return createElement(
         "ol",
-        { key },
+        { key, className: "document-reader__list document-reader__list--ordered" },
         block.children.map((child, index) =>
           renderListItem(child, `${key}:item:${index}`)
         ),
@@ -97,7 +198,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
     case "checkList":
       return createElement(
         "ul",
-        { key },
+        { key, className: "document-reader__list document-reader__list--tasks" },
         createElement(
           "li",
           null,
@@ -117,23 +218,17 @@ function renderBlockNode(block: Block, key: string): ReactNode {
       );
     case "codeBlock": {
       const language = propsOf(block).language;
-      return createElement(
-        "pre",
-        { key },
-        createElement(
-          "code",
-          typeof language === "string" && language
-            ? { "data-language": language }
-            : null,
-          block.content.map((span) => span.text).join(""),
-        ),
-      );
+      return createElement(ReaderCodeBlock, {
+        key,
+        code: block.content.map((span) => span.text).join(""),
+        language: typeof language === "string" && language ? language : undefined,
+      });
     }
 
     case "blockquote":
       return createElement(
         "blockquote",
-        { key },
+        { key, className: "document-reader__blockquote" },
         renderInline(block.content, key),
         children,
       );
@@ -148,49 +243,18 @@ function renderBlockNode(block: Block, key: string): ReactNode {
               Array.isArray(row) && row.every((value) => typeof value === "string"),
           )
         : [];
-      return createElement(
-        "table",
-        { key },
-        createElement(
-          "thead",
-          null,
-          createElement(
-            "tr",
-            null,
-            headers.map((header, index) =>
-              createElement("th", { key: `${key}:header:${index}` }, header)
-            ),
-          ),
-        ),
-        createElement(
-          "tbody",
-          null,
-          rows.map((row, rowIndex) =>
-            createElement(
-              "tr",
-              { key: `${key}:row:${rowIndex}` },
-              row.map((cell, cellIndex) =>
-                createElement(
-                  "td",
-                  { key: `${key}:cell:${rowIndex}:${cellIndex}` },
-                  cell,
-                )
-              ),
-            )
-          ),
-        ),
-      );
+      return createElement(ReaderTable, { key, headers, rows });
     }
     case "image": {
       const alt = propsOf(block).alt;
       return createElement(
         "p",
-        { key },
+        { key, className: "document-reader__paragraph" },
         `[Image: ${typeof alt === "string" && alt.trim() ? alt : "image"}]`,
       );
     }
     case "divider":
-      return createElement("hr", { key });
+      return createElement("hr", { key, className: "document-reader__divider" });
     case "callout": {
       const calloutType = propsOf(block).type;
       return createElement(
@@ -198,6 +262,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
         {
           key,
           role: "note",
+          className: "document-reader__callout",
           "data-callout":
             typeof calloutType === "string" ? calloutType : "note",
         },

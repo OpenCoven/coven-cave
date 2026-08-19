@@ -2,7 +2,7 @@
 
 import "@/styles/cave-md.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CanonicalMemoryOverviewPanel } from "@/components/canonical-memory-overview";
 import {
   CanonicalMemoryReader,
@@ -11,7 +11,6 @@ import {
 import {
   MemoryFilesList,
   MemoryReaderModal,
-  SourceFilterChip,
 } from "@/components/familiars-memory-files";
 import { MemoryReaderPane } from "@/components/familiars-memory-reader";
 import { MemoryRowItem } from "@/components/familiars-memory-row";
@@ -26,8 +25,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Modal } from "@/components/ui/modal";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { SearchInput } from "@/components/ui/search-input";
 import { StandardSelect } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import {
+  Popover,
+  PopoverBody,
+  PopoverLabel,
+} from "@/components/ui/popover";
 import type {
   CanonicalMemoryOverview,
   CanonicalMemorySummary,
@@ -202,13 +207,15 @@ export function FamiliarsMemoryView({
   const effectiveLimit = limit ?? Infinity;
   const FILE_PAGE = 80;
   const [fileLimit, setFileLimit] = useState(FILE_PAGE);
-  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const sourceSummaryId = useId();
+  const overviewPanelId = useId();
   const [missingCanonical, setMissingCanonical] = useState<{
     memoryId: string | null;
     notice: string | null;
   }>({ memoryId: null, notice: null });
-  const lastListScrollTop = useRef(0);
-  const mastheadRef = useRef<HTMLDivElement | null>(null);
+  const filtersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const mountedRef = useRef(true);
   // Match Workspace's explicit-refresh precedence: polls may supersede polls,
@@ -216,28 +223,6 @@ export function FamiliarsMemoryView({
   const loadGenerationRef = useRef(0);
   const loadForceEpochRef = useRef(0);
   const loadActiveForceEpochRef = useRef<number | null>(null);
-
-  const collapseMasthead = useCallback(() => {
-    if (
-      typeof document !== "undefined" &&
-      mastheadRef.current?.contains(document.activeElement)
-    ) {
-      searchInputRef.current?.focus({ preventScroll: true });
-    }
-    setHeaderCollapsed(true);
-  }, []);
-
-  const onListScroll = useCallback(
-    (event: React.UIEvent<HTMLDivElement>) => {
-      const top = event.currentTarget.scrollTop;
-      const previous = lastListScrollTop.current;
-      if (top <= 4) setHeaderCollapsed(false);
-      else if (top > previous + 4) collapseMasthead();
-      else if (top < previous - 4) setHeaderCollapsed(false);
-      lastListScrollTop.current = top;
-    },
-    [collapseMasthead],
-  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -732,6 +717,21 @@ export function FamiliarsMemoryView({
     () => suggestions.filter((entry) => entry.protection === "normal"),
     [suggestions],
   );
+  const activeFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    const sourceLabels: Record<string, string> = {
+      "coven-origin": "Coven origin",
+      "external-harness": "External runtimes",
+      runtime: "Runtime memory",
+    };
+    if (sourceFilter !== "all") {
+      parts.push(sourceLabels[sourceFilter] ?? sourceFilter);
+    }
+    if (groupMode !== "none") parts.push(`Group: ${groupMode}`);
+    if (sortMode !== "recent") parts.push(`Sort: ${sortMode}`);
+    if (staleOnly) parts.push("Stale");
+    return parts.length > 0 ? parts.join(" · ") : "Filters";
+  }, [groupMode, sortMode, sourceFilter, staleOnly]);
 
   useEffect(() => {
     setFileLimit(FILE_PAGE);
@@ -809,6 +809,7 @@ export function FamiliarsMemoryView({
     }),
     [familiarScopedFiles],
   );
+  const memorySourceSummary = `Coven origin ${fileSourceCounts.covenOrigin}; External runtimes ${fileSourceCounts.externalHarnesses}; Runtime memory ${fileSourceCounts.runtimeMemory}`;
 
   const filesSettled = filesState.state !== "loading";
   const listPresentation = memoryListPresentation({
@@ -832,36 +833,47 @@ export function FamiliarsMemoryView({
         }`}
       >
         {!compact ? (
-          <div
-            ref={mastheadRef}
-            data-testid="memory-masthead"
-            data-collapsed={headerCollapsed ? "true" : "false"}
-            aria-hidden={headerCollapsed}
-            inert={headerCollapsed ? true : undefined}
-            className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-              headerCollapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
-            }`}
-          >
-            <div className="min-h-0 overflow-hidden">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Icon
-                      name="ph:brain-bold"
-                      width={15}
-                      className="text-[var(--accent-presence)]"
-                    />
-                    <h2 className="text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
-                      Familiar Memory
-                    </h2>
-                  </div>
-                  <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                    Trusted canonical recall and local memory files for one familiar.
-                  </p>
-                </div>
-                {lastLoadedAt ? (
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[length:var(--text-xs)]">
+            <div className="flex min-w-0 items-center gap-2">
+              <Icon
+                name="ph:brain-bold"
+                width={14}
+                className="shrink-0 text-[var(--accent-presence)]"
+                aria-hidden
+              />
+              <h2 className="truncate font-semibold text-[var(--text-primary)]">
+                Familiar Memory
+              </h2>
+              <span aria-hidden className="text-[var(--border-strong)]">·</span>
+              <span className="truncate text-[var(--text-secondary)]">
+                {selectedFamiliar?.display_name ?? "No familiar selected"}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[var(--text-muted)]">
+              <span>{unifiedRows.length} shown</span>
+              <span aria-hidden>·</span>
+              <button
+                type="button"
+                aria-expanded={overviewOpen}
+                aria-controls={overviewPanelId}
+                onClick={() => setOverviewOpen((current) => !current)}
+                className="focus-ring inline-flex items-center gap-1 rounded-[var(--radius-control)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                {overviewState.state === "ready"
+                  ? `Canonical ${overviewState.value.verification.state}`
+                  : overviewState.state === "error"
+                    ? "Canonical status unavailable"
+                    : "Checking canonical status…"}
+                <Icon
+                  name={overviewOpen ? "ph:caret-up" : "ph:caret-down"}
+                  width={10}
+                  aria-hidden
+                />
+              </button>
+              {lastLoadedAt ? (
+                <>
+                  <span aria-hidden>·</span>
                   <span
-                    className="text-[length:var(--text-2xs)] text-[var(--text-muted)]"
                     title={`Last refreshed ${formatTimestamp(
                       lastLoadedAt,
                       readDateTimePrefs(),
@@ -869,127 +881,55 @@ export function FamiliarsMemoryView({
                   >
                     Updated {age(lastLoadedAt)}
                   </span>
-                ) : null}
-              </div>
-              <div
-                data-testid="memory-stats-inline"
-                className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
-              >
-                <span className="inline-flex items-baseline gap-1 px-1">
-                  <span className="text-[var(--text-muted)]">
-                    Familiar memories
-                  </span>
-                  <span className="font-semibold text-[var(--text-primary)]">
-                    {visibleCanonical.length}
-                  </span>
-                </span>
-                <span aria-hidden className="text-[var(--border-strong)]">
-                  ·
-                </span>
-                <span className="mr-0.5 text-[length:var(--text-2xs)] uppercase tracking-wider text-[var(--text-muted)]">
-                  Sources
-                </span>
-                <SourceFilterChip
-                  label="Coven origin"
-                  count={fileSourceCounts.covenOrigin}
-                  active={sourceFilter === "coven-origin"}
-                  onClick={() =>
-                    setSourceFilter((current) =>
-                      current === "coven-origin" ? "all" : "coven-origin"
-                    )
-                  }
-                  help="Files written by this Cave's own familiars and conversations"
-                />
-                <SourceFilterChip
-                  label="External runtimes"
-                  count={fileSourceCounts.externalHarnesses}
-                  active={sourceFilter === "external-harness"}
-                  onClick={() =>
-                    setSourceFilter((current) =>
-                      current === "external-harness"
-                        ? "all"
-                        : "external-harness"
-                    )
-                  }
-                  help="Memory kept by other agent tools on this machine"
-                />
-                <SourceFilterChip
-                  label="Runtime memory"
-                  count={fileSourceCounts.runtimeMemory}
-                  active={sourceFilter === "runtime"}
-                  onClick={() =>
-                    setSourceFilter((current) =>
-                      current === "runtime" ? "all" : "runtime"
-                    )
-                  }
-                  help="Working files a runtime writes while it runs"
-                />
-              </div>
-              <div className="mt-3">
-                {overviewState.state === "ready" ? (
-                  <CanonicalMemoryOverviewPanel overview={overviewState.value} />
-                ) : overviewState.state === "loading" ? (
-                  <SkeletonRows count={2} />
-                ) : overviewState.state === "error" ? (
-                  <ErrorState
-                    compact
-                    live={false}
-                    headline="Couldn't load canonical overview"
-                    subtitle={
-                      canonicalMemoryErrorCopy(overviewState.error.code).subtitle
-                    }
-                  />
-                ) : null}
-              </div>
+                </>
+              ) : null}
             </div>
           </div>
         ) : null}
 
-        <div
-          className={`${
-            compact || headerCollapsed ? "" : "mt-3"
-          } flex flex-wrap items-center gap-2 transition-[margin] duration-200`}
-        >
-          <div className={`relative ${compact ? "min-w-0" : "min-w-[220px]"} flex-1`}>
-            <Icon
-              name="ph:magnifying-glass"
-              width={12}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-            />
-            <input
-              ref={searchInputRef}
-              type="search"
-              aria-label={
-                lockToFamiliar && selectedFamiliar?.display_name
-                  ? `Search ${selectedFamiliar.display_name}'s memory`
-                  : "Search memory"
-              }
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && query) {
-                  event.preventDefault();
-                  setQuery("");
-                }
-              }}
-              placeholder={
-                lockToFamiliar && selectedFamiliar?.display_name
-                  ? `Search ${selectedFamiliar.display_name}'s memory…`
-                  : "Search memory..."
-              }
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-8 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                aria-label="Clear search"
-                className="focus-ring absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        {!compact && overviewOpen ? (
+          <div id={overviewPanelId} className="mb-2">
+            {overviewState.state === "ready" ? (
+              <CanonicalMemoryOverviewPanel overview={overviewState.value} />
+            ) : overviewState.state === "loading" ? (
+              <div
+                className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3"
+                aria-label="Loading canonical overview"
+                aria-busy="true"
               >
-                <Icon name="ph:x-bold" width={10} />
-              </button>
+                <SkeletonRows count={2} />
+              </div>
+            ) : overviewState.state === "error" ? (
+              <ErrorState
+                compact
+                live={false}
+                headline="Couldn't load canonical overview"
+                subtitle={
+                  canonicalMemoryErrorCopy(overviewState.error.code).subtitle
+                }
+              />
             ) : null}
           </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchInput
+            ref={searchInputRef}
+            value={query}
+            onValueChange={setQuery}
+            onClear={() => setQuery("")}
+            aria-label={
+              lockToFamiliar && selectedFamiliar?.display_name
+                ? `Search ${selectedFamiliar.display_name}'s memory`
+                : "Search memory"
+            }
+            placeholder={
+              lockToFamiliar && selectedFamiliar?.display_name
+                ? `Search ${selectedFamiliar.display_name}'s memory…`
+                : "Search memory…"
+            }
+            containerClassName="min-w-0 flex-1"
+          />
           {!lockToFamiliar ? (
             <StandardSelect
               label="Filter memory by familiar"
@@ -1002,6 +942,107 @@ export function FamiliarsMemoryView({
               }))}
             />
           ) : null}
+          {!compact ? (
+            <>
+              <span id={sourceSummaryId} className="sr-only">
+                Sources: {memorySourceSummary}
+              </span>
+              <button
+                ref={filtersTriggerRef}
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={filtersOpen}
+                aria-describedby={sourceSummaryId}
+                onClick={() => setFiltersOpen((current) => !current)}
+                className="focus-ring inline-flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:funnel" width={11} aria-hidden />
+                <span className="truncate">{activeFilterSummary}</span>
+              </button>
+              <Popover
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+                anchorRef={filtersTriggerRef}
+                placement="bottom-end"
+                minWidth={300}
+                ariaLabel="Memory filters"
+              >
+                <PopoverBody>
+                  <PopoverLabel>Memory filters</PopoverLabel>
+                  <div className="grid gap-3 p-3">
+                    <div className="grid gap-1">
+                      <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">Source</span>
+                      <StandardSelect<typeof sourceFilter>
+                        label="Source"
+                        value={sourceFilter}
+                        onChange={setSourceFilter}
+                        options={[
+                          { value: "all", label: "All sources" },
+                          { value: "coven-origin", label: `Coven origin (${fileSourceCounts.covenOrigin})` },
+                          { value: "external-harness", label: `External runtimes (${fileSourceCounts.externalHarnesses})` },
+                          { value: "runtime", label: `Runtime memory (${fileSourceCounts.runtimeMemory})` },
+                        ]}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">Group</span>
+                      <StandardSelect<GroupBy>
+                        label="Group"
+                        value={groupMode}
+                        onChange={setGroupMode}
+                        options={[
+                          { value: "none", label: "None" },
+                          { value: "type", label: "Type" },
+                          { value: "source", label: "Source" },
+                          { value: "date", label: "Date" },
+                        ]}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">Sort</span>
+                      <StandardSelect<typeof sortMode>
+                        label="Sort"
+                        value={sortMode}
+                        onChange={setSortMode}
+                        options={[
+                          { value: "recent", label: "Recent" },
+                          { value: "oldest", label: "Oldest" },
+                          { value: "name", label: "Name" },
+                          { value: "size", label: "Size" },
+                          { value: "staleFirst", label: "Stale first" },
+                        ]}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      aria-pressed={staleOnly}
+                      onClick={() => setStaleOnly((current) => !current)}
+                      className={`focus-ring flex min-h-8 items-center justify-between rounded-md border px-2 text-[length:var(--text-xs)] ${
+                        staleOnly
+                          ? "border-[var(--color-warning)] bg-[var(--color-warning)]/12 text-[var(--text-primary)]"
+                          : "border-[var(--border-hairline)] text-[var(--text-secondary)]"
+                      }`}
+                    >
+                      <span>Stale only</span>
+                      <span>{suggestions.length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSourceFilter("all");
+                        setGroupMode("none");
+                        setSortMode("recent");
+                        setStaleOnly(false);
+                      }}
+                      className="focus-ring min-h-8 rounded-md border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                    >
+                      Reset filters
+                    </button>
+                  </div>
+                </PopoverBody>
+              </Popover>
+            </>
+          ) : null}
           <Button
             size="xs"
             variant="ghost"
@@ -1012,54 +1053,6 @@ export function FamiliarsMemoryView({
             Refresh
           </Button>
         </div>
-
-        {!compact ? (
-          <div className="memory-controls mt-3">
-            <label className="memory-control">
-              Group
-              <StandardSelect<GroupBy>
-                label="Group memory"
-                value={groupMode}
-                onChange={setGroupMode}
-                className="memory-control-select"
-                options={[
-                  { value: "none", label: "None" },
-                  { value: "type", label: "Type" },
-                  { value: "source", label: "Source" },
-                  { value: "date", label: "Date" },
-                ]}
-              />
-            </label>
-            <label className="memory-control">
-              Sort
-              <StandardSelect<typeof sortMode>
-                label="Sort memory"
-                value={sortMode}
-                onChange={setSortMode}
-                className="memory-control-select"
-                options={[
-                  { value: "recent", label: "Recent" },
-                  { value: "oldest", label: "Oldest" },
-                  { value: "name", label: "Name" },
-                  { value: "size", label: "Size" },
-                  { value: "staleFirst", label: "Stale first" },
-                ]}
-              />
-            </label>
-            <button
-              type="button"
-              aria-pressed={staleOnly}
-              onClick={() => setStaleOnly((current) => !current)}
-              className={`focus-ring inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[length:var(--text-xs)] transition-colors ${
-                staleOnly
-                  ? "border-[var(--color-warning)] bg-[var(--color-warning)]/12 text-[var(--text-primary)]"
-                  : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-              }`}
-            >
-              Stale ({suggestions.length})
-            </button>
-          </div>
-        ) : null}
 
         {canonicalError ? (
           <div className="mt-2">
@@ -1239,7 +1232,6 @@ export function FamiliarsMemoryView({
                 </div>
               </div>
               <div
-                onScroll={onListScroll}
                 className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-hairline)]"
               >
                 {listPresentation === "loading" ? (
@@ -1298,6 +1290,7 @@ export function FamiliarsMemoryView({
                   onMissing={() => handleMissingCanonicalMemory(selectedRow.memoryId)}
                   onRefresh={() => load(true)}
                   onBack={clearMemorySelection}
+                  onExpand={() => setExpandRow(selectedRow)}
                 />
               ) : (
                 <MemoryReaderPane

@@ -173,11 +173,6 @@
     },
     {
       "rule": "copy/no-ascii-ellipsis",
-      "path": "src/components/familiars-memory-view.tsx",
-      "excerpt": "placeholder={ lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory…` : \"Search memory...\" }"
-    },
-    {
-      "rule": "copy/no-ascii-ellipsis",
       "path": "src/components/marketplace/craft-create-drawer.tsx",
       "excerpt": "Loading roles..."
     },

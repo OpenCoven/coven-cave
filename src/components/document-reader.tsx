@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type MutableRefObject,
   type ReactNode,
 } from "react";
@@ -19,15 +20,83 @@ import {
   PopoverItem,
   PopoverLabel,
 } from "@/components/ui/popover";
+import { useAppPreferences } from "@/lib/app-preferences";
 import {
   READER_TEXT_SCALE_DEFAULT_INDEX,
   READER_TEXT_SCALE_STEPS,
+  applyReadingSize,
   clampScaleIndex,
-  loadScaleIndex,
   saveScaleIndex,
   scaleForIndex,
   scaleLabel,
 } from "@/lib/reader-text-scale";
+import {
+  DEFAULT_READING_ALIGN,
+  READING_ALIGN_OPTIONS,
+  applyReadingAlign,
+  type ReadingAlign,
+} from "@/lib/reading-align";
+import {
+  DEFAULT_READING_HYPHENS,
+  READING_HYPHENS_OPTIONS,
+  applyReadingHyphens,
+  type ReadingHyphens,
+} from "@/lib/reading-hyphens";
+import {
+  DEFAULT_READING_LEADING,
+  READING_LEADING_OPTIONS,
+  applyReadingLeading,
+  type ReadingLeading,
+} from "@/lib/reading-leading";
+import {
+  DEFAULT_READING_TRACKING,
+  READING_TRACKING_OPTIONS,
+  applyReadingTracking,
+  type ReadingTracking,
+} from "@/lib/reading-tracking";
+import {
+  DEFAULT_READING_WEIGHT,
+  READING_WEIGHT_OPTIONS,
+  applyReadingWeight,
+  type ReadingWeight,
+} from "@/lib/reading-weight";
+import {
+  DEFAULT_READING_WIDTH,
+  READING_WIDTH_OPTIONS,
+  applyReadingWidth,
+  type ReadingWidth,
+} from "@/lib/reading-width";
+
+const READING_LABELS = {
+  leading: {
+    compact: "Compact",
+    normal: "Normal",
+    relaxed: "Relaxed",
+  } satisfies Record<ReadingLeading, string>,
+  tracking: {
+    normal: "Normal",
+    wide: "Wide",
+    wider: "Wider",
+  } satisfies Record<ReadingTracking, string>,
+  align: {
+    left: "Left",
+    justify: "Justify",
+  } satisfies Record<ReadingAlign, string>,
+  width: {
+    full: "Balanced",
+    medium: "Focused",
+    narrow: "Narrow",
+  } satisfies Record<ReadingWidth, string>,
+  weight: {
+    light: "Light",
+    normal: "Normal",
+    medium: "Medium",
+  } satisfies Record<ReadingWeight, string>,
+  hyphens: {
+    off: "Off",
+    on: "On",
+  } satisfies Record<ReadingHyphens, string>,
+};
 
 export type DocumentReaderSection<TBlock> = {
   id: string;
@@ -81,7 +150,10 @@ export function DocumentReader<TBlock, TLede = TBlock>({
 }: DocumentReaderProps<TBlock, TLede>) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const contentsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const preferencesTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const tocLinkRefs = useRef(new Map<string, HTMLButtonElement>());
   const [contentsOpen, setContentsOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(
     document.sections.find((section) => section.heading)?.id ?? null,
   );
@@ -89,23 +161,25 @@ export function DocumentReader<TBlock, TLede = TBlock>({
     () => new Set(document.sections.map((section) => section.id)),
   );
 
-  // Text size starts at the default and adopts the stored value after mount.
-  // Reading localStorage in the initializer would render different HTML on the
-  // server than on the client and trip hydration, so the first paint is always
-  // the default size and the effect below corrects it.
-  const [scaleIndex, setScaleIndex] = useState(READER_TEXT_SCALE_DEFAULT_INDEX);
+  const reading = useAppPreferences().appearance.reading;
+  const [scaleIndex, setScaleIndex] = useState(
+    READER_TEXT_SCALE_DEFAULT_INDEX,
+  );
 
   useEffect(() => {
-    setScaleIndex(loadScaleIndex());
-  }, []);
+    setScaleIndex(
+      clampScaleIndex(reading.size ?? READER_TEXT_SCALE_DEFAULT_INDEX),
+    );
+  }, [reading.size]);
 
   const stepScale = useCallback((delta: number) => {
-    setScaleIndex((current) => {
-      const next = clampScaleIndex(current + delta);
-      if (next !== current) saveScaleIndex(next);
-      return next;
-    });
-  }, []);
+    const next = clampScaleIndex(scaleIndex + delta);
+    if (next !== scaleIndex) {
+      setScaleIndex(next);
+      saveScaleIndex(next);
+      applyReadingSize(next);
+    }
+  }, [scaleIndex]);
 
   const atSmallest = scaleIndex <= 0;
   const atLargest = scaleIndex >= READER_TEXT_SCALE_STEPS.length - 1;
@@ -177,6 +251,63 @@ export function DocumentReader<TBlock, TLede = TBlock>({
     });
   };
 
+  const onTocKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    id: string,
+  ) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = namedSections.findIndex((section) => section.id === id);
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? namedSections.length - 1
+          : event.key === "ArrowDown"
+            ? (currentIndex + 1) % namedSections.length
+            : currentIndex <= 0
+              ? namedSections.length - 1
+              : currentIndex - 1;
+    tocLinkRefs.current.get(namedSections[nextIndex]?.id)?.focus();
+  };
+
+  const resetReadingPreferences = () => {
+    setScaleIndex(READER_TEXT_SCALE_DEFAULT_INDEX);
+    saveScaleIndex(READER_TEXT_SCALE_DEFAULT_INDEX);
+    applyReadingSize(READER_TEXT_SCALE_DEFAULT_INDEX);
+    applyReadingWidth(DEFAULT_READING_WIDTH);
+    applyReadingLeading(DEFAULT_READING_LEADING);
+    applyReadingTracking(DEFAULT_READING_TRACKING);
+    applyReadingAlign(DEFAULT_READING_ALIGN);
+    applyReadingWeight(DEFAULT_READING_WEIGHT);
+    applyReadingHyphens(DEFAULT_READING_HYPHENS);
+  };
+
+  const preferenceGroup = <T extends string>(
+    label: string,
+    options: readonly T[],
+    value: T,
+    labels: Record<T, string>,
+    apply: (next: T) => void,
+  ) => (
+    <div className="document-reader__preference-group" role="group" aria-label={label}>
+      <span className="document-reader__preference-label">{label}</span>
+      <div className="document-reader__preference-options">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            className="document-reader__preference-option focus-ring"
+            aria-pressed={value === option}
+            onClick={() => apply(option)}
+          >
+            {labels[option]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const contents = (
     <>
       {namedSections.map((section) => (
@@ -185,7 +316,14 @@ export function DocumentReader<TBlock, TLede = TBlock>({
           type="button"
           className="document-reader__toc-link rr-toclink focus-ring"
           data-active={activeSection === section.id}
+          aria-current={activeSection === section.id ? "location" : undefined}
+          tabIndex={activeSection === section.id ? 0 : -1}
+          ref={(node) => {
+            if (node) tocLinkRefs.current.set(section.id, node);
+            else tocLinkRefs.current.delete(section.id);
+          }}
           onClick={() => scrollToSection(section.id)}
+          onKeyDown={(event) => onTocKeyDown(event, section.id)}
         >
           {section.heading}
         </button>
@@ -211,6 +349,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
         { "--reader-text-scale": scaleForIndex(scaleIndex) } as CSSProperties
       }
     >
+      <div className="document-reader__layout">
       {navigation === "rail" && namedSections.length > 0 ? (
         <nav
           className="document-reader__toc rr-col rr-toc"
@@ -240,30 +379,67 @@ export function DocumentReader<TBlock, TLede = TBlock>({
             no table of contents still needs it. The Contents trigger keeps its
             own class so the existing compact-nav styling is unchanged. */}
         <div className="document-reader__toolbar">
-          <div className="document-reader__textsize" role="group" aria-label="Text size">
+          <div className="document-reader__preferences">
             <button
+              ref={preferencesTriggerRef}
               type="button"
-              className="document-reader__textsize-btn focus-ring"
-              onClick={() => stepScale(-1)}
-              disabled={atSmallest}
-              aria-label={`Decrease text size (currently ${scaleLabel(scaleIndex)})`}
-              title="Decrease text size"
+              className="document-reader__preferences-trigger focus-ring"
+              aria-label="Reading preferences"
+              aria-haspopup="dialog"
+              aria-expanded={preferencesOpen}
+              onClick={() => setPreferencesOpen((current) => !current)}
             >
-              <span aria-hidden className="document-reader__textsize-glyph--small">A</span>
+              <span aria-hidden>Aa</span>
             </button>
-            <button
-              type="button"
-              className="document-reader__textsize-btn focus-ring"
-              onClick={() => stepScale(1)}
-              disabled={atLargest}
-              aria-label={`Increase text size (currently ${scaleLabel(scaleIndex)})`}
-              title="Increase text size"
+            <Popover
+              open={preferencesOpen}
+              onOpenChange={setPreferencesOpen}
+              anchorRef={preferencesTriggerRef}
+              placement="bottom-start"
+              minWidth={280}
+              ariaLabel="Reading preferences"
             >
-              <span aria-hidden className="document-reader__textsize-glyph--large">A</span>
-            </button>
+              <PopoverBody>
+                <PopoverLabel>Reading preferences</PopoverLabel>
+                <div className="document-reader__size-row" role="group" aria-label="Reader size">
+                  <button
+                    type="button"
+                    className="document-reader__size-step focus-ring"
+                    onClick={() => stepScale(-1)}
+                    disabled={atSmallest}
+                    aria-label={`Decrease reader size (currently ${scaleLabel(scaleIndex)})`}
+                  >
+                    A−
+                  </button>
+                  <span aria-live="polite">{scaleLabel(scaleIndex)}</span>
+                  <button
+                    type="button"
+                    className="document-reader__size-step focus-ring"
+                    onClick={() => stepScale(1)}
+                    disabled={atLargest}
+                    aria-label={`Increase reader size (currently ${scaleLabel(scaleIndex)})`}
+                  >
+                    A+
+                  </button>
+                </div>
+                {preferenceGroup("Width", READING_WIDTH_OPTIONS, reading.width, READING_LABELS.width, applyReadingWidth)}
+                {preferenceGroup("Line spacing", READING_LEADING_OPTIONS, reading.leading, READING_LABELS.leading, applyReadingLeading)}
+                {preferenceGroup("Letter spacing", READING_TRACKING_OPTIONS, reading.tracking, READING_LABELS.tracking, applyReadingTracking)}
+                {preferenceGroup("Alignment", READING_ALIGN_OPTIONS, reading.align, READING_LABELS.align, applyReadingAlign)}
+                {preferenceGroup("Weight", READING_WEIGHT_OPTIONS, reading.weight, READING_LABELS.weight, applyReadingWeight)}
+                {preferenceGroup("Hyphenation", READING_HYPHENS_OPTIONS, reading.hyphens, READING_LABELS.hyphens, applyReadingHyphens)}
+                <button
+                  type="button"
+                  className="document-reader__reset focus-ring"
+                  onClick={resetReadingPreferences}
+                >
+                  Reset reading preferences
+                </button>
+              </PopoverBody>
+            </Popover>
           </div>
 
-          {navigation === "compact" && namedSections.length >= 2 ? (
+          {navigation !== "none" && namedSections.length >= 2 ? (
           <div className="document-reader__compact-nav">
             <button
               ref={contentsTriggerRef}
@@ -302,7 +478,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
           ) : null}
         </div>
 
-        <div className="document-reader__column rr-doc__column">
+        <div className="document-reader__column document-reader__prose rr-doc__column">
           {hasBody ? (
             <>
               {kicker ? (
@@ -382,6 +558,7 @@ export function DocumentReader<TBlock, TLede = TBlock>({
           ) : (
             empty ?? null
           )}
+        </div>
         </div>
       </div>
     </div>

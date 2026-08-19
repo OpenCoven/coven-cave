@@ -2,10 +2,9 @@
  * Grimoire launcher data — pure logic behind the Memories launcher screen
  * (the Knowledge tab's no-selection state; "Memories Prototype" redesign).
  *
- * Everything here is deterministic and side-effect free so the bento tiles,
- * search, and capture detection can be unit-tested without React: merging the
- * three corpora into one recency pool, week/streak stats, graph counts, and
- * the URL-capture detection for the big search field.
+ * Everything here is deterministic and side-effect free so Continue / Recall /
+ * Weave can be tested without React: merging the three corpora into one recency
+ * pool, searching it, and classifying explicit URL capture.
  */
 
 import type { DocGraph } from "@/lib/grimoire-graph";
@@ -161,7 +160,7 @@ export function searchLauncherItems(items: LauncherItem[], query: string, limit 
   return out;
 }
 
-// ── Bento stats ──────────────────────────────────────────────────────────────
+// ── Historical aggregate helpers ────────────────────────────────────────────
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 

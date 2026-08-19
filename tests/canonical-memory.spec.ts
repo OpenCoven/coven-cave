@@ -362,7 +362,25 @@ test("local-ready canonical memory renders after shell paint at 1280x720 without
   await expect(page.locator("html")).toHaveAttribute("data-mode", "dark");
   await expect(
     dialog.getByLabel("Canonical memory overview"),
-  ).toContainText("Canonical overview");
+  ).toHaveCount(0);
+  await expect(dialog).toContainText("Familiar Memory");
+  await expect(dialog).toContainText(FAMILIAR.display_name);
+  const overviewToggle = dialog.getByRole("button", { name: "Canonical verified" });
+  await overviewToggle.click();
+  await expect(dialog.getByLabel("Canonical memory overview")).toContainText("Canonical overview");
+  await overviewToggle.click();
+  await dialog.getByRole("button", { name: "Filters" }).click();
+  const filters = page.getByRole("dialog", { name: "Memory filters" });
+  const sourceFilter = filters.getByRole("button", { name: "Source" });
+  await expect(sourceFilter).toBeVisible();
+  await expect(filters.getByRole("button", { name: "Group" })).toBeVisible();
+  await expect(filters.getByRole("button", { name: "Sort" })).toBeVisible();
+  await sourceFilter.click();
+  await expect(page.getByRole("menuitemradio", { name: "Coven origin (0)" })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "External runtimes (0)" })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "Runtime memory (1)" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: "Filters" }).click();
   await expect(rowButton(page, "Synthetic alpha memory")).toBeVisible();
   await expect(
     dialog.getByRole("button", {
@@ -419,11 +437,13 @@ test("local-ready canonical memory renders after shell paint at 1280x720 without
   await expect(
     dialog.getByRole("button", { name: "Edit memory file" }),
   ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Copy path" })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Open file" })).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: "Memories" }),
-  ).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Rendered" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Raw" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Expand to fullscreen reader" })).toBeVisible();
+  await dialog.getByRole("button", { name: "More memory actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Copy path" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Open file" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Open in Memories" })).toBeVisible();
 });
 
 test("narrow master-detail stays keyboard-operable and resets privacy on selection", async ({
@@ -566,5 +586,6 @@ test("canonical list failure leaves the independently successful file-memory fee
   await expect(
     dialog.getByRole("button", { name: "Edit memory file" }),
   ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Copy path" })).toBeVisible();
+  await dialog.getByRole("button", { name: "More memory actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Copy path" })).toBeVisible();
 });

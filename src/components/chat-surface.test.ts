@@ -177,8 +177,8 @@ assert.match(
 
 assert.match(
   agentsMemoryView,
-  /Familiar memories[\s\S]*Coven origin[\s\S]*External runtimes[\s\S]*Runtime memory/,
-  "Agents memory view should summarize native Coven, external runtime, and runtime memory sources",
+  /const memorySourceSummary = `Coven origin \$\{fileSourceCounts\.covenOrigin\}; External runtimes \$\{fileSourceCounts\.externalHarnesses\}; Runtime memory \$\{fileSourceCounts\.runtimeMemory\}`[\s\S]*id=\{sourceSummaryId\}[\s\S]*Sources: \{memorySourceSummary\}[\s\S]*aria-describedby=\{sourceSummaryId\}/,
+  "Agents memory view should summarize native Coven, external runtime, and runtime memory source counts through the filter trigger",
 );
 
 assert.match(

@@ -6,6 +6,10 @@ const source = await readFile(new URL("./familiars-memory-reader.tsx", import.me
 assert.match(source, /export function MemoryReaderPane\(/, "MemoryReaderPane must be exported");
 assert.match(source, /useMemoryFile\(/, "reader must load file content via the shared hook");
 assert.match(source, /<DocumentReader/, "Rendered mode must use the shared DocumentReader");
+assert.match(source, /<OverflowMenu[\s\S]*?ariaLabel="More memory actions"/, "path and file actions live in overflow");
+assert.match(source, /\{copied \? "Path copied" : "Copy path"\}/, "Copy path remains reachable");
+assert.match(source, />\s*Open file\s*</, "Open file remains reachable");
+assert.match(source, />\s*Open in Memories\s*</, "the cross-surface action uses the approved label");
 assert.match(
   source,
   /parseMarkdownReaderDocument\(content,\s*row\?\.title \?\? "Memory"\)/,

@@ -8,7 +8,12 @@ import {
   queueAppPreferencesPatch,
   readBootstrap,
 } from "./app-preferences-core.ts";
-import { applyPreferencesPatch, createDefaultPreferences } from "./preferences-schema.ts";
+import {
+  applyPreferencesPatch,
+  createDefaultPreferences,
+  legacyStorageToPreferencesPatch,
+  preferencesToLegacyStorage,
+} from "./preferences-schema.ts";
 
 const clientStore = await readFile(new URL("./app-preferences.ts", import.meta.url), "utf8");
 const clientCore = await readFile(new URL("./app-preferences-core.ts", import.meta.url), "utf8");
@@ -145,6 +150,7 @@ for (const representative of [
   "cave:font:sans",
   "cave:screen-scale",
   "cave:reading-width",
+  "cave:reader:text-scale",
   "cave:datetime-clock",
   "cave:corner-radius",
   "cave:backdrop:v1",
@@ -152,6 +158,32 @@ for (const representative of [
 ]) {
   assert.ok(legacyBlock.includes(`"${representative}"`), `migration allowlist includes ${representative}`);
 }
+
+const migratedReaderSize = legacyStorageToPreferencesPatch({
+  "cave:reader:text-scale": "3",
+});
+assert.deepEqual(
+  migratedReaderSize.appearance?.reading,
+  { size: 3 },
+  "the local DocumentReader scale migrates into the canonical reading contract",
+);
+assert.deepEqual(
+  legacyStorageToPreferencesPatch({
+    "cave:reading-width": "medium",
+  }).appearance?.reading,
+  { width: "medium" },
+  "an absent local reader-size key must not silently migrate to the smallest size",
+);
+const canonicalReaderSize = applyPreferencesPatch(
+  createDefaultPreferences(true),
+  { appearance: { reading: { size: 4 } } },
+);
+assert.equal(canonicalReaderSize.appearance.reading.size, 4);
+assert.equal(
+  preferencesToLegacyStorage(canonicalReaderSize)["cave:reader:text-scale"],
+  "4",
+  "the canonical size mirrors to the legacy key while upgraded clients coexist",
+);
 
 const elevenLabsCanonical = applyPreferencesPatch(createDefaultPreferences(true), {
   voice: {

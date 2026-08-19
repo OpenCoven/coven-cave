@@ -172,18 +172,55 @@ test.describe("research reader", () => {
 
     // Contents rail is hidden until expanded.
     await expect(reader.locator(".rr-toc")).toBeHidden();
-    await reader.getByRole("button", { name: "Expand" }).click();
+    await reader.getByRole("button", { name: "More research reader actions" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Contents" }).click();
     await expect(reader).toHaveAttribute("data-expanded", "true");
+    await expect(reader).toHaveAttribute("data-toc", "true");
     await expect(reader.locator(".rr-toc")).toBeVisible();
     await expect(reader.locator(".rr-toclink", { hasText: "Key results" })).toBeVisible();
 
     // Copy is offered for a written deliverable (clipboard success itself is
     // environment-dependent under headless, so assert the affordance, not the
     // confirmation).
-    await expect(reader.getByRole("button", { name: "Copy findings as markdown" })).toBeEnabled();
+    await reader.getByRole("button", { name: "More research reader actions" }).click();
+    await expect(page.getByRole("menuitem", { name: "Copy findings" })).toBeEnabled();
+    await page.keyboard.press("Escape");
+
+    await reader.getByRole("button", { name: "Reading preferences" }).click();
+    const preferences = page.getByRole("dialog", { name: "Reading preferences" });
+    await expect(preferences).toContainText("Width");
+    await expect(preferences).toContainText("Line spacing");
+    await expect(preferences).toContainText("Hyphenation");
+    await page.keyboard.press("Escape");
 
     // Close dismisses the reader.
     await reader.getByRole("button", { name: "Close" }).click();
     await expect(page.locator(".research-reader")).toHaveCount(0);
+  });
+
+  test("narrow rail mode collapses to one grid column and preserves prose gutters", async ({ page }) => {
+    await page.setViewportSize({ width: 400, height: 720 });
+    await openReader(page);
+    const reader = page.locator(".research-reader");
+    await reader.getByRole("button", { name: "More research reader actions" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Contents" }).click();
+
+    const columns = await reader.locator(".document-reader__layout").evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns,
+    );
+    expect(columns.trim().split(/\s+/)).toHaveLength(1);
+
+    const gutters = await reader.evaluate((element) => {
+      const scroll = element.querySelector<HTMLElement>(".document-reader__scroll")!;
+      const prose = element.querySelector<HTMLElement>(".document-reader__column")!;
+      const scrollRect = scroll.getBoundingClientRect();
+      const proseRect = prose.getBoundingClientRect();
+      return {
+        left: proseRect.left - scrollRect.left,
+        right: scrollRect.right - proseRect.right,
+      };
+    });
+    expect(gutters.left).toBeGreaterThan(0);
+    expect(gutters.right).toBeGreaterThan(0);
   });
 });
