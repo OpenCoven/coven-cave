@@ -359,7 +359,7 @@ export type ResearchMissionActionInput =
   | {
     action: ResearchMissionAction;
     direction?: string;
-    /** One-pass approval to continue when the previous iteration reported no cost. */
+    /** One-iteration approval to continue when the previous iteration reported no cost. */
     approveCostUnavailable?: boolean;
     /**
      * Retry-only project root override: a path re-targets the retried
@@ -1165,7 +1165,7 @@ export type ResearchContinueLabel = {
   description: string;
   /** A stop gate already refuses the next iteration — pressing starts nothing. */
   gated: boolean;
-  /** Missing telemetry may be bypassed for exactly one explicitly approved pass. */
+  /** Missing telemetry may be bypassed for exactly one explicitly approved iteration. */
   costApprovalRequired: boolean;
 };
 
@@ -1182,7 +1182,7 @@ export function nextResearchIterationNumber(
  * (src/lib/server/research-mission-runner.ts): iteration count, wall-clock
  * budget, missing-cost policy, and the reported-spend cap. Hard bounds refuse
  * the action; missing cost instead requires an explicit approval that applies
- * to one pass only. Keep this in sync with stopBeforeNextIteration.
+ * to one iteration only. Keep this in sync with stopBeforeNextIteration.
  */
 export function researchContinueLabel(
   mission: Pick<ResearchMission, "iterations" | "bounds" | "startedAt">,
@@ -1222,7 +1222,7 @@ export function researchContinueLabel(
   ) {
     return {
       label: `Continue with unreported cost, iteration ${next} of ${max}`,
-      description: `An iteration finished without reporting cost. Continue starts iteration ${next} with one-pass approval; the mission will ask again before another unmetered pass.`,
+      description: `An iteration finished without reporting cost. Continue starts iteration ${next} with approval for that one iteration; the mission will ask again before another unmetered iteration.`,
       gated: true,
       costApprovalRequired: true,
     };
