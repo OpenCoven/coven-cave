@@ -210,13 +210,15 @@ assert.equal(
   "a SHA-256 OID is exempt only when the evidence is explicitly GitHub evidence",
 );
 for (const kind of ["task", "dependency", "saved-link"] as const) {
-  expectRejected(
-    output([recommendation({
-      id: `credential-shaped-${kind}-id`,
-      evidenceRefs: [{ id: "a".repeat(64), kind, label: `${kind} evidence` }],
-    })]),
-    "secret_evidence",
-  );
+  for (const credentialShapedId of ["a".repeat(40), "a".repeat(64)]) {
+    expectRejected(
+      output([recommendation({
+        id: `credential-shaped-${kind}-${credentialShapedId.length}-id`,
+        evidenceRefs: [{ id: credentialShapedId, kind, label: `${kind} evidence` }],
+      })]),
+      "secret_evidence",
+    );
+  }
 }
 expectRejected(
   output([recommendation({
@@ -447,6 +449,29 @@ assert.equal(
   isAutoApplyAllowed(rankedForgedVerified[0]!),
   false,
   "a manually constructed verified lookalike remains untrusted after ranking",
+);
+
+const topLevelMutationRanked = rankAgenticRecommendations([verifiedAuto])[0]!;
+assert.equal(isAutoApplyAllowed(topLevelMutationRanked), true);
+topLevelMutationRanked.surface = "chat";
+assert.equal(
+  isAutoApplyAllowed(topLevelMutationRanked),
+  false,
+  "a trusted ranking copy loses auto-apply authority when an authorization field changes",
+);
+
+const independentlyVerifiedAuto = verifyAutoApplicableRecommendation(
+  parsedAutoRecommendations[1]!,
+  exactResolutionChecks,
+);
+assert.ok(independentlyVerifiedAuto);
+const nestedMutationRanked = rankAgenticRecommendations([independentlyVerifiedAuto])[0]!;
+assert.equal(isAutoApplyAllowed(nestedMutationRanked), true);
+nestedMutationRanked.verification.checks[0]!.detail = "The trusted verification detail was changed.";
+assert.equal(
+  isAutoApplyAllowed(nestedMutationRanked),
+  false,
+  "a trusted ranking copy loses auto-apply authority when nested verification changes",
 );
 assert.doesNotMatch(JSON.stringify(ranked), /confidence/i, "the contract never emits numeric confidence");
 

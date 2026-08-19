@@ -333,20 +333,25 @@ assert.equal(
   true,
   "Bearer authorization with a token-shaped value remains secret text",
 );
-const shortCommitShas = [
+const ordinaryHexValues = [
   "0123456789abcdef0123456789abcdef",
   "0123456789abcdef0123456789abcdef01234567",
 ];
-for (const commitSha of shortCommitShas) {
+for (const ordinaryHexValue of ordinaryHexValues) {
   assert.equal(
-    containsSecretText(`commit ${commitSha}`),
-    false,
-    "hex commit SHAs in plain text are not generic base64 secrets",
+    containsSecretText(`value ${ordinaryHexValue}`),
+    true,
+    "ordinary 32- and 40-character hexadecimal values remain secret-shaped globally",
   );
   assert.equal(
-    containsSecretText(JSON.stringify({ commit: commitSha })),
-    false,
-    "hex commit SHAs in JSON are not generic base64 secrets",
+    containsSecretText(JSON.stringify({ value: ordinaryHexValue })),
+    true,
+    "ordinary hexadecimal JSON values remain secret-shaped globally",
+  );
+  assert.equal(
+    redactSecretText(`value ${ordinaryHexValue}`),
+    `value ${REDACTED_SECRET}`,
+    "ordinary hexadecimal values are redacted outside scoped GitHub evidence handling",
   );
 }
 const hexApiKey = "a".repeat(64);

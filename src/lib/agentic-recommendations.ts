@@ -162,6 +162,7 @@ const MAX_PAYLOAD_ENTRIES = 128;
 const MAX_CONTEXT_BYTES = 16 * 1024;
 const MAX_CONTEXT_DEPTH = 16;
 const MAX_CONTEXT_ENTRIES = 256;
+const MAX_VERIFICATION_STAMP_BYTES = 96 * 1024;
 const ID_RE = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
 const GIT_OID_RE = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
 const EXPLICIT_GITHUB_COMMIT_OID_RE = /(\b(?:commit|sha(?:256)?)\b[\s:="']+)(?:[a-f0-9]{40}|[a-f0-9]{64})\b/gi;
@@ -175,7 +176,7 @@ const READONLY_PROJECTIONS = new Set<RecomputeReadonlyProjectionPayload["project
   "reference-summary",
   "status-summary",
 ]);
-const trustedVerifiedRecommendations = new WeakSet<object>();
+const trustedVerifiedRecommendationStamps = new WeakMap<object, string>();
 
 type RawRecord = Record<string, unknown>;
 
@@ -366,6 +367,44 @@ function hasPassedVerificationChecks(verification: Pick<AgenticVerification, "st
   );
 }
 
+function verificationStampDigest(
+  recommendation: AgenticRecommendation | RankedAgenticRecommendation,
+): string | undefined {
+  const values: Record<string, unknown> = {
+    id: recommendation.id,
+    surface: recommendation.surface,
+    kind: recommendation.kind,
+    payload: recommendation.payload,
+    evidenceRefs: recommendation.evidenceRefs,
+    contextFingerprint: recommendation.contextFingerprint,
+    verification: recommendation.verification,
+    application: recommendation.application,
+  };
+  if ("ordinal" in recommendation) values.ordinal = recommendation.ordinal;
+
+  try {
+    const writer: CanonicalWriter = { parts: [], bytes: 0, maxBytes: MAX_VERIFICATION_STAMP_BYTES };
+    canonicalJson(values, MAX_CONTEXT_DEPTH, new Set(), { entries: 0 }, writer);
+    return writer.parts.join("");
+  } catch {
+    return undefined;
+  }
+}
+
+function stampTrustedVerifiedRecommendation(
+  recommendation: AgenticRecommendation | RankedAgenticRecommendation,
+): void {
+  const digest = verificationStampDigest(recommendation);
+  if (digest !== undefined) trustedVerifiedRecommendationStamps.set(recommendation, digest);
+}
+
+function hasTrustedVerificationStamp(
+  recommendation: AgenticRecommendation | RankedAgenticRecommendation,
+): boolean {
+  const stampedDigest = trustedVerifiedRecommendationStamps.get(recommendation);
+  return stampedDigest !== undefined && stampedDigest === verificationStampDigest(recommendation);
+}
+
 function parseRecommendation(value: unknown): AgenticRecommendation {
   if (
     !isRecord(value) ||
@@ -526,18 +565,18 @@ export function verifyAutoApplicableRecommendation(
   }
 
   const verified = createVerificationResult(recommendation, "verified", checks);
-  trustedVerifiedRecommendations.add(verified);
+  stampTrustedVerifiedRecommendation(verified);
   return verified;
 }
 
 /** The only machine-applied recommendation operations; all content changes remain review proposals. */
 export function isAutoApplyAllowed(
-  recommendation: Pick<AgenticRecommendation, "kind" | "payload" | "verification" | "application">,
+  recommendation: AgenticRecommendation | RankedAgenticRecommendation,
 ): boolean {
   return (
     typeof recommendation === "object"
     && recommendation !== null
-    && trustedVerifiedRecommendations.has(recommendation)
+    && hasTrustedVerificationStamp(recommendation)
     && autoApplyKinds.has(recommendation.kind)
     && isAutoApplyPayload(recommendation.kind, recommendation.payload)
     && recommendation.application.mode === "auto-apply"
@@ -549,7 +588,7 @@ export function isAutoApplyAllowed(
 
 function rankTier(recommendation: AgenticRecommendation): number {
   if (
-    trustedVerifiedRecommendations.has(recommendation)
+    hasTrustedVerificationStamp(recommendation)
     && hasPassedVerificationChecks(recommendation.verification)
   ) return 0;
   switch (recommendation.verification.status) {
@@ -581,12 +620,12 @@ export function rankAgenticRecommendations<TPayload extends AgenticPayload>(
     }
     const ranked = { ...recommendation, ordinal };
     if (
-      trustedVerifiedRecommendations.has(recommendation)
+      hasTrustedVerificationStamp(recommendation)
       && ranked.payload === recommendation.payload
       && ranked.verification === recommendation.verification
       && ranked.application === recommendation.application
     ) {
-      trustedVerifiedRecommendations.add(ranked);
+      stampTrustedVerifiedRecommendation(ranked);
     }
     return ranked;
   });
@@ -599,6 +638,7 @@ function utf8ByteLength(value: string): number {
 interface CanonicalWriter {
   parts: string[];
   bytes: number;
+  maxBytes: number;
 }
 
 function appendCanonical(writer: CanonicalWriter, fragment: string): void {
@@ -621,7 +661,7 @@ function appendCanonical(writer: CanonicalWriter, fragment: string): void {
     } else {
       bytes += 3;
     }
-    if (bytes > MAX_CONTEXT_BYTES) throw new Error("context is too large to fingerprint");
+    if (bytes > writer.maxBytes) throw new Error("context is too large to fingerprint");
   }
   writer.bytes = bytes;
   writer.parts.push(fragment);
@@ -786,7 +826,7 @@ function hash32(value: string, seed: number): string {
 
 /** A deterministic, versioned client-safe fingerprint for stale-context checks, not an integrity signature. */
 export function contextFingerprint(context: unknown): string {
-  const writer: CanonicalWriter = { parts: [], bytes: 0 };
+  const writer: CanonicalWriter = { parts: [], bytes: 0, maxBytes: MAX_CONTEXT_BYTES };
   canonicalJson(context, MAX_CONTEXT_DEPTH, new Set(), { entries: 0 }, writer);
   const canonical = writer.parts.join("");
   return `ctx-v1-${[

@@ -176,19 +176,9 @@ function matchesSecretPattern(pattern: RegExp, text: string): boolean {
 
 function containsGenericBase64Secret(text: string): boolean {
   GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = GENERIC_BASE64_SECRET_PATTERN.exec(text)) !== null) {
-    if (!isHexString(match[0]) || match[0].length === 64) {
-      GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
-      return true;
-    }
-  }
+  const containsSecret = GENERIC_BASE64_SECRET_PATTERN.test(text);
   GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
-  return false;
-}
-
-function isHexString(value: string): boolean {
-  return /^[a-f0-9]+$/i.test(value);
+  return containsSecret;
 }
 
 function isBasicAuthorizationCredential(value: string): boolean {
@@ -222,7 +212,7 @@ function redactSecretTextPlain(text: string): string {
   }
   next = next.replace(
     GENERIC_BASE64_SECRET_PATTERN,
-    (match) => (isHexString(match) && match.length !== 64 ? match : REDACTED_SECRET),
+    REDACTED_SECRET,
   );
   next = next.replace(
     /([?&](?:access_token|api_key|auth|key|password|secret|token)=)[^&#\s]+/gi,
