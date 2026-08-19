@@ -109,40 +109,6 @@ mod native_startup_terminal_tests {
     }
 }
 
-/// Show or hide the macOS traffic lights (close/minimize/zoom) on the
-/// invoking window. The main window's title bar is an Overlay (see the main
-/// window builder), so the buttons float over web content — when the app's
-/// side panel is closed the shell asks for them to disappear, Dia-style, and
-/// brings them back the moment the panel (or its hover-peek) opens. AppKit
-/// must be touched on the main thread; a no-op elsewhere.
-#[cfg(desktop)]
-#[tauri::command]
-fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
-    #[cfg(target_os = "macos")]
-    {
-        let win = window.clone();
-        let _ = window.run_on_main_thread(move || {
-            let Ok(ns_ptr) = win.ns_window() else { return };
-            unsafe {
-                use objc2::msg_send;
-                use objc2::runtime::AnyObject;
-                let ns_window = ns_ptr as *mut AnyObject;
-                // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
-                for kind in 0u64..=2u64 {
-                    let button: *mut AnyObject = msg_send![&*ns_window, standardWindowButton: kind];
-                    if !button.is_null() {
-                        let _: () = msg_send![&*button, setHidden: !visible];
-                    }
-                }
-            }
-        });
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (window, visible);
-    }
-}
-
 #[cfg(all(test, desktop))]
 #[path = "shell_open_tests.rs"]
 mod shell_open_tests;
@@ -299,7 +265,6 @@ pub fn run() {
             open_x_oauth_url,
             shell_open_path,
             shell_pick_directory,
-            set_traffic_lights_visible,
             #[cfg(target_os = "macos")]
             microphone::microphone_permission_request,
             #[cfg(target_os = "macos")]
@@ -498,14 +463,11 @@ pub fn run() {
                         // them.
                         .disable_drag_drop_handler();
                 // macOS: dissolve the seam between the native title bar and the
-                // app's top toolbar. `Overlay` lets the webview content fill to the
+                // app's title strip. `Overlay` lets the webview content fill to the
                 // very top (the traffic-light buttons float over it) and
-                // `hidden_title` drops the centered "CovenCave" label, so the
-                // toolbar reads as one continuous strip. The web side reserves room
-                // for the traffic lights (`[data-tauri-titlebar]` in globals.css)
-                // and marks the bar `data-tauri-drag-region="deep"`; the drag is
-                // an ACL-gated IPC call, granted to this loopback origin by
-                // capabilities/loopback-window-drag.json. No-op on Windows/Linux.
+                // `hidden_title` drops the native "CovenCave" label. The web side
+                // renders the centered Coven identity, reserves room for the
+                // traffic lights, and marks the strip as a deep drag region.
                 #[cfg(target_os = "macos")]
                 {
                     main_window = main_window

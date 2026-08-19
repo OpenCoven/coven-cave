@@ -72,6 +72,10 @@ button:active > .edge-rail-chip {
   display: none;
 }
 
+.shell-window-titlebar {
+  display: none;
+}
+
 .shell-top__bar {
   display: flex;
   align-items: center;
@@ -90,12 +94,10 @@ button:active > .edge-rail-chip {
 }
 
 /* ────────────────────────────────────────────────
-   Seamless macOS title bar (Tauri desktop)
+   Layered macOS title bar (Tauri desktop)
    The native title bar is set to `Overlay` (see src-tauri/src/lib.rs), so the
-   webview fills to the very top and the traffic-light buttons float over this
-   bar — there's no separate native title strip and no seam. We:
-     1. reserve room on the left so the toggle doesn't sit under the lights,
-     2. give the bar a touch more height to comfortably frame the lights.
+   webview fills to the very top and the traffic-light buttons float over a
+   dedicated identity strip. The functional toolbar sits beneath it.
    The actual window drag is NOT these `app-region` hints: WebKit ignores them
    on external-URL webviews (the app loads from http://127.0.0.1), so dragging
    is driven by the `data-tauri-drag-region="deep"` attributes in shell.tsx +
@@ -113,36 +115,48 @@ button:active > .edge-rail-chip {
   --titlebar-lights-inset: 78px;
 }
 
-/* Fit at EVERY window width: the lights float over the webview no matter how
-   narrow the window is, so the reserve can't be desktop-media-gated — in a
-   sub-1024 window the mobile top-bar's controls sat underneath the buttons. */
-:root[data-tauri-titlebar] .shell-top {
-  padding-left: var(--titlebar-lights-inset);
-}
-
-/* Dia-style: with the side panel closed the shell hides the traffic lights
-   (set_traffic_lights_visible in lib.rs, driven by shell.tsx — the attribute
-   flips to "hidden" only AFTER the native hide is confirmed), so the bar
-   releases the room reserved for them and slides back to the window edge. */
-:root[data-tauri-titlebar][data-traffic-lights="hidden"] .shell-top {
-  padding-left: var(--space-3);
-}
-
-/* Subtle titlebar glass (native shell only — the browser tab keeps the fully
-   seamless canvas): a whisper of translucent fill + blur so the band reads
-   as window chrome floating over the backdrop, macOS-native, not a painted
-   strip. Falls back to the seamless transparent band where glass can't
-   render legibly. */
-:root[data-tauri-titlebar] .shell-top {
+/* Native identity strip: the centered title is positioned against the whole
+   window rather than the traffic-light-safe content area. */
+:root[data-tauri-titlebar] .shell-window-titlebar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  min-height: 30px;
+  padding: 0 var(--space-3) 0 var(--titlebar-lights-inset);
   background: color-mix(in oklch, var(--bg-base) 46%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+:root[data-tauri-titlebar] .shell-window-titlebar__title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Functional controls remain in their own compact row below native chrome. */
+:root[data-tauri-titlebar] .shell-top {
+  min-height: 34px;
+  padding-left: var(--space-3);
+  background: var(--bg-base);
+  backdrop-filter: none;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root[data-tauri-titlebar] .shell-top { background: transparent; }
+  :root[data-tauri-titlebar] .shell-window-titlebar { background: var(--bg-base); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  :root[data-tauri-titlebar] .shell-top {
-    background: transparent;
+  :root[data-tauri-titlebar] .shell-window-titlebar {
+    background: var(--bg-base);
     backdrop-filter: none;
   }
 }
@@ -184,17 +198,6 @@ button:active > .edge-rail-chip {
     padding-left: var(--space-6);
   }
 
-  :root[data-tauri-titlebar] .shell-top {
-    /* The slim 29px band hugs the 28px controls so the bar doesn't tower
-       over the lights (was 36px — user asked for ~20% shorter). */
-    min-height: 29px;
-  }
-
-  /* The inner menu-bar would otherwise prop the band back open at 34px. */
-  :root[data-tauri-titlebar] .shell-top .menu-bar {
-    min-height: 28px;
-  }
-
   :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
     position: absolute;
     inset: 0;
@@ -206,6 +209,7 @@ button:active > .edge-rail-chip {
   }
 
   :root[data-tauri-titlebar] :is(
+    .shell-window-titlebar,
     .shell-top,
     .shell-top__bar,
     .shell-top .menu-bar,

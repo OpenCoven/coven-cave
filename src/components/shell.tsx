@@ -18,7 +18,6 @@ import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-updat
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
-import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import { ShellPeelReveal } from "@/components/shell-peel-reveal";
@@ -633,64 +632,6 @@ function ShellInner({
   useEffect(() => {
     if (!navPeekEnabled) setNavPeeking(false);
   }, [navPeekEnabled]);
-
-  // Dia-style traffic lights: on the macOS desktop shell the native
-  // close/minimize/zoom buttons float over the side panel's top edge. With
-  // the panel fully closed (not even hover-peeked) they'd hover over page
-  // content, so they follow the panel — hidden with it, back the moment it
-  // opens or peeks. The root attribute lets globals.css release the 78px
-  // title-bar inset; the native call is an app command
-  // (set_traffic_lights_visible in lib.rs), so it needs no ACL entry. Mobile
-  // layouts keep their drawer chrome and never hide the lights.
-  //
-  // Fit contract (title-bar overlap bug): the inset is released ONLY after
-  // the native hide is confirmed. Showing is marked optimistically (worst
-  // case: a roomy bar), but marking "hidden" before the buttons actually
-  // vanish — pre-update shell without the command, an AppKit hiccup — slid
-  // the nav toggle + history chevrons underneath still-visible lights.
-  const trafficLightsVisible = navOpen || navPeekVisible || isMobile;
-  useEffect(() => {
-    const root = document.documentElement;
-    // Only the macOS desktop Tauri shell overlays the title bar; everywhere
-    // else there are no lights to manage. Detected directly (not via the
-    // root marker) so this effect can't race <TauriTitlebarMarker />'s mount.
-    if (!isMacDesktopShell()) return;
-    let cancelled = false;
-    const applyNative = (visible: boolean) =>
-      import("@tauri-apps/api/core").then(({ invoke }) =>
-        invoke("set_traffic_lights_visible", { visible }),
-      );
-    if (trafficLightsVisible) {
-      root.dataset.trafficLights = "visible";
-      void applyNative(true).catch(() => {});
-    } else {
-      void applyNative(false)
-        .then(() => {
-          if (!cancelled) root.dataset.trafficLights = "hidden";
-        })
-        .catch(() => {
-          // Pre-update shell without the command — the buttons stay put, so
-          // the bar must keep the 78px inset reserved for them.
-          if (!cancelled) root.dataset.trafficLights = "visible";
-        });
-    }
-    // macOS re-shows the standard buttons on its own after some window
-    // transitions (fullscreen round-trips, space changes). Re-assert the
-    // intended state whenever the window regains focus so the bar and the
-    // buttons can't drift apart mid-session.
-    const onFocus = () => {
-      if (trafficLightsVisible) return;
-      void applyNative(false).catch(() => {});
-    };
-    window.addEventListener("focus", onFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", onFocus);
-      // If the shell ever unmounts mid-hide, leave the window usable.
-      delete root.dataset.trafficLights;
-      void applyNative(true).catch(() => {});
-    };
-  }, [trafficLightsVisible]);
 
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
@@ -1435,6 +1376,9 @@ function ShellInner({
       {/* Keyboard/SR users can jump straight past the chrome to the active
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
+      <div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">
+        <span className="shell-window-titlebar__title">Coven</span>
+      </div>
       {/* `deep` (not the bare attribute) matters: drag.js's bare value only
           drags on DIRECT presses on the attributed element, so empty chrome
           inside .menu-bar / .top-bar wrappers would short-circuit the walk and
