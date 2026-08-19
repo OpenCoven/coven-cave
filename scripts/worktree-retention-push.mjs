@@ -213,10 +213,18 @@ export function hadRemoteTracking(worktreePath, branch) {
  * Did a push ever configure an upstream for this branch?
  *
  * `branch.<name>.remote` lives in `.git/config`, not in the ref store, so
- * unlike the remote-tracking ref it SURVIVES `fetch --prune`. Only `push -u`
- * (or an explicit `--set-upstream`) writes it, so it is a partial signal —
- * present for some branches and not others — which is exactly why it is one of
- * several rather than the answer.
+ * unlike the remote-tracking ref it SURVIVES `fetch --prune`. `push -u` (or an
+ * explicit `--set-upstream`) writes it, so it is a partial signal — present for
+ * some branches and not others — which is exactly why it is one of several
+ * rather than the answer.
+ *
+ * One other thing writes it: `git worktree add -b <branch> <path> origin/main`,
+ * whose default `branch.autoSetupMerge` tracks the remote start point. That
+ * made the key true from birth for every canonically-created worktree, so this
+ * signal was silently unconditional and `deletedUpstream` below always took the
+ * archive-tag route — never the readable-branch route it promises for a
+ * never-pushed branch (cave-t57kr). `worktree-lifecycle-create.ts` now passes
+ * `--no-track`, which restores the key to meaning what this doc comment says.
  */
 export function hasUpstreamConfig(worktreePath, branch) {
   if (!branch) return false;
@@ -375,7 +383,8 @@ function main() {
     // do not (cave-xjuup):
     //
     //   - the remote-tracking ref, which a `fetch --prune` erases;
-    //   - `branch.<name>.remote`, which only `push -u` writes;
+    //   - `branch.<name>.remote`, which `push -u` writes (and which worktree
+    //     creation no longer writes — see hasUpstreamConfig, cave-t57kr);
     //   - this hook's own log, which records that IT pushed the branch.
     //
     // One signal was not enough. GitHub Desktop prunes routinely here, so the

@@ -1837,6 +1837,19 @@ function execute(
     [
       "worktree",
       "add",
+      // `--start-point` is a remote-tracking ref (`origin/main` by default), and
+      // git's default `branch.autoSetupMerge` would make the new branch TRACK
+      // it: `branch.<name>.remote=origin`, `branch.<name>.merge=refs/heads/main`.
+      // That upstream is wrong in every case — the branch is not a local view of
+      // `main` — and it costs twice over. It renders every managed worktree as
+      // "behind N" against `main` in GitHub Desktop, and a bare `git push` from
+      // one is refused with git's own suggestion to run `git push origin
+      // HEAD:main`, the direct-to-main move this repository forbids. It also
+      // writes the `branch.<name>.remote` key that `worktree-retention-push.mjs`
+      // reads as proof a push once happened, which would be true from birth for
+      // every canonically-created worktree and would collapse that hook's
+      // three-signal test into "always archive as a tag".
+      "--no-track",
       "-b",
       options.branch,
       worktreePath,
