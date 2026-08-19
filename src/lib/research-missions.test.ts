@@ -1071,7 +1071,28 @@ test("Continue reports every runner stop gate, not just the iteration limit", ()
     Date.parse("2026-07-15T00:10:00Z"),
   );
   assert.equal(noCost.gated, true);
+  assert.equal(noCost.costApprovalRequired, true);
+  assert.match(noCost.label, /Continue with unreported cost/);
   assert.match(noCost.description, /finished without reporting cost/);
+
+  const spendBeforeApproval = researchContinueLabel(
+    {
+      iterations: [
+        { number: 1, status: "checkpoint" as const, finishedAt: "2026-07-15T00:05:00Z", costUsd: 5 },
+        { number: 2, status: "checkpoint" as const, finishedAt: "2026-07-15T00:10:00Z" },
+      ],
+      bounds: {
+        ...bounds,
+        maxIterations: 3,
+        maxSpendUsd: 5,
+        stopWhenCostUnavailable: true,
+      },
+      startedAt,
+    },
+    Date.parse("2026-07-15T00:10:00Z"),
+  );
+  assert.equal(spendBeforeApproval.costApprovalRequired, false);
+  assert.match(spendBeforeApproval.description, /reported spend has reached/);
 });
 
 // --- bound readings: a bar only where a denominator exists -----------------

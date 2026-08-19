@@ -503,7 +503,7 @@ export function ResearchMissionDetail({
       size="xs"
       variant={
         action === "continue"
-          ? (continueInfo.gated ? "ghost" : "primary")
+          ? (continueInfo.costApprovalRequired ? "secondary" : continueInfo.gated ? "ghost" : "primary")
           : action === "retry"
             ? "primary"
             : action === "cancel"
@@ -512,13 +512,19 @@ export function ResearchMissionDetail({
                 ? "secondary"
                 : "ghost"
       }
-      disabled={busy}
-      {...(action === "continue"
+      disabled={busy || (action === "continue" && continueInfo.gated && !continueInfo.costApprovalRequired)}
+      {...(action === "continue" || (action === "resume" && continueInfo.costApprovalRequired)
         ? { "aria-label": continueInfo.description, title: continueInfo.description }
         : {})}
-      onClick={() => void runAction(action === "retry" ? plannedRetry : { action })}
+      onClick={() => void runAction(
+        action === "retry"
+          ? plannedRetry
+          : (action === "continue" || action === "resume") && continueInfo.costApprovalRequired
+            ? { action, approveCostUnavailable: true }
+            : { action },
+      )}
     >
-      {action === "continue"
+      {action === "continue" || (action === "resume" && continueInfo.costApprovalRequired)
         ? continueInfo.label
         : action === "retry" ? retryLabel : ACTION_LABELS[action] ?? action}
     </Button>
@@ -884,9 +890,19 @@ export function ResearchMissionDetail({
                   size="xs"
                   variant="secondary"
                   disabled={busy || directionDrafting || !direction.trim()}
-                  onClick={() => void runAction({ action: "refine", direction })}
+                  aria-label={continueInfo.costApprovalRequired
+                    ? `Refine and continue with unreported cost. ${continueInfo.description}`
+                    : undefined}
+                  title={continueInfo.costApprovalRequired ? continueInfo.description : undefined}
+                  onClick={() => void runAction({
+                    action: "refine",
+                    direction,
+                    ...(continueInfo.costApprovalRequired ? { approveCostUnavailable: true } : {}),
+                  })}
                 >
-                  Refine and continue
+                  {continueInfo.costApprovalRequired
+                    ? "Refine and continue with unreported cost"
+                    : "Refine and continue"}
                 </Button>
               </div>
               {directionDrafting ? (

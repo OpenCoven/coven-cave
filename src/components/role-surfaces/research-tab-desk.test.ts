@@ -75,8 +75,10 @@ test("checkpoint direction can be drafted agentically without auto-continuing", 
   assert.match(detail, /direction\.length\.toLocaleString\(\)\} \/ \{RESEARCH_DIRECTION_MAX_LENGTH\.toLocaleString\(\)/);
   assert.match(
     detail,
-    /onClick=\{\(\) => void runAction\(\{ action: "refine", direction \}\)\}/,
+    /onClick=\{\(\) => void runAction\(\{[\s\S]{0,180}?action: "refine",[\s\S]{0,180}?direction,[\s\S]{0,180}?approveCostUnavailable/,
   );
+  assert.match(detail, /Refine and continue with unreported cost/);
+  assert.match(detail, /title=\{continueInfo\.costApprovalRequired \? continueInfo\.description : undefined\}/);
   assert.doesNotMatch(
     detail,
     /generateResearchRefineDirection\([\s\S]{0,800}?runAction\(\{ action: "refine"/,
@@ -359,9 +361,12 @@ test("the action bar stays decision-first, sticky, with end actions split right"
   const actionsIndex = detail.indexOf("research-mission-actions");
   assert.ok(bannerIndex !== -1 && actionsIndex !== -1 && bannerIndex < actionsIndex);
   // Actions still come from the shared gate, with the consequence-labeled
-  // Continue demoting itself when a stop gate refuses.
+  // Continue disabled at hard bounds while missing cost becomes an explicit,
+  // one-pass approval.
   assert.match(detail, /allowedResearchActions\(mission\)/);
-  assert.match(detail, /continueInfo\.gated \? "ghost" : "primary"/);
+  assert.match(detail, /continueInfo\.costApprovalRequired \? "secondary"/);
+  assert.match(detail, /continueInfo\.gated && !continueInfo\.costApprovalRequired/);
+  assert.match(detail, /approveCostUnavailable: true/);
   // Cancel/Archive detach to the right edge of the bar.
   assert.match(detail, /new Set\(\["cancel", "archive"\]\)/);
   assert.match(detail, /\{mainActions\.map\(renderActionButton\)\}/);

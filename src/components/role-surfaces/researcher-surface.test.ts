@@ -326,9 +326,12 @@ test("the action bar reads decision-first with a consequence-labeled Continue", 
   assert.ok(bannerIndex !== -1 && actionsIndex !== -1 && bannerIndex < actionsIndex);
   // Continue says which iteration it starts (researchContinueLabel is
   // behaviorally tested in the lib suite) and demotes itself when any runner
-  // stop gate — iteration, wall-clock, cost policy, spend — already refuses.
+  // hard stop gate — iteration, wall-clock, spend — already refuses. Missing
+  // cost instead gets an explicit one-pass approval payload.
   assert.match(detail, /researchContinueLabel\(mission\)/);
-  assert.match(detail, /continueInfo\.gated \? "ghost" : "primary"/);
+  assert.match(detail, /continueInfo\.costApprovalRequired \? "secondary"/);
+  assert.match(detail, /continueInfo\.gated && !continueInfo\.costApprovalRequired/);
+  assert.match(detail, /approveCostUnavailable: true/);
   assert.match(detail, /"aria-label": continueInfo\.description, title: continueInfo\.description/);
   assert.match(detail, /continueInfo\.label/);
 });
@@ -341,7 +344,7 @@ test("retry adapts to project-root failures with a visible config", () => {
   // …the button label says what the retry will actually do…
   assert.match(detail, /Retry in workspace/);
   assert.match(detail, /Retry with new root/);
-  assert.match(detail, /runAction\(action === "retry" \? plannedRetry : \{ action \}\)/);
+  assert.match(detail, /action === "retry"[\s\S]{0,120}?\? plannedRetry/);
   // …and the root is editable with an honest workspace fallback.
   assert.match(detail, /id="research-retry-root"/);
   assert.match(detail, /Leave empty to run in the mission workspace/);

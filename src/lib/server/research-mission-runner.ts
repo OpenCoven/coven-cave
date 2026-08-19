@@ -16,6 +16,7 @@ import {
 import { buildResearchMissionFlow } from "../research-mission-flow.ts";
 import {
   allowedResearchActions,
+  RESEARCH_COST_UNAVAILABLE_STOP_REASON,
   RESEARCH_DIRECTION_MAX_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
   researchArtifactKindForMode,
@@ -873,9 +874,15 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     return { ...mission, projectRoot: resolved };
   };
 
-  const startNextIteration = async (mission: ResearchMission): Promise<ResearchMission> => {
-    const stopReason = stopBeforeNextIteration(mission, deps.now());
+  const startNextIteration = async (
+    mission: ResearchMission,
+    options: { allowCostUnavailable?: boolean } = {},
+  ): Promise<ResearchMission> => {
+    const stopReason = stopBeforeNextIteration(mission, deps.now(), options);
     if (stopReason) {
+      if (mission.status === "completed" || mission.status === "cancelled") {
+        return mission;
+      }
       const atIterationLimit = stopReason === "Iteration limit reached";
       return saveUpdated({
         ...mission,
@@ -1110,7 +1117,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           throw new Error(`refined direction must be at most ${RESEARCH_DIRECTION_MAX_LENGTH} characters`);
         }
         mission = { ...mission, direction };
-        return startNextIteration(mission);
+        return startNextIteration(mission, {
+          allowCostUnavailable: input.approveCostUnavailable === true,
+        });
       }
       if (input.action === "retry") {
         if (input.projectRoot !== undefined) {
@@ -1119,7 +1128,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         return retryCurrentIteration(mission);
       }
       if (input.action === "continue") {
-        return startNextIteration(mission);
+        return startNextIteration(mission, {
+          allowCostUnavailable: input.approveCostUnavailable === true,
+        });
       }
       if (input.action === "cancel") {
         const current = mission.iterations.at(-1);
@@ -1210,6 +1221,12 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         return saveUpdated({ ...mission, status: "archived" });
       }
       if (input.action === "resume") {
+        if (
+          mission.lastError === RESEARCH_COST_UNAVAILABLE_STOP_REASON &&
+          input.approveCostUnavailable === true
+        ) {
+          return startNextIteration(mission, { allowCostUnavailable: true });
+        }
         return saveUpdated({ ...mission, status: "checkpoint", lastError: undefined });
       }
       return mission;
