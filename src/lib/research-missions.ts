@@ -1221,7 +1221,7 @@ export function researchContinueLabel(
     mission.iterations.some((iteration) => iteration.finishedAt && iteration.costUsd === undefined)
   ) {
     return {
-      label: `Continue with unreported cost (i${next}/${max})`,
+      label: `Continue with unreported cost, iteration ${next} of ${max}`,
       description: `An iteration finished without reporting cost. Continue starts iteration ${next} with one-pass approval; the mission will ask again before another unmetered pass.`,
       gated: true,
       costApprovalRequired: true,
