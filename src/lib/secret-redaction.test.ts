@@ -433,6 +433,16 @@ assert.equal(
   "Basic authorization with a credential-shaped base64 value remains secret text",
 );
 assert.equal(
+  containsSecretText("Authorization: opaque-credential"),
+  true,
+  "Authorization headers with one opaque colon-form token remain secret text",
+);
+assert.equal(
+  redactSecretText("Authorization: opaque-credential"),
+  `Authorization: ${REDACTED_SECRET}`,
+  "Authorization headers redact one opaque colon-form token as a credential",
+);
+assert.equal(
   containsSecretText("Authorization: Bearer x"),
   true,
   "short Bearer authorization credentials remain secret text",

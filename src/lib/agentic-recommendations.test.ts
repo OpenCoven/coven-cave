@@ -168,6 +168,7 @@ for (const label of [
   "Authorization: DPoP x",
   "Authorization: Proof_v1+demo x",
   "Authorization: Signature keyId=demo,signature=abc123",
+  "Authorization: opaque-credential",
   "authorization=opaque-credential",
   "API_KEY=synthetic-credential-value",
   JSON.stringify({ authorization: "opaque-credential" }),

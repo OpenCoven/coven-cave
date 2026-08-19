@@ -149,12 +149,17 @@ function hasMeaningfulAuthorizationScalar(value: unknown): boolean {
 
 function containsAuthorizationCredential(value: string): boolean {
   const parsed = readAuthorizationSchemeAndCredential(value);
-  if (!parsed) return false;
+  if (!parsed) return hasOpaqueAuthorizationCredential(value);
 
   const { scheme, credential } = parsed;
   if (scheme === "digest") return hasDigestAuthorizationCredential(credential);
   return hasAuthorizationParameterList(credential)
     || (!/\s/.test(credential) && isSingleTokenAuthorizationCredential(credential));
+}
+
+function hasOpaqueAuthorizationCredential(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && !/\s/.test(trimmed);
 }
 
 function hasDigestAuthorizationCredential(value: string): boolean {
