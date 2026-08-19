@@ -4,6 +4,7 @@ import "@/styles/settings-phone.css";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PairingStepsList } from "@/components/pairing-steps-list";
+import { TailscaleRecoveryActions } from "@/components/tailscale-recovery-actions";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -18,7 +19,10 @@ import {
 import { Icon } from "@/lib/icon";
 import type { PairingStep } from "@/lib/mobile-handoff";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
-import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
+import {
+  reconcileMobileModeRequest,
+  type MobileModeResponse,
+} from "@/lib/mobile-mode-reconcile";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   PasskeyError,
@@ -681,7 +685,10 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
   const { announce } = useAnnouncer();
 
   const reconcileMobileMode = useCallback(
-    async (enabled: boolean, options?: { busy?: boolean; force?: boolean }) => {
+    async (
+      enabled: boolean,
+      options?: { busy?: boolean; force?: boolean },
+    ): Promise<MobileModeResponse> => {
       if (options?.busy) setBusy(true);
       setError(null);
       if (!enabled) {
@@ -696,7 +703,7 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
         if (!result.ok) {
           setHandoff(null);
           setError(result.stderr || result.error || "Mobile mode unavailable.");
-          return false;
+          return result;
         }
         setHandoff(
           enabled
@@ -709,11 +716,17 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
               }
             : null,
         );
-        return true;
+        return result;
       } catch (cause) {
         setHandoff(null);
-        setError(cause instanceof Error ? cause.message : "Mobile mode unavailable.");
-        return false;
+        const message = cause instanceof Error ? cause.message : "Mobile mode unavailable.";
+        setError(message);
+        return {
+          ok: false,
+          status: 0,
+          error: message,
+          retryBlocked: false,
+        };
       } finally {
         if (options?.busy) setBusy(false);
       }
@@ -724,14 +737,14 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
   const onMobileModeChange = async (enabled: boolean) => {
     writeMobileModeEnabled(enabled);
     setMobileModeEnabled(enabled);
-    const ok = await reconcileMobileMode(enabled, { busy: true, force: true });
+    const result = await reconcileMobileMode(enabled, { busy: true, force: true });
     announce(
       enabled
-        ? ok
+        ? result.ok
           ? "Mobile mode on."
           : "Mobile mode on; pairing needs attention."
         : "Mobile mode off.",
-      ok ? "polite" : "assertive",
+      result.ok ? "polite" : "assertive",
     );
   };
 
@@ -954,20 +967,17 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
               >
                 {steps?.some((step) => step.state === "fail") ? (
                   <li className="settings-phone-checklist__retry">
-                    <Button
-                      size="xs"
-                      variant="secondary"
-                      leadingIcon="ph:arrows-clockwise"
-                      onClick={() =>
-                        void reconcileMobileMode(true, {
+                    <TailscaleRecoveryActions
+                      failure={error}
+                      steps={steps}
+                      busy={busy}
+                      attempt={() =>
+                        reconcileMobileMode(true, {
                           busy: true,
                           force: true,
                         })
                       }
-                      disabled={busy}
-                    >
-                      Retry
-                    </Button>
+                    />
                   </li>
                 ) : null}
               </PairingStepsList>
@@ -976,17 +986,13 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
                 <div className="settings-phone-pair__warning" role="status">
                   <strong>{friendly.headline}</strong>
                   <p>{friendly.hint}</p>
-                  <Button
-                    size="xs"
-                    variant="secondary"
-                    leadingIcon="ph:arrows-clockwise"
-                    onClick={() =>
-                      void reconcileMobileMode(true, { busy: true, force: true })
+                  <TailscaleRecoveryActions
+                    failure={error}
+                    busy={busy}
+                    attempt={() =>
+                      reconcileMobileMode(true, { busy: true, force: true })
                     }
-                    disabled={busy}
-                  >
-                    Retry
-                  </Button>
+                  />
                 </div>
               ) : null}
 

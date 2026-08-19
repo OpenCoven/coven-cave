@@ -214,3 +214,24 @@ fn native_x_oauth_launcher_suppresses_secret_bearing_process_output() {
         "the native launcher must not forward output that could contain the authorization URL",
     );
 }
+
+#[test]
+fn tailscale_launcher_uses_only_fixed_native_commands() {
+    let src = include_str!("shell_open_commands.rs");
+
+    assert!(
+        src.contains("Command::new(\"/usr/bin/open\")")
+            && src.contains(".args([\"-a\", \"Tailscale\"])"),
+        "macOS must launch the named Tailscale app through the fixed system opener",
+    );
+    assert!(
+        src.contains("join(\"Tailscale\").join(\"tailscale-ipn.exe\")"),
+        "Windows must launch only the installed Tailscale client from a standard program directory",
+    );
+    assert!(
+        !src.contains("open_tailscale_app(path")
+            && !src.contains("open_tailscale_app(command")
+            && !src.contains("open_tailscale_app(args"),
+        "the Tauri command must not accept caller-controlled launch input",
+    );
+}
