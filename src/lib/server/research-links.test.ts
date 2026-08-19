@@ -1,21 +1,104 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { after, test } from "node:test";
+import { after, beforeEach, test } from "node:test";
 
+import {
+  categorizeLink,
+  deriveLinkTitle,
+  savedLinkDedupeKey,
+  type SavedLink,
+} from "../link-organizer.ts";
+import {
+  MAX_X_ARTICLE_BODY_CHARS,
+  MAX_X_ARTICLE_EXCERPT_CHARS,
+  type XArticleSnapshot,
+} from "../x-articles.ts";
 import type { HfPaperMetadata } from "./hf-paper-metadata.ts";
+import { enrichXArticleUrls } from "./x-article-ingest.ts";
+import { fetchSorsaXArticle } from "./x-article-sorsa.ts";
 
-const tmp = await mkdtemp(path.join(tmpdir(), "cave-research-links-"));
+const tmp = path.join(import.meta.dirname, `.research-links-test-${randomUUID()}`);
 const originalOverride = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE;
 process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = path.join(tmp, "research-links.json");
 
 const {
+  getSavedLinkById,
   listSavedLinks,
+  listSavedLinkSummaries,
   MAX_LINKS_PER_SAVE,
   removeSavedLink,
+  reserveXArticleCandidates,
   saveResearchLinks,
+  toSavedLinkSummary,
 } = await import("./research-links.ts");
+
+const STORE_PATH = () => process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
+const ARTICLE_URL = "https://x.com/OpenCoven/status/123456789";
+const ARTICLE_WEB_ALIAS_URL = "https://twitter.com/i/web/status/123456789?ref=home";
+const ARTICLE_USER_ALIAS_URL = "https://twitter.com/OpenCoven/status/123456789#article";
+const ARTICLE_TITLE = "Open Coven reads the room";
+const BODY_SENTINEL = "X ARTICLE BODY SENTINEL";
+const LEGACY_ARTICLE_URL = "https://example.com/blog/legacy-article";
+const VALID_TIMESTAMP = "2026-08-18T12:34:56.000Z";
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function makeXArticleSnapshot(overrides: Partial<XArticleSnapshot> = {}): XArticleSnapshot {
+  return {
+    version: 1,
+    provider: "sorsa",
+    sourcePostId: "123456789",
+    titleSource: "derived",
+    author: {
+      id: "42",
+      username: "opencoven",
+      displayName: "Open Coven",
+    },
+    body: BODY_SENTINEL,
+    excerpt: "Lead preview",
+    coverImageUrl: "https://cdn.example.com/x-articles/cover.png",
+    publishedAt: VALID_TIMESTAMP,
+    fetchedAt: "2026-08-18T12:35:10.000Z",
+    contentSha256: sha256(BODY_SENTINEL),
+    ...overrides,
+  };
+}
+
+function articleEnrichment(snapshot = makeXArticleSnapshot(), title = ARTICLE_TITLE) {
+  return { xArticle: { title, snapshot } };
+}
+
+function storedLink(
+  patch: Partial<Omit<SavedLink, "paper" | "xArticle">> & { paper?: unknown; xArticle?: unknown } = {},
+): Record<string, unknown> {
+  return {
+    id: "stored-link",
+    url: LEGACY_ARTICLE_URL,
+    category: "article",
+    title: "Stored link",
+    addedAt: "2026-08-18T00:00:00.000Z",
+    source: "desk",
+    ...patch,
+  };
+}
+
+async function writeStore(file: unknown): Promise<void> {
+  await writeFile(STORE_PATH(), JSON.stringify(file, null, 2), "utf8");
+}
+
+async function readStoreJson<T>(): Promise<T> {
+  return JSON.parse(await readFile(STORE_PATH(), "utf8")) as T;
+}
+
+beforeEach(async () => {
+  process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = path.join(tmp, "research-links.json");
+  await rm(tmp, { recursive: true, force: true });
+  await mkdir(tmp, { recursive: true });
+});
 
 after(async () => {
   if (originalOverride === undefined) delete process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE;
@@ -47,9 +130,7 @@ test("saving organizes, dedupes, and persists newest-first", async () => {
   assert.equal(listed.length, 3);
 
   // The store survives a fresh read from disk (persisted JSON, not memory).
-  const onDisk = JSON.parse(
-    await readFile(process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!, "utf8"),
-  ) as { version: number; links: unknown[] };
+  const onDisk = await readStoreJson<{ version: number; links: unknown[] }>();
   assert.equal(onDisk.version, 1);
   assert.equal(onDisk.links.length, 3);
 });
@@ -78,10 +159,347 @@ test("one save is bounded to MAX_LINKS_PER_SAVE", async () => {
   assert.equal(result.added.length, MAX_LINKS_PER_SAVE);
 });
 
+test("persists a valid X Article enrichment with article title, category, and full snapshot", async () => {
+  const snapshot = makeXArticleSnapshot();
+  const { added } = await saveResearchLinks(
+    [ARTICLE_URL],
+    "desk",
+    new Map([[ARTICLE_URL, articleEnrichment(snapshot)]]),
+  );
+
+  assert.equal(added.length, 1);
+  assert.equal(added[0].title, ARTICLE_TITLE);
+  assert.equal(added[0].category, "article");
+  assert.deepEqual(added[0].xArticle, snapshot);
+
+  const listed = await listSavedLinks();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].title, ARTICLE_TITLE);
+  assert.equal(listed[0].category, "article");
+  assert.deepEqual(listed[0].xArticle, snapshot);
+});
+
+test("every accepted Sorsa result persists as an X Article snapshot", async () => {
+  const accepted = await fetchSorsaXArticle(ARTICLE_URL, {
+    apiKey: "test-only-key",
+    now: () => new Date("2026-08-18T12:35:10.000Z"),
+    fetchImpl: async () => new Response(JSON.stringify({
+      full_text: BODY_SENTINEL,
+      preview_text: "Lead preview",
+      cover_image_url: "https://cdn.example.com/x-articles/cover.png",
+      published_at: VALID_TIMESTAMP,
+      author: { id: "42", username: "opencoven", display_name: "Open Coven" },
+    }), { status: 200 }),
+  });
+  const enriched = await enrichXArticleUrls([ARTICLE_URL], new Set(), {
+    provider: {
+      id: "sorsa",
+      fetchArticle: async () => accepted,
+    },
+  });
+  const enrichment = enriched.enrichments.get(ARTICLE_URL);
+  assert.ok(enrichment);
+
+  const { added } = await saveResearchLinks(
+    [ARTICLE_URL],
+    "desk",
+    new Map([[ARTICLE_URL, enrichment]]),
+  );
+
+  assert.equal(added.length, 1);
+  assert.deepEqual(added[0].xArticle, enrichment.xArticle?.snapshot);
+  assert.ok((await listSavedLinks())[0]?.xArticle);
+});
+
+test("X candidate reservations atomically dedupe aliases and release after failure", async () => {
+  const [first, second] = await Promise.all([
+    reserveXArticleCandidates([ARTICLE_URL]),
+    reserveXArticleCandidates([ARTICLE_WEB_ALIAS_URL]),
+  ]);
+
+  assert.deepEqual(first.reservedUrls, [ARTICLE_URL]);
+  assert.deepEqual([...first.reservedIdentities], [savedLinkDedupeKey(ARTICLE_URL)]);
+  assert.deepEqual(second.reservedUrls, []);
+  assert.deepEqual([...second.contendedIdentities], [savedLinkDedupeKey(ARTICLE_URL)]);
+
+  try {
+    await assert.rejects(async () => {
+      throw new Error("provider failed");
+    }, /provider failed/);
+  } finally {
+    await first.release();
+  }
+  await second.release();
+
+  const retry = await reserveXArticleCandidates([ARTICLE_WEB_ALIAS_URL]);
+  try {
+    assert.deepEqual(retry.reservedUrls, [ARTICLE_WEB_ALIAS_URL]);
+    assert.deepEqual([...retry.contendedIdentities], []);
+  } finally {
+    await retry.release();
+  }
+});
+
+test("saveResearchLinks dedupes X status aliases within one submission", async () => {
+  const result = await saveResearchLinks(
+    [ARTICLE_URL, ARTICLE_WEB_ALIAS_URL],
+    "desk",
+  );
+
+  assert.equal(result.added.length, 1);
+  assert.deepEqual(result.duplicates, [ARTICLE_WEB_ALIAS_URL]);
+
+  const listed = await listSavedLinks();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].url, ARTICLE_URL);
+  assert.equal(listed[0].xArticle, undefined);
+});
+
+test("saveResearchLinks dedupes X status aliases against existing provider-neutral saved links", async () => {
+  const baseline = await saveResearchLinks([ARTICLE_USER_ALIAS_URL], "desk");
+  assert.equal(baseline.added.length, 1);
+  assert.equal(baseline.added[0].xArticle, undefined);
+
+  const result = await saveResearchLinks([ARTICLE_URL], "chat");
+  assert.equal(result.added.length, 0);
+  assert.deepEqual(result.duplicates, [ARTICLE_URL]);
+
+  const listed = await listSavedLinks();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].url, ARTICLE_USER_ALIAS_URL);
+  assert.equal(listed[0].xArticle, undefined);
+});
+
+test("saveResearchLinks drops xArticle enrichment when the URL source post id does not match", async () => {
+  const snapshot = makeXArticleSnapshot({ sourcePostId: "987654321" });
+  const { added } = await saveResearchLinks(
+    [ARTICLE_URL],
+    "desk",
+    new Map([[ARTICLE_URL, articleEnrichment(snapshot)]]),
+  );
+
+  assert.equal(added.length, 1);
+  assert.equal(added[0].xArticle, undefined);
+  assert.equal(added[0].category, categorizeLink(ARTICLE_URL));
+  assert.equal(added[0].title, deriveLinkTitle(ARTICLE_URL));
+
+  const listed = await listSavedLinks();
+  assert.equal(listed[0].xArticle, undefined);
+});
+
+test("listSavedLinkSummaries and toSavedLinkSummary omit xArticle bodies without mutating the full record", async () => {
+  const snapshot = makeXArticleSnapshot();
+  const { added } = await saveResearchLinks(
+    [ARTICLE_URL],
+    "desk",
+    new Map([[ARTICLE_URL, articleEnrichment(snapshot)]]),
+  );
+
+  const full = await getSavedLinkById(added[0].id);
+  assert.ok(full?.xArticle);
+  assert.equal(full.xArticle.body, BODY_SENTINEL);
+
+  const projected = toSavedLinkSummary(full);
+  assert.ok(projected.xArticle);
+  assert.equal(projected.xArticle.author.displayName, "Open Coven");
+  assert.ok(!("body" in projected.xArticle));
+  assert.ok(!JSON.stringify(projected).includes(BODY_SENTINEL));
+
+  const listed = await listSavedLinkSummaries();
+  assert.equal(listed.length, 1);
+  assert.ok(listed[0].xArticle);
+  assert.ok(!("body" in listed[0].xArticle!));
+  assert.equal(listed[0].xArticle?.contentSha256, snapshot.contentSha256);
+  assert.ok(!JSON.stringify(listed).includes(BODY_SENTINEL));
+
+  assert.equal(full.xArticle.body, BODY_SENTINEL, "projection must not mutate the full record");
+});
+
+test("getSavedLinkById returns full Article bodies and null for unknown or invalid ids", async () => {
+  const { added } = await saveResearchLinks(
+    [ARTICLE_URL],
+    "desk",
+    new Map([[ARTICLE_URL, articleEnrichment()]]),
+  );
+
+  const full = await getSavedLinkById(added[0].id);
+  assert.ok(full?.xArticle);
+  assert.equal(full.xArticle.body, BODY_SENTINEL);
+  assert.equal(await getSavedLinkById(""), null);
+  assert.equal(await getSavedLinkById(" ".repeat(4)), null);
+  assert.equal(await getSavedLinkById("x".repeat(129)), null);
+  assert.equal(await getSavedLinkById("missing-id"), null);
+});
+
+test("valid X Article snapshots survive a disk reload", async () => {
+  const snapshot = makeXArticleSnapshot({
+    body: "Reload-safe X Article body",
+    contentSha256: sha256("Reload-safe X Article body"),
+  });
+  await saveResearchLinks(
+    [ARTICLE_URL],
+    "chat",
+    new Map([[ARTICLE_URL, articleEnrichment(snapshot, "Reload-safe title")]]),
+  );
+
+  const onDisk = await readStoreJson<{ version: number; links: Array<{ xArticle?: unknown }> }>();
+  assert.equal(onDisk.version, 1);
+  assert.deepEqual(onDisk.links[0]?.xArticle, snapshot);
+
+  const listed = await listSavedLinks();
+  assert.deepEqual(listed[0].xArticle, snapshot);
+});
+
+test("an xArticle block with a mismatched body hash is dropped while the base link remains", async () => {
+  await writeStore({
+    version: 1,
+    links: [
+      storedLink({
+        id: "broken-article",
+        title: "Broken article snapshot",
+        xArticle: {
+          ...makeXArticleSnapshot(),
+          body: "Mutated body keeps the old hash",
+        },
+      }),
+    ],
+  });
+
+  const listed = await listSavedLinks();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].id, "broken-article");
+  assert.equal(listed[0].title, "Broken article snapshot");
+  assert.equal(listed[0].category, "article");
+  assert.equal(listed[0].xArticle, undefined);
+});
+
+test("a valid xArticle block on a non-X URL is dropped while preserving the base category fallback", async () => {
+  await writeStore({
+    version: 1,
+    links: [
+      storedLink({
+        id: "non-x-article",
+        title: "Non-X article snapshot",
+        xArticle: makeXArticleSnapshot(),
+      }),
+    ],
+  });
+
+  const listed = await listSavedLinks();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].id, "non-x-article");
+  assert.equal(listed[0].title, "Non-X article snapshot");
+  assert.equal(listed[0].category, "article");
+  assert.equal(listed[0].xArticle, undefined);
+});
+
+test("malformed xArticle field groups are dropped during normalization", async () => {
+  const tooLongBody = "🧙".repeat(MAX_X_ARTICLE_BODY_CHARS + 1);
+  const cases = [
+    { name: "version", xArticle: { ...makeXArticleSnapshot(), version: 2 } },
+    { name: "provider", xArticle: { ...makeXArticleSnapshot(), provider: "elsewhere" } },
+    { name: "sourcePostId", xArticle: { ...makeXArticleSnapshot(), sourcePostId: "not-numeric" } },
+    { name: "sourcePostId overlength", xArticle: { ...makeXArticleSnapshot(), sourcePostId: "1".repeat(33) } },
+    { name: "titleSource", xArticle: { ...makeXArticleSnapshot(), titleSource: "headline" } },
+    { name: "author", xArticle: { ...makeXArticleSnapshot(), author: null } },
+    {
+      name: "username",
+      xArticle: { ...makeXArticleSnapshot(), author: { id: "42", username: "not-valid!" } },
+    },
+    {
+      name: "author id overlength",
+      xArticle: { ...makeXArticleSnapshot(), author: { id: "x".repeat(129), username: "opencoven" } },
+    },
+    {
+      name: "displayName overlength",
+      xArticle: {
+        ...makeXArticleSnapshot(),
+        author: { id: "42", username: "opencoven", displayName: "x".repeat(201) },
+      },
+    },
+    { name: "body", xArticle: { ...makeXArticleSnapshot(), body: "   " } },
+    {
+      name: "body overlength",
+      xArticle: {
+        ...makeXArticleSnapshot(),
+        body: tooLongBody,
+        contentSha256: sha256(tooLongBody),
+      },
+    },
+    { name: "excerpt", xArticle: { ...makeXArticleSnapshot(), excerpt: "🧙".repeat(MAX_X_ARTICLE_EXCERPT_CHARS + 1) } },
+    { name: "cover URL", xArticle: { ...makeXArticleSnapshot(), coverImageUrl: "ftp://example.com/private.png" } },
+    {
+      name: "cover URL overlength",
+      xArticle: {
+        ...makeXArticleSnapshot(),
+        coverImageUrl: `https://example.com/${"a".repeat(2100)}`,
+      },
+    },
+    { name: "timestamps", xArticle: { ...makeXArticleSnapshot(), fetchedAt: "2026-99-99T99:99:99Z" } },
+    { name: "hash", xArticle: { ...makeXArticleSnapshot(), contentSha256: "A".repeat(64) } },
+  ] as const;
+
+  for (const entry of cases) {
+    await writeStore({
+      version: 1,
+      links: [storedLink({ id: entry.name, xArticle: entry.xArticle })],
+    });
+
+    const listed = await listSavedLinks();
+    assert.equal(listed.length, 1, entry.name);
+    assert.equal(listed[0].id, entry.name);
+    assert.equal(listed[0].xArticle, undefined, entry.name);
+    assert.equal(listed[0].category, "article", entry.name);
+  }
+});
+
+test("a malformed xArticle block cannot strand an X status URL in the article category", async () => {
+  await writeStore({
+    version: 1,
+    links: [
+      storedLink({
+        id: "broken-x-status",
+        url: ARTICLE_URL,
+        category: "article",
+        title: "Broken X article",
+        xArticle: { ...makeXArticleSnapshot(), provider: "other" },
+      }),
+    ],
+  });
+
+  const listed = await listSavedLinks();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].xArticle, undefined);
+  assert.equal(listed[0].category, categorizeLink(ARTICLE_URL));
+  assert.equal(listed[0].category, "social");
+});
+
+test("legacy links without xArticle still normalize unchanged", async () => {
+  await writeStore({
+    version: 1,
+    links: [
+      storedLink({
+        id: "legacy-link",
+        title: "Legacy article link",
+      }),
+    ],
+  });
+
+  const listed = await listSavedLinks();
+  assert.deepEqual(listed, [{
+    id: "legacy-link",
+    url: LEGACY_ARTICLE_URL,
+    category: "article",
+    title: "Legacy article link",
+    addedAt: "2026-08-18T00:00:00.000Z",
+    source: "desk",
+  }]);
+});
+
 // ── corruption safety (review finding on 972bf1cd) ───────────────────────────
 
 test("a corrupt store file is preserved aside, never silently wiped by a save", async () => {
-  const target = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
+  const target = STORE_PATH();
   await saveResearchLinks(["https://example.com/pre-corruption"], "desk");
   // Hand-edit the file into invalid JSON (trailing comma).
   const valid = await readFile(target, "utf8");
@@ -99,8 +517,9 @@ test("a corrupt store file is preserved aside, never silently wiped by a save", 
 });
 
 test("same-millisecond corruption events keep distinct aside captures", async () => {
-  const target = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
+  const target = STORE_PATH();
   const dir = path.dirname(target);
+  await saveResearchLinks(["https://example.com/pre-corruption"], "desk");
   const valid = await readFile(target, "utf8");
   const before = new Set((await readdir(dir)).filter((name) => name.includes(".corrupt-")));
 
@@ -149,42 +568,34 @@ test("unreadable stores surface errors instead of reading as empty", async () =>
 // ── paper metadata (cave-cbz28) ──────────────────────────────────────────────
 
 test("a well-formed paper block survives, a malformed one is dropped without discarding the link", async () => {
-  const target = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
-  await writeFile(
-    target,
-    JSON.stringify({
-      version: 1,
-      links: [
-        {
-          id: "paper-a",
-          url: "https://huggingface.co/papers/2401.12345",
-          category: "paper",
-          title: "A well-formed paper",
-          addedAt: "2026-01-01T00:00:00.000Z",
-          source: "desk",
-          paper: {
-            arxivId: "2401.12345",
-            authors: ["A. Author"],
-            abstract: "An abstract.",
-            publishedAt: "2024-01-22T00:00:00.000Z",
-          },
+  await writeStore({
+    version: 1,
+    links: [
+      storedLink({
+        id: "paper-a",
+        url: "https://huggingface.co/papers/2401.12345",
+        category: "paper",
+        title: "A well-formed paper",
+        paper: {
+          arxivId: "2401.12345",
+          authors: ["A. Author"],
+          abstract: "An abstract.",
+          publishedAt: "2024-01-22T00:00:00.000Z",
         },
-        {
-          id: "paper-b",
-          url: "https://huggingface.co/papers/2402.54321",
-          category: "paper",
-          title: "A malformed paper",
-          addedAt: "2026-01-02T00:00:00.000Z",
-          source: "desk",
-          paper: {
-            arxivId: "../etc/passwd",
-            authors: "not-an-array",
-          },
+      }),
+      storedLink({
+        id: "paper-b",
+        url: "https://huggingface.co/papers/2402.54321",
+        category: "paper",
+        title: "A malformed paper",
+        addedAt: "2026-08-18T00:00:01.000Z",
+        paper: {
+          arxivId: "../etc/passwd",
+          authors: "not-an-array",
         },
-      ],
-    }),
-    "utf8",
-  );
+      }),
+    ],
+  });
 
   const listed = await listSavedLinks();
   const linkA = listed.find((link) => link.id === "paper-a");
@@ -207,7 +618,7 @@ test("enrichment metadata sets the stored title and paper block", async () => {
     publishedAt: "2024-01-22T00:00:00.000Z",
   };
   const url = "https://huggingface.co/papers/2401.99999";
-  const { added } = await saveResearchLinks([url], "desk", new Map([[url, meta]]));
+  const { added } = await saveResearchLinks([url], "desk", new Map([[url, { paper: meta }]]));
   assert.equal(added.length, 1);
   assert.equal(added[0].title, meta.title);
   assert.deepEqual(added[0].paper, {
@@ -229,28 +640,28 @@ test("a URL that merely embeds a paper URL never gets a paper block", async () =
     abstract: "A foreign paper's abstract.",
     publishedAt: "2024-01-22T00:00:00.000Z",
   };
-  const { added } = await saveResearchLinks([wrapper], "chat", new Map([[wrapper, meta]]));
+  const { added } = await saveResearchLinks([wrapper], "chat", new Map([[wrapper, { paper: meta }]]));
   assert.equal(added.length, 1);
   assert.equal(added[0].url, wrapper);
   assert.equal(added[0].paper, undefined);
 });
 
-test("a null enrichment entry produces exactly the record saved with no enrichment map at all", async () => {
+test("an empty enrichment entry produces exactly the record saved with no enrichment map at all", async () => {
   const url = "https://huggingface.co/papers/2402.11111";
 
   const baseline = await saveResearchLinks([url], "desk");
   assert.equal(baseline.added.length, 1);
   assert.equal(await removeSavedLink(baseline.added[0].id), true);
 
-  const withNullEnrichment = await saveResearchLinks([url], "desk", new Map([[url, null]]));
-  assert.equal(withNullEnrichment.added.length, 1);
+  const withEmptyEnrichment = await saveResearchLinks([url], "desk", new Map([[url, {}]]));
+  assert.equal(withEmptyEnrichment.added.length, 1);
 
   // Same URL, source, title, category, and absence of a paper block — the only
   // fields the map is expected to differ on (id, addedAt) are left uncompared.
-  assert.equal(withNullEnrichment.added[0].url, baseline.added[0].url);
-  assert.equal(withNullEnrichment.added[0].title, baseline.added[0].title);
-  assert.equal(withNullEnrichment.added[0].category, baseline.added[0].category);
-  assert.equal(withNullEnrichment.added[0].source, baseline.added[0].source);
-  assert.equal(withNullEnrichment.added[0].paper, baseline.added[0].paper);
-  assert.equal(withNullEnrichment.added[0].paper, undefined);
+  assert.equal(withEmptyEnrichment.added[0].url, baseline.added[0].url);
+  assert.equal(withEmptyEnrichment.added[0].title, baseline.added[0].title);
+  assert.equal(withEmptyEnrichment.added[0].category, baseline.added[0].category);
+  assert.equal(withEmptyEnrichment.added[0].source, baseline.added[0].source);
+  assert.equal(withEmptyEnrichment.added[0].paper, baseline.added[0].paper);
+  assert.equal(withEmptyEnrichment.added[0].paper, undefined);
 });

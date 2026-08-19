@@ -184,6 +184,9 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     readSessionTranscript: async () => "",
     readMissionFile: async () => null,
     readSources: async () => [],
+    materializeSavedLink: async () => {
+      throw new Error("saved X Article not found");
+    },
     publishKnowledge: async (entry) => entry,
     killSession: async () => {},
     createAutomation: async (input) => ({
@@ -1330,6 +1333,7 @@ test("an active private owner blocks lifecycle, artifact, and schedule mutations
 
   for (const action of [
     { action: "attach-source" as const, source: { id: "manual", title: "Manual" } },
+    { action: "attach-saved-link" as const, savedLinkId: "saved-link-1", familiarId: "sage" },
     { action: "update-source" as const, sourceId: "manual", patch: { note: "later" } },
     { action: "finish" as const },
     { action: "archive" as const },
@@ -1374,6 +1378,219 @@ test("manual sources normalize, dedupe, and remain revisable", async () => {
   assert.equal(result.sources.length, 1);
   assert.equal(result.sources[0].status, "conflicting");
   assert.equal(result.sources[0].note, "Different target cohort");
+});
+
+test("attach-saved-link materializes a matching familiar's Article and remains idempotent", async () => {
+  let stored = checkpointMission();
+  const materializedIds: string[] = [];
+  let rollbacks = 0;
+  const source = {
+    id: "saved-0123456789abcdef01234567",
+    title: "Durable research",
+    url: "https://x.com/opencoven/status/123",
+    localPath: "source-files/x-article-0123456789abcdef01234567.md",
+    publisher: "OpenCoven",
+    publishedAt: "2026-08-17T20:00:00.000Z",
+    sourceType: "x-article",
+    status: "candidate" as const,
+  };
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    materializeSavedLink: async (_mission, savedLinkId) => {
+      materializedIds.push(savedLinkId);
+      return { source, rollback: async () => { rollbacks += 1; } };
+    },
+  }));
+
+  const first = await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: " saved-link-1 ",
+    familiarId: "sage",
+  });
+  const repeated = await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: "saved-link-1",
+    familiarId: "sage",
+  });
+
+  assert.deepEqual(materializedIds, ["saved-link-1", "saved-link-1"]);
+  assert.equal(first.sources.length, 1);
+  assert.equal(repeated.sources.length, 1);
+  assert.deepEqual(repeated.sources[0], source);
+  assert.equal(rollbacks, 0);
+});
+
+test("reattaching a saved Article preserves reviewed fields and refreshes its materialized reference", async () => {
+  let stored = checkpointMission();
+  let materialization = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    materializeSavedLink: async () => {
+      materialization += 1;
+      return {
+        source: materialization === 1
+          ? {
+            id: "saved-0123456789abcdef01234567",
+            title: "Fetched article title",
+            url: "https://x.com/opencoven/status/123",
+            localPath: "source-files/x-article-original.md",
+            publisher: "Fetched publisher",
+            publishedAt: "2026-08-17T20:00:00.000Z",
+            sourceType: "x-article",
+            status: "candidate" as const,
+          }
+          : {
+            id: "saved-0123456789abcdef01234567",
+            title: "Refetched article title",
+            url: "https://twitter.com/opencoven/status/123",
+            localPath: "source-files/x-article-current.md",
+            publisher: "Refetched publisher",
+            publishedAt: "2026-08-18T20:00:00.000Z",
+            sourceType: "x-article",
+            status: "candidate" as const,
+          },
+        rollback: async () => {},
+      };
+    },
+  }));
+
+  await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: "saved-link-1",
+    familiarId: "sage",
+  });
+  await runner.act(stored.id, {
+    action: "update-source",
+    sourceId: "saved-0123456789abcdef01234567",
+    patch: {
+      title: "Reviewer title",
+      publisher: "Reviewer publisher",
+      publishedAt: "2020-01-01T00:00:00.000Z",
+      sourceType: "primary source",
+      claim: "Supports the primary claim",
+      note: "Reviewed against the source",
+      confidence: 0.9,
+      status: "used",
+    },
+  });
+  const repeated = await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: "saved-link-1",
+    familiarId: "sage",
+  });
+
+  assert.equal(repeated.sources.length, 1);
+  assert.deepEqual(repeated.sources[0], {
+    id: "saved-0123456789abcdef01234567",
+    title: "Reviewer title",
+    url: "https://twitter.com/opencoven/status/123",
+    localPath: "source-files/x-article-current.md",
+    publisher: "Reviewer publisher",
+    publishedAt: "2020-01-01T00:00:00.000Z",
+    sourceType: "primary source",
+    claim: "Supports the primary claim",
+    note: "Reviewed against the source",
+    confidence: 0.9,
+    status: "used",
+  });
+});
+
+test("attach-saved-link rejects unauthorized inputs before reconciliation or any mutation", async () => {
+  const stored = checkpointMission();
+  let reconciliations = 0;
+  let sessionOwnerLoads = 0;
+  let materializations = 0;
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    loadSessionOwner: async () => {
+      sessionOwnerLoads += 1;
+      return null;
+    },
+    loadFlowRun: async () => {
+      reconciliations += 1;
+      return null;
+    },
+    saveMission: async () => { saves += 1; },
+    materializeSavedLink: async () => {
+      materializations += 1;
+      throw new Error("should not materialize");
+    },
+  }));
+
+  await assert.rejects(
+    () => runner.act(stored.id, {
+      action: "attach-saved-link",
+      savedLinkId: "saved-link-1",
+      familiarId: "other",
+    }),
+    { message: "research mission not found" },
+  );
+  for (const savedLinkId of ["   ", "x".repeat(129)]) {
+    await assert.rejects(
+      () => runner.act(stored.id, {
+        action: "attach-saved-link",
+        savedLinkId,
+        familiarId: "sage",
+      }),
+      { message: "saved link id is invalid" },
+    );
+  }
+  assert.equal(reconciliations, 0);
+  assert.equal(sessionOwnerLoads, 0);
+  assert.equal(materializations, 0);
+  assert.equal(saves, 0);
+});
+
+test("attach-saved-link compensates its materialized file if the mission save fails", async () => {
+  const stored = checkpointMission();
+  let rollbacks = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async () => { throw new Error("mission save failed"); },
+    materializeSavedLink: async () => ({
+      source: {
+        id: "saved-0123456789abcdef01234567",
+        title: "Durable research",
+        localPath: "source-files/x-article-0123456789abcdef01234567.md",
+        sourceType: "x-article",
+        status: "candidate",
+      },
+      rollback: async () => { rollbacks += 1; },
+    }),
+  }));
+
+  await assert.rejects(
+    () => runner.act(stored.id, {
+      action: "attach-saved-link",
+      savedLinkId: "saved-link-1",
+      familiarId: "sage",
+    }),
+    { message: "mission save failed" },
+  );
+  assert.equal(rollbacks, 1);
+});
+
+test("attach-saved-link does not save when materialization fails", async () => {
+  const stored = checkpointMission();
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async () => { saves += 1; },
+    materializeSavedLink: async () => { throw new Error("saved X Article not found"); },
+  }));
+
+  await assert.rejects(
+    () => runner.act(stored.id, {
+      action: "attach-saved-link",
+      savedLinkId: "saved-link-1",
+      familiarId: "sage",
+    }),
+    { message: "saved X Article not found" },
+  );
+  assert.equal(saves, 0);
 });
 
 test("artifact rejection preserves the file reference and refine starts once", async () => {
