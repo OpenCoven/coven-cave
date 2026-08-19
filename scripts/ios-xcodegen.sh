@@ -39,7 +39,7 @@ command -v node >/dev/null 2>&1 || {
   exit 1
 }
 
-echo "[ios] building web bundles"
+echo "[ios] building markdown resources"
 # Upgrade safety: older checkouts generated this ignored resource. XcodeGen
 # scans the source tree, so leaving it behind would silently re-bundle the
 # retired native terminal even though its Swift surface no longer exists.

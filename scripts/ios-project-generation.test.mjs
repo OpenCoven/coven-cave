@@ -51,7 +51,6 @@ assert.match(
 // wrapperCode, not wrapper: the header comment names all three files, so a
 // full-text search passes even when the check loop does not mention them. This
 // assertion has the same shape as the ordering check above.
-// above. Search executable lines only.
 for (const resource of ["markdown.html", "markdown.css"]) {
   assert.ok(
     wrapperCode.includes(resource),
