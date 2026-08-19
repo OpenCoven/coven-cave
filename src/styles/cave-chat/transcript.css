@@ -455,6 +455,12 @@
   gap: var(--space-2);
 }
 
+.cave-followup-card__entry {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
 .cave-followup-card {
   display: grid;
   gap: var(--space-1);
@@ -484,6 +490,46 @@
 
 .cave-followup-card__outcome {
   color: var(--text-secondary);
+}
+
+.cave-followup-card__details {
+  border-top: 1px solid var(--border-hairline);
+  padding-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+}
+
+.cave-followup-card__details summary {
+  width: fit-content;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.cave-followup-card__details p {
+  margin: var(--space-1) 0 0;
+}
+
+.cave-followup-card__evidence {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.cave-followup-card__evidence > span {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.cave-followup-card__evidence > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
 }
 
 @media (max-width: 40rem) {

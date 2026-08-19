@@ -208,7 +208,7 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import type { NextPath } from "@/lib/next-paths";
+import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
@@ -3697,6 +3697,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         : null,
       selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
       recentThreadTitle: session?.title ?? null,
+      modelScope: `${modelState?.source ?? "runtime-default"}:${composerModelValue}`,
+      recentMessages: turns
+        .filter((turn) => (turn.role === "user" || turn.role === "assistant") && !turn.pending && !turn.error)
+        .slice(-4)
+        .map((turn) => ({ id: turn.id, role: turn.role, text: turn.text })),
+      recentToolOutcomes: turns
+        .flatMap((turn) => turn.tools ?? [])
+        .filter((tool) => tool.status === "ok" || tool.status === "error")
+        .slice(-3)
+        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status, output: tool.output ?? "" })),
+      linkedTask: linkedContext?.task ?? null,
     },
     disabled: busy,
   });
@@ -3871,9 +3882,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractChatRenderedText(last.text).nextPaths;
+    const suggestions = contextualizeNextPaths(extractChatRenderedText(last.text).nextPaths, {
+      messageId: last.id,
+      taskId: linkedContext?.task?.id ?? null,
+      toolOutcomeIds: (last.tools ?? [])
+        .filter((tool) => tool.status === "ok" || tool.status === "error")
+        .map((tool) => tool.id),
+    });
     return suggestions.length ? { suggestions } : empty;
-  }, [activePath]);
+  }, [activePath, linkedContext?.task?.id]);
 
   const handleFollowUp = useCallback((path: NextPath) => {
     if (path.kind === "reply") {
@@ -7449,6 +7466,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onDismiss={promptEnhance.dismiss}
                 onRevert={promptEnhance.revert}
                 onCancel={promptEnhance.cancel}
+                onFocusComposer={() => inputRef.current?.focus()}
               />
               {queuedMessages.length > 0 ? (
                 <div className="cave-composer-queue" role="group" aria-label="Queued messages">

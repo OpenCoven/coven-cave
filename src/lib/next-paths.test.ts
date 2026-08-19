@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   buildNextPathsDirective,
+  contextualizeNextPaths,
   extractNextPaths,
   DEFAULT_NEXT_PATHS_COUNT,
   type NextPath,
@@ -15,6 +16,8 @@ assert.match(buildNextPathsDirective(), /only in this block — do not also enum
 assert.match(buildNextPathsDirective(), /\[reply\]/);
 assert.match(buildNextPathsDirective(), /\[task\]/);
 assert.match(buildNextPathsDirective(), /\[action:open-tasks\]/);
+assert.match(buildNextPathsDirective(), /rationale="…"/, "the directive requests bounded why-this metadata");
+assert.match(buildNextPathsDirective(), /evidence="message:message-id"/, "the directive requests typed evidence references");
 assert.doesNotMatch(buildNextPathsDirective(), /\[action:open-changes\]/);
 assert.match(buildNextPathsDirective(3), /<coven:next-paths>/);
 assert.match(buildNextPathsDirective(2), /up to 2 short/);
@@ -63,6 +66,33 @@ for (const malformed of ["[", "[action"]) {
     { kind: "reply", label: "Run the tests", prompt: "Run the tests" },
     { kind: "task", label: "Open a", prompt: "Open a" },
   ] satisfies NextPath[]);
+}
+// Tagged paths carry only bounded rationale + allowlisted evidence metadata.
+{
+  const r = extractNextPaths(
+    'Answer.\n<coven:next-paths>\n- [reply rationale="Keeps the implementation moving" evidence="message:turn-1|task:task-1"] Run the focused tests\n</coven:next-paths>',
+  );
+  assert.deepEqual(r.suggestions, [
+    {
+      kind: "reply",
+      label: "Run the focused tests",
+      prompt: "Run the focused tests",
+      metadata: {
+        rationale: "Keeps the implementation moving",
+        evidenceRefs: [
+          { id: "turn-1", kind: "message", label: "Recent chat message" },
+          { id: "task-1", kind: "task", label: "Linked task" },
+        ],
+      },
+    },
+  ] satisfies NextPath[]);
+}
+// Malformed metadata is rejected rather than becoming a misleading reply.
+{
+  const r = extractNextPaths(
+    'Answer.\n<coven:next-paths>\n- [reply rationale="too long" evidence="unknown:item"] Run the focused tests\n</coven:next-paths>',
+  );
+  assert.deepEqual(r.suggestions, [], "unknown evidence kinds do not survive extraction");
 }
 // legacy and malformed intent prefixes stay safe editable replies
 {
@@ -138,6 +168,66 @@ for (const malformed of ["[", "[action"]) {
   assert.deepEqual(r.suggestions, [
     { kind: "reply", label: "Continue the work", prompt: "Continue the work" },
   ] satisfies NextPath[]);
+}
+
+// Chat can hydrate a parsed path with its bounded current message, linked task,
+// and settled tool outcome without changing the action kind or prompt.
+{
+  const [path] = contextualizeNextPaths(
+    [{ kind: "reply", label: "Run the focused tests", prompt: "Run the focused tests" }],
+    {
+      messageId: "turn-1",
+      taskId: "task-1",
+      toolOutcomeIds: ["tool-1", "tool-2"],
+    },
+  );
+  assert.deepEqual(path, {
+    kind: "reply",
+    label: "Run the focused tests",
+    prompt: "Run the focused tests",
+    metadata: {
+      rationale: "Suggested from the latest assistant response.",
+      evidenceRefs: [
+        { id: "turn-1", kind: "message", label: "Latest assistant response" },
+        { id: "task-1", kind: "task", label: "Linked task" },
+        { id: "tool-1", kind: "artifact", label: "Recent tool outcome" },
+      ],
+    },
+  } satisfies NextPath);
+}
+
+// Model-authored evidence is only a claim. Chat keeps the supplied references
+// first and drops unresolvable IDs, including when the valid IDs begin with a
+// digit as normal UUIDs do.
+{
+  const messageId = "0f4d5c55-6f15-4e7c-a1f4-3462fb56e5c4";
+  const toolId = "1e3c2f11-17de-4e01-aab2-35b9f4e2b555";
+  const [path] = contextualizeNextPaths(
+    [
+      {
+        kind: "reply",
+        label: "Run the focused tests",
+        prompt: "Run the focused tests",
+        metadata: {
+          rationale: "Model-supplied context",
+          evidenceRefs: [
+            { id: "message-not-in-context", kind: "message", label: "Recent chat message" },
+            { id: "artifact-not-in-context", kind: "artifact", label: "Recent tool outcome" },
+          ],
+        },
+      },
+    ],
+    { messageId, taskId: "task-1", toolOutcomeIds: [toolId] },
+  );
+  assert.deepEqual(
+    path?.metadata?.evidenceRefs,
+    [
+      { id: messageId, kind: "message", label: "Latest assistant response" },
+      { id: "task-1", kind: "task", label: "Linked task" },
+      { id: toolId, kind: "artifact", label: "Recent tool outcome" },
+    ],
+    "only bounded supplied refs render, in trusted context order",
+  );
 }
 
 console.log("next-paths.test.ts: ok");

@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { Card, CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-types";
+import type {
+  Card,
+  CardLifecycle,
+  CardPriority,
+  CardStatus,
+} from "@/lib/cave-board-types";
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
@@ -51,6 +56,10 @@ import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 import { BoardInspectorDebug } from "@/components/board-inspector-debug";
 import { useProjectFamiliars } from "@/lib/use-project-familiars";
 import { useProjects } from "@/lib/use-projects";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { caveAgenticRecommendations } from "@/lib/feature-flags";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -1159,6 +1168,541 @@ function StepsSection({
   );
 }
 
+type BoardAgenticEnhanceProps = {
+  card: Card;
+  onCardReplaced: (card: Card) => void;
+};
+
+type BoardAgenticAction = "apply" | "dismiss" | "generate" | "revert";
+type BoardAgenticProposal = NonNullable<Card["agenticEnhance"]>["proposals"][number];
+
+function proposalStateLabel(state: NonNullable<Card["agenticEnhance"]>["proposals"][number]["state"]): string {
+  switch (state) {
+    case "auto-applied":
+      return "Applied normalization";
+    case "applied":
+      return "Applied";
+    case "reverted":
+      return "Reverted";
+    case "dismissed":
+      return "Dismissed";
+    case "blocked":
+      return "Blocked";
+    default:
+      return "Proposal";
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasField(value: Record<string, unknown>, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, field);
+}
+
+function displayValue(value: unknown): string {
+  if (value === undefined) return "—";
+  if (value === null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value) ?? "[unrenderable value]";
+  } catch {
+    return "[unrenderable value]";
+  }
+}
+
+function proposalDisplayPatch(proposal: BoardAgenticProposal): Record<string, unknown> | null {
+  if (isRecord(proposal.patch)) return proposal.patch;
+  const payload = proposal.recommendation.payload;
+  return isRecord(payload) && isRecord(payload.patch) ? payload.patch : null;
+}
+
+function dependencyLabel(dependency: unknown): string {
+  if (!isRecord(dependency)) return `Invalid dependency: ${displayValue(dependency)}`;
+  return [
+    `id: ${displayValue(dependency.id)}`,
+    `kind: ${displayValue(dependency.kind)}`,
+    `label: ${displayValue(dependency.label)}`,
+    `state: ${displayValue(dependency.state)}`,
+    `task: ${displayValue(dependency.taskId)}`,
+    `reference: ${displayValue(dependency.ref)}`,
+    `URL: ${displayValue(dependency.url)}`,
+    `origin: ${displayValue(dependency.origin)}`,
+  ].join(" · ");
+}
+
+function nextStepLabel(step: unknown): string {
+  if (step === null || step === undefined) return "No next step";
+  if (!isRecord(step)) return `Invalid next step: ${displayValue(step)}`;
+  const inputs = step.inputs === undefined
+    ? "—"
+    : Array.isArray(step.inputs)
+      ? step.inputs.map(displayValue).join(", ") || "—"
+      : `Invalid inputs: ${displayValue(step.inputs)}`;
+  return [
+    `summary: ${displayValue(step.summary)}`,
+    `actor: ${displayValue(step.actorFamiliarId)}`,
+    `capability: ${displayValue(step.capability)}`,
+    `target: ${displayValue(step.target)}`,
+    `inputs: ${inputs}`,
+    `approval: ${step.requiresApproval === true ? "required" : step.requiresApproval === false ? "not required" : `Invalid approval: ${displayValue(step.requiresApproval)}`}`,
+    `origin: ${displayValue(step.origin)}`,
+  ].join(" · ");
+}
+
+function githubLinkLabel(link: unknown): string {
+  if (!isRecord(link)) return `Invalid GitHub reference: ${displayValue(link)}`;
+  const labels = Array.isArray(link.labels)
+    ? link.labels.map(displayValue).join(", ") || "—"
+    : `Invalid labels: ${displayValue(link.labels)}`;
+  return [
+    `id: ${displayValue(link.id)}`,
+    `kind: ${displayValue(link.kind)}`,
+    `repository: ${displayValue(link.repo)}`,
+    `number: ${displayValue(link.number)}`,
+    `title: ${displayValue(link.title)}`,
+    `URL: ${displayValue(link.url)}`,
+    `state: ${displayValue(link.state)}`,
+    `labels: ${labels}`,
+  ].join(" · ");
+}
+
+function displayList(value: unknown, item: (entry: unknown) => string, empty: string): string[] {
+  if (!Array.isArray(value)) return [`Invalid list: ${displayValue(value)}`];
+  return value.length > 0 ? value.map(item) : [empty];
+}
+
+function primaryLabel(id: unknown, dependencies: unknown): string {
+  if (id === null || id === undefined) return "No primary blocker";
+  if (typeof id !== "string") return `Invalid primary blocker: ${displayValue(id)}`;
+  const dependency = Array.isArray(dependencies)
+    ? dependencies.find((entry) => isRecord(entry) && entry.id === id)
+    : undefined;
+  return dependency ? dependencyLabel(dependency) : `id: ${id} · reference: —`;
+}
+
+function ProposalDiffRow({
+  label,
+  current,
+  proposed,
+}: {
+  label: string;
+  current: readonly string[];
+  proposed: readonly string[];
+}) {
+  const removed = current.filter((value) => !proposed.includes(value));
+  const added = proposed.filter((value) => !current.includes(value));
+  return (
+    <div className="board-agentic-enhance__diff-row">
+      <dt>{label}</dt>
+      <dd>
+        <div className="board-agentic-enhance__diff-value">
+          <span>Current</span>
+          <ul>{current.map((value) => <li key={value}>{value}</li>)}</ul>
+        </div>
+        <div className="board-agentic-enhance__diff-value">
+          <span>Proposed</span>
+          <ul>{proposed.map((value) => <li key={value}>{value}</li>)}</ul>
+        </div>
+        {removed.length > 0 ? (
+          <p className="board-agentic-enhance__diff-delta">Removed: {removed.join(" · ")}</p>
+        ) : null}
+        {added.length > 0 ? (
+          <p className="board-agentic-enhance__diff-delta">Added: {added.join(" · ")}</p>
+        ) : null}
+      </dd>
+    </div>
+  );
+}
+
+function proposalPatchRows(card: Card, patch: Record<string, unknown> | null) {
+  if (!patch) return null;
+  const currentDependencies = card.dependencies ?? [];
+  const proposedDependencies = hasField(patch, "dependencies")
+    ? patch.dependencies
+    : currentDependencies;
+  return (
+    <dl className="board-agentic-enhance__patch board-agentic-enhance__diff">
+      {hasField(patch, "title") ? (
+        <ProposalDiffRow label="Task title" current={[card.title]} proposed={[displayValue(patch.title)]} />
+      ) : null}
+      {hasField(patch, "notes") ? (
+        <ProposalDiffRow
+          label="Task prose"
+          current={[card.notes || "No task notes"]}
+          proposed={[displayValue(patch.notes)]}
+        />
+      ) : null}
+      {hasField(patch, "dependencies") ? (
+        <ProposalDiffRow
+          label="Dependencies"
+          current={displayList(currentDependencies, dependencyLabel, "No dependencies")}
+          proposed={displayList(patch.dependencies, dependencyLabel, "No dependencies")}
+        />
+      ) : null}
+      {hasField(patch, "primaryBlockerId") ? (
+        <ProposalDiffRow
+          label="Primary blocker"
+          current={[primaryLabel(card.primaryBlockerId, currentDependencies)]}
+          proposed={[primaryLabel(patch.primaryBlockerId, proposedDependencies)]}
+        />
+      ) : null}
+      {hasField(patch, "primaryBlockerPinned") ? (
+        <ProposalDiffRow
+          label="Primary blocker pin"
+          current={[card.primaryBlockerPinned ? "Pinned" : "Not pinned"]}
+          proposed={[patch.primaryBlockerPinned === true ? "Pinned" : patch.primaryBlockerPinned === false ? "Not pinned" : `Invalid pin: ${displayValue(patch.primaryBlockerPinned)}`]}
+        />
+      ) : null}
+      {hasField(patch, "nextStep") ? (
+        <ProposalDiffRow
+          label="Next step"
+          current={[nextStepLabel(card.nextStep)]}
+          proposed={[nextStepLabel(patch.nextStep)]}
+        />
+      ) : null}
+      {hasField(patch, "links") ? (
+        <ProposalDiffRow
+          label="References"
+          current={displayList(card.links, displayValue, "No references")}
+          proposed={displayList(patch.links, displayValue, "No references")}
+        />
+      ) : null}
+      {hasField(patch, "github") ? (
+        <ProposalDiffRow
+          label="GitHub references"
+          current={displayList(card.github, githubLinkLabel, "No GitHub references")}
+          proposed={displayList(patch.github, githubLinkLabel, "No GitHub references")}
+        />
+      ) : null}
+    </dl>
+  );
+}
+
+function BoardAgenticEnhanceSection({ card, onCardReplaced }: BoardAgenticEnhanceProps) {
+  const enabled = caveAgenticRecommendations();
+  const { announce } = useAnnouncer();
+  const [open, setOpen] = useState(false);
+  const [activeMutation, setActiveMutation] = useState<{
+    action: BoardAgenticAction;
+    proposalId?: string;
+  } | null>(null);
+  const [proposalErrors, setProposalErrors] = useState<Record<string, string>>({});
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [staleProposalIds, setStaleProposalIds] = useState<ReadonlySet<string>>(new Set());
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const previousOpenRef = useRef(open);
+  const mutationSequenceRef = useRef(0);
+  const currentCardIdRef = useRef(card.id);
+  currentCardIdRef.current = card.id;
+  const proposals = card.agenticEnhance?.proposals ?? [];
+  const mutationBusy = activeMutation !== null;
+
+  useEffect(() => {
+    const wasOpen = previousOpenRef.current;
+    previousOpenRef.current = open;
+    if (open && !wasOpen) {
+      const frame = requestAnimationFrame(() => panelRef.current?.focus());
+      return () => cancelAnimationFrame(frame);
+    }
+    if (!open && wasOpen) triggerRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    setProposalErrors({});
+    setGenerationError(null);
+    setStaleProposalIds(new Set());
+  }, [card.id, card.updatedAt]);
+
+  if (!enabled) return null;
+
+  const mutate = async (
+    action: BoardAgenticAction,
+    proposal?: BoardAgenticProposal,
+  ) => {
+    if (mutationBusy || (action !== "generate" && !proposal)) return;
+    const sequence = mutationSequenceRef.current + 1;
+    mutationSequenceRef.current = sequence;
+    const requestCardId = card.id;
+    setActiveMutation({ action, proposalId: proposal?.id });
+    if (proposal) {
+      setProposalErrors((current) => {
+        const next = { ...current };
+        delete next[proposal.id];
+        return next;
+      });
+    } else {
+      setGenerationError(null);
+    }
+    try {
+      const response = await fetch(`/api/board/${card.id}/enhance`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-coven-cave-intent": "board-agentic-enhance",
+        },
+        body: JSON.stringify({
+          ...(action === "generate"
+            ? {
+              intent: "generate",
+              familiarId: card.familiarId ?? undefined,
+              model: card.modelOverride ?? undefined,
+            }
+            : {
+              intent: "board-agentic-enhance",
+              action,
+              proposalId: proposal?.id,
+              contextFingerprint: proposal?.context.fingerprint,
+            }),
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        card?: Card;
+        error?: string;
+      } | null;
+      if (
+        sequence !== mutationSequenceRef.current
+        || requestCardId !== currentCardIdRef.current
+      ) {
+        return;
+      }
+      if (!response.ok || !body?.ok || !body.card) {
+        const message = action === "generate"
+          ? body?.error === "stale_context"
+            ? "The task changed before recommendations could be generated. Try Enhance again."
+            : "Recommendations could not be generated. Try Enhance again."
+          : body?.error === "stale_context"
+            ? "This proposal is out of date. Refresh the card before applying it."
+            : "This proposal could not be updated. Try again.";
+        if (proposal) {
+          setProposalErrors((current) => ({ ...current, [proposal.id]: message }));
+          if (body?.error === "stale_context") {
+            setStaleProposalIds((current) => new Set([...current, proposal.id]));
+          }
+        } else {
+          setGenerationError(message);
+        }
+        announce(message);
+        return;
+      }
+      onCardReplaced(body.card as Card);
+      if (action === "generate") setOpen(true);
+      const label = action === "generate"
+        ? body.card.agenticEnhance?.proposals.length
+          ? "Recommendations are ready to review."
+          : "No grounded recommendations are available yet."
+        : action === "apply"
+        ? "Applied proposal."
+        : action === "dismiss"
+          ? "Dismissed proposal."
+          : "Reverted normalization.";
+      announce(label);
+    } catch {
+      if (sequence !== mutationSequenceRef.current || requestCardId !== currentCardIdRef.current) return;
+      const message = action === "generate"
+        ? "Recommendations could not be generated. Try Enhance again."
+        : "This proposal could not be updated. Try again.";
+      if (proposal) {
+        setProposalErrors((current) => ({ ...current, [proposal.id]: message }));
+      } else {
+        setGenerationError(message);
+      }
+      announce(message);
+    } finally {
+      if (sequence === mutationSequenceRef.current) setActiveMutation(null);
+    }
+  };
+
+  return (
+    <section className="board-agentic-enhance" aria-labelledby="board-agentic-enhance-heading">
+      <header className="board-agentic-enhance__header">
+        <div>
+          <p className="board-agentic-enhance__eyebrow">Governed Enhance</p>
+          <h3 id="board-agentic-enhance-heading">Recommendations</h3>
+          <p>Review task prose and orchestration changes before they affect this task.</p>
+        </div>
+        <Button
+          ref={triggerRef}
+          variant={proposals.length === 0 ? "primary" : "secondary"}
+          size="sm"
+          className="focus-ring"
+          aria-expanded={open}
+          aria-controls="board-agentic-enhance-panel"
+          loading={activeMutation?.action === "generate"}
+          disabled={mutationBusy}
+          onClick={() => {
+            if (proposals.length === 0) {
+              setOpen(true);
+              void mutate("generate");
+              return;
+            }
+            setOpen((current) => !current);
+          }}
+        >
+          {proposals.length === 0
+            ? "Enhance task"
+            : open
+              ? "Close enhancements"
+              : "Review enhancements"}
+        </Button>
+      </header>
+
+      {open ? (
+        <section
+          id="board-agentic-enhance-panel"
+          ref={panelRef}
+          className="board-agentic-enhance__panel"
+          role="region"
+          aria-label="Enhance recommendations"
+          tabIndex={-1}
+        >
+          {proposals.length === 0 ? (
+            <>
+              <EmptyState
+                compact
+                headline="No recommendations yet"
+                subtitle="Recommendations appear here after the task has grounded evidence to review."
+                actions={(
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="focus-ring"
+                    loading={activeMutation?.action === "generate"}
+                    disabled={mutationBusy}
+                    onClick={() => void mutate("generate")}
+                  >
+                    Generate recommendations
+                  </Button>
+                )}
+              />
+              {generationError ? (
+                <p className="board-agentic-enhance__errors" role="alert">{generationError}</p>
+              ) : null}
+            </>
+          ) : (
+            <div className="board-agentic-enhance__list">
+              {proposals.map((proposal) => {
+                const isBusy = activeMutation?.proposalId === proposal.id;
+                const isStale = staleProposalIds.has(proposal.id);
+                const isAuthorshipConflict = proposal.validation.errors.some(
+                  (error) => error.code === "dependency_authorship" || error.code === "next_step_authorship",
+                );
+                const isApprovalBound = proposal.needsHuman;
+                const canApply = proposal.state === "proposed" && !isStale;
+                const canDismiss = (proposal.state === "proposed" || proposal.state === "blocked") && !isBusy;
+                const canRevert = proposal.state === "auto-applied"
+                  && proposal.recommendation.application.reversible
+                  && !isStale;
+                return (
+                  <article
+                    key={proposal.id}
+                    className="board-agentic-enhance__proposal"
+                    data-state={proposal.state}
+                    aria-label={`Enhancement: ${proposal.id}`}
+                  >
+                    <header className="board-agentic-enhance__proposal-header">
+                      <span className="board-agentic-enhance__state">{proposalStateLabel(proposal.state)}</span>
+                      <span className="board-agentic-enhance__rank">Task recommendation</span>
+                    </header>
+
+                    {proposalPatchRows(card, proposalDisplayPatch(proposal))}
+
+                    <details className="board-agentic-enhance__details">
+                      <summary className="focus-ring">Why this?</summary>
+                      <p>{proposal.recommendation.rationale}</p>
+                      {proposal.recommendation.rankReasons.length > 0 ? (
+                        <ul>
+                          {proposal.recommendation.rankReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                        </ul>
+                      ) : null}
+                    </details>
+
+                    <div className="board-agentic-enhance__evidence" aria-label="Evidence">
+                      <span>Evidence</span>
+                      <div>
+                        {(proposal.evidence.length > 0 ? proposal.evidence : proposal.recommendation.evidenceRefs).map((evidence) => (
+                          <span key={`${evidence.kind}:${evidence.id}`} className="ui-pill">
+                            {evidence.kind}: {evidence.label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {isAuthorshipConflict ? (
+                      <p className="board-agentic-enhance__authorship" role="alert">
+                        <strong>Human authorship conflict</strong> — this proposal will not replace a human-authored task field.
+                      </p>
+                    ) : null}
+                    {isApprovalBound ? (
+                      <p className="board-agentic-enhance__approval" role="status">
+                        Approval required. Enhance does not dispatch or transition this task.
+                      </p>
+                    ) : null}
+                    {proposal.validation.errors.length > 0 ? (
+                      <ul className="board-agentic-enhance__errors" aria-label="Proposal blockers">
+                        {proposal.validation.errors.map((error) => <li key={`${error.code}:${error.message}`}>{error.message}</li>)}
+                      </ul>
+                    ) : null}
+                    {proposal.validation.checks.length > 0 ? (
+                      <details className="board-agentic-enhance__details">
+                        <summary className="focus-ring">Verification details</summary>
+                        <ul>
+                          {proposal.validation.checks.map((check) => (
+                            <li key={check.id}>{check.state} — {check.detail}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                    {proposalErrors[proposal.id] ? (
+                      <p className="board-agentic-enhance__errors" role="alert">{proposalErrors[proposal.id]}</p>
+                    ) : null}
+
+                    <footer className="board-agentic-enhance__actions">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="focus-ring"
+                        loading={isBusy && proposal.state === "proposed"}
+                        disabled={!canApply || mutationBusy}
+                        onClick={() => void mutate("apply", proposal)}
+                      >
+                        Apply proposal
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="focus-ring"
+                        disabled={!canDismiss || mutationBusy}
+                        onClick={() => void mutate("dismiss", proposal)}
+                      >
+                        Dismiss proposal
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="focus-ring"
+                        loading={isBusy && proposal.state === "auto-applied"}
+                        disabled={!canRevert || mutationBusy}
+                        onClick={() => void mutate("revert", proposal)}
+                      >
+                        Revert normalization
+                      </Button>
+                    </footer>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 
 export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onOpenTaskWork, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
   const dtPrefs = useDateTimePrefs();
@@ -1177,6 +1721,16 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
 
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
+  const approvalBound = card.nextStep?.requiresApproval === true
+    || (
+      caveAgenticRecommendations()
+      && (card.agenticEnhance?.proposals.some(
+        (proposal) => proposal.state !== "dismissed" && proposal.state !== "reverted" && proposal.needsHuman,
+      ) ?? false)
+    );
+  const availableMoves = approvalBound
+    ? moves.filter((move) => move.to !== "dispatched")
+    : moves;
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
   const modelHarness = canonicalHarnessId(
     currentFamiliar?.harness ?? currentFamiliar?.defaultHarness ?? "",
@@ -1676,6 +2230,8 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             )}
           </div>
 
+          <BoardAgenticEnhanceSection card={card} onCardReplaced={onCardReplaced} />
+
           <StepsSection card={card} onPatch={onPatch} />
 
           <LinksSection card={card} onPatch={onPatch} onOpenUrl={onOpenUrl} />
@@ -1759,9 +2315,9 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       {card.lifecycleReason}
                     </p>
                   ) : null}
-                  {moves.length > 0 && (
+                  {availableMoves.length > 0 && (
                     <div className="board-drawer-lifecycle-actions">
-                      {moves.map((m) => (
+                      {availableMoves.map((m) => (
                         <button
                           key={`${m.to}-${m.retry}`}
                           type="button"
@@ -1774,6 +2330,11 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       ))}
                     </div>
                   )}
+                  {approvalBound ? (
+                    <p className="board-drawer-field-hint board-drawer-field-hint--nudge">
+                      Approval is required before dispatching this task.
+                    </p>
+                  ) : null}
                   {lifecycleErr && <p className="board-drawer-lifecycle-error">{lifecycleErr}</p>}
                 </div>
 

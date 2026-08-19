@@ -12,3 +12,9 @@ export function caveChatoutCodex(): boolean {
 export function caveCrafts(): boolean {
   return envFlag(process.env.NEXT_PUBLIC_CAVE_CRAFTS);
 }
+
+/** Agentic Board and Research recommendations stay gated while legacy Chat
+ * Enhance remains available independently. */
+export function caveAgenticRecommendations(): boolean {
+  return envFlag(process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS);
+}

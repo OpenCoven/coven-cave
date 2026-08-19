@@ -164,6 +164,7 @@ const MAX_CONTEXT_DEPTH = 16;
 const MAX_CONTEXT_ENTRIES = 256;
 const MAX_VERIFICATION_STAMP_BYTES = 96 * 1024;
 const ID_RE = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const GIT_OID_RE = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
 const GITHUB_ISSUE_REFERENCE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*#[1-9][0-9]*$/;
 const FINGERPRINT_RE = /^ctx-v1-[0-9a-f]{32}$/;
@@ -213,6 +214,7 @@ function isGitOid(value: unknown): value is string {
 function isValidEvidenceId(value: unknown, kind: AgenticEvidenceKind): value is string {
   return (
     isValidId(value)
+    || (typeof value === "string" && UUID_RE.test(value))
     || isGitOid(value)
     || (kind === "github" && typeof value === "string" && GITHUB_ISSUE_REFERENCE_RE.test(value))
   );

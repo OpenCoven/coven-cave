@@ -6,7 +6,13 @@ import {
   isAutoApplyAllowed,
   parseAgenticRecommendationsOutput,
   type AgenticRecommendation,
+  type AgenticSurface,
 } from "./agentic-recommendations.ts";
+import {
+  recordAgenticDiagnostic,
+  type AgenticDiagnosticInput,
+  type AgenticDiagnosticSink,
+} from "./agentic-diagnostics.ts";
 
 export const MIN_AGENTIC_RECOMMENDATIONS_DEBOUNCE_MS = 100;
 export const MAX_AGENTIC_RECOMMENDATIONS_DEBOUNCE_MS = 1_000;
@@ -28,6 +34,8 @@ export type AgenticRecommendationGenerationRequest<TContext> = {
 export type AgenticRecommendationGenerator<TContext> = (
   request: AgenticRecommendationGenerationRequest<TContext>,
 ) => Promise<string>;
+
+export type AgenticRecommendationOutputParser = (text: string) => AgenticRecommendation[];
 
 export type AgenticRecommendationApplyResult = {
   revert: () => Promise<void> | void;
@@ -89,10 +97,17 @@ export type AgenticRecommendationsLifecycle<TContext> = {
 export type CreateAgenticRecommendationsLifecycleOptions<TContext> = {
   generate: AgenticRecommendationGenerator<TContext>;
   apply: AgenticRecommendationApply<TContext>;
+  /** Surface-specific strict extraction; defaults to the shared model parser. */
+  parseOutput?: AgenticRecommendationOutputParser;
   /** A durable-context key. Draft keystrokes must not change this value. */
   meaningfulContextKey: (context: TContext) => string;
+  /** Keep existing explicit controls manual while still tracking freshness. */
+  autoGenerate?: boolean;
   createRunId: () => string;
   cancelRun?: (runId: string) => Promise<void> | void;
+  /** Optional content-free diagnostic sink for lifecycle outcomes. */
+  diagnostics?: AgenticDiagnosticSink;
+  diagnosticSurface?: AgenticSurface;
   clock?: AgenticRecommendationClock;
   debounceMs?: number;
 };
@@ -161,6 +176,7 @@ export function createAgenticRecommendationsLifecycle<TContext>(
   options: CreateAgenticRecommendationsLifecycleOptions<TContext>,
 ): AgenticRecommendationsLifecycle<TContext> {
   const clock = options.clock ?? browserClock;
+  const autoGenerate = options.autoGenerate ?? true;
   const debounceMs = boundedDebounce(options.debounceMs);
   const listeners = new Set<() => void>();
   const reverters = new Map<string, () => Promise<void> | void>();
@@ -169,6 +185,21 @@ export function createAgenticRecommendationsLifecycle<TContext>(
   let latestContext: TContext | null = null;
   let latestFingerprint: string | null = null;
   let latestMeaningfulContextKey: string | null = null;
+
+  const recordLifecycleDiagnostic = (
+    input: Omit<AgenticDiagnosticInput, "surface">,
+  ) => {
+    if (!options.diagnostics) return;
+    const event = recordAgenticDiagnostic({
+      surface: options.diagnosticSurface ?? "chat",
+      ...input,
+    });
+    try {
+      options.diagnostics(event);
+    } catch {
+      // Diagnostics must not change lifecycle behavior.
+    }
+  };
 
   const notify = () => {
     for (const listener of listeners) listener();
@@ -268,17 +299,30 @@ export function createAgenticRecommendationsLifecycle<TContext>(
         return;
       }
 
-      if (!isCurrent(run)) return;
+      if (!isCurrent(run)) {
+        recordLifecycleDiagnostic({
+          code: "stale_discarded",
+        });
+        return;
+      }
 
       try {
-        const recommendations = parseAgenticRecommendationsOutput(text);
+        const recommendations = (options.parseOutput ?? parseAgenticRecommendationsOutput)(text);
         if (recommendations.some((recommendation) => recommendation.contextFingerprint !== run.fingerprint)) {
+          recordLifecycleDiagnostic({
+            code: "stale_discarded",
+            counts: { recommendations: recommendations.length },
+          });
           throw new Error("recommendation context fingerprint does not match the active context");
         }
         finishWithRecommendations(run, recommendations);
         return;
       } catch {
         if (attempt === 1) {
+          recordLifecycleDiagnostic({
+            code: "generation_validation_failed",
+            counts: { attempts: 2 },
+          });
           finishWithError(run, validationError());
           return;
         }
@@ -346,6 +390,17 @@ export function createAgenticRecommendationsLifecycle<TContext>(
       latestFingerprint = fingerprint;
       latestMeaningfulContextKey = meaningfulContextKey;
 
+      if (!autoGenerate) {
+        if (active && didFingerprintChange && !stopActive(active)) return;
+        if (active) return;
+        setState(newState("idle", {
+          contextFingerprint: fingerprint,
+          meaningfulContextKey,
+          items: retainedItems(),
+        }));
+        return;
+      }
+
       if (!didMeaningfulContextChange) {
         if (!didFingerprintChange) return;
         if (active && !stopActive(active)) return;
@@ -375,6 +430,7 @@ export function createAgenticRecommendationsLifecycle<TContext>(
       if (!active || active.runId !== runId) return false;
       const stopped = stopActive(active);
       if (stopped) {
+        recordLifecycleDiagnostic({ code: "cancelled" });
         setState(newState("idle", {
           contextFingerprint: latestFingerprint,
           meaningfulContextKey: latestMeaningfulContextKey,
@@ -407,6 +463,9 @@ export function createAgenticRecommendationsLifecycle<TContext>(
         item.recommendation.application.mode === "auto-apply"
         && !isAutoApplyAllowed(item.recommendation)
       ) {
+        recordLifecycleDiagnostic({
+          code: "verification_blocked",
+        });
         replaceItem(recommendationId, (current) => ({
           ...current,
           phase: "error",
@@ -415,6 +474,9 @@ export function createAgenticRecommendationsLifecycle<TContext>(
         return;
       }
       if (item.recommendation.contextFingerprint !== latestFingerprint) {
+        recordLifecycleDiagnostic({
+          code: "stale_discarded",
+        });
         replaceItem(recommendationId, (current) => ({
           ...current,
           phase: "error",
@@ -434,6 +496,9 @@ export function createAgenticRecommendationsLifecycle<TContext>(
         reverters.set(recommendationId, result.revert);
         replaceItem(recommendationId, (next) => ({ ...next, phase: "applied" }));
       } catch {
+        recordLifecycleDiagnostic({
+          code: "apply_failed",
+        });
         replaceItem(recommendationId, (current) => ({
           ...current,
           phase: "error",

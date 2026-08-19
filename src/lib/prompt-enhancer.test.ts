@@ -4,10 +4,18 @@ import {
   ENHANCE_INTENTS,
   buildEnhanceInstruction,
   buildPromptEnhancement,
+  createPromptEnhancementRecommendation,
+  extractCompleteEnhancedPrompt,
   extractEnhancedPrompt,
+  isPromptEnhancementRecommendationCurrent,
   normalizeEnhanceMode,
+  parsePromptEnhancementRecommendationOutput,
+  promptEnhancementEvidenceRefs,
+  promptEnhancementLifecycleFingerprint,
+  serializePromptEnhancementRecommendation,
   settleEnhance,
 } from "./prompt-enhancer.ts";
+import { parseAgenticRecommendationsOutput } from "./agentic-recommendations.ts";
 
 const code = buildPromptEnhancement({
   draft: "fix login bug",
@@ -126,10 +134,137 @@ assert.deepEqual(
   { partial: "Do the thing.", complete: false },
   "stray code fences around a tagless response are stripped",
 );
+assert.equal(
+  extractCompleteEnhancedPrompt("<enhanced>Do the thing.</enhanced>"),
+  "Do the thing.",
+  "settled model output requires one complete enhanced frame",
+);
+for (const malformed of [
+  "Do the thing.",
+  "<enhanced>Do the thing",
+  "<enhanced></enhanced>",
+  "before <enhanced>Do the thing.</enhanced> after",
+  "<enhanced>One</enhanced><enhanced>Two</enhanced>",
+]) {
+  assert.equal(
+    extractCompleteEnhancedPrompt(malformed),
+    null,
+    `tagless or malformed output is rejected for lifecycle retry: ${malformed}`,
+  );
+}
 
 // Race rule: only a byte-identical draft applies in place.
 assert.equal(settleEnhance("draft", "draft"), "apply", "an unchanged draft applies in place");
 assert.equal(settleEnhance("draft", "draft edited"), "suggest", "a changed draft downgrades to a suggestion");
+
+// Chat enhancement output is a strict, reviewable shared recommendation. Its
+// metadata cites bounded existing chat context rather than carrying raw text.
+{
+  const recommendation = createPromptEnhancementRecommendation({
+    id: "prompt-enhance-test",
+    enhanced: "Investigate the login regression and summarize the focused test results.",
+    mode: "code",
+    intent: "clarify",
+    offline: false,
+    contextFingerprint: "ctx-v1-0123456789abcdef0123456789abcdef",
+    evidenceRefs: [
+      { id: "turn-1", kind: "message", label: "Recent chat message" },
+      { id: "task-1", kind: "task", label: "Linked task" },
+      { id: "tool-1", kind: "artifact", label: "Recent tool outcome" },
+    ],
+  });
+  assert.equal(recommendation.surface, "chat", "enhancement recommendations belong to Chat");
+  assert.equal(recommendation.kind, "prose", "a rewritten prompt remains a prose proposal");
+  assert.equal(recommendation.payload.enhanced, "Investigate the login regression and summarize the focused test results.");
+  assert.match(recommendation.rationale, /clarif/i, "the rationale names the chosen enhancement intent");
+  assert.deepEqual(
+    recommendation.evidenceRefs.map((evidence) => evidence.kind),
+    ["message", "task", "artifact"],
+    "message, task, and tool evidence stay as typed shared refs",
+  );
+  const parsed = parseAgenticRecommendationsOutput(serializePromptEnhancementRecommendation(recommendation));
+  assert.deepEqual(parsed[0]?.payload, recommendation.payload, "the serialized enhancement survives strict shared extraction");
+  assert.equal(parsed[0]?.application.mode, "review", "model-authored rewrites remain reviewable");
+
+  const promptSpecific = parsePromptEnhancementRecommendationOutput(
+    serializePromptEnhancementRecommendation({
+      ...recommendation,
+      payload: { ...recommendation.payload, enhanced: "long prompt ".repeat(182) },
+    }),
+  );
+  assert.equal(
+    promptSpecific[0]?.payload.enhanced.length,
+    2_184,
+    "prompt-specific extraction preserves composer-compatible proposals over the shared 2,000-character string limit",
+  );
+  const quoteAndSlashRichPrompt = '\\"'.repeat(32_768);
+  const escaped = parsePromptEnhancementRecommendationOutput(
+    serializePromptEnhancementRecommendation({
+      ...recommendation,
+      payload: { ...recommendation.payload, enhanced: quoteAndSlashRichPrompt },
+    }),
+  );
+  assert.equal(
+    escaped[0]?.payload.enhanced,
+    quoteAndSlashRichPrompt,
+    "a decoded 64 KiB prompt survives its larger quote-and-backslash JSON envelope",
+  );
+}
+
+// A reviewed rewrite cannot be applied after meaningful composer context
+// changes. Actual UUID IDs survive as evidence rather than being discarded.
+{
+  const uuid = "0f4d5c55-6f15-4e7c-a1f4-3462fb56e5c4";
+  const base = {
+    mode: "chat" as const,
+    familiarId: "familiar-1",
+    context: {
+      selectedFiles: ["src/chat.tsx"],
+      linkedTask: { id: "task-1", title: "Improve Chat" },
+      modelScope: "session:model-a",
+      recentMessages: [{ id: uuid, role: "assistant", text: "Review the current implementation." }],
+      recentToolOutcomes: [{ id: uuid, name: "Read", status: "ok", output: "Found ChatView." }],
+    },
+  };
+  const recommendation = createPromptEnhancementRecommendation({
+    id: "prompt-enhance-freshness",
+    enhanced: "Review the current implementation and summarize the focused checks.",
+    offline: false,
+    mode: base.mode,
+    intent: "clarify",
+    contextFingerprint: promptEnhancementLifecycleFingerprint(base),
+    evidenceRefs: promptEnhancementEvidenceRefs(base.context),
+  });
+  assert.deepEqual(
+    recommendation.evidenceRefs.map((evidence) => evidence.id),
+    [uuid, "task-1", uuid],
+    "digit-leading UUID message and tool identities remain exact typed evidence",
+  );
+  assert.equal(
+    isPromptEnhancementRecommendationCurrent(recommendation, promptEnhancementLifecycleFingerprint({
+      ...base,
+      context: { ...base.context, selectedFiles: ["src/chat.tsx", "src/composer.tsx"] },
+    })),
+    false,
+    "adding an attachment or selected file invalidates a pending suggestion",
+  );
+  assert.equal(
+    isPromptEnhancementRecommendationCurrent(recommendation, promptEnhancementLifecycleFingerprint({
+      ...base,
+      context: { ...base.context, linkedTask: { id: "task-2", title: "Different task" } },
+    })),
+    false,
+    "changing the linked task invalidates a pending suggestion",
+  );
+  assert.equal(
+    isPromptEnhancementRecommendationCurrent(recommendation, promptEnhancementLifecycleFingerprint({
+      ...base,
+      context: { ...base.context, modelScope: "next-message:model-b" },
+    })),
+    false,
+    "changing the composer-local model scope invalidates a pending suggestion",
+  );
+}
 
 // ── Research idempotency (#4628) ──────────────────────────────────────────────
 // Improve resends the input on every click, so a second pass re-wraps an

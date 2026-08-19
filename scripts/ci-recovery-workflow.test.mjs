@@ -63,6 +63,25 @@ assert.equal(
   "pnpm ${{ matrix.validation.command }}",
   "each frontend validation matrix lane runs its declared command",
 );
+const defaultE2e = ciWorkflow.jobs.build.steps.find(
+  (step) => step.name === "Validate end-to-end behavior",
+);
+assert.ok(defaultE2e, "CI keeps default-off end-to-end coverage");
+assert.equal(defaultE2e.run, "pnpm exec playwright test");
+assert.equal(defaultE2e.env, undefined, "default end-to-end coverage does not enable agentic recommendations");
+
+const agenticE2e = ciWorkflow.jobs.build.steps.find(
+  (step) => step.name === "Validate flag-enabled agentic journeys",
+);
+assert.ok(agenticE2e, "CI runs explicitly enabled Board and Research recommendation journeys");
+assert.deepEqual(agenticE2e.env, {
+  NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1",
+});
+assert.equal(
+  agenticE2e.run,
+  "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+  "the enabled journeys run in a separate desktop server with only their necessary flags",
+);
 const bundleRun = ciWorkflow.jobs["frontend-bundle"].steps.at(-1)?.run;
 assert.ok(bundleRun, "the frontend bundle job ends with a build script");
 assert.match(bundleRun, /if \[ "\$attempt" -lt 3 \]; then/);

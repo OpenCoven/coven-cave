@@ -30,8 +30,8 @@ assert.match(
 );
 assert.match(
   view,
-  /const suggestions = extractChatRenderedText\(last\.text\)\.nextPaths;/,
-  "follow-up cards read next-path suggestions from the shared projection",
+  /const suggestions = contextualizeNextPaths\(extractChatRenderedText\(last\.text\)\.nextPaths, \{/,
+  "follow-up cards contextualize next-path suggestions from the shared projection",
 );
 
 console.log("chat-rendered-text-wiring.test.ts passed");

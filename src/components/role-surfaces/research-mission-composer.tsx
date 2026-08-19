@@ -79,6 +79,8 @@ type Props = {
   recommendations?: ResearchPromptRecommendation[];
   /** Current draft, reported up so Quick saves can match against it. */
   onDraftChange?(draft: string): void;
+  /** An explicitly accepted recommendation replaces the composer draft once. */
+  recommendedDraft?: { value: string; revision: number } | null;
 };
 
 const MODE_LABELS: Record<ResearchMissionMode, string> = {
@@ -115,6 +117,27 @@ export function modeCardMeta(mode: ResearchMissionMode): string {
     ? `up to ${bounds.maxIterations} passes`
     : `${bounds.maxIterations} pass${bounds.maxIterations === 1 ? "" : "es"}`;
   return `${passes} · ${bounds.wallClockMinutes} min · ${bounds.sourceTarget} sources`;
+}
+
+/** Builds a recommendation-initiated mission exactly as the auto-routed
+ * composer does: no inferred title is persisted, and the standard route still
+ * owns final validation and normalization. */
+export function createRecommendedResearchMissionInput(
+  familiarId: string,
+  topic: string,
+): CreateResearchMissionInput {
+  const intent = topic.trim();
+  const inferred = inferResearchMissionMode(intent);
+  const plan = defaultResearchPlan(inferred.mode);
+  return {
+    familiarId,
+    intent,
+    mode: inferred.mode,
+    modeSource: "auto",
+    deliverable: plan.deliverables.join(" + "),
+    bounds: { ...plan.bounds },
+    harness: RESEARCH_RUNTIME_DEFAULT_HARNESS,
+  };
 }
 
 /** A trailing slash token opens the command palette (design logic 785–811). */
@@ -220,6 +243,7 @@ export function ResearchMissionComposer({
   onOpenResources,
   recommendations = [],
   onDraftChange,
+  recommendedDraft,
 }: Props) {
   const { announce } = useAnnouncer();
   const [intent, setIntent] = useState("");
@@ -255,6 +279,20 @@ export function ResearchMissionComposer({
   const [briefShown, setBriefShown] = useState(false);
   const [recsOpen, setRecsOpen] = useState(false);
   const [briefNote, setBriefNote] = useState<string | null>(null);
+  const appliedRecommendedDraftRevision = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (
+      !recommendedDraft
+      || appliedRecommendedDraftRevision.current === recommendedDraft.revision
+    ) {
+      return;
+    }
+    appliedRecommendedDraftRevision.current = recommendedDraft.revision;
+    setIntent(recommendedDraft.value);
+    setMenuDismissed(false);
+    setMenuCursor(0);
+  }, [recommendedDraft]);
 
   // Every setMode caller is an explicit pick — mode cards, slash commands,
   // Reset to Auto, cross-tab preselect — so a deliberate switch clears the

@@ -4,10 +4,12 @@ import {
   isAutoApplyAllowed,
   type AgenticRecommendation,
 } from "./agentic-recommendations.ts";
+import { parsePromptEnhancementRecommendationOutput } from "./prompt-enhancer.ts";
 import {
   createAgenticRecommendationsLifecycle,
   type AgenticRecommendationGenerator,
 } from "./use-agentic-recommendations.ts";
+import type { AgenticDiagnosticEvent } from "./agentic-diagnostics.ts";
 
 type Context = {
   cardId: string;
@@ -86,6 +88,35 @@ function meaningfulContextKey({ cardId, title }: Context) {
 async function flush() {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+// Manual recommendation surfaces (Chat Enhance) retain the latest context but
+// make no request until their existing explicit control calls refresh().
+{
+  const clock = createClock();
+  const context = { cardId: "chat-turn-1", title: "Clarify the prompt", rawDraft: "Draft one" };
+  let calls = 0;
+  const lifecycle = createAgenticRecommendationsLifecycle<Context>({
+    autoGenerate: false,
+    clock,
+    createRunId: () => "manual-chat-run",
+    meaningfulContextKey,
+    generate: async (request) => {
+      calls += 1;
+      return output(recommendation(request.context, "chat-recommendation"));
+    },
+    apply: async () => ({ revert: async () => {} }),
+  });
+
+  lifecycle.update(context);
+  lifecycle.update({ ...context, rawDraft: "Draft two" });
+  assert.equal(clock.size(), 0, "draft changes never generate a manual recommendation");
+  assert.equal(calls, 0, "no request runs before the explicit Enhance action");
+  lifecycle.refresh();
+  clock.runNext();
+  await flush();
+  assert.equal(calls, 1, "manual refresh starts one shared recommendation run");
+  assert.equal(lifecycle.getState().phase, "review");
 }
 
 // The debounce is keyed to durable meaning, not the full context fingerprint.
@@ -206,6 +237,30 @@ async function flush() {
   await flush();
   assert.equal(exhausted.getState().phase, "error");
   assert.match(exhausted.getState().error?.message ?? "", /could not be validated/i);
+}
+
+// A surface parser retains that same retry boundary. Chat uses this for a
+// complete `<enhanced>` frame, so tagless or unterminated output cannot become
+// a code-authored fallback recommendation.
+{
+  const clock = createClock();
+  const attempts: number[] = [];
+  const lifecycle = createAgenticRecommendationsLifecycle<Context>({
+    clock,
+    createRunId: () => "prompt-frame-retry",
+    meaningfulContextKey,
+    parseOutput: parsePromptEnhancementRecommendationOutput,
+    generate: async ({ attempt }) => {
+      attempts.push(attempt);
+      return "{}";
+    },
+    apply: async () => ({ revert: async () => {} }),
+  });
+  lifecycle.update({ cardId: "chat-turn-1", title: "Require an enhanced frame" });
+  clock.runNext();
+  await flush();
+  assert.deepEqual(attempts, [0, 1], "the prompt parser receives exactly one malformed-output retry");
+  assert.equal(lifecycle.getState().phase, "error", "the second malformed prompt result preserves the draft and reports an error");
 }
 
 // Review items move through apply, dismiss, and revert without ever applying
@@ -382,6 +437,52 @@ async function flush() {
     lifecycle.getState().items.find((item) => item.recommendation.id === "rec-card-6")?.phase,
     "review",
     "the preserved apply result remains reversible after refresh",
+  );
+}
+
+// The shared lifecycle can publish bounded metadata through an injected sink
+// without surfacing model output or changing its visible validation/cancel flow.
+{
+  const context = { cardId: "card-diagnostics", title: "Record safe lifecycle outcomes" };
+  const validationClock = createClock();
+  const validationDiagnostics: AgenticDiagnosticEvent[] = [];
+  const validationLifecycle = createAgenticRecommendationsLifecycle<Context>({
+    clock: validationClock,
+    createRunId: () => "run-diagnostics-validation",
+    meaningfulContextKey,
+    diagnosticSurface: "research",
+    diagnostics: (event) => validationDiagnostics.push(event),
+    generate: async () => "malformed",
+    apply: async () => ({ revert: async () => {} }),
+  });
+
+  validationLifecycle.update(context);
+  validationClock.runNext();
+  await flush();
+  assert.equal(validationLifecycle.getState().phase, "error");
+  assert.deepEqual(
+    validationDiagnostics.map((event) => [event.surface, event.code, event.counts?.attempts]),
+    [["research", "generation_validation_failed", 2]],
+  );
+
+  const cancellationClock = createClock();
+  const cancellationDiagnostics: AgenticDiagnosticEvent[] = [];
+  const waiting = deferred<string>();
+  const cancellationLifecycle = createAgenticRecommendationsLifecycle<Context>({
+    clock: cancellationClock,
+    createRunId: () => "run-diagnostics-cancel",
+    meaningfulContextKey,
+    diagnosticSurface: "board",
+    diagnostics: (event) => cancellationDiagnostics.push(event),
+    generate: () => waiting.promise,
+    apply: async () => ({ revert: async () => {} }),
+  });
+  cancellationLifecycle.update(context);
+  cancellationClock.runNext();
+  assert.equal(cancellationLifecycle.cancel("run-diagnostics-cancel"), true);
+  assert.deepEqual(
+    cancellationDiagnostics.map((event) => [event.surface, event.code]),
+    [["board", "cancelled"]],
   );
 }
 
