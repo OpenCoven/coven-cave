@@ -63,8 +63,13 @@ const intrinsicObjectBrandChecks = Object.values(nodeUtilTypes).filter(
     typeof check === "function" && check !== isProxyIntrinsic,
 );
 
+type WebIntrinsicObjectBrandProbeResult =
+  | "match"
+  | "non-match"
+  | "failure";
 type WebIntrinsicObjectBrandProbe = {
-  invoke: (value: object) => void;
+  exactTypeErrorIsNonMatch: boolean;
+  invoke: (value: object) => WebIntrinsicObjectBrandProbeResult;
 };
 
 function canStructuredCloneWithoutUserCode(value: object): boolean {
@@ -145,8 +150,10 @@ function captureReceiverBrandProbe(
   const member = descriptor?.[memberKind];
   if (typeof member !== "function") return;
   probes.push({
+    exactTypeErrorIsNonMatch: true,
     invoke(value) {
       reflectApplyIntrinsic(member, value, argumentsList);
+      return "match";
     },
   });
 }
@@ -169,8 +176,10 @@ function captureArgumentBrandProbe(
     return;
   }
   probes.push({
+    exactTypeErrorIsNonMatch: true,
     invoke(value) {
       reflectApplyIntrinsic(member, Constructor, [value]);
+      return "match";
     },
   });
 }
@@ -197,9 +206,10 @@ function captureUncloneableHostSlotProbe(
   }
 
   probes.push({
+    exactTypeErrorIsNonMatch: false,
     invoke(value) {
       if (!canStructuredCloneWithoutUserCode(value)) {
-        throw new typeErrorIntrinsic();
+        return "failure";
       }
       try {
         reflectApplyIntrinsic(structuredCloneIntrinsic, undefined, [value]);
@@ -209,11 +219,11 @@ function captureUncloneableHostSlotProbe(
           && error !== null
           && getPrototypeOfIntrinsic(error) === dataCloneErrorPrototype
         ) {
-          return;
+          return "match";
         }
         throw error;
       }
-      throw new typeErrorIntrinsic();
+      return "non-match";
     },
   });
 }
@@ -326,16 +336,19 @@ function isExactIntrinsicTypeError(error: unknown): boolean {
   );
 }
 
-function hasWebIntrinsicObjectBrand(
+function probeWebIntrinsicObjectBrand(
   value: object,
   probe: WebIntrinsicObjectBrandProbe,
-): boolean {
+): WebIntrinsicObjectBrandProbeResult {
   try {
-    probe.invoke(value);
-    return true;
+    return probe.invoke(value);
   } catch (error) {
-    if (!isExactIntrinsicTypeError(error)) throw error;
-    return false;
+    if (!probe.exactTypeErrorIsNonMatch) return "failure";
+    try {
+      return isExactIntrinsicTypeError(error) ? "non-match" : "failure";
+    } catch {
+      return "failure";
+    }
   }
 }
 const EXISTING_NORMALIZED_SENSITIVE_KEY_FAMILIES = [
@@ -760,10 +773,10 @@ export function snapshotProtocolObjectProperties(
     index += 1
   ) {
     if (
-      hasWebIntrinsicObjectBrand(
+      probeWebIntrinsicObjectBrand(
         value,
         webIntrinsicObjectBrandProbes[index]!,
-      )
+      ) !== "non-match"
     ) {
       return fail("invalid_value", path, `${label} must be an ordinary object`);
     }

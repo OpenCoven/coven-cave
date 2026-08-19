@@ -54,6 +54,7 @@ import {
   type RunManifestV1,
 } from "./run-manifest.ts";
 import {
+  deeplyNestedOptionShell,
   nonExtensibleOrdinaryOptionShells,
   nonExtensibleSpoofedFetchOptionShells,
   spoofedWebOptionShells,
@@ -2614,6 +2615,36 @@ test("non-extensible ordinary manifest revision option roots remain valid", () =
       label,
     );
   }
+});
+
+test("manifest revision deep option probe failures fail closed without throwing", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const options = deeplyNestedOptionShell(
+    { contextConsent: "7-days" },
+    5_000,
+  ) as ManifestRevisionOptions;
+  let result: ReturnType<typeof validateRunManifestRevision> | undefined;
+
+  assert.doesNotThrow(() => {
+    result = validateRunManifestRevision(previous, next, options);
+  });
+  assert.ok(result);
+  expectError(result, "$.options", "invalid_value");
+});
+
+test("manifest revision normally deep ordinary options remain valid", () => {
+  const previous = expectOk(parseRunManifestV1(finalLocalManifestJson));
+  const next = expectOk(parseRunManifestV1(retentionUpdateJson));
+  const options = deeplyNestedOptionShell(
+    { contextConsent: "7-days" },
+    128,
+  ) as ManifestRevisionOptions;
+
+  assert.strictEqual(
+    expectOk(validateRunManifestRevision(previous, next, options)),
+    next,
+  );
 });
 
 test("manifest revision lifecycle clocks cannot roll back at nanosecond precision", () => {

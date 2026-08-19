@@ -10,6 +10,17 @@ const nonExtensibleIntegrityOperations: readonly IntegrityOperation[] = [
   ["frozen", Object.freeze],
 ];
 
+export function deeplyNestedOptionShell(
+  properties: Readonly<Record<string, unknown>>,
+  depth: number,
+): Record<string, unknown> {
+  let extension: Record<string, unknown> = { leaf: true };
+  for (let index = 0; index < depth; index += 1) {
+    extension = { nested: extension };
+  }
+  return { ...properties, extension };
+}
+
 function availableWebObjectFactories(): ObjectFactory[] {
   const factories: ObjectFactory[] = [];
 

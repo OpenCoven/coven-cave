@@ -42,6 +42,7 @@ import {
   parseResearchContextBindingV1,
 } from "./common.ts";
 import {
+  deeplyNestedOptionShell,
   nonExtensibleOrdinaryOptionShells,
   nonExtensibleSpoofedFetchOptionShells,
   spoofedWebOptionShells,
@@ -1667,6 +1668,44 @@ test("ordinary frozen research-run options and collection arrays preserve run id
       label,
     );
   }
+});
+
+test("research-run deep option probe failures fail closed without throwing", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const options = deeplyNestedOptionShell(
+    {
+      manifestHistory: [root, tip],
+      authorizedFreshConsentAt: [freshConsentAt],
+    },
+    5_000,
+  ) as ResearchRunCompositionOptionsV1;
+  let result:
+    | ReturnType<typeof validateResearchRunContextPackV1>
+    | undefined;
+
+  assert.doesNotThrow(() => {
+    result = validateResearchRunContextPackV1(run, contextPack, options);
+  });
+  assert.ok(result);
+  expectError(result, "$.options", "invalid_value");
+});
+
+test("research-run normally deep ordinary options remain valid", () => {
+  const { run, contextPack, root, tip, freshConsentAt } =
+    rootedExtendedRetentionComposition();
+  const options = deeplyNestedOptionShell(
+    {
+      manifestHistory: [root, tip],
+      authorizedFreshConsentAt: [freshConsentAt],
+    },
+    128,
+  ) as ResearchRunCompositionOptionsV1;
+
+  assert.strictEqual(
+    expectOk(validateResearchRunContextPackV1(run, contextPack, options)),
+    run,
+  );
 });
 
 test("manifest histories allow nested immutable references shared across revisions", () => {

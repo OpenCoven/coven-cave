@@ -5,7 +5,35 @@ import {
   compareUtcTimestamps,
   isUtcTimestamp,
   isUtcTimestampAtMostHoursAfter,
+  snapshotProtocolObjectProperties,
 } from "./common.ts";
+
+test("structured-clone option probes fail closed for nested proxies", () => {
+  let proxyTrapCalls = 0;
+  const nestedProxy = new Proxy({}, {
+    getPrototypeOf() {
+      proxyTrapCalls += 1;
+      throw new Error("nested proxy trap must not escape");
+    },
+  });
+  let result:
+    | ReturnType<typeof snapshotProtocolObjectProperties>
+    | undefined;
+
+  assert.doesNotThrow(() => {
+    result = snapshotProtocolObjectProperties(
+      { extension: nestedProxy },
+      "$.options",
+      "Options",
+    );
+  });
+  assert.ok(result);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error.path, "$.options");
+  assert.equal(result.error.code, "invalid_value");
+  assert.equal(proxyTrapCalls, 0);
+});
 
 test("UTC RFC 3339 timestamps accept ordinary timestamps and month-end leap-second placement", () => {
   for (const value of [
