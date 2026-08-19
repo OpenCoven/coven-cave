@@ -18,6 +18,15 @@
 // locking it would only force an unlock during routine cleanup. Same
 // philosophy as the guard, which lets clean+pushed cleanup pass silently.
 //
+// A lock is re-evaluated on later passes and RELEASED once the risk it names no
+// longer holds — the tree is clean and its head is retained on a remote branch
+// or a remote tag. Without that, a lock taken while work was genuinely at risk
+// outlived the risk and permanently blocked automated retirement: the nightly
+// sweep failed with `retirement-blocked` on units that were in fact safe,
+// registered worktrees climbed 14 -> 55, and both budgets blew, which blocks
+// worktree creation for every session (cave-a245b). Only this hook's own locks
+// are released; see `isAutoLock`.
+//
 // Advisory only: this never blocks a tool call and always exits 0.
 
 import { execFileSync } from "node:child_process";
@@ -50,12 +59,15 @@ export function parseWorktrees(porcelain) {
   for (const rawLine of porcelain.split("\n")) {
     const line = rawLine.trimEnd();
     if (line.startsWith("worktree ")) {
-      current = { path: line.slice("worktree ".length), locked: false, bare: false };
+      current = { path: line.slice("worktree ".length), locked: false, bare: false, lockReason: "" };
       records.push(current);
       continue;
     }
     if (!current) continue;
-    if (line === "locked" || line.startsWith("locked ")) current.locked = true;
+    if (line === "locked" || line.startsWith("locked ")) {
+      current.locked = true;
+      current.lockReason = line === "locked" ? "" : line.slice("locked ".length);
+    }
     if (line === "bare") current.bare = true;
   }
   return records;
@@ -83,12 +95,28 @@ export function parseWorktrees(porcelain) {
 // would count LOCAL tags, and a local-only tag is not retention — it dies with
 // the checkout, which is the hole the guard exists to close.
 export function riskOf(worktreePath, tagRetained = () => false) {
+  const verdict = evaluateRisk(worktreePath, tagRetained);
+  if (verdict.status !== "at-risk") return null;
+  return { dirty: verdict.dirty, unpushed: verdict.unpushed };
+}
+
+// The same measurement as `riskOf`, but it distinguishes the two cases `riskOf`
+// deliberately flattens into `null`.
+//
+// For LOCKING, "no risk" and "unreadable" are interchangeable — both mean don't
+// lock, and neither can destroy anything. For RELEASING they are opposites: a
+// tree we cannot read must stay locked, because "I could not measure this" is
+// not evidence the work is safe. Collapsing them would turn a git hiccup, a
+// half-created worktree, or a dead registration into the one verdict that
+// permits destruction — the exact inversion the tag blind spot caused in
+// cave-qbr34. So the release path consumes this, and only `clear` unlocks.
+export function evaluateRisk(worktreePath, tagRetained = () => false) {
   let dirty = 0;
   let unpushed = 0;
   try {
     dirty = git(["status", "--porcelain"], worktreePath).split("\n").filter(Boolean).length;
   } catch {
-    return null; // unreadable (mid-creation, or a dead registration) — leave it alone
+    return { status: "unreadable" }; // mid-creation, or a dead registration
   }
   try {
     unpushed = Number(
@@ -104,8 +132,29 @@ export function riskOf(worktreePath, tagRetained = () => false) {
   // unanswerable question as "retained" hands out the one verdict that permits
   // destruction.
   if (unpushed > 0 && tagRetained(worktreePath)) unpushed = 0;
-  if (dirty === 0 && unpushed === 0) return null;
-  return { dirty, unpushed };
+  if (dirty === 0 && unpushed === 0) return { status: "clear" };
+  return { status: "at-risk", dirty, unpushed };
+}
+
+// Did THIS hook take the lock? Only its own locks may be released.
+//
+// A lock reason is a point-in-time claim, and nothing re-evaluated it: a tree
+// locked while genuinely at risk stayed locked after the retention-push hook
+// pushed its branch or tag, and `beads:worktrees:apply` then failed with
+// `retirement-blocked` on a unit that was in fact safe. Registered worktrees
+// climbed 14 -> 55 that way and both budgets blew, which blocks worktree
+// creation for every session (cave-a245b).
+//
+// The prefix test is the whole safety boundary. A human — or another tool —
+// who locks a tree is making a claim this hook cannot evaluate ("active
+// cave-1c8zf PR completion" says nothing about dirtiness), so those locks are
+// never touched, only reported. `git worktree list --porcelain` C-quotes a
+// reason containing anything unusual, and ours always does (an em dash), so the
+// opening quote is stripped before the prefix is compared.
+export function isAutoLock(reason) {
+  if (typeof reason !== "string") return false;
+  const unquoted = reason.trim().replace(/^"/, "");
+  return unquoted.startsWith(REASON_PREFIX);
 }
 
 // Commit oids the REMOTE holds under a tag, HEAD included when a tag points at
@@ -204,10 +253,31 @@ function main() {
 
   // The first record is the main working tree; git refuses to lock it.
   for (const wt of worktrees.slice(1)) {
-    if (wt.locked || wt.bare) continue;
+    if (wt.bare) continue;
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (wt.locked) {
+      // Someone else's claim — this hook cannot evaluate it, so it stands.
+      if (!isAutoLock(wt.lockReason)) continue;
+      const verdict = evaluateRisk(wt.path, tagRetained);
+      // Anything but a positive all-clear keeps the lock: still at risk, or
+      // unreadable and therefore unproven.
+      if (verdict.status !== "clear") continue;
+      try {
+        git(["worktree", "unlock", wt.path], root);
+        record(root, { verdict: "released", worktree: wt.path, was: wt.lockReason });
+      } catch (error) {
+        record(root, {
+          verdict: "release-failed",
+          worktree: wt.path,
+          error: String(error?.message ?? error),
+        });
+      }
+      continue;
+    }
+
     const risk = riskOf(wt.path, tagRetained);
     if (!risk) continue;
-    const today = new Date().toISOString().slice(0, 10);
     try {
       git(["worktree", "lock", "--reason", reasonFor(risk, today), wt.path], root);
       record(root, { verdict: "locked", worktree: wt.path, ...risk });
