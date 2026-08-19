@@ -167,7 +167,10 @@ for (const label of [
   `Authorization: Bearer ${"a".repeat(32)}`,
   "Authorization: DPoP x",
   "Authorization: Proof_v1+demo x",
+  "Authorization: Signature keyId=demo,signature=abc123",
   "API_KEY=synthetic-credential-value",
+  "/callback?key=relative-secret",
+  "//example.invalid/callback#key=fragment-secret",
   JSON.stringify({ client_secret: "synthetic-credential-value" }),
 ]) {
   expectRejected(
@@ -182,6 +185,8 @@ const safeEvidenceLabels = [
   "Authorization: migrate to OAuth 2.1",
   "Authorization: Basic authentication is disabled",
   "Authorization: DPoP proof is required",
+  "Authorization: Signature request signing is required",
+  "/callback?state=visible#tab=details",
   '{ "safe": "value" }',
 ];
 for (const [index, label] of safeEvidenceLabels.entries()) {

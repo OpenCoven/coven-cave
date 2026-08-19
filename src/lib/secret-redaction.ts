@@ -53,8 +53,9 @@ const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
 ];
 const GENERIC_BASE64_SECRET_PATTERN = /\b[A-Za-z0-9+/]{32,}={0,2}\b/g;
-const HTTP_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi;
+const URL_CANDIDATE_PATTERN = /(?:https?:)?\/\/[^\s<>"'`]+|\/[^\s<>"'`]+/gi;
 const URL_PARAMETER_PATTERN = /([?#&])([^=&?#]+)=([^&#\s]*)/g;
+const URL_PARSE_BASE = "https://secret-redaction.invalid";
 
 export function redactSecretText(text: string): string {
   const jsonRedaction = redactJsonText(text);
@@ -133,8 +134,8 @@ function containsAuthorizationCredential(value: string): boolean {
 
   const { scheme, credential } = parsed;
   if (scheme === "digest") return hasDigestAuthorizationCredential(credential);
-  if (/\s/.test(credential)) return false;
-  return isSingleTokenAuthorizationCredential(credential);
+  return hasAuthorizationParameterList(credential)
+    || (!/\s/.test(credential) && isSingleTokenAuthorizationCredential(credential));
 }
 
 function hasDigestAuthorizationCredential(value: string): boolean {
@@ -194,21 +195,20 @@ function redactSecretTextPlain(text: string): string {
 }
 
 function containsSecretUrlParameter(text: string): boolean {
-  HTTP_URL_PATTERN.lastIndex = 0;
-  for (const match of text.matchAll(HTTP_URL_PATTERN)) {
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
+  for (const match of text.matchAll(URL_CANDIDATE_PATTERN)) {
     const candidate = match[0];
     if (!candidate) continue;
-    try {
-      const url = new URL(candidate);
-      if (hasSecretUrlParameter(url.searchParams) || hasSecretUrlParameter(new URLSearchParams(url.hash.slice(1)))) {
-        HTTP_URL_PATTERN.lastIndex = 0;
-        return true;
-      }
-    } catch {
-      // A malformed URL is left to the ordinary text parser.
+    const url = parseUrlCandidate(candidate);
+    if (
+      url &&
+      (hasSecretUrlParameter(url.searchParams) || hasSecretUrlParameter(new URLSearchParams(url.hash.slice(1))))
+    ) {
+      URL_CANDIDATE_PATTERN.lastIndex = 0;
+      return true;
     }
   }
-  HTTP_URL_PATTERN.lastIndex = 0;
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
   return false;
 }
 
@@ -220,13 +220,9 @@ function hasSecretUrlParameter(parameters: URLSearchParams): boolean {
 }
 
 function redactUrlParameters(text: string): string {
-  HTTP_URL_PATTERN.lastIndex = 0;
-  const redacted = text.replace(HTTP_URL_PATTERN, (candidate) => {
-    try {
-      new URL(candidate);
-    } catch {
-      return candidate;
-    }
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
+  const redacted = text.replace(URL_CANDIDATE_PATTERN, (candidate) => {
+    if (!parseUrlCandidate(candidate)) return candidate;
     return candidate.replace(URL_PARAMETER_PATTERN, (parameter, prefix, encodedKey, value) => {
       let key: string;
       try {
@@ -239,12 +235,20 @@ function redactUrlParameters(text: string): string {
         : parameter;
     });
   });
-  HTTP_URL_PATTERN.lastIndex = 0;
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
   return redacted;
 }
 
 function isSecretUrlParameterKey(key: string): boolean {
   return isSecretKey(key) || key.trim().toLowerCase() === "key";
+}
+
+function parseUrlCandidate(candidate: string): URL | undefined {
+  try {
+    return new URL(candidate, URL_PARSE_BASE);
+  } catch {
+    return undefined;
+  }
 }
 
 export function redactSecretsDeep<T>(value: T): T {
@@ -774,6 +778,9 @@ function scanAuthorizationCredential(text: string, start: number): number | unde
     return quoteEnd === -1 ? text.length : quoteEnd;
   }
 
+  const parameterEnd = scanAuthorizationParameterList(text, credentialStart);
+  if (parameterEnd !== undefined) return parameterEnd;
+
   let credentialEnd = credentialStart;
   while (
     credentialEnd < text.length &&
@@ -785,6 +792,60 @@ function scanAuthorizationCredential(text: string, start: number): number | unde
   return isSingleTokenAuthorizationCredential(text.slice(credentialStart, credentialEnd))
     ? credentialEnd
     : undefined;
+}
+
+function hasAuthorizationParameterList(value: string): boolean {
+  return scanAuthorizationParameterList(value, 0) === value.length;
+}
+
+function scanAuthorizationParameterList(text: string, start: number): number | undefined {
+  let index = start;
+  let parameterEnd: number | undefined;
+
+  while (index < text.length) {
+    const nameEnd = scanHttpTokenEnd(text, index);
+    if (nameEnd === index) return parameterEnd;
+    if (parameterEnd === undefined && isSecretKey(text.slice(index, nameEnd))) return undefined;
+
+    index = skipHorizontalWhitespace(text, nameEnd);
+    if (text[index] !== "=") return parameterEnd;
+
+    index = skipHorizontalWhitespace(text, index + 1);
+    const valueStart = index;
+    if (text[index] === '"' || text[index] === "'") {
+      const valueEnd = scanQuotedValue(text, index, text[index]!);
+      if (valueEnd === -1) return text.length;
+      index = valueEnd;
+    } else {
+      while (index < text.length && !isWhitespace(text[index]) && text[index] !== ",") index += 1;
+    }
+    if (index === valueStart) return parameterEnd;
+    parameterEnd = index;
+
+    if (index === text.length) return index;
+    if (text[index] === ",") {
+      index = skipHorizontalWhitespace(text, index + 1);
+      if (index === text.length) return parameterEnd;
+      continue;
+    }
+    if (!isHorizontalWhitespace(text[index])) return parameterEnd;
+
+    const next = skipHorizontalWhitespace(text, index);
+    if (next === text.length) return next;
+    const nextNameEnd = scanHttpTokenEnd(text, next);
+    if (nextNameEnd === next || text[skipHorizontalWhitespace(text, nextNameEnd)] !== "=") {
+      return parameterEnd;
+    }
+    index = next;
+  }
+
+  return parameterEnd;
+}
+
+function skipHorizontalWhitespace(text: string, start: number): number {
+  let index = start;
+  while (isHorizontalWhitespace(text[index])) index += 1;
+  return index;
 }
 
 function readAuthorizationSchemeAndCredential(

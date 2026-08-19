@@ -218,6 +218,38 @@ assert.equal(
   `See https://example.invalid/callback?%6bey=${REDACTED_SECRET}&safe=visible#%4b%45%59=${REDACTED_SECRET}&tab=details`,
   "decoded URL key parameters redact while preserving the original encoding",
 );
+for (const [url, expected] of [
+  [
+    "/callback?key=relative-secret&safe=visible#key=fragment-secret&tab=details",
+    `/callback?key=${REDACTED_SECRET}&safe=visible#key=${REDACTED_SECRET}&tab=details`,
+  ],
+  [
+    "//example.invalid/callback?%6bey=protocol-relative-secret#%4b%45%59=fragment-secret",
+    `//example.invalid/callback?%6bey=${REDACTED_SECRET}#%4b%45%59=${REDACTED_SECRET}`,
+  ],
+] as const) {
+  assert.equal(
+    containsSecretText(url),
+    true,
+    "relative and protocol-relative URL key parameters remain secret evidence",
+  );
+  assert.equal(
+    redactSecretText(url),
+    expected,
+    "relative and protocol-relative URL key parameters redact without rewriting the URL",
+  );
+}
+const safeRelativeUrl = "/callback?state=visible#tab=details";
+assert.equal(
+  containsSecretText(safeRelativeUrl),
+  false,
+  "ordinary relative URL query and fragment parameters remain safe evidence",
+);
+assert.equal(
+  redactSecretText(safeRelativeUrl),
+  safeRelativeUrl,
+  "ordinary relative URLs remain intact during redaction",
+);
 assert.equal(
   containsSecretText("key=value"),
   false,
@@ -400,6 +432,29 @@ assert.equal(
   containsSecretText("Authorization: DPoP proof is required"),
   false,
   "multi-word authorization documentation remains safe evidence for arbitrary schemes",
+);
+for (const authorization of [
+  "Authorization: Signature keyId=demo,signature=abc123",
+  "Authorization: Signature keyId=demo signature=abc123",
+  "AUTHORIZATION=ApiKey key=abc123",
+]) {
+  assert.equal(
+    containsSecretText(authorization),
+    true,
+    "authorization parameter credentials remain secret text for valid schemes",
+  );
+  assert.equal(
+    redactSecretText(authorization),
+    authorization.startsWith("AUTHORIZATION=")
+      ? `AUTHORIZATION=${REDACTED_SECRET}`
+      : `Authorization: ${REDACTED_SECRET}`,
+    "authorization parameter credentials redact the complete authorization value",
+  );
+}
+assert.equal(
+  containsSecretText("Authorization: Signature request signing is required"),
+  false,
+  "authorization documentation without a credential token or parameter remains safe evidence",
 );
 const digestCredential = 'Authorization: Digest username="Mufasa", realm="test@example.invalid", nonce="abcdef1234567890", response="0123456789abcdef"';
 assert.equal(
