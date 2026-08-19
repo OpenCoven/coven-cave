@@ -602,6 +602,50 @@ in-app instead. A dev-only recovery overlay replaces the raw `ChunkLoadError` /
 `ERR_CONNECTION_REFUSED` page, polls the origin, and hard-reloads the window as
 soon as the server answers so no stale chunk ids survive the restart.
 
+## Local remote hygiene — keep the Desktop branch list honest
+
+GitHub Desktop lists every remote-tracking ref in this checkout, so anything
+stale or foreign shows up as branch-list noise. Three rules keep it accurate.
+
+**One remote: `origin`.** A fork remote mirrors branches nobody here maintains.
+`snowopsdev` sat in this checkout contributing three refs, none of which any
+local branch tracked, long after its only contribution (`#4596`, closed
+unmerged, later re-landed on `main`) was superseded. Removing a remote is
+local-only and lossless — the fork keeps its own branches — so drop one as soon
+as its PR is resolved:
+
+```bash
+git remote -v                    # expect exactly origin (fetch + push)
+git remote remove <fork>
+```
+
+**`fetch.prune = true`.** Without it, deleted remote branches linger as
+tracking refs forever, and this repository deletes branches constantly
+(`delete_branch_on_merge` plus `branch-cap.yml`). Set once per checkout:
+
+```bash
+git config fetch.prune true
+git config fetch.pruneTags false   # tags are the retention store; never prune them
+```
+
+⚠️ Keep `pruneTags` off. `archive/*` and `retention/*` tags are what the
+worktree guard reads as proof a head is retained, and pruning them locally
+would make retained work look at-risk.
+
+**No feature branch tracks a remote branch.** Only `main` and the Beads dolt
+sync branch should have an upstream. Audit with:
+
+```bash
+git for-each-ref --format='%(refname:short) -> %(upstream:short)' refs/heads \
+  | grep -v ' -> $'
+```
+
+Anything else listed is a branch that will render as "behind N" against a ref
+it is not a view of, and whose bare `git push` git answers by suggesting
+`git push origin HEAD:main`. Clear it with `git branch --unset-upstream
+<branch>`. Managed creation stopped producing these in `cave-t57kr`, but
+branches made before that fix still carry one.
+
 ## Diagnosing concurrent sessions
 
 If git operations keep colliding with surprise pulls/merges, multiple Claude sessions are likely on the same checkout. Diagnose:
@@ -685,8 +729,18 @@ something the others do not (`cave-xjuup`):
 
 - `refs/remotes/origin/<branch>`, written by a push. Survives the remote
   dropping the branch, but **not** a `fetch --prune`.
-- `branch.<name>.remote`, written only by `push -u`. Lives in `.git/config`, so
+- `branch.<name>.remote`, written by `push -u`. Lives in `.git/config`, so
   a prune cannot touch it — but plenty of branches never get one.
+
+  ⚠️ It was **also** written by managed worktree creation until `cave-t57kr`:
+  `git worktree add -b <branch> <path> origin/main` tracks its remote start
+  point by default, so this key was true from birth for every canonical
+  worktree. That made the "three signals" below effectively one — the test
+  never reached the log, always read "was deleted", and so always archived a
+  tag instead of the readable branch the paragraph after this one promises.
+  `worktree-lifecycle-create.ts` now passes `--no-track`. A branch created
+  before that fix still carries the stale key; clear it with
+  `git branch --unset-upstream <branch>`.
 - **the hook's own log**, which records that *it* pushed the branch. Survives
   everything short of deleting the file.
 
