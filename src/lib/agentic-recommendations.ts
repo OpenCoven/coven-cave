@@ -1,4 +1,4 @@
-import { redactSecretText } from "./secret-redaction.ts";
+import { containsSecretText } from "./secret-redaction.ts";
 
 export const AGENTIC_SURFACES = ["board", "research", "chat"] as const;
 export type AgenticSurface = (typeof AGENTIC_SURFACES)[number];
@@ -104,6 +104,7 @@ export type AgenticRecommendationParseErrorCode =
   | "invalid_evidence"
   | "secret_evidence"
   | "invalid_verification"
+  | "invalid_verified_checks"
   | "invalid_application"
   | "auto_apply_forbidden";
 
@@ -148,7 +149,12 @@ function parseError(code: AgenticRecommendationParseErrorCode): never {
 }
 
 function isRecord(value: unknown): value is RawRecord {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+  return value !== null && typeof value === "object" && !Array.isArray(value) && isPlainObject(value);
+}
+
+function isPlainObject(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function hasExactKeys(value: RawRecord, expected: readonly string[]): boolean {
@@ -217,7 +223,7 @@ function parseEvidenceRefs(value: unknown): AgenticEvidenceRef[] {
     if (!isRecord(entry) || !hasExactKeys(entry, ["id", "kind", "label"])) parseError("invalid_evidence");
     if (!isValidId(entry.id) || !isBoundedString(entry.label)) parseError("invalid_evidence");
     const kind = asEvidenceKind(entry.kind);
-    if (redactSecretText(entry.id) !== entry.id || redactSecretText(entry.label) !== entry.label) {
+    if (containsSecretText(entry.id) || containsSecretText(entry.label)) {
       parseError("secret_evidence");
     }
     return { id: entry.id, kind, label: entry.label };
@@ -240,7 +246,19 @@ function parseVerification(value: unknown): AgenticVerification {
     }
     return { id: check.id, state: check.state as AgenticVerificationCheckState, detail: check.detail };
   });
-  return { status, checks };
+  const verification = { status, checks };
+  if (status === "verified" && !hasPassedVerificationChecks(verification)) {
+    parseError("invalid_verified_checks");
+  }
+  return verification;
+}
+
+function hasPassedVerificationChecks(verification: Pick<AgenticVerification, "status" | "checks">): boolean {
+  return (
+    verification.status === "verified"
+    && verification.checks.length > 0
+    && verification.checks.every((check) => check.state === "passed")
+  );
 }
 
 function parseApplication(value: unknown): AgenticApplication {
@@ -352,16 +370,15 @@ export function isAutoApplyAllowed(recommendation: Pick<AgenticRecommendation, "
     recommendation.application.mode === "auto-apply" &&
     !recommendation.application.requiresApproval &&
     recommendation.application.reversible &&
-    recommendation.verification.status === "verified" &&
-    recommendation.verification.checks.some((check) => check.state === "passed")
+    hasPassedVerificationChecks(recommendation.verification)
   );
 }
 
 function rankTier(recommendation: AgenticRecommendation): number {
+  if (hasPassedVerificationChecks(recommendation.verification)) return 0;
   switch (recommendation.verification.status) {
-    case "verified":
-      return 0;
     case "proposal":
+    case "verified":
       return 1;
     case "blocked":
       return 2;
@@ -402,21 +419,80 @@ function canonicalJson(
 ): string {
   if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("context must contain JSON values");
+    if (!Number.isFinite(value)) throw new Error("context must not contain non-finite numbers");
     return JSON.stringify(value);
   }
-  if (depth <= 0 || !Array.isArray(value) && !isRecord(value)) throw new Error("context must contain bounded JSON values");
+  if (typeof value === "function") throw new Error("context must not contain functions");
+  if (typeof value === "symbol") throw new Error("context must not contain symbols");
+  if (typeof value === "bigint") throw new Error("context must not contain bigints");
+  if (typeof value === "undefined") throw new Error("context must not contain undefined values");
+  if (depth <= 0) throw new Error("context exceeds the maximum nesting depth");
+  if (typeof value !== "object") throw new Error("context must contain only JSON values");
   if (ancestors.has(value)) throw new Error("context must not contain cycles");
 
-  const entries = Array.isArray(value) ? value : Object.keys(value).sort().map((key) => [key, value[key]] as const);
-  if (entries.length > MAX_CONTEXT_ENTRIES - budget.entries) throw new Error("context has too many entries");
-  budget.entries += entries.length;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      throw new Error("context arrays must use the Array prototype");
+    }
+    return canonicalArray(value, depth, ancestors, budget);
+  }
+  if (!isPlainObject(value)) throw new Error("context objects must be plain objects");
+  return canonicalObject(value as RawRecord, depth, ancestors, budget);
+}
+
+function canonicalArray(
+  value: unknown[],
+  depth: number,
+  ancestors: Set<object>,
+  budget: { entries: number },
+): string {
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== value.length + 1 || !keys.includes("length")) {
+    throw new Error("context arrays must not have non-index properties");
+  }
+  if (value.length > MAX_CONTEXT_ENTRIES - budget.entries) throw new Error("context has too many entries");
+  budget.entries += value.length;
+
   ancestors.add(value);
   try {
-    if (Array.isArray(value)) {
-      return `[${value.map((entry) => canonicalJson(entry, depth - 1, ancestors, budget)).join(",")}]`;
+    const entries: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+        throw new Error("context arrays must not be sparse or accessor-backed");
+      }
+      entries.push(descriptor.value);
     }
-    return `{${(entries as ReadonlyArray<readonly [string, unknown]>)
+    return `[${entries.map((entry) => canonicalJson(entry, depth - 1, ancestors, budget)).join(",")}]`;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function canonicalObject(
+  value: RawRecord,
+  depth: number,
+  ancestors: Set<object>,
+  budget: { entries: number },
+): string {
+  const keys = Reflect.ownKeys(value);
+  if (keys.some((key) => typeof key !== "string")) throw new Error("context must not contain symbol keys");
+  if (keys.length > MAX_CONTEXT_ENTRIES - budget.entries) throw new Error("context has too many entries");
+  budget.entries += keys.length;
+
+  const entries = (keys as string[])
+    .map((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+        throw new Error("context plain objects must contain enumerable data properties");
+      }
+      return [key, descriptor.value] as const;
+    })
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+
+  ancestors.add(value);
+  try {
+    return `{${entries
       .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry, depth - 1, ancestors, budget)}`)
       .join(",")}}`;
   } finally {

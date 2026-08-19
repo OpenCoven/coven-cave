@@ -102,6 +102,28 @@ expectRejected(output([recommendation({ surface: "canvas" })]), "unknown_surface
 expectRejected(output([recommendation({ kind: "future-kind" })]), "unknown_kind");
 expectRejected(output([recommendation({ kind: "x".repeat(65) })]), "kind_too_long");
 expectRejected(output([recommendation({ confidence: 0.99 })]), "invalid_recommendation");
+expectRejected(
+  output([recommendation({ verification: { status: "verified", checks: [] } })]),
+  "invalid_verified_checks",
+);
+expectRejected(
+  output([recommendation({
+    verification: {
+      status: "verified",
+      checks: [{ id: "still-running", state: "pending", detail: "The verification has not completed." }],
+    },
+  })]),
+  "invalid_verified_checks",
+);
+expectRejected(
+  output([recommendation({
+    verification: {
+      status: "verified",
+      checks: [{ id: "failed-check", state: "failed", detail: "The verification failed." }],
+    },
+  })]),
+  "invalid_verified_checks",
+);
 
 // IDs and evidence are a trust boundary, not model-authored labels to accept blindly.
 expectRejected(output([recommendation(), recommendation({ id: "rec-1" })]), "duplicate_id");
@@ -115,6 +137,30 @@ expectRejected(
   })]),
   "secret_evidence",
 );
+for (const label of [
+  `Authorization: Bearer ${"a".repeat(32)}`,
+  "API_KEY=synthetic-credential-value",
+  JSON.stringify({ client_secret: "synthetic-credential-value" }),
+]) {
+  expectRejected(
+    output([recommendation({
+      id: `secret-evidence-${label.length}`,
+      evidenceRefs: [{ id: "issue-8", kind: "github", label }],
+    })]),
+    "secret_evidence",
+  );
+}
+const safeEvidenceLabels = [
+  "Authorization: migrate to OAuth 2.1",
+  '{ "safe": "value" }',
+];
+for (const [index, label] of safeEvidenceLabels.entries()) {
+  const parsed = parseAgenticRecommendationsOutput(output([recommendation({
+    id: `safe-evidence-${index}`,
+    evidenceRefs: [{ id: "issue-8", kind: "github", label }],
+  })]))[0]!;
+  assert.equal(parsed.evidenceRefs[0]?.label, label, "safe evidence text survives strict parsing");
+}
 
 // Fingerprints are canonical across object key order and detect a stale recommendation.
 assert.equal(
@@ -125,6 +171,32 @@ assert.equal(
 assert.notEqual(contextFingerprint({ ...context, title: "Different goal" }), fingerprint);
 assert.equal(isRecommendationContextStale(extracted[0]!, context), false);
 assert.equal(isRecommendationContextStale(extracted[0]!, { ...context, dependencies: [] }), true);
+const nullPrototypeContext = Object.assign(Object.create(null) as Record<string, unknown>, context);
+assert.equal(
+  contextFingerprint(nullPrototypeContext),
+  fingerprint,
+  "null-prototype plain objects remain valid fingerprint contexts",
+);
+class ContextInstance {
+  value = "context";
+}
+assert.throws(
+  () => contextFingerprint(new Date(0)),
+  /plain object/,
+  "Date contexts cannot collide with an empty plain-object fingerprint",
+);
+assert.throws(
+  () => contextFingerprint(new ContextInstance()),
+  /plain object/,
+  "class instances are not JSON plain-object contexts",
+);
+assert.throws(() => contextFingerprint({ value: () => "context" }), /function/);
+assert.throws(() => contextFingerprint({ value: Symbol("context") }), /symbol/);
+assert.throws(() => contextFingerprint({ value: BigInt(1) }), /bigint/);
+assert.throws(() => contextFingerprint({ value: Number.NaN }), /non-finite/);
+const cyclicContext: Record<string, unknown> = {};
+cyclicContext.self = cyclicContext;
+assert.throws(() => contextFingerprint(cyclicContext), /cycles/);
 
 // Ranking is qualitative, dense ordinal, and preserves model order inside a tie.
 const ranked = rankAgenticRecommendations(parseAgenticRecommendationsOutput(output([
@@ -165,6 +237,34 @@ assert.deepEqual(
   "missing tiers still receive dense ordinals in deterministic tier order",
 );
 assert.doesNotMatch(JSON.stringify(ranked), /confidence/i, "the contract never emits numeric confidence");
+const verifiedForDefensiveRanking = parseAgenticRecommendationsOutput(output([
+  recommendation({ id: "genuinely-verified" }),
+]))[0]!;
+const defensiveRanking = rankAgenticRecommendations([
+  verifiedForDefensiveRanking,
+  {
+    ...verifiedForDefensiveRanking,
+    id: "inconsistent-verified",
+    verification: { status: "verified" as const, checks: [] },
+  },
+  {
+    ...verifiedForDefensiveRanking,
+    id: "ordinary-proposal",
+    verification: {
+      status: "proposal" as const,
+      checks: [{ id: "awaiting-review", state: "pending" as const, detail: "Awaiting review." }],
+    },
+  },
+]);
+assert.deepEqual(
+  defensiveRanking.map(({ id, ordinal }) => ({ id, ordinal })),
+  [
+    { id: "genuinely-verified", ordinal: 1 },
+    { id: "inconsistent-verified", ordinal: 2 },
+    { id: "ordinary-proposal", ordinal: 2 },
+  ],
+  "inconsistent verified data receives the review tier rather than the verified tier",
+);
 
 // Auto-application has a small, exact, review-independent allowlist.
 assert.deepEqual(AUTO_APPLY_RECOMMENDATION_KINDS, [
@@ -181,6 +281,22 @@ for (const kind of AUTO_APPLY_RECOMMENDATION_KINDS) {
   });
   const parsed = parseAgenticRecommendationsOutput(output([auto]))[0]!;
   assert.equal(isAutoApplyAllowed(parsed), true, `${kind} is explicitly allowlisted`);
+}
+const verifiedAuto = parseAgenticRecommendationsOutput(output([recommendation({
+  id: "verified-auto",
+  kind: "reference-canonicalization",
+  application: { mode: "auto-apply", requiresApproval: false, reversible: true },
+})]))[0]!;
+for (const checks of [
+  [],
+  [{ id: "pending-check", state: "pending" as const, detail: "Awaiting verification." }],
+  [{ id: "failed-check", state: "failed" as const, detail: "Verification failed." }],
+]) {
+  assert.equal(
+    isAutoApplyAllowed({ ...verifiedAuto, verification: { status: "verified", checks } }),
+    false,
+    "auto-application independently requires nonempty all-passed verification",
+  );
 }
 for (const kind of ["prose", "dependency", "topic", "action"]) {
   const unsafe = recommendation({

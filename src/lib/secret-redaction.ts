@@ -67,6 +67,103 @@ export function redactSecretText(text: string): string {
   return redactSecretTextPlain(text);
 }
 
+/**
+ * Detects actual credential material without comparing against redacted output,
+ * which may serialize otherwise safe JSON or authorization documentation.
+ */
+export function containsSecretText(text: string): boolean {
+  const decoded = decodeJsonValue(text);
+  return (
+    (decoded !== undefined && containsSecretJsonValue(decoded.value))
+    || containsSecretTextPlain(text)
+  );
+}
+
+function containsSecretJsonValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    const nested = decodeJsonValue(value);
+    return containsSecretTextPlain(value) || (nested !== undefined && containsSecretJsonValue(nested.value));
+  }
+  if (value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((entry) => containsSecretJsonValue(entry));
+
+  return Object.entries(value).some(([key, entry]) => (
+    containsSecretFieldValue(key, entry) || containsSecretJsonValue(entry)
+  ));
+}
+
+function containsSecretTextPlain(text: string): boolean {
+  if (WHOLE_SECRET_PATTERNS.some((pattern) => matchesSecretPattern(pattern, text))) return true;
+  if (/[?&](?:access_token|api_key|auth|key|password|secret|token)=[^&#\s]+/i.test(text)) return true;
+  if (/\bhttps?:\/\/[^:/\s]+:[^@\s/]+@/i.test(text)) return true;
+
+  let index = 0;
+  while (index < text.length) {
+    const assignment = readAssignment(text, index);
+    if (!assignment) {
+      index += 1;
+      continue;
+    }
+
+    const valueEnd = scanAssignmentValue(
+      text,
+      assignment.valueStart,
+      assignment.key,
+      assignment.separator,
+    );
+    if (containsSecretFieldValue(assignment.key, text.slice(assignment.valueStart, valueEnd))) return true;
+    index = Math.max(assignment.keyEnd, valueEnd);
+  }
+  return false;
+}
+
+function containsSecretFieldValue(key: string, value: unknown): boolean {
+  if (!isSecretKey(key)) return false;
+  if (isAuthorizationKey(key)) {
+    return typeof value === "string"
+      ? containsAuthorizationCredential(value) || containsSecretTextPlain(value)
+      : containsSecretJsonValue(value);
+  }
+  return hasCredentialValue(value);
+}
+
+function containsAuthorizationCredential(value: string): boolean {
+  const match = /^\s*([A-Za-z][A-Za-z-]*)\s+(\S+)/.exec(value);
+  if (!match) return false;
+
+  const scheme = match[1]!.toLowerCase();
+  const credential = match[2]!;
+  if (
+    AUTHORIZATION_SCHEMES.has(scheme)
+    || scheme === "apikey"
+    || scheme === "api-key"
+    || scheme === "token"
+  ) {
+    return true;
+  }
+  return scheme === "oauth" && !/^\d+(?:\.\d+)*$/.test(credential);
+}
+
+function hasCredentialValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length < 2) return trimmed.length > 0;
+    if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      return trimmed.slice(1, -1).trim().length > 0;
+    }
+    return true;
+  }
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && typeof value === "object" && Object.keys(value).length > 0;
+}
+
+function matchesSecretPattern(pattern: RegExp, text: string): boolean {
+  pattern.lastIndex = 0;
+  const matched = pattern.test(text);
+  pattern.lastIndex = 0;
+  return matched;
+}
+
 function redactSecretTextPlain(text: string): string {
   let next = text;
   for (const pattern of WHOLE_SECRET_PATTERNS) {
