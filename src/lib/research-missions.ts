@@ -1159,7 +1159,7 @@ export function researchSourceStatusCounts(
 }
 
 export type ResearchContinueLabel = {
-  /** Compact button text in the desk's iN/M vocabulary. */
+  /** Explicit button text naming the iteration the runner will evaluate. */
   label: string;
   /** Full-sentence consequence for the button's aria-label and title. */
   description: string;
@@ -1168,6 +1168,12 @@ export type ResearchContinueLabel = {
   /** Missing telemetry may be bypassed for exactly one explicitly approved pass. */
   costApprovalRequired: boolean;
 };
+
+export function nextResearchIterationNumber(
+  mission: Pick<ResearchMission, "iterations">,
+): number {
+  return (mission.iterations.at(-1)?.number ?? 0) + 1;
+}
 
 /**
  * What pressing Continue will actually do.
@@ -1182,9 +1188,9 @@ export function researchContinueLabel(
   mission: Pick<ResearchMission, "iterations" | "bounds" | "startedAt">,
   nowMs: number = Date.now(),
 ): ResearchContinueLabel {
-  const next = mission.iterations.length + 1;
+  const next = nextResearchIterationNumber(mission);
   const max = mission.bounds.maxIterations;
-  const label = `Continue (i${next}/${max})`;
+  const label = `Continue to iteration ${next} of ${max}`;
   const refusal = (why: string) => ({
     label,
     description: `Continue would ask for iteration ${next}, but ${why}`,
@@ -1193,7 +1199,7 @@ export function researchContinueLabel(
   });
   if (next > max) {
     return {
-      label,
+      label: "Iteration limit reached",
       description: `Continue would ask for iteration ${next}, past the planned ${max} — the runner stops at the iteration limit instead of starting it.`,
       gated: true,
       costApprovalRequired: false,
