@@ -229,9 +229,7 @@ fn tailscale_launcher_uses_only_fixed_native_commands() {
         "Windows must launch only the installed Tailscale client from a standard program directory",
     );
     assert!(
-        !src.contains("open_tailscale_app(path")
-            && !src.contains("open_tailscale_app(command")
-            && !src.contains("open_tailscale_app(args"),
+        src.contains("pub(super) async fn open_tailscale_app() -> Result<(), String>"),
         "the Tauri command must not accept caller-controlled launch input",
     );
 }
