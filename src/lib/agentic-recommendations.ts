@@ -86,6 +86,9 @@ export type AgenticVerificationCheck = {
   detail: string;
 };
 
+/** Mechanical facts supplied by a trusted surface adapter, never model output. */
+export type AgenticAdapterVerificationCheck = AgenticVerificationCheck;
+
 export type AgenticVerification = {
   status: AgenticVerificationStatus;
   checks: AgenticVerificationCheck[];
@@ -152,6 +155,7 @@ const MAX_ID_CHARS = 96;
 const MAX_TEXT_CHARS = 2_000;
 const MAX_RANK_REASONS = 8;
 const MAX_EVIDENCE_REFS = 16;
+const MAX_ADAPTER_VERIFICATION_CHECKS = 16;
 const MAX_PAYLOAD_BYTES = 8 * 1024;
 const MAX_PAYLOAD_DEPTH = 12;
 const MAX_PAYLOAD_ENTRIES = 128;
@@ -337,8 +341,9 @@ function parseEvidenceRefs(value: unknown): AgenticEvidenceRef[] {
     if (!isRecord(entry) || !hasExactKeys(entry, ["id", "kind", "label"])) parseError("invalid_evidence");
     if (!isValidEvidenceId(entry.id) || !isBoundedString(entry.label)) parseError("invalid_evidence");
     const kind = asEvidenceKind(entry.kind);
+    const isGitHubOid = kind === "github" && isGitOid(entry.id);
     if (
-      (!isGitOid(entry.id) && containsSecretText(entry.id))
+      (!isGitHubOid && containsSecretText(entry.id))
       || containsSecretText(stripExplicitGithubCommitOids(kind, entry.label))
     ) {
       parseError("secret_evidence");
@@ -441,34 +446,86 @@ export function parseAgenticRecommendationsOutput(text: string): AgenticRecommen
   });
 }
 
+function parseAdapterVerificationChecks(
+  checks: readonly AgenticAdapterVerificationCheck[],
+): AgenticVerificationCheck[] | undefined {
+  if (!Array.isArray(checks) || checks.length === 0 || checks.length > MAX_ADAPTER_VERIFICATION_CHECKS) {
+    return undefined;
+  }
+
+  const ids = new Set<string>();
+  const parsed: AgenticVerificationCheck[] = [];
+  for (const check of checks) {
+    if (
+      !isRecord(check)
+      || !hasExactKeys(check, ["id", "state", "detail"])
+      || !isValidId(check.id)
+      || (check.state !== "passed" && check.state !== "pending" && check.state !== "failed")
+      || !isBoundedString(check.detail)
+      || ids.has(check.id)
+    ) {
+      return undefined;
+    }
+    ids.add(check.id);
+    parsed.push({ id: check.id, state: check.state, detail: check.detail });
+  }
+  return parsed;
+}
+
+function createVerificationResult(
+  recommendation: AgenticRecommendation,
+  status: AgenticVerificationStatus,
+  checks: AgenticVerificationCheck[],
+): AgenticRecommendation {
+  const result: AgenticRecommendation = {
+    ...recommendation,
+    payload: Object.freeze({ ...recommendation.payload }),
+    verification: { status, checks },
+    application: status === "verified"
+      ? { mode: "auto-apply", requiresApproval: false, reversible: true }
+      : { mode: "review", requiresApproval: true, reversible: false },
+  };
+  Object.freeze(result.verification.checks);
+  Object.freeze(result.verification);
+  Object.freeze(result.application);
+  Object.freeze(result);
+  return result;
+}
+
 /**
  * Validates one deterministic proposal in application code and issues an
- * in-process verification stamp. Persisted data must be passed through here again.
+ * in-process verification stamp only after trusted adapter checks pass. Persisted
+ * data must be passed through here again with fresh mechanical checks.
  */
 export function verifyAutoApplicableRecommendation(
   recommendation: AgenticRecommendation,
+  adapterChecks: readonly AgenticAdapterVerificationCheck[],
 ): AgenticRecommendation | undefined {
   if (!isAutoApplyPayload(recommendation.kind, recommendation.payload)) return undefined;
 
-  const verified: AgenticRecommendation = {
-    ...recommendation,
-    payload: Object.freeze({ ...recommendation.payload }),
-    verification: {
-      status: "verified",
-      checks: [
-        {
-          id: "deterministic-payload-schema",
-          state: "passed",
-          detail: "The code-owned payload schema accepted this deterministic operation.",
-        },
-      ],
-    },
-    application: { mode: "auto-apply", requiresApproval: false, reversible: true },
+  const schemaCheck: AgenticVerificationCheck = {
+    id: "deterministic-payload-schema",
+    state: "passed",
+    detail: "The code-owned payload schema accepted this deterministic operation.",
   };
-  Object.freeze(verified.verification.checks);
-  Object.freeze(verified.verification);
-  Object.freeze(verified.application);
-  Object.freeze(verified);
+  const mechanicalChecks = parseAdapterVerificationChecks(adapterChecks);
+  if (!mechanicalChecks) {
+    return createVerificationResult(recommendation, "blocked", [
+      schemaCheck,
+      {
+        id: "adapter-verification-required",
+        state: "failed",
+        detail: "A trusted adapter must provide nonempty mechanical verification checks.",
+      },
+    ]);
+  }
+
+  const checks = [schemaCheck, ...mechanicalChecks];
+  if (!mechanicalChecks.every((check) => check.state === "passed")) {
+    return createVerificationResult(recommendation, "blocked", checks);
+  }
+
+  const verified = createVerificationResult(recommendation, "verified", checks);
   trustedVerifiedRecommendations.add(verified);
   return verified;
 }

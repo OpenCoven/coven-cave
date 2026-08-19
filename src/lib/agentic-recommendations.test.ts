@@ -138,6 +138,13 @@ expectRejected(
   "invalid_recommendation",
 );
 expectRejected(
+  output([{
+    ...recommendation(),
+    adapterChecks: [{ id: "model-claimed-check", state: "passed", detail: "A model cannot verify itself." }],
+  }]),
+  "invalid_recommendation",
+);
+expectRejected(
   output([recommendation({
     application: { mode: "auto-apply", requiresApproval: false, reversible: true },
   })]),
@@ -193,6 +200,24 @@ assert.equal(
   gitCommitOid,
   "an exact Git OID is safe GitHub evidence",
 );
+const safeGitHubSha256Evidence = parseAgenticRecommendationsOutput(output([recommendation({
+  id: "safe-github-sha256-evidence",
+  evidenceRefs: [{ id: "a".repeat(64), kind: "github", label: "GitHub SHA-256 evidence" }],
+})]))[0]!;
+assert.equal(
+  safeGitHubSha256Evidence.evidenceRefs[0]?.id,
+  "a".repeat(64),
+  "a SHA-256 OID is exempt only when the evidence is explicitly GitHub evidence",
+);
+for (const kind of ["task", "dependency", "saved-link"] as const) {
+  expectRejected(
+    output([recommendation({
+      id: `credential-shaped-${kind}-id`,
+      evidenceRefs: [{ id: "a".repeat(64), kind, label: `${kind} evidence` }],
+    })]),
+    "secret_evidence",
+  );
+}
 expectRejected(
   output([recommendation({
     id: `ghp_${"a".repeat(36)}`,
@@ -301,11 +326,57 @@ for (const kind of AUTO_APPLY_RECOMMENDATION_KINDS) {
   })]), "invalid_payload");
 }
 
-const verifiedAuto = verifyAutoApplicableRecommendation(parsedAutoRecommendations[0]!);
-assert.ok(verifiedAuto, "the code-owned verifier accepts a strictly valid deterministic payload");
+const missingAdapterChecks = verifyAutoApplicableRecommendation(parsedAutoRecommendations[0]!, []);
+assert.ok(missingAdapterChecks, "missing adapter checks returns a safe blocked recommendation");
+assert.equal(
+  missingAdapterChecks.verification.status,
+  "blocked",
+  "payload-schema validation alone cannot authorize a recommendation",
+);
+assert.equal(isAutoApplyAllowed(missingAdapterChecks), false);
+
+const unresolvedReference = verifyAutoApplicableRecommendation(parsedAutoRecommendations[0]!, [
+  {
+    id: "reference-exists",
+    state: "failed",
+    detail: "The adapter could not resolve reference-42.",
+  },
+]);
+assert.ok(unresolvedReference, "an unresolved reference returns a safe blocked recommendation");
+assert.equal(unresolvedReference.verification.status, "blocked");
+assert.equal(
+  isAutoApplyAllowed(unresolvedReference),
+  false,
+  "a failed mechanical reference check cannot authorize auto-application",
+);
+
+const exactResolutionChecks = [
+  {
+    id: "reference-exists",
+    state: "passed" as const,
+    detail: "The adapter resolved reference-42.",
+  },
+  {
+    id: "canonical-url-exact",
+    state: "passed" as const,
+    detail: "The adapter resolved the canonical URL exactly.",
+  },
+];
+const verifiedAuto = verifyAutoApplicableRecommendation(parsedAutoRecommendations[0]!, exactResolutionChecks);
+assert.ok(verifiedAuto, "all-passed mechanical checks authorize a strictly valid deterministic payload");
 assert.equal(isAutoApplyAllowed(verifiedAuto), true, "only the verifier can authorize auto-application");
-assert.ok(verifiedAuto.verification.checks.length > 0);
-assert.ok(verifiedAuto.verification.checks.every((check) => check.state === "passed"));
+assert.deepEqual(
+  verifiedAuto.verification.checks,
+  [
+    {
+      id: "deterministic-payload-schema",
+      state: "passed",
+      detail: "The code-owned payload schema accepted this deterministic operation.",
+    },
+    ...exactResolutionChecks,
+  ],
+  "a stamp records both built-in payload validation and adapter-owned mechanical checks",
+);
 
 const reloadedVerifiedAuto = JSON.parse(JSON.stringify(verifiedAuto));
 assert.equal(
@@ -313,7 +384,7 @@ assert.equal(
   false,
   "persisted recommendations lose their in-process verification stamp and must be reverified",
 );
-const reverifiedAuto = verifyAutoApplicableRecommendation(reloadedVerifiedAuto);
+const reverifiedAuto = verifyAutoApplicableRecommendation(reloadedVerifiedAuto, exactResolutionChecks);
 assert.ok(reverifiedAuto);
 assert.equal(isAutoApplyAllowed(reverifiedAuto), true, "rehydrated recommendations can be reverified by code");
 
@@ -322,7 +393,7 @@ for (const kind of ["prose", "dependency", "topic", "action"]) {
     id: `unsafe-${kind}`,
     kind,
   })]))[0]!;
-  assert.equal(verifyAutoApplicableRecommendation(unsafe), undefined, `${kind} cannot be auto-applied`);
+  assert.equal(verifyAutoApplicableRecommendation(unsafe, exactResolutionChecks), undefined, `${kind} cannot be auto-applied`);
 }
 
 // Ranking trusts only recommendations stamped by this process, never a model-claimed verified tier.
