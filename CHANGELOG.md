@@ -7,6 +7,33 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-19
+
+> A calmer native iOS shell, clearer Chats, and a safer cross-platform foundation.
+
+Patch release on top of v0.3.6.
+
+### Changes
+- Refine native iOS navigation, Chats chrome, Settings shelves, and accessibility
+  while retiring the native-only Terminal surface (#4729)
+- Layer native destination titles above app toolbars for clearer hierarchy
+  (#4727)
+- Require explicit Research cost approval and protect active Terminal missions
+  (#4726)
+- Publish a deterministic Client v1 contract with precise success and error
+  envelopes (#4717, #4725)
+- Preserve marketplace logos through shared transport handling (#4724)
+- Harden CI recovery, managed worktree retention, and release lifecycle guards
+  (#4719, #4720, #4721)
+- Improve Chat follow-up pills and session-toolbar alignment (#4718, #4707)
+- Add familiar execution analytics, durable local previews, direct podcast
+  rendering, and the inference-route foundation (#4710, #4714)
+- Restore compact Code-rail Terminal access and improve cross-theme Beautiful UI
+  legibility (#4713, #4702)
+- Honor `COVEN_BIN` in the desktop shell and retry transient managed Node
+  installation failures (#4703)
+
+
 ## [0.3.6] - 2026-08-17
 
 > Seamless familiar credential intake and a Chat panel that stays with you across the Cave.
