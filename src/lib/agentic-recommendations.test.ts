@@ -68,6 +68,10 @@ assert.equal(
 );
 expectRejected(`Preamble\n${output([recommendation()])}`, "invalid_envelope");
 expectRejected(output([{ ...recommendation(), unexpected: true }]), "invalid_recommendation");
+expectRejected(
+  `<recommendations>\n${output([])}\n</recommendations>`.padEnd(64 * 1024 + 1, " "),
+  "output_too_large",
+);
 
 // The surface and recommendation-kind allowlists are explicit and exhaustive.
 assert.deepEqual(AGENTIC_SURFACES, ["board", "research", "chat"]);
@@ -144,6 +148,21 @@ assert.deepEqual(
     { id: "blocked-last", ordinal: 3 },
   ],
   "qualitative tiers receive adaptive ordinal ranks with stable ties",
+);
+const rankedWithoutProposal = rankAgenticRecommendations(parseAgenticRecommendationsOutput(output([
+  recommendation({
+    id: "blocked-without-proposal",
+    verification: { status: "blocked", checks: [{ id: "missing-proof", state: "failed", detail: "No proof." }] },
+  }),
+  recommendation({ id: "verified-without-proposal" }),
+])));
+assert.deepEqual(
+  rankedWithoutProposal.map(({ id, ordinal }) => ({ id, ordinal })),
+  [
+    { id: "verified-without-proposal", ordinal: 1 },
+    { id: "blocked-without-proposal", ordinal: 2 },
+  ],
+  "missing tiers still receive dense ordinals in deterministic tier order",
 );
 assert.doesNotMatch(JSON.stringify(ranked), /confidence/i, "the contract never emits numeric confidence");
 
