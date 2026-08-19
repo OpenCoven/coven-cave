@@ -109,7 +109,7 @@ async function mockReviewDeck(page: Page) {
     route.fulfill({ json: { ok: true, sessions: [SESSION] } }),
   );
   await page.route(/\/api\/roles(\?|$)/, (route) =>
-    route.fulfill({ json: { roles: [] } }),
+    route.fulfill({ json: { ok: true, roles: [] } }),
   );
   await page.route(/\/api\/github\/item\?/, (route) =>
     route.fulfill({ json: ITEM }),
