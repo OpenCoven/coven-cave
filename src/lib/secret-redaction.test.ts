@@ -174,6 +174,39 @@ assert.equal(
   `https://example.invalid/callback?token=${REDACTED_SECRET}&safe=visible`,
   "URL query secret redaction remains intact",
 );
+for (const secretParameter of [
+  "client_secret",
+  "access_token",
+  "refresh_token",
+  "api_key",
+  "password",
+]) {
+  const embeddedUrl =
+    `See https://example.invalid/callback?${secretParameter}=query-secret&safe=visible`
+    + `#${secretParameter}=fragment-secret&tab=details`;
+  assert.equal(
+    containsSecretText(embeddedUrl),
+    true,
+    `${secretParameter} URL query and fragment parameters are secret evidence`,
+  );
+  assert.equal(
+    redactSecretText(embeddedUrl),
+    `See https://example.invalid/callback?${secretParameter}=${REDACTED_SECRET}&safe=visible`
+    + `#${secretParameter}=${REDACTED_SECRET}&tab=details`,
+    `${secretParameter} URL query and fragment values are redacted in embedded URLs`,
+  );
+}
+const safeOrdinaryUrl = "See https://example.invalid/callback?state=visible#tab=details";
+assert.equal(
+  containsSecretText(safeOrdinaryUrl),
+  false,
+  "ordinary URL query and fragment parameters remain safe evidence",
+);
+assert.equal(
+  redactSecretText(safeOrdinaryUrl),
+  safeOrdinaryUrl,
+  "ordinary URLs remain intact during redaction",
+);
 assert.equal(
   redactSecretText("https://user:short-password@example.invalid/path"),
   `https://user:${REDACTED_SECRET}@example.invalid/path`,
@@ -478,6 +511,24 @@ for (const value of [null, false, 0, [], {}]) {
     `decoded JSON token values such as ${json} use structured traversal without assignment-text false positives`,
   );
   assert.deepEqual(JSON.parse(redactSecretText(json)), { token: value });
+}
+for (const [key, value] of [["password", 123456], ["token", true]] as const) {
+  const json = JSON.stringify({ [key]: value });
+  assert.equal(
+    containsSecretText(json),
+    true,
+    `meaningful ${typeof value} values under ${key} are secret evidence`,
+  );
+  assert.deepEqual(
+    JSON.parse(redactSecretText(json)),
+    { [key]: REDACTED_SECRET },
+    `meaningful ${typeof value} values under ${key} are redacted from JSON`,
+  );
+  assert.deepEqual(
+    redactSecretsDeep({ [key]: value }),
+    { [key]: REDACTED_SECRET },
+    `meaningful ${typeof value} values under ${key} are redacted from objects`,
+  );
 }
 
 let veryDeep: Record<string, unknown> = { leaf: "raw-leaf-value" };

@@ -60,6 +60,8 @@ const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
 ];
 const GENERIC_BASE64_SECRET_PATTERN = /\b[A-Za-z0-9+/]{32,}={0,2}\b/g;
+const HTTP_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi;
+const URL_PARAMETER_PATTERN = /([?#&])([^=&?#]+)=([^&#\s]*)/g;
 
 export function redactSecretText(text: string): string {
   const jsonRedaction = redactJsonText(text);
@@ -95,6 +97,7 @@ function containsSecretTextPlain(text: string): boolean {
   if (
     WHOLE_SECRET_PATTERNS.some((pattern) => matchesSecretPattern(pattern, text))
     || containsGenericBase64Secret(text)
+    || containsSecretUrlParameter(text)
   ) {
     return true;
   }
@@ -163,6 +166,8 @@ function hasCredentialValue(value: unknown): boolean {
     }
     return true;
   }
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  if (typeof value === "boolean") return value;
   if (Array.isArray(value)) return value.length > 0;
   return value !== null && typeof value === "object" && Object.keys(value).length > 0;
 }
@@ -207,6 +212,7 @@ function isCredentialToken(value: string): boolean {
 
 function redactSecretTextPlain(text: string): string {
   let next = text;
+  next = redactUrlParameters(next);
   for (const pattern of WHOLE_SECRET_PATTERNS) {
     next = next.replace(pattern, REDACTED_SECRET);
   }
@@ -221,6 +227,56 @@ function redactSecretTextPlain(text: string): string {
   next = redactSecretAssignments(next);
   next = next.replace(/\b(https?:\/\/[^:/\s]+:)[^@\s/]+(@)/gi, `$1${REDACTED_SECRET}$2`);
   return next;
+}
+
+function containsSecretUrlParameter(text: string): boolean {
+  HTTP_URL_PATTERN.lastIndex = 0;
+  for (const match of text.matchAll(HTTP_URL_PATTERN)) {
+    const candidate = match[0];
+    if (!candidate) continue;
+    try {
+      const url = new URL(candidate);
+      if (hasSecretUrlParameter(url.searchParams) || hasSecretUrlParameter(new URLSearchParams(url.hash.slice(1)))) {
+        HTTP_URL_PATTERN.lastIndex = 0;
+        return true;
+      }
+    } catch {
+      // A malformed URL is left to the ordinary text parser.
+    }
+  }
+  HTTP_URL_PATTERN.lastIndex = 0;
+  return false;
+}
+
+function hasSecretUrlParameter(parameters: URLSearchParams): boolean {
+  for (const [key, value] of parameters) {
+    if (isSecretKey(key) && hasCredentialValue(value)) return true;
+  }
+  return false;
+}
+
+function redactUrlParameters(text: string): string {
+  HTTP_URL_PATTERN.lastIndex = 0;
+  const redacted = text.replace(HTTP_URL_PATTERN, (candidate) => {
+    try {
+      new URL(candidate);
+    } catch {
+      return candidate;
+    }
+    return candidate.replace(URL_PARAMETER_PATTERN, (parameter, prefix, encodedKey, value) => {
+      let key: string;
+      try {
+        key = decodeURIComponent(encodedKey.replace(/\+/g, " "));
+      } catch {
+        return parameter;
+      }
+      return isSecretKey(key) && hasCredentialValue(value)
+        ? `${prefix}${encodedKey}=${REDACTED_SECRET}`
+        : parameter;
+    });
+  });
+  HTTP_URL_PATTERN.lastIndex = 0;
+  return redacted;
 }
 
 export function redactSecretsDeep<T>(value: T): T {

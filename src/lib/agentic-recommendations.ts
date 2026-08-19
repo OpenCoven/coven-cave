@@ -165,7 +165,7 @@ const MAX_CONTEXT_ENTRIES = 256;
 const MAX_VERIFICATION_STAMP_BYTES = 96 * 1024;
 const ID_RE = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
 const GIT_OID_RE = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
-const EXPLICIT_GITHUB_COMMIT_OID_RE = /(\b(?:commit|sha(?:256)?)\b[\s:="']+)(?:[a-f0-9]{40}|[a-f0-9]{64})\b/gi;
+const GITHUB_ISSUE_REFERENCE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*#[1-9][0-9]*$/;
 const FINGERPRINT_RE = /^ctx-v1-[0-9a-f]{32}$/;
 const agenticSurfaces = new Set<string>(AGENTIC_SURFACES);
 const evidenceKinds = new Set<string>(AGENTIC_EVIDENCE_KINDS);
@@ -210,8 +210,12 @@ function isGitOid(value: unknown): value is string {
   return typeof value === "string" && GIT_OID_RE.test(value);
 }
 
-function isValidEvidenceId(value: unknown): value is string {
-  return isValidId(value) || isGitOid(value);
+function isValidEvidenceId(value: unknown, kind: AgenticEvidenceKind): value is string {
+  return (
+    isValidId(value)
+    || isGitOid(value)
+    || (kind === "github" && typeof value === "string" && GITHUB_ISSUE_REFERENCE_RE.test(value))
+  );
 }
 
 function asSurface(value: unknown): AgenticSurface {
@@ -340,23 +344,13 @@ function parseEvidenceRefs(value: unknown): AgenticEvidenceRef[] {
   if (!Array.isArray(value) || value.length > MAX_EVIDENCE_REFS) parseError("invalid_evidence");
   return value.map((entry) => {
     if (!isRecord(entry) || !hasExactKeys(entry, ["id", "kind", "label"])) parseError("invalid_evidence");
-    if (!isValidEvidenceId(entry.id) || !isBoundedString(entry.label)) parseError("invalid_evidence");
     const kind = asEvidenceKind(entry.kind);
-    const isGitHubOid = kind === "github" && isGitOid(entry.id);
-    if (
-      (!isGitHubOid && containsSecretText(entry.id))
-      || containsSecretText(stripExplicitGithubCommitOids(kind, entry.label))
-    ) {
+    if (!isValidEvidenceId(entry.id, kind) || !isBoundedString(entry.label)) parseError("invalid_evidence");
+    if (containsSecretText(entry.id) || containsSecretText(entry.label)) {
       parseError("secret_evidence");
     }
     return { id: entry.id, kind, label: entry.label };
   });
-}
-
-function stripExplicitGithubCommitOids(kind: AgenticEvidenceKind, label: string): string {
-  return kind === "github"
-    ? label.replace(EXPLICIT_GITHUB_COMMIT_OID_RE, "$1")
-    : label;
 }
 
 function hasPassedVerificationChecks(verification: Pick<AgenticVerification, "status" | "checks">): boolean {

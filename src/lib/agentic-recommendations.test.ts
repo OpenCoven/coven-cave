@@ -179,8 +179,6 @@ for (const label of [
 const safeEvidenceLabels = [
   "Authorization: migrate to OAuth 2.1",
   "Authorization: Basic authentication is disabled",
-  "Commit 0123456789abcdef0123456789abcdef01234567",
-  JSON.stringify({ commit: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }),
   '{ "safe": "value" }',
 ];
 for (const [index, label] of safeEvidenceLabels.entries()) {
@@ -191,23 +189,35 @@ for (const [index, label] of safeEvidenceLabels.entries()) {
   assert.equal(parsed.evidenceRefs[0]?.label, label, "safe evidence text survives strict parsing");
 }
 const gitCommitOid = "0123456789abcdef0123456789abcdef01234567";
-const safeGitHubCommitEvidence = parseAgenticRecommendationsOutput(output([recommendation({
-  id: "safe-github-commit-evidence",
-  evidenceRefs: [{ id: gitCommitOid, kind: "github", label: `Commit SHA ${gitCommitOid}` }],
+for (const rawOid of [gitCommitOid, "a".repeat(64)]) {
+  expectRejected(
+    output([recommendation({
+      id: `raw-model-git-oid-${rawOid.length}`,
+      evidenceRefs: [{ id: rawOid, kind: "github", label: `Commit SHA ${rawOid}` }],
+    })]),
+    "secret_evidence",
+  );
+  expectRejected(
+    output([recommendation({
+      id: `raw-model-git-oid-label-${rawOid.length}`,
+      evidenceRefs: [{ id: "issue-8", kind: "github", label: `Commit SHA ${rawOid}` }],
+    })]),
+    "secret_evidence",
+  );
+}
+const safeGitHubIssueReference = "OpenCoven/coven-cave#4730";
+const parsedGitHubIssueReference = parseAgenticRecommendationsOutput(output([recommendation({
+  id: "safe-github-issue-reference",
+  evidenceRefs: [{
+    id: safeGitHubIssueReference,
+    kind: "github",
+    label: safeGitHubIssueReference,
+  }],
 })]))[0]!;
 assert.equal(
-  safeGitHubCommitEvidence.evidenceRefs[0]?.id,
-  gitCommitOid,
-  "an exact Git OID is safe GitHub evidence",
-);
-const safeGitHubSha256Evidence = parseAgenticRecommendationsOutput(output([recommendation({
-  id: "safe-github-sha256-evidence",
-  evidenceRefs: [{ id: "a".repeat(64), kind: "github", label: "GitHub SHA-256 evidence" }],
-})]))[0]!;
-assert.equal(
-  safeGitHubSha256Evidence.evidenceRefs[0]?.id,
-  "a".repeat(64),
-  "a SHA-256 OID is exempt only when the evidence is explicitly GitHub evidence",
+  parsedGitHubIssueReference.evidenceRefs[0]?.id,
+  safeGitHubIssueReference,
+  "normal GitHub issue references remain accepted model evidence",
 );
 for (const kind of ["task", "dependency", "saved-link"] as const) {
   for (const credentialShapedId of ["a".repeat(40), "a".repeat(64)]) {
