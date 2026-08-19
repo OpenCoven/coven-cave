@@ -224,7 +224,22 @@ export function reviewSummary<T extends { additions: number; deletions: number }
 
 export type DiffLineKind = "meta" | "hunk" | "add" | "del" | "ctx";
 
-export type DiffLine = { kind: DiffLineKind; mark: string; text: string };
+export type DiffLine = {
+  kind: DiffLineKind;
+  mark: string;
+  text: string;
+  oldLine: number | null;
+  newLine: number | null;
+};
+
+export type DiffRow =
+  | { kind: "line"; key: string; line: DiffLine }
+  | {
+      kind: "fold";
+      key: string;
+      hidden: DiffLine[];
+      label: string;
+    };
 
 /**
  * Split a unified diff into typed lines for the colored diff body. Classifies
@@ -238,14 +253,140 @@ export function parseDiffLines(diff: string): DiffLine[] {
   const lines = diff.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
   // A trailing newline yields a final empty element that isn't a real line.
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  let oldLine: number | null = null;
+  let newLine: number | null = null;
   return lines.map((raw) => {
-    if (raw.startsWith("@@")) return { kind: "hunk", mark: "", text: raw };
-    if (raw.startsWith("+++") || raw.startsWith("---")) return { kind: "meta", mark: "", text: raw };
-    if (raw.startsWith("diff ") || raw.startsWith("index ") || raw.startsWith("new file") || raw.startsWith("deleted file") || raw.startsWith("rename ") || raw.startsWith("similarity ")) {
-      return { kind: "meta", mark: "", text: raw };
+    if (raw.startsWith("@@")) {
+      const match = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      oldLine = match ? Number(match[1]) : null;
+      newLine = match ? Number(match[2]) : null;
+      return { kind: "hunk", mark: "", text: raw, oldLine: null, newLine: null };
     }
-    if (raw.startsWith("+")) return { kind: "add", mark: "+", text: raw.slice(1) };
-    if (raw.startsWith("-")) return { kind: "del", mark: "−", text: raw.slice(1) };
-    return { kind: "ctx", mark: "", text: raw.startsWith(" ") ? raw.slice(1) : raw };
+    if (raw.startsWith("+++") || raw.startsWith("---")) {
+      return { kind: "meta", mark: "", text: raw, oldLine: null, newLine: null };
+    }
+    if (raw.startsWith("diff ") || raw.startsWith("index ") || raw.startsWith("new file") || raw.startsWith("deleted file") || raw.startsWith("rename ") || raw.startsWith("similarity ")) {
+      return { kind: "meta", mark: "", text: raw, oldLine: null, newLine: null };
+    }
+    if (raw === "\\ No newline at end of file") {
+      return { kind: "ctx", mark: "", text: raw, oldLine: null, newLine: null };
+    }
+    if (raw.startsWith("+")) {
+      const line = { kind: "add" as const, mark: "+", text: raw.slice(1), oldLine: null, newLine };
+      if (newLine != null) newLine += 1;
+      return line;
+    }
+    if (raw.startsWith("-")) {
+      const line = { kind: "del" as const, mark: "−", text: raw.slice(1), oldLine, newLine: null };
+      if (oldLine != null) oldLine += 1;
+      return line;
+    }
+    const line = {
+      kind: "ctx" as const,
+      mark: "",
+      text: raw.startsWith(" ") ? raw.slice(1) : raw,
+      oldLine,
+      newLine,
+    };
+    if (oldLine != null) oldLine += 1;
+    if (newLine != null) newLine += 1;
+    return line;
   });
+}
+
+function withoutWhitespace(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+/**
+ * Hide only paired deletion/addition rows whose content differs by whitespace.
+ * The route does not support GitHub's whitespace option, so broader filtering
+ * would risk hiding real edits.
+ */
+export function hideWhitespaceOnlyDiff(lines: readonly DiffLine[]): DiffLine[] {
+  const out: DiffLine[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const next = lines[index + 1];
+    if (
+      line.kind === "del" &&
+      next?.kind === "add" &&
+      withoutWhitespace(line.text) === withoutWhitespace(next.text)
+    ) {
+      index += 1;
+      continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Fold the quiet middle of long context runs while preserving the requested
+ * number of lines around edits. Each fold can be expanded without reparsing.
+ */
+export function buildDiffRows(
+  lines: readonly DiffLine[],
+  contextLines: number,
+  expandedFolds: ReadonlySet<string> = new Set(),
+): DiffRow[] {
+  const out: DiffRow[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    if (lines[index].kind !== "ctx") {
+      out.push({ kind: "line", key: `line-${index}`, line: lines[index] });
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < lines.length && lines[end].kind === "ctx") end += 1;
+    const run = lines.slice(index, end);
+    const keep = Math.max(0, contextLines);
+    const hiddenCount = run.length - keep * 2;
+    if (hiddenCount <= 1) {
+      for (let offset = 0; offset < run.length; offset += 1) {
+        out.push({
+          kind: "line",
+          key: `line-${index + offset}`,
+          line: run[offset],
+        });
+      }
+      index = end;
+      continue;
+    }
+    for (let offset = 0; offset < keep; offset += 1) {
+      out.push({
+        kind: "line",
+        key: `line-${index + offset}`,
+        line: run[offset],
+      });
+    }
+    const foldKey = `fold-${index + keep}-${hiddenCount}`;
+    const hidden = run.slice(keep, run.length - keep);
+    if (expandedFolds.has(foldKey)) {
+      hidden.forEach((line, offset) =>
+        out.push({
+          kind: "line",
+          key: `${foldKey}-line-${offset}`,
+          line,
+        }),
+      );
+    } else {
+      out.push({
+        kind: "fold",
+        key: foldKey,
+        hidden,
+        label: `Show ${hidden.length} unchanged lines`,
+      });
+    }
+    for (let offset = run.length - keep; offset < run.length; offset += 1) {
+      out.push({
+        kind: "line",
+        key: `line-${index + offset}`,
+        line: run[offset],
+      });
+    }
+    index = end;
+  }
+  return out;
 }

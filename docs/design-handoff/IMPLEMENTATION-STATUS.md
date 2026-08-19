@@ -50,7 +50,7 @@ tests), so when a project gains or loses a frame, update this table by hand.
 | `Sessions.dc.html` | Sessions surface | `dc6e61e2ea` (#3600) |
 | `Chart Room - Astra v2.dc.html` | Chart Room (`src/components/role-surfaces/chart-room-graph.tsx`, `src/components/role-surfaces/chart-room-chain.tsx`) | `01874924dc` (`cave-iuc8h`) |
 | `Weaves and Proposals.dc.html` | Weaves decision surface | `9d43c00a28` (#4108) |
-| `Review Deck.dc.html` | tri-pane change review | `779030fc0d` (#3767) |
+| `Review Deck.dc.html` | Focused Review Run: compact attention queue, dominant line-numbered diff, head-scoped proof ribbon/progress, adaptive evidence dock, and verdict-scoped reviewer notes. The original tri-pane frame is no longer the binding hierarchy. **Not adopted** — invented inline comment/suggestion authoring, split-diff mode before parser coverage, generated risk scores, and re-review deltas; those require backend or compare capabilities that do not exist. | `779030fc0d` (#3767), `cave-n83q3` |
 | `Daily Report - Redesign.dc.html` | the chaptered day | `f0aaeced14` (#3981) |
 | `Marketplace.dc.html` | Explore (Browse + Skills merged) | `32d7d309fd` (#3775) |
 | `Memories Prototype.dc.html` | Memories / Knowledge launcher | `e62f2fd421` (#3756), `17386746a9` (#3445) |

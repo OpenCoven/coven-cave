@@ -183,10 +183,16 @@ never fake production data.
   [`orchestration-ready-tasks.md`](./orchestration-ready-tasks.md), and the
   overlay is imported once and removed. Until that lands, the overlay remains
   the only dependency store and is still not authoritative.
-- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a tri-pane deck: a
-  summary strip; a filterable, collapsible review queue built from sessions
-  carrying PRs, working changes, or branches; a center change viewer with file
-  tabs over a colored unified diff (capped by the changes API); a context rail
-  with session facts, PR/session jumps, and a reviewer note; and a checkpoints
-  footer. A verdict bar dispatches approve / request-changes / merge to the real
-  GitHub review + merge routes. Never edits the working tree.
+- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a focused review
+  run built from sessions carrying PRs, working changes, or branches. A compact
+  attention queue sits at the edge while the line-numbered unified diff remains
+  dominant. A proof ribbon and explicit reviewed-file controls persist progress
+  against the exact PR head SHA (or an honest local working-tree revision);
+  progress resets when that identity changes. Overview, comments, merge status,
+  and session context move into an adaptive evidence dock. Reviewer notes appear
+  only inside approve/request-changes flows and remain per-session drafts.
+  Checkpoints appear only for local reviews. PR sessions always read GitHub;
+  only sessions without a linked PR read the local working tree. Unknown
+  readiness stays non-actionable, and approve / request-changes / squash-merge
+  continue to dispatch through the real GitHub routes. The deck never edits the
+  working tree.
