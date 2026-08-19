@@ -44,6 +44,9 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     readSessionTranscript: async () => "",
     readMissionFile: async () => null,
     readSources: async () => [],
+    materializeSavedLink: async () => {
+      throw new Error("saved X Article not found");
+    },
     publishKnowledge: async (entry) => entry,
     killSession: async () => {},
     createAutomation: async (input) => ({

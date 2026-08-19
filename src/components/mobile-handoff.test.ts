@@ -12,6 +12,7 @@ const stepsList = await readFile(new URL("./pairing-steps-list.tsx", import.meta
 const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
 const tailscaleFailure = await readFile(new URL("../lib/tailscale-failure.ts", import.meta.url), "utf8");
+const tailscaleRecovery = await readFile(new URL("../lib/tailscale-recovery.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
 const desktopChromeCss = await readFile(
   new URL("../styles/globals/desktop-chrome.css", import.meta.url),
@@ -213,6 +214,23 @@ assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Se
 
 // ── The pairing card (cave-rkiw): one scan, plain language, jargon demoted ──
 assert.match(settings, /classifyTailscaleFailure/, "Settings translates handoff failures into plain language");
+assert.match(settingsPhone, /TailscaleRecoveryActions/, "Phone settings offer native Tailscale recovery beside a failed checklist rung");
+assert.match(modal, /TailscaleRecoveryActions/, "Open-on-phone offers the same recovery path instead of a dead QR");
+assert.match(
+  tailscaleRecovery,
+  /await invoke\("open_tailscale_app"\)/,
+  "frontend recovery reaches only the fixed native Tailscale launcher command",
+);
+assert.match(
+  tauriLib,
+  /shell_open,\s*open_tailscale_app,\s*open_x_oauth_url/,
+  "the packaged desktop registers the native Tailscale launcher",
+);
+assert.match(
+  tailscaleRecovery,
+  /TAILSCALE_RECOVERY_DELAYS_MS\s*=\s*\[\s*750\s*,\s*1_250\s*,\s*2_000\s*,\s*3_000\s*,\s*4_000\s*,\s*5_000\s*\]/,
+  "recovery retries are prompt but bounded",
+);
 assert.match(
   settings,
   /Pairing secret unavailable/,

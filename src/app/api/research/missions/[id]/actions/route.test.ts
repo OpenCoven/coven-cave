@@ -21,7 +21,7 @@ test("accepted lifecycle actions derive from the domain — no contract drift", 
   // will actually perform.
   assert.match(source, /allowedResearchActions\(\{ status \}\)/);
   assert.match(source, /MISSION_STATUSES\.flatMap/);
-  assert.match(source, /"attach-source", "update-source", "reject-artifact"/);
+  assert.match(source, /"attach-source", "attach-saved-link", "update-source", "reject-artifact"/);
   // "pause" is in the ResearchMissionAction union but no status ever allows
   // it (allowedResearchActions never returns it) — the old hand-copied list
   // accepted it and produced a silent no-op 200. It must not reappear.
@@ -72,6 +72,8 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
   // The classified messages are the runner's real validation throws.
   for (const known of [
     "Source id and title are required",
+    "saved link id is invalid",
+    "saved X Article not found",
     "artifact rejection reason required",
     "research artifact not found",
     "refined direction required",
@@ -79,6 +81,14 @@ test("errors map by kind: unknown action 400, client mistakes 400, missing missi
   ]) {
     assert.match(source, new RegExp(known));
   }
+});
+
+test("saved-link materialization is admitted and keeps malformed and missing Article input at 400", () => {
+  assert.match(source, /"attach-saved-link"/);
+  assert.match(source, /"saved link id is invalid"/);
+  assert.match(source, /"saved X Article not found"/);
+  assert.match(source, /if \(message === "research mission not found"\) return 404/);
+  assert.match(source, /invalid research action/);
 });
 
 test("publish-artifact is routable with its validation and conflict mappings", () => {

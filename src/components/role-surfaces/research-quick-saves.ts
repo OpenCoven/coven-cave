@@ -19,19 +19,21 @@ import {
   type SavedLink,
 } from "@/lib/link-organizer";
 
-export type QuickSaveEntry = {
-  link: SavedLink;
+type QuickSaveLink = Pick<SavedLink, "id" | "url" | "category" | "title">;
+
+export type QuickSaveEntry<TLink extends QuickSaveLink = SavedLink> = {
+  link: TLink;
   /** Why this save was suggested; absent outside the suggested group. */
   why?: string;
 };
 
-export type QuickSaveGroup = {
+export type QuickSaveGroup<TLink extends QuickSaveLink = SavedLink> = {
   id: string;
   label: string;
   /** Right-aligned subtitle; empty for the leftover group. */
   hint: string;
   suggested: boolean;
-  links: QuickSaveEntry[];
+  links: QuickSaveEntry<TLink>[];
 };
 
 /** Words too common to make a match meaningful. */
@@ -55,7 +57,10 @@ export function draftTokens(draft: string): string[] {
 }
 
 /** The reason a link is suggested, or null when nothing in it matched. */
-export function matchReason(link: SavedLink, tokens: readonly string[]): string | null {
+export function matchReason<TLink extends QuickSaveLink>(
+  link: TLink,
+  tokens: readonly string[],
+): string | null {
   if (tokens.length === 0) return null;
   const haystack = `${link.title} ${link.url}`.toLowerCase();
   const hit = tokens.find((token) => haystack.includes(token));
@@ -69,12 +74,15 @@ export function matchReason(link: SavedLink, tokens: readonly string[]): string 
  * A link appears exactly once — promotion into the suggested group removes it
  * from its category group, so counts across groups always sum to the input.
  */
-export function matchSavedLinks(links: readonly SavedLink[], draft: string): QuickSaveGroup[] {
+export function matchSavedLinks<TLink extends QuickSaveLink>(
+  links: readonly TLink[],
+  draft: string,
+): QuickSaveGroup<TLink>[] {
   const tokens = draftTokens(draft);
-  const groups: QuickSaveGroup[] = [];
+  const groups: QuickSaveGroup<TLink>[] = [];
   const claimed = new Set<string>();
 
-  const suggested: QuickSaveEntry[] = [];
+  const suggested: QuickSaveEntry<TLink>[] = [];
   for (const link of links) {
     const why = matchReason(link, tokens);
     if (why) {
@@ -92,7 +100,7 @@ export function matchSavedLinks(links: readonly SavedLink[], draft: string): Qui
     });
   }
 
-  const byCategory = new Map<LinkCategory, QuickSaveEntry[]>();
+  const byCategory = new Map<LinkCategory, QuickSaveEntry<TLink>[]>();
   for (const link of links) {
     if (claimed.has(link.id)) continue;
     const bucket = byCategory.get(link.category);

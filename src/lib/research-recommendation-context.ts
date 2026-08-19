@@ -1,4 +1,4 @@
-import type { SavedLink } from "./link-organizer.ts";
+import type { SavedLinkSummary } from "./link-organizer.ts";
 import type { ResearchMission } from "./research-missions.ts";
 
 export const MAX_CLIENT_RECOMMENDATION_MISSIONS = 12;
@@ -70,7 +70,7 @@ function missionEvidenceRevision(mission: ResearchMission): string {
 export function buildResearchRecommendationContext(
   familiarId: string,
   missions: readonly ResearchMission[],
-  links: readonly SavedLink[],
+  links: readonly SavedLinkSummary[],
 ): ResearchRecommendationClientContext {
   return {
     familiarId,

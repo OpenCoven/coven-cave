@@ -56,6 +56,13 @@ The app stores the invite in an HTTP-only cookie after the first successful requ
 
 In the packaged desktop app, click **Open on phone** in the top bar to create the same kind of invite as a QR code. Scan it from a phone signed into the same tailnet.
 
+If Tailscale is stopped or signed out, the packaged app shows **Open
+Tailscale** beside the failed connection step. That action launches the
+installed client with a fixed native command and retries the pairing route for
+a bounded window; the signed QR appears as soon as the route is proven live.
+If Tailscale is missing, **Install Tailscale** opens the official download
+page. Cave does not show an unusable QR while the route is offline.
+
 ## Keep the Mac reachable
 
 The packaged macOS app has two explicit, default-off controls under **Settings

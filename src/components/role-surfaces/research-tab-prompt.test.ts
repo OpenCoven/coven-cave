@@ -157,15 +157,22 @@ test("the enhance route contract matches what Improve sends", () => {
 
 // ── Quick saves: attach state → candidate sources on the new mission ─────────
 
-test("quick saves attach as candidate sources via the ledger's mechanism", () => {
+test("quick saves materialize saved Articles and attach ordinary sources via the ledger", () => {
   // Rows are real toggles; chips render with a remove affordance.
   assert.match(promptTab, /aria-pressed=\{isAttached\}/);
   assert.match(promptTab, /useResearchLinks\(\)/);
   assert.match(composer, /Related context \(\{attachedLinks\.length\}\):/);
   assert.match(composer, /onRemoveAttached\?\.\(link\.id\)/);
-  // After start, each attached link becomes an attach-source action against
-  // the NEW mission id — the same action the evidence ledger uses.
-  assert.match(promptTab, /research\.act\(result\.mission\.id, \{\s*action: "attach-source"/);
+  // After start, Article quick saves materialize from their saved-link record;
+  // ordinary links retain the evidence ledger's attach-source action.
+  assert.match(
+    promptTab,
+    /if \(link\.xArticle\) \{\s*const attach = await research\.act\(result\.mission\.id, \{\s*action: "attach-saved-link",\s*savedLinkId: link\.id,\s*familiarId: result\.mission\.familiarId,/,
+  );
+  assert.match(
+    promptTab,
+    /const attach = await research\.act\(result\.mission\.id, \{\s*action: "attach-source"/,
+  );
   assert.match(promptTab, /sourceType: "web"/);
   assert.match(promptTab, /status: "candidate"/);
   // Attach happens before the desk hand-off, and the hand-off follows the

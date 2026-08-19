@@ -74,6 +74,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Integrity and integrations
 
+- [`dependency-advisories.md`](dependency-advisories.md) — open Dependabot alerts whose patched version is unreachable from this dependency graph: the resolver refusal, the exposure assessment, and the upstream change that would lift each
 - [`project-permission-integrity.md`](project-permission-integrity.md) — reconciling stale grants against the project registry
 - [`discord-rich-presence.md`](discord-rich-presence.md) — privacy-safe local activity publishing
 

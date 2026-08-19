@@ -18,7 +18,7 @@ const agenticRecommendationsEnabled = ["1", "true", "yes", "on"].includes(
 // effects, so the number of initial fetches is unpredictable. The one POST
 // (Studio diagram create) records its body into a variable instead.
 
-const FAMILIAR_ID = "rida";
+const FAMILIAR_ID = "researcher";
 const NOW = Date.now();
 const iso = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
 
@@ -242,9 +242,91 @@ const COMPLETED_MISSION = {
 
 const MISSIONS = [CHECKPOINT_MISSION, RUNNING_MISSION, FAILED_MISSION, COMPLETED_MISSION];
 
+const PROMPT_CREATED_MISSION = {
+  version: 1,
+  id: "m-prompt-start",
+  familiarId: FAMILIAR_ID,
+  title: "Saved-link intake coverage pass",
+  intent: "Compare how saved X Articles and ordinary links should enter a new research mission.",
+  mode: "sweep",
+  modeSource: "user",
+  deliverable: "report + source-ledger",
+  constraints: [],
+  bounds: BOUNDS,
+  harness: "copilot",
+  status: "planning",
+  createdAt: iso(0),
+  updatedAt: iso(0),
+  iterations: [],
+  artifacts: [],
+  sources: [],
+};
+
 // ── Saved links (Resources / Prompt quick saves) ─────────────────────────────
 
-const LINKS = [
+type MockXArticle = {
+  version: 1;
+  provider: "sorsa";
+  sourcePostId: string;
+  titleSource: "provider" | "derived";
+  author: { id: string; username: string; displayName?: string };
+  body: string;
+  excerpt: string;
+  publishedAt: string;
+  fetchedAt: string;
+  contentSha256: string;
+};
+
+type MockSavedLink = {
+  id: string;
+  url: string;
+  category: string;
+  title: string;
+  addedAt: string;
+  source: "chat" | "desk";
+  xArticle?: MockXArticle;
+};
+
+const X_ARTICLE_URL = "https://x.com/opencoven/status/123456789";
+const FAILED_X_ARTICLE_URL = "https://x.com/opencoven/status/987654321";
+const ORDINARY_RESOURCE_URL = "https://example.com/research-desk-sibling";
+const X_ARTICLE_BODY = "Known X Article body text stays in the saved snapshot, not the list response.";
+
+const X_ARTICLE_LINK: MockSavedLink = {
+  id: "x-article-1",
+  url: X_ARTICLE_URL,
+  category: "article",
+  title: "Durable evidence belongs with the research run",
+  addedAt: iso(20),
+  source: "desk",
+  xArticle: {
+    version: 1,
+    provider: "sorsa",
+    sourcePostId: "123456789",
+    titleSource: "provider",
+    author: {
+      id: "42",
+      username: "opencoven",
+      displayName: "Open Coven",
+    },
+    body: X_ARTICLE_BODY,
+    excerpt: "A concise evidence snapshot for the Research Desk.",
+    publishedAt: "2026-08-18T12:34:56.000Z",
+    fetchedAt: "2026-08-18T12:35:00.000Z",
+    contentSha256: "a".repeat(64),
+  },
+};
+
+const ORDINARY_RESOURCE_LINK: MockSavedLink = {
+  id: "ordinary-sibling-1",
+  url: ORDINARY_RESOURCE_URL,
+  category: "other",
+  title: "Ordinary research sibling",
+  addedAt: iso(20),
+  source: "desk",
+};
+
+const LINKS: MockSavedLink[] = [
   { id: "l-gh", url: "https://github.com/acme/vector-bench", category: "github", title: "acme/vector-bench", addedAt: iso(60), source: "chat" },
   { id: "l-docs", url: "https://docs.qdrant.tech/guide", category: "docs", title: "Qdrant guide", addedAt: iso(120), source: "chat" },
   { id: "l-paper", url: "https://arxiv.org/abs/2401.01234", category: "paper", title: "Efficient ANN search", addedAt: iso(90), source: "desk" },
@@ -333,6 +415,28 @@ const LONG_PAPER_TOPIC = [
   "Document the measurement protocol and identify the evidence that would change the decision.",
 ].join(" ");
 
+function toMockSavedLinkSummary(link: MockSavedLink) {
+  if (!link.xArticle) return { ...link };
+  const { body: _body, ...xArticle } = link.xArticle;
+  return { ...link, xArticle };
+}
+
+function assertBodyFreeSavedLinkResponse(response: unknown) {
+  const serialized = JSON.stringify(response);
+  expect(serialized).not.toContain('"body"');
+  expect(serialized).not.toContain(X_ARTICLE_BODY);
+}
+
+function parseMockResourceBatch(value: unknown): { urls: string[]; invalid: string[] } {
+  if (typeof value !== "string") return { urls: [], invalid: [] };
+  const urls = value.match(/https?:\/\/[^\s,]+/g) ?? [];
+  const invalid = value
+    .split(/[\s,]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && !/^https?:\/\//.test(entry));
+  return { urls, invalid };
+}
+
 // ── Studio generation (mock POST → ready diagram record) ─────────────────────
 
 const DIAGRAM_GENERATION = {
@@ -368,7 +472,19 @@ type BootHandles = {
     contextFingerprint?: string;
     reducedContext: boolean;
   };
+  linkDetailIds: string[];
+  linkListResponses: unknown[];
+  linkSaveResponses: unknown[];
+  missionRequests: Array<{ kind: "create" | "action"; missionId: string; body: unknown }>;
 };
+
+type MockResearchApiOptions = {
+  initialLinks?: MockSavedLink[];
+};
+
+function cloneForMock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
 
 function fulfillDirectionDraft(route: Route) {
   return route.fulfill({
@@ -399,7 +515,7 @@ function fulfillJournalSend(route: Route) {
   });
 }
 
-async function mockResearchApis(page: Page): Promise<BootHandles> {
+async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}): Promise<BootHandles> {
   const handles: BootHandles = {
     createdGenerationBodies: [],
     createdMissionBodies: [],
@@ -415,10 +531,16 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
       recommendations: [],
       reducedContext: false,
     },
+    linkDetailIds: [],
+    linkListResponses: [],
+    linkSaveResponses: [],
+    missionRequests: [],
   };
+  const missions: Array<(typeof MISSIONS)[number] | typeof PROMPT_CREATED_MISSION> =
+    cloneForMock(MISSIONS);
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
-    window.localStorage.setItem("cave:active-familiar", "rida");
+    window.localStorage.setItem("cave:active-familiar", "researcher");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
@@ -435,40 +557,43 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
   // No active role manifests — the role label alone opens the room.
   await page.route(/\/api\/roles(\?|$)/, (route) => route.fulfill({ json: { roles: [] } }));
-  await page.route(/\/api\/research\/missions(?:\?|$)/, (route) => {
-    if (route.request().method() === "POST") {
-      handles.createdMissionBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-      return route.fulfill({
-        json: {
-          ok: true,
-          mission: {
-            ...CHECKPOINT_MISSION,
-            id: "m-recommendation-start",
-            title: "Compare vector index recall against latency under our production workload",
-            intent: "Compare vector index recall against latency under our production workload",
-            status: "queued",
-            updatedAt: iso(0),
-            iterations: [],
-            artifacts: [],
-            sources: [],
-          },
-        },
-      });
+  await page.route(/\/api\/research\/missions(?:\?.*)?$/, (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      return route.fulfill({ json: { ok: true, missions } });
     }
-    return route.fulfill({ json: { ok: true, missions: MISSIONS } });
+    if (request.method() === "POST") {
+      const createdMission = cloneForMock(PROMPT_CREATED_MISSION);
+      const body = request.postDataJSON() as Record<string, unknown>;
+      handles.createdMissionBodies.push(body);
+      handles.missionRequests.push({
+        kind: "create",
+        missionId: createdMission.id,
+        body,
+      });
+      missions.unshift(createdMission);
+      return route.fulfill({ json: { ok: true, mission: createdMission } });
+    }
+    return route.fulfill({ status: 405, json: { ok: false, error: "method not allowed" } });
   });
   await page.route(/\/api\/research\/missions\/[^/]+\/actions$/, (route) => {
-    handles.missionActionBodies.push(route.request().postDataJSON() as Record<string, unknown>);
-    return route.fulfill({
-      json: {
-        ok: true,
-        mission: {
-          ...CHECKPOINT_MISSION,
-          direction: (handles.missionActionBodies.at(-1)?.direction as string | undefined),
-          updatedAt: iso(0),
-        },
-      },
-    });
+    const request = route.request();
+    const missionId = decodeURIComponent(request.url().match(/\/api\/research\/missions\/([^/]+)\/actions$/)?.[1] ?? "");
+    const body = request.postDataJSON() as Record<string, unknown>;
+    handles.missionActionBodies.push(body);
+    handles.missionRequests.push({ kind: "action", missionId, body });
+    const mission = missions.find((candidate) => candidate.id === missionId);
+    return route.fulfill(mission
+      ? {
+          json: {
+            ok: true,
+            mission: {
+              ...mission,
+              ...(typeof body.direction === "string" ? { direction: body.direction } : {}),
+            },
+          },
+        }
+      : { status: 404, json: { ok: false, error: "mission not found" } });
   });
   await page.route("**/api/research/recommendations**", (route) => {
     handles.recommendationRequests += 1;
@@ -537,9 +662,73 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
       },
     }),
   );
-  await page.route("**/api/research/links", (route) =>
-    route.fulfill({ json: { ok: true, links: LINKS } }),
-  );
+  const savedLinks = cloneForMock([...LINKS, ...(options.initialLinks ?? [])]);
+  await page.route(/\/api\/research\/links(?:\?.*)?$/, (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "GET") {
+      const id = url.searchParams.get("id");
+      if (id !== null) {
+        handles.linkDetailIds.push(id);
+        const link = savedLinks.find((candidate) => candidate.id === id);
+        return route.fulfill(link
+          ? { json: { ok: true, link } }
+          : { status: 404, json: { ok: false, error: "link not found" } });
+      }
+      const response = { ok: true, links: savedLinks.map(toMockSavedLinkSummary) };
+      handles.linkListResponses.push(response);
+      assertBodyFreeSavedLinkResponse(response);
+      return route.fulfill({ json: response });
+    }
+    if (request.method() === "POST") {
+      const body = request.postDataJSON() as { text?: unknown };
+      const { urls, invalid } = parseMockResourceBatch(body.text);
+      const added: MockSavedLink[] = [];
+      const duplicates: string[] = [];
+      const failed: Array<{ url: string; code: "timeout"; message: string; retryable: boolean }> = [];
+      for (const candidate of urls) {
+        if (savedLinks.some((link) => link.url === candidate)) {
+          duplicates.push(candidate);
+        } else if (candidate === X_ARTICLE_URL) {
+          savedLinks.push({ ...X_ARTICLE_LINK, xArticle: { ...X_ARTICLE_LINK.xArticle! } });
+          added.push(X_ARTICLE_LINK);
+        } else if (candidate === ORDINARY_RESOURCE_URL) {
+          savedLinks.push({ ...ORDINARY_RESOURCE_LINK });
+          added.push(ORDINARY_RESOURCE_LINK);
+        } else if (candidate === FAILED_X_ARTICLE_URL) {
+          failed.push({
+            url: candidate,
+            code: "timeout",
+            message: "The deterministic X Article mock timed out.",
+            retryable: true,
+          });
+        } else {
+          invalid.push(candidate);
+        }
+      }
+      const response = {
+        ok: true,
+        added: added.map(toMockSavedLinkSummary),
+        duplicates,
+        invalid,
+        failed,
+      };
+      handles.linkSaveResponses.push(response);
+      assertBodyFreeSavedLinkResponse(response);
+      return route.fulfill({ json: response });
+    }
+    if (request.method() === "DELETE") {
+      const body = request.postDataJSON() as { id?: unknown };
+      const id = typeof body.id === "string" ? body.id : "";
+      const index = savedLinks.findIndex((link) => link.id === id);
+      if (index < 0) {
+        return route.fulfill({ status: 404, json: { ok: false, error: "link not found" } });
+      }
+      savedLinks.splice(index, 1);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ status: 405, json: { ok: false, error: "method not allowed" } });
+  });
   await page.route(/\/api\/research\/generations/, async (route) => {
     if (route.request().url().includes("/readiness")) {
       await route.fulfill({
@@ -602,8 +791,8 @@ async function enterResearchDesk(page: Page) {
   }).toPass({ timeout: 90_000 });
 }
 
-async function openResearchDesk(page: Page): Promise<BootHandles> {
-  const handles = await mockResearchApis(page);
+async function openResearchDesk(page: Page, options: MockResearchApiOptions = {}): Promise<BootHandles> {
+  const handles = await mockResearchApis(page, options);
   await page.goto("/");
   await enterResearchDesk(page);
   return handles;
@@ -989,6 +1178,8 @@ test.describe("research desk tabs", () => {
             },
           ],
           duplicates: [],
+          invalid: [],
+          failed: [],
         },
       });
     });
@@ -1008,6 +1199,120 @@ test.describe("research desk tabs", () => {
 
     await expect(res.getByRole("status").filter({ hasText: "Saved 1 resource." })).toBeVisible();
     await expect(intake).toHaveValue(nextBatch);
+  });
+
+  test("Resources ingests, reads, and attaches an X Article", async ({ page }) => {
+    const handles = await openResearchDesk(page);
+    const appOrigin = new URL(page.url()).origin;
+    const thirdPartyRequests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if ((url.protocol === "http:" || url.protocol === "https:") && url.origin !== appOrigin) {
+        thirdPartyRequests.push(url.toString());
+      }
+    });
+
+    await deskTab(page, /^Desk/).click();
+    const rail = page.locator(".research-desk").getByRole("navigation", { name: "Research missions" });
+    await rail.getByRole("button", { name: new RegExp(CHECKPOINT_MISSION.title) }).click();
+    await deskTab(page, /^Resources/).click();
+
+    const resources = page.locator(".research-res");
+    const intake = resources.getByLabel("Add resources");
+    await intake.fill(`${X_ARTICLE_URL},\n${ORDINARY_RESOURCE_URL}`);
+    await resources.getByRole("button", { name: "Save resources", exact: true }).click();
+    await expect(resources.getByRole("status").filter({ hasText: "Saved 2 resources." })).toBeVisible();
+
+    const xArticleCard = resources.locator(".research-res-card", { hasText: X_ARTICLE_LINK.title });
+    await expect(xArticleCard).toContainText("X Article");
+    await expect(xArticleCard).toContainText("Open Coven");
+    await expect(xArticleCard).toContainText(X_ARTICLE_LINK.xArticle!.excerpt);
+    await expect(
+      resources.locator(".research-res-card", { hasText: ORDINARY_RESOURCE_LINK.title }),
+    ).toBeVisible();
+    expect(handles.linkListResponses).not.toEqual([]);
+    expect(handles.linkSaveResponses).not.toEqual([]);
+    for (const response of [...handles.linkListResponses, ...handles.linkSaveResponses]) {
+      assertBodyFreeSavedLinkResponse(response);
+    }
+
+    await xArticleCard.getByRole("button", { name: `${X_ARTICLE_LINK.title} — open details` }).click();
+    const dialog = page.getByRole("dialog", { name: X_ARTICLE_LINK.title });
+    await dialog.getByRole("button", { name: "Read article", exact: true }).click();
+    await expect.poll(() => handles.linkDetailIds).toContain("x-article-1");
+    const reader = page.getByRole("article", { name: `Reading ${X_ARTICLE_LINK.title}` });
+    await expect(reader).toContainText(X_ARTICLE_BODY);
+    await expect(reader).toBeFocused();
+    expect(await reader.evaluate((element) => getComputedStyle(element).userSelect)).not.toBe("none");
+
+    await dialog.getByRole("button", { name: "Add to run", exact: true }).click();
+    await expect.poll(() => handles.missionActionBodies).toEqual([
+      { action: "attach-saved-link", savedLinkId: "x-article-1", familiarId: "researcher" },
+    ]);
+    await expect(page.getByRole("status").filter({ hasText: "Added to “Vector DB pricing landscape”" })).toBeVisible();
+    expect(thirdPartyRequests).toEqual([]);
+  });
+
+  test("Prompt starts a mission with selected X Article and ordinary quick saves", async ({ page }) => {
+    const handles = await openResearchDesk(page, {
+      initialLinks: [X_ARTICLE_LINK, ORDINARY_RESOURCE_LINK],
+    });
+    await deskTab(page, /^Prompt/).click();
+
+    const prompt = page.locator(".research-intake");
+    await prompt.getByRole("button", { name: /^Quick saves/ }).click();
+    const saves = prompt.getByRole("region", { name: "Quick saves" });
+    await expect(saves).toBeVisible();
+    await expect(saves.getByRole("button", { name: new RegExp(X_ARTICLE_LINK.title) })).toBeVisible();
+    await expect(saves.getByRole("button", { name: new RegExp(ORDINARY_RESOURCE_LINK.title) })).toBeVisible();
+
+    await saves.getByRole("button", { name: new RegExp(X_ARTICLE_LINK.title) }).click();
+    await saves.getByRole("button", { name: new RegExp(ORDINARY_RESOURCE_LINK.title) }).click();
+    await expect(prompt.getByText("2 attached to this run")).toBeVisible();
+    await prompt.getByRole("button", { name: /^Quick saves/ }).click();
+    await expect(prompt.getByRole("region", { name: "Quick saves" })).toHaveCount(0);
+
+    const missionPrompt = "Compare how saved X Articles and ordinary links should enter a new research mission.";
+    await prompt.getByLabel("What should we investigate?").fill(missionPrompt);
+    await prompt.getByRole("button", { name: "Start research" }).click();
+
+    await expect.poll(() => handles.createdMissionBodies.length).toBe(1);
+    await expect.poll(() => handles.missionActionBodies.length).toBe(2);
+    await expect.poll(() => handles.missionRequests.length).toBe(3);
+
+    const createdBody = handles.createdMissionBodies[0] as Record<string, unknown>;
+    expect(createdBody.familiarId).toBe(FAMILIAR_ID);
+    expect(createdBody.intent).toBe(missionPrompt);
+
+    const expectedXAction = {
+      action: "attach-saved-link",
+      savedLinkId: "x-article-1",
+      familiarId: "researcher",
+    };
+    const expectedOrdinaryAction = {
+      action: "attach-source",
+      source: {
+        id: "link-ordinary-sibling-1",
+        title: "Ordinary research sibling",
+        url: ORDINARY_RESOURCE_URL,
+        sourceType: "web",
+        status: "candidate",
+      },
+    };
+    expect(handles.missionActionBodies).toContainEqual(expectedXAction);
+    expect(handles.missionActionBodies).toContainEqual(expectedOrdinaryAction);
+
+    expect(handles.missionRequests[0]?.kind).toBe("create");
+    expect(handles.missionRequests[0]?.missionId).toBe(PROMPT_CREATED_MISSION.id);
+    for (const request of handles.missionRequests.slice(1)) {
+      expect(request.kind).toBe("action");
+      expect(request.missionId).toBe(PROMPT_CREATED_MISSION.id);
+    }
+
+    await expect(deskTab(page, /^Desk/)).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.locator(".research-desk").getByRole("heading", { name: PROMPT_CREATED_MISSION.title }),
+    ).toBeVisible();
   });
 
   test("Prompt shows the composer, opens the slash palette on '/', and mode cards track typed intent", async ({ page }) => {

@@ -151,6 +151,13 @@ never fake production data.
   explicit action. The read-only evidence route returns a context fingerprint
   plus a lightweight revision projection; a changed mission, saved/X source, or
   Vault revision makes a displayed proposal stale before an action can use it.
+  Resources accepts mixed
+  ordinary, Hugging Face paper, and X Article URLs (up to 10 X Articles per
+  submission). X Article ingestion uses the third-party Sorsa provider
+  (`COVEN_CAVE_X_ARTICLE_PROVIDER=sorsa`) because the official X API does not
+  expose full Article bodies; keep `SORSA_API_KEY` in Cave Vault, never a
+  client environment. It retains durable normalized snapshots and
+  mission-local provenance Markdown copies.
 - **Comms Operations** (`messenger-ops`, role `messenger`) — channel-aware
   drafting (email/Discord/Slack/SMS/Teams/social), approval-required states,
   real inbox items, delivery queue drawer. Nothing sends externally — no

@@ -262,6 +262,7 @@ pub fn run() {
             browser::browser_commands::browser_report_title,
             browser::browser_commands::browser_report_scroll,
             shell_open,
+            open_tailscale_app,
             open_x_oauth_url,
             shell_open_path,
             shell_pick_directory,
