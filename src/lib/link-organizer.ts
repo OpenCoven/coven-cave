@@ -327,7 +327,7 @@ export function groupSavedLinksByUsage<
   const cited: TLink[] = [];
 
   for (const link of links) {
-    const missions = citedByUrl.get(normalizeLinkUrl(link.url)) ?? [];
+    const missions = citedByUrl.get(savedLinkDedupeKey(link.url)) ?? [];
     if (selectedMissionId && missions.some((mission) => mission.id === selectedMissionId)) {
       selected.push(link);
     } else if (missions.length === 0) {

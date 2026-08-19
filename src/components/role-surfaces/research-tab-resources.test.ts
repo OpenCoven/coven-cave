@@ -33,11 +33,11 @@ test("resources render real SavedLink fields only — no fabricated stats", () =
 });
 
 test("cited-by is derived by cross-referencing normalized mission source urls", () => {
-  // The index maps normalizeLinkUrl(source.url) → citing missions, and links
-  // look themselves up through the same normalization — never a stored count.
+  // The index maps savedLinkDedupeKey(source.url) → citing missions, and links
+  // look themselves up through the same key — never a stored count.
   assert.match(source, /for \(const mission of research\.missions\)/);
-  assert.match(source, /if \(source\.url\) urls\.add\(normalizeLinkUrl\(source\.url\)\)/);
-  assert.match(source, /citedByIndex\.get\(normalizeLinkUrl\(link\.url\)\)/);
+  assert.match(source, /if \(source\.url\) urls\.add\(savedLinkDedupeKey\(source\.url\)\)/);
+  assert.match(source, /citedByIndex\.get\(savedLinkDedupeKey\(link\.url\)\)/);
   // Cards surface an honest citation state for both cited and uncited links.
   assert.match(source, /cited\.length > 0\s*\?/);
   assert.match(

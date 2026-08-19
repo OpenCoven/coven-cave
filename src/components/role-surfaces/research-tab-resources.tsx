@@ -41,6 +41,7 @@ import {
   LINK_CATEGORY_ORDER,
   MAX_LINKS_PER_SAVE,
   normalizeLinkUrl,
+  savedLinkDedupeKey,
   summarizeLinkIntake,
   type LinkCategory,
   type SavedLinkSummary,
@@ -151,15 +152,16 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     }
   }, []);
 
-  // ── Cited-by index: normalized link URL → missions whose source ledger
-  // holds that URL. This is the honest cross-reference the design's
-  // "cited by runs" line is built from.
+  // ── Cited-by index: deduplicated link key → missions whose source ledger
+  // holds that URL. savedLinkDedupeKey collapses X/twitter aliases so both
+  // x.com and twitter.com links resolve to the same identity. This is the
+  // honest cross-reference the design's "cited by runs" line is built from.
   const citedByIndex = useMemo(() => {
     const index = new Map<string, ResearchMission[]>();
     for (const mission of research.missions) {
       const urls = new Set<string>();
       for (const source of mission.sources) {
-        if (source.url) urls.add(normalizeLinkUrl(source.url));
+        if (source.url) urls.add(savedLinkDedupeKey(source.url));
       }
       for (const url of urls) {
         const bucket = index.get(url) ?? [];
@@ -171,7 +173,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   }, [research.missions]);
 
   const citingMissions = useCallback(
-    (link: Pick<SavedLinkSummary, "url">) => citedByIndex.get(normalizeLinkUrl(link.url)) ?? [],
+    (link: Pick<SavedLinkSummary, "url">) => citedByIndex.get(savedLinkDedupeKey(link.url)) ?? [],
     [citedByIndex],
   );
 
