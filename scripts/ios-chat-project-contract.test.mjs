@@ -342,8 +342,8 @@ assert.match(
 );
 assert.match(
   home,
-  /label: "New chat"\) \{\s*presentContextualNewChat\(\)/,
-  "Chats compose controls must use contextual New Chat",
+  /Button \{\s*presentContextualNewChat\(\)\s*\} label:[\s\S]{0,500}accessibilityLabel\("New chat"\)/,
+  "the Chats compose control must use contextual New Chat",
 );
 assert.match(
   home,

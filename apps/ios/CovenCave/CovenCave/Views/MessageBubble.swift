@@ -607,7 +607,7 @@ struct GrimoireHintCard: View {
         "Long-press a bubble for copy, forward, and retry.",
         "/image conjures pictures; /skill runs a ritual.",
         "Pin a chat from the list to keep it on top.",
-        "The ☰ menu holds projects, tasks, and the terminal.",
+        "The ☰ menu keeps projects, familiars, tasks, and settings close.",
         "/clear tidies the transcript; /new starts fresh.",
     ]
 

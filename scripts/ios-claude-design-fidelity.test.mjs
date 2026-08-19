@@ -28,7 +28,6 @@ const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift")
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
 const linkedTasks = await read("apps/ios/CovenCave/CovenCave/Views/LinkedTasksSheet.swift");
-const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swift");
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
@@ -142,22 +141,94 @@ assert.match(
   "Chats renders the familiar list it defines",
 );
 assert.match(root, /CaveNavigationDrawer\(/, "the global Claude Design drawer is mounted at app root");
+assert.match(
+  root,
+  /DrawerDestinationStage\(\s*isOpen: app\.navigationDrawerOpen/,
+  "opening the drawer turns the active destination into the rounded live-surface peek",
+);
+assert.match(
+  root,
+  /\.accessibilityHidden\(isOpen\)/,
+  "the obscured destination leaves the accessibility tree while the modal drawer is open",
+);
+assert.match(
+  appModel,
+  /navigationDrawerOpen: Bool = \{[\s\S]*?--ui-open-drawer/,
+  "the layered drawer has a deterministic native screenshot fixture",
+);
 assert.doesNotMatch(root, /TabView/, "the primary shell does not retain a native tab view");
 assert.doesNotMatch(root, /Tab\("/, "the primary shell does not declare native tabs");
 assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutral shell");
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(terminal: terminal, cwd: \$terminalCwd\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
+  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
   "the shell mounts exactly the selected primary destination",
 );
-for (const label of ["Chats", "Tasks", "Terminal", "Settings"]) {
+for (const label of ["Chats", "Tasks", "Settings"]) {
   const matches = drawer.match(new RegExp(`DrawerNavRow\\([\\s\\S]*?label: "${label}"`, "g")) ?? [];
   assert.equal(matches.length, 1, `drawer includes ${label} exactly once as a primary row`);
 }
-for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Terminal", terminal], ["Settings", settings]]) {
+assert.match(
+  drawer,
+  /geo\.size\.width \* 0\.70/,
+  "the drawer keeps enough of the active destination visible to preserve spatial context",
+);
+assert.match(
+  drawer,
+  /Theme\.initials\(app\.operatorDisplayName\)/,
+  "the bottom action dock carries a readable operator identity tile",
+);
+for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Settings", settings]]) {
   assert.match(source, /navigationDrawerOpen = true/, `${name} exposes Open navigation`);
 }
+assert.doesNotMatch(drawer, /label: "Terminal"|go\(\.terminal\)/,
+  "the retired iOS terminal stays out of the drawer");
+assert.doesNotMatch(root, /TerminalView|PtyTerminal|case \.terminal/,
+  "the connected shell cannot mount the retired iOS terminal");
+assert.match(
+  home,
+  /Text\("Chats"\)[\s\S]{0,120}\.font\(\.system\(size: 32, weight: \.semibold, design: \.serif\)\)/,
+  "the Chats title uses the restrained editorial hierarchy",
+);
+assert.match(home, /visibleConversationCount/, "the Chats title reports useful conversation context");
+assert.match(
+  home,
+  /--ui-preview-chats-home/,
+  "the Chats list chrome has a deterministic native screenshot fixture",
+);
+assert.match(
+  home,
+  /private var homeSearchBar[\s\S]*?\.glass\(\.elevated, cornerRadius: 24\)/,
+  "the Chats footer is a floating search dock instead of a full-width slab",
+);
+assert.match(
+  home,
+  /private var homeSearchBar[\s\S]*?chrome\.accentGradient[\s\S]*?accessibilityLabel\("New chat"\)/,
+  "the footer carries one unmistakable accessible New Chat action",
+);
+assert.doesNotMatch(
+  home,
+  /private var homeSearchBar[\s\S]*?glassChrome\(\.bottom\)/,
+  "the Chats footer no longer paints an edge-to-edge chrome bar",
+);
+assert.match(
+  settings,
+  /Section\("Community"\) \{\s*HStack\(spacing: 0\)/,
+  "Community presents its destinations as one icon shelf",
+);
+for (const label of ["Discord", "X", "Docs", "Podcast", "Blog"]) {
+  assert.match(
+    settings,
+    new RegExp(`communityLink\\("${label}"|communityLink\\(\\s*"${label}"`),
+    `Community keeps an accessible ${label} icon`,
+  );
+}
+assert.match(
+  settings,
+  /LabeledContent\("Status"\) \{\s*HStack\(spacing: 10\)[\s\S]*?arrow\.clockwise/,
+  "Connection status and its re-check action share one row",
+);
 assert.doesNotMatch(chat, /\.toolbar\(\.hidden, for: \.tabBar\)/, "ChatView does not depend on a removed tab bar");
 assert.doesNotMatch(glass, /UITabBar(?:Appearance)?|tabAppearance|liveTabBars/,
   "the chrome system no longer styles an unavailable native tab bar");
@@ -198,7 +269,7 @@ assert.match(
 );
 assert.match(
   drawer,
-  /Color\.black\.opacity\(isOpen \? 0\.46 : 0\)/,
+  /Color\.black\.opacity\(isOpen \? 0\.\d+ : 0\)/,
   "the closed drawer does not leave its dimming scrim over the app",
 );
 assert.match(

@@ -7,7 +7,7 @@
 # … in scope` — which reads as a code bug and invites hand-editing the
 # generated, gitignored .pbxproj.
 #
-# Resources/{markdown.html,terminal.html,markdown.css} are gitignored build
+# Resources/{markdown.html,markdown.css} are gitignored build
 # artifacts. `xcodegen generate` SCANS the source directory, so on a fresh
 # clone — where those files do not exist yet — they never enter the resource
 # build phase. project.yml regenerates them in preBuildScripts, but that runs
@@ -15,7 +15,7 @@
 # without node still builds against the Swift fallbacks.
 #
 # The result was an archive that succeeded with no warning and shipped an app
-# rendering assistant replies blank and a dead terminal (cave-d8ma3, hit while
+# rendering assistant replies blank (cave-d8ma3, hit while
 # cutting v0.2.3 from a clean clone). The README documented the right order;
 # nothing enforced it.
 #
@@ -35,16 +35,19 @@ command -v xcodegen >/dev/null 2>&1 || {
 command -v node >/dev/null 2>&1 || {
   echo "[ios] missing node — cannot build the web bundles the app embeds." >&2
   echo "[ios] Generating the project without them ships a blank markdown view" >&2
-  echo "[ios] and a dead terminal, so this is fatal here (cave-d8ma3)." >&2
+  echo "[ios] so this is fatal here (cave-d8ma3)." >&2
   exit 1
 }
 
 echo "[ios] building web bundles"
-if ! ( cd "$ROOT" && node scripts/build-ios-markdown.mjs && node scripts/build-ios-terminal.mjs ); then
+# Upgrade safety: older checkouts generated this ignored resource. XcodeGen
+# scans the source tree, so leaving it behind would silently re-bundle the
+# retired native terminal even though its Swift surface no longer exists.
+rm -f "$RESOURCES/terminal.html"
+if ! ( cd "$ROOT" && node scripts/build-ios-markdown.mjs ); then
   echo "" >&2
   echo "[ios] web bundle generation failed." >&2
-  echo "[ios] The generators inline vendored assets from node_modules (xterm's" >&2
-  echo "[ios] CSS, the markdown/mermaid bundle), so a checkout that has not run" >&2
+  echo "[ios] The generator inlines vendored assets from node_modules, so a checkout that has not run" >&2
   echo "[ios] 'pnpm install' fails here with a missing-module error." >&2
   echo "[ios] Run 'pnpm install' at the repo root, then re-run this script." >&2
   exit 1
@@ -53,7 +56,7 @@ fi
 # The generators can succeed while writing nothing useful; check the artifacts
 # themselves, not the exit code, since the exit code is what fooled us before.
 missing=()
-for resource in markdown.html terminal.html markdown.css; do
+for resource in markdown.html markdown.css; do
   [ -s "$RESOURCES/$resource" ] || missing+=("$resource")
 done
 if [ ${#missing[@]} -gt 0 ]; then

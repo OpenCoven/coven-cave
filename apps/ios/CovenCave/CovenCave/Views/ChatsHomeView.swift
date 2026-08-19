@@ -102,14 +102,11 @@ struct ChatsHomeView: View {
                 isPresented: $showNewChat,
                 onDismiss: {
                     fixedNewChatFamiliarId = nil
-                    app.cancelTerminalFamiliarHandoff()
                 }
             ) {
                 NewChatView(
-                    fixedFamiliarId: fixedNewChatFamiliarId,
-                    initialProjectRoot: app.terminalFamiliarHandoff?.cwd
+                    fixedFamiliarId: fixedNewChatFamiliarId
                 ) { thread in
-                    app.applyTerminalFamiliarHandoff(to: thread)
                     showNewChat = false
                     open(.thread(thread))
                 }
@@ -264,34 +261,42 @@ struct ChatsHomeView: View {
     /// Large-title header pinned to the top, mirroring the Read / Tasks
     /// destinations so every destination title aligns at the same flush position.
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             CircularIconButton(systemImage: "line.3.horizontal",
                                label: "Open navigation") {
                 app.navigationDrawerOpen = true
             }
-            Text("Chats")
-                .font(.largeTitle.weight(.bold))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Chats")
+                    .font(.system(size: 32, weight: .semibold, design: .serif))
+                    .foregroundStyle(chrome.textPrimary)
+                if visibleConversationCount > 0 {
+                    Text("\(visibleConversationCount)")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(chrome.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(chrome.bgElevated, in: Capsule())
+                        .accessibilityLabel("\(visibleConversationCount) conversations")
+                }
+            }
             Spacer()
             CircularIconButton(systemImage: "folder",
                                label: "Projects") {
                 showProjects = true
             }
-            CircularIconButton(systemImage: "square.and.pencil",
-                               label: "New chat") {
-                presentContextualNewChat()
-            }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
         .glassChrome(.top)
     }
 
     private var homeSearchBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(searchFocused ? chrome.accent : chrome.textSecondary)
                 TextField("Search chats…", text: $query)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -307,18 +312,33 @@ struct ChatsHomeView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            .background(chrome.bgRaised, in: Capsule())
-            .overlay(Capsule().stroke(chrome.border.opacity(0.7), lineWidth: 1))
+            .frame(minHeight: 48)
+            .glass(.control, in: Capsule())
+            .accentGlow(active: searchFocused)
 
-            CircularIconButton(systemImage: "square.and.pencil",
-                               label: "New chat") {
+            Button {
                 presentContextualNewChat()
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(chrome.accentForeground)
+                    .frame(width: 48, height: 48)
+                    .background(
+                        chrome.accentGradient,
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    )
             }
+            .buttonStyle(.glassPress)
+            .accessibilityLabel("New chat")
         }
+        .padding(8)
+        .glass(.elevated, cornerRadius: 24)
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassChrome(.bottom)
+        .padding(.bottom, 8)
+    }
+
+    private var visibleConversationCount: Int {
+        app.threads.lazy.filter { !$0.archived }.count
     }
 
     private var homeList: some View {
@@ -381,6 +401,9 @@ struct ChatsHomeView: View {
     /// Open Chats at the latest active conversation without stealing focus from
     /// a deep link, cross-view handoff, New Chat, or an existing selection.
     private func selectMostRecentThreadIfNeeded() {
+        #if DEBUG
+        guard !ProcessInfo.processInfo.arguments.contains("--ui-preview-chats-home") else { return }
+        #endif
         guard selection == nil,
               !showNewChat,
               app.threadToOpen == nil,

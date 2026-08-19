@@ -328,11 +328,19 @@ struct SettingsView: View {
 
     private var communitySection: some View {
         Section("Community") {
-            linkRow("Discord", value: "OpenCoven", url: "https://discord.gg/opencoven")
-            linkRow("X", value: "@OpenCvn", url: "https://x.com/OpenCvn")
-            linkRow("Docs", value: "docs.opencoven.ai", url: "https://docs.opencoven.ai")
-            linkRow("Podcast", value: "pod.opencoven.ai", url: "https://pod.opencoven.ai")
-            linkRow("Blog", value: "mind.opencoven.ai", url: "https://mind.opencoven.ai")
+            HStack(spacing: 0) {
+                communityLink(
+                    "Discord",
+                    systemImage: "bubble.left.and.bubble.right.fill",
+                    url: "https://discord.gg/opencoven"
+                )
+                communityLink("X", systemImage: "at", url: "https://x.com/OpenCvn")
+                communityLink("Docs", systemImage: "book.closed.fill", url: "https://docs.opencoven.ai")
+                communityLink("Podcast", systemImage: "waveform", url: "https://pod.opencoven.ai")
+                communityLink("Blog", systemImage: "text.page.fill", url: "https://mind.opencoven.ai")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
         }
     }
 
@@ -364,6 +372,27 @@ struct SettingsView: View {
             .foregroundStyle(.primary)
         }
     }
+
+    @ViewBuilder
+    private func communityLink(_ label: String, systemImage: String, url: String) -> some View {
+        if let destination = URL(string: url) {
+            Link(destination: destination) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(chrome.textPrimary)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        chrome.bgElevated,
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .accessibilityHint("Opens \(label)")
+        }
+    }
 }
 
 // MARK: - Connection detail (pushed from the hero)
@@ -382,9 +411,19 @@ private struct ConnectionSettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Status") { statusBadge }
-                Button("Re-check connection") {
-                    Task { await app.refreshConnection() }
+                LabeledContent("Status") {
+                    HStack(spacing: 10) {
+                        statusBadge
+                        Button {
+                            Task { await app.refreshConnection() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .frame(width: 44, height: 44)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Re-check connection")
+                    }
                 }
             } footer: {
                 Text("Connected over your Tailscale network with a paired Cave access token.")

@@ -1,5 +1,9 @@
 # iOS chat IA: familiars-first home, one chat at a time
 
+> **Current supporting IA rationale.** Priority order and later amendments live
+> in [`../../ios-current-direction.md`](../../ios-current-direction.md), which
+> wins if this dated design conflicts with the current app.
+
 **Bead:** cave-ru7ay
 **Scope:** `apps/ios/CovenCave` only. The web chat surface is untouched.
 

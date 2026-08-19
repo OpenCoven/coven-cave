@@ -1,5 +1,8 @@
 # iOS onboarding · constant connection · cloud persistence — review & plan
 
+> **Historical planning record.** Current iOS priorities and authority order
+> live in [`ios-current-direction.md`](ios-current-direction.md).
+
 > Status: DRAFT (review in progress, 2026-07-09). This document is the planning
 > anchor for three related threads: overhauling the iOS onboarding experience,
 > making the desktop↔iOS connection feel constant, and adding cloud persistence
