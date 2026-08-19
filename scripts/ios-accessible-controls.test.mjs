@@ -98,7 +98,7 @@ test("no Button { } label: { EmptyView() } ships without hiding it from assistiv
   );
 });
 
-test("the ⌘1–4 destination shortcuts stay out of the accessibility tree", () => {
+test("the ⌘1–3 destination shortcuts stay out of the accessibility tree", () => {
   const rootView = readFileSync(join(appRoot, "Views/RootView.swift"), "utf8");
   const anchorIndex = rootView.indexOf("AppTab.shortcutOrder");
   assert.notEqual(

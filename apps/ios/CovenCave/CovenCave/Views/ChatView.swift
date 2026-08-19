@@ -1552,10 +1552,6 @@ struct ChatView: View {
         case .openBoard:
             app.selectedTab = .tasks
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
-        case .openTerminal:
-            app.selectedTab = .terminal
-            dismiss()
-            app.showToast("Opened Terminal", systemImage: "terminal", style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
         case .daemonStatus:

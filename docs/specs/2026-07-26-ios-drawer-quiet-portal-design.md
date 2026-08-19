@@ -1,8 +1,14 @@
 # iOS Drawer Shell and Quiet Portal
 
+> **Supporting historical design.** The current product shape and priority queue
+> are consolidated in [`../ios-current-direction.md`](../ios-current-direction.md).
+
 Date: 2026-07-26
 Status: Approved
 Scope: Coven Cave native iOS app
+
+Amended 2026-08-18: the native Terminal destination and its PTY functionality
+were retired. Desktop and web terminal surfaces are outside this document.
 
 ## Context
 
@@ -16,7 +22,7 @@ It does not carry the visual quality or identity of the new start page.
 ## Goals
 
 - Make the custom drawer the sole primary navigation surface on iPhone.
-- Keep Chats, Tasks, Terminal, and Settings reachable alongside Projects,
+- Keep Chats, Tasks, and Settings reachable alongside Projects,
   Familiars, project shortcuts, and recent chats.
 - Preserve existing command routing, deep links, keyboard shortcuts, and
   selected-destination state.
@@ -40,7 +46,6 @@ existing `AppTab` value and mounts exactly one of:
 
 - Chats
 - Tasks
-- Terminal
 - Settings
 
 The shared `CaveNavigationDrawer` stays above that selected destination. Its
@@ -102,7 +107,7 @@ Source-contract coverage will pin:
 
 - no `TabView` or `Tab` declarations in the connected shell;
 - all `AppTab` values appear exactly once in `drawerDestinations`;
-- the drawer contains Chats, Tasks, Terminal, and Settings;
+- the drawer contains Chats, Tasks, and Settings, with no Terminal destination;
 - selected-destination routing covers every `AppTab`;
 - Quiet Portal copy, live host rendering, reduced-motion branch, and
   accessibility semantics.

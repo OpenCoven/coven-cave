@@ -5,10 +5,10 @@ import WidgetKit
 
 /// The primary destinations. Lifted out of the drawer shell so slash commands
 /// (`/board`, `/chats`) can drive selection from anywhere.
-enum AppTab: String, CaseIterable { case chats, tasks, terminal, settings }
+enum AppTab: String, CaseIterable { case chats, tasks, settings }
 
 extension AppTab {
-    static let drawerDestinations: [AppTab] = [.chats, .tasks, .terminal, .settings]
+    static let drawerDestinations: [AppTab] = [.chats, .tasks, .settings]
     static let shortcutOrder: [AppTab] = drawerDestinations
 }
 
@@ -42,29 +42,6 @@ struct ToastMessage: Identifiable, Equatable {
     var text: String
     var systemImage: String
     var style: Style = .info
-}
-
-/// A one-shot, operator-reviewed transfer from Terminal to a new chat.
-///
-/// The value is prefilled into chat but is never submitted by this handoff.
-struct TerminalFamiliarHandoff: Equatable {
-    let draft: String
-    let cwd: String?
-
-    var chatDraft: String {
-        let location = cwd ?? "Home"
-        return """
-        Please review this terminal input before I run it.
-
-        Working directory: \(location)
-
-        ```shell
-        \(draft)
-        ```
-
-        Explain what it does and flag risks. Do not execute anything.
-        """
-    }
 }
 
 @Observable
@@ -172,12 +149,15 @@ final class AppModel {
     /// Global Claude Design navigation. Any top-level surface can open the
     /// shared drawer; one-shot requests let its Search/Chat actions hand off to
     /// the Chats split view without coupling the drawer to local view state.
-    var navigationDrawerOpen = false
+    var navigationDrawerOpen: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--ui-open-drawer")
+        #else
+        return false
+        #endif
+    }()
     var newChatRequested = false
     var chatSearchRequested = false
-    /// Held only while the New Chat flow is selecting a familiar and project.
-    /// `applyTerminalFamiliarHandoff` turns it into an ordinary unsent chat draft.
-    var terminalFamiliarHandoff: TerminalFamiliarHandoff?
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -224,24 +204,6 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
-    }
-
-    func requestTerminalFamiliarHandoff(draft: String, cwd: String?) {
-        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        terminalFamiliarHandoff = TerminalFamiliarHandoff(draft: trimmed, cwd: cwd)
-        selectedTab = .chats
-        newChatRequested = true
-    }
-
-    func applyTerminalFamiliarHandoff(to thread: ChatThread) {
-        guard let handoff = terminalFamiliarHandoff else { return }
-        setThreadDraft(thread.id, text: handoff.chatDraft)
-        terminalFamiliarHandoff = nil
-    }
-
-    func cancelTerminalFamiliarHandoff() {
-        terminalFamiliarHandoff = nil
     }
 
     /// Switch the visible conversation to one chosen in the session picker.
@@ -306,7 +268,7 @@ final class AppModel {
 
     // MARK: - Developer surface
 
-    /// Configured project roots, shared across the Code and Terminal surfaces.
+    /// Configured project roots used by chat creation and project browsing.
     var projects: [ProjectInfo] = []
     var projectsError: String?
     var projectsLoaded = false
