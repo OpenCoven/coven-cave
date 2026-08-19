@@ -207,6 +207,27 @@ assert.equal(
   safeOrdinaryUrl,
   "ordinary URLs remain intact during redaction",
 );
+const encodedUrlKey = "See https://example.invalid/callback?%6bey=short&safe=visible#%4b%45%59=fragment-secret&tab=details";
+assert.equal(
+  containsSecretText(encodedUrlKey),
+  true,
+  "decoded URL key parameters remain secret evidence",
+);
+assert.equal(
+  redactSecretText(encodedUrlKey),
+  `See https://example.invalid/callback?%6bey=${REDACTED_SECRET}&safe=visible#%4b%45%59=${REDACTED_SECRET}&tab=details`,
+  "decoded URL key parameters redact while preserving the original encoding",
+);
+assert.equal(
+  containsSecretText("key=value"),
+  false,
+  "ordinary prose key assignments remain safe evidence",
+);
+assert.equal(
+  redactSecretText("key=value"),
+  "key=value",
+  "ordinary prose key assignments remain intact",
+);
 assert.equal(
   redactSecretText("https://user:short-password@example.invalid/path"),
   `https://user:${REDACTED_SECRET}@example.invalid/path`,
@@ -349,6 +370,16 @@ assert.equal(
   containsSecretText("Authorization: Basic dXNlcjpwYXNz"),
   true,
   "Basic authorization with a credential-shaped base64 value remains secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: Bearer x"),
+  true,
+  "short Bearer authorization credentials remain secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: Token x"),
+  true,
+  "short Token authorization credentials remain secret text",
 );
 const digestCredential = 'Authorization: Digest username="Mufasa", realm="test@example.invalid", nonce="abcdef1234567890", response="0123456789abcdef"';
 assert.equal(

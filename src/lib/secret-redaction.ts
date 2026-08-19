@@ -27,12 +27,19 @@ const SECRET_TERMINAL_PAIRS = new Set([
 
 const SECRET_KEY_MARKERS = new Set(["api", "auth", "client", "private", "secret"]);
 
-const AUTHORIZATION_SCHEMES = new Set([
+const SINGLE_TOKEN_AUTHORIZATION_SCHEMES = new Set([
   "basic",
   "bearer",
-  "digest",
   "negotiate",
   "ntlm",
+  "apikey",
+  "api-key",
+  "token",
+  "oauth",
+]);
+const AUTHORIZATION_SCHEMES = new Set([
+  ...SINGLE_TOKEN_AUTHORIZATION_SCHEMES,
+  "digest",
 ]);
 
 const SAFE_SECRET_TRAILING_WORDS = new Set([
@@ -48,6 +55,7 @@ const MAX_ASSIGNMENT_NESTING = 64;
 const MAX_REDACTION_DEPTH = 64;
 const MAX_REDACTION_ENTRIES = 4_096;
 const MAX_REDACTION_STRING_BYTES = 256 * 1_024;
+const AUTHORIZATION_TOKEN68_PATTERN = /^[A-Za-z0-9\-._~+/]+={0,}$/;
 
 const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/gi,
@@ -101,7 +109,7 @@ function containsSecretTextPlain(text: string): boolean {
   ) {
     return true;
   }
-  if (/[?&](?:access_token|api_key|auth|key|password|secret|token)=[^&#\s]+/i.test(text)) return true;
+  if (/[?&](?:access_token|api_key|auth|password|secret|token)=[^&#\s]+/i.test(text)) return true;
   if (/\bhttps?:\/\/[^:/\s]+:[^@\s/]+@/i.test(text)) return true;
 
   let index = 0;
@@ -135,22 +143,15 @@ function containsSecretFieldValue(key: string, value: unknown): boolean {
 }
 
 function containsAuthorizationCredential(value: string): boolean {
-  const match = /^\s*([A-Za-z][A-Za-z-]*)\s+(\S+)/.exec(value);
+  const match = /^\s*([A-Za-z][A-Za-z-]*)\s+(.+?)\s*$/.exec(value);
   if (!match) return false;
 
   const scheme = match[1]!.toLowerCase();
-  const credential = match[2]!;
-  if (
-    !AUTHORIZATION_SCHEMES.has(scheme)
-    && scheme !== "apikey"
-    && scheme !== "api-key"
-    && scheme !== "token"
-    && scheme !== "oauth"
-  ) return false;
-
-  if (scheme === "basic") return isBasicAuthorizationCredential(credential);
+  const credential = match[2]!.trim();
+  if (!AUTHORIZATION_SCHEMES.has(scheme)) return false;
   if (scheme === "digest") return hasDigestAuthorizationCredential(value);
-  return isCredentialToken(credential);
+  if (!SINGLE_TOKEN_AUTHORIZATION_SCHEMES.has(scheme) || /\s/.test(credential)) return false;
+  return isSingleTokenAuthorizationCredential(credential);
 }
 
 function hasDigestAuthorizationCredential(value: string): boolean {
@@ -186,28 +187,8 @@ function containsGenericBase64Secret(text: string): boolean {
   return containsSecret;
 }
 
-function isBasicAuthorizationCredential(value: string): boolean {
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) return false;
-  const unpadded = value.replace(/=+$/, "");
-  if (unpadded.length % 4 === 1) return false;
-  if (unpadded.length >= 20) return true;
-
-  try {
-    return atob(value).includes(":");
-  } catch {
-    return false;
-  }
-}
-
-function isCredentialToken(value: string): boolean {
-  if (!/^[A-Za-z0-9._~+/=-]{20,}$/.test(value)) return false;
-  const characterClasses = [
-    /[a-z]/.test(value),
-    /[A-Z]/.test(value),
-    /\d/.test(value),
-    /[._~+/=-]/.test(value),
-  ];
-  return characterClasses.filter(Boolean).length >= 3;
+function isSingleTokenAuthorizationCredential(value: string): boolean {
+  return AUTHORIZATION_TOKEN68_PATTERN.test(value);
 }
 
 function redactSecretTextPlain(text: string): string {
@@ -221,7 +202,7 @@ function redactSecretTextPlain(text: string): string {
     REDACTED_SECRET,
   );
   next = next.replace(
-    /([?&](?:access_token|api_key|auth|key|password|secret|token)=)[^&#\s]+/gi,
+    /([?&](?:access_token|api_key|auth|password|secret|token)=)[^&#\s]+/gi,
     `$1${REDACTED_SECRET}`,
   );
   next = redactSecretAssignments(next);
@@ -250,7 +231,7 @@ function containsSecretUrlParameter(text: string): boolean {
 
 function hasSecretUrlParameter(parameters: URLSearchParams): boolean {
   for (const [key, value] of parameters) {
-    if (isSecretKey(key) && hasCredentialValue(value)) return true;
+    if (isSecretUrlParameterKey(key) && hasCredentialValue(value)) return true;
   }
   return false;
 }
@@ -270,13 +251,17 @@ function redactUrlParameters(text: string): string {
       } catch {
         return parameter;
       }
-      return isSecretKey(key) && hasCredentialValue(value)
+      return isSecretUrlParameterKey(key) && hasCredentialValue(value)
         ? `${prefix}${encodedKey}=${REDACTED_SECRET}`
         : parameter;
     });
   });
   HTTP_URL_PATTERN.lastIndex = 0;
   return redacted;
+}
+
+function isSecretUrlParameterKey(key: string): boolean {
+  return isSecretKey(key) || key.trim().toLowerCase() === "key";
 }
 
 export function redactSecretsDeep<T>(value: T): T {
