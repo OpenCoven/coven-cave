@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 /**
  * Bounded loopback-origin readiness probe for the Tauri development launcher.
  * A listening TCP port is not sufficient: a wedged Next compiler can accept
@@ -26,6 +30,29 @@ export function parseTimeout(value) {
     : null;
 }
 
+export function resolveProbeAccessToken({
+  port,
+  env = process.env,
+  homeDir = homedir(),
+  readFileImpl = readFileSync,
+} = {}) {
+  const explicit = env.COVEN_CAVE_ACCESS_TOKEN?.trim();
+  if (explicit) return explicit;
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) return "";
+
+  const stateRoot =
+    env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim()
+    || join(env.XDG_STATE_HOME?.trim() || join(homeDir, ".local", "state"), "coven-cave");
+  const stateDir =
+    env.COVEN_CAVE_MOBILE_STATE_DIR?.trim()
+    || join(stateRoot, `mobile-tailscale-${port}`);
+  try {
+    return readFileImpl(join(stateDir, "access-token"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 async function awaitByDeadline(promise, deadline) {
   const settlement = Promise.resolve(promise).catch(() => {});
   const remainingMs = deadline - Date.now();
@@ -48,6 +75,7 @@ export async function loopbackOriginResponds({
   port,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fetchImpl = fetch,
+  accessToken = "",
 } = {}) {
   if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) return false;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) return false;
@@ -59,15 +87,10 @@ export async function loopbackOriginResponds({
       const response = await fetchImpl(`http://127.0.0.1:${port}${READY_PATH}`, {
         method: "GET",
         redirect: "manual",
+        headers: accessToken ? { authorization: `Bearer ${accessToken}` } : undefined,
         signal: AbortSignal.timeout(remainingMs),
       });
-      // A persisted mobile-access secret deliberately protects direct browser
-      // navigation with the access gate (401).  The native WebView receives
-      // server.ts's loopback-peer stamp and therefore renders the document;
-      // this unauthenticated probe cannot.  A 401 still proves that Next has
-      // compiled and answered the root document, whereas a transport failure
-      // or 5xx response does not.
-      if ((response.status >= 200 && response.status < 400) || response.status === 401) return true;
+      if (response.status >= 200 && response.status < 400) return true;
       await awaitByDeadline(response.body?.cancel(), deadline);
     } catch {}
 
@@ -91,5 +114,6 @@ function cliArgs(argv) {
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) {
   const options = cliArgs(process.argv.slice(2));
-  process.exitCode = options && await loopbackOriginResponds(options) ? 0 : 1;
+  const accessToken = options ? resolveProbeAccessToken({ port: options.port }) : "";
+  process.exitCode = options && await loopbackOriginResponds({ ...options, accessToken }) ? 0 : 1;
 }

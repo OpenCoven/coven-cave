@@ -65,6 +65,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
+import { strictGitTimeoutMs } from "./worktree-guard-timeouts.mjs";
 
 const FULL_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 // Generic branch/tag retention proof has a deterministic network/work ceiling.
@@ -124,7 +125,7 @@ function strictGitProbe(args, cwd) {
     cwd,
     env: strictGitEnv(),
     encoding: "utf8",
-    timeout: 10000,
+    timeout: strictGitTimeoutMs(args),
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (probe.error) throw new Error(`git probe failed: ${probe.error.message}`);

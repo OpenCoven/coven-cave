@@ -6,6 +6,7 @@ import {
   loopbackOriginResponds,
   parsePort,
   parseTimeout,
+  resolveProbeAccessToken,
 } from "./dev-app-origin-health.mjs";
 
 function listen(server) {
@@ -24,6 +25,29 @@ assert.equal(parsePort("0"), null);
 assert.equal(parsePort("3000;echo nope"), null);
 assert.equal(parseTimeout(undefined), 1_500);
 assert.equal(parseTimeout("99"), null);
+assert.equal(
+  resolveProbeAccessToken({
+    port: 3007,
+    env: { COVEN_CAVE_ACCESS_TOKEN: " direct-secret " },
+    readFileImpl: () => {
+      throw new Error("the persisted token should not be read when the environment is explicit");
+    },
+  }),
+  "direct-secret",
+);
+let persistedTokenPath = "";
+assert.equal(
+  resolveProbeAccessToken({
+    port: 3007,
+    env: { COVEN_CAVE_MOBILE_STATE_DIR: "/tmp/cave-probe-state" },
+    readFileImpl: (path) => {
+      persistedTokenPath = path;
+      return " persisted-secret\n";
+    },
+  }),
+  "persisted-secret",
+);
+assert.equal(persistedTokenPath, "/tmp/cave-probe-state/access-token");
 
 const ready = http.createServer((_, response) => {
   response.writeHead(204);
@@ -55,16 +79,30 @@ try {
   await close(redirect);
 }
 
-const mobileAccessGate = http.createServer((_, response) => {
-  response.writeHead(401, { "content-type": "text/html; charset=utf-8" });
-  response.end("local access gate");
+const mobileAccessGate = http.createServer((request, response) => {
+  if (request.headers.authorization === "Bearer probe-secret") {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<main>Coven compiled</main>");
+    return;
+  }
+  response.writeHead(401, { "content-type": "application/json" });
+  response.end('{"ok":false,"error":"unauthorized"}');
 });
 const mobileAccessGatePort = await listen(mobileAccessGate);
 try {
   assert.equal(
-    await loopbackOriginResponds({ port: mobileAccessGatePort, timeoutMs: 500 }),
+    await loopbackOriginResponds({ port: mobileAccessGatePort, timeoutMs: 100 }),
+    false,
+    "an unauthenticated access-gate response does not prove the root document compiled",
+  );
+  assert.equal(
+    await loopbackOriginResponds({
+      port: mobileAccessGatePort,
+      timeoutMs: 500,
+      accessToken: "probe-secret",
+    }),
     true,
-    "the mobile access gate proves the root document compiled for a native loopback WebView",
+    "the authenticated root response proves the document compiled for the native WebView",
   );
 } finally {
   await close(mobileAccessGate);
