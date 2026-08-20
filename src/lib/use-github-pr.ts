@@ -125,6 +125,7 @@ export type PrDetail = {
   pull: {
     headRef: string;
     baseRef: string;
+    headSha: string;
     commits: number;
     additions: number;
     deletions: number;

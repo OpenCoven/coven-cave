@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PairingStepsList } from "@/components/pairing-steps-list";
+import { TailscaleRecoveryActions } from "@/components/tailscale-recovery-actions";
 import { copyText } from "@/lib/clipboard";
 import type { PairingStep } from "@/lib/mobile-handoff";
 import { openExternalUrl } from "@/lib/open-external";
@@ -96,7 +97,7 @@ export function MobileHandoffModal({
     }
   }, []);
 
-  const start = useCallback(async (copyRequest = 0) => {
+  const start = useCallback(async (copyRequest = 0): Promise<HandoffResponse> => {
     startAbortRef.current?.abort();
     const controller = new AbortController();
     startAbortRef.current = controller;
@@ -113,28 +114,37 @@ export function MobileHandoffModal({
         body: JSON.stringify(chatId ? { action: "app-start", chatId } : { action: "app-start" }),
         signal: controller.signal,
       });
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        return { ok: false, error: "Pairing refresh cancelled." };
+      }
       const json = (await res.json()) as HandoffResponse;
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        return { ok: false, error: "Pairing refresh cancelled." };
+      }
       if (!json.ok) {
         setHandoff(null);
         setError(json.stderr || json.error || "Mobile handoff failed.");
         setErrorSteps(Array.isArray(json.steps) && json.steps.length > 0 ? json.steps : null);
-        return;
+        return json;
       }
       setHandoff(json);
       setPhoneSeenAt(json.lastSeenAt ?? null);
       if (copyRequest > 0 && copyRequest !== lastAutoCopyRequestRef.current) {
         await copyHandoffUrl(json);
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          return { ok: false, error: "Pairing refresh cancelled." };
+        }
         lastAutoCopyRequestRef.current = copyRequest;
       }
+      return json;
     } catch (err) {
       if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
-        return;
+        return { ok: false, error: "Pairing refresh cancelled." };
       }
       setHandoff(null);
-      setError(err instanceof Error ? err.message : "Mobile handoff failed.");
+      const message = err instanceof Error ? err.message : "Mobile handoff failed.";
+      setError(message);
+      return { ok: false, error: message };
     } finally {
       if (!controller.signal.aborted) setLoading(false);
       if (startAbortRef.current === controller) startAbortRef.current = null;
@@ -349,6 +359,12 @@ export function MobileHandoffModal({
                 <PairingStepsList steps={errorSteps} className="mobile-handoff__steps" />
               ) : null}
               <p className="mobile-handoff__error">{error}</p>
+              <TailscaleRecoveryActions
+                failure={error}
+                steps={errorSteps}
+                busy={loading}
+                attempt={() => start()}
+              />
             </>
           ) : (
             <p className="mobile-handoff__meta">

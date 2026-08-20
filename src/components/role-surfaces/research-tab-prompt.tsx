@@ -11,9 +11,9 @@
  * the frame's shape, and the reason the intake itself no longer has to compete
  * with a permanently-open list. Rows toggle an attach state that renders as
  * "Related context" chips inside the composer card. On Start research the
- * mission is created first, then every attached link is added as a `candidate`
- * source through the same attach-source action the evidence ledger uses, and
- * the desk opens on the new mission.
+ * mission is created first, then ordinary links become `candidate` sources
+ * while saved Articles materialize through their immutable saved-link action,
+ * and the desk opens on the new mission.
  *
  * Grouping is REAL data only: a "✦ Suggested for this prompt" group matched
  * against the live draft, then one group per saved-link category, then the
@@ -25,7 +25,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { linkCategoryMeta, type SavedLink } from "@/lib/link-organizer";
+import { linkCategoryMeta, type SavedLinkSummary } from "@/lib/link-organizer";
 import type { ResearchMissionMode } from "@/lib/research-missions";
 import { promptRecommendations } from "@/lib/research-prompt-brief";
 import { relativeTime } from "@/lib/relative-time";
@@ -45,7 +45,7 @@ const ANGLE_SEEDS_PER_POOL = 6;
 export function ResearchTabPrompt({ research, context, onNavigate, initialMode }: ResearchTabPromptProps) {
   const links = useResearchLinks();
   const { announce } = useAnnouncer();
-  const [attached, setAttached] = useState<SavedLink[]>([]);
+  const [attached, setAttached] = useState<SavedLinkSummary[]>([]);
   const [query, setQuery] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -72,7 +72,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
     url: link.url,
   }));
 
-  const toggleAttach = (link: SavedLink) => {
+  const toggleAttach = (link: SavedLinkSummary) => {
     setAttached((current) => (
       current.some((entry) => entry.id === link.id)
         ? current.filter((entry) => entry.id !== link.id)
@@ -85,7 +85,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
     ? links.links.filter((link) => `${link.title} ${link.url}`.toLowerCase().includes(trimmedQuery))
     : links.links;
 
-  const groups: QuickSaveGroup[] = useMemo(
+  const groups: QuickSaveGroup<SavedLinkSummary>[] = useMemo(
     () => matchSavedLinks(visibleLinks, draft),
     [visibleLinks, draft],
   );
@@ -114,13 +114,21 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
             onStart={async (input) => {
               const result = await research.start(input);
               if (result.ok) {
-                // Attach the selected quick saves as candidate sources — the same
-                // attach-source action the evidence ledger uses. A failed attach is
-                // non-fatal: the mission exists (and its spend is committed), so
-                // failures are collected — never aborting the loop or the desk
-                // hand-off, which would invite a duplicate-spend retry.
+                // Saved Articles must materialize their persisted body; ordinary
+                // links retain the evidence ledger's candidate-source action.
+                // A failed attach is non-fatal: the mission exists (and its spend
+                // is committed), so failures never abort the desk hand-off.
                 let failedAttaches = 0;
                 for (const link of attached) {
+                  if (link.xArticle) {
+                    const attach = await research.act(result.mission.id, {
+                      action: "attach-saved-link",
+                      savedLinkId: link.id,
+                      familiarId: result.mission.familiarId,
+                    }).catch(() => ({ ok: false as const }));
+                    if (!attach.ok) failedAttaches += 1;
+                    continue;
+                  }
                   const attach = await research.act(result.mission.id, {
                     action: "attach-source",
                     source: {
