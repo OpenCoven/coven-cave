@@ -33,38 +33,8 @@
   flex-shrink: 0;
 }
 
-/* The scope trigger and the New-chat button are deliberately the same box:
-   full width, --rail-control tall, control radius, --rail-lead before the
-   glyph. They stack, so any mismatch reads as a misalignment rather than a
-   style choice — and --rail-lead is what keeps their glyphs on the same icon
-   column as the nav rows below AND as their own collapsed-rail forms (issue 4351). */
-.rail-header__scope .familiar-switcher__trigger--labeled {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  min-height: var(--rail-control);
-  gap: 10px;
-  /* Border-compensated: this control is the only 2px-bordered box on the
-     column, and its edge plus the odd width of the scope glyph would otherwise
-     carry the avatar off the icon column that the (border-less) nav rows below
-     establish. Measured against the rendered box, not derived from the border. */
-  padding: 0 calc(var(--rail-lead) - 1px);
-  justify-content: flex-start;
-  border-radius: var(--radius-control);
-  border: 2px solid var(--accent-presence);
-  background: transparent;
-}
-
-.rail-header__scope .familiar-switcher__trigger--labeled:hover {
-  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
-  border-color: var(--accent-presence);
-}
-
-.rail-header__scope .familiar-switcher__trigger-label {
-  font-size: var(--text-base);
-  font-weight: 600;
-}
+/* The scope control and New-chat button are the same box; workspace-context-switcher.css
+   owns the selector-specific trigger rules. */
 
 .rail-header__actions {
   display: flex;
@@ -151,15 +121,11 @@
   justify-content: center;
 }
 
-.shell-nav--rail .rail-header__scope .familiar-switcher__trigger-label,
-.shell-nav--rail .rail-header__scope .familiar-switcher__trigger-caret,
 .shell-nav--rail .rail-header__new-label,
 .shell-nav--rail .rail-header__new-kbd {
   display: none;
 }
 
-.shell-nav--rail .rail-header__scope .familiar-switcher__trigger,
-.shell-nav--rail .rail-header__scope .familiar-switcher__trigger--labeled,
 .shell-nav--rail .rail-header__new {
   flex: 0 0 auto;
   justify-content: center;
@@ -175,8 +141,7 @@
 /* Touch targets on the mobile drawer, same as every other rail control. There
    is no icon rail below 1024px, so this never fights the square above. */
 @media (max-width: 1023px) {
-  .rail-header__new,
-  .rail-header__scope .familiar-switcher__trigger--labeled {
+  .rail-header__new {
     min-height: var(--touch-target);
   }
 }

@@ -1,9 +1,7 @@
-// Global "show thread instruments" preference for the chat transcript.
+// Global "show activity map" preference for the chat transcript.
 //
-// The run spine (left gutter) and the thread minimap (right edge) are one
-// feature to a reader — navigation furniture around the conversation — so they
-// toggle together. Splitting them would offer a choice nobody has, at the cost
-// of two settings to explain.
+// The persisted key predates the activity-map name. Keep it so existing reader
+// preferences survive the replacement of the thread spine/minimap.
 //
 // Mirrors reasoning-visibility.ts deliberately: persisted in localStorage and
 // broadcast on a custom event, because the toggle lives in the session header
@@ -75,3 +73,5 @@ export function useThreadInstrumentsVisible(): [boolean, (value: boolean) => voi
 
   return [visible, writeThreadInstrumentsVisible];
 }
+
+export const useActivityMapVisible = useThreadInstrumentsVisible;

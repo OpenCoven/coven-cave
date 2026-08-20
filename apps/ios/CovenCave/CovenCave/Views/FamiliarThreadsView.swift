@@ -9,6 +9,10 @@ struct FamiliarThreadsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     let familiar: Familiar
+    /// The project context whose history is being shown. ChatView's session
+    /// picker pins this to the visible conversation so a later global project
+    /// switch does not reshuffle the list underneath the user.
+    let projectContext: ProjectContext
     @Binding var path: [ChatRoute]
     /// Namespace owned by `ChatsHomeView`; local thread rows register as
     /// zoom-transition sources so the pushed conversation grows out of them.
@@ -66,13 +70,13 @@ struct FamiliarThreadsView: View {
     /// search query narrows both kinds of row. An empty query returns everything.
     private var entries: [Entry] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let local = app.directThreads(for: familiar.id)
+        let local = app.directThreads(for: familiar.id, in: projectContext)
             .filter { showArchived || !$0.archived }
             .filter { matches($0, query: q) }
             .map(Entry.local)
         // A server-only session has no transcript on this device yet, so its
         // title is the only thing there is to match.
-        let server = app.serverOnlySessions(for: familiar.id)
+        let server = app.serverOnlySessions(for: familiar.id, in: projectContext)
             .filter { q.isEmpty || $0.title.lowercased().contains(q) }
             .map(Entry.server)
         return (local + server).sorted { $0.date > $1.date }
@@ -90,7 +94,7 @@ struct FamiliarThreadsView: View {
 
     /// Number of archived on-device threads (drives the show/hide toggle).
     private var archivedLocalCount: Int {
-        app.directThreads(for: familiar.id).filter(\.archived).count
+        app.directThreads(for: familiar.id, in: projectContext).filter(\.archived).count
     }
 
     var body: some View {
@@ -149,7 +153,7 @@ struct FamiliarThreadsView: View {
         .refreshable { await app.loadSessions() }
         // Re-appearance is not: reuse a list fetched moments ago (cave-ioswipe.5).
         .task { await app.loadSessionsIfStale() }
-        .onAppear { app.markFamiliarViewed([familiar.id]) }
+        .onAppear { app.markFamiliarViewed([familiar.id], in: projectContext) }
         .safeAreaInset(edge: .bottom) {
             if selectMode {
                 HStack {
@@ -247,8 +251,10 @@ struct FamiliarThreadsView: View {
                             Button { renamingThread = thread } label: {
                                 Label("Rename", systemImage: "pencil")
                             }
-                            Button { app.duplicateThread(thread) } label: {
-                                Label("Duplicate", systemImage: "plus.square.on.square")
+                            if !app.isRecoveryOnlyThread(thread) {
+                                Button { app.duplicateThread(thread) } label: {
+                                    Label("Duplicate", systemImage: "plus.square.on.square")
+                                }
                             }
                             Button { app.setThreadPinned(thread, !thread.pinned) } label: {
                                 Label(thread.pinned ? "Unpin" : "Pin",
@@ -304,7 +310,7 @@ struct FamiliarThreadsView: View {
     // MARK: - Bulk select
 
     private var localThreads: [ChatThread] {
-        app.directThreads(for: familiar.id).filter { showArchived || !$0.archived }
+        app.directThreads(for: familiar.id, in: projectContext).filter { showArchived || !$0.archived }
     }
     /// The local threads actually on screen. `entries` is narrowed by the
     /// archive toggle AND the search query, so this is derived from it rather
@@ -320,7 +326,11 @@ struct FamiliarThreadsView: View {
             return nil
         }
     }
-    private var hasLocalThreads: Bool { !app.directThreads(for: familiar.id).isEmpty }
+    private var hasLocalThreads: Bool { !app.projectDirectThreads(for: familiar.id).isEmpty }
+    private var canStartChatsInContext: Bool {
+        if case .project = projectContext { return true }
+        return false
+    }
     private var allLocalSelected: Bool {
         !visibleLocalThreads.isEmpty && Set(visibleLocalThreads.map(\.id)).isSubset(of: selectedIds)
     }
@@ -418,18 +428,44 @@ struct FamiliarThreadsView: View {
         }
     }
 
+    private func chooseIfOpenable(_ thread: ChatThread) {
+        guard app.canOpen(thread) else {
+            guard let failure = app.threadOpenFailure(for: thread) else { return }
+            app.showToast(
+                failure.toastText,
+                systemImage: failure.systemImage,
+                style: .warning
+            )
+            return
+        }
+        choose(thread)
+    }
+
     private func open(_ entry: Entry) {
         switch entry {
         case .local(let thread):
-            choose(thread)
+            chooseIfOpenable(thread)
         case .server(let session):
             // Bind the server session to a local thread (and pull its history),
             // then open it like any other.
-            choose(app.openServerSession(session, familiarId: familiar.id))
+            chooseIfOpenable(app.openServerSession(session, familiarId: familiar.id))
         }
     }
 
     private func startNewChat() {
+        guard canStartChatsInContext else {
+            app.showToast(
+                "Unassigned chats are recovery-only. Switch to a registered project to start a replacement chat.",
+                systemImage: "folder.badge.questionmark",
+                style: .warning
+            )
+            return
+        }
+        if app.projectContext?.id != projectContext.id {
+            guard app.requestOpenDestination(.chats, projectId: projectContext.projectId) else {
+                return
+            }
+        }
         showNewChat = true
     }
 
@@ -437,10 +473,16 @@ struct FamiliarThreadsView: View {
         ContentUnavailableView {
             Label("No chats with \(familiar.displayName)", systemImage: "bubble.left")
         } description: {
-            Text("Start a conversation — it'll appear here and stay separate from your other chats.")
+            if canStartChatsInContext {
+                Text("Start a conversation — it'll appear here and stay separate from your other chats.")
+            } else {
+                Text("Unassigned chats are recovery-only. Switch to a registered project to start a replacement chat.")
+            }
         } actions: {
-            Button("New chat", action: startNewChat)
-                .buttonStyle(.borderedProminent)
+            if canStartChatsInContext {
+                Button("New chat", action: startNewChat)
+                    .buttonStyle(.borderedProminent)
+            }
         }
     }
 }

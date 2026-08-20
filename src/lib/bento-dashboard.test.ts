@@ -175,9 +175,10 @@ describe("streakPips", () => {
 });
 
 describe("heatmapCells", () => {
-  it("produces a full 53×7 column-major grid ending on today's week", () => {
-    const { cells } = heatmapCells([], NOW, 53);
-    assert.equal(cells.length, 53 * 7);
+  it("starts an empty coven at an exact trailing 90-day window", () => {
+    const { cells, windowDays } = heatmapCells([], NOW);
+    assert.equal(windowDays, 90);
+    assert.equal(cells.filter((cell) => !cell.outside).length, 90);
     // NOW is a Saturday (UTC) — the last cell of the last column is today.
     const last = cells[cells.length - 1];
     assert.equal(last.date, "2026-07-18");
@@ -186,7 +187,7 @@ describe("heatmapCells", () => {
 
   it("marks trailing cells after today as future on a mid-week now", () => {
     const wednesday = Date.parse("2026-07-15T12:00:00.000Z");
-    const { cells } = heatmapCells([], wednesday, 53);
+    const { cells } = heatmapCells([], wednesday);
     const lastCol = cells.slice(-7);
     assert.deepEqual(lastCol.map((c) => c.future), [false, false, false, false, true, true, true]);
   });
@@ -194,7 +195,7 @@ describe("heatmapCells", () => {
   it("buckets counts into levels 0/1/2/3/4", () => {
     const mk = (n: number) => Array.from({ length: n }, () => session({ created_at: "2026-07-18T01:00:00.000Z" }));
     const levelOfToday = (n: number) => {
-      const { cells } = heatmapCells(mk(n), NOW, 53);
+      const { cells } = heatmapCells(mk(n), NOW);
       return cells[cells.length - 1].level;
     };
     assert.equal(levelOfToday(0), 0);
@@ -204,8 +205,17 @@ describe("heatmapCells", () => {
     assert.equal(levelOfToday(7), 4);
   });
 
-  it("derives month labels spanning the year", () => {
-    const { monthLabels } = heatmapCells([], NOW, 53);
+  it("expands the activity grid from 90 to 180 to 365 days as history matures", () => {
+    const at = (days: number) => session({ created_at: new Date(NOW - days * 24 * 60 * 60 * 1000).toISOString() });
+    assert.equal(heatmapCells([at(89)], NOW).windowDays, 90);
+    assert.equal(heatmapCells([at(90)], NOW).windowDays, 180);
+    assert.equal(heatmapCells([at(179)], NOW).windowDays, 180);
+    assert.equal(heatmapCells([at(180)], NOW).windowDays, 365);
+  });
+
+  it("derives month labels for the selected adaptive window", () => {
+    const old = session({ created_at: new Date(NOW - 180 * 24 * 60 * 60 * 1000).toISOString() });
+    const { monthLabels } = heatmapCells([old], NOW);
     assert.equal(monthLabels[0], "jul");
     assert.equal(monthLabels[monthLabels.length - 1], "jul");
     assert.ok(monthLabels.length >= 12 && monthLabels.length <= 14);
@@ -215,7 +225,6 @@ describe("heatmapCells", () => {
     const { cells } = heatmapCells(
       [session({ created_at: "2026-07-18T01:00:00.000Z", archived_at: "2026-07-18T02:00:00.000Z" })],
       NOW,
-      53,
     );
     assert.equal(cells[cells.length - 1].count, 0);
   });

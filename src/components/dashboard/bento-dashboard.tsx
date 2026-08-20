@@ -445,7 +445,7 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
                   <span className="bd-heat-chevron" aria-hidden>
                     {heatOpen ? "▾" : "▸"}
                   </span>{" "}
-                  coven session activity
+                  coven session activity · past {heat.windowDays} days
                 </span>
                 <span className="bd-heat-legend" aria-hidden>
                   less
@@ -458,17 +458,22 @@ export function BentoDashboard({ model: initialModel }: { model: DashboardModel 
               </button>
               {heatOpen ? (
                 <>
-                  <div className="bd-heat-grid" {...heatTip.gridProps}>
+                  <div
+                    className={`bd-heat-grid bd-heat-grid--${heat.windowDays}`}
+                    role="img"
+                    aria-label={`Coven session activity over the past ${heat.windowDays} days`}
+                    {...heatTip.gridProps}
+                  >
                     {heat.cells.map((c) => (
                       <div
                         key={c.date}
-                        className={`bd-heat-cell${c.future ? " bd-heat-cell--future" : ` bd-heat-l${c.level}`}`}
-                        data-tip={c.future ? undefined : formatHeatTip(c.date, c.count)}
+                        className={`bd-heat-cell${c.outside ? " bd-heat-cell--future" : ` bd-heat-l${c.level}`}`}
+                        data-tip={c.outside ? undefined : formatHeatTip(c.date, c.count)}
                       />
                     ))}
                   </div>
                   {heatTip.tip}
-                  <div className="bd-heat-months" aria-hidden>
+                  <div className={`bd-heat-months bd-heat-months--${heat.windowDays}`} aria-hidden>
                     {heat.monthLabels.map((m, i) => (
                       <span key={`${m}-${i}`}>{m}</span>
                     ))}

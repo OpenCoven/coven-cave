@@ -133,6 +133,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pathDraft, setPathDraft] = useState("");
+  const [pathError, setPathError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [placeGroups, setPlaceGroups] = useState<PlaceGroup[]>([]);
@@ -149,6 +151,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const loadGenerationRef = useRef(0);
   const newFolderHintId = "directory-picker-new-folder-help";
   const newFolderErrorId = "directory-picker-new-folder-error";
+  const pathHintId = "directory-picker-path-help";
+  const pathErrorId = "directory-picker-path-error";
 
   const resetCreateFolderState = useCallback(({ preserveBusy = false }: { preserveBusy?: boolean } = {}) => {
     setCreatingFolder(false);
@@ -157,27 +161,37 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     if (!preserveBusy) setCreateBusy(false);
   }, []);
 
-  const load = useCallback(async (dir: string | null, sessionGeneration = modalSessionRef.current) => {
+  const load = useCallback(async (
+    dir: string | null,
+    sessionGeneration = modalSessionRef.current,
+    fromPathEntry = false,
+  ) => {
     if (sessionGeneration !== modalSessionRef.current) return;
     const loadGeneration = ++loadGenerationRef.current;
     setLoading(true);
     setError(null);
+    setPathError(null);
     try {
       const url = dir ? `/api/fs-browse?dir=${encodeURIComponent(dir)}` : "/api/fs-browse";
       const res = await fetch(url, { cache: "no-store" });
       const body = (await res.json()) as BrowseResponse;
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
       if (!res.ok || !body.ok || !body.cwd) {
-        setError(browseErrorMessage(body, "Could not read that folder"));
+        const message = browseErrorMessage(body, "Could not read that folder");
+        setError(message);
+        if (fromPathEntry) setPathError(message);
         return;
       }
       setHome((h) => h ?? body.home ?? body.cwd!);
       setCwd(body.cwd);
       setParent(body.parent ?? null);
       setEntries(body.entries ?? []);
+      setPathDraft(body.cwd === DRIVES ? "" : body.cwd);
     } catch {
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
-      setError("Could not reach the folder browser");
+      const message = "Could not reach the folder browser";
+      setError(message);
+      if (fromPathEntry) setPathError(message);
     } finally {
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
       setLoading(false);
@@ -201,11 +215,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   // Navigation (up, crumbs, opening a row) clears the per-folder UI state —
   // filter, highlight, and any in-progress inline create — before loading.
   const navigateTo = useCallback(
-    (dir: string | null) => {
+    (dir: string | null, { fromPathEntry = false }: { fromPathEntry?: boolean } = {}) => {
       setFilter("");
       setSelectedPath(null);
       resetCreateFolderState();
-      void load(dir);
+      void load(dir, modalSessionRef.current, fromPathEntry);
     },
     [load, resetCreateFolderState],
   );
@@ -226,12 +240,20 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       setEntries([]);
       setLoading(false);
       setError(null);
+      setPathDraft("");
+      setPathError(null);
       setFilter("");
       setSelectedPath(null);
       setPlaceGroups([]);
       resetCreateFolderState();
     }
   }, [open, load, loadPlaces, resetCreateFolderState]);
+
+  const submitPathDraft = () => {
+    const nextPath = pathDraft.trim();
+    if (!nextPath || loading || createBusy) return;
+    navigateTo(nextPath, { fromPathEntry: true });
+  };
 
   // This is a true modal (aria-modal, covers the page). Trap focus inside it,
   // close on Escape, and restore focus to the trigger on close — the hook does
@@ -480,7 +502,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 <Icon name="ph:arrow-up" width={15} aria-hidden />
               </Button>
               <nav
-                aria-label="Folder path"
+                aria-label="Folder breadcrumbs"
                 className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto whitespace-nowrap font-mono text-[length:var(--text-sm)] [scrollbar-width:none] [&::-webkit-scrollbar]:h-0"
               >
                 {crumbs.map((crumb, i) => {
@@ -520,6 +542,63 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               >
                 New folder
               </Button>
+            </div>
+
+            <div className="px-5 pb-2">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitPathDraft();
+                }}
+                className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 transition-colors focus-within:border-[var(--ring-focus)]"
+              >
+                <label
+                  htmlFor="directory-picker-path"
+                  className="flex-none text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]"
+                >
+                  Folder path
+                </label>
+                <input
+                  id="directory-picker-path"
+                  className="focus-ring h-full min-w-0 flex-1 rounded-[var(--radius-control)] bg-transparent font-mono text-base text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-60"
+                  value={pathDraft}
+                  onChange={(event) => {
+                    setPathDraft(event.target.value);
+                    setError(null);
+                    setPathError(null);
+                  }}
+                  onFocus={(event) => event.currentTarget.select()}
+                  placeholder="Paste an absolute folder path"
+                  disabled={loading || createBusy}
+                  aria-invalid={Boolean(pathError)}
+                  aria-describedby={pathError ? `${pathHintId} ${pathErrorId}` : pathHintId}
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="xs"
+                  disabled={!pathDraft.trim() || loading || createBusy}
+                  className="h-7 flex-none rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                >
+                  Go
+                </Button>
+              </form>
+              <p id={pathHintId} className="mt-1.5 px-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                Paste an absolute path, then press Enter.
+              </p>
+              {pathError ? (
+                <p
+                  id={pathErrorId}
+                  role="alert"
+                  className="mt-1 px-1 text-[length:var(--text-xs)] text-[var(--color-danger)]"
+                >
+                  {pathError}
+                </p>
+              ) : null}
             </div>
 
             <div className="px-5 pb-2">
@@ -597,7 +676,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 </div>
               ) : null}
 
-              {error ? (
+              {error && !pathError ? (
                 <p role="alert" className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p>
               ) : loading && entries.length === 0 ? (
                 <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>

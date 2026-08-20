@@ -28,13 +28,13 @@ assert.match(
 
 assert.match(
   rowBlock,
-  /\.swipeActions\(edge: \.trailing[\s\S]{0,260}?app\.hasUnread\(familiar\.id\)[\s\S]{0,200}?markFamiliarViewed\(\[familiar\.id\]\)/,
+  /\.swipeActions\(edge: \.trailing[\s\S]{0,260}?app\.projectHasUnread\(familiar\.id\)[\s\S]{0,200}?markFamiliarViewed\(\[familiar\.id\]\)/,
   "trailing swipe should mark read when unread",
 );
 
 assert.match(
   rowBlock,
-  /\.contextMenu \{[\s\S]{0,400}?startNewChat\(with: familiar\)[\s\S]{0,300}?Mark all read/,
+  /\.contextMenu \{[\s\S]{0,400}?startNewChat\(with: familiar\)[\s\S]{0,400}?projectHasUnread\(familiar\.id\)[\s\S]{0,220}?Mark all read/,
   "the context menu should offer New chat and Mark all read",
 );
 

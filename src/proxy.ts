@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_QUERY_PARAM,
+  ACCESS_PROMPT_QUERY_PARAM,
   TOKEN_PARAM,
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
@@ -19,6 +20,7 @@ import {
   bearerFromReferer,
   bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  shouldBypassMobileAccessGate,
   isTrustedLocalPeer,
   isHtmlNavigationRequest,
   accessGatePage,
@@ -50,6 +52,23 @@ function jsonError(status: number, error: string) {
 function configuredMobileAccessToken() {
   const token = process.env.COVEN_CAVE_ACCESS_TOKEN?.trim();
   return token && token.length > 0 ? token : null;
+}
+
+const DEV_READINESS_TOKEN_HEADER = "x-coven-cave-readiness-token";
+const DEV_READINESS_PROOF_HEADER = "x-coven-cave-readiness";
+
+function isAuthenticatedDevReadinessProbe(req: NextRequest, trustedLocalPeer: boolean) {
+  const expected = process.env.COVEN_CAVE_DEV_PROBE_TOKEN?.trim();
+  const supplied = req.headers.get(DEV_READINESS_TOKEN_HEADER);
+  return Boolean(
+    trustedLocalPeer
+    && expected
+    && supplied
+    && req.method === "GET"
+    && req.nextUrl.pathname === "/"
+    && req.nextUrl.searchParams.get("__devShellProbe") === "1"
+    && timingSafeEqualString(supplied, expected)
+  );
 }
 
 function bearerToken(req: NextRequest) {
@@ -90,6 +109,8 @@ async function mobileAccessGate(
 ) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
+  const accessPromptRequested =
+    req.nextUrl.searchParams.get(ACCESS_PROMPT_QUERY_PARAM) === "1";
 
   // A server.ts-stamped direct loopback DOCUMENT navigation is this machine's
   // own window asking for a page, and it is the one request shape that cannot
@@ -107,8 +128,13 @@ async function mobileAccessGate(
   // the comment on shouldRequireMobileAccessCredential describes, distinguishing
   // the intended local user from other OS users on a shared machine.
   if (
-    trustedLocalPeer &&
-    isHtmlNavigationRequest(req.method, req.nextUrl.pathname, req.headers.get("accept"))
+    shouldBypassMobileAccessGate(
+      trustedLocalPeer,
+      accessPromptRequested,
+      req.method,
+      req.nextUrl.pathname,
+      req.headers.get("accept"),
+    )
   ) {
     return null;
   }
@@ -149,6 +175,7 @@ async function mobileAccessGate(
   if (queryToken && (req.method === "GET" || req.method === "HEAD")) {
     const url = req.nextUrl.clone();
     url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
+    url.searchParams.delete(ACCESS_PROMPT_QUERY_PARAM);
     const res = NextResponse.redirect(url);
     const queryVerification = await isValidMobileAccessCredential({
       supplied: queryToken,
@@ -230,6 +257,11 @@ export async function proxy(req: NextRequest) {
     req.headers.get(LOCAL_PEER_HEADER),
     process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
   );
+  if (isAuthenticatedDevReadinessProbe(req, trustedLocalPeer)) {
+    const response = NextResponse.next();
+    response.headers.set(DEV_READINESS_PROOF_HEADER, "1");
+    return response;
+  }
   // Tailnet device context behind a Tailscale-Serve-forwarded request. This is
   // never sufficient authentication because direct loopback clients can forge
   // forwarding headers; it is consumed only after bearer authentication for

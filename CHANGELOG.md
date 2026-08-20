@@ -7,6 +7,42 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-08-20
+
+> Familiar memory stats now count workspace-owned memories, plus a guided
+> diagram command, a rebuilt research PDF reader, and Dependabot cleanup.
+
+Patch release on top of v0.3.7.
+
+### Changes
+- feat: add guided diagram chat command (#4751)
+- Open markdown file refs in chat reader
+- Safely unlink disposable symlink artifacts during retirement (#4756)
+- fix(dev): disable persistent Turbopack cache (#4755)
+- Merge workspace memory into familiar stats
+- docs: cross-link the OpenCoven UI specimen browser (#4754)
+- fix: ignore generated PDF worker during retirement (#4752)
+- Fully hide the collapsed sidebar (#4747)
+- fix(familiars): clarify runtime selection (#4750)
+- Modernize document reading and Memories (#4736)
+- fix: canonicalize Windows managed CLI path (#4749)
+- fix(desktop): mint dev sidecar auth token (#4748)
+- Fix and expand the research PDF reader (#4746)
+- fix(research): make the pdf.js worker a verified build artifact (#4745)
+- Add governed agentic recommendations across Cave surfaces (#4743)
+- fix(test): stop a swallowed Escape sinking the shortcuts sheet suite (#4744)
+- fix(deps): bump nanoid to 3.3.18 (Dependabot #17) (#4739)
+- fix(deps): force postcss >=8.5.23 (Dependabot #7 #9 #10 #11) (#4741)
+- fix(deps): bump serde_with to 3.21.0 (Dependabot #19) (#4737)
+- docs(security): record glib VariantStrIter constraint (Dependabot #18) (#4738)
+- fix(deps): bump sharp to 0.35.3 (Dependabot #1 #8) (#4742)
+- build(deps): bump mermaid from 11.16.0 to 11.16.1 (#4735)
+- Harden production iOS pairing recovery (#4731)
+- Add X Article Research Desk ingestion (#4730)
+- Skip blocked worktree retirement candidates (#4734)
+- Overhaul the Review Deck workflow (#4733)
+
+
 ### Fixed
 - Verify Cave’s private Coven CLI after first-run installation on Windows even
   when the inherited environment spells `Path` with different casing.

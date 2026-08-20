@@ -67,14 +67,28 @@ function workflowRun({
 
 const GUARDED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
 const GUARDED_CONCURRENCY =
+  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}";
+const PREVIOUS_GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_IFS = {
+const GUARDED_SUBORDINATE_JOB_IFS = {
   paths: GUARDED_JOB_IF,
   ios: `needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
-  build: `always() && (${GUARDED_JOB_IF})`,
 };
+const SHA_MISMATCH_STEP = [
+  "    steps:",
+  "      - name: Refuse recovery SHA mismatch",
+  "        env:",
+  "          EXPECTED_SHA: ${{ inputs.expected_sha }}",
+  "          ACTUAL_SHA: ${{ github.sha }}",
+  "        run: |",
+  "          set -euo pipefail",
+  '          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then',
+  '            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."',
+  "            exit 1",
+  "          fi",
+];
 const GUARDED_CI_WORKFLOW = [
   "name: CI",
   `run-name: ${GUARDED_RUN_NAME}`,
@@ -84,13 +98,21 @@ const GUARDED_CI_WORKFLOW = [
   "      expected_sha:",
   "        required: true",
   "        type: string",
+  "      expected_pr_number:",
+  "        required: true",
+  "        type: string",
   "concurrency:",
   `  group: ${GUARDED_CONCURRENCY}`,
   "jobs:",
-  ...Object.entries(GUARDED_JOB_IFS).flatMap(([name, condition]) => [
+  "  pr-checks:",
+  ...SHA_MISMATCH_STEP,
+  ...Object.entries(GUARDED_SUBORDINATE_JOB_IFS).flatMap(([name, condition]) => [
     `  ${name}:`,
     `    if: ${condition}`,
   ]),
+  "  build:",
+  "    if: always()",
+  ...SHA_MISMATCH_STEP,
   "",
 ].join("\n");
 const PREVIOUS_GUARDED_CI_WORKFLOW = [
@@ -103,11 +125,36 @@ const PREVIOUS_GUARDED_CI_WORKFLOW = [
   "        required: true",
   "        type: string",
   "concurrency:",
-  `  group: ${GUARDED_CONCURRENCY}`,
+  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
   "jobs:",
   "  build:",
   `    if: ${GUARDED_JOB_IF}`,
   "",
+].join("\n");
+const MIGRATION_GUARDED_CI_WORKFLOW = [
+  "name: CI",
+  `run-name: ${GUARDED_RUN_NAME}`,
+  "on:",
+  "  workflow_dispatch:",
+  "    inputs:",
+  "      expected_sha:",
+  "        required: true",
+  "        type: string",
+  "concurrency:",
+  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
+  "jobs:",
+  "  paths:",
+  `    if: ${GUARDED_JOB_IF}`,
+  "  ios:",
+  `    if: needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
+  "  build:",
+  `    if: always() && (${GUARDED_JOB_IF})`,
+  "",
+].join("\n");
+const REQUIRED_EXPECTED_PR_NUMBER_INPUT = [
+  "      expected_pr_number:",
+  "        required: true",
+  "        type: string",
 ].join("\n");
 
 function githubFixture({ pulls, runsBySha = {}, jobsByRun = {}, workflowsBySha = {} }) {
@@ -206,7 +253,10 @@ test("apply dispatches one fresh CI run for a qualifying same-repository head", 
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
+        body: {
+          ref: pr.head.ref,
+          inputs: { expected_sha: pr.head.sha, expected_pr_number: String(pr.number) },
+        },
       },
     ],
   );
@@ -235,6 +285,34 @@ test("apply preserves expected_sha for the previous complete guarded workflow", 
     ],
   );
 });
+
+for (const [name, workflow] of [
+  ["previous", PREVIOUS_GUARDED_CI_WORKFLOW],
+  ["migration", MIGRATION_GUARDED_CI_WORKFLOW],
+]) {
+  test(
+    `a ${name} guarded workflow with a required expected_pr_number is partial and never dispatched`,
+    async () => {
+      const pr = pull();
+      const fixture = githubFixture({
+        pulls: [pr],
+        workflowsBySha: {
+          [pr.head.sha]: workflow.replace(
+            "concurrency:",
+            `${REQUIRED_EXPECTED_PR_NUMBER_INPUT}\nconcurrency:`,
+          ),
+        },
+      });
+
+      const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+      assert.deepEqual(result.recoveries, []);
+      assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
+      assert.equal(result.degraded, true);
+      assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+    },
+  );
+}
 
 test("apply omits expected_sha only for a legacy head workflow without that input", async () => {
   const pr = pull();
@@ -301,7 +379,10 @@ test("a partial guard contract is skipped without blocking the other candidates"
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: healthy.head.ref, inputs: { expected_sha: healthy.head.sha } },
+        body: {
+          ref: healthy.head.ref,
+          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
+        },
       },
     ],
   );
@@ -310,14 +391,42 @@ test("a partial guard contract is skipped without blocking the other candidates"
   assert.equal(messages.some((message) => message.includes("needs attention")), true);
 });
 
-test("a job missing the expected SHA guard is skipped, never dispatched", async () => {
+test("an expected_pr_number-only contract is skipped and never dispatched", async () => {
+  const pr = pull();
+  const expectedPrNumberOnlyWorkflow = [
+    "name: CI",
+    "on:",
+    "  workflow_dispatch:",
+    "    inputs:",
+    "      expected_pr_number:",
+    "        required: true",
+    "        type: string",
+    "jobs:",
+    "  build:",
+    "    if: ${{ inputs.expected_pr_number }}",
+    "",
+  ].join("\n");
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: { [pr.head.sha]: expectedPrNumberOnlyWorkflow },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
+  assert.equal(result.degraded, true);
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
+test("a required job missing the expected SHA failure is skipped, never dispatched", async () => {
   const pr = pull();
   const fixture = githubFixture({
     pulls: [pr],
     workflowsBySha: {
       [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        `  build:\n    if: ${GUARDED_JOB_IFS.build}`,
-        "  build:\n    if: success()",
+        "      - name: Refuse recovery SHA mismatch",
+        "      - name: Start validation",
       ),
     },
   });
@@ -377,7 +486,10 @@ test("an un-dispatchable head is skipped without blocking the other candidates",
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: healthy.head.ref, inputs: { expected_sha: healthy.head.sha } },
+        body: {
+          ref: healthy.head.ref,
+          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
+        },
       },
     ],
   );
@@ -712,7 +824,10 @@ test("a completed dispatch for a different expected SHA does not cover the curre
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: current.head.ref, inputs: { expected_sha: current.head.sha } },
+        body: {
+          ref: current.head.ref,
+          inputs: { expected_sha: current.head.sha, expected_pr_number: String(current.number) },
+        },
       },
     ],
   );

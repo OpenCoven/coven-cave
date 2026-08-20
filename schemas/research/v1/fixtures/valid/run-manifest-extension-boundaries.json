@@ -1,0 +1,120 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_extension_boundaries_01",
+  "runId": "run_extension_boundaries_01",
+  "digest": "a3e2072dd05a74aecb6df4bffe3583e9f3e59208e6de333f068e4fb7072107fb",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:10:00.000Z",
+  "context": {
+    "contextPackId": "ctx_extension_boundaries_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "extensionMetadata": {
+      "items": [{ "label": "context" }]
+    }
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_extension_boundaries_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "extensionMetadata": {
+        "items": [{ "label": "context source" }]
+      }
+    },
+    {
+      "kind": "public-evidence",
+      "id": "evidence_extension_boundaries_01",
+      "contentDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "snapshotDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "canonicalUrl": "http://www.iana.org/evidence",
+      "fetchedAt": "2026-08-16T20:07:00.000Z",
+      "extensionMetadata": {
+        "items": [{ "label": "public source" }]
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_extension_boundaries_01",
+      "kind": "research-report",
+      "title": "Research report",
+      "mediaType": "text/markdown",
+      "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "bytes": 1024,
+      "placement": "cloud-content",
+      "contentSync": "synced",
+      "createdAt": "2026-08-16T20:09:00.000Z",
+      "extensionMetadata": {
+        "items": [{ "label": "artifact" }]
+      }
+    }
+  ],
+  "modelExecutions": [
+    {
+      "taskId": "modeltask_extension_boundaries_01",
+      "phase": "synthesize",
+      "attempt": 1,
+      "inputDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "outputDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "receipt": {
+        "familiarId": "sage",
+        "runtime": "copilot",
+        "effectiveModel": "gpt-5.6-sol",
+        "modelSource": "session",
+        "providerBilling": "user-connected",
+        "usage": {
+          "inputTokens": null,
+          "outputTokens": null,
+          "costUsd": null,
+          "reportedByRuntime": false,
+          "extensionMetadata": {
+            "items": [{ "label": "receipt usage" }]
+          }
+        },
+        "extensionMetadata": {
+          "items": [{ "label": "receipt" }]
+        }
+      },
+      "extensionMetadata": {
+        "items": [{ "label": "model execution" }]
+      }
+    }
+  ],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported",
+    "extensionMetadata": {
+      "items": [{ "label": "manifest usage" }]
+    }
+  },
+  "retention": {
+    "policy": "project",
+    "effectivePolicy": "project",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:10:00.000Z",
+    "extensionMetadata": {
+      "items": [{ "label": "retention" }]
+    }
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "extensionMetadata": {
+      "items": [{ "label": "deletion" }]
+    }
+  },
+  "extensionMetadata": {
+    "context": "benign audit metadata",
+    "contentment": "benign audit metadata",
+    "textile": "benign audit metadata",
+    "pathology": "benign audit metadata",
+    "secretary": "benign audit metadata",
+    "credentialed": "benign audit metadata",
+    "items": [{ "label": "manifest root" }]
+  }
+}

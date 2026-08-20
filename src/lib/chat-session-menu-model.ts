@@ -18,7 +18,7 @@ export type SessionMenuItemId =
   | "continue-on-phone"
   | "project"
   | "thinking"
-  | "instruments"
+  | "activity-map"
   | "reflect"
   | "debug";
 
@@ -45,8 +45,8 @@ export function sessionMenuSections(ctx: {
   projectRoot: string | null;
   hasTurns: boolean;
   showThinking: boolean;
-  /** Whether the run spine + thread minimap are currently shown. */
-  instrumentsVisible: boolean;
+  /** Whether the chat activity map is currently shown. */
+  activityMapVisible: boolean;
   /** Reflect-on-thread is wired (familiar has an id). */
   reflectAvailable: boolean;
   reflecting: boolean;
@@ -84,18 +84,13 @@ export function sessionMenuSections(ctx: {
     // there is nothing to navigate in an empty transcript, and offering to
     // hide furniture that is not on screen reads as a broken setting.
     tools.push({
-      id: "instruments",
-      label: ctx.instrumentsVisible ? "Hide thread map" : "Show thread map",
-      // `ph:path` — the spine IS a path through the thread. Both states share
-      // it: the Popover's own checkmark slot carries on/off, and only a
-      // curated subset of Phosphor ships in the bundle (no -bold variant of
-      // this glyph exists in it), so a weight swap would mean growing the
-      // icon subset for decoration.
+      id: "activity-map",
+      label: ctx.activityMapVisible ? "Hide activity map" : "Show activity map",
       icon: "ph:path",
-      checked: ctx.instrumentsVisible,
-      title: ctx.instrumentsVisible
-        ? "Hide the turn spine and minimap in the gutters"
-        : "Show the turn spine and minimap in the gutters",
+      checked: ctx.activityMapVisible,
+      title: ctx.activityMapVisible
+        ? "Hide the activity timeline and tool summary"
+        : "Show the activity timeline and tool summary",
     });
   }
   if (ctx.reflectAvailable) {

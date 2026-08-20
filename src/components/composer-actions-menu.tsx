@@ -174,7 +174,7 @@ export function ComposerActionsMenu({
           setOpen(true);
         }}
       >
-        <Icon name="ph:plus" width="var(--icon-md)" aria-hidden />
+        <Icon name={isToolsTrigger ? "ph:sparkle" : "ph:plus"} width="var(--icon-md)" aria-hidden />
         {isToolsTrigger ? <span>Tools</span> : null}
         {showIndicator ? <span className="composer-actions__indicator" aria-hidden /> : null}
       </button>

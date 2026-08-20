@@ -1,0 +1,137 @@
+/* ══ Workspace context switcher — project + familiar scope controls ═══════════
+   Selector-specific layout for the two context controls that live inside
+   SidebarRailHeader, extracted from rail-header.css so each selector lives
+   in exactly one file.
+
+   The two controls (ProjectPicker trigger, FamiliarSwitcher trigger) must be
+   the same box as .rail-header__new — full width, --rail-control tall, control
+   radius, --rail-lead before the glyph — so that all three align on the same
+   icon column as the nav rows below them. */
+
+.workspace-context-switcher {
+  display: grid;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+}
+
+.workspace-context-switcher__project,
+.workspace-context-switcher__crew {
+  display: flex;
+  min-width: 0;
+}
+
+/* ── Project trigger ─────────────────────────────────────────────────────── */
+.workspace-context-switcher__project .cave-project-picker__trigger {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: var(--rail-control);
+  gap: var(--space-2);
+  padding: 0 calc(var(--rail-lead) - 1px);
+  justify-content: flex-start;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.workspace-context-switcher__project .cave-project-picker__trigger:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.workspace-context-switcher__project .cave-project-picker__trigger-label {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+/* ── Crew / familiar trigger ──────────────────────────────────────────────── */
+/* The crew trigger is bordered like the old scope trigger — same box, same
+   icon column — and uses the accent-presence tint from the design language. */
+.workspace-context-switcher__crew .familiar-switcher__trigger--labeled {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: var(--rail-control);
+  gap: var(--space-2);
+  padding: 0 calc(var(--rail-lead) - 1px);
+  justify-content: flex-start;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  background: transparent;
+}
+
+.workspace-context-switcher__crew .familiar-switcher__trigger--labeled:hover {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  border-color: var(--accent-presence);
+}
+
+.workspace-context-switcher__crew .familiar-switcher__trigger-label {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+/* ── Status / notice rows ────────────────────────────────────────────────── */
+.workspace-context-switcher__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--danger-text);
+  font-size: var(--text-xs);
+}
+
+.workspace-context-switcher__empty {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.workspace-context-switcher__notice {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+/* ── Collapsed 56px icon rail ─────────────────────────────────────────────── */
+/* Both context controls collapse to --rail-control squares centred on the rail,
+   labels and carets hidden. Status rows are suppressed since there is no room. */
+
+.shell-nav--rail .workspace-context-switcher {
+  justify-items: center;
+}
+
+.shell-nav--rail .workspace-context-switcher__error,
+.shell-nav--rail .workspace-context-switcher__empty,
+.shell-nav--rail .workspace-context-switcher__notice {
+  display: none;
+}
+
+.shell-nav--rail .workspace-context-switcher__project .cave-project-picker__trigger,
+.shell-nav--rail .workspace-context-switcher__crew .familiar-switcher__trigger,
+.shell-nav--rail .workspace-context-switcher__crew .familiar-switcher__trigger--labeled {
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 0;
+  width: var(--rail-control);
+  min-width: var(--rail-control);
+  height: var(--rail-control);
+  min-height: var(--rail-control);
+  padding: 0;
+  margin-inline: auto;
+}
+
+.shell-nav--rail .workspace-context-switcher__project .cave-project-picker__trigger-label,
+.shell-nav--rail .workspace-context-switcher__project .cave-project-picker__trigger-caret,
+.shell-nav--rail .workspace-context-switcher__crew .familiar-switcher__trigger-label,
+.shell-nav--rail .workspace-context-switcher__crew .familiar-switcher__trigger-caret {
+  display: none;
+}
+
+/* ── Mobile touch targets ────────────────────────────────────────────────── */
+/* No icon rail below 1024px; these apply only in the expanded drawer. */
+@media (max-width: 1023px) {
+  .workspace-context-switcher__project .cave-project-picker__trigger,
+  .workspace-context-switcher__crew .familiar-switcher__trigger--labeled {
+    min-height: var(--touch-target);
+  }
+}

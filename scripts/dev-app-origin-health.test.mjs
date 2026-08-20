@@ -6,6 +6,7 @@ import {
   loopbackOriginResponds,
   parsePort,
   parseTimeout,
+  resolveProbeToken,
 } from "./dev-app-origin-health.mjs";
 
 function listen(server) {
@@ -24,15 +25,60 @@ assert.equal(parsePort("0"), null);
 assert.equal(parsePort("3000;echo nope"), null);
 assert.equal(parseTimeout(undefined), 1_500);
 assert.equal(parseTimeout("99"), null);
+assert.equal(
+  resolveProbeToken({ COVEN_CAVE_ACCESS_TOKEN: "persisted-mobile-secret" }),
+  "",
+  "the readiness probe must ignore the persisted mobile-access credential",
+);
+assert.equal(
+  resolveProbeToken({ COVEN_CAVE_DEV_PROBE_TOKEN: " readiness-only " }),
+  "readiness-only",
+);
 
-const ready = http.createServer((_, response) => {
-  response.writeHead(204);
+let capturedAuthorization = "";
+let capturedAccept = "";
+let capturedProbeToken = "";
+assert.equal(
+  await loopbackOriginResponds({
+    port: 3007,
+    timeoutMs: 500,
+    probeToken: "readiness-only",
+    fetchImpl: async (_url, options) => {
+      capturedAuthorization = options.headers?.authorization ?? "";
+      capturedAccept = options.headers?.accept ?? "";
+      capturedProbeToken = options.headers?.["x-coven-cave-readiness-token"] ?? "";
+      return {
+        status: 204,
+        headers: new Headers({ "x-coven-cave-readiness": "1" }),
+      };
+    },
+  }),
+  true,
+  "a compiled loopback root response should be accepted",
+);
+assert.equal(
+  capturedAuthorization,
+  "",
+  "the readiness probe must never disclose an authorization token to the process owning the port",
+);
+assert.equal(capturedAccept, "text/html", "the readiness probe must request the root document shape");
+assert.equal(capturedProbeToken, "readiness-only", "the probe sends only its readiness-scoped token");
+
+const ready = http.createServer((request, response) => {
+  response.writeHead(204, {
+    "x-coven-cave-readiness":
+      request.headers["x-coven-cave-readiness-token"] === "readiness-only" ? "1" : "0",
+  });
   response.end();
 });
 const readyPort = await listen(ready);
 try {
   assert.equal(
-    await loopbackOriginResponds({ port: readyPort, timeoutMs: 500 }),
+    await loopbackOriginResponds({
+      port: readyPort,
+      timeoutMs: 500,
+      probeToken: "readiness-only",
+    }),
     true,
     "a 2xx loopback HTTP response is ready for the desktop WebView",
   );
@@ -40,14 +86,22 @@ try {
   await close(ready);
 }
 
-const redirect = http.createServer((_, response) => {
-  response.writeHead(302, { location: "/" });
+const redirect = http.createServer((request, response) => {
+  response.writeHead(302, {
+    location: "/",
+    "x-coven-cave-readiness":
+      request.headers["x-coven-cave-readiness-token"] === "readiness-only" ? "1" : "0",
+  });
   response.end();
 });
 const redirectPort = await listen(redirect);
 try {
   assert.equal(
-    await loopbackOriginResponds({ port: redirectPort, timeoutMs: 500 }),
+    await loopbackOriginResponds({
+      port: redirectPort,
+      timeoutMs: 500,
+      probeToken: "readiness-only",
+    }),
     true,
     "a bounded redirect is also a usable loopback origin",
   );
@@ -55,19 +109,68 @@ try {
   await close(redirect);
 }
 
-const mobileAccessGate = http.createServer((_, response) => {
-  response.writeHead(401, { "content-type": "text/html; charset=utf-8" });
-  response.end("local access gate");
+const mobileAccessGate = http.createServer((request, response) => {
+  if (
+    request.headers.accept === "text/html"
+    && request.headers.authorization === undefined
+    && request.headers["x-coven-cave-readiness-token"] === "readiness-only"
+  ) {
+    response.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "x-coven-cave-readiness": "1",
+    });
+    response.end("<main>Coven compiled</main>");
+    return;
+  }
+  response.writeHead(401, { "content-type": "application/json" });
+  response.end('{"ok":false,"error":"unauthorized"}');
 });
 const mobileAccessGatePort = await listen(mobileAccessGate);
 try {
   assert.equal(
-    await loopbackOriginResponds({ port: mobileAccessGatePort, timeoutMs: 500 }),
+    await loopbackOriginResponds({
+      port: mobileAccessGatePort,
+      timeoutMs: 500,
+      probeToken: "readiness-only",
+    }),
     true,
-    "the mobile access gate proves the root document compiled for a native loopback WebView",
+    "the loopback HTML navigation shape proves the root compiled without disclosing mobile access",
   );
 } finally {
   await close(mobileAccessGate);
+}
+
+let takeoverAuthorization = "not-observed";
+let takeoverProbeToken = "";
+const reclaimedPort = http.createServer((request, response) => {
+  takeoverAuthorization = request.headers.authorization ?? "";
+  takeoverProbeToken = request.headers["x-coven-cave-readiness-token"] ?? "";
+  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  response.end("<main>unrelated local process</main>");
+});
+const reclaimedPortNumber = await listen(reclaimedPort);
+try {
+  assert.equal(
+    await loopbackOriginResponds({
+      port: reclaimedPortNumber,
+      timeoutMs: 100,
+      probeToken: "readiness-only",
+    }),
+    false,
+    "a successful response without server-issued readiness proof is not app-ready after port takeover",
+  );
+  assert.equal(
+    takeoverAuthorization,
+    "",
+    "the long-lived watchdog must disclose no persisted credential after port takeover",
+  );
+  assert.equal(
+    takeoverProbeToken,
+    "readiness-only",
+    "port takeover exposes only the ephemeral readiness-scoped credential",
+  );
+} finally {
+  await close(reclaimedPort);
 }
 
 let transientAttempts = 0;
@@ -82,7 +185,10 @@ assert.equal(
         error.code = "ECONNREFUSED";
         throw error;
       }
-      return new Response(null, { status: 204 });
+      return new Response(null, {
+        status: 204,
+        headers: { "x-coven-cave-readiness": "1" },
+      });
     },
   }),
   true,
@@ -125,7 +231,10 @@ assert.equal(
       } catch (error) {
         cancellationAwaitAssertion = error;
       }
-      return new Response(null, { status: 204 });
+      return new Response(null, {
+        status: 204,
+        headers: { "x-coven-cave-readiness": "1" },
+      });
     },
   }),
   true,

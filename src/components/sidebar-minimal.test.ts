@@ -15,6 +15,12 @@ const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "
 // so their markup and chrome are pinned against the shared files, not this one.
 const railHeaderSource = readFileSync(new URL("./sidebar-rail-header.tsx", import.meta.url), "utf8");
 const railHeaderCss = readFileSync(new URL("../styles/globals/rail-header.css", import.meta.url), "utf8");
+// The workspace context switcher CSS owns the trigger-selector-specific rules
+// extracted from rail-header.css in Task 5.
+const workspaceContextSwitcherCss = readFileSync(
+  new URL("../styles/globals/workspace-context-switcher.css", import.meta.url),
+  "utf8",
+);
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 // The Home/Code split itself — the sidebar reaches the registry only through
 // this module, so a committed artifact here breaks the rail just as badly.
@@ -417,9 +423,16 @@ assert.match(
   "the header switcher drives the shared familiar scope",
 );
 const sidebarCss = styles;
+// The trigger selector-specific rules moved from rail-header.css into
+// workspace-context-switcher.css in Task 5. Assert the new location.
 assert.match(
-  railHeaderCss,
-  /\.shell-nav--rail \.rail-header__scope \.familiar-switcher__trigger-label,[\s\S]*?display: none/,
+  workspaceContextSwitcherCss,
+  /\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?width:\s*100%;/,
+  "the expanded familiar control fills its available width in the crew section",
+);
+assert.match(
+  workspaceContextSwitcherCss,
+  /\.shell-nav--rail \.workspace-context-switcher__crew \.familiar-switcher__trigger-label,[\s\S]*?display: none/,
   "the rail keeps the avatar-only trigger (label drops)",
 );
 assert.doesNotMatch(

@@ -210,3 +210,26 @@ test("Workspace keeps automatic recovery quiet but restores truthful banners aft
     "offline and start-error banners should stay dismissed only while bounded recovery is quiet",
   );
 });
+
+test("Workspace routes expired browser access to the existing token prompt", () => {
+  assert.match(
+    workspace,
+    /import \{ accessPromptUrl \} from "@\/proxy-helpers";/,
+    "Workspace should share the proxy's access-prompt URL contract",
+  );
+  assert.match(
+    workspace,
+    /title: "Access required — sign in with a fresh pairing token\."/,
+    "the auth banner should name the required action without promising that reload is enough",
+  );
+  assert.match(
+    workspace,
+    /label: "Sign in"[\s\S]*window\.location\.assign\(accessPromptUrl\(window\.location\.href\)\)/,
+    "the banner CTA should navigate to the explicitly marked access prompt",
+  );
+  assert.doesNotMatch(
+    workspace,
+    /id: "auth-expired"[\s\S]*window\.location\.reload\(\)/,
+    "auth recovery should not repeat the trusted-navigation bypass loop",
+  );
+});

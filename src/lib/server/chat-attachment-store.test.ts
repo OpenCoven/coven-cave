@@ -16,6 +16,7 @@ const {
   chatAttachmentMimeType,
   isValidChatAttachmentId,
   readChatImageAttachment,
+  saveChatFileAttachment,
   saveChatImageAttachment,
   saveChatMediaAttachment,
   saveChatMediaAttachmentFromFileSync,
@@ -152,6 +153,30 @@ test("media reads use the media cap, not the image cap", async () => {
   assert.ok(
     chatAttachmentMaxBytes(storedId) > chatAttachmentMaxBytes("5b1f0e64-6b0e-4b6b-9f3a-0d1c2e3f4a5b.png"),
     "media ids carry a larger cap than image ids",
+  );
+});
+
+test("a generic source file round-trips through the durable store", async () => {
+  const source = Buffer.from("<main>design source</main>");
+  const dataUrl = `data:text/html;base64,${source.toString("base64")}`;
+  const storedId = await saveChatFileAttachment(dataUrl, "text/html", "Components.html");
+  assert.ok(storedId, "saving an allowlisted source file returns an id");
+  assert.match(storedId, /\.html$/, "the stored id preserves a safe source extension");
+  assert.equal(chatAttachmentMimeType(storedId), "text/html");
+  assert.equal(chatAttachmentMaxBytes(storedId), 20 * 1024 * 1024);
+
+  const read = await readChatImageAttachment(storedId);
+  assert.equal(read.mimeType, "text/html");
+  assert.deepEqual(read.data, source, "the source bytes come back unchanged");
+});
+
+test("a generic source file cannot spoof its stored extension", async () => {
+  const archive = Buffer.from("PK fake archive");
+  const dataUrl = `data:application/zip;base64,${archive.toString("base64")}`;
+  assert.equal(
+    await saveChatFileAttachment(dataUrl, "application/zip", "looks-safe.html"),
+    null,
+    "a zip payload cannot be persisted and served as HTML",
   );
 });
 

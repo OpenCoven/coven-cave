@@ -38,10 +38,13 @@ const ciSource = await readFile(new URL("../.github/workflows/ci.yml", import.me
 const ciWorkflow = parse(ciSource);
 assert.deepEqual(
   Object.keys(ciWorkflow.jobs).sort(),
-  ["build", "frontend-bundle", "frontend-validation", "ios", "paths"],
-  "routine CI classifies once, fans frontend validation out, then reports through the required job",
+  ["build", "frontend-bundle", "frontend-validation", "ios", "paths", "pr-checks"],
+  "Phase 1 retains routine fanout while establishing the replacement PR context",
 );
-assert.equal(ciWorkflow.jobs.build.name, "Frontend build");
+const prChecks = ciWorkflow.jobs["pr-checks"];
+const frontendBuild = ciWorkflow.jobs.build;
+assert.equal(prChecks.name, "PR checks");
+assert.equal(frontendBuild.name, "Frontend build");
 assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "paths",
   "ios",
@@ -53,6 +56,7 @@ assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validati
   { name: "lint", command: "lint" },
   { name: "typecheck", command: "typecheck" },
   { name: "test wiring", command: "check:tests-wired" },
+  { name: "protocol conformance", command: "test:conformance" },
   { name: "app tests", command: "test:app" },
   { name: "API tests", command: "test:api" },
   { name: "mobile tests", command: "test:mobile" },
@@ -103,12 +107,17 @@ assert.deepEqual(ciWorkflow.on.workflow_dispatch, {
       required: true,
       type: "string",
     },
+    expected_pr_number: {
+      description: "Pull request number used for recovery concurrency",
+      required: true,
+      type: "string",
+    },
   },
 });
 assert.equal(
   ciWorkflow.concurrency.group,
-  "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}",
-  "late pull_request delivery and its recovery dispatch must share one concurrency key",
+  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}",
+  "each pull request and its recovery dispatch must share one concurrency key",
 );
 // Sharing the key is deliberate; CANCELLING across it is not. A dispatch
 // resolves to the same group as the run it is rescuing, so with a blanket
@@ -122,7 +131,7 @@ assert.equal(
   "${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}",
   "a recovery dispatch must never cancel the run it exists to rescue",
 );
-const expectedJobGuards = {
+const expectedSubordinateJobGuards = {
   paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
   ios:
     "needs.paths.outputs.ios == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
@@ -130,16 +139,63 @@ const expectedJobGuards = {
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
   "frontend-bundle":
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
-  build:
-    "always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
 };
-for (const [jobName, guard] of Object.entries(expectedJobGuards)) {
+for (const [jobName, guard] of Object.entries(expectedSubordinateJobGuards)) {
   assert.equal(
     ciWorkflow.jobs[jobName].if,
     guard,
     `${jobName} must not run a recovery dispatch after the branch head moves`,
   );
 }
+for (const job of [prChecks, frontendBuild]) {
+  assert.equal(
+    job.if,
+    job === frontendBuild ? "always()" : undefined,
+    `${job.name} must always report rather than skip a mismatched recovery dispatch as success`,
+  );
+  const mismatchCheck = job.steps[0];
+  assert.equal(
+    mismatchCheck?.name,
+    "Refuse recovery SHA mismatch",
+    `${job.name} must start by rejecting a recovery dispatch for another commit`,
+  );
+  assert.deepEqual(mismatchCheck.env, {
+    EXPECTED_SHA: "${{ inputs.expected_sha }}",
+    ACTUAL_SHA: "${{ github.sha }}",
+  });
+  assert.match(
+    mismatchCheck.run,
+    /if \[ "\$GITHUB_EVENT_NAME" = "workflow_dispatch" \] && \[ "\$ACTUAL_SHA" != "\$EXPECTED_SHA" \]; then/,
+    `${job.name} must fail only mismatched recovery dispatches`,
+  );
+  assert.match(
+    mismatchCheck.run,
+    /::error::.*expected.*actual/i,
+    `${job.name} must make a recovery SHA mismatch diagnosable`,
+  );
+  assert.match(
+    mismatchCheck.run,
+    /exit 1/,
+    `${job.name} must fail rather than produce a successful skipped required check`,
+  );
+}
+const prCommands = prChecks.steps
+  .map((step) => step.run)
+  .filter((run) => run?.startsWith("pnpm "));
+assert.deepEqual(prCommands, [
+  "pnpm install --frozen-lockfile",
+  "pnpm lint",
+  "pnpm typecheck",
+  "pnpm check:tests-wired",
+  "pnpm test:app",
+  "pnpm test:api",
+  "pnpm test:mobile",
+]);
+assert.match(
+  ciWorkflow.jobs["pr-checks"].steps.find((step) => step.uses?.startsWith("actions/checkout@")).with.ref,
+  /refs\/pull\/.*merge/,
+  "PR checks validates the pull-request merge ref",
+);
 assert.equal(
   ciWorkflow.jobs.ios.steps.some((step) => step.run === "bash scripts/ios-xcodegen.sh"),
   true,

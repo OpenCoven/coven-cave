@@ -19,7 +19,7 @@ src-tauri/resources/server-archive/*
 src-tauri/resources/node/*
 !src-tauri/resources/node/placeholder.txt
 src-tauri/resources/whisper/*
-!src-tauri/resources/whisper/placeholder.txt
+!src-tauri/resources/whisper/.gitkeep
 src-tauri/resources/piper/*
 !src-tauri/resources/piper/placeholder.txt
 src-tauri/resources/kokoro/*

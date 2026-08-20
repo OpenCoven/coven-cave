@@ -217,17 +217,13 @@ test("instrument tint mappings use theme-aware semantic tokens", () => {
   assert.match(instrumentStyles, /\.cave-thread-map \.is-read \{ --tim: var\(--color-info\); \}/);
 });
 
-test("chat-view mounts both instruments over the SAME activePath the transcript renders", () => {
+test("chat-view mounts the activity map over the SAME activePath the transcript renders", () => {
   assert.match(
     chatView,
-    /<ChatThreadMinimap\s*\n\s*turns=\{activePath\}/,
-    "the minimap reads the branch-aware visible path, not raw turns",
+    /<ChatActivityMap turns=\{activePath\}/,
+    "the activity map reads the branch-aware visible path, not raw turns",
   );
-  assert.match(
-    chatView,
-    /<ChatThreadSpine\s*\n\s*turns=\{activePath\}/,
-    "the spine reads the branch-aware visible path, not raw turns",
-  );
+  assert.doesNotMatch(chatView, /ChatThreadMinimap|ChatThreadSpine/);
 });
 
 test("instruments are overlays: self-gated by pane width, jump via data-turn-id", () => {

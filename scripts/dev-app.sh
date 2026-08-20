@@ -151,6 +151,16 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 
+# This credential is accepted only by the root-document readiness probe. Unlike
+# the mobile access secret, disclosing it to a process that later reclaims the
+# port grants no API, PTY, or application-session authority.
+if [ -z "${COVEN_CAVE_DEV_PROBE_TOKEN:-}" ]; then
+  COVEN_CAVE_DEV_PROBE_TOKEN="$(
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
+  )"
+  export COVEN_CAVE_DEV_PROBE_TOKEN
+fi
+
 # The packaged app always gives its sidecar and WebView the same ephemeral
 # credential. Mirror that contract in dev even when the caller did not provide
 # one: server.ts may re-arm the persisted mobile-access gate for this port, and

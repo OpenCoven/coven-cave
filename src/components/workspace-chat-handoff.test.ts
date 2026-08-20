@@ -58,7 +58,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /const startFamiliarChat = useCallback\([\s\S]*if \(chatProjectBlockedRef\.current\) \{[\s\S]*setMode\("home"\);[\s\S]*return;[\s\S]*\}[\s\S]*setPendingChatAction\(\{[\s\S]*kind: "new"[\s\S]*familiarId[\s\S]*projectRoot[\s\S]*nonce: Date\.now\(\)[\s\S]*\}\)[\s\S]*setMode\("chat"\)/,
+  /const startFamiliarChat = useCallback\([\s\S]*actorHasProjectAccess\?: boolean[\s\S]*setMode\("home"\);[\s\S]*return false;[\s\S]*setPendingChatAction\(\{[\s\S]*kind: "new"[\s\S]*familiarId[\s\S]*projectRoot[\s\S]*nonce: Date\.now\(\)[\s\S]*\}\)[\s\S]*setMode\("chat"\);[\s\S]*return true;/,
   "New chat should enqueue a pending chat action before entering chat mode",
 );
 
@@ -70,14 +70,14 @@ assert.match(
 
 assert.match(
   workspace,
-  /CustomEvent<\{[\s\S]*?initialControls\?: InitialCommandControls \| null[\s\S]*?\}>[\s\S]*?startFamiliarChat\([\s\S]*?d\?\.initialControls \?\? null[\s\S]*?\)/,
-  "Workspace non-chat bridge should carry initial controls from cave:agents-new-chat into startFamiliarChat",
+  /CustomEvent<AgentsNewChatRequest>[\s\S]*?startWorkspaceChat\(d \?\? \{\}\)/,
+  "Workspace non-chat bridge should carry the complete cave:agents-new-chat request through actor validation",
 );
 
 assert.match(
   workspace,
-  /<HomeComposer[\s\S]*?onStartChat=\{\(prompt, fid, projectRoot, opts\) =>\s*startFamiliarChat\(fid, projectRoot, prompt, opts\?\.initialControls \?\? null, opts\?\.initialAttachments \?\? null\)\s*\}/,
-  "Workspace HomeComposer handoff should forward initial controls + attachments into startFamiliarChat",
+  /<HomeComposer[\s\S]*?onStartChat=\{\(prompt, fid, projectRoot, opts\) =>\s*startFamiliarChat\(\s*fid,\s*projectRoot,\s*prompt,\s*opts\?\.initialControls \?\? null,\s*opts\?\.initialAttachments \?\? null,\s*undefined,\s*true,\s*\)\s*\}/,
+  "Workspace HomeComposer handoff should forward controls, attachments, and shell-verified actor access into startFamiliarChat",
 );
 
 assert.match(
@@ -273,7 +273,7 @@ assert.match(
 
 // Cross-page handoff (cave-hbpb): standalone routes (familiar analytics) have no
 // cave:agents-new-chat listener — they persist the request and navigate to /,
-// where Workspace must consume it at boot into a primed chat.
+// where Workspace must retain it through boot until actor authority is ready.
 const agentsNewChatLib = await readFile(new URL("../lib/agents-new-chat.ts", import.meta.url), "utf8");
 assert.match(
   agentsNewChatLib,
@@ -287,13 +287,44 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{ consumePendingAgentsNewChat \} from "@\/lib\/agents-new-chat"/,
-  "Workspace should import the cross-page chat handoff consumer",
+  /clearPendingAgentsNewChat,[\s\S]*readPendingAgentsNewChat/,
+  "Workspace should import non-destructive read and explicit clear helpers",
 );
 assert.match(
   workspace,
-  /const pending = consumePendingAgentsNewChat\(\);[\s\S]{0,200}startFamiliarChat\(\s*pending\.familiarId \?\? null,\s*pending\.projectRoot \?\? null,\s*pending\.initialPrompt \?\? null,\s*pending\.initialControls \?\? null,?\s*\)/,
-  "Workspace boot should turn a pending cross-page request into a primed familiar chat",
+  /setPendingAgentsNewChat\(readPendingAgentsNewChat\(\)\)[\s\S]*requestActingFamiliarResult\("New chat", pending\.familiarId\)[\s\S]*startFamiliarChat\([\s\S]*pending\.initialControls \?\? null[\s\S]*clearPendingAgentsNewChat\(\)/,
+  "Workspace boot should retain a request until current eligibility validates its preferred or chosen actor",
+);
+const persistedHandoffEffectStart = workspace.indexOf("const pending = pendingAgentsNewChat;");
+assert.notEqual(
+  persistedHandoffEffectStart,
+  -1,
+  "Workspace should define the persisted handoff replay effect",
+);
+const persistedHandoffEffectEnd = workspace.indexOf("\n  }, [", persistedHandoffEffectStart);
+assert.notEqual(
+  persistedHandoffEffectEnd,
+  -1,
+  "Workspace should terminate the persisted handoff replay effect with dependencies",
+);
+const persistedHandoffEffect = workspace.slice(
+  persistedHandoffEffectStart,
+  persistedHandoffEffectEnd,
+);
+assert.match(
+  persistedHandoffEffect,
+  /!projectsLoadedSuccessfully[\s\S]{0,220}announce\(projectsError \?\? "Project registry is unavailable"\);\s*return;/,
+  "settled registry failures should announce but retain persisted handoffs for retry",
+);
+assert.match(
+  persistedHandoffEffect,
+  /requestedProjectId === undefined[\s\S]{0,180}announce\("That project is no longer available"\);\s*clearPendingAgentsNewChat\(\);\s*setPendingAgentsNewChat\(null\);\s*return;/,
+  "unknown persisted project roots should be announced and discarded",
+);
+assert.match(
+  persistedHandoffEffect,
+  /const authorityFailed =[\s\S]{0,500}!projectsLoadedSuccessfully[\s\S]{0,500}if \(authorityFailed\) \{[\s\S]{0,240}?announce\([\s\S]{0,180}?\);\s*return;\s*\}/,
+  "ownerless persisted handoffs should remain durable while restored authority is transiently unavailable",
 );
 // The bridge effect registers BOTH cave:agents-new-chat and
 // cave:continue-on-phone; its cleanup must remove both or re-runs/remounts

@@ -567,7 +567,11 @@ describe("FamiliarAnalyticsView", () => {
 
     assert.equal(model.healRequests.length, 1);
     assert.equal(model.threadReports.length, 1);
-    assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
+    assert.match(
+      source,
+      /escalateBlockers\([\s\S]{0,180}?model\.healRequests,[\s\S]{0,40}?windowReports/,
+      "self-report blocker requests retain their real source thread",
+    );
     assert.match(stageSource, /request\{healRequests\.length === 1 \? "" : "s"\}/, "the self-heal stat pluralizes its count");
     assert.doesNotMatch(source, /ResponseConfidenceSection/, "response confidence analytics retired (cave-7ku5)");
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{windowReports\}/);
@@ -821,8 +825,13 @@ describe("FamiliarAnalyticsView", () => {
     );
     assert.match(
       contentSource,
-      /const traceRequest = useCallback\(\(request: SelfHealRequest\) => \{\s*setBoardOpen\(false\);\s*setTraceTarget\(\{ id: request\.id, title: request\.title \}\);/,
-      "opening a trace from the board retires the board before activating the trace focus trap",
+      /if \(!request\.traceSessionId\) \{[\s\S]*?No source thread is available for this request/,
+      "derived requests without thread evidence never send synthetic request ids to the session endpoint",
+    );
+    assert.match(
+      contentSource,
+      /setTraceTarget\(\{\s*id: request\.traceSessionId,\s*title: request\.traceThreadTitle \?\? request\.title,\s*\}\)/,
+      "traceable requests open the newest real source thread",
     );
 
     // A face turned away is hidden to the eye by backface-visibility, but that
@@ -1008,7 +1017,11 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.equal(sevenDays.trends.overall.direction, "insufficient");
     assert.equal(fourteenDays.trends.overall.direction, "improving");
     assert.equal(sevenDays.queue.length, 0);
-    assert.ok(fourteenDays.queue.some((item) => item.sourceId === "context-pressure"));
+    assert.equal(
+      fourteenDays.queue.some((item) => item.sourceId === "context-pressure"),
+      false,
+      "a newer adequate report resolves older context pressure inside the selected window",
+    );
     assert.equal(sevenDays.evidenceCount, 1);
     assert.equal(fourteenDays.evidenceCount, 2);
     assert.equal(sevenDays.sessionCount, 1);
@@ -1095,6 +1108,63 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /confidence\.metrics\.map/, "bars render from the derived metric list");
     assert.match(source, /aria-label="Context pressure distribution"/, "the context-pressure mix rides along");
     assert.match(source, /CONTEXT_PRESSURE_HINT/, "context pills carry a plain-language legend tooltip");
+    assert.match(source, /className="fa-thread-priorities"/, "the panel calls out prioritized areas for improvement");
+    assert.match(source, /THREAD_METRIC_IMPROVEMENT_COPY/, "improvement cards carry concrete next steps");
+    assert.match(source, /contributes \{contribution\.toFixed\(1\)\} points/, "metric cards expose weighted contribution");
+    const css = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.doesNotMatch(
+      css.match(/\.fa-thread-analysis \{[^}]*\}/)?.[0] ?? "",
+      /justify-content: space-between/,
+      "the confidence panel no longer creates a large empty vertical gulf",
+    );
+    assert.match(
+      css,
+      /\.fa-thread-analysis__top \{[\s\S]{0,180}?grid-template-columns: minmax\(0, 2fr\) minmax\(240px, 1fr\);/,
+      "trend and improvement priorities share a balanced top row",
+    );
+  });
+
+  it("enlarges the trust computation modal and shows the actual weighted arithmetic", () => {
+    assert.match(
+      contentSource,
+      /<Modal open onClose=\{onClose\} wide breadcrumb=\{\["Trust"/,
+      "trust computation uses the wide modal treatment",
+    );
+    assert.match(contentSource, /className="fa-trust-modal__equation"/, "the exact weighted equation is visible");
+    assert.match(contentSource, /className="fa-trust-row__contribution"/, "each metric shows its point contribution");
+    assert.match(contentSource, /className="fa-trust-context"/, "report coverage includes context-pressure evidence");
+  });
+
+  it("turns the self-heal board into a production-grade intervention queue", () => {
+    assert.match(contentSource, /className="fa-board__summary"/, "the board opens with an operational summary");
+    assert.match(
+      contentSource,
+      /className="fa-board__summary-stat fa-board__summary-stat--crit"/,
+      "critical work is visible before filtering",
+    );
+    assert.match(contentSource, /className="fa-heal-card__evidence"/, "request cards separate evidence from action");
+    assert.match(contentSource, /className="fa-heal-card__next-label">Next step</, "the primary action is clearly named");
+    assert.match(
+      contentSource,
+      /request\.traceSessionId \? \([\s\S]*?Trace source thread[\s\S]*?\) : \([\s\S]*?No source thread/,
+      "board cards expose tracing only when backed by a real thread",
+    );
+    assert.match(
+      stageSource,
+      /request\.traceSessionId \? \([\s\S]*?Trace the thread behind this request[\s\S]*?\) : null/,
+      "the compact self-heal strip also hides untraceable controls",
+    );
+    const css = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.match(
+      css,
+      /\.fa-board__grid \{[\s\S]{0,180}?grid-template-columns: repeat\(auto-fit, minmax\(320px, 1fr\)\);/,
+      "board cards use the whole modal at every queue size",
+    );
+    assert.doesNotMatch(
+      css,
+      /\.fa-board__grid \.fa-heal-card \{[^}]*min-height: 148px/,
+      "request cards are not padded into artificial empty height",
+    );
   });
 
   it("teaches enabling self-reporting when there are no thread reports yet", () => {

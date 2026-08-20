@@ -1,0 +1,30 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_7_days_leap_boundary",
+  "runId": "run_7_days_leap_boundary",
+  "digest": "76767440497509b42a7a940fb6e782111542932e78db6e1aa9e2ebfd63d83b62",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2016-12-31T11:59:00Z",
+  "finalizedAt": "2016-12-31T12:00:00Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2017-01-07T11:59:59Z",
+    "updatedAt": "2016-12-31T12:00:00Z"
+  },
+  "deletion": {
+    "status": "scheduled",
+    "requestedAt": "2016-12-31T12:00:00Z"
+  }
+}

@@ -2,7 +2,7 @@
  * Pure derivations behind the bento dashboard (`/dashboard`).
  *
  * Everything here is deterministic on its inputs so the whole surface can be
- * unit-tested without React: stat totals, streak gamification, the 53-week
+ * unit-tested without React: stat totals, streak gamification, the adaptive
  * session heatmap, the merged activity feed, board buckets, the 14-day
  * activity carousel (series + SVG paths), the performance matrix and the
  * GitHub rail. The component layer (`bento-dashboard.tsx`) only fetches,
@@ -18,6 +18,10 @@ import { deriveThreadConfidence } from "@/lib/thread-confidence";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 import { itemHref } from "@/lib/daily-report";
 import { sessionsPerDay } from "@/lib/dashboard-analytics";
+import {
+  activityHeatmapWindowDays,
+  type ActivityHeatmapWindowDays,
+} from "@/lib/activity-heatmap-window";
 
 const DAY_MS = 86_400_000;
 
@@ -67,7 +71,7 @@ export function streakPips(current: number, best: number): number {
   return Math.round(Math.min(current / best, 1) * 5);
 }
 
-// ─── Session heatmap (53 weeks × 7 days, column-major) ───────────────────────
+// ─── Session heatmap (adaptive window, column-major) ─────────────────────────
 
 export type HeatCell = {
   /** ISO date (UTC) the cell covers. */
@@ -77,6 +81,8 @@ export type HeatCell = {
   level: number;
   /** True for cells after today in the trailing week — rendered invisible. */
   future: boolean;
+  /** True for week-alignment padding outside the selected activity window. */
+  outside: boolean;
 };
 
 function heatLevel(count: number): number {
@@ -88,28 +94,32 @@ function heatLevel(count: number): number {
 }
 
 /**
- * GitHub-style year heatmap: `weeks` columns of 7 rows (Sunday-first),
- * column-major so CSS `grid-auto-flow: column` lays it out directly. The
- * final column is the current week; cells after today are `future`.
+ * GitHub-style heatmap with a 30, 90 or 365-day activity window. Sunday-first
+ * padding keeps columns aligned; padding and future cells are `outside`.
  */
 export function heatmapCells(
   sessions: SessionRow[],
   nowMs: number,
-  weeks = 53,
-): { cells: HeatCell[]; monthLabels: string[] } {
+): { cells: HeatCell[]; monthLabels: string[]; windowDays: ActivityHeatmapWindowDays } {
+  const activeSessions = sessions.filter((session) => !session.archived_at);
+  const windowDays = activityHeatmapWindowDays(
+    activeSessions.map((session) => session.created_at),
+    nowMs,
+  );
+  const today = Math.floor(nowMs / DAY_MS);
+  const windowStart = today - (windowDays - 1);
+  const firstDay = windowStart - new Date(windowStart * DAY_MS).getUTCDay();
+  const lastDay = today + (6 - new Date(today * DAY_MS).getUTCDay());
+  const weeks = (lastDay - firstDay + 1) / 7;
+
   const perDay = new Map<number, number>();
-  for (const s of sessions) {
-    if (s.archived_at) continue;
+  for (const s of activeSessions) {
     const t = Date.parse(s.created_at);
     if (Number.isNaN(t)) continue;
     const day = Math.floor(t / DAY_MS);
+    if (day < windowStart || day > today) continue;
     perDay.set(day, (perDay.get(day) ?? 0) + 1);
   }
-
-  const today = Math.floor(nowMs / DAY_MS);
-  const todayDow = new Date(today * DAY_MS).getUTCDay();
-  const lastColSunday = today - todayDow;
-  const firstDay = lastColSunday - (weeks - 1) * 7;
 
   const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
   const cells: HeatCell[] = [];
@@ -122,15 +132,17 @@ export function heatmapCells(
       const day = colSunday + d;
       const count = perDay.get(day) ?? 0;
       const future = day > today;
+      const outside = day < windowStart || future;
       cells.push({
         date: new Date(day * DAY_MS).toISOString().slice(0, 10),
-        count: future ? 0 : count,
-        level: future ? 0 : heatLevel(count),
+        count: outside ? 0 : count,
+        level: outside ? 0 : heatLevel(count),
         future,
+        outside,
       });
     }
   }
-  return { cells, monthLabels };
+  return { cells, monthLabels, windowDays };
 }
 
 // ─── Activity feed ────────────────────────────────────────────────────────────

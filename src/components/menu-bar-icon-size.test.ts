@@ -21,7 +21,7 @@ assert.match(css, /\.menu-bar__search-icon\s*\{[^}]*width:\s*var\(--icon-sm\)[^}
 // Action buttons + search input use the design-token body size, not ad-hoc px.
 assert.match(
   css,
-  /\.menu-bar__new,\s*\n\.menu-bar__task,\s*\n\.menu-bar__status \{[^}]*font-size:\s*var\(--text-base\)[^}]*\}/,
+  /\.menu-bar__new,\s*\n\.menu-bar__task,\s*\n\.menu-bar__status,\s*\n\.menu-bar__group--status \.notification-bell__trigger \{[^}]*font-size:\s*var\(--text-base\)[^}]*\}/,
   "menu-bar buttons use var(--text-base)",
 );
 assert.match(css, /\.menu-bar__search-input\s*\{[^}]*font-size:\s*var\(--text-base\)[^}]*\}/, "search input uses var(--text-base)");
@@ -57,4 +57,9 @@ assert.match(css, /\.menu-bar__task-label \{\s*\n\s*display:\s*none/, "task labe
 assert.match(css, /\.menu-bar__task-label--live \{\s*\n\s*display:\s*inline/, "…except live enrich progress, which is information, not chrome");
 assert.match(css, /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,300}?flex: 0 0 30px/, "native macOS renders a dedicated 30px window title strip");
 assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 34px/, "the functional toolbar keeps its compact 34px row below the title strip");
+assert.match(
+  css,
+  /\.menu-bar__new,\s*\n\.menu-bar__task,\s*\n\.menu-bar__status,\s*\n\.menu-bar__group--status \.notification-bell__trigger \{[^}]*width:\s*28px;[^}]*height:\s*28px;/,
+  "every desktop titlebar action uses the same 28px square hit target",
+);
 console.log("menu-bar-icon-size.test.ts passed");

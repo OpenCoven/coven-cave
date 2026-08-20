@@ -123,8 +123,8 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Voice call"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*<EnhanceControl[\s\S]*aria-label="Send message"/,
-  "Composer should keep Tools at its edge plus voice, context, enhance, and send actions in the footer row",
+  /className="cave-composer-edge-actions"[\s\S]*<ComposerActionsMenu[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-control-row"[\s\S]*className="cave-composer-mode-switch"[\s\S]*<ComposerContextMeter[\s\S]*className="cave-composer-submit-row"[\s\S]*<EnhanceControl[\s\S]*aria-label="Voice call"[\s\S]*aria-label="Send message"/,
+  "Composer should keep Tools at its edge plus access, context, enhance, voice, and send actions in the command rail",
 );
 assert.match(
   addMenuSource,
@@ -140,8 +140,8 @@ assert.match(
 
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
-  "The grouped Response section exposes access, model, and capability-aware controls with an honest delivery label",
+  /const composerResponseSections:[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\([\s\S]*capability\.delivery === "prompt-only" \? "Prompt guidance" : "Native"[\s\S]*<ComposerActionsMenu[\s\S]*sections:\s*composerResponseSections/,
+  "The grouped Response section exposes model and capability-aware controls while access stays direct",
 );
 assert.match(
   source,

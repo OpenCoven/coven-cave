@@ -26,6 +26,25 @@ assert.ok(
   "proxy should exempt only the exact public pdf.js worker filename",
 );
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
+assert.match(
+  source,
+  /process\.env\.COVEN_CAVE_DEV_PROBE_TOKEN[\s\S]*?req\.method === "GET"[\s\S]*?req\.nextUrl\.pathname === "\/"[\s\S]*?req\.nextUrl\.searchParams\.get\("__devShellProbe"\) === "1"/,
+  "the dev readiness credential must be scoped to the exact root-document probe",
+);
+assert.match(
+  source,
+  /isAuthenticatedDevReadinessProbe\(req, trustedLocalPeer\)[\s\S]*?response\.headers\.set\(DEV_READINESS_PROOF_HEADER, "1"\)/,
+  "an authenticated local dev probe must receive explicit server readiness proof",
+);
+const readinessHelper = source.slice(
+  source.indexOf("function isAuthenticatedDevReadinessProbe"),
+  source.indexOf("function bearerToken"),
+);
+assert.doesNotMatch(
+  readinessHelper,
+  /COVEN_CAVE_ACCESS_TOKEN|authorization/,
+  "dev readiness must not reuse or transmit the persisted mobile-access credential",
+);
 assert.match(source, /isValidResearchMediaTicketRequest/, "proxy should accept only the restricted native media ticket when a media element cannot send the sidecar header");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
 assert.match(
@@ -185,6 +204,16 @@ assert.match(
 assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens should not overwrite the access cookie");
 assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
+assert.match(
+  source,
+  /const accessPromptRequested =\s*req\.nextUrl\.searchParams\.get\(ACCESS_PROMPT_QUERY_PARAM\) === "1"/,
+  "proxy should recognize the explicit browser access-prompt marker",
+);
+assert.match(
+  source,
+  /url\.searchParams\.delete\(ACCESS_TOKEN_QUERY_PARAM\)[\s\S]*url\.searchParams\.delete\(ACCESS_PROMPT_QUERY_PARAM\)/,
+  "successful access-token exchange should remove both authentication query parameters",
+);
 
 // ── User-bound local authentication (cave-ruw4z) ──────────────────────────
 // The local-peer stamp still distinguishes direct from forwarded ingress, but
@@ -213,8 +242,8 @@ assert.match(
 // sockets, so Serve/tailnet traffic can never reach this branch.
 assert.match(
   source,
-  /if \(\s*trustedLocalPeer &&\s*isHtmlNavigationRequest\(req\.method, req\.nextUrl\.pathname, req\.headers\.get\("accept"\)\)\s*\) \{\s*return null;/,
-  "a stamped local-peer document navigation must skip the mobile gate so the app can always load",
+  /if \(\s*shouldBypassMobileAccessGate\(\s*trustedLocalPeer,\s*accessPromptRequested,\s*req\.method,\s*req\.nextUrl\.pathname,\s*req\.headers\.get\("accept"\),?\s*\)\s*\) \{\s*return null;/,
+  "a stamped local-peer document navigation must skip the mobile gate unless it explicitly requests the prompt",
 );
 // The exemption must be navigation-scoped, never a blanket local-peer bypass:
 // `/api/*` keeps requiring the sidecar credential, which is what distinguishes
