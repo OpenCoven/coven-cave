@@ -1133,7 +1133,7 @@ function resolveDisposableIgnoredTarget(
   }
 
   let current = worktreePath;
-  for (const segment of segments) {
+  for (const [index, segment] of segments.entries()) {
     current = path.join(current, segment);
     if (
       current !== worktreePath &&
@@ -1147,6 +1147,9 @@ function resolveDisposableIgnoredTarget(
     try {
       const stat = lstatSync(current);
       if (stat.isSymbolicLink()) {
+        if (index === segments.length - 1) {
+          return { ok: true, target: current };
+        }
         return {
           ok: false,
           reason: `refused disposable ignored cleanup through a symbolic link: ${rawCandidate}`,

@@ -220,6 +220,7 @@ export const SUITES = {
     "src-tauri/release-runtime.test.mjs",
     "src-tauri/notch-window-chrome.test.mjs",
     "scripts/react-compiler-config.test.mjs",
+    "scripts/turbopack-dev-cache.test.mjs",
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
