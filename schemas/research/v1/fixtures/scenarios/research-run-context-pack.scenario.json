@@ -615,7 +615,7 @@
         "ok": false,
         "stage": "composition",
         "code": "semantic_conflict",
-        "path": "$.manifestHistory[1].retention.contentExpiresAt"
+        "path": "$.manifestRevisionOptions[0].freshConsentAt"
       }
     },
     {
@@ -654,7 +654,7 @@
         "ok": false,
         "stage": "composition",
         "code": "semantic_conflict",
-        "path": "$.manifestHistory[1].retention.contentExpiresAt"
+        "path": "$.manifestRevisionOptions[0].freshConsentAt"
       }
     },
     {
