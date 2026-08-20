@@ -12,7 +12,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { caveHome } from "../../coven-paths.ts";
 import {
@@ -58,6 +58,7 @@ export interface CredentialStore {
 
 export interface CredentialStoreOptions {
   now?: () => number;
+  readFile?: (path: string, encoding: "utf8") => Promise<string>;
   root?: string;
 }
 
@@ -70,6 +71,26 @@ const BEARER_HASH_RE = /^[a-f0-9]{64}$/;
 const DECOY_BEARER_HASH = createHash("sha256")
   .update("cave-client-v1-credential-decoy")
   .digest("hex");
+const operationTails = new Map<string, Promise<void>>();
+
+async function runExclusive<T>(
+  path: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = operationTails.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolveCurrent) => {
+    release = resolveCurrent;
+  });
+  operationTails.set(path, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (operationTails.get(path) === current) operationTails.delete(path);
+  }
+}
 
 function hashBearer(bearer: string): string {
   return createHash("sha256").update(bearer).digest("hex");
@@ -151,17 +172,36 @@ function parseStore(raw: string): Map<string, ClientV1CredentialRecord> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
-    return new Map();
+  } catch (cause) {
+    throw new Error("Client v1 credential store contains malformed JSON.", {
+      cause,
+    });
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return new Map();
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Client v1 credential store must contain an object.");
+  }
   const file = parsed as Record<string, unknown>;
-  if (file.version !== 1 || !Array.isArray(file.credentials)) return new Map();
+  if (file.version !== 1) {
+    throw new Error("Client v1 credential store has an unsupported version.");
+  }
+  if (!Array.isArray(file.credentials)) {
+    throw new Error("Client v1 credential store credentials must be an array.");
+  }
 
   const records = new Map<string, ClientV1CredentialRecord>();
-  for (const value of file.credentials) {
+  for (const [index, value] of file.credentials.entries()) {
     const record = parseRecord(value);
-    if (record && !records.has(record.id)) records.set(record.id, record);
+    if (!record) {
+      throw new Error(
+        `Client v1 credential store contains an invalid credential record at index ${index}.`,
+      );
+    }
+    if (records.has(record.id)) {
+      throw new Error(
+        `Client v1 credential store contains duplicate credential id "${record.id}".`,
+      );
+    }
+    records.set(record.id, record);
   }
   return records;
 }
@@ -198,49 +238,34 @@ export function clientV1CredentialStorePath(root = caveHome()): string {
 export class FileCredentialStore implements CredentialStore {
   readonly #now: () => number;
   readonly #path: string;
-  #loaded = false;
+  readonly #readFile: (path: string, encoding: "utf8") => Promise<string>;
   #records = new Map<string, ClientV1CredentialRecord>();
-  #mutationTail: Promise<void> = Promise.resolve();
 
   constructor(options: CredentialStoreOptions = {}) {
     this.#now = options.now ?? Date.now;
-    this.#path = clientV1CredentialStorePath(options.root ?? caveHome());
+    this.#path = resolve(clientV1CredentialStorePath(options.root ?? caveHome()));
+    this.#readFile = options.readFile ?? readFile;
   }
 
   async #exclusive<T>(operation: () => Promise<T>): Promise<T> {
-    const previous = this.#mutationTail;
-    let release!: () => void;
-    this.#mutationTail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-    }
+    return runExclusive(this.#path, operation);
   }
 
   async #loadFromDisk(): Promise<void> {
     let raw: string;
     try {
-      raw = await readFile(this.#path, "utf8");
+      raw = await this.#readFile(this.#path, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         this.#records = new Map();
-        this.#loaded = true;
         return;
       }
-      this.#records = new Map();
-      this.#loaded = true;
-      return;
+      throw new Error(
+        `Failed to read client v1 credential store at ${this.#path}.`,
+        { cause: error },
+      );
     }
     this.#records = parseStore(raw);
-    this.#loaded = true;
-  }
-
-  async #ensureLoaded(): Promise<void> {
-    if (!this.#loaded) await this.#loadFromDisk();
   }
 
   async #persist(): Promise<void> {
@@ -266,7 +291,7 @@ export class FileCredentialStore implements CredentialStore {
 
   async issue(input: ClientV1CredentialIssueInput): Promise<ClientV1IssuedCredential> {
     return this.#exclusive(async () => {
-      await this.#ensureLoaded();
+      await this.#loadFromDisk();
       const appName = input.appName.trim();
       const installationId = input.installationId.trim();
       if (!appName || !installationId) {
@@ -297,7 +322,7 @@ export class FileCredentialStore implements CredentialStore {
 
   async verify(id: string, bearer: string): Promise<boolean> {
     return this.#exclusive(async () => {
-      await this.#ensureLoaded();
+      await this.#loadFromDisk();
       const record = this.#records.get(id);
       const matches = hashesEqual(record?.bearerHash ?? DECOY_BEARER_HASH, hashBearer(bearer));
       if (!record || record.revokedAt !== null || !matches) return false;
@@ -308,7 +333,7 @@ export class FileCredentialStore implements CredentialStore {
 
   async findByBearer(bearer: string): Promise<ClientV1CredentialRecord | null> {
     return this.#exclusive(async () => {
-      await this.#ensureLoaded();
+      await this.#loadFromDisk();
       const candidateHash = hashBearer(bearer);
       let match: ClientV1CredentialRecord | null = null;
       let activeMatches = 0;
@@ -328,7 +353,7 @@ export class FileCredentialStore implements CredentialStore {
 
   async revoke(id: string, reason: string): Promise<void> {
     await this.#exclusive(async () => {
-      await this.#ensureLoaded();
+      await this.#loadFromDisk();
       const record = this.#records.get(id);
       if (!record || record.revokedAt !== null) return;
       const revocationReason = reason.trim();
@@ -353,7 +378,7 @@ export class FileCredentialStore implements CredentialStore {
   }
 
   readPersistedFile(): Promise<string> {
-    return readFile(this.#path, "utf8");
+    return this.#readFile(this.#path, "utf8");
   }
 }
 

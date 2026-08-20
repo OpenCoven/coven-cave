@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -69,6 +76,29 @@ test("credentials and revocation state survive reload and revoked credentials fa
   });
 });
 
+test("revocation remains authoritative across stale store instances", async () => {
+  await withCredentialRoot(async (root) => {
+    let staleNow = 1_000;
+    const staleStore = createCredentialStore({ root, now: () => staleNow });
+    const issued = await staleStore.issue(credentialInput);
+
+    const authorityStore = createCredentialStore({ root, now: () => 2_000 });
+    await authorityStore.reload();
+    await authorityStore.revoke(issued.credential.id, "user_requested");
+
+    staleNow = 61_000;
+    assert.equal(await staleStore.verify(issued.credential.id, issued.bearer), false);
+    assert.equal(await staleStore.findByBearer(issued.bearer), null);
+
+    const persisted = await authorityStore.reload();
+    assert.equal(persisted.get(issued.credential.id)?.revokedAt, 2_000);
+    assert.equal(
+      persisted.get(issued.credential.id)?.revocationReason,
+      "user_requested",
+    );
+  });
+});
+
 test("findByBearer performs bearer-only active lookup without accepting hash-prefix near misses", async () => {
   await withCredentialRoot(async (root) => {
     let now = 4_000;
@@ -102,6 +132,73 @@ test("credential persistence stays atomic and leaves no temporary files", async 
     assert.deepEqual(entries, [CLIENT_V1_CREDENTIAL_STORE_FILE]);
     const raw = await store.readPersistedFile();
     assert.doesNotThrow(() => JSON.parse(raw));
+  });
+});
+
+test("malformed persisted JSON is rejected and never overwritten by issue", async () => {
+  await withCredentialRoot(async (root) => {
+    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    const malformed = "{\"version\":1,\"credentials\":[";
+    await writeFile(path, malformed, { encoding: "utf8", mode: 0o600 });
+
+    const store = createCredentialStore({ root, now: () => 8_000 });
+    await assert.rejects(
+      store.issue(credentialInput),
+      /credential store contains malformed JSON/i,
+    );
+    assert.equal(await readFile(path, "utf8"), malformed);
+  });
+});
+
+test("invalid persisted record schema is rejected before a cached mutation can overwrite it", async () => {
+  await withCredentialRoot(async (root) => {
+    const store = createCredentialStore({ root, now: () => 9_000 });
+    const issued = await store.issue(credentialInput);
+    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.credentials[0].bearerHash = "not-a-full-sha256-hash";
+    const invalid = JSON.stringify(parsed, null, 2);
+    await writeFile(path, invalid, { encoding: "utf8", mode: 0o600 });
+
+    await assert.rejects(
+      store.revoke(issued.credential.id, "user_requested"),
+      /invalid credential record at index 0/i,
+    );
+    assert.equal(await readFile(path, "utf8"), invalid);
+  });
+});
+
+test("persisted read failures are explicit and never overwritten by mutation", async () => {
+  await withCredentialRoot(async (root) => {
+    const healthyStore = createCredentialStore({ root, now: () => 10_000 });
+    await healthyStore.issue(credentialInput);
+    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    const original = await readFile(path, "utf8");
+    const readFailure = Object.assign(
+      new Error("deterministic injected read failure"),
+      { code: "EIO" },
+    );
+    const failingStore = createCredentialStore({
+      root,
+      now: () => 11_000,
+      readFile: async () => {
+        throw readFailure;
+      },
+    });
+
+    await assert.rejects(
+      failingStore.issue({
+        ...credentialInput,
+        installationId: "5e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5c",
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /failed to read client v1 credential store/i);
+        assert.equal(error.cause, readFailure);
+        return true;
+      },
+    );
+    assert.equal(await readFile(path, "utf8"), original);
   });
 });
 
