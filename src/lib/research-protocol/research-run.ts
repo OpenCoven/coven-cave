@@ -387,6 +387,8 @@ function validateReplayConsentCreationChronology(
   entry: ParsedReplayRevisionOptions,
   run: ResearchRunV1,
   contextPack: ContextPackV1 | undefined,
+  previous: RunManifestV1,
+  successor: RunManifestV1,
 ): ProtocolParseResult<void> {
   const entryPath = `$.manifestRevisionOptions[${entry.index}]`;
   if (
@@ -423,6 +425,30 @@ function validateReplayConsentCreationChronology(
       "semantic_conflict",
       `${entryPath}.contextConsent`,
       "Replay contextConsent must equal the authenticated Context Pack retention ceiling",
+    );
+  }
+  const latestPriorAuthority =
+    previous.deletion.requestedAt !== undefined &&
+    compareUtcTimestamps(
+      previous.deletion.requestedAt,
+      previous.retention.updatedAt,
+    ) > 0
+      ? previous.deletion.requestedAt
+      : previous.retention.updatedAt;
+  if (
+    compareUtcTimestamps(
+      entry.options.freshConsentAt,
+      latestPriorAuthority,
+    ) <= 0 ||
+    compareUtcTimestamps(
+      entry.options.freshConsentAt,
+      successor.retention.updatedAt,
+    ) > 0
+  ) {
+    return fail(
+      "semantic_conflict",
+      `${entryPath}.freshConsentAt`,
+      "Fresh consent must postdate prior retention and deletion-request authority and be no later than the new revision",
     );
   }
   return pass(undefined);
@@ -774,6 +800,8 @@ function validateEmbeddedManifestAuthority(
         transitionOptions,
         run,
         contextPack,
+        replayed,
+        candidate.value,
       );
       if (!chronology.ok) return chronology;
       directOptions = transitionOptions.options;
