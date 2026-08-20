@@ -1,0 +1,79 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_deletion_homoglyph_array_01",
+  "runId": "run_deletion_homoglyph_array_01",
+  "digest": "3b6463ad0df324bad896c856ead79bb7d2c75af24c92310ab1131ca150400b42",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "context": {
+    "contextPackId": "ctx_local_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "topicProposalId": "proposal_local_01",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_local_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_local_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "futureExtension": {
+        "preserve": true
+      }
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z",
+    "futureExtension": {
+      "preserve": true
+    }
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "futureExtension": {
+      "preserve": true
+    },
+    "auditEnvelope": [
+      {
+        "objectKеy": "redacted"
+      }
+    ]
+  },
+  "futureExtension": {
+    "preserve": true
+  }
+}

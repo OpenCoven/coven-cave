@@ -8,6 +8,10 @@ on:
         description: Expected pull request head SHA
         required: true
         type: string
+      expected_pr_number:
+        description: Pull request number used for recovery concurrency
+        required: true
+        type: string
   push:
     branches: [main]
   pull_request:
@@ -15,9 +19,8 @@ on:
 
 # A recovery dispatch resolves to the SAME group as the pull_request run it is
 # rescuing — `github.event.pull_request` is null for a dispatch, so the group
-# falls through to `inputs.expected_sha`, which is that exact head. With
-# cancel-in-progress on, the dispatch therefore CANCELS the run it came to
-# replace (cave-f22tp).
+# falls through to `inputs.expected_pr_number`. With cancel-in-progress on, the
+# dispatch would therefore CANCEL the run it came to replace (cave-f22tp).
 #
 # Observed 2026-08-14 on #4618: head 11aceeb89 collected three cancelled runs
 # and no verdict — a pull_request run killed ~60 minutes in, then two dispatches
@@ -30,13 +33,70 @@ on:
 # the in-flight run for that head and starts only once the group frees. A push
 # still supersedes its predecessor, which is the behaviour this setting is for.
 concurrency:
-  group: ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}
+  group: ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
 jobs:
+  # This context is introduced alongside Frontend build during the protection
+  # migration. It is deliberately non-path-aware: a required check must report
+  # for every PR before branch protection can safely be switched to it.
+  pr-checks:
+    name: PR checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Refuse recovery SHA mismatch
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ACTUAL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."
+            exit 1
+          fi
+
+      - id: clock
+        name: Start duration clock
+        run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm check:tests-wired
+      - run: pnpm test:app
+      - run: pnpm test:api
+      - run: pnpm test:mobile
+
+      - name: Summarize PR check duration
+        if: always()
+        env:
+          START_EPOCH: ${{ steps.clock.outputs.epoch }}
+        run: |
+          end_epoch=$(date +%s)
+          duration=$((end_epoch - START_EPOCH))
+          {
+            echo "## PR checks"
+            echo
+            echo "- Duration: ${duration}s"
+            echo "- Commit: $GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   paths:
     name: Select validation
     if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
@@ -106,6 +166,8 @@ jobs:
             command: typecheck
           - name: test wiring
             command: check:tests-wired
+          - name: protocol conformance
+            command: test:conformance
           - name: app tests
             command: test:app
           - name: API tests
@@ -168,12 +230,23 @@ jobs:
   build:
     name: Frontend build
     needs: [paths, ios, frontend-validation, frontend-bundle]
-    if: always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
     steps:
+      - name: Refuse recovery SHA mismatch
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ACTUAL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."
+            exit 1
+          fi
+
       - name: Require selected validation
         env:
           PATHS_RESULT: ${{ needs.paths.result }}

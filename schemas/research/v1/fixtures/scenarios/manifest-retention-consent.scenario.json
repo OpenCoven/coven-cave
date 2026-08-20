@@ -1,0 +1,75 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "manifest-retention-consent",
+  "objects": {
+    "context-bound-manifest": {
+      "fixture": "valid/run-manifest-final-local.json"
+    },
+    "contextless-manifest": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "context": null,
+        "sources": []
+      },
+      "digestTargets": [""]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "manifest-consent.valid-context-consent",
+      "description": "A context-bound manifest accepts retention within the supplied Context Pack consent.",
+      "validator": "manifest-retention-consent",
+      "inputs": {
+        "manifest": "context-bound-manifest"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest-consent.missing-context-consent",
+      "description": "A context-bound manifest requires its Context Pack retention consent.",
+      "validator": "manifest-retention-consent",
+      "inputs": {
+        "manifest": "context-bound-manifest"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.policy"
+      }
+    },
+    {
+      "id": "manifest-consent.retention-above-consent",
+      "description": "A context-bound manifest cannot exceed its Context Pack retention consent.",
+      "validator": "manifest-retention-consent",
+      "inputs": {
+        "manifest": "context-bound-manifest"
+      },
+      "options": {
+        "contextConsent": "run-only"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.policy"
+      }
+    },
+    {
+      "id": "manifest-consent.contextless-without-consent",
+      "description": "A contextless manifest uses its original retention policy as its ceiling.",
+      "validator": "manifest-retention-consent",
+      "inputs": {
+        "manifest": "contextless-manifest"
+      },
+      "expected": {
+        "ok": true
+      }
+    }
+  ]
+}

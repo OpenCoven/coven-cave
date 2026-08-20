@@ -1594,6 +1594,8 @@ export const SUITES = {
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
+    "scripts/release-promotion.test.mjs",
+    "scripts/release-promotion-workflow.test.mjs",
     "scripts/stamp-release.test.mjs",
     "src/app/api/daemon/start/route.test.ts",
     "src/lib/github-token.test.ts",
@@ -1760,12 +1762,21 @@ export const SUITES = {
     "src/components/chat-list-mobile-rail-port.test.ts",
     "src/components/chat-artifact-viewer.test.ts",
   ],
-  // Cross-environment conformance (#1990). Runs on the ubuntu/windows/macos CI
-  // matrix via `pnpm test:conformance` — the SAME assertions on every OS. Kept
-  // out of the app/api/mobile suites (the neutral Linux baseline) on purpose;
-  // the matrix is where per-OS behavior is verified.
+  // Cross-environment conformance (#1990). Release CI runs the SAME assertions
+  // on ubuntu/windows/macos, and normal pull-request CI runs them on Ubuntu.
+  // Keep this separate from the broader app/api/mobile suites.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/research-protocol-conformance.test.ts",
+    "scripts/research-protocol-scenario-conformance.test.ts",
+    "src/lib/research-protocol/common.test.ts",
+    "src/lib/research-protocol/digest.test.ts",
+    "src/lib/research-protocol/context-pack.test.ts",
+    "src/lib/research-protocol/topic-discovery.test.ts",
+    "src/lib/research-protocol/research-run.test.ts",
+    "src/lib/research-protocol/model-task.test.ts",
+    "src/lib/research-protocol/run-manifest.test.ts",
+    "src/lib/research-protocol/index.test.ts",
     "scripts/daemon-connectivity-faults.test.ts",
     "scripts/windows-native-browser-regression.test.mjs",
     "scripts/cave-home-migration-windows.test.ts",
