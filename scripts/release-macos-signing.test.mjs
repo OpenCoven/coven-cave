@@ -223,8 +223,8 @@ test("manual release verifies the tag once and pins publication to its commit", 
   assert.doesNotMatch(releaseWorkflow, /github\.event\.inputs\.source_ref/);
   assert.match(
     releaseWorkflow,
-    /release-commit: \$\{\{ steps\.tag\.outputs\.commit \}\}/,
-    "the source gate must expose the commit peeled from the verified release tag",
+    /release-commit: \$\{\{ steps\.release\.outputs\.commit \}\}/,
+    "the source gate must preserve the commit authorized by signed promotion",
   );
   for (const jobName of ["build", "checksums", "updater-manifest"]) {
     assert.match(

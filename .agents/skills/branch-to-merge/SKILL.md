@@ -214,6 +214,10 @@ gh pr view <#> --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup
 - `Frontend build`
 
 CodeQL is retired, and code scanning is fully off — nothing scans in its place.
+`PR checks` now reports in parallel as the staged replacement. It is **not**
+required until an operator changes classic branch protection after confirming a
+successful post-merge report; continue to require `Frontend build` meanwhile.
+
 If a required context never reports, the PR sits `BLOCKED` with nothing failing.
 Before and after the watch, require `headRefOid` to equal `$expected_head` and
 each listed context to be complete and successful. A pass tied to an earlier

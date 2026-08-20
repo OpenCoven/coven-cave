@@ -14,14 +14,22 @@ const WORKFLOW_FILE = "ci.yml";
 const MAX_PULL_PAGES = 10;
 const EXPECTED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
 const EXPECTED_CONCURRENCY_GROUP =
+  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}";
+const PREVIOUS_CONCURRENCY_GROUP =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const EXPECTED_JOB_GUARD =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const EXPECTED_JOB_GUARDS = {
+const EXPECTED_SUBORDINATE_JOB_GUARDS = {
   paths: EXPECTED_JOB_GUARD,
   ios: `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})`,
-  build: `always() && (${EXPECTED_JOB_GUARD})`,
 };
+const EXPECTED_REQUIRED_JOB_IFS = {
+  "pr-checks": undefined,
+  build: "always()",
+};
+const EXPECTED_SHA_MISMATCH_STEP = "Refuse recovery SHA mismatch";
+const EXPECTED_SHA_MISMATCH_CONDITION =
+  'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then';
 
 export async function runCiRecovery({
   apply = false,
@@ -113,14 +121,21 @@ export async function runCiRecovery({
         if (contract.reason === CONTRACT_PARTIAL) degraded = true;
         continue;
       }
-      dispatchable.push({ recovery, supportsExpectedSha: contract.supportsExpectedSha });
+      dispatchable.push({ recovery, ...contract });
     }
   }
 
   const recoveries = apply ? [] : eligible.map((recovery) => ({ ...recovery, dispatched: false }));
-  for (const { recovery, supportsExpectedSha } of dispatchable) {
+  for (const { recovery, supportsExpectedSha, supportsExpectedPrNumber } of dispatchable) {
     try {
-      await dispatchWorkflow(context, recovery.ref, recovery.sha, supportsExpectedSha);
+      await dispatchWorkflow(
+        context,
+        recovery.ref,
+        recovery.sha,
+        recovery.number,
+        supportsExpectedSha,
+        supportsExpectedPrNumber,
+      );
     } catch (cause) {
       // A refused dispatch is that PR's problem. Throwing here abandoned every
       // dispatch still queued behind it.
@@ -335,8 +350,8 @@ async function workflowJobCount(context, runId) {
  *    no `workflow_dispatch` trigger, so it cannot be dispatched by anyone. A
  *    permanent fact about the branch, not an ambiguity, so the caller skips
  *    this candidate and continues.
- *  - `{dispatchable: true, supportsExpectedSha}` — dispatch it, with the SHA
- *    guard when the head carries the complete guarded contract.
+ *  - `{dispatchable: true, supportsExpectedSha, supportsExpectedPrNumber}` —
+ *    dispatch it with exactly the inputs its exact-head guard supports.
  *  - `{dispatchable: false, reason: CONTRACT_PARTIAL}` — the guard contract is
  *    only PARTIALLY configured. We cannot tell whether the exact-SHA guard will
  *    be honoured, so a dispatch might silently test a different commit than the
@@ -381,7 +396,12 @@ async function inspectRecoveryDispatch(context, sha) {
     // WHOLE apply — so a single stale branch whose ci.yml predates dispatch
     // support disabled recovery for every other PR in the repository
     // (cave-qibp6: #4646 blocked #4643 and #4641, and nothing was dispatched).
-    return { dispatchable: false, reason: NOT_DISPATCHABLE, supportsExpectedSha: false };
+    return {
+      dispatchable: false,
+      reason: NOT_DISPATCHABLE,
+      supportsExpectedSha: false,
+      supportsExpectedPrNumber: false,
+    };
   }
   const inputs = workflow?.on?.workflow_dispatch?.inputs;
   const expectedInput =
@@ -396,37 +416,111 @@ async function inspectRecoveryDispatch(context, sha) {
     typeof expectedInput === "object" &&
     expectedInput.required === true &&
     expectedInput.type === "string";
+  const expectedPrNumberInput =
+    inputs !== null &&
+    typeof inputs === "object" &&
+    Object.hasOwn(inputs, "expected_pr_number")
+      ? inputs.expected_pr_number
+      : null;
+  const hasExpectedPrNumberInput = expectedPrNumberInput !== null;
+  const hasCompleteExpectedPrNumberInput =
+    expectedPrNumberInput !== null &&
+    typeof expectedPrNumberInput === "object" &&
+    expectedPrNumberInput.required === true &&
+    expectedPrNumberInput.type === "string";
   const hasCompleteGuardedContract =
     hasCompleteExpectedInput &&
+    hasCompleteExpectedPrNumberInput &&
     workflow["run-name"] === EXPECTED_RUN_NAME &&
     workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
-    Object.entries(EXPECTED_JOB_GUARDS).every(
+    Object.entries(EXPECTED_SUBORDINATE_JOB_GUARDS).every(
       ([name, guard]) => workflow?.jobs?.[name]?.if === guard,
+    ) &&
+    Object.entries(EXPECTED_REQUIRED_JOB_IFS).every(
+      ([name, jobIf]) =>
+        workflow?.jobs?.[name]?.if === jobIf &&
+        hasExpectedShaMismatchFailureStep(workflow?.jobs?.[name]),
     );
   const hasPreviousGuardedContract =
     hasCompleteExpectedInput &&
     workflow["run-name"] === EXPECTED_RUN_NAME &&
-    workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
+    workflow?.concurrency?.group === PREVIOUS_CONCURRENCY_GROUP &&
     workflow?.jobs?.build?.if === EXPECTED_JOB_GUARD &&
     !Object.hasOwn(workflow?.jobs ?? {}, "paths") &&
     !Object.hasOwn(workflow?.jobs ?? {}, "ios");
-  if (hasCompleteGuardedContract || hasPreviousGuardedContract) {
-    return { dispatchable: true, supportsExpectedSha: true };
+  const hasMigrationGuardedContract =
+    hasCompleteExpectedInput &&
+    workflow["run-name"] === EXPECTED_RUN_NAME &&
+    workflow?.concurrency?.group === PREVIOUS_CONCURRENCY_GROUP &&
+    workflow?.jobs?.paths?.if === EXPECTED_JOB_GUARD &&
+    workflow?.jobs?.ios?.if === `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})` &&
+    workflow?.jobs?.build?.if === `always() && (${EXPECTED_JOB_GUARD})`;
+  const hasExpectedPrNumberMarker = JSON.stringify(workflow).includes("expected_pr_number");
+  if (hasCompleteGuardedContract) {
+    return {
+      dispatchable: true,
+      supportsExpectedSha: true,
+      supportsExpectedPrNumber: true,
+    };
+  }
+  if (
+    !hasExpectedPrNumberMarker &&
+    (hasPreviousGuardedContract || hasMigrationGuardedContract)
+  ) {
+    return {
+      dispatchable: true,
+      supportsExpectedSha: true,
+      supportsExpectedPrNumber: false,
+    };
   }
 
+  const serialized = JSON.stringify(workflow);
   const hasGuardedProtocolMarker =
-    hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
+    hasExpectedInput ||
+    hasExpectedPrNumberInput ||
+    serialized.includes("inputs.expected_sha") ||
+    hasExpectedPrNumberMarker;
   if (hasGuardedProtocolMarker) {
-    return { dispatchable: false, reason: CONTRACT_PARTIAL, supportsExpectedSha: false };
+    return {
+      dispatchable: false,
+      reason: CONTRACT_PARTIAL,
+      supportsExpectedSha: false,
+      supportsExpectedPrNumber: false,
+    };
   }
-  return { dispatchable: true, supportsExpectedSha: false };
+  return {
+    dispatchable: true,
+    supportsExpectedSha: false,
+    supportsExpectedPrNumber: false,
+  };
 }
 
-async function dispatchWorkflow(context, ref, expectedSha, supportsExpectedSha) {
+function hasExpectedShaMismatchFailureStep(job) {
+  const step = job?.steps?.[0];
+  return (
+    step?.name === EXPECTED_SHA_MISMATCH_STEP &&
+    step?.env?.EXPECTED_SHA === "${{ inputs.expected_sha }}" &&
+    step?.env?.ACTUAL_SHA === "${{ github.sha }}" &&
+    typeof step.run === "string" &&
+    step.run.includes(EXPECTED_SHA_MISMATCH_CONDITION) &&
+    step.run.includes("exit 1")
+  );
+}
+
+async function dispatchWorkflow(
+  context,
+  ref,
+  expectedSha,
+  expectedPrNumber,
+  supportsExpectedSha,
+  supportsExpectedPrNumber,
+) {
   const url = `${context.apiUrl}/repos/${context.repositoryPath}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
-  const body = supportsExpectedSha
-    ? { ref, inputs: { expected_sha: expectedSha } }
-    : { ref };
+  const inputs = supportsExpectedSha ? { expected_sha: expectedSha } : null;
+  if (inputs && supportsExpectedPrNumber) {
+    inputs.expected_pr_number = String(expectedPrNumber);
+  }
+  const body = inputs ? { ref, inputs } : { ref };
   const response = await context.fetchImpl(url, {
     method: "POST",
     headers: { ...context.headers, "content-type": "application/json" },
