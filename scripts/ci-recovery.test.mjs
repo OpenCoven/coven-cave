@@ -72,12 +72,23 @@ const PREVIOUS_GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_IFS = {
-  "pr-checks": GUARDED_JOB_IF,
+const GUARDED_SUBORDINATE_JOB_IFS = {
   paths: GUARDED_JOB_IF,
   ios: `needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
-  build: `always() && (${GUARDED_JOB_IF})`,
 };
+const SHA_MISMATCH_STEP = [
+  "    steps:",
+  "      - name: Refuse recovery SHA mismatch",
+  "        env:",
+  "          EXPECTED_SHA: ${{ inputs.expected_sha }}",
+  "          ACTUAL_SHA: ${{ github.sha }}",
+  "        run: |",
+  "          set -euo pipefail",
+  '          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then',
+  '            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."',
+  "            exit 1",
+  "          fi",
+];
 const GUARDED_CI_WORKFLOW = [
   "name: CI",
   `run-name: ${GUARDED_RUN_NAME}`,
@@ -93,10 +104,15 @@ const GUARDED_CI_WORKFLOW = [
   "concurrency:",
   `  group: ${GUARDED_CONCURRENCY}`,
   "jobs:",
-  ...Object.entries(GUARDED_JOB_IFS).flatMap(([name, condition]) => [
+  "  pr-checks:",
+  ...SHA_MISMATCH_STEP,
+  ...Object.entries(GUARDED_SUBORDINATE_JOB_IFS).flatMap(([name, condition]) => [
     `  ${name}:`,
     `    if: ${condition}`,
   ]),
+  "  build:",
+  "    if: always()",
+  ...SHA_MISMATCH_STEP,
   "",
 ].join("\n");
 const PREVIOUS_GUARDED_CI_WORKFLOW = [
@@ -322,14 +338,14 @@ test("a partial guard contract is skipped without blocking the other candidates"
   assert.equal(messages.some((message) => message.includes("needs attention")), true);
 });
 
-test("a job missing the expected SHA guard is skipped, never dispatched", async () => {
+test("a required job missing the expected SHA failure is skipped, never dispatched", async () => {
   const pr = pull();
   const fixture = githubFixture({
     pulls: [pr],
     workflowsBySha: {
       [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        `  build:\n    if: ${GUARDED_JOB_IFS.build}`,
-        "  build:\n    if: success()",
+        "      - name: Refuse recovery SHA mismatch",
+        "      - name: Start validation",
       ),
     },
   });

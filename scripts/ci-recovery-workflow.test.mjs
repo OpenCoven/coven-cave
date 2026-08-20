@@ -41,8 +41,10 @@ assert.deepEqual(
   ["build", "frontend-bundle", "frontend-validation", "ios", "paths", "pr-checks"],
   "Phase 1 retains routine fanout while establishing the replacement PR context",
 );
-assert.equal(ciWorkflow.jobs["pr-checks"].name, "PR checks");
-assert.equal(ciWorkflow.jobs.build.name, "Frontend build");
+const prChecks = ciWorkflow.jobs["pr-checks"];
+const frontendBuild = ciWorkflow.jobs.build;
+assert.equal(prChecks.name, "PR checks");
+assert.equal(frontendBuild.name, "Frontend build");
 assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "paths",
   "ios",
@@ -128,8 +130,7 @@ assert.equal(
   "${{ github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/main' }}",
   "a recovery dispatch must never cancel the run it exists to rescue",
 );
-const expectedJobGuards = {
-  "pr-checks": "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
+const expectedSubordinateJobGuards = {
   paths: "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha",
   ios:
     "needs.paths.outputs.ios == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
@@ -137,17 +138,47 @@ const expectedJobGuards = {
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
   "frontend-bundle":
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
-  build:
-    "always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
 };
-for (const [jobName, guard] of Object.entries(expectedJobGuards)) {
+for (const [jobName, guard] of Object.entries(expectedSubordinateJobGuards)) {
   assert.equal(
     ciWorkflow.jobs[jobName].if,
     guard,
     `${jobName} must not run a recovery dispatch after the branch head moves`,
   );
 }
-const prCommands = ciWorkflow.jobs["pr-checks"].steps
+for (const job of [prChecks, frontendBuild]) {
+  assert.equal(
+    job.if,
+    job === frontendBuild ? "always()" : undefined,
+    `${job.name} must always report rather than skip a mismatched recovery dispatch as success`,
+  );
+  const mismatchCheck = job.steps[0];
+  assert.equal(
+    mismatchCheck?.name,
+    "Refuse recovery SHA mismatch",
+    `${job.name} must start by rejecting a recovery dispatch for another commit`,
+  );
+  assert.deepEqual(mismatchCheck.env, {
+    EXPECTED_SHA: "${{ inputs.expected_sha }}",
+    ACTUAL_SHA: "${{ github.sha }}",
+  });
+  assert.match(
+    mismatchCheck.run,
+    /if \[ "\$GITHUB_EVENT_NAME" = "workflow_dispatch" \] && \[ "\$ACTUAL_SHA" != "\$EXPECTED_SHA" \]; then/,
+    `${job.name} must fail only mismatched recovery dispatches`,
+  );
+  assert.match(
+    mismatchCheck.run,
+    /::error::.*expected.*actual/i,
+    `${job.name} must make a recovery SHA mismatch diagnosable`,
+  );
+  assert.match(
+    mismatchCheck.run,
+    /exit 1/,
+    `${job.name} must fail rather than produce a successful skipped required check`,
+  );
+}
+const prCommands = prChecks.steps
   .map((step) => step.run)
   .filter((run) => run?.startsWith("pnpm "));
 assert.deepEqual(prCommands, [

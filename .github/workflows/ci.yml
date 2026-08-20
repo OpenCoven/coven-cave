@@ -45,10 +45,20 @@ jobs:
   # for every PR before branch protection can safely be switched to it.
   pr-checks:
     name: PR checks
-    if: github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      - name: Refuse recovery SHA mismatch
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ACTUAL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."
+            exit 1
+          fi
+
       - id: clock
         name: Start duration clock
         run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -218,12 +228,23 @@ jobs:
   build:
     name: Frontend build
     needs: [paths, ios, frontend-validation, frontend-bundle]
-    if: always() && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       NEXT_PUBLIC_CAVE_CRAFTS: "1"
     steps:
+      - name: Refuse recovery SHA mismatch
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ACTUAL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."
+            exit 1
+          fi
+
       - name: Require selected validation
         env:
           PATHS_RESULT: ${{ needs.paths.result }}

@@ -19,12 +19,17 @@ const PREVIOUS_CONCURRENCY_GROUP =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const EXPECTED_JOB_GUARD =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const EXPECTED_JOB_GUARDS = {
-  "pr-checks": EXPECTED_JOB_GUARD,
+const EXPECTED_SUBORDINATE_JOB_GUARDS = {
   paths: EXPECTED_JOB_GUARD,
   ios: `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})`,
-  build: `always() && (${EXPECTED_JOB_GUARD})`,
 };
+const EXPECTED_REQUIRED_JOB_IFS = {
+  "pr-checks": undefined,
+  build: "always()",
+};
+const EXPECTED_SHA_MISMATCH_STEP = "Refuse recovery SHA mismatch";
+const EXPECTED_SHA_MISMATCH_CONDITION =
+  'if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then';
 
 export async function runCiRecovery({
   apply = false,
@@ -427,8 +432,13 @@ async function inspectRecoveryDispatch(context, sha) {
     hasCompleteExpectedPrNumberInput &&
     workflow["run-name"] === EXPECTED_RUN_NAME &&
     workflow?.concurrency?.group === EXPECTED_CONCURRENCY_GROUP &&
-    Object.entries(EXPECTED_JOB_GUARDS).every(
+    Object.entries(EXPECTED_SUBORDINATE_JOB_GUARDS).every(
       ([name, guard]) => workflow?.jobs?.[name]?.if === guard,
+    ) &&
+    Object.entries(EXPECTED_REQUIRED_JOB_IFS).every(
+      ([name, jobIf]) =>
+        workflow?.jobs?.[name]?.if === jobIf &&
+        hasExpectedShaMismatchFailureStep(workflow?.jobs?.[name]),
     );
   const hasPreviousGuardedContract =
     hasCompleteExpectedInput &&
@@ -474,6 +484,18 @@ async function inspectRecoveryDispatch(context, sha) {
     supportsExpectedSha: false,
     supportsExpectedPrNumber: false,
   };
+}
+
+function hasExpectedShaMismatchFailureStep(job) {
+  const step = job?.steps?.[0];
+  return (
+    step?.name === EXPECTED_SHA_MISMATCH_STEP &&
+    step?.env?.EXPECTED_SHA === "${{ inputs.expected_sha }}" &&
+    step?.env?.ACTUAL_SHA === "${{ github.sha }}" &&
+    typeof step.run === "string" &&
+    step.run.includes(EXPECTED_SHA_MISMATCH_CONDITION) &&
+    step.run.includes("exit 1")
+  );
 }
 
 async function dispatchWorkflow(
