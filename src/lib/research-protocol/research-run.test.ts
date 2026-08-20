@@ -2973,3 +2973,37 @@ test("deletion event composition rejects incomplete, malformed, and wrong-run st
     "semantic_conflict",
   );
 });
+
+test("run composition rejects exotic option shells before reading protocol inputs", () => {
+  const params = new URLSearchParams("manifestHistory=value");
+  Object.setPrototypeOf(params, Object.prototype);
+  Object.freeze(params);
+
+  expectError(
+    validateResearchRunContextPackV1(
+      {} as ResearchRunV1,
+      undefined,
+      params as unknown as Parameters<
+        typeof validateResearchRunContextPackV1
+      >[2],
+    ),
+    "$.options",
+    "invalid_value",
+  );
+
+  const options = Object.defineProperty({}, "manifestHistory", {
+    enumerable: true,
+    get() {
+      throw new Error("option getter must not execute");
+    },
+  });
+  expectError(
+    validateResearchRunContextPackV1(
+      {} as ResearchRunV1,
+      undefined,
+      options,
+    ),
+    "$.options",
+    "invalid_value",
+  );
+});

@@ -26,6 +26,7 @@ import {
   validateSafeDeletionExtensionKeys,
   validateSafeExtensionKeys as validateSensitiveObjectKeys,
 } from "./privacy-extension.ts";
+import { snapshotProtocolObjectProperties } from "./option-shell.ts";
 
 export {
   SENSITIVE_EXTENSION_KEY_PATTERN,
@@ -225,6 +226,12 @@ export type ManifestRevisionOptions = {
   contextConsent?: RetentionPolicyV1;
 };
 
+const MANIFEST_REVISION_OPTION_FIELDS = new Set([
+  "freshConsent",
+  "freshConsentAt",
+  "contextConsent",
+]);
+
 function childPath(path: string, key: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
     ? `${path}.${key}`
@@ -237,6 +244,63 @@ function indexPath(path: string, index: number): string {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function parseManifestRevisionOptions(
+  value: ManifestRevisionOptions,
+): ProtocolParseResult<ManifestRevisionOptions> {
+  const wireValue = snapshotProtocolObjectProperties(
+    value,
+    "$.options",
+    "Manifest revision options",
+  );
+  if (!wireValue.ok) return wireValue;
+  for (const key of Object.keys(wireValue.value)) {
+    if (!MANIFEST_REVISION_OPTION_FIELDS.has(key)) {
+      return fail(
+        "invalid_value",
+        childPath("$.options", key),
+        `Unknown manifest revision option ${key}`,
+      );
+    }
+  }
+
+  const options: ManifestRevisionOptions = {};
+  if (hasOwn(wireValue.value, "freshConsent")) {
+    if (typeof wireValue.value.freshConsent !== "boolean") {
+      return fail(
+        "invalid_type",
+        "$.options.freshConsent",
+        "freshConsent must be a boolean",
+      );
+    }
+    options.freshConsent = wireValue.value.freshConsent;
+  }
+  if (hasOwn(wireValue.value, "freshConsentAt")) {
+    if (!isUtcTimestamp(wireValue.value.freshConsentAt)) {
+      return fail(
+        "invalid_value",
+        "$.options.freshConsentAt",
+        "freshConsentAt must be a UTC RFC 3339 timestamp",
+      );
+    }
+    options.freshConsentAt = wireValue.value.freshConsentAt;
+  }
+  if (hasOwn(wireValue.value, "contextConsent")) {
+    const contextConsent = wireValue.value.contextConsent;
+    if (
+      typeof contextConsent !== "string" ||
+      !Object.hasOwn(RETENTION_ORDER, contextConsent)
+    ) {
+      return fail(
+        "invalid_value",
+        "$.options.contextConsent",
+        "contextConsent must be run-only, 7-days, or project",
+      );
+    }
+    options.contextConsent = contextConsent as RetentionPolicyV1;
+  }
+  return pass(options);
 }
 
 function validateModelReceiptExtensionKeys(
@@ -2438,6 +2502,8 @@ export function validateRunManifestRevisionV1(
   candidate: unknown,
   options: ManifestRevisionOptions = {},
 ): ProtocolParseResult<RunManifestV1> {
+  const parsedOptions = parseManifestRevisionOptions(options);
+  if (!parsedOptions.ok) return parsedOptions;
   const trustedPrevious = resolveTrustedPredecessor(previous);
   if (!trustedPrevious.ok) return trustedPrevious;
   const next = parseRunManifestRevisionCandidateV1(candidate);
@@ -2445,7 +2511,7 @@ export function validateRunManifestRevisionV1(
   const validated = validateParsedRunManifestRevision(
     trustedPrevious.value,
     next.value,
-    options,
+    parsedOptions.value,
   );
   if (!validated.ok) return validated;
   const rememberedResult = rememberValidatedRevisionReference(
