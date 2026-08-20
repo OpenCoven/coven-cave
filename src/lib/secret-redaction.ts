@@ -27,14 +27,6 @@ const SECRET_TERMINAL_PAIRS = new Set([
 
 const SECRET_KEY_MARKERS = new Set(["api", "auth", "client", "private", "secret"]);
 
-const AUTHORIZATION_SCHEMES = new Set([
-  "basic",
-  "bearer",
-  "digest",
-  "negotiate",
-  "ntlm",
-]);
-
 const SAFE_SECRET_TRAILING_WORDS = new Set([
   "count",
   "duration",
@@ -48,6 +40,7 @@ const MAX_ASSIGNMENT_NESTING = 64;
 const MAX_REDACTION_DEPTH = 64;
 const MAX_REDACTION_ENTRIES = 4_096;
 const MAX_REDACTION_STRING_BYTES = 256 * 1_024;
+const AUTHORIZATION_TOKEN68_PATTERN = /^[A-Za-z0-9\-._~+/]+={0,}$/;
 
 const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/gi,
@@ -58,8 +51,11 @@ const WHOLE_SECRET_PATTERNS: RegExp[] = [
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
   /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
-  /\b[A-Za-z0-9+/]{32,}={0,2}\b/g,
 ];
+const GENERIC_BASE64_SECRET_PATTERN = /\b[A-Za-z0-9+/]{32,}={0,2}\b/g;
+const URL_CANDIDATE_PATTERN = /(?:https?:)?\/\/[^\s<>"'`]+|[/?#][^\s<>"'`]+/gi;
+const URL_PARAMETER_PATTERN = /([?#&])([^=&?#]+)=([^&#\s]*)/g;
+const URL_PARSE_BASE = "https://secret-redaction.invalid";
 
 export function redactSecretText(text: string): string {
   const jsonRedaction = redactJsonText(text);
@@ -67,18 +63,216 @@ export function redactSecretText(text: string): string {
   return redactSecretTextPlain(text);
 }
 
+/**
+ * Detects actual credential material without comparing against redacted output,
+ * which may serialize otherwise safe JSON or authorization documentation.
+ */
+export function containsSecretText(text: string): boolean {
+  const decoded = decodeJsonValue(text);
+  return decoded !== undefined
+    ? containsSecretJsonValue(decoded.value)
+    : containsSecretTextPlain(text);
+}
+
+function containsSecretJsonValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    const nested = decodeJsonValue(value);
+    return containsSecretTextPlain(value) || (nested !== undefined && containsSecretJsonValue(nested.value));
+  }
+  if (value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((entry) => containsSecretJsonValue(entry));
+
+  return Object.entries(value).some(([key, entry]) => (
+    containsStructuredSecretFieldValue(key, entry) || containsSecretJsonValue(entry)
+  ));
+}
+
+function containsSecretTextPlain(text: string): boolean {
+  if (
+    WHOLE_SECRET_PATTERNS.some((pattern) => matchesSecretPattern(pattern, text))
+    || containsGenericBase64Secret(text)
+    || containsSecretUrlParameter(text)
+  ) {
+    return true;
+  }
+  if (/[?&](?:access_token|api_key|auth|password|secret|token)=[^&#\s]+/i.test(text)) return true;
+  if (/\bhttps?:\/\/[^:/\s]+:[^@\s/]+@/i.test(text)) return true;
+
+  let index = 0;
+  while (index < text.length) {
+    const assignment = readAssignment(text, index);
+    if (!assignment) {
+      index += 1;
+      continue;
+    }
+
+    const valueEnd = scanAssignmentValue(
+      text,
+      assignment.valueStart,
+      assignment.key,
+      assignment.separator,
+    );
+    if (
+      assignment.separator === "=" &&
+      isAuthorizationKey(assignment.key) &&
+      hasMeaningfulAuthorizationScalar(text.slice(assignment.valueStart, valueEnd))
+    ) {
+      return true;
+    }
+    if (containsSecretFieldValue(assignment.key, text.slice(assignment.valueStart, valueEnd))) return true;
+    index = Math.max(assignment.keyEnd, valueEnd);
+  }
+  return false;
+}
+
+function containsStructuredSecretFieldValue(key: string, value: unknown): boolean {
+  if (isAuthorizationKey(key) && hasMeaningfulAuthorizationScalar(value)) return true;
+  return containsSecretFieldValue(key, value);
+}
+
+function containsSecretFieldValue(key: string, value: unknown): boolean {
+  if (!isSecretKey(key)) return false;
+  if (isAuthorizationKey(key)) {
+    return typeof value === "string"
+      ? containsAuthorizationCredential(value) || containsSecretTextPlain(value)
+      : containsSecretJsonValue(value);
+  }
+  return hasCredentialValue(value);
+}
+
+function hasMeaningfulAuthorizationScalar(value: unknown): boolean {
+  if (typeof value === "string") return hasCredentialValue(value);
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  if (typeof value === "boolean") return value;
+  return false;
+}
+
+function containsAuthorizationCredential(value: string): boolean {
+  const parsed = readAuthorizationSchemeAndCredential(value);
+  if (!parsed) return hasOpaqueAuthorizationCredential(value);
+
+  const { scheme, credential } = parsed;
+  if (scheme === "digest") return hasDigestAuthorizationCredential(credential);
+  return hasAuthorizationParameterList(credential)
+    || (!/\s/.test(credential) && isSingleTokenAuthorizationCredential(credential));
+}
+
+function hasOpaqueAuthorizationCredential(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && !/\s/.test(trimmed);
+}
+
+function hasDigestAuthorizationCredential(value: string): boolean {
+  return /(?:^|[\s,])(?:username|nonce|response|cnonce|opaque)\s*=\s*(?:"[^"]+"|[^,\s]+)/i.test(value);
+}
+
+function hasCredentialValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length < 2) return trimmed.length > 0;
+    if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      return trimmed.slice(1, -1).trim().length > 0;
+    }
+    return true;
+  }
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== null && typeof value === "object" && Object.keys(value).length > 0;
+}
+
+function matchesSecretPattern(pattern: RegExp, text: string): boolean {
+  pattern.lastIndex = 0;
+  const matched = pattern.test(text);
+  pattern.lastIndex = 0;
+  return matched;
+}
+
+function containsGenericBase64Secret(text: string): boolean {
+  GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
+  const containsSecret = GENERIC_BASE64_SECRET_PATTERN.test(text);
+  GENERIC_BASE64_SECRET_PATTERN.lastIndex = 0;
+  return containsSecret;
+}
+
+function isSingleTokenAuthorizationCredential(value: string): boolean {
+  return AUTHORIZATION_TOKEN68_PATTERN.test(value);
+}
+
 function redactSecretTextPlain(text: string): string {
   let next = text;
+  next = redactUrlParameters(next);
   for (const pattern of WHOLE_SECRET_PATTERNS) {
     next = next.replace(pattern, REDACTED_SECRET);
   }
   next = next.replace(
-    /([?&](?:access_token|api_key|auth|key|password|secret|token)=)[^&#\s]+/gi,
+    GENERIC_BASE64_SECRET_PATTERN,
+    REDACTED_SECRET,
+  );
+  next = next.replace(
+    /([?&](?:access_token|api_key|auth|password|secret|token)=)[^&#\s]+/gi,
     `$1${REDACTED_SECRET}`,
   );
   next = redactSecretAssignments(next);
   next = next.replace(/\b(https?:\/\/[^:/\s]+:)[^@\s/]+(@)/gi, `$1${REDACTED_SECRET}$2`);
   return next;
+}
+
+function containsSecretUrlParameter(text: string): boolean {
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
+  for (const match of text.matchAll(URL_CANDIDATE_PATTERN)) {
+    const candidate = match[0];
+    if (!candidate) continue;
+    const url = parseUrlCandidate(candidate);
+    if (
+      url &&
+      (hasSecretUrlParameter(url.searchParams) || hasSecretUrlParameter(new URLSearchParams(url.hash.slice(1))))
+    ) {
+      URL_CANDIDATE_PATTERN.lastIndex = 0;
+      return true;
+    }
+  }
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
+  return false;
+}
+
+function hasSecretUrlParameter(parameters: URLSearchParams): boolean {
+  for (const [key, value] of parameters) {
+    if (isSecretUrlParameterKey(key) && hasCredentialValue(value)) return true;
+  }
+  return false;
+}
+
+function redactUrlParameters(text: string): string {
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
+  const redacted = text.replace(URL_CANDIDATE_PATTERN, (candidate) => {
+    if (!parseUrlCandidate(candidate)) return candidate;
+    return candidate.replace(URL_PARAMETER_PATTERN, (parameter, prefix, encodedKey, value) => {
+      let key: string;
+      try {
+        key = decodeURIComponent(encodedKey.replace(/\+/g, " "));
+      } catch {
+        return parameter;
+      }
+      return isSecretUrlParameterKey(key) && hasCredentialValue(value)
+        ? `${prefix}${encodedKey}=${REDACTED_SECRET}`
+        : parameter;
+    });
+  });
+  URL_CANDIDATE_PATTERN.lastIndex = 0;
+  return redacted;
+}
+
+function isSecretUrlParameterKey(key: string): boolean {
+  return isSecretKey(key) || key.trim().toLowerCase() === "key";
+}
+
+function parseUrlCandidate(candidate: string): URL | undefined {
+  try {
+    return new URL(candidate, URL_PARSE_BASE);
+  } catch {
+    return undefined;
+  }
 }
 
 export function redactSecretsDeep<T>(value: T): T {
@@ -114,7 +308,7 @@ export function redactSecretsDeep<T>(value: T): T {
       continue;
     }
 
-    if (frame.key && isSecretKey(frame.key)) {
+    if (frame.key && isSecretKey(frame.key) && hasCredentialValue(frame.value)) {
       if (!frame.assign(REDACTED_SECRET)) return REDACTED_SECRET as T;
       continue;
     }
@@ -588,23 +782,15 @@ function scanLineEnd(text: string, start: number): number {
 }
 
 function scanAuthorizationCredential(text: string, start: number): number | undefined {
-  let schemeEnd = start;
-  while (
-    isAsciiLetter(text[schemeEnd]) ||
-    isAsciiDigit(text[schemeEnd]) ||
-    text[schemeEnd] === "-"
-  ) {
-    schemeEnd += 1;
-  }
+  const schemeEnd = scanHttpTokenEnd(text, start);
   if (schemeEnd === start) return undefined;
-  if (!AUTHORIZATION_SCHEMES.has(text.slice(start, schemeEnd).toLowerCase())) {
-    return undefined;
-  }
 
+  const scheme = text.slice(start, schemeEnd).toLowerCase();
   let credentialStart = schemeEnd;
   while (isHorizontalWhitespace(text[credentialStart])) credentialStart += 1;
   if (credentialStart === schemeEnd) return undefined;
   if (credentialStart >= text.length) return text.length;
+  if (scheme === "digest") return scanDigestAuthorizationCredential(text, credentialStart);
 
   const first = text[credentialStart]!;
   if (first === '"' || first === "'") {
@@ -616,6 +802,9 @@ function scanAuthorizationCredential(text: string, start: number): number | unde
     return quoteEnd === -1 ? text.length : quoteEnd;
   }
 
+  const parameterEnd = scanAuthorizationParameterList(text, credentialStart);
+  if (parameterEnd !== undefined) return parameterEnd;
+
   let credentialEnd = credentialStart;
   while (
     credentialEnd < text.length &&
@@ -623,7 +812,112 @@ function scanAuthorizationCredential(text: string, start: number): number | unde
   ) {
     credentialEnd += 1;
   }
-  return credentialEnd === credentialStart ? text.length : credentialEnd;
+  if (credentialEnd === credentialStart) return text.length;
+  return isSingleTokenAuthorizationCredential(text.slice(credentialStart, credentialEnd))
+    ? credentialEnd
+    : undefined;
+}
+
+function hasAuthorizationParameterList(value: string): boolean {
+  return scanAuthorizationParameterList(value, 0) === value.length;
+}
+
+function scanAuthorizationParameterList(text: string, start: number): number | undefined {
+  let index = start;
+  let parameterEnd: number | undefined;
+
+  while (index < text.length) {
+    const nameEnd = scanHttpTokenEnd(text, index);
+    if (nameEnd === index) return parameterEnd;
+    if (parameterEnd === undefined && isSecretKey(text.slice(index, nameEnd))) return undefined;
+
+    index = skipHorizontalWhitespace(text, nameEnd);
+    if (text[index] !== "=") return parameterEnd;
+
+    index = skipHorizontalWhitespace(text, index + 1);
+    const valueStart = index;
+    if (text[index] === '"' || text[index] === "'") {
+      const valueEnd = scanQuotedValue(text, index, text[index]!);
+      if (valueEnd === -1) return text.length;
+      index = valueEnd;
+    } else {
+      while (index < text.length && !isWhitespace(text[index]) && text[index] !== ",") index += 1;
+    }
+    if (index === valueStart) return parameterEnd;
+    parameterEnd = index;
+
+    if (index === text.length) return index;
+    if (text[index] === ",") {
+      index = skipHorizontalWhitespace(text, index + 1);
+      if (index === text.length) return parameterEnd;
+      continue;
+    }
+    if (!isHorizontalWhitespace(text[index])) return parameterEnd;
+
+    const next = skipHorizontalWhitespace(text, index);
+    if (next === text.length) return next;
+    const nextNameEnd = scanHttpTokenEnd(text, next);
+    if (nextNameEnd === next || text[skipHorizontalWhitespace(text, nextNameEnd)] !== "=") {
+      return parameterEnd;
+    }
+    index = next;
+  }
+
+  return parameterEnd;
+}
+
+function skipHorizontalWhitespace(text: string, start: number): number {
+  let index = start;
+  while (isHorizontalWhitespace(text[index])) index += 1;
+  return index;
+}
+
+function readAuthorizationSchemeAndCredential(
+  value: string,
+): { scheme: string; credential: string } | undefined {
+  let start = 0;
+  while (isWhitespace(value[start])) start += 1;
+
+  const schemeEnd = scanHttpTokenEnd(value, start);
+  if (schemeEnd === start) return undefined;
+
+  let credentialStart = schemeEnd;
+  while (isWhitespace(value[credentialStart])) credentialStart += 1;
+  if (credentialStart === schemeEnd) return undefined;
+
+  const credential = value.slice(credentialStart).trim();
+  if (credential.length === 0) return undefined;
+  return {
+    scheme: value.slice(start, schemeEnd).toLowerCase(),
+    credential,
+  };
+}
+
+function scanDigestAuthorizationCredential(text: string, start: number): number {
+  let index = start;
+
+  while (index < text.length) {
+    const char = text[index]!;
+    if (char === '"' || char === "'") {
+      const quoteEnd = scanQuotedValue(text, index, char);
+      if (quoteEnd === -1) return text.length;
+      index = quoteEnd;
+      continue;
+    }
+    if (char === "`") {
+      const quoteEnd = scanBacktickValue(text, index);
+      if (quoteEnd === -1) return text.length;
+      index = quoteEnd;
+      continue;
+    }
+    if (char === "\\") {
+      index = Math.min(text.length, index + 2);
+      continue;
+    }
+    if (isDigestAuthorizationCredentialDelimiter(char)) return index;
+    index += 1;
+  }
+  return text.length;
 }
 
 function scanQuotedValue(text: string, start: number, quote: string): number {
@@ -744,6 +1038,10 @@ function isAuthorizationCredentialDelimiter(char: string): boolean {
   return isWhitespace(char) || ",;|&<>".includes(char);
 }
 
+function isDigestAuthorizationCredentialDelimiter(char: string): boolean {
+  return "\r\n;|&<>()[]{}".includes(char);
+}
+
 function isHorizontalWhitespace(char: string | undefined): boolean {
   return char === " " || char === "\t";
 }
@@ -770,4 +1068,21 @@ function isAsciiUpper(char: string | undefined): boolean {
 
 function isAsciiDigit(char: string | undefined): boolean {
   return Boolean(char && char >= "0" && char <= "9");
+}
+
+function scanHttpTokenEnd(text: string, start: number): number {
+  let index = start;
+  while (isHttpTokenChar(text[index])) index += 1;
+  return index;
+}
+
+function isHttpTokenChar(char: string | undefined): boolean {
+  return Boolean(
+    char &&
+    (
+      isAsciiLetter(char) ||
+      isAsciiDigit(char) ||
+      "!#$%&'*+-.^_`|~".includes(char)
+    ),
+  );
 }

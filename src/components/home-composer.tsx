@@ -1075,6 +1075,7 @@ export function HomeComposer({
           onDismiss={promptEnhance.dismiss}
           onRevert={promptEnhance.revert}
           onCancel={promptEnhance.cancel}
+          onFocusComposer={() => textareaRef.current?.focus()}
         />
 
         {dictation.listening ? (

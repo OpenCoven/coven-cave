@@ -54,6 +54,7 @@ const contracts: RouteContract[] = [
   { route: "/beads/overview", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/beads/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/board/[id]/enhance", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]/lifecycle", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
@@ -255,6 +256,7 @@ const contracts: RouteContract[] = [
   { route: "/research/missions/[id]/schedule", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/research/recommendations", methods: ["GET"], kind: "json", localOriginGuard: true },
   // No pathGuard: the id is validated against a strict arXiv shape and
   // interpolated into a hard-coded host, so there is no filesystem path to deny.
   { route: "/research/papers/pdf", methods: ["GET"], kind: "stream", localOriginGuard: true },
