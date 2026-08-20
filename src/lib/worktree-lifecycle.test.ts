@@ -87,6 +87,7 @@ assert.equal(
     "artifacts/report.json",
     "test-results/results.json",
     "public/sandbox/runtime.js",
+    "public/pdf.worker.min.mjs",
     "src-tauri/gen/schemas.json",
     "src-tauri/resources/server/server.mjs",
     "src-tauri/target/debug/app",
@@ -97,6 +98,11 @@ assert.equal(
     isDisposableIgnoredPath("docs/superpowers/plans/uncommitted-design.md"),
     false,
     "ignored authored work remains preservation evidence",
+  );
+  assert.equal(
+    isDisposableIgnoredPath("public/valuable-source.mjs"),
+    false,
+    "other ignored public assets remain preservation evidence",
   );
   assert.equal(
     isDisposableIgnoredPath("node_modules\\valuable/source.ts"),
