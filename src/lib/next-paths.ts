@@ -7,6 +7,8 @@
  */
 
 import { markdownCodeRanges } from "./github-blocks.ts";
+import type { AgenticEvidenceRef } from "./agentic-recommendations.ts";
+import { containsSecretText } from "./secret-redaction.ts";
 
 export const DEFAULT_NEXT_PATHS_COUNT = 3;
 
@@ -33,9 +35,29 @@ const TEMPLATE_SUGGESTION_LABELS = new Set<string>([
 
 /** A safe, assistant-inferred destination for a suggested next step. */
 export type NextPath =
-  | { kind: "reply"; label: string; prompt: string }
-  | { kind: "task"; label: string; prompt: string }
-  | { kind: "action"; actionId: "open-tasks"; label: string; prompt: string };
+  | { kind: "reply"; label: string; prompt: string; metadata?: NextPathMetadata }
+  | { kind: "task"; label: string; prompt: string; metadata?: NextPathMetadata }
+  | { kind: "action"; actionId: "open-tasks"; label: string; prompt: string; metadata?: NextPathMetadata };
+
+export type NextPathMetadata = {
+  rationale: string;
+  evidenceRefs: AgenticEvidenceRef[];
+};
+
+export type NextPathContext = {
+  messageId?: string | null;
+  taskId?: string | null;
+  toolOutcomeIds?: readonly string[];
+};
+
+const MAX_NEXT_PATH_RATIONALE_CHARS = 240;
+const MAX_NEXT_PATH_EVIDENCE_REFS = 3;
+const SAFE_EVIDENCE_ID_RE = /^(?:[A-Za-z][A-Za-z0-9._:/-]{0,95}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const NEXT_PATH_EVIDENCE_LABELS: Record<"message" | "task" | "artifact", string> = {
+  message: "Recent chat message",
+  task: "Linked task",
+  artifact: "Recent tool outcome",
+};
 
 function isTemplateSuggestion(title: string): boolean {
   return TEMPLATE_SUGGESTION_LABELS.has(title);
@@ -48,11 +70,54 @@ function isIncompleteControlPrefix(line: string): boolean {
     || ["reply", "task", "action", "action:open-tasks"].some((control) => control.startsWith(partial));
 }
 
-function replyFor(title: string): NextPath | null {
+function replyFor(title: string, metadata?: NextPathMetadata): NextPath | null {
   const normalized = title.trim();
   return normalized && !isTemplateSuggestion(normalized)
-    ? { kind: "reply", label: normalized, prompt: normalized }
+    ? { kind: "reply", label: normalized, prompt: normalized, ...(metadata ? { metadata } : {}) }
     : null;
+}
+
+function validEvidenceId(value: string): boolean {
+  return SAFE_EVIDENCE_ID_RE.test(value) && !containsSecretText(value);
+}
+
+function parseNextPathMetadata(attributes: string): NextPathMetadata | null {
+  const match = /^\s*rationale="([^"]{1,240})"\s+evidence="([^"]{1,480})"\s*$/.exec(attributes);
+  if (!match) return null;
+  const rationale = match[1]!.trim();
+  if (!rationale || rationale.length > MAX_NEXT_PATH_RATIONALE_CHARS || containsSecretText(rationale)) {
+    return null;
+  }
+
+  const evidenceRefs: AgenticEvidenceRef[] = [];
+  const seen = new Set<string>();
+  for (const value of match[2]!.split("|")) {
+    const evidence = /^(message|task|artifact):(.+)$/.exec(value.trim());
+    if (!evidence) return null;
+    const kind = evidence[1] as "message" | "task" | "artifact";
+    const id = evidence[2]!.trim();
+    const key = `${kind}:${id}`;
+    if (!validEvidenceId(id) || seen.has(key)) return null;
+    seen.add(key);
+    evidenceRefs.push({ id, kind, label: NEXT_PATH_EVIDENCE_LABELS[kind] });
+    if (evidenceRefs.length > MAX_NEXT_PATH_EVIDENCE_REFS) return null;
+  }
+  return evidenceRefs.length > 0 ? { rationale, evidenceRefs } : null;
+}
+
+function nextPathFor(
+  kind: "reply" | "task" | "action:open-tasks",
+  title: string,
+  metadata?: NextPathMetadata,
+): NextPath | null {
+  const normalized = title.trim();
+  if (!normalized || isTemplateSuggestion(normalized)) return null;
+  const metadataFields = metadata ? { metadata } : {};
+  if (kind === "task") return { kind: "task", label: normalized, prompt: normalized, ...metadataFields };
+  if (kind === "action:open-tasks") {
+    return { kind: "action", actionId: "open-tasks", label: normalized, prompt: normalized, ...metadataFields };
+  }
+  return replyFor(normalized, metadata);
 }
 
 function inFencedRange(ranges: Array<[number, number]>, index: number): boolean {
@@ -130,6 +195,16 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
   if (line.startsWith("[") && !line.includes("]") && (isStreaming || isIncompleteControlPrefix(line))) {
     return null;
   }
+  const tagged = /^\[(reply|task|action:open-tasks)(?:\s+([^\]]+))?\](?:\s+(.*)|\s*)$/.exec(line);
+  if (tagged) {
+    const metadata = tagged[2] === undefined ? undefined : parseNextPathMetadata(tagged[2]);
+    if (tagged[2] !== undefined && !metadata) return null;
+    return nextPathFor(
+      tagged[1] as "reply" | "task" | "action:open-tasks",
+      tagged[3] ?? "",
+      metadata ?? undefined,
+    );
+  }
   const prefixed = line.match(/^\[([^\]]*)\](?:\s+(.*)|\s*)$/);
   if (!prefixed) {
     // Strip an incomplete prefix from the visible fallback too: prompt markup
@@ -143,10 +218,8 @@ function parseNextPath(line: string, isStreaming: boolean): NextPath | null {
   const title = rawTitle.trim();
   if (!title || isTemplateSuggestion(title)) return null;
 
-  if (intent === "task") return { kind: "task", label: title, prompt: title };
-  if (intent === "action:open-tasks") {
-    return { kind: "action", actionId: "open-tasks", label: title, prompt: title };
-  }
+  if (intent === "task") return nextPathFor("task", title);
+  if (intent === "action:open-tasks") return nextPathFor("action:open-tasks", title);
   // This intentionally includes both legacy `[reply]` and unknown intents.
   return replyFor(title);
 }
@@ -159,7 +232,7 @@ export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT
     "<next_paths>",
     `After your reply, append ${exactDefault ? count : `up to ${count}`} short typed suggested next steps the user could take, as exactly this block:`,
     OPEN,
-    ...NEXT_PATH_EXAMPLES.map((example, index) => `- ${example.control} ${example.label}${index === 0 ? " (imperative, <= ~7 words)" : ""}`),
+    ...NEXT_PATH_EXAMPLES.map((example, index) => `- ${example.control.slice(0, -1)} rationale="…" evidence="message:message-id"] ${example.label}${index === 0 ? " (imperative, <= ~7 words)" : ""}`),
     CLOSE,
     `One '- ' line each, distinct and directly useful.${exactDefault ? ` Give exactly ${count}.` : ""} Put nothing after the closing tag.`,
     "Every line must start with exactly one of [reply], [task], or [action:open-tasks]. Use [reply] by default; [action:open-tasks] is the only action type allowed.",
@@ -195,4 +268,37 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
     .slice(0, DEFAULT_NEXT_PATHS_COUNT);
   const visible = (markerSafeText.slice(0, open) + markerSafeText.slice(blockEnd)).trimEnd();
   return { visible, suggestions };
+}
+
+/**
+ * The chat surface resolves its current message, task, and tool context after
+ * parsing. This keeps model output bounded while attaching only existing IDs.
+ */
+export function contextualizeNextPaths(paths: readonly NextPath[], context: NextPathContext): NextPath[] {
+  const contextualEvidence: AgenticEvidenceRef[] = [];
+  const add = (kind: "message" | "task" | "artifact", id: string | null | undefined, label: string) => {
+    if (!id || !validEvidenceId(id)) return;
+    if (contextualEvidence.some((evidence) => evidence.kind === kind && evidence.id === id)) return;
+    contextualEvidence.push({ id, kind, label });
+  };
+  add("message", context.messageId, "Latest assistant response");
+  add("task", context.taskId, "Linked task");
+  for (const id of context.toolOutcomeIds ?? []) {
+    add("artifact", id, "Recent tool outcome");
+    if (contextualEvidence.length >= MAX_NEXT_PATH_EVIDENCE_REFS) break;
+  }
+
+  return paths.map((path) => {
+    // Metadata IDs are model claims. Render only the bounded IDs supplied by
+    // Chat, which are resolved independently of the trailer text.
+    const evidenceRefs = [...contextualEvidence];
+    if (!path.metadata && evidenceRefs.length === 0) return path;
+    return {
+      ...path,
+      metadata: {
+        rationale: path.metadata?.rationale ?? "Suggested from the latest assistant response.",
+        evidenceRefs,
+      },
+    };
+  });
 }

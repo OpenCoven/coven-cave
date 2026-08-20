@@ -1,4 +1,9 @@
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import type {
+  AgenticRecommendation,
+  AgenticVerificationCheck,
+  AgenticVerificationStatus,
+} from "@/lib/agentic-recommendations";
 
 export type CardStatus = "backlog" | "inbox" | "running" | "review" | "blocked" | "done";
 export type CardPriority = "low" | "medium" | "high" | "urgent";
@@ -135,6 +140,96 @@ export type CardGitHubLink = {
   updatedAt?: string;
 };
 
+/**
+ * The only Board fields an Enhance proposal may change. Lifecycle, status, and
+ * dispatch intent remain outside the proposal contract.
+ */
+export type BoardAgenticPatch = {
+  title?: string;
+  notes?: string;
+  links?: string[];
+  github?: CardGitHubLink[];
+  dependencies?: TaskDependency[];
+  primaryBlockerId?: string | null;
+  primaryBlockerPinned?: boolean;
+  nextStep?: TaskNextStep | null;
+};
+
+export type BoardAgenticProposalState =
+  | "proposed"
+  | "blocked"
+  | "auto-applied"
+  | "applied"
+  | "reverted"
+  | "dismissed";
+
+export type BoardAgenticProposalError = {
+  code: string;
+  field?: "dependencies" | "primaryBlockerId" | "primaryBlockerPinned" | "nextStep";
+  dependencyId?: string;
+  message: string;
+};
+
+export type BoardAgenticEvidenceResolution = {
+  id: string;
+  kind: "task" | "dependency" | "github";
+  label: string;
+  resolvedId: string;
+};
+
+export type BoardAgenticProposalContext = {
+  fingerprint: string;
+  cardUpdatedAt: string;
+  taskIds: string[];
+  githubRefs: string[];
+};
+
+/** A reversible, reference-scoped normalization that cannot overwrite siblings. */
+export type BoardAgenticScopedInverse = {
+  kind: "canonicalize-reference";
+  referenceId: string;
+  previousUrl: string;
+  appliedUrl: string;
+};
+
+export type BoardAgenticProposalRecord = {
+  id: string;
+  recommendation: AgenticRecommendation;
+  patch: BoardAgenticPatch | null;
+  /** Code-owned pre-application values, retained only for verified reversible normalizations. */
+  inversePatch?: BoardAgenticPatch | null;
+  /** Preferred inverse format for reference-level normalizations. */
+  scopedInverse?: BoardAgenticScopedInverse | null;
+  /** The exact task snapshot created by a reversible application. */
+  appliedContextFingerprint?: string | null;
+  state: BoardAgenticProposalState;
+  context: BoardAgenticProposalContext;
+  evidence: BoardAgenticEvidenceResolution[];
+  validation: {
+    status: AgenticVerificationStatus;
+    checks: AgenticVerificationCheck[];
+    errors: BoardAgenticProposalError[];
+  };
+  needsHuman: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BoardAgenticProposalAuditEntry = {
+  proposalId: string;
+  action: "generated" | "blocked" | "auto-applied" | "applied" | "reverted" | "dismissed";
+  actor: string;
+  at: string;
+  context: BoardAgenticProposalContext;
+  evidence: BoardAgenticEvidenceResolution[];
+  validation: BoardAgenticProposalRecord["validation"];
+};
+
+export type BoardAgenticEnhanceState = {
+  proposals: BoardAgenticProposalRecord[];
+  audit: BoardAgenticProposalAuditEntry[];
+};
+
 export type CardAsanaKind = "task" | "subtask" | "project";
 
 /**
@@ -232,6 +327,8 @@ export type Card = {
   nextStep?: TaskNextStep | null;
   /** Append-only explanation of automatic primary-blocker promotions. */
   orchestrationAudit?: TaskOrchestrationAuditEntry[];
+  /** Bounded, reviewable Enhance proposals and their governance audit trail. */
+  agenticEnhance?: BoardAgenticEnhanceState;
   /** Files carried in from the composer when the card was created. Stored lean:
    * metadata + inlined text, but image `dataUrl`/`mimeType` are stripped so the
    * board JSON doesn't bloat with base64 payloads. Absent when none were staged. */
