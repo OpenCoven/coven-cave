@@ -40,7 +40,7 @@
     "protocol:tweet-thread:check": "node scripts/generate-tweet-thread-protocol.mjs --check",
     "protocol:tweet-thread:validator": "node scripts/build-tweet-thread-validator.mjs",
     "protocol:tweet-thread:validator:check": "node scripts/build-tweet-thread-validator.mjs --check",
-    "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-marketplace-logos.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs",
+    "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-marketplace-logos.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs && node scripts/copy-pdf-worker.mjs",
     "build": "next build && pnpm build:server",
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
     "test:bundle": "node scripts/bundle-budget.mjs",
