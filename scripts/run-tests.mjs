@@ -539,6 +539,7 @@ export const SUITES = {
     "src/components/marketplace/marketplace-detail.test.ts",
     "src/lib/knowledge-pack-ui.test.ts",
     "src/components/home-hearth.test.ts",
+    "src/lib/home-task-handoff.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
     "src/components/home-composer-centering.test.ts",
@@ -1011,6 +1012,7 @@ export const SUITES = {
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
     "src/components/settings-save-feedback.test.ts",
+    "src/components/settings-save-feedback.behavior.test.tsx",
     "src/components/voice-engine-settings.test.ts",
     "src/components/voice-provider-settings.test.tsx",
     "src/components/voice-provider-settings.integration.test.tsx",
@@ -2079,6 +2081,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/chat-preview-card.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",

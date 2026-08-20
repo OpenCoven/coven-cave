@@ -84,6 +84,10 @@ import {
   reconcileCrewForProject,
   resolveActingFamiliar,
 } from "@/lib/workspace-context";
+import {
+  resolveHomeTaskHandoff,
+  type HomeTaskOrigin,
+} from "@/lib/home-task-handoff";
 import { useProjectFamiliars } from "@/lib/use-project-familiars";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
@@ -743,6 +747,10 @@ export function Workspace() {
   // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
   // before, so restored sessions and share links still land where they point.
   const [mode, setModeRaw] = useState<CaveMode>("home");
+  const [homeTaskOrigin, setHomeTaskOrigin] = useState<HomeTaskOrigin | null>(null);
+  useEffect(() => {
+    if (mode !== "home") setHomeTaskOrigin(null);
+  }, [mode]);
   const [primaryPaneRequest, setPrimaryPaneRequest] = useState<WorkspacePaneRequest | null>(null);
   const primaryPaneRequestRef = useRef(primaryPaneRequest);
   primaryPaneRequestRef.current = primaryPaneRequest;
@@ -2673,13 +2681,40 @@ export function Workspace() {
     const onNavigate = (e: Event) => {
       const targetMode = (e as CustomEvent<{ mode?: string }>).detail?.mode;
       if (!targetMode) return;
+      const task = (e as CustomEvent<{ task?: unknown }>).detail?.task;
+      if (targetMode === "home" && task !== undefined) {
+        const handoff = resolveHomeTaskHandoff(task, {
+          projects: registeredProjects,
+          currentProjectId: selectedWorkspaceProjectId,
+          familiars,
+          currentFamiliarId: activeId,
+        });
+        if (handoff) {
+          setHomeTaskOrigin(handoff.origin);
+          if (handoff.projectId !== selectedWorkspaceProjectId) {
+            selectWorkspaceProject(handoff.projectId);
+          }
+          if (handoff.familiarId) setActiveId(handoff.familiarId);
+        } else {
+          setHomeTaskOrigin(null);
+        }
+      } else if (targetMode === "home") {
+        setHomeTaskOrigin(null);
+      }
       // Alias modes (flow, journal, groupchat, github, …) need no
       // special-casing: setMode's alias funnel routes them via MODE_ALIASES.
       setMode(targetMode as WorkspaceMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
-  }, [openFamiliarSession]);
+  }, [
+    activeId,
+    familiars,
+    registeredProjects,
+    selectWorkspaceProject,
+    selectedWorkspaceProjectId,
+    setMode,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -4412,6 +4447,7 @@ export function Workspace() {
       <HomeComposer
         familiars={resolvedFamiliars}
         project={selectedWorkspaceProject}
+        taskOrigin={homeTaskOrigin}
         actingFamiliarId={
           actingFamiliar.kind === "resolved" ? actingFamiliar.familiarId : null
         }
