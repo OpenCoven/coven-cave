@@ -1,6 +1,6 @@
 // @ts-nocheck
-// Behavioral tests for the thread-instruments preference (cave-xb6g5), plus
-// source pins for how the toggle reaches the transcript.
+// Behavioral tests for the persisted activity-map preference, plus source pins
+// for how the toggle reaches the chat.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -82,41 +82,15 @@ const header = readFileSync(
   new URL("../components/chat-session-header.tsx", import.meta.url),
   "utf8",
 );
-const instruments = readFileSync(
-  new URL("../components/chat-thread-instruments.tsx", import.meta.url),
-  "utf8",
-);
-
-// Unmount, don't just hide: CSS-hiding would leave the spine's scroll
-// measurement and ResizeObservers running for furniture nobody can see.
 assert.match(
   chatView,
-  /\{activePath\.length > 0 && instrumentsVisible \? \(/,
-  "an unchecked toggle must skip mounting the instruments entirely",
+  /\{activePath\.length > 0 && activityMapVisible \? \(/,
+  "an unchecked toggle skips mounting the activity map entirely",
 );
 assert.match(
   header,
-  /instruments: \(\) => \{\s*setInstrumentsVisible\(!instrumentsVisible\);/,
+  /"activity-map": \(\) => \{\s*setActivityMapVisible\(!activityMapVisible\);/,
   "the kebab item must flip the shared preference",
-);
-
-// ── the stamp lane follows the machine's own clock ────────────────────────
-// 24-hour "23:00" is 5 characters where 12-hour "11:00 PM" is 8, and the format
-// is the reader's, not ours. A fixed lane clips one of them.
-assert.match(
-  instruments,
-  /const stampChars = Math\.max\(\s*SPINE_STAMP_MIN_CHARS,\s*\.\.\.placed\.map\(\(n\) => n\.time\?\.length \?\? 0\),\s*\);/,
-  "the lane must be measured from the stamps this thread actually renders",
-);
-assert.match(
-  instruments,
-  /"--cave-spine-stamp-chars": stampChars/,
-  "and handed to the stylesheet as the lane knob",
-);
-assert.match(
-  instruments,
-  /const SPINE_STAMP_MIN_CHARS = 5;/,
-  "a floor keeps a stampless thread from collapsing the lane back under the ring",
 );
 
 console.log("thread-instruments-visibility tests passed");

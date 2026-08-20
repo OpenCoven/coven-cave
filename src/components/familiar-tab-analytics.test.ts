@@ -96,7 +96,21 @@ test("charts derive from real model fields with honest empty state", () => {
   assert.match(src, /recentSessions\.length === 0 \?[\s\S]{0,300}?Charts appear once this familiar has run a session\./,
     "one honest empty state replaces the whole charts area");
   assert.match(src, /sessionOutcome\(session\.status\)/, "outcomes classified from real session statuses");
-  assert.match(src, /heatmapFromSessions\(recentSessions\)/, "heatmap bucketed from real created_at timestamps");
+  assert.match(
+    src,
+    /activityHeatmapWindowDays\([\s\S]{0,160}?session\.created_at/,
+    "heatmap range matures from the familiar's first real session",
+  );
+  assert.match(
+    src,
+    /heatmapFromSessions\(recentSessions, Date\.parse\(updatedAt \?\? ""\)\)/,
+    "heatmap buckets real created_at timestamps against the current refresh",
+  );
+  assert.match(
+    src,
+    /Activity heatmap · past \$\{heat\.windowDays\} days/,
+    "the selected 30, 90 or 365-day scope is visible",
+  );
   assert.match(src, /barsByProject\(recentSessions\)/, "bars split by real project_root basenames");
   assert.match(src, /color-mix\(in oklch, var\(--accent-presence\) \$\{pct\}%, transparent\)/,
     "heat ramp mixes accent-presence per the design");

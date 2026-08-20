@@ -5,34 +5,76 @@ const read = (rel) => readFile(new URL(`../${rel}`, import.meta.url), "utf8");
 const iosRoot = "apps/ios/CovenCave/CovenCave";
 
 const sheet = await read(`${iosRoot}/Views/LinkedTasksSheet.swift`);
+const model = await read(`${iosRoot}/State/AppModel.swift`);
+const chat = await read(`${iosRoot}/Views/ChatView.swift`);
 
-// When searching tasks to assign from within a chat, the list is scoped to the
-// chat's familiar(s) or unassigned tasks — another familiar's tasks never show.
+// Linked task assignment is two-stage: first the task must still belong to the
+// chat's project context, then the familiar/search filters apply within that
+// project-scoped set.
 assert.match(
   sheet,
-  /let chatFamiliars = Set\(thread\.familiarIds\)/,
-  "assignable should derive the chat's familiar set from the thread",
+  /private var linked: \[BoardCard\] \{ app\.projectLinkedTasks\(for: thread\) \}/,
+  "the linked section should hide tasks that no longer belong to this chat's project context",
 );
 assert.match(
   sheet,
-  /let owner = card\.familiarId/,
-  "assignable should read each card's owning familiar",
+  /private var assignable: \[BoardCard\] \{\s*app\.projectAssignableTasks\(for: thread, matching: query\)\s*\}/,
+  "assignable tasks should come from the project-scoped AppModel helper",
 );
 assert.match(
-  sheet,
-  /let belongsHere = owner == nil \|\| owner!\.isEmpty \|\| chatFamiliars\.contains\(owner!\)/,
-  "a task is assignable only when unassigned or owned by one of the chat's familiars",
+  model,
+  /func projectLinkedTasks\(for thread: ChatThread\) -> \[BoardCard\][\s\S]*context\.matches\(task: \$0, registeredProjects: projects\)/,
+  "project-linked tasks should filter existing links back down to the thread's current project",
 );
 assert.match(
-  sheet,
-  /guard belongsHere else \{ return false \}/,
-  "tasks belonging to a different familiar are filtered out before the text match",
+  model,
+  /func projectAssignableTasks\(for thread: ChatThread, matching query: String\) -> \[BoardCard\]/,
+  "AppModel should expose a dedicated project-scoped assignable-task helper",
 );
-// The text-search match still applies on top of the familiar scope.
 assert.match(
-  sheet,
-  /return q\.isEmpty \|\| card\.title\.lowercased\(\)\.contains\(q\)/,
-  "the search query still filters within the familiar-scoped set",
+  model,
+  /let context = projectContext\(for: thread\)/,
+  "assignable tasks should derive the thread's current project context first",
+);
+assert.match(
+  model,
+  /guard context\.matches\(task: card, registeredProjects: projects\) else \{ return false \}/,
+  "tasks from another project must be rejected before familiar or text filtering",
+);
+assert.match(
+  model,
+  /let owner = normalizedFamiliarID\(card\.familiarId\)/,
+  "the familiar filter should normalize the card owner before comparing it to the chat roster",
+);
+assert.match(
+  model,
+  /let belongsHere = owner == nil \|\| chatFamiliars\.contains\(owner!\)/,
+  "after project scoping, a task is assignable only when unassigned or owned by one of the chat's familiars",
+);
+assert.match(
+  model,
+  /return trimmedQuery\.isEmpty \|\| card\.title\.lowercased\(\)\.contains\(trimmedQuery\)/,
+  "the search query should still narrow the already project-and-familiar-scoped task set",
+);
+assert.match(
+  chat,
+  /if !app\.projectLinkedTasks\(for: thread\)\.isEmpty \{/,
+  "chat should only advertise linked tasks that still belong to the active project scope",
+);
+assert.match(
+  chat,
+  /private var linkedGitHubContext: \(link: CardGitHubLink, url: URL\)\? \{[\s\S]*app\.projectLinkedTasks\(for: thread\)/,
+  "linked GitHub context should come from the same project-scoped task set as the sheet",
+);
+assert.match(
+  chat,
+  /private var linkedContextStrip: some View \{[\s\S]*let cards = app\.projectLinkedTasks\(for: thread\)/,
+  "linked task count and header should use the same project-scoped helper as the sheet",
+);
+assert.doesNotMatch(
+  chat,
+  /app\.linkedTasks\(for: thread\)/,
+  "chat should not advertise out-of-scope linked tasks once project scoping is active",
 );
 
 console.log("ios-task-search-familiar-scope.test.mjs: ok");

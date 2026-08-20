@@ -39,6 +39,7 @@ export type ComposerContextProps = {
   /** Project id, NO_PROJECT_ID, or null (null falls back to the first project). */
   projectValue: string | null;
   onProjectChange: (id: string) => void;
+  showProject?: boolean;
   allowNoProject?: boolean;
   familiarId?: string | null;
   /** From the caller's useProjects(); either creator enables the "Add project…" row. */
@@ -232,6 +233,7 @@ export function ComposerContextPickers({
 
 export function ComposerContextChips(props: ComposerContextProps) {
   const [menu, setMenu] = useState<ComposerContextView>(null);
+  const showProject = props.showProject ?? true;
   const projectRef = useRef<HTMLButtonElement | null>(null);
   const worktreeRef = useRef<HTMLButtonElement | null>(null);
   const branchRef = useRef<HTMLButtonElement | null>(null);
@@ -245,36 +247,38 @@ export function ComposerContextChips(props: ComposerContextProps) {
 
   return (
     <div className="cave-context-controls" role="group" aria-label={props.ariaLabel ?? "Chat context"}>
-      <button
-        ref={projectRef}
-        type="button"
-        className="cave-context-chip focus-ring"
-        disabled={props.disabled}
-        aria-haspopup="dialog"
-        aria-expanded={menu === "project"}
-        aria-label={`Project: ${projectLabel} — change project`}
-        title={
-          context.selectedProject
-            ? `${context.selectedProject.root}${projectAccess ? ` · ${projectAccess} access` : ""}`
-            : context.emptyProjectLabel
-        }
-        onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
-      >
-        <span className="cave-context-chip__lead" aria-hidden>
-          {context.selectedProject ? (
-            <ProjectAvatar
-              name={context.selectedProject.name}
-              root={context.selectedProject.root}
-              color={context.selectedProject.color}
-              size="sm"
-            />
-          ) : (
-            <Icon name="ph:folder" width={13} aria-hidden />
-          )}
-        </span>
-        <span className="cave-context-chip__text">{projectLabel}</span>
-        <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
-      </button>
+      {showProject ? (
+        <button
+          ref={projectRef}
+          type="button"
+          className="cave-context-chip focus-ring"
+          disabled={props.disabled}
+          aria-haspopup="dialog"
+          aria-expanded={menu === "project"}
+          aria-label={`Project: ${projectLabel} — change project`}
+          title={
+            context.selectedProject
+              ? `${context.selectedProject.root}${projectAccess ? ` · ${projectAccess} access` : ""}`
+              : context.emptyProjectLabel
+          }
+          onClick={() => setMenu((c) => (c === "project" ? null : "project"))}
+        >
+          <span className="cave-context-chip__lead" aria-hidden>
+            {context.selectedProject ? (
+              <ProjectAvatar
+                name={context.selectedProject.name}
+                root={context.selectedProject.root}
+                color={context.selectedProject.color}
+                size="sm"
+              />
+            ) : (
+              <Icon name="ph:folder" width={13} aria-hidden />
+            )}
+          </span>
+          <span className="cave-context-chip__text">{projectLabel}</span>
+          <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
+        </button>
+      ) : null}
       {context.hasGit && context.worktree ? (
         <button
           ref={worktreeRef}
@@ -334,21 +338,23 @@ export function ComposerContextChips(props: ComposerContextProps) {
         <Icon name="ph:caret-down" width={9} aria-hidden className="cave-context-chip__chevron" />
       </button>
 
-      <ProjectPickerPopover
-        open={menu === "project"}
-        onOpenChange={(open) => setMenu(open ? "project" : null)}
-        anchorRef={projectRef}
-        projects={context.config.projects}
-        value={context.config.projectValue}
-        onChange={context.config.onProjectChange}
-        allowNoProject={context.config.allowNoProject}
-        onAddProject={context.canAddProject ? context.addFlow.beginAddProject : undefined}
-        addingProject={context.addFlow.adding}
-        registerCurrentRoot={context.config.registerCurrentRoot}
-        onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
-        placement={context.config.popoverPlacement === "bottom-start" ? "bottom-start" : undefined}
-        ariaLabel="Choose project"
-      />
+      {showProject ? (
+        <ProjectPickerPopover
+          open={menu === "project"}
+          onOpenChange={(open) => setMenu(open ? "project" : null)}
+          anchorRef={projectRef}
+          projects={context.config.projects}
+          value={context.config.projectValue}
+          onChange={context.config.onProjectChange}
+          allowNoProject={context.config.allowNoProject}
+          onAddProject={context.canAddProject ? context.addFlow.beginAddProject : undefined}
+          addingProject={context.addFlow.adding}
+          registerCurrentRoot={context.config.registerCurrentRoot}
+          onRegisterCurrentRoot={context.config.onRegisterCurrentRoot}
+          placement={context.config.popoverPlacement === "bottom-start" ? "bottom-start" : undefined}
+          ariaLabel="Choose project"
+        />
+      ) : null}
       <ComposerRuntimePopover
         open={menu === "model"}
         onOpenChange={(open) => setMenu(open ? "model" : null)}

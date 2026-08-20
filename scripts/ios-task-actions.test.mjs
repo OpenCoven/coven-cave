@@ -26,6 +26,11 @@ assert.match(
 );
 assert.match(
   client,
+  /func updateTaskProject\(cardId: String, projectId: String\) async throws -> BoardCard/,
+  "CaveClient should expose the idempotent projectId PATCH helper for recovery moves",
+);
+assert.match(
+  client,
   /func deleteTask\(cardId: String\) async throws \{[\s\S]*method: "DELETE"/,
   "CaveClient.deleteTask should DELETE /api/board/{id}",
 );
@@ -36,9 +41,29 @@ assert.match(
 );
 
 // Model exposes optimistic actions that revert on failure.
-for (const fn of ["setTaskStatus", "setTaskPriority", "toggleStep", "deleteTask"]) {
+for (const fn of ["requestTaskStatus", "requestTaskPriority", "requestTaskProjectMove", "deleteTask"]) {
   assert.match(model, new RegExp(`func ${fn}\\(`), `AppModel should expose ${fn}`);
 }
+assert.match(
+  model,
+  /private final class TaskMutationCoordinator[\s\S]*previousTask\?\.cancel\(\)[\s\S]*_ = await previousTask\?\.result/,
+  "task mutations should single-flight by card+field, cancelling the older request before the newer one sends",
+);
+assert.match(
+  model,
+  /func requestTaskProjectMove\([\s\S]*_ card: BoardCard,[\s\S]*applyTask\(id: card\.id\) \{ \$0\.projectId = projectId \}[\s\S]*scheduleTaskMutationRequest\(mutation\)/,
+  "task recovery moves should optimistically patch projectId and reconcile through the client helper",
+);
+assert.match(
+  model,
+  /private func performTaskProjectMutation\([\s\S]*client\.updateTaskProject\(cardId: cardId, projectId: projectId\)/,
+  "task recovery moves should PATCH projectId through the project helper once their lane reaches the network",
+);
+assert.match(
+  model,
+  /private func performTaskProjectMutation\([\s\S]*repairTaskChatScopeAfterProjectMove\(cardId: cardId\)[\s\S]*reportTaskMoveRepairIssue/,
+  "task recovery moves should surface stale-chat repair failures instead of silently keeping a mismatched link",
+);
 assert.match(
   model,
   /func deleteTask\(_ card: BoardCard\) async \{[\s\S]*tasks\.remove\(at: index\)[\s\S]*catch[\s\S]*reinsertTask\(removed, at: index\)/,
@@ -73,6 +98,26 @@ assert.match(
   /Menu \{[\s\S]*ForEach\(CardStatus\.allCases[\s\S]*ForEach\(CardPriority\.allCases/,
   "taskMenu should offer status and priority submenus",
 );
+assert.doesNotMatch(
+  list,
+  /case status = "Status", project = "Project", familiar = "Familiar", priority = "Priority"/,
+  "single-project Tasks should no longer offer Project grouping",
+);
+assert.match(
+  list,
+  /static func normalizedGroupByRaw\(_ rawValue: String\) -> String \{[\s\S]*GroupBy\(rawValue: rawValue\)\?\.rawValue \?\? GroupBy\.familiar\.rawValue[\s\S]*\}/,
+  "legacy stored Project grouping should migrate to a supported default",
+);
+assert.match(
+  list,
+  /if !app\.projectFamiliars\.isEmpty \{[\s\S]*ForEach\(app\.projectFamiliars\)/,
+  "familiar filter options should come from the active project's familiar roster",
+);
+assert.match(
+  list,
+  /guard let card = Self\.requestedCardToOpen\(app\.cardToOpen, in: app\.projectTasks\) else \{/,
+  "opening a task from the project-scoped list should refuse cards outside app.projectTasks",
+);
 
 // Detail view reads the live card and offers an actions menu + tappable steps.
 assert.match(
@@ -80,10 +125,45 @@ assert.match(
   /private var live: BoardCard \{ app\.tasks\.first \{ \$0\.id == card\.id \} \?\? card \}/,
   "detail view should read the live card from the store",
 );
+assert.match(
+  detail,
+  /FamiliarPickerSheet \{ fam in[\s\S]*Task \{ await app\.openChat\(for: live, familiarId: fam\.id\) \}/,
+  "task familiar picker should route through AppModel with the live task snapshot",
+);
+assert.match(
+  detail,
+  /if let thread = app\.linkedThread\(for: live\)[\s\S]*Button \{ Task \{ await app\.openChat\(for: live\) \} \}[\s\S]*Button\(role: \.destructive\) \{ app\.unlinkTask\(live\) \}/,
+  "linked task chats should open and unlink against the live task snapshot",
+);
+assert.match(
+  detail,
+  /Button \{\s*if live\.familiarId != nil \{\s*Task \{ await app\.openChat\(for: live\) \}\s*\}\s*else \{ showFamiliarPicker = true \}\s*\} label: \{[\s\S]*Label\("Start a chat"/,
+  "Start a chat should use the live task familiar or fall back to the familiar picker",
+);
+assert.match(
+  detail,
+  /if needsProjectRecovery \{[\s\S]*actionChip\("Project", value: "Move to project…", color: chrome\.accent\) \{[\s\S]*showProjectPicker = true/,
+  "projectless or unregistered tasks should offer a recovery-only Move to project action",
+);
+assert.match(
+  detail,
+  /private var needsProjectRecovery: Bool \{[\s\S]*guard let normalizedProjectId else \{ return true \}[\s\S]*guard app\.projectsLoaded else \{ return false \}[\s\S]*return app\.project\(normalizedProjectId\) == nil/,
+  "deleted-project tasks should enter the same recovery move flow as projectless tasks once the catalog loads",
+);
+assert.match(
+  detail,
+  /MoveTaskProjectSheet\(task: live\) \{ project in[\s\S]*app\.requestTaskProjectMove\(live, project: project\)/,
+  "the recovery project picker should route through AppModel's optimistic moveTaskToProject mutation",
+);
+assert.match(
+  detail,
+  /displayChip\("Project", value: registeredProject\?\.name \?\? "Loading…"\)/,
+  "registered tasks should keep the Project field read-only in the detail grid",
+);
 assert.match(detail, /private var actionsMenu: some View/, "detail view should have an actions menu");
 assert.match(
   detail,
-  /Button \{ Haptics\.tap\(\); Task \{ await app\.toggleStep\(live, stepId: step\.id\) \} \}/,
+  /Button \{ Haptics\.tap\(\); app\.requestToggleTaskStep\(live, stepId: step\.id\) \}/,
   "detail steps should be tappable to toggle done (with haptic confirmation)",
 );
 assert.match(

@@ -10,6 +10,7 @@ struct TaskDetailView: View {
     @State private var notesHeight: CGFloat = 0
     @State private var notesReader: ResponseReaderItem?
     @State private var confirmingDelete = false
+    @State private var showProjectPicker = false
     @State private var editingNotes = false
     @State private var renamingTitle = false
     @State private var titleDraft = ""
@@ -20,6 +21,21 @@ struct TaskDetailView: View {
     /// reflect immediately; falls back to the passed-in snapshot.
     private var live: BoardCard { app.tasks.first { $0.id == card.id } ?? card }
     private var familiar: Familiar? { live.familiarId.flatMap(app.familiar) }
+    private var normalizedProjectId: String? {
+        let trimmed = live.projectId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
+    private var registeredProject: ProjectInfo? {
+        normalizedProjectId.flatMap(app.project)
+    }
+    private var authoritativeChatPreview: AppModel.TaskChatSessionPreview? {
+        app.authoritativeTaskSessionPreview(for: live)
+    }
+    private var needsProjectRecovery: Bool {
+        guard let normalizedProjectId else { return true }
+        guard app.projectsLoaded else { return false }
+        return app.project(normalizedProjectId) == nil
+    }
 
     var body: some View {
         ScrollView {
@@ -44,7 +60,13 @@ struct TaskDetailView: View {
         .sheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { fam in
                 showFamiliarPicker = false
-                app.openChat(for: card, familiarId: fam.id)
+                Task { await app.openChat(for: live, familiarId: fam.id) }
+            }
+        }
+        .sheet(isPresented: $showProjectPicker) {
+            MoveTaskProjectSheet(task: live) { project in
+                showProjectPicker = false
+                app.requestTaskProjectMove(live, project: project)
             }
         }
         .sheet(item: $notesReader) { item in
@@ -52,8 +74,12 @@ struct TaskDetailView: View {
         }
         .sheet(isPresented: $editingNotes) {
             NotesEditorView(initialText: live.notes ?? "") { text in
-                Task { await app.setTaskNotes(live, text) }
+                app.requestTaskNotes(live, text)
             }
+        }
+        .task {
+            if !app.projectsLoaded { await app.loadProjects() }
+            if live.sessionId != nil { await app.loadSessionsIfStale() }
         }
         .confirmationDialog("Delete this task?", isPresented: $confirmingDelete,
                             titleVisibility: .visible) {
@@ -66,7 +92,7 @@ struct TaskDetailView: View {
             TextField("Title", text: $titleDraft)
             Button("Save") {
                 let t = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !t.isEmpty { Task { await app.setTaskTitle(live, t) } }
+                if !t.isEmpty { app.requestTaskTitle(live, t) }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -84,7 +110,7 @@ struct TaskDetailView: View {
 
             Menu {
                 ForEach(CardPriority.allCases, id: \.self) { priority in
-                    Button { Task { await app.setTaskPriority(live, priority) } } label: {
+                    Button { app.requestTaskPriority(live, priority) } label: {
                         Label(priority.label, systemImage: live.priority == priority ? "checkmark" : "flag")
                     }
                 }
@@ -120,27 +146,21 @@ struct TaskDetailView: View {
     private var chatCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Chat").font(.headline)
-            if let thread = app.linkedThread(for: card) {
-                Button { app.openChat(for: card) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                            .foregroundStyle(.tint)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(thread.title).font(.callout.weight(.medium)).foregroundStyle(.primary)
-                            Text(chatSubtitle(thread)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
+            if let thread = app.linkedThread(for: live) {
+                chatLinkButton(title: thread.title, subtitle: chatSubtitle(thread))
+                unlinkChatButton
+            } else if let preview = authoritativeChatPreview {
+                chatLinkButton(title: preview.title, subtitle: preview.subtitle)
+                if preview.mismatchedProject {
+                    taskChatMismatchCallout(preview)
                 }
-                .buttonStyle(.plain)
-                Button(role: .destructive) { app.unlinkTask(card) } label: {
-                    Label("Unlink chat", systemImage: "link.badge.minus").font(.caption)
-                }
+                authoritativeChatActions(preview)
             } else {
                 Text("No chat linked yet.").font(.caption).foregroundStyle(.secondary)
                 Button {
-                    if card.familiarId != nil { app.openChat(for: card) }
+                    if live.familiarId != nil {
+                        Task { await app.openChat(for: live) }
+                    }
                     else { showFamiliarPicker = true }
                 } label: {
                     Label("Start a chat", systemImage: "plus.bubble.fill")
@@ -153,6 +173,69 @@ struct TaskDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .glass(.raised, cornerRadius: 14)
+    }
+
+    private func chatLinkButton(title: String, subtitle: String) -> some View {
+        Button { Task { await app.openChat(for: live) } } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.callout.weight(.medium)).foregroundStyle(.primary)
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func authoritativeChatActions(_ preview: AppModel.TaskChatSessionPreview) -> some View {
+        if preview.mismatchedProject {
+            if let repairProject = preview.suggestedProject {
+                Button {
+                    app.requestTaskProjectMove(live, project: repairProject)
+                } label: {
+                    Label(preview.repairLabel, systemImage: "folder.badge.plus")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                Button {
+                    showProjectPicker = true
+                } label: {
+                    Label(preview.repairLabel, systemImage: "folder.badge.plus")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        unlinkChatButton
+    }
+
+    private func taskChatMismatchCallout(_ preview: AppModel.TaskChatSessionPreview) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .padding(.top, 2)
+            Text(preview.warningText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .glass(.control, cornerRadius: 12)
+    }
+
+    private var unlinkChatButton: some View {
+        Button(role: .destructive) { app.unlinkTask(live) } label: {
+            Label("Unlink chat", systemImage: "link.badge.minus").font(.caption)
+        }
     }
 
     private func chatSubtitle(_ thread: ChatThread) -> String {
@@ -204,10 +287,15 @@ struct TaskDetailView: View {
             cycleChip("Priority", value: live.priority.label, color: Theme.color(for: live.priority)) {
                 guard let index = CardPriority.allCases.firstIndex(of: live.priority) else { return }
                 let next = CardPriority.allCases[(index + 1) % CardPriority.allCases.count]
-                Task { await app.setTaskPriority(live, next) }
+                app.requestTaskPriority(live, next)
             }
-            // TODO(no backend): task project mutation is not exposed by CaveClient.
-            displayChip("Project", value: live.projectId.flatMap(app.project)?.name ?? "None")
+            if needsProjectRecovery {
+                actionChip("Project", value: "Move to project…", color: chrome.accent) {
+                    showProjectPicker = true
+                }
+            } else {
+                displayChip("Project", value: registeredProject?.name ?? "Loading…")
+            }
             // TODO(no backend): task assignee mutation is not exposed by CaveClient.
             displayChip("Assignee", value: familiar?.displayName ?? "Unassigned")
         }
@@ -224,6 +312,14 @@ struct TaskDetailView: View {
 
     private func displayChip(_ label: String, value: String) -> some View {
         propertyChip(label, value: value, color: .secondary)
+    }
+
+    private func actionChip(_ label: String, value: String, color: Color,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            propertyChip(label, value: value, color: color)
+        }
+        .buttonStyle(.plain)
     }
 
     private func propertyChip(_ label: String, value: String, color: Color) -> some View {
@@ -277,7 +373,7 @@ struct TaskDetailView: View {
             }
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
-                    Button { Haptics.tap(); Task { await app.toggleStep(live, stepId: step.id) } } label: {
+                    Button { Haptics.tap(); app.requestToggleTaskStep(live, stepId: step.id) } label: {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(step.done ? Color.green : Color.secondary)
@@ -293,14 +389,14 @@ struct TaskDetailView: View {
                     // stays a clean tap-to-toggle target (drag-reorder isn't
                     // available for a VStack inside the detail ScrollView).
                     .contextMenu {
-                        Button { Task { await app.moveStep(live, stepId: step.id, by: -1) } } label: {
+                        Button { app.requestMoveTaskStep(live, stepId: step.id, by: -1) } label: {
                             Label("Move up", systemImage: "arrow.up")
                         }.disabled(index == 0)
-                        Button { Task { await app.moveStep(live, stepId: step.id, by: 1) } } label: {
+                        Button { app.requestMoveTaskStep(live, stepId: step.id, by: 1) } label: {
                             Label("Move down", systemImage: "arrow.down")
                         }.disabled(index == steps.count - 1)
                         Divider()
-                        Button(role: .destructive) { Task { await app.deleteStep(live, stepId: step.id) } } label: {
+                        Button(role: .destructive) { app.requestDeleteTaskStep(live, stepId: step.id) } label: {
                             Label("Delete step", systemImage: "trash")
                         }
                     }
@@ -331,7 +427,7 @@ struct TaskDetailView: View {
         guard !text.isEmpty else { return }
         newStep = ""
         Haptics.tap()
-        Task { await app.addStep(live, text: text) }
+        app.requestAddTaskStep(live, text: text)
     }
 
     private var hasNotes: Bool {
@@ -390,7 +486,9 @@ struct TaskDetailView: View {
     private var bottomActions: some View {
         VStack(spacing: 10) {
             Button {
-                if live.familiarId != nil { app.openChat(for: live) }
+                if live.familiarId != nil {
+                    Task { await app.openChat(for: live) }
+                }
                 else { showFamiliarPicker = true }
             } label: {
                 Label("Open in chat", systemImage: "bubble.left.and.bubble.right.fill")
@@ -439,32 +537,32 @@ struct TaskDetailView: View {
     private var scheduleCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Schedule").font(.headline)
-            dateRow("Start", value: live.startDate) { await app.setTaskDates(live, start: $0, end: live.endDate) }
+            dateRow("Start", value: live.startDate) { app.requestTaskDates(live, start: $0, end: live.endDate) }
             Divider()
-            dateRow("Due", value: live.endDate) { await app.setTaskDates(live, start: live.startDate, end: $0) }
+            dateRow("Due", value: live.endDate) { app.requestTaskDates(live, start: live.startDate, end: $0) }
         }
         .padding(16)
         .glass(.raised, cornerRadius: 14)
     }
 
     private func dateRow(_ label: String, value: String?,
-                        set: @escaping (String?) async -> Void) -> some View {
+                        set: @escaping (String?) -> Void) -> some View {
         HStack {
             Text(label).foregroundStyle(.secondary)
             Spacer()
             if let date = parseDateOnly(value) {
                 DatePicker("", selection: Binding(
                     get: { date },
-                    set: { newValue in Task { await set(formatDateOnly(newValue)) } }
+                    set: { newValue in set(formatDateOnly(newValue)) }
                 ), displayedComponents: .date)
                 .labelsHidden()
-                Button { Task { await set(nil) } } label: {
+                Button { set(nil) } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear \(label) date")
             } else {
-                Button("Add") { Task { await set(formatDateOnly(Date())) } }
+                Button("Add") { set(formatDateOnly(Date())) }
                     .font(.callout)
             }
         }
@@ -485,6 +583,107 @@ struct TaskDetailView: View {
             Text(date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—")
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct MoveTaskProjectSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
+    @Environment(\.dismiss) private var dismiss
+
+    let task: BoardCard
+    let onSelect: (ProjectInfo) -> Void
+
+    private var sortedProjects: [ProjectInfo] {
+        app.projects.sorted {
+            let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+            if order == .orderedSame { return $0.id < $1.id }
+            return order == .orderedAscending
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if !app.projectsLoaded, app.projects.isEmpty, app.projectsError == nil {
+                    ProgressView("Loading projects…")
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = app.projectsError, app.projects.isEmpty {
+                    ContentUnavailableView {
+                        Label("Couldn’t load projects", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Retry") { Task { await app.loadProjects() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if sortedProjects.isEmpty {
+                    ContentUnavailableView {
+                        Label(ProjectContextCopy.noProjectsTitle, systemImage: "folder.badge.plus")
+                    } description: {
+                        Text(ProjectContextCopy.noProjectsMessage)
+                    } actions: {
+                        Button("Retry") { Task { await app.loadProjects() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    List {
+                        if app.projectsError != nil {
+                            Section {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                    Text("Showing cached projects")
+                                        .font(.footnote)
+                                    Spacer()
+                                    Button("Retry") { Task { await app.loadProjects() } }
+                                        .font(.footnote.weight(.semibold))
+                                }
+                                .foregroundStyle(chrome.textSecondary)
+                            }
+                            .listRowBackground(chrome.bgRaised)
+                        }
+
+                        Section {
+                            ForEach(sortedProjects) { project in
+                                Button {
+                                    onSelect(project)
+                                    dismiss()
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(project.name)
+                                            .foregroundStyle(.primary)
+                                        Text(project.root)
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(minHeight: 44)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        } header: {
+                            Text("Move “\(task.title)” to")
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                    .themedListBackground()
+                }
+            }
+            .navigationTitle("Move to project")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .task {
+                if !app.projectsLoaded { await app.loadProjects() }
+            }
+        }
+        .themedSheetBackground()
     }
 }
 

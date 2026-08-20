@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import {
   type Tone,
 } from "@/lib/permissions-console";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import { publishProjectAccessChanged } from "@/lib/project-access-events";
 
 /**
  * Which half of the protocol to render.
@@ -125,6 +126,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
   // Keys mid-flight, so a row can't be double-toggled while its request runs.
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [resolving, setResolving] = useState<Set<string>>(new Set());
+  const publishedAcceptedProposalIdsRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,7 +150,19 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
       setGrantChanges(
         Array.isArray(grantRes?.grantChanges) ? (grantRes.grantChanges as ConsoleGrantChange[]) : [],
       );
-      setProposals(Array.isArray(proposalRes?.proposals) ? proposalRes.proposals : []);
+      const nextProposals = Array.isArray(proposalRes?.proposals)
+        ? (proposalRes.proposals as ConsoleProposal[])
+        : [];
+      setProposals(nextProposals);
+      for (const proposal of nextProposals) {
+        if (
+          proposal.status === "accepted"
+          && !publishedAcceptedProposalIdsRef.current.has(proposal.id)
+        ) {
+          publishedAcceptedProposalIdsRef.current.add(proposal.id);
+          publishProjectAccessChanged(proposal.projectId);
+        }
+      }
       setError(null);
     } catch {
       setError("Couldn’t load project access. Is the desktop reachable?");
@@ -224,6 +238,7 @@ export function FamiliarStudioProjectsTab({ familiar, variant = "full" }: Props)
           ),
         });
         if (!res.ok) throw new Error(String(res.status));
+        publishProjectAccessChanged(projectId);
         setError(null);
         // Re-sync so grant metadata (level, source, time) reflects the server.
         await load();

@@ -45,8 +45,13 @@ const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const conte
 assert.ok(chatSidebarBlock, "workspace should keep a distinct chatSidebar block");
 assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
 assert.ok(
-  (chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6,
+  (chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 5,
   "chat sidebar actions should dismiss the mobile nav drawer",
+);
+assert.match(
+  workspace,
+  /const startWorkspaceChat = useCallback[\s\S]{0,160}dismissNavMobile/,
+  "the shared actor-gated new-chat action owns its mobile-nav dismissal",
 );
 assert.match(
   workspaceSidebar,

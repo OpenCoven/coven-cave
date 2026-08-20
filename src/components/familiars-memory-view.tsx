@@ -1,6 +1,7 @@
 "use client";
 
 import "@/styles/cave-md.css";
+import "@/styles/familiars-memory.css";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CanonicalMemoryOverviewPanel } from "@/components/canonical-memory-overview";
@@ -818,17 +819,17 @@ export function FamiliarsMemoryView({
     rowCount: unifiedRows.length,
   });
   const contentClass = compact
-    ? "flex flex-col gap-4 overflow-y-auto p-4"
-    : "grid min-h-0 gap-4 p-4 @min-[1024px]/memview:grid-cols-[minmax(0,1fr)_minmax(420px,560px)]";
+    ? "fm-content--compact flex flex-col overflow-y-auto"
+    : "fm-content--split grid min-h-0";
   const canonicalError =
     canonicalState.state === "error"
       ? canonicalMemoryErrorCopy(canonicalState.error.code)
       : null;
 
   return (
-    <div className="@container/memview flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
+    <div className="@container/memview fm-workspace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div
-        className={`shrink-0 border-b border-[var(--border-hairline)] ${
+        className={`fm-header shrink-0 border-b border-[var(--border-hairline)] ${
           compact ? "px-3 py-2" : "px-4 py-3"
         }`}
       >
@@ -1085,7 +1086,7 @@ export function FamiliarsMemoryView({
         ) : null}
       </div>
 
-      <div className={`min-h-0 flex-1 ${contentClass}`}>
+      <div className={`fm-content min-h-0 flex-1 ${contentClass}`}>
         {compact ? (
           <>
             {listPresentation === "empty" ? (

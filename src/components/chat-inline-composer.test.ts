@@ -17,7 +17,11 @@ const css = readFileSync(new URL("../styles/home-dashboard.css", import.meta.url
 
 test("one composer element, rendered in exactly one of two positions", () => {
   assert.match(chatView, /const composerNode = \(/, "the dock is extracted to a variable, not duplicated");
-  assert.match(chatView, /const inlineComposer = sessionId === null;/, "inline only on a brand-new chat");
+  assert.match(
+    chatView,
+    /const inlineComposer = sessionId === null && turns\.length === 0;/,
+    "the composer stays inline only while the brand-new chat dashboard is visible",
+  );
   assert.match(
     chatView,
     /\{inlineComposer \? null : composerNode\}/,
@@ -29,6 +33,19 @@ test("one composer element, rendered in exactly one of two positions", () => {
     (chatView.match(/className="cave-composer-dock"/g) ?? []).length,
     1,
     "a second dock element would mean two composers",
+  );
+});
+
+test("pre-session tool results move the composer into the reply dock", () => {
+  assert.match(
+    chatView,
+    /const inlineComposer = sessionId === null && turns\.length === 0;/,
+    "image, auto-mode, and other tool-only turns must make the composer dock even before a session id exists",
+  );
+  assert.match(
+    chatView,
+    /turns\.length === 0 \? \([\s\S]*?sessionId === null \? \([\s\S]*?<ChatNewDashboard[\s\S]*?composer=\{composerNode\}/,
+    "the inline composer belongs exclusively to the zero-turn new-chat dashboard",
   );
 });
 

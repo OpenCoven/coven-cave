@@ -110,6 +110,9 @@ struct CovenCaveApp: App {
                             await app.flushThreadsAndWait()
                         }
                     }
+                    #if DEBUG
+                    guard !app.isConnectingPreview else { return }
+                    #endif
                     guard phase == .active, app.connection != nil else { return }
                     if app.connectionState != .connected,
                        app.connectionState != .checking {

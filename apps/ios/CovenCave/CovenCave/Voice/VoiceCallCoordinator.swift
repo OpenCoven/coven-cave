@@ -4,7 +4,8 @@ import Foundation
 /// grant minted by Cave; the desktop vault credential never reaches iOS.
 struct VoiceCallTransportContext: Sendable {
     let familiarId: String
-    let sessionId: String
+    let sessionId: String?
+    let projectRoot: String?
     let grant: CaveClient.VoiceSessionGrant?
 }
 
@@ -39,7 +40,11 @@ final class VoiceCallCoordinator {
     init(mode: VoiceCallMode, transport: VoiceCallTransport,
          mediaSession: VoiceMediaSessionManaging,
          context: VoiceCallTransportContext) {
-        state = VoiceCallState(mode: mode)
+        state = VoiceCallState(
+            mode: mode,
+            sessionId: context.sessionId,
+            projectRoot: context.projectRoot
+        )
         self.transport = transport
         self.mediaSession = mediaSession
         self.context = context
@@ -88,16 +93,16 @@ final class VoiceCallCoordinator {
     }
 
     private func receive(_ event: VoiceCallEvent) {
-        guard !state.phase.isTerminal else { return }
+        let previousState = state
         state.receive(event)
-        if state.phase.isTerminal { cleanUp() }
+        guard state != previousState else { return }
+        if !previousState.phase.isTerminal, state.phase.isTerminal { cleanUp() }
         publish()
     }
 
     private func cleanUp() {
         guard !didCleanUp else { return }
         didCleanUp = true
-        transport.onEvent = nil
         mediaSession.onInterruption = nil
         mediaSession.onRouteChange = nil
         transport.stop()

@@ -80,7 +80,7 @@ assert.match(
 );
 assert.match(
   projectFamiliars,
-  /loadedSuccessfully: enabled && Boolean\(projectId\) && loadedProjectId === projectId/,
+  /loadedSuccessfully: enabled && projectId !== null && loadedProjectId === projectId/,
   "a familiar roster from the previous project never enables the picker during a project change",
 );
 assert.match(

@@ -9,20 +9,10 @@ struct LinkedTasksSheet: View {
 
     @State private var query = ""
 
-    private var linked: [BoardCard] { app.linkedTasks(for: thread) }
+    private var linked: [BoardCard] { app.projectLinkedTasks(for: thread) }
 
     private var assignable: [BoardCard] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        // Scope to this chat: only tasks owned by one of the chat's familiar(s)
-        // or tasks with no assigned familiar — never another familiar's tasks.
-        let chatFamiliars = Set(thread.familiarIds)
-        return app.tasks.filter { card in
-            guard !linked.contains(where: { $0.id == card.id }) else { return false }
-            let owner = card.familiarId
-            let belongsHere = owner == nil || owner!.isEmpty || chatFamiliars.contains(owner!)
-            guard belongsHere else { return false }
-            return q.isEmpty || card.title.lowercased().contains(q)
-        }
+        app.projectAssignableTasks(for: thread, matching: query)
     }
 
     var body: some View {
@@ -83,7 +73,7 @@ struct LinkedTasksSheet: View {
             }
             .listStyle(.insetGrouped)
             .themedListBackground()
-            .searchable(text: $query, prompt: "Search tasks to assign")
+            .searchable(text: $query, prompt: "Search tasks…")
             .navigationTitle("Tasks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

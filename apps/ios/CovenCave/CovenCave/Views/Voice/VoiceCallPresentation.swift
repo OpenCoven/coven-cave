@@ -153,6 +153,13 @@ enum VoiceCallCopy {
                 recovery: .retry,
                 offersOnDeviceFallback: false
             )
+        case "voice_turn_project_required":
+            return VoiceCallErrorCopy(
+                title: "Choose a project first",
+                message: "Close this call, choose a registered project for the chat, then try the voice call again.",
+                recovery: .dismiss,
+                offersOnDeviceFallback: false
+            )
         case "audio_interrupted":
             return VoiceCallErrorCopy(
                 title: "Call interrupted",

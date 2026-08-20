@@ -250,13 +250,13 @@ function writeNavWidthPref(width: number): void {
   }
 }
 
-// Closing the left nav removes it completely. The persistent title-bar toggle
-// and keyboard shortcut remain available to reopen it.
-const NAV_COLLAPSED_PX = 0;
+// Closing the desktop nav leaves an icons-only destination rail; mobile
+// drawers still close completely.
+const NAV_RAIL_PX = 56;
 // The nav Panel's open width (its defaultSize) — the ⌘B expand target and the
 // basis for the minimized-by-default layout injection.
 const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;
-const NAV_OPEN_THRESHOLD_PX = NAV_COLLAPSED_PX + 1;
+const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 const NAV_EDGE_SWIPE_START_PX = 24;
 const NAV_SWIPE_VERTICAL_CANCEL_PX = 12;
 
@@ -492,7 +492,7 @@ function ShellInner({
     if (isMobile) {
       setMobileDrawer("right-chat");
     } else {
-      const navWidth = navRef.current?.getSize().inPixels ?? NAV_COLLAPSED_PX;
+      const navWidth = navRef.current?.getSize().inPixels ?? NAV_RAIL_PX;
       const listWidth = twoPane ? 0 : listRef.current?.getSize().inPixels ?? 0;
       if (
         shouldAutoCollapseNavForRightChat({
@@ -619,13 +619,16 @@ function ShellInner({
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
+  const [navChromeWidth, setNavChromeWidth] = useState(
+    chatContextual ? NAV_OPEN_PX : NAV_RAIL_PX,
+  );
   // Mirror of navOpen for effects that need the CURRENT visible state without
   // taking navOpen as a dependency (the policy handoff must fire on the policy
   // change, not on every sidebar toggle).
   const navOpenRef = useRef(navOpen);
   navOpenRef.current = navOpen;
   const defaultNavSize =
-    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_COLLAPSED_PX}px`;
+    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
 
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
@@ -697,7 +700,7 @@ function ShellInner({
     const cur = group.getLayout();
     const nav = cur.nav;
     if (typeof nav !== "number" || typeof cur.detail !== "number") return;
-    const collapsedPct = nav * (NAV_COLLAPSED_PX / preferredNavWidth);
+    const collapsedPct = nav * (NAV_RAIL_PX / preferredNavWidth);
     if (collapsedPct >= nav) return;
     minimizedGroupsRef.current.add(groupId);
     seedNavOpenPref(false);
@@ -784,7 +787,7 @@ function ShellInner({
         layout: defaultLayout,
         panelIds,
         groupSize,
-        collapsedNavPixels: NAV_COLLAPSED_PX,
+        collapsedNavPixels: NAV_RAIL_PX,
       })
     ) {
       seedNavOpenPref(false);
@@ -804,7 +807,7 @@ function ShellInner({
         ...(desktopRightChat && { "right-chat": rightChatOpen ? preferredRightChatWidth : 0 }),
       },
       preferredNavPixels: preferredNavWidth,
-      collapsedNavPixels: NAV_COLLAPSED_PX,
+      collapsedNavPixels: NAV_RAIL_PX,
       isMobile,
     });
     if (!destinationLayout) return;
@@ -1222,12 +1225,14 @@ function ShellInner({
         minSize={`${SHELL_NAV_MIN_PX}px`}
         maxSize={`${SHELL_NAV_MAX_PX}px`}
         collapsible
-        // Every shell policy closes to zero. Desktop reopens from the persistent
-        // title-bar toggle or shortcut; touch layouts also support edge swipe.
-        collapsedSize={NAV_COLLAPSED_PX}
+        // Mobile drawers close fully; desktop keeps an icons-only destination
+        // rail so navigation remains reachable.
+        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
-          const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
+          const width = size.inPixels ?? 0;
+          if (Number.isFinite(width) && width > 0) setNavChromeWidth(width);
+          const open = width > NAV_OPEN_THRESHOLD_PX;
           setNavOpen(open);
           // Persist user-driven changes only: the group must be armed (boot /
           // group-swap layout churn is programmatic) and the code rail must
@@ -1249,17 +1254,15 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className="shell-nav"
+          className={`shell-nav${!isMobile && !navOpen ? " shell-nav--rail" : ""}`}
           aria-label="Sidebar"
-          aria-hidden={isMobile ? mobileDrawer !== "nav" : !navOpen}
-          inert={isMobile ? mobileDrawer !== "nav" : !navOpen}
+          aria-hidden={isMobile ? mobileDrawer !== "nav" : undefined}
+          inert={isMobile && mobileDrawer !== "nav"}
         >
           {nav}
         </aside>
       </Panel>
-      <Separator
-        className={`shell-separator${!isMobile && !navOpen ? " shell-separator--collapsed-nav" : ""}`}
-      />
+      <Separator className="shell-separator" />
       {!twoPane && (
         <>
           <Panel
@@ -1325,10 +1328,12 @@ function ShellInner({
   const homeCenterShift = 0;
 
   const shellFrameStyle: CSSProperties & {
+    "--shell-nav-chrome-width": string;
     "--shell-left-gap-px": string;
     "--shell-right-gap-px": string;
     "--shell-home-center-shift-px": string;
   } = {
+    "--shell-nav-chrome-width": `${navChromeWidth}px`,
     // The detail panel's real left/right viewport gaps (side panels +
     // separators + edge rails). Surfaces can read these to reason about the
     // chrome around the detail panel; Home now simply fills the detail panel
@@ -1383,9 +1388,10 @@ function ShellInner({
         onClick={toggleRightChat}
       >
         <Icon
-          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
+          name={rightChatOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
           width={CAVE_ICON_SIZE.shellToggle}
           height={CAVE_ICON_SIZE.shellToggle}
+          className="shell-top-toggle__icon--mirrored"
         />
       </button>
     ) : null
@@ -1432,7 +1438,13 @@ function ShellInner({
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
       <div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">
-        <span className="shell-window-titlebar__title">Coven</span>
+        <div className="shell-window-titlebar__controls">
+          {navToggle}
+          {historyNav}
+        </div>
+        <div className="shell-window-titlebar__rail" data-tauri-drag-region="deep">
+          <span className="shell-window-titlebar__title">Coven</span>
+        </div>
       </div>
       {/* `deep` (not the bare attribute) matters: drag.js's bare value only
           drags on DIRECT presses on the attributed element, so empty chrome

@@ -17,10 +17,14 @@ const [
   picker,
   home,
   familiarThreads,
+  root,
   nativeContractTests,
   nativeSelectionTests,
   nativeClientTests,
+  nativeAppContextTests,
   nativeContextTests,
+  voiceClientTests,
+  voiceModelTests,
   uiTests,
   snapshotTests,
   runner,
@@ -37,13 +41,24 @@ const [
   read(`${iosRoot}/Views/ChatProjectPicker.swift`),
   read(`${iosRoot}/Views/ChatsHomeView.swift`),
   read(`${iosRoot}/Views/FamiliarThreadsView.swift`),
+  read(`${iosRoot}/Views/RootView.swift`),
   read("apps/ios/CovenCave/CovenCaveTests/ChatProjectContractTests.swift"),
   read("apps/ios/CovenCave/CovenCaveTests/ChatProjectSelectionTests.swift"),
   read("apps/ios/CovenCave/CovenCaveTests/ChatProjectClientTests.swift"),
+  read("apps/ios/CovenCave/CovenCaveTests/AppModelProjectContextTests.swift"),
   read("apps/ios/CovenCave/CovenCaveTests/ChatNewConversationContextTests.swift"),
+  read("apps/ios/CovenCave/CovenCaveTests/VoiceSessionContractTests.swift"),
+  read("apps/ios/CovenCave/CovenCaveTests/LiveVoiceCallModelTests.swift"),
   read("apps/ios/CovenCave/CovenCaveUITests/NewChatUITests.swift"),
   read("apps/ios/CovenCave/CovenCaveTests/ThreadSnapshotStoreTests.swift"),
   read("scripts/run-tests.mjs"),
+]);
+
+const [voiceState, voiceModel, voiceTurnSender, appleVoiceTransport] = await Promise.all([
+  read(`${iosRoot}/Voice/LiveVoiceCallState.swift`),
+  read(`${iosRoot}/Views/Voice/LiveVoiceCallModel.swift`),
+  read(`${iosRoot}/Views/Voice/CaveVoiceTurnSender.swift`),
+  read(`${iosRoot}/Voice/AppleVoiceTransport.swift`),
 ]);
 
 // Wire and persistence: a new local thread owns project provenance and every
@@ -212,8 +227,13 @@ assert.doesNotMatch(
 // All user-visible constructors route through selection and preserve the root.
 assert.match(
   newChat,
-  /private var canLaunchChat: Bool \{[\s\S]*!isMissingFixedFamiliar[\s\S]*!selected\.isEmpty[\s\S]*projectResolved[\s\S]*selectedProjectRoot != nil[\s\S]*\}/,
-  "launch gating must require a live fixed familiar, selected familiars, and a resolved project",
+  /private var activeProject: ProjectInfo\? \{ app\.activeProject \}/,
+  "New Chat must derive its root from the active project context",
+);
+assert.match(
+  newChat,
+  /private var canLaunchChat: Bool \{[\s\S]*activeProjectRoot != nil[\s\S]*!selectedFamiliarIds\.isEmpty[\s\S]*unavailableSelectedFamiliarIDs\.isEmpty[\s\S]*\}/,
+  "launch gating must require the active project root and only active-project familiars",
 );
 assert.match(
   newChat,
@@ -222,8 +242,8 @@ assert.match(
 );
 assert.match(
   newChat,
-  /Section\("Project"\) \{[\s\S]*ChatProjectPicker\([\s\S]*familiarIds: selectedFamiliarIds[\s\S]*selectedRoot: \$selectedProjectRoot[\s\S]*isResolved: \$projectResolved[\s\S]*\)/,
-  "New Chat must retain project selection and its bindings",
+  /Section\("Project"\) \{[\s\S]*Label\(activeProject\.name, systemImage: "folder"\)[\s\S]*Switch projects from Chats to use another root\./,
+  "New Chat must describe the fixed active project instead of offering a picker",
 );
 assert.match(
   newChat,
@@ -232,28 +252,18 @@ assert.match(
 );
 assert.match(
   newChat,
-  /private var isMissingFixedFamiliar: Bool \{[\s\S]*fixedFamiliarId != nil && fixedFamiliar == nil[\s\S]*\}/,
-  "stale fixed familiars must be detected as a non-launchable state",
+  /private var blockedMessage: \(title: String, body: String, systemImage: String\)\? \{[\s\S]*Unassigned chats are recovery-only\./,
+  "Unassigned New Chat must surface recovery-only guidance",
 );
 assert.match(
   newChat,
-  /private var canLaunchChat: Bool \{[\s\S]*!isMissingFixedFamiliar[\s\S]*!selected\.isEmpty[\s\S]*projectResolved[\s\S]*selectedProjectRoot != nil[\s\S]*\}/,
-  "launch controls must stay blocked when the fixed familiar is stale",
+  /private var blockedMessage: \(title: String, body: String, systemImage: String\)\? \{[\s\S]*This familiar is no longer in/,
+  "fixed familiar launches must explain when the selected familiar leaves the active project",
 );
 assert.match(
   newChat,
-  /@State private var showProjectAccess = false[\s\S]*@State private var projectRefreshToken = 0/,
-  "fixed familiar mode must track project access sheet state and refresh tokens",
-);
-assert.match(
-  newChat,
-  /ChatProjectPicker\([\s\S]*refreshToken:\s*projectRefreshToken[\s\S]*onManageAccess:\s*fixedFamiliar(?:Id)?\s*==\s*nil\s*\?\s*nil\s*:\s*\{\s*showProjectAccess\s*=\s*true\s*\}/,
-  "fixed familiar mode must wire project access repair through the picker",
-);
-assert.match(
-  newChat,
-  /ChatProjectPicker\([\s\S]*refreshToken:\s*projectRefreshToken[\s\S]*onResolved:\s*nil/,
-  "new chats must pass the managed refresh token to the picker",
+  /private var selectedFamiliarIds: \[String\] \{[\s\S]*availableFamiliars\.map\(\\\.id\)\.filter \{ selected\.contains\(\$0\) \}[\s\S]*\}/,
+  "selectedFamiliarIds must stay inside the active project roster",
 );
 assert.match(
   newChat,
@@ -262,28 +272,23 @@ assert.match(
 );
 assert.match(
   newChat,
-  /if isMissingFixedFamiliar \{\s*Section \{\s*Label\(\s*"This familiar is no longer available\."\s*,\s*systemImage:\s*"person\.crop\.circle\.badge\.exclamationmark"\s*\)[\s\S]*?Text\(\s*"Refresh Chats and try again\."\s*\)[\s\S]*?\}\s*\}\s*else \{\s*Section\("Project"\) \{\s*ChatProjectPicker\([\s\S]*?selectedRoot: \$selectedProjectRoot[\s\S]*?isResolved: \$projectResolved[\s\S]*?\)\s*\}\s*\}/,
-  "stale fixed familiars must show a utility message before the project section",
+  /startFreshThread\([\s\S]*projectRoot: activeProjectRoot[\s\S]*createGroup\([\s\S]*projectRoot: activeProjectRoot/,
+  "direct and group constructors must always persist the active project root",
 );
 assert.match(
   newChat,
-  /private var selectedFamiliarIds: \[String\] \{[\s\S]*app\.familiars\.map\(\\\.id\)\.filter \{ selected\.contains\(\$0\) \}[\s\S]*\}/,
-  "selectedFamiliarIds must only include live roster entries",
+  /let launchContext = NewChatImportLaunchContext\([\s\S]*activeProject: activeProject,[\s\S]*selectedFamiliarIds: selectedFamiliarIds[\s\S]*\)[\s\S]*importLaunchContext = launchContext[\s\S]*importingFile = true/,
+  "imports must freeze the active project context before opening the picker",
 );
 assert.match(
   newChat,
-  /\.sheet\(isPresented:\s*\$showProjectAccess,\s*onDismiss:\s*\{\s*projectRefreshToken\s*\+=\s*1\s*\}\)/,
-  "dismissing project access must refresh the picker token",
+  /switch launchContext\.validate\([\s\S]*projectContext: app\.projectContext,[\s\S]*activeProject: activeProject,[\s\S]*projectMembership: app\.projectMembership[\s\S]*\)[\s\S]*importMarkdown\([\s\S]*familiarIds: launchContext\.familiarIds,[\s\S]*projectRoot: launchContext\.projectRoot/,
+  "imports must revalidate the frozen project context before opening the imported thread",
 );
-assert.match(
+assert.doesNotMatch(
   newChat,
-  /FamiliarPermissionsSheet\(familiar:\s*familiar\)/,
-  "the familiar-scoped permissions sheet must render for the fixed familiar",
-);
-assert.match(
-  newChat,
-  /startFreshThread\([\s\S]*projectRoot: selectedProjectRoot[\s\S]*createGroup\([\s\S]*projectRoot: selectedProjectRoot/,
-  "direct and group constructors must persist the selected root",
+  /ChatProjectPicker\(|showProjectAccess|projectRefreshToken|FamiliarPermissionsSheet/,
+  "normal New Chat must not offer an independent project picker or access sheet",
 );
 assert.match(
   appModel,
@@ -292,7 +297,7 @@ assert.match(
 );
 assert.match(
   appModel,
-  /func importMarkdown\([\s\S]*familiarIds preferredFamiliarIds: \[String\][\s\S]*projectRoot: String\?[\s\S]*ChatThread\([\s\S]*familiarIds: familiarIds,[\s\S]*projectRoot: projectRoot/,
+  /func importMarkdown\([\s\S]*familiarIds preferredFamiliarIds: \[String\][\s\S]*projectRoot: String[\s\S]*ChatThread\([\s\S]*familiarIds: familiarIds,[\s\S]*projectRoot: projectRoot/,
   "Markdown imports must retain selected familiars and project provenance",
 );
 assert.match(
@@ -301,9 +306,74 @@ assert.match(
   "explicit import participants must remain the project-authorized send scope",
 );
 assert.match(
-  newChat,
-  /importMarkdown\([\s\S]*familiarIds: selectedFamiliarIds,[\s\S]*projectRoot: selectedProjectRoot/,
-  "the import constructor must receive the resolved New Chat context",
+  appModel,
+  /func startFreshThread\([\s\S]*projectRoot: String[\s\S]*ChatThread\(/,
+  "fresh-thread creation must require a project root",
+);
+assert.match(
+  appModel,
+  /func startFreshThreadInActiveProject\([\s\S]*guard let activeProject, let activeProjectRoot else \{ return nil \}[\s\S]*guard projectMembershipLoaded else \{[\s\S]*Refresh Chats to load project access[\s\S]*\}[\s\S]*let invalidFamiliarIDs = familiarIds\.filter \{[\s\S]*projectMembership\.contains\(\$0, in: activeProject\)[\s\S]*Open New Chat to choose a valid roster or switch projects/,
+  "/new and replacement flows must validate every participant against the active project roster",
+);
+assert.match(
+  appModel,
+  /private func taskChatLaunchProject\([\s\S]*Unassigned tasks are recovery-only\.[\s\S]*This task is no longer linked to a registered project\.[\s\S]*can’t access[\s\S]*return project/,
+  "task chat launches must block recovery-only, deleted-project, and access-denied launches with guidance",
+);
+assert.match(
+  appModel,
+  /private enum TaskLinkedSessionResolution \{[\s\S]*case resolved\(SessionRow\)[\s\S]*case confirmedMissing\(ConfirmedMissingReason\)[\s\S]*case transientLoadFailure/,
+  "task linked-session resolution must distinguish resolved rows, confirmed missing metadata, and transient load failures",
+);
+assert.match(
+  appModel,
+  /func openChat\(for card: BoardCard, familiarId: String\? = nil\) async -> ChatThread\? \{[\s\S]*if let sessionID = normalizedSessionID\(card\.sessionId\) \{[\s\S]*let resolution = await resolveTaskLinkedSession\(sessionID: sessionID\)[\s\S]*switch resolution \{[\s\S]*case \.resolved\(let authoritativeRow\):[\s\S]*taskLinkedThread\(\s*titled: title,\s*for: card,\s*authoritativeRow: authoritativeRow,\s*fallbackFamiliarID: requestedFamiliarID\s*\)[\s\S]*taskChatSessionPreview\([\s\S]*case \.confirmedMissing:[\s\S]*taskRecoveryThread\(for: card, sessionID: sessionID\)[\s\S]*case \.transientLoadFailure:[\s\S]*return nil[\s\S]*guard let taskProject = taskChatLaunchProject\(\s*for: card,\s*familiarId: requestedFamiliarID\s*\)[\s\S]*projectRoot: taskProject\.root/,
+  "task chat launches must resolve authoritative session roots first, downgrade only confirmed-missing links to recovery, and create a fresh task-project chat only when no server session is linked",
+);
+assert.match(
+  appModel,
+  /func openChat\(for card: BoardCard, familiarId: String\? = nil\) async -> ChatThread\? \{[\s\S]*case \.confirmedMissing:[\s\S]*showToast\([\s\S]*taskRecoveryThread\(for: card, sessionID: sessionID\)[\s\S]*case \.transientLoadFailure:[\s\S]*showToast\([\s\S]*return nil/,
+  "task chat launches must warn for both confirmed-missing and transient linked-session failures, but only confirmed-missing outcomes may enter recovery",
+);
+assert.match(
+  appModel,
+  /private func taskRecoveryThread\(\s*for card: BoardCard,\s*sessionID: String\s*\) -> ChatThread\? \{[\s\S]*localLinkedThread\(for: card\.id\)[\s\S]*thread\(matchingSessionID: sessionID\)[\s\S]*thread\.projectRoot = nil[\s\S]*persistThreads\(\)[\s\S]*return thread/,
+  "confirmed-missing task-session recovery must reuse an existing local thread, strip project provenance, and avoid inserting or relabeling a fresh chat",
+);
+assert.match(
+  appModel,
+  /private func taskLinkedThread\([\s\S]*let changed = backfillThreadProjectRoots\(from: \[row\]\)[\s\S]*guard let sessionID = normalizedSessionID\(row\.id\) else \{ return nil \}[\s\S]*if let existing = linkedThread\(for: card\) \{[\s\S]*repairThreadSessionBinding\([\s\S]*if let existing = thread\(matchingSessionID: sessionID\) \{[\s\S]*guard let resolvedFamiliarID = authoritativeFamiliarID\([\s\S]*threads\.insert\(thread, at: 0\)[\s\S]*loadHistory\(into: thread, sessionId: sessionID\)/,
+  "task-linked authoritative session opens must reuse and repair either a compatible local link or an already materialized server session before inserting a new one",
+);
+assert.match(
+  appModel,
+  /func linkedThread\(for card: BoardCard\) -> ChatThread\? \{[\s\S]*let authoritativeSessionID = normalizedSessionID\(card\.sessionId\)[\s\S]*let taskAuthoritativeRow = cachedSessionRow\(for: authoritativeSessionID\)[\s\S]*taskLinkMatchesProject\([\s\S]*taskAuthoritativeRow[\s\S]*thread\(matchingSessionID: sessionID\)[\s\S]*authoritativeRow: taskAuthoritativeRow/,
+  "task-linked thread lookups must prefer the task’s authoritative session row and reject stale local links whose project scope no longer matches",
+);
+assert.match(
+  appModel,
+  /private func repairTaskChatScopeAfterProjectMove\(cardId: String\) async -> String\?[\s\S]*requestTaskSession\(cardId: card\.id, sessionId: nil\)[\s\S]*clearLocalTaskThreadLink/,
+  "moving a task to a registered project must repair or clear incompatible task-chat links",
+);
+assert.match(
+  appModel,
+  /private func authoritativeFamiliarID\([\s\S]*row\.familiarId[\s\S]*fallbackFamiliarID/,
+  "task-linked server sessions must prefer the server row's familiarId before task or caller fallback",
+);
+assert.match(
+  appModel,
+  /private func repairThreadSessionBinding\([\s\S]*thread\.sessionIds[\s\S]*thread\.familiarIds[\s\S]*persistThreads\(\)/,
+  "existing server-backed task threads must repair stale familiar/session bindings before opening",
+);
+assert.match(
+  appModel,
+  /private func repairThreadSessionBinding\([\s\S]*let isDirectThread = !thread\.isGroup[\s\S]*isDirectThread: isDirectThread/,
+  "task-linked repair must preserve structural group rosters instead of inferring directness from bound session count",
+);
+assert.doesNotMatch(
+  appModel,
+  /isDirectThread:\s*nextSessionIDs\.count\s*<=\s*1/,
+  "task-linked repair must not collapse group rosters just because only one participant is bound",
 );
 assert.match(
   chat,
@@ -317,8 +387,193 @@ assert.doesNotMatch(
 );
 assert.match(
   chat,
-  /startFreshThread\(familiarIds: thread\.familiarIds,[\s\S]*projectRoot: thread\.projectRoot\)/,
-  "/new must preserve the current project context",
+  /startFreshThreadInActiveProject\([\s\S]*familiarIds: thread\.familiarIds/,
+  "/new and replacement flows must start in the active project",
+);
+assert.match(
+  chat,
+  /if isRecoveryOnlyThread \{[\s\S]*recoveryOnlyComposer[\s\S]*\} else \{[\s\S]*composer[\s\S]*\}/,
+  "established projectless chats must replace the composer with recovery-only guidance",
+);
+assert.match(
+  chat,
+  /private var recoveryOnlyComposer: some View[\s\S]*Start replacement chat/,
+  "recovery-only chats must offer a start-replacement affordance when a project is active",
+);
+assert.match(
+  chat,
+  /app\.markFamiliarViewed\(\s*thread\.familiarIds,\s*in:\s*app\.projectContext\(for: thread\)\s*\)/,
+  "opening a chat must clear unread state in that thread's own project context",
+);
+assert.match(
+  chat,
+  /private var visibleThreadContext: ProjectContext \{[\s\S]*app\.projectContext\(for: thread\)\s*\}/,
+  "chat actions must derive their routing context from the visible thread itself",
+);
+assert.match(
+  chat,
+  /private var voiceCallLaunch: VoiceCallLaunch\? \{[\s\S]*guard !isRecoveryOnlyThread else \{ return nil \}[\s\S]*guard app\.threadOpenFailure\(for: thread\) == nil else \{ return nil \}[\s\S]*guard visibleThreadContext != \.unassigned else \{ return nil \}[\s\S]*guard let projectRoot = thread\.projectRoot\?/,
+  "voice calls must stay unavailable for recovery-only, invalid-metadata, and Unassigned chats until the thread has a registered project root",
+);
+assert.match(
+  chat,
+  /LiveVoiceCallView\([\s\S]*sessionId: voiceCallLaunch\.sessionId,[\s\S]*projectRoot: voiceCallLaunch\.projectRoot,[\s\S]*onSessionEstablished: \{ sessionId in[\s\S]*bindVoiceCallSession\(sessionId, for: voiceCallLaunch\.familiar\.id\)[\s\S]*onSessionDiscarded: \{ sessionId in[\s\S]*unbindVoiceCallSession\(sessionId, for: voiceCallLaunch\.familiar\.id\)[\s\S]*onCleanupWarning: \{ message in[\s\S]*app\.showToast\(message,[\s\S]*style: \.warning\)/,
+  "ChatView must pass thread project provenance into live voice calls, bind new server sessions, clear discarded bindings, and surface cleanup failures through app toasts",
+);
+assert.match(
+  chat,
+  /private func bindVoiceCallSession\(_ sessionId: String, for familiarId: String\) \{[\s\S]*app\.bindThreadSession\(sessionId, to: thread, for: familiarId\)/,
+  "voice-session binding should flow through AppModel so task-linked voice chats reconcile their card session ids immediately",
+);
+assert.match(
+  chat,
+  /private func unbindVoiceCallSession\(_ sessionId: String, for familiarId: String\) \{[\s\S]*thread\.sessionIds\.removeValue\(forKey: familiarId\)[\s\S]*app\.touch\(thread\)/,
+  "discarded auto-created voice sessions must remove their local thread binding",
+);
+assert.match(
+  appModel,
+  /func bindThreadSession\(_ sessionId: String, to thread: ChatThread, for familiarId: String\) \{[\s\S]*let hadAnySession = primarySessionId\(of: thread\) != nil[\s\S]*thread\.sessionIds\[familiarId\] = trimmed[\s\S]*touch\(thread\)[\s\S]*if !hadAnySession, cardThreadLinks\.values\.contains\(thread\.id\) \{[\s\S]*await reconcileCardLinks\(for: thread\)/,
+  "voice-first task chats must PATCH linked cards as soon as their first server session binds",
+);
+assert.match(
+  chat,
+  /private func switchTo\(_ familiar: Familiar\) \{[\s\S]*openFamiliarLandingThread\(\s*for:\s*familiar\.id,\s*in:\s*visibleThreadContext\s*\)/,
+  "familiar switching must reuse or materialize the landing chat inside the visible thread context",
+);
+assert.match(
+  chat,
+  /private func forward\(_ message: DisplayMessage, to familiar: Familiar\) \{[\s\S]*let activeContext = visibleThreadContext[\s\S]*openFamiliarLandingThread\(\s*for:\s*familiar\.id,\s*in:\s*activeContext,\s*loadHistory:\s*false\s*\)/,
+  "forwarding must reuse or materialize the visible-thread landing chat without racing a background history import",
+);
+assert.match(
+  appModel,
+  /@discardableResult\s*func requestOpen\(_ thread: ChatThread\) -> Bool \{[\s\S]*beginProjectNavigation\(ProjectNavigationIntent\([\s\S]*entity: \.thread\(id: thread\.id\),[\s\S]*destination: \.chats/,
+  "AppModel thread opens must route through the shared project-aware navigation resolver",
+);
+assert.match(
+  appModel,
+  /private func completeProjectNavigation\([\s\S]*if let context, didSwitchProject \{[\s\S]*switchProject\(to: context\)[\s\S]*selectedTab = intent\.resolvedDestination[\s\S]*if let thread \{[\s\S]*threadToOpen = thread[\s\S]*if let card \{[\s\S]*cardToOpen = card/,
+  "the shared resolver must switch project first, then select the destination, then publish thread/task opens",
+);
+assert.match(
+  appModel,
+  /func openFamiliarLandingThread\(\s*for familiarId: String,\s*in context: ProjectContext\?,\s*loadHistory\s+\w+: Bool = true\s*\) -> ChatThread\? \{[\s\S]*landingDirectThread\(for: familiarId, in: context\)[\s\S]*case \.project = context,[\s\S]*serverOnlySessions\(for: familiarId, in: context\)\.first[\s\S]*openServerSession\([\s\S]*serverOnly,[\s\S]*familiarId: familiarId,[\s\S]*loadHistory: \w+[\s\S]*\)[\s\S]*directThread\(for: familiarId, in: context\)/,
+  "AppModel must share one familiar landing-chat helper that prefers local, then server-only, then fresh project-bound chats while letting immediate-send paths skip background hydration",
+);
+assert.match(
+  appModel,
+  /func globalLandingDirectThread\(for familiarId: String\) -> ChatThread\? \{[\s\S]*landingDirectThread\(for: familiarId, in: \$0\)[\s\S]*\.max/,
+  "AppModel must resolve a familiar's global landing chat from the most recent eligible local landing thread across contexts",
+);
+assert.match(
+  client,
+  /func startVoiceConversation\(familiarId: String, projectRoot: String\) async throws -> String \{[\s\S]*VoiceConversationStartRequest\(familiarId: familiarId, projectRoot: projectRoot\)[\s\S]*request\("api\/chat\/conversation", method: "POST", body: payload\)/,
+  "fresh voice calls that need a server session must create it through the project-scoped chat conversation route",
+);
+assert.match(
+  client,
+  /func discardVoiceConversationIfEmpty\(sessionId: String\) async throws -> Bool \{[\s\S]*let escaped = try Self\.encodedPathSegment\(sessionId\)[\s\S]*ifEmpty=1[\s\S]*retryingIdempotentMutation: true/,
+  "voice orphan cleanup must use the server-side ifEmpty DELETE contract through the client's retrying idempotent mutation boundary",
+);
+assert.match(
+  voiceModel,
+  /private func startRealtime\(\) async \{[\s\S]*guard let projectRoot = state\.projectRoot else \{[\s\S]*projectRequiredCopy[\s\S]*\}[\s\S]*let sessionId = try await realtimeSessionID\(client: client, projectRoot: projectRoot\)[\s\S]*mintVoiceSession\([\s\S]*familiarId: familiar\.id,\s*sessionId: sessionId/,
+  "realtime voice must keep server-side grant minting while bootstrapping fresh calls through a project-scoped session",
+);
+assert.match(
+  voiceModel,
+  /private var autoCreatedSessionId: String\?[\s\S]*private var hasCommittedConversationContent = false/,
+  "the voice model must track whether it auto-created a session and whether content was ever committed",
+);
+assert.match(
+  voiceModel,
+  /private func realtimeSessionID\(client: CaveClient, projectRoot: String\) async throws -> String \{[\s\S]*autoCreatedSessionId = sessionId[\s\S]*state\.receive\(\.sessionBound\(sessionId\)\)/,
+  "fresh realtime calls must remember which server session they auto-created before minting",
+);
+assert.match(
+  voiceModel,
+  /private func bindThreadSessionIfNeeded\(\) \{[\s\S]*!state\.transcript\.isEmpty[\s\S]*hasCommittedConversationContent = true[\s\S]*autoCreatedSessionId = nil[\s\S]*onSessionEstablished\?\(sessionId\)/,
+  "binding the thread session must retire auto-created cleanup as soon as the call has transcript content",
+);
+assert.match(
+  voiceModel,
+  /private func resetForRestart\(mode: VoiceCallMode\) \{[\s\S]*let retryableAutoCreatedSessionId = pendingAutoCreatedSessionIdForRestart\(\)[\s\S]*autoCreatedSessionId = retryableAutoCreatedSessionId[\s\S]*launch = \.idle[\s\S]*private func pendingAutoCreatedSessionIdForRestart\(\) -> String\? \{[\s\S]*!hasCommittedConversationContent,[\s\S]*!didBindThreadSession[\s\S]*return autoCreatedSessionId/,
+  "retry and fallback restarts must preserve an uncommitted auto-created session id until transcript binding or confirmed deletion retires it",
+);
+assert.match(
+  voiceModel,
+  /private func scheduleAutoCreatedSessionCleanupIfNeeded\(\) \{[\s\S]*client\.discardVoiceConversationIfEmpty\(sessionId: sessionId\)[\s\S]*guard deleted else \{ return \}[\s\S]*state\.clearSessionBinding\(matching: sessionId\)[\s\S]*onSessionDiscarded\?\(sessionId\)[\s\S]*onCleanupWarning\?\(Self\.cleanupWarningMessage\(for: error\)\)/,
+  "empty auto-created voice sessions must clean themselves up through the retry-safe client helper and report any cleanup failure without replacing the primary error flow",
+);
+assert.match(
+  voiceState,
+  /case sessionBound\(String\)[\s\S]*let projectRoot: String\?[\s\S]*private\(set\) var sessionId: String\?/,
+  "voice call state must retain project/session provenance so first-turn calls can bind their conversation as the session appears",
+);
+assert.match(
+  voiceState,
+  /mutating func clearSessionBinding\(matching sessionId: String\) \{[\s\S]*self\.sessionId = nil/,
+  "voice call state must be able to drop a deleted auto-created session id without rebuilding the whole transcript state",
+);
+assert.match(
+  voiceTurnSender,
+  /guard resolvedSessionId != nil \|\| resolvedProjectRoot != nil else \{[\s\S]*VoiceTurnSendError\.missingLaunchContext[\s\S]*\}[\s\S]*projectRoot: resolvedProjectRoot/,
+  "the native voice sender must fail closed without launch provenance and carry the thread projectRoot on every first-turn send body",
+);
+assert.match(
+  voiceTurnSender,
+  /var boundSessionId = resolvedSessionId[\s\S]*var publishedSessionId = resolvedSessionId[\s\S]*case \.session\(let sessionId\):[\s\S]*publishBoundSession\([\s\S]*case \.done\(let isError, let sessionId,[\s\S]*publishBoundSession\(/,
+  "the native voice sender must publish a newly announced session id as soon as the SSE stream yields .session or .done",
+);
+assert.match(
+  appleVoiceTransport,
+  /turnSender\.sendRecognizedTurn\([\s\S]*projectRoot: self\?\.currentProjectRoot \?\? context\.projectRoot,[\s\S]*onSessionBound: \{ \[weak self\] sessionId in[\s\S]*self\?\.updateSessionBinding\(from: sessionId\)/,
+  "Apple native voice must relay mid-stream session bindings into call state immediately so hangups keep the thread bound",
+);
+assert.match(
+  voiceClientTests,
+  /testDiscardVoiceConversationIfEmptyUsesDeleteIfEmptyContract[\s\S]*testDiscardVoiceConversationIfEmptyPreservesDeletedFalse/,
+  "voice client tests must pin the ifEmpty discard contract",
+);
+assert.match(
+  voiceModelTests,
+  /testEndingAnAutoCreatedCallWithoutTranscriptDiscardsTheEmptySession[\s\S]*testTranscriptContentPreservesAnAutoCreatedSessionOnEnd[\s\S]*testMicrophoneDenialDiscardsAnAutoCreatedSession[\s\S]*testSetupFailureNeverDeletesAPreBoundSession[\s\S]*testCleanupFailureReportsANonfatalWarningWithoutHidingMintFailure[\s\S]*testHangupAfterMidReplySessionBindingKeepsTheThreadBoundForTheNextCall/,
+  "voice model tests must cover empty-session discard, transcript preservation, permission denial cleanup, pre-bound session safety, cleanup warnings, and mid-reply binding survival",
+);
+assert.doesNotMatch(
+  voiceTurnSender,
+  /projectRoot:\s*nil/,
+  "no production native-voice send body should hardcode a nil projectRoot",
+);
+assert.match(
+  appModel,
+  /@discardableResult\s*func requestOpenGlobalFamiliarLandingThread\(for familiarId: String\) -> Bool \{[\s\S]*globalLandingDirectThread\(for: familiarId\)[\s\S]*globalServerOnlySessions\(for: familiarId\)\.first[\s\S]*openServerSession\([\s\S]*projectMembership\.contains\(familiarId, in: activeProject\)[\s\S]*directThread\(for: familiarId, in: \.project\(activeProject\)\)[\s\S]*requestOpen\(/,
+  "global familiar opens must prefer existing chats across contexts, then server-only sessions, and only synthesize a fresh active-project chat as a last resort",
+);
+assert.match(
+  root,
+  /case \.familiars: FamiliarsListView \{ familiar in[\s\S]*openFamiliarLandingThread\(\s*for:\s*familiar\.id,\s*in:\s*app\.projectContext\s*\)/,
+  "the root familiars sheet must route familiar opens through the shared landing-chat helper",
+);
+assert.match(
+  root,
+  /openFamiliar: \{ familiar in[\s\S]*requestOpenGlobalFamiliarLandingThread\(for: familiar\.id\)/,
+  "global search familiar opens must route through the global landing-chat helper",
+);
+assert.match(
+  root,
+  /openServerSession: \{ session, familiarId in[\s\S]*requestOpenServerSession\(\s*session,\s*fallbackFamiliarId: familiarId\s*\)/,
+  "global search server-session opens must route through the central project-aware session helper",
+);
+assert.match(
+  root,
+  /openProject: \{ project in[\s\S]*requestOpenProjectSearchResult\(project\)/,
+  "global search project opens must route through the central project-aware destination helper",
+);
+assert.match(
+  appModel,
+  /func requestOpenProjectSearchResult\([\s\S]*selectedTab\.projectSearchReturnDestination[\s\S]*func requestOpenServerSession\(/,
+  "AppModel must centralize project-search destination policy and server-session opens",
 );
 assert.match(
   chat,
@@ -334,6 +589,11 @@ assert.match(
   home,
   /enum ChatNewConversationContext[\s\S]*static func fixedFamiliarId\([\s\S]*detailPath\.last \?\? selection/,
   "Chats must resolve New Chat context from the visible detail route before the sidebar selection",
+);
+assert.match(
+  nativeAppContextTests,
+  /testRequestOpenSwitchesToThreadProjectBeforeOpening[\s\S]*testRequestOpenSwitchesToUnassignedForProjectlessThread[\s\S]*testRequestOpenCanonicalizesNestedWorktreeRootToRegisteredProject[\s\S]*testRequestOpenTreatsUnknownAndDeletedRootsAsUnassigned[\s\S]*testRequestOpenTaskSwitchesToTaskProjectBeforeOpening[\s\S]*testRequestOpenTaskSwitchesToUnassignedForProjectlessTask[\s\S]*testRequestOpenProjectSearchResultKeepsProjectScopedDestination[\s\S]*testRequestOpenProjectSearchResultFallsBackToChatsFromSettings[\s\S]*testRequestOpenServerSessionSwitchesToSessionProjectBeforeOpening[\s\S]*testRequestOpenTaskTreatsUnknownProjectAsUnassignedRecovery[\s\S]*testRequestOpenTaskFailsExplicitlyWhenProjectIDIsMalformed[\s\S]*testRequestOpenFailsExplicitlyWhenProjectMetadataIsInvalid[\s\S]*testRequestOpenDoesNotSwitchProjectWhenContextAlreadyMatches[\s\S]*testEntityMetadataWinsWhenAdvisoryProjectDisagrees[\s\S]*testProjectDeepLinkFailsExplicitlyWhenProjectIsUnknown[\s\S]*testProjectChatsDeepLinkSwitchesProjectAndPreservesDestination[\s\S]*testPendingTaskNavigationSurvivesFailedHydration/,
+  "native app-context tests must cover cross-project thread/task/session opens, project-search destination policy, unassigned recovery, unknown-project recovery tasks, malformed task ids, same-context no-ops, redundant-project mismatches, and pending intents that survive failed hydration",
 );
 assert.match(
   home,
@@ -391,9 +651,29 @@ assert.match(
   "native tests must prove project discovery uses the retrying injected transport",
 );
 assert.match(
+  nativeAppContextTests,
+  /testOpenFamiliarLandingThreadPrefersExistingLocalThreadOverServerOnlySession[\s\S]*testOpenFamiliarLandingThreadMaterializesServerOnlyProjectSession[\s\S]*testOpenFamiliarLandingThreadMaterializesServerOnlyProjectSessionForImmediateSend[\s\S]*testOpenFamiliarLandingThreadCreatesFreshProjectThreadWhenNoHistoryExists[\s\S]*testOpenFamiliarLandingThreadBlocksFreshProjectThreadWhenFamiliarCannotAccessProject[\s\S]*testOpenFamiliarLandingThreadBlocksRecoveryOnlyUnassignedMaterialization/,
+  "native AppModel tests must cover landing-thread reuse, server-only immediate-send materialization, and access or Unassigned blocks",
+);
+assert.match(
+  nativeAppContextTests,
+  /testRequestOpenGlobalFamiliarLandingThreadPrefersMostRecentLocalLandingAcrossContexts[\s\S]*testRequestOpenGlobalFamiliarLandingThreadMaterializesMostRecentServerOnlySessionAcrossContexts[\s\S]*testRequestOpenGlobalFamiliarLandingThreadCreatesFreshChatInActiveProjectWhenNoHistoryExists[\s\S]*testRequestOpenGlobalFamiliarLandingThreadShowsGuidanceWhenFamiliarBelongsToDifferentProject/,
+  "native AppModel tests must cover global familiar opens for existing local chats, server-only history, fresh active-project starts, and off-project guidance",
+);
+assert.match(
+  nativeAppContextTests,
+  /testLoadSessionsBackfillsLegacyRestoredThreadAndReclassifiesUnassigned[\s\S]*testOpenChatCreatesDirectTaskThreadInTaskProject[\s\S]*testOpenChatUsesChosenFamiliarForProjectScopedTaskThread[\s\S]*testOpenChatFromTaskBlocksInUnassignedRecoveryContext[\s\S]*testOpenChatFromTaskBlocksWhenTaskProjectIsMissingOrDeleted[\s\S]*testOpenChatFromTaskBlocksWhenFamiliarCannotAccessTaskProject[\s\S]*testOpenChatForTaskSessionFetchesAuthoritativeSessionWhenCacheIsEmpty[\s\S]*testOpenChatForTaskSessionOpensAuthoritativeSessionWhenProjectDisagrees[\s\S]*testAuthoritativeTaskSessionPreviewRemainsVisibleWhenTaskProjectDisagrees[\s\S]*testOpenChatForMissingTaskSessionReturnsNilWithoutMaterializingLocalThread[\s\S]*testOpenChatForTaskSessionLoadFailureReturnsNilWithoutMaterializingLocalThread[\s\S]*testOpenChatForTaskSessionLoadFailurePreservesExistingLocalThreadWithoutDowngrading[\s\S]*testOpenChatForTaskSessionMissingProjectRootReturnsNilWithoutMaterializingLocalThread[\s\S]*testRepeatedTaskSessionRecoveryFailuresDoNotGrowThreadsOrLinks[\s\S]*testOpenChatForUnresolvedTaskSessionOpensExistingLocalThreadAsRecoveryOnly[\s\S]*testOpenChatForTaskSessionMissingProjectRootOpensExistingLocalThreadAsRecoveryOnly[\s\S]*testOpenChatForMissingTaskSessionOpensAuthoritativeSessionAfterRefresh[\s\S]*testOpenChatForMissingTaskSessionRestoresExistingRecoveryThreadAfterRefresh[\s\S]*testStartFreshThreadInActiveProjectCreatesThreadForValidRoster[\s\S]*testStartFreshThreadInActiveProjectBlocksRosterOutsideActiveProject/,
+  "native AppModel tests must cover legacy backfill, blocked task launches, authoritative session recovery across mismatches, and active-project roster validation",
+);
+assert.match(
+  nativeAppContextTests,
+  /testMoveTaskToProjectClearsProjectlessLocalChatLink[\s\S]*testMoveTaskToProjectPreservesCompatibleLocalChatLink[\s\S]*testMoveTaskToProjectUnlinksMismatchedServerBackedChat[\s\S]*testMoveTaskToProjectKeepsLinkStateWhenServerUnlinkFails/,
+  "native AppModel tests must cover project-repair reconciliation for local-only, preserved, mismatched, and unlink-failure task chat links",
+);
+assert.match(
   uiTests,
-  /testContextualNewChatRetriesProjectFailureWithoutFamiliarReselection[\s\S]*testEmptyProjectStateRetriesWithoutFamiliarReselection/,
-  "simulator tests must cover transport and empty-project retry-to-success",
+  /testContextualNewChatUsesActiveProjectWithoutIndependentPicker[\s\S]*testContextualNewChatBlocksStartWhenFixedFamiliarLeavesActiveProject[\s\S]*testContextualNewChatShowsRecoveryOnlyGuidanceForUnassigned/,
+  "simulator tests must cover the fixed active root, revoked access, and Unassigned recovery-only states",
 );
 assert.match(
   snapshotTests,
