@@ -193,6 +193,48 @@ test("managed Node paths are user-scoped and never point at a system installatio
   assert.equal(managedNodeRoot("linux", { XDG_DATA_HOME: "/home/sage/.local/share" } as unknown as NodeJS.ProcessEnv, "/home/sage"), "/home/sage/.local/share/opencoven/coven-cave/toolchains");
 });
 
+test("managed Node spawn environment replaces Windows PATH keys case-insensitively", () => {
+  const paths = managedNodePaths(
+    "win32",
+    "x64",
+    { LOCALAPPDATA: "C:\\Users\\Sage\\AppData\\Local" } as unknown as NodeJS.ProcessEnv,
+    "C:\\Users\\Sage",
+  );
+  assert.ok(paths);
+  const env = managedNodeSpawnEnv({
+    Path: "C:\\stale-user-path",
+    PATH: "C:\\stale-uppercase-path",
+  } as unknown as NodeJS.ProcessEnv, paths);
+  assert.ok(env);
+  assert.deepEqual(
+    Object.keys(env).filter((key) => key.toUpperCase() === "PATH"),
+    ["PATH"],
+  );
+  assert.deepEqual(
+    env.PATH?.split(";"),
+    [paths.npmBin, paths.installDir, "C:\\stale-uppercase-path"],
+  );
+});
+
+test("managed Node spawn environment preserves a mixed-case Windows Path value", () => {
+  const paths = managedNodePaths(
+    "win32",
+    "x64",
+    { LOCALAPPDATA: "C:\\Users\\Sage\\AppData\\Local" } as unknown as NodeJS.ProcessEnv,
+    "C:\\Users\\Sage",
+  );
+  assert.ok(paths);
+  const env = managedNodeSpawnEnv(
+    { Path: "C:\\Windows\\System32" } as unknown as NodeJS.ProcessEnv,
+    paths,
+  );
+  assert.ok(env);
+  assert.deepEqual(
+    env.PATH?.split(";"),
+    [paths.npmBin, paths.installDir, "C:\\Windows\\System32"],
+  );
+});
+
 test("managed Node probe distinguishes an absent toolchain from an unusable one", async () => {
   const missing = await probeManagedNodeToolchain({ platform: "linux", architecture: "x64", home: path.join(tmpdir(), "missing-coven-node") });
   assert.equal(missing.status, "missing");
