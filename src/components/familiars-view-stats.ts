@@ -4,6 +4,13 @@ import type { Familiar, SessionRow } from "@/lib/types";
 
 export type CanonicalMemoryAvailability = "ready" | "unavailable";
 
+export type FamiliarFileMemoryStat = {
+  familiarId?: string;
+  relPath: string;
+  fullPath: string;
+  modified: string;
+};
+
 export type FamiliarCardStats = {
   memoryCount: number;
   memoryAvailability: CanonicalMemoryAvailability;
@@ -42,6 +49,8 @@ export function buildFamiliarCardStats(args: {
   sessions: SessionRow[];
   covenEntries: CanonicalMemorySummary[];
   memoryAvailability: CanonicalMemoryAvailability;
+  fileEntries?: FamiliarFileMemoryStat[];
+  fileMemoryAvailability?: CanonicalMemoryAvailability;
   now?: number;
 }): Map<string, FamiliarCardStats> {
   const now = args.now ?? Date.now();
@@ -66,10 +75,25 @@ export function buildFamiliarCardStats(args: {
     memoriesByFamiliar.set(entry.familiarId, bucket);
   }
 
+  const fileMemoriesByFamiliar = new Map<string, FamiliarFileMemoryStat[]>();
+  for (const entry of args.fileEntries ?? []) {
+    if (!entry.familiarId) continue;
+    const bucket = fileMemoriesByFamiliar.get(entry.familiarId) ?? [];
+    bucket.push(entry);
+    fileMemoriesByFamiliar.set(entry.familiarId, bucket);
+  }
+
+  const fileMemoryTracked = args.fileMemoryAvailability !== undefined;
+
   const result = new Map<string, FamiliarCardStats>();
   for (const familiar of args.familiars) {
     const sessions = sessionsByFamiliar.get(familiar.id) ?? [];
     const memories = memoriesByFamiliar.get(familiar.id) ?? [];
+    const fileMemories = fileMemoriesByFamiliar.get(familiar.id) ?? [];
+    const hasDurableMemory = memories.length + fileMemories.length > 0;
+    const allTrackedMemorySourcesReady =
+      args.memoryAvailability === "ready"
+      && (!fileMemoryTracked || args.fileMemoryAvailability === "ready");
 
     let lastSessionAt: string | null = null;
     let lastSessionMs = -Infinity;
@@ -106,10 +130,19 @@ export function buildFamiliarCardStats(args: {
         latestMemory = { title: entry.title, updatedAt: entry.updatedAt };
       }
     }
+    for (const entry of fileMemories) {
+      const ms = Date.parse(entry.modified);
+      if (!Number.isFinite(ms)) continue;
+      if (ms > latestMs) {
+        latestMs = ms;
+        latestMemory = { title: entry.relPath, updatedAt: entry.modified };
+      }
+    }
 
     result.set(familiar.id, {
-      memoryCount: memories.length,
-      memoryAvailability: args.memoryAvailability,
+      memoryCount: memories.length + fileMemories.length,
+      memoryAvailability:
+        hasDurableMemory || allTrackedMemorySourcesReady ? "ready" : "unavailable",
       latestMemory,
       lastSessionAt,
       sessionsTotal: sessions.length,
