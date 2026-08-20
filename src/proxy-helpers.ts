@@ -217,6 +217,26 @@ export function isHtmlNavigationRequest(
   return Boolean(accept && accept.toLowerCase().includes("text/html"));
 }
 
+export function accessPromptUrl(value: string) {
+  const url = new URL(value);
+  url.searchParams.set(ACCESS_PROMPT_QUERY_PARAM, "1");
+  return url.toString();
+}
+
+export function shouldBypassMobileAccessGate(
+  trustedLocalPeer: boolean,
+  promptRequested: boolean,
+  method: string,
+  pathname: string,
+  accept: string | null,
+) {
+  return (
+    trustedLocalPeer &&
+    !promptRequested &&
+    isHtmlNavigationRequest(method, pathname, accept)
+  );
+}
+
 /**
  * The access-gate page served (with a 401) to unauthenticated browser
  * navigations when COVEN_CAVE_ACCESS_TOKEN is configured. Deliberately
@@ -300,6 +320,7 @@ export function accessGatePage({ invalidToken = false }: { invalidToken?: boolea
   <p>This Cave is protected. Open your pairing link, or paste an access token below.</p>
   ${note}
   <form method="get" action="">
+    <input type="hidden" name="${ACCESS_PROMPT_QUERY_PARAM}" value="1">
     <input type="password" name="${ACCESS_TOKEN_QUERY_PARAM}" autocomplete="off" required aria-label="Access token" placeholder="Access token">
     <button type="submit">Unlock</button>
   </form>
@@ -341,6 +362,7 @@ export function requiresPasskeyPresence(
 }
 
 export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
+export const ACCESS_PROMPT_QUERY_PARAM = "coven_access_prompt";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";
 export const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";

@@ -6,6 +6,7 @@ import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl } from "@/lib/github-item-url";
+import { accessPromptUrl } from "@/proxy-helpers";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
@@ -1312,8 +1313,8 @@ export function Workspace() {
   }, [daemonStatusUnavailable, authExpired, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
 
   // Re-auth banner: the access-token gate is rejecting every request, so all
-  // surfaces are degrading at once. A reload lands on the gate page, which
-  // explains how to sign back in (paste a token / open the pairing link).
+  // surfaces are degrading at once. Explicitly request the existing gate page;
+  // an ordinary trusted local reload intentionally bypasses it.
   useEffect(() => {
     if (!authExpired) {
       dismissBanner("auth-expired");
@@ -1322,11 +1323,11 @@ export function Workspace() {
     pushBanner({
       id: "auth-expired",
       severity: "error",
-      title: "Access expired — this session's token is no longer valid. Reload to sign in again.",
+      title: "Access required — sign in with a fresh pairing token.",
       cta: {
-        label: "Reload",
+        label: "Sign in",
         onClick: () => {
-          window.location.reload();
+          window.location.assign(accessPromptUrl(window.location.href));
         },
       },
     });
