@@ -598,7 +598,9 @@ export function createGitRetirementOperations({
           process.execPath,
           [
             "-e",
-            "try { require('node:fs').rmSync(process.argv[1], { recursive: true, force: false, maxRetries: 8, retryDelay: 100 }) } catch (error) { if (error?.code !== 'ENOENT') throw error }",
+            resolved.unlinkOnly
+              ? "try { require('node:fs').unlinkSync(process.argv[1]) } catch (error) { if (error?.code !== 'ENOENT') throw error }"
+              : "try { require('node:fs').rmSync(process.argv[1], { recursive: true, force: false, maxRetries: 8, retryDelay: 100 }) } catch (error) { if (error?.code !== 'ENOENT') throw error }",
             resolved.target,
           ],
           normalizedRoot,
@@ -1107,7 +1109,7 @@ function parseWorktreeListPaths(raw: string): string[] | null {
 function resolveDisposableIgnoredTarget(
   worktreePath: string,
   rawCandidate: string,
-): OperationFailure | { ok: true; target: string } {
+): OperationFailure | { ok: true; target: string; unlinkOnly: boolean } {
   if (rawCandidate.includes("\0")) {
     return { ok: false, reason: `invalid ignored path contains NUL: ${rawCandidate}` };
   }
@@ -1133,7 +1135,7 @@ function resolveDisposableIgnoredTarget(
   }
 
   let current = worktreePath;
-  for (const segment of segments) {
+  for (const [index, segment] of segments.entries()) {
     current = path.join(current, segment);
     if (
       current !== worktreePath &&
@@ -1147,6 +1149,9 @@ function resolveDisposableIgnoredTarget(
     try {
       const stat = lstatSync(current);
       if (stat.isSymbolicLink()) {
+        if (index === segments.length - 1) {
+          return { ok: true, target: current, unlinkOnly: true };
+        }
         return {
           ok: false,
           reason: `refused disposable ignored cleanup through a symbolic link: ${rawCandidate}`,
@@ -1154,7 +1159,7 @@ function resolveDisposableIgnoredTarget(
       }
     } catch (error) {
       if (isErrno(error, "ENOENT")) {
-        return { ok: true, target: current };
+        return { ok: true, target: current, unlinkOnly: false };
       }
       return {
         ok: false,
@@ -1163,7 +1168,7 @@ function resolveDisposableIgnoredTarget(
     }
   }
 
-  return { ok: true, target: current };
+  return { ok: true, target: current, unlinkOnly: false };
 }
 
 function zeroOidFor(oid: string): string {
