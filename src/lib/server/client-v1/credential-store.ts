@@ -8,11 +8,11 @@ import {
   chmod,
   lstat,
   mkdir,
+  open,
   readFile,
   realpath,
   rename,
   rm,
-  writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -62,6 +62,7 @@ export interface CredentialStoreOptions {
   now?: () => number;
   readFile?: (path: string, encoding: "utf8") => Promise<string>;
   root?: string;
+  temporaryRandomBytes?: (size: number) => Buffer;
 }
 
 type CredentialStoreFile = {
@@ -280,23 +281,34 @@ function parseStore(raw: string): Map<string, ClientV1CredentialRecord> {
 async function writeStoreAtomic(
   path: string,
   records: ReadonlyMap<string, ClientV1CredentialRecord>,
+  temporaryRandomBytes: (size: number) => Buffer,
 ): Promise<void> {
-  const temporaryPath = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  const temporaryPath = `${path}.${process.pid}.${temporaryRandomBytes(6).toString("hex")}.tmp`;
   const file: CredentialStoreFile = {
     version: 1,
     credentials: Array.from(records.values(), cloneRecord),
   };
+  let ownsTemporaryPath = false;
+  let temporaryHandle: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    await writeFile(temporaryPath, JSON.stringify(file, null, 2), {
+    temporaryHandle = await open(temporaryPath, "wx", 0o600);
+    ownsTemporaryPath = true;
+    await temporaryHandle.writeFile(JSON.stringify(file, null, 2), {
       encoding: "utf8",
-      flag: "wx",
-      mode: 0o600,
     });
-    await chmod(temporaryPath, 0o600);
+    await temporaryHandle.chmod(0o600);
+    await temporaryHandle.close();
+    temporaryHandle = null;
     await rename(temporaryPath, path);
+    ownsTemporaryPath = false;
     await chmod(path, 0o600);
   } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => {});
+    if (temporaryHandle) {
+      await temporaryHandle.close().catch(() => {});
+    }
+    if (ownsTemporaryPath) {
+      await rm(temporaryPath, { force: true }).catch(() => {});
+    }
     throw error;
   }
 }
@@ -309,6 +321,7 @@ export class FileCredentialStore implements CredentialStore {
   readonly #configuredRoot: string;
   readonly #now: () => number;
   readonly #readFile: (path: string, encoding: "utf8") => Promise<string>;
+  readonly #temporaryRandomBytes: (size: number) => Buffer;
   #locationPromise: Promise<CredentialStoreLocation> | null = null;
   #records = new Map<string, ClientV1CredentialRecord>();
 
@@ -316,6 +329,7 @@ export class FileCredentialStore implements CredentialStore {
     this.#configuredRoot = options.root ?? caveHome();
     this.#now = options.now ?? Date.now;
     this.#readFile = options.readFile ?? readFile;
+    this.#temporaryRandomBytes = options.temporaryRandomBytes ?? randomBytes;
   }
 
   #location(): Promise<CredentialStoreLocation> {
@@ -358,7 +372,11 @@ export class FileCredentialStore implements CredentialStore {
 
   async #persist(location: CredentialStoreLocation): Promise<void> {
     await assertCredentialStoreLocation(location);
-    await writeStoreAtomic(location.path, this.#records);
+    await writeStoreAtomic(
+      location.path,
+      this.#records,
+      this.#temporaryRandomBytes,
+    );
   }
 
   async #recordUse(

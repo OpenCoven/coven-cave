@@ -257,6 +257,38 @@ test("credential persistence stays atomic and leaves no temporary files", async 
   });
 });
 
+test("a colliding temporary file remains unchanged when exclusive creation fails", async () => {
+  await withCredentialRoot(async (root) => {
+    const temporaryBytes = Buffer.from("a1b2c3d4e5f6", "hex");
+    const storePath = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    const temporaryPath = `${storePath}.${process.pid}.${temporaryBytes.toString("hex")}.tmp`;
+    const existing = "pre-existing temporary file";
+    await writeFile(temporaryPath, existing, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+
+    const store = createCredentialStore({
+      root,
+      now: () => 7_500,
+      temporaryRandomBytes: (size) => {
+        assert.equal(size, temporaryBytes.byteLength);
+        return Buffer.from(temporaryBytes);
+      },
+    });
+
+    await assert.rejects(
+      store.issue(credentialInput),
+      (error: unknown) => {
+        assert.equal((error as NodeJS.ErrnoException).code, "EEXIST");
+        return true;
+      },
+    );
+    assert.equal(await readFile(temporaryPath, "utf8"), existing);
+  });
+});
+
 test("malformed persisted JSON is rejected and never overwritten by issue", async () => {
   await withCredentialRoot(async (root) => {
     const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
