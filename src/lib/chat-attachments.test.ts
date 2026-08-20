@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   attachmentMediaKind,
   buildPromptWithAttachments,
+  cleanFileDataUrl,
+  cleanImageDataUrl,
+  fileToAttachment,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
@@ -139,6 +142,57 @@ const [truncated] = normalizeChatAttachments([
 assert.equal(truncated.text.length, 64_000);
 assert.equal(truncated.truncated, true);
 
+{
+  const zipPayload = Buffer.from("PK fake zip source bundle");
+  const zipDataUrl = `data:application/zip;base64,${zipPayload.toString("base64")}`;
+  assert.deepEqual(cleanFileDataUrl(zipDataUrl), {
+    dataUrl: zipDataUrl,
+    mimeType: "application/zip",
+  });
+  assert.equal(
+    cleanFileDataUrl("data:image/png;base64,aGVsbG8="),
+    null,
+    "generic validation cannot bypass the tighter image path",
+  );
+  assert.equal(
+    cleanFileDataUrl("data:application/zip;base64,not-valid!!"),
+    null,
+    "malformed generic payloads are rejected",
+  );
+}
+
+{
+  const OriginalFileReader = globalThis.FileReader;
+  class TestFileReader {
+    result = null;
+    onload = null;
+    onerror = null;
+
+    readAsDataURL(file) {
+      void file.arrayBuffer().then((buffer) => {
+        const mimeType = file.type || "application/octet-stream";
+        this.result = `data:${mimeType};base64,${Buffer.from(buffer).toString("base64")}`;
+        this.onload?.();
+      }, () => this.onerror?.());
+    }
+  }
+  globalThis.FileReader = TestFileReader;
+  try {
+    for (const file of [
+      new File(["<main>Components</main>"], "Components.html", { type: "text/html" }),
+      new File(["export const icons = {};"], "composer-icons.js", { type: "text/javascript" }),
+      new File([Buffer.from("PK bundle")], "design-handoff.zip", { type: "application/zip" }),
+    ]) {
+      const attachment = await fileToAttachment(file);
+      assert.ok(attachment.dataUrl, `${file.name} keeps bytes for runtime materialization`);
+      assert.equal(attachment.size, file.size);
+    }
+  } finally {
+    if (OriginalFileReader === undefined) delete globalThis.FileReader;
+    else globalThis.FileReader = OriginalFileReader;
+  }
+}
+
 assert.deepEqual(
   stripPreviewOnlyAttachmentFields([
     {
@@ -158,8 +212,8 @@ assert.deepEqual(
   ],
 );
 
-// The send-body variant keeps valid image payloads (so the server can deliver
-// them to the harness) but still strips preview fields from non-images.
+// The send-body variant keeps every validated bounded payload so the server can
+// materialize it for a local file-reading harness.
 assert.deepEqual(
   stripPreviewOnlyAttachmentFieldsKeepingImages([
     {
@@ -189,6 +243,8 @@ assert.deepEqual(
       name: "doc.pdf",
       type: "application/pdf",
       size: 64,
+      mimeType: "application/pdf",
+      dataUrl: "data:application/pdf;base64,aGVsbG8=",
     },
   ],
 );
@@ -274,9 +330,9 @@ const HEADER_CASES = [
   ["data:image/png;base64,aGVsbG9v", "image/png"],
 ];
 for (const [url, mime] of HEADER_CASES) {
-  const [ok] = normalizeChatAttachments([{ name: "a.png", type: "image/png", dataUrl: url }]);
-  assert.equal(ok.dataUrl, url, `${url} must be accepted`);
-  assert.equal(ok.mimeType, mime, `${url} must report ${mime}`);
+  const ok = cleanImageDataUrl(url);
+  assert.equal(ok?.dataUrl, url, `${url} must be accepted`);
+  assert.equal(ok?.mimeType, mime, `${url} must report ${mime}`);
 }
 
 const REJECT_CASES = [
@@ -291,8 +347,7 @@ const REJECT_CASES = [
   `data:image/${"x".repeat(61)};base64,aGVsbG8=`,
 ];
 for (const url of REJECT_CASES) {
-  const [bad] = normalizeChatAttachments([{ name: "a.png", type: "image/png", dataUrl: url }]);
-  assert.equal(bad.dataUrl, undefined, `${url} must be rejected`);
+  assert.equal(cleanImageDataUrl(url), null, `${url} must be rejected`);
 }
 
 console.log("chat-attachments: large image data URLs ok");
@@ -313,17 +368,17 @@ for (const mime of ["image/png", "image/svg+xml", "IMAGE/JPEG", "application/pdf
     }
     const url = `data:${mime};base64,${body}`;
     const old = OLD_PATTERN.exec(url);
-    const [now] = normalizeChatAttachments([{ name: "a", type: "image/png", dataUrl: url }]);
+    const now = cleanImageDataUrl(url);
     // The old pattern had no size floor of its own; `cleanImageDataUrl` rejects
     // a payload that decodes to zero bytes, then and now. Compare on that basis.
     const oldAccepts = Boolean(old) && Math.floor((old[2].length * 3) / 4)
       - (old[2].endsWith("==") ? 2 : old[2].endsWith("=") ? 1 : 0) > 0;
     assert.equal(
-      Boolean(now.dataUrl),
+      Boolean(now?.dataUrl),
       oldAccepts,
       `acceptance changed for ${JSON.stringify(url)}`,
     );
-    if (oldAccepts) assert.equal(now.mimeType, old[1].toLowerCase());
+    if (oldAccepts) assert.equal(now?.mimeType, old[1].toLowerCase());
     compared++;
   }
 }

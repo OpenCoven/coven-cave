@@ -18,6 +18,7 @@ import {
 } from "@/lib/project-setup-validation";
 import { Popover, PopoverBody } from "@/components/ui/popover";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import { publishProjectAccessChanged } from "@/lib/project-access-events";
 import { emitProjectRegistryMutation } from "@/lib/project-registry-events";
 import { PROJECT_SETUP_COLOR_CHOICES } from "@/lib/project-setup-offer";
 import { Button } from "@/components/ui/button";
@@ -238,6 +239,7 @@ export function ProjectSetupModal({
           );
           return;
         }
+        publishProjectAccessChanged(project.id);
       }
       for (const group of memberGroups) {
         const level = groupLevels[group.id] ?? "none";
@@ -260,6 +262,7 @@ export function ProjectSetupModal({
           );
           return;
         }
+        publishProjectAccessChanged(project.id);
       }
       emitProjectRegistryMutation();
       announce("Project created.");

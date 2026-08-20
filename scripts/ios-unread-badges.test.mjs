@@ -9,20 +9,30 @@ const model = await read("State/AppModel.swift");
 assert.match(model, /var familiarViews: \[String: Date\] = \[:\]/, "AppModel should track per-familiar last-viewed times");
 assert.match(
   model,
-  /func hasUnread\(_ familiarId: String\) -> Bool \{[\s\S]*lastActivity\(for: familiarId\)[\s\S]*activity > seen/,
-  "hasUnread should compare lastActivity against the seen time",
+  /private func familiarViewKey\(for familiarId: String, in context: ProjectContext\?\) -> String/,
+  "AppModel should key unread state by familiar and optional project context",
+);
+assert.match(
+  model,
+  /func projectHasUnread\(_ familiarId: String\) -> Bool \{[\s\S]*projectLastActivity\(for: familiarId\)[\s\S]*activity > seen/,
+  "project unread badges should compare project activity against the scoped seen time",
 );
 assert.match(model, /func markFamiliarViewed\(_ ids: \[String\]\)/, "AppModel should expose markFamiliarViewed");
-assert.match(model, /private func seedFamiliarViews\(_ ids: \[String\]\)/, "AppModel should seed new familiars as seen");
-assert.match(model, /seedFamiliarViews\(familiars\.map\(\\\.id\)\)/, "loadFamiliars should seed views");
+assert.match(model, /func markFamiliarViewed\(_ ids: \[String\], in context: ProjectContext\?\)/, "AppModel should expose explicit scoped unread updates");
+assert.match(model, /private func seedFamiliarViews\(_ ids: \[String\], in context: ProjectContext\?\)/, "AppModel should seed new familiars as seen per context");
+assert.match(model, /seedFamiliarViews\(nextFamiliars\.map\(\\\.id\), in: nil\)/, "project-context loads should seed the global familiar view map");
 assert.match(model, /loadFamiliarViews\(\)/, "init should load persisted views");
 assert.match(model, /cave-familiar-views\.json/, "views should persist to disk");
 
 // Opening a chat or a familiar's threads marks it read.
 const chat = await read("Views/ChatView.swift");
-assert.match(chat, /app\.markFamiliarViewed\(thread\.familiarIds\)/, "opening a chat marks its familiars read");
+assert.match(chat, /app\.markFamiliarViewed\(\s*thread\.familiarIds,\s*in: app\.projectContext\(for: thread\)\s*\)/, "opening a chat marks its familiars read in that thread's project context");
 const threads = await read("Views/FamiliarThreadsView.swift");
-assert.match(threads, /app\.markFamiliarViewed\(\[familiar\.id\]\)/, "opening a familiar's threads marks it read");
+assert.match(
+  threads,
+  /app\.markFamiliarViewed\(\[familiar\.id\],\s*in: projectContext\)/,
+  "opening a familiar's threads marks it read in the explicit picker context",
+);
 
 // The Chats row shows an accent unread dot.
 const home = await read("Views/ChatsHomeView.swift");
@@ -31,9 +41,9 @@ const home = await read("Views/ChatsHomeView.swift");
 // \s* between the calls so the rail's multi-line chain matches too.
 assert.match(
   home,
-  /if app\.hasUnread\(familiar\.id\) \{\s*Circle\(\)\s*\.fill\(chrome\.accent\)/,
-  "the familiar rail avatar should show an accent unread dot",
+  /if app\.projectHasUnread\(familiar\.id\) \{\s*Circle\(\)\s*\.fill\(chrome\.accent\)/,
+  "the familiar row avatar should show an accent unread dot",
 );
-assert.match(home, /if app\.hasUnread\(familiar\.id\) \{ parts\.append\("unread"\) \}/, "VoiceOver should announce unread");
+assert.match(home, /if app\.projectHasUnread\(familiar\.id\) \{ parts\.append\("unread"\) \}/, "VoiceOver should announce unread");
 
 console.log("ios-unread-badges: ok");

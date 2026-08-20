@@ -11,6 +11,7 @@ import {
   normalizeChatAutoRenamePolicy,
   type ChatAutoRenamePolicy,
 } from "@/lib/chat-auto-rename";
+import { showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 /**
  * Consolidated chat settings — the chat page's Settings tab. One place for the
@@ -209,6 +210,7 @@ export function ChatSettingsView() {
       .then((json: { ok?: boolean; error?: string }) => {
         if (!json.ok) throw new Error(json.error ?? "failed to save");
         setSaveState("idle");
+        showSettingsSavedToast();
       })
       .catch(() => {
         setPolicy(previous);
@@ -231,6 +233,7 @@ export function ChatSettingsView() {
       .then((json: { ok?: boolean; error?: string }) => {
         if (!json.ok) throw new Error(json.error ?? "failed to save");
         setSaveState("idle");
+        showSettingsSavedToast();
       })
       .catch(() => {
         setRenamePolicy(previous);

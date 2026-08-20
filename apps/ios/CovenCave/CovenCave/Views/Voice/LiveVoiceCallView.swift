@@ -13,9 +13,23 @@ struct LiveVoiceCallView: View {
 
     @State private var model: LiveVoiceCallModel
 
-    init(familiar: Familiar, sessionId: String, client: CaveClient?) {
+    init(
+        familiar: Familiar,
+        sessionId: String?,
+        projectRoot: String?,
+        client: CaveClient?,
+        onSessionEstablished: ((String) -> Void)? = nil,
+        onSessionDiscarded: ((String) -> Void)? = nil,
+        onCleanupWarning: ((String) -> Void)? = nil
+    ) {
         _model = State(initialValue: LiveVoiceCallModel(
-            familiar: familiar, sessionId: sessionId, client: client
+            familiar: familiar,
+            sessionId: sessionId,
+            projectRoot: projectRoot,
+            client: client,
+            onSessionEstablished: onSessionEstablished,
+            onSessionDiscarded: onSessionDiscarded,
+            onCleanupWarning: onCleanupWarning
         ))
     }
 

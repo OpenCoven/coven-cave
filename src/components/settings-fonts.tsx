@@ -13,6 +13,7 @@ import {
   type FontSlot,
 } from "@/lib/font-catalog";
 import { applyFontPair, readFontPairPref, writeFontPairPref } from "@/lib/font-storage";
+import { showSettingsSavedAfterPreferencesFlush } from "@/lib/settings-save-feedback";
 import {
   DEFAULT_SCREEN_SCALE,
   SCREEN_SCALE_EVENT,
@@ -272,47 +273,56 @@ export function FontSettings() {
     setPairId(pair.id);
     writeFontPairPref(pair.id);
     applyFontPair(pair.id);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setTextSize = (next: ScreenScale) => {
     setScale(next);
     applyScreenScale(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setLineSpacing = (next: ReadingLeading) => {
     setLeading(next);
     applyReadingLeading(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setReaderSize = (next: number) => {
     setReadingSize(next);
     saveScaleIndex(next);
     applyReadingSize(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setLetterSpacing = (next: ReadingTracking) => {
     setTracking(next);
     applyReadingTracking(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setTextAlign = (next: ReadingAlign) => {
     setAlign(next);
     applyReadingAlign(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setReadingWidth = (next: ReadingWidth) => {
     setWidth(next);
     applyReadingWidth(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setFontWeight = (next: ReadingWeight) => {
     setWeight(next);
     applyReadingWeight(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const setHyphenation = (next: ReadingHyphens) => {
     setHyphens(next);
     applyReadingHyphens(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const reset = () => {

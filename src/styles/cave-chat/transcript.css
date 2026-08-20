@@ -348,7 +348,7 @@
 }
 
 .cave-chat-linear .cave-composer-dock {
-  padding: 10px clamp(16px, 3vw, 34px) var(--space-4);
+  padding: var(--space-5) clamp(16px, 3vw, 34px) var(--space-4);
 }
 
 /* ── Typed follow-up options in the composer footer ───────────────────────── */
@@ -548,9 +548,9 @@
 
 
 .cave-chat-linear .cave-composer-shell {
-  /* Let the writing surface use the full dock even while the transcript keeps
-     its centered reading measure. */
-  max-width: 100%;
+  /* Match the chat's readable column instead of expanding into a window-wide
+     command slab. */
+  max-width: var(--cave-chat-measure);
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -558,26 +558,37 @@
      --radius so the Appearance → Corner radius setting applies: 18px at the
      default 10px base, squarer at sharp, fuller at round. */
   border-radius: calc(var(--radius) * 1.8);
+  border-color: color-mix(in oklch, var(--accent-presence) 36%, var(--border-strong));
   box-shadow:
-    0 14px 38px oklch(0 0 0 / 22%),
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 16%, transparent),
+    0 16px 42px oklch(0 0 0 / 24%),
+    0 0 28px color-mix(in oklch, var(--accent-presence) 12%, transparent),
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.cave-chat-linear .cave-composer-input {
+  min-height: calc(var(--space-10) + var(--space-9));
+}
+
+.cave-chat-linear .cave-composer-footer-band {
+  border-radius: 0 0 calc(var(--radius) * 1.8) calc(var(--radius) * 1.8);
 }
 
 /* The in-chat action chrome stays compact so the full-width writing surface
    remains dominant. Mobile restores touch-safe targets below. */
 .cave-chat-linear .cave-composer-footer-action,
 .cave-chat-linear .cave-composer-plus {
-  width: var(--space-6);
-  height: var(--space-6);
+  width: var(--space-8);
+  height: var(--space-8);
 }
 
 .cave-chat-linear .cave-composer-control-row {
-  min-height: var(--space-6);
+  min-height: var(--space-10);
 }
 
 .cave-chat-linear .cave-composer-send {
-  width: var(--space-6);
-  height: var(--space-6);
+  width: var(--space-8);
+  height: var(--space-8);
   border-color: transparent;
   border-radius: var(--radius-control);
   background: var(--text-primary);
@@ -600,6 +611,15 @@
 .cave-chat-linear .cave-composer-send--busy:hover {
   background: var(--color-danger);
   color: var(--color-danger-foreground);
+}
+
+.cave-chat-linear .cave-composer-send--busy {
+  width: auto;
+  padding-inline: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 @media (max-width: 720px) {
@@ -654,6 +674,10 @@
 
   .cave-chat-linear .cave-composer-control-row {
     min-height: var(--touch-target);
+  }
+
+  .cave-chat-linear .cave-composer-send--busy {
+    width: auto;
   }
 
   .cave-chat-linear-header {

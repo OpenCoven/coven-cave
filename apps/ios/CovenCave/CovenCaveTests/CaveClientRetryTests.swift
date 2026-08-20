@@ -72,6 +72,25 @@ final class CaveClientRetryTests: XCTestCase {
         XCTAssertEqual(attempts, 2)
     }
 
+    func testDiscardVoiceConversationIfEmptyRetriesTransientFailure() async throws {
+        var attempts = 0
+        CaveClientRetryURLProtocol.handler = { [self] request in
+            attempts += 1
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/api/chat/conversation/task-42")
+            XCTAssertEqual(request.url?.query, "ifEmpty=1")
+            if attempts == 1 {
+                throw URLError(.networkConnectionLost)
+            }
+            return (try response(for: request), Data(#"{"ok":true,"deleted":true}"#.utf8))
+        }
+
+        let deleted = try await client().discardVoiceConversationIfEmpty(sessionId: "task-42")
+
+        XCTAssertTrue(deleted)
+        XCTAssertEqual(attempts, 2)
+    }
+
     func testPatchRetriesTransientFailure() async throws {
         var attempts = 0
         CaveClientRetryURLProtocol.handler = { [self] request in
@@ -87,6 +106,55 @@ final class CaveClientRetryTests: XCTestCase {
         _ = try await client().data(for: request, retryingIdempotentMutation: true)
 
         XCTAssertEqual(attempts, 2)
+    }
+
+    func testUpdateTaskProjectPatchesProjectIdThroughBoardHelper() async throws {
+        var body: [String: String] = [:]
+        CaveClientRetryURLProtocol.handler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/api/board/task-42")
+            let data = try XCTUnwrap(request.httpBody)
+            body = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: data) as? [String: String]
+            )
+            return (
+                try response(for: request),
+                Data(
+                    #"""
+                    {"ok":true,"card":{"id":"task-42","title":"Recover","notes":null,"status":"backlog","priority":"medium","familiarId":null,"projectId":"alpha","sessionId":null,"labels":null,"startDate":null,"endDate":null,"createdAt":null,"updatedAt":null,"needsHuman":null,"steps":null,"github":null}}
+                    """#.utf8
+                )
+            )
+        }
+
+        let updated = try await client().updateTaskProject(cardId: "task-42", projectId: "alpha")
+
+        XCTAssertEqual(body, ["projectId": "alpha"])
+        XCTAssertEqual(updated.projectId, "alpha")
+    }
+
+    func testUpdateTaskProjectDecodesStructuredBoardConflictErrors() async throws {
+        CaveClientRetryURLProtocol.handler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/api/board/task-42")
+            return (
+                try response(for: request, status: 409),
+                Data(
+                    #"""
+                    {"ok":false,"code":"assigned_project_not_found","error":"This project no longer exists."}
+                    """#.utf8
+                )
+            )
+        }
+
+        do {
+            _ = try await client().updateTaskProject(cardId: "task-42", projectId: "alpha")
+            XCTFail("Expected the structured board error to throw")
+        } catch let CaveError.serverResponse(status, code, message) {
+            XCTAssertEqual(status, 409)
+            XCTAssertEqual(code, "assigned_project_not_found")
+            XCTAssertEqual(message, "This project no longer exists.")
+        }
     }
 
     func testPostWithoutIdempotencyKeyDoesNotRetry() async throws {

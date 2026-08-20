@@ -81,28 +81,52 @@ export function AnalyticsPageShell({ children }: { children: ReactNode }) {
   const isExpanded = !isMobile && navOpen;
 
   const desktopChrome = !isMobile ? (
-    <header className="aps-top shell-top" data-tauri-drag-region="deep">
-      <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
-      <button
-        type="button"
-        className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
-        aria-label={navOpen ? "Collapse navigation" : "Expand navigation"}
-        aria-expanded={navOpen}
-        title={navOpen ? "Collapse navigation" : "Expand navigation"}
-        onClick={handleToggleNav}
-      >
-        <Icon
-          name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
-          width={CAVE_ICON_SIZE.shellToggle}
-          height={CAVE_ICON_SIZE.shellToggle}
-        />
-      </button>
-      <DesktopHistoryNav />
-    </header>
+    <>
+      <div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">
+        <div className="shell-window-titlebar__controls">
+          <button
+            type="button"
+            className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
+            aria-label={navOpen ? "Collapse navigation" : "Expand navigation"}
+            aria-expanded={navOpen}
+            title={navOpen ? "Collapse navigation" : "Expand navigation"}
+            onClick={handleToggleNav}
+          >
+            <Icon
+              name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+              width={CAVE_ICON_SIZE.shellToggle}
+              height={CAVE_ICON_SIZE.shellToggle}
+            />
+          </button>
+          <DesktopHistoryNav />
+        </div>
+        <div className="shell-window-titlebar__rail" data-tauri-drag-region="deep">
+          <span className="shell-window-titlebar__title">Coven</span>
+        </div>
+      </div>
+      <header className="aps-top shell-top" data-tauri-drag-region="deep">
+        <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
+        <button
+          type="button"
+          className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
+          aria-label={navOpen ? "Collapse navigation" : "Expand navigation"}
+          aria-expanded={navOpen}
+          title={navOpen ? "Collapse navigation" : "Expand navigation"}
+          onClick={handleToggleNav}
+        >
+          <Icon
+            name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+            width={CAVE_ICON_SIZE.shellToggle}
+            height={CAVE_ICON_SIZE.shellToggle}
+          />
+        </button>
+        <DesktopHistoryNav />
+      </header>
+    </>
   ) : null;
 
   return (
-    <div className="aps">
+    <div className={`aps${isExpanded ? " aps--nav-expanded" : ""}`}>
       {desktopChrome}
       <div className="aps-body">
         {/* The rail is always rendered — collapsing shrinks it to 56px icons,

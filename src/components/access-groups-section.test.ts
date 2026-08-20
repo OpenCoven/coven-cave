@@ -51,6 +51,16 @@ assert.match(
   "changing project access sends the full replacement grant list",
 );
 assert.match(section, /method: "DELETE"/, "groups can be deleted");
+assert.match(
+  section,
+  /withBusy\(group\.id, group\.projectGrants\.map\(\(grant\) => grant\.projectId\)/,
+  "membership and deletion changes invalidate every project granted through the group",
+);
+assert.match(
+  section,
+  /withBusy\(group\.id, \[projectId\]/,
+  "a group grant change invalidates its affected project",
+);
 
 // ── Read/write levels ─────────────────────────────────────────────────────────
 assert.match(

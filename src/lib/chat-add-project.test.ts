@@ -10,6 +10,7 @@ import {
   resetProjectRegistryListenersForTests,
   subscribeProjectRegistryMutation,
 } from "./project-registry-events.ts";
+import { PROJECT_ACCESS_CHANGED_EVENT } from "./project-access-events.ts";
 
 // projectNameForRoot: the leaf folder is the human name.
 assert.equal(projectNameForRoot("/Users/me/code/coven-cave"), "coven-cave");
@@ -22,9 +23,19 @@ assert.equal(projectNameForRoot(""), "");
 {
   resetProjectRegistryListenersForTests();
   let notifications = 0;
+  const accessChanges = [];
   const unsubscribe = subscribeProjectRegistryMutation(() => {
     notifications += 1;
   });
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    dispatchEvent: (event) => {
+      if (event.type === PROJECT_ACCESS_CHANGED_EVENT) {
+        accessChanges.push(event.detail?.projectId);
+      }
+      return true;
+    },
+  };
   const calls = [];
   const createProject = async (name, root, options) => {
     calls.push(["create", name, root, options]);
@@ -35,6 +46,8 @@ assert.equal(projectNameForRoot(""), "");
     return { ok: true, json: async () => ({ ok: true }) };
   };
   const result = await addChatProject({ root: "/code/orphan", familiarId: "sage", createProject, fetchImpl });
+  if (previousWindow === undefined) delete globalThis.window;
+  else globalThis.window = previousWindow;
   assert.deepEqual(result, { ok: true, projectId: "p1" });
   assert.equal(calls[0][0], "create");
   assert.equal(calls[0][1], "orphan");
@@ -45,6 +58,7 @@ assert.equal(projectNameForRoot(""), "");
   // The grant route rejects any `familiarId` field — only targetFamiliarId is sent.
   assert.deepEqual(calls[1][2], { targetFamiliarId: "sage", projectId: "p1" });
   assert.equal(notifications, 1, "successful grant completion emits a post-grant refresh");
+  assert.deepEqual(accessChanges, ["p1"], "successful grant completion invalidates shell access authority");
   unsubscribe();
 }
 

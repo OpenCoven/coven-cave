@@ -505,8 +505,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await resolveLocalRuntimeCwd\(authorizedProjectRoot\)/,
-  "Local Cave chat should resolve only the root accepted by the shared launch gate",
+  /await resolveLocalRuntimeCwd\(authorizedProjectRoot,\s*\{\s*rootAuthority: "authorized-project",\s*\}\)/,
+  "Local Cave chat should resolve only the root accepted by the shared launch gate, without reapplying the obsolete home-only boundary",
 );
 
 assert.match(

@@ -14,6 +14,14 @@ const fileReader = readFileSync(
   new URL("./familiars-memory-reader.tsx", import.meta.url),
   "utf8",
 );
+const overview = readFileSync(
+  new URL("./canonical-memory-overview.tsx", import.meta.url),
+  "utf8",
+);
+const canonicalReader = readFileSync(
+  new URL("./canonical-memory-reader.tsx", import.meta.url),
+  "utf8",
+);
 const familiarsView = readFileSync(
   new URL("./familiars-view.tsx", import.meta.url),
   "utf8",
@@ -38,6 +46,29 @@ const studio = readFileSync(
   new URL("./familiar-studio-inline.tsx", import.meta.url),
   "utf8",
 );
+
+test("familiar memory is a compact recall workspace with provenance-led rows", () => {
+  assert.match(memoryView, /import "@\/styles\/familiars-memory\.css"/);
+  assert.match(memoryView, /className="@container\/memview fm-workspace/);
+  assert.match(memoryView, /className=\{`fm-header/);
+  assert.match(memoryView, /<CanonicalMemoryOverviewPanel/);
+  assert.match(memoryView, /<SearchInput/);
+  assert.match(memoryView, /<Popover[\s\S]*?<PopoverBody>/);
+  assert.match(memoryView, /className=\{`fm-content/);
+  assert.match(memoryView, /selectedRowId[\s\S]*?@min-\[1024px\]\/memview:flex/);
+  assert.match(memoryView, /<MemoryReaderPane/);
+  assert.match(memoryRow, /className=\{`fm-memory-row/);
+  assert.match(memoryRow, /className="fm-memory-row__provenance"/);
+  assert.match(memoryRow, /row\.sourceLabel/);
+  assert.match(fileReader, /className="fm-reader-empty"/);
+  assert.match(fileReader, /className="fm-reader-shell[^"]*"/);
+  assert.match(overview, /className="fm-overview"/);
+  assert.match(overview, /className="fm-overview__metrics"/);
+  assert.match(canonicalReader, /className="fm-reader-shell[^"]*"/);
+  assert.match(canonicalReader, /className="fm-reader-header[^"]*"/);
+  assert.match(canonicalReader, /<dl className="mt-2 flex flex-wrap/);
+  assert.match(canonicalReader, /className="fm-reader-body[^"]*"/);
+});
 const studioMemory = readFileSync(
   new URL("./familiar-studio-memory-tab.tsx", import.meta.url),
   "utf8",

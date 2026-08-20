@@ -62,8 +62,12 @@ availability and accessible labels. It does not receive provider credentials.
 4. An iOS WebRTC adapter exchanges SDP with the grant URL, sends microphone
    audio, plays inbound audio, and maps provider events into transcript rows.
 5. Ending the call closes the peer connection, stops audio, and leaves the
-   ordinary chat thread intact. Final transcript persistence must use one
-   explicit path so it never duplicates a provider-persisted turn.
+   ordinary chat thread intact. If iOS auto-created a fresh session and the
+   call never bound or produced transcript content, it discards that empty
+   conversation through `DELETE /api/chat/conversation/:id?ifEmpty=1` so a
+   cancelled start does not leave a blank thread behind. Final transcript
+   persistence must use one explicit path so it never duplicates a
+   provider-persisted turn.
 
 SwiftUI does not provide `RTCPeerConnection`; the implementation therefore
 adds a vetted iOS WebRTC package rather than attempting to emulate Realtime
@@ -79,6 +83,14 @@ turn-taking loop:
 2. Append that turn through `ChatThread.send` so ordinary chat persistence and
    streaming remain authoritative.
 3. Render the assistant stream in the call transcript.
+   As soon as the stream announces the authoritative `sessionId`, publish that
+   binding back to the chat thread instead of waiting for the whole turn to
+   finish, so a hangup during the reply still resumes the same session later.
+   Hanging up during `Processing` must still allow that binding to land, while
+   suppressing any later assistant audio or ordinary call-state updates.
+   If that thread is locally linked to a task and this is its first bound
+   session, reconcile the card immediately so the board PATCHes the same
+   canonical `sessionId` without waiting for a later text-only send.
 4. Speak only completed assistant text, then return to listening.
 
 The sheet labels this mode `Native voice` and describes its turn-based behavior
@@ -102,7 +114,7 @@ in accessible status text. It never claims to be a live Realtime conversation.
 
 - Pure Swift tests cover state transitions, permission denial, mute/end,
   transcript ordering, partial-final replacement, audio interruption cleanup,
-  and native turn handoff.
+  native turn handoff, and empty-session cleanup on early exits.
 - API tests prove the mobile call request carries only familiar/session IDs and
   the returned grant never contains the provider key.
 - UI tests prove dictation and phone-call controls remain distinct, the sheet

@@ -227,3 +227,11 @@
   background: var(--accent-presence);
   transition: width 0.1s linear;
 }
+
+.ui-save-toast .ui-undo-toast__icon {
+  color: var(--color-success);
+}
+
+.ui-save-toast {
+  bottom: calc(var(--space-5) + var(--space-12));
+}

@@ -3,7 +3,32 @@ import { describe, it } from "node:test";
 import { FAMILIAR_CONTRACT_SPEC_VERSION, type ContractReport } from "./familiar-contract.ts";
 import { deriveHealRequests, escalateBlockers, type SelfHealRequest } from "./familiar-heal-requests.ts";
 import type { FamiliarGrowthReport } from "./familiar-growth-signals.ts";
-import type { ThreadSignalsAggregate } from "./thread-self-report.ts";
+import {
+  aggregateThreadSignals,
+  type ThreadSelfReport,
+  type ThreadSignalsAggregate,
+} from "./thread-self-report.ts";
+
+function report(over: Partial<ThreadSelfReport>): ThreadSelfReport {
+  return {
+    id: "report",
+    familiarId: "momo",
+    sessionId: "session",
+    reportedAt: "2026-08-01T00:00:00.000Z",
+    overallConfidence: 80,
+    toolReliability: { score: 80, failedTools: [], unreliableTools: [] },
+    contextPressure: "adequate",
+    skillsUsed: [],
+    skillsNeedingClarity: [],
+    skillsNeedingAccess: [],
+    capabilitiesLacking: [],
+    capabilitiesVital: [],
+    memoryRecallScore: 80,
+    fileLocatabilityScore: 80,
+    persistentBlockers: [],
+    ...over,
+  };
+}
 
 function aggregateWithBlockers(
   blockers: ThreadSignalsAggregate["persistentBlockers"],
@@ -148,6 +173,37 @@ describe("deriveHealRequests", () => {
 });
 
 describe("escalateBlockers", () => {
+  it("carries the newest source thread onto an aggregated blocker request", () => {
+    const blocker = {
+      id: "missing-auth",
+      title: "Authentication is missing",
+      category: "auth" as const,
+      impact: "blocking" as const,
+      detail: "The thread could not authenticate.",
+    };
+    const reports = [
+      report({
+        id: "older",
+        sessionId: "session-older",
+        reportedAt: "2026-08-01T00:00:00.000Z",
+        persistentBlockers: [blocker],
+      }),
+      report({
+        id: "newer",
+        sessionId: "session-newer",
+        threadTitle: "Repair deployment auth",
+        reportedAt: "2026-08-02T00:00:00.000Z",
+        persistentBlockers: [blocker],
+      }),
+    ];
+    const aggregate = aggregateThreadSignals(reports);
+
+    const [request] = escalateBlockers("momo", aggregate, [], reports);
+
+    assert.equal(request.traceSessionId, "session-newer");
+    assert.equal(request.traceThreadTitle, "Repair deployment auth");
+  });
+
   it("turns critical aggregate blockers into critical self-heal requests", () => {
     const requests = escalateBlockers("cody", aggregateWithBlockers([blocker("auth-oauth", "auth")]), []);
 

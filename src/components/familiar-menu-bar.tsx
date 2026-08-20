@@ -33,8 +33,8 @@ type Props = {
   enrichProgress?: { done: number; total: number } | null;
   /** Jump to the Schedules surface (calendar + crons). */
   onViewSchedules: () => void;
-  /** Open the quick-chat dropdown (anchored under its trigger in this bar). */
-  onOpenQuickChat?: () => void;
+  /** Start a blank chat through the shell's acting-familiar gate. */
+  onOpenQuickChat: () => void;
 };
 
 const ENRICH_TASKS_TITLE =
@@ -109,19 +109,17 @@ export function FamiliarMenuBar({
       </form>
 
       <div className="menu-bar__group menu-bar__group--tasks">
-        {onOpenQuickChat ? (
-          <button
-            type="button"
-            className="menu-bar__task focus-ring"
-            data-quick-chat-trigger
-            onClick={onOpenQuickChat}
-            aria-label="Quick chat"
-            title="Quick chat (⌘J)"
-          >
-            <Icon name="ph:chat-circle-dots" width={22} height={22} aria-hidden />
-            <span className="menu-bar__task-label">Chat</span>
-          </button>
-        ) : null}
+        <button
+          type="button"
+          data-quick-chat-trigger
+          className="menu-bar__task focus-ring"
+          onClick={onOpenQuickChat}
+          aria-label="Quick chat"
+          title="Quick chat"
+        >
+          <Icon name="ph:note-pencil" width={22} height={22} aria-hidden />
+          <span className="menu-bar__task-label">Quick chat</span>
+        </button>
         {onEnrichTasks ? (
           <button
             type="button"
