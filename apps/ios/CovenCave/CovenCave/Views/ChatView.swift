@@ -1560,6 +1560,8 @@ struct ChatView: View {
             Task { await runDoctor() }
         case .switchModel:
             Task { await switchModel(args) }
+        case .startDiagram:
+            startDiagram(args)
         case .desktopOnly(let surface):
             app.showToast("\(surface) lives on your desktop", systemImage: "desktopcomputer",
                           style: .warning)
@@ -1567,6 +1569,22 @@ struct ChatView: View {
     }
 
     // MARK: - Command handlers
+
+    private func startDiagram(_ args: String) {
+        guard let client = app.client else { return }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
+        let brief = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelBinding = turnModelBinding
+        thread.send(DiagramCommandPrompt.build(brief),
+                    displayText: brief.isEmpty ? DiagramCommandPrompt.start : brief,
+                    modelControls: modelControlValues,
+                    modelOverride: modelBinding.modelOverride,
+                    modelOverrideScope: modelBinding.scope,
+                    client: client) { app.touch(thread) }
+    }
 
     private func switchTo(_ familiar: Familiar) {
         if !thread.isGroup, thread.familiarIds == [familiar.id] {

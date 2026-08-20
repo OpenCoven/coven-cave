@@ -16,4 +16,11 @@ assert.ok(matchSlash("/ima").some((c) => c.name === "/image"), "/ima autocomplet
 assert.equal(canonicalize("/img"), "/image", "/img aliases to /image");
 assert.equal(canonicalize("/imagine"), "/image", "/imagine aliases to /image");
 
-console.log("slash-commands /canvas: ok");
+const diagram = SLASH_COMMANDS.find((c) => c.name === "/diagram");
+assert.ok(diagram, "/diagram is registered");
+assert.ok(diagram.argPlaceholder, "/diagram advertises an optional starting brief");
+assert.equal(diagram.section, "chat", "/diagram lives in the chat section");
+assert.ok(matchSlash("/dia").some((c) => c.name === "/diagram"), "/dia autocompletes to /diagram");
+assert.equal(canonicalize("/diagram"), "/diagram", "/diagram canonicalizes to itself");
+
+console.log("slash-commands: ok");

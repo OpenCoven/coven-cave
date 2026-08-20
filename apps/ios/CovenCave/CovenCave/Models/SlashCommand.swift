@@ -42,6 +42,7 @@ struct SlashCommand: Identifiable, Hashable {
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
         case switchModel           // /model — pick or set the chat model
+        case startDiagram          // /diagram — start the guided diagram intake
         case desktopOnly(String)   // recognised, but lives on the desktop
     }
 
@@ -107,6 +108,10 @@ enum SlashCatalog {
                      description: "Generate an image inline in chat (provider set in Familiar Studio → Brain).",
                      argPlaceholder: "describe an image…", section: .chat,
                      availability: .desktopOnly, action: .desktopOnly("Image generation")),
+        SlashCommand(name: "/diagram", hint: "design a diagram",
+                     description: "Start a guided diagram session and generate an accessible HTML/SVG artifact.",
+                     argPlaceholder: "what to diagram…", section: .chat,
+                     availability: .native, action: .startDiagram),
 
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",
@@ -229,6 +234,7 @@ enum SlashInput {
         if let command = SlashCatalog.command(for: token) {
             return .command(command, args: args)
         }
+
         return .unknown(token: token)
     }
 
@@ -237,5 +243,31 @@ enum SlashInput {
     static func isTypingCommand(_ raw: String) -> Bool {
         guard raw.hasPrefix("/") else { return false }
         return !raw.contains(" ") && !raw.contains("\n")
+    }
+}
+
+enum DiagramCommandPrompt {
+    static let start = "Help me create a diagram."
+
+    static func build(_ userBrief: String) -> String {
+        let brief = userBrief.trimmingCharacters(in: .whitespacesAndNewlines)
+        let startingBrief = brief.isEmpty ? "No brief yet." : brief
+        let nextStep = brief.isEmpty
+            ? "Begin by asking what the diagram should help its audience understand."
+            : "Assess the starting brief now. Ask the single highest-value missing question, or present the plan if it is already complete."
+
+        return """
+        Guide the user through creating one clear, editorial-quality diagram in this chat.
+        If the `diagram-design` skill is available, use it. If it is not available, continue with this workflow instead of asking the user to install anything.
+
+        Gather only the missing essentials: what the audience should understand, the facts/nodes/relationships to show, the best visual type, output size or destination, and brand/style constraints. Ask exactly one concise, highest-value question per turn and do not repeat answered questions. When the brief is sufficient, state a compact plan naming the visual type, size, focal point, and anything omitted to stay legible. Ask for confirmation unless the user already pinned those choices.
+
+        Target density 4/10 and usually no more than nine primary nodes. Use one or two focal accents. Avoid shadows, generic identical rounded boxes, decorative tech glow, and diagonal connectors. Default to a static diagram.
+
+        After confirmation, return exactly one fenced `html` code block and no prose around it. Produce a complete self-contained HTML document with inline CSS and SVG. Include an accessible SVG name and description using `role="img"`, `aria-labelledby`, `<title>`, and `<desc>`.
+
+        Starting brief: \(startingBrief)
+        \(nextStep)
+        """
     }
 }
