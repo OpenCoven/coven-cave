@@ -35,9 +35,6 @@ test("exports strict tag patterns and parsing contracts", () => {
     rc: 1,
   });
   assert.deepEqual(parseFinalTag("v1.2.3"), { tag: "v1.2.3", version: "1.2.3" });
-  const largeCandidate = parseCandidateTag("v1.2.3-rc.9007199254740993");
-  assert.equal(typeof largeCandidate.rc, "number");
-  assert.equal(largeCandidate.tag, "v1.2.3-rc.9007199254740993");
 
   for (const tag of ["v1.2.3", "v1.2.3-rc.0", "v1.2.3-rc.01", "v1.2", "v1.2.3-beta.1"]) {
     assert.throws(() => parseCandidateTag(tag), /valid release-candidate tag/);
@@ -45,11 +42,23 @@ test("exports strict tag patterns and parsing contracts", () => {
   for (const tag of ["v1.2.3-rc.1", "v1.2.3-beta.1", "1.2.3", "v01.2.3"]) {
     assert.throws(() => parseFinalTag(tag), /valid final release tag/);
   }
+  
+  // Reject unsafe integers (beyond Number.MAX_SAFE_INTEGER)
+  assert.throws(
+    () => parseCandidateTag("v1.2.3-rc.9007199254740992"),
+    /valid release-candidate tag/,
+  );
+  
+  // Reject extremely long digit sequences that overflow to Infinity
+  assert.throws(
+    () => parseCandidateTag("v1.2.3-rc.99999999999999999999999999999999999999999"),
+    /valid release-candidate tag/,
+  );
 });
 
-test("candidate ordering remains exact above the safe-integer range", async () => {
-  const lower = "v1.2.3-rc.9007199254740992";
-  const higher = "v1.2.3-rc.9007199254740993";
+test("candidate ordering works correctly with valid large safe integers", async () => {
+  const lower = "v1.2.3-rc.9007199254740990";
+  const higher = "v1.2.3-rc.9007199254740991";
   const { fetchImpl } = githubFixture({
     routes: ({ pathname }) => {
       if (pathname.endsWith("/actions/workflows/release-candidate.yml/runs")) {

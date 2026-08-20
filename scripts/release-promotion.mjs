@@ -31,6 +31,10 @@ function parseCandidateTagParts(tag) {
   }
   const [, major, minor, patch, rcText] = match;
   const rc = Number(rcText);
+  // Reject unsafe integers and special values (Infinity, -Infinity, NaN)
+  if (!Number.isSafeInteger(rc) || rc <= 0) {
+    throw new Error(`'${String(tag)}' is not a valid release-candidate tag`);
+  }
   const version = `${major}.${minor}.${patch}`;
   return { tag, baseTag: `v${version}`, version, rc, rcText };
 }
