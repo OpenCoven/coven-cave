@@ -1,0 +1,8 @@
+{
+  "schema": "opencoven.run-event/v1",
+  "runId": "run_01",
+  "sequence": 0,
+  "type": "run.created",
+  "at": "2026-08-15T20:00:00.000Z",
+  "data": {}
+}
