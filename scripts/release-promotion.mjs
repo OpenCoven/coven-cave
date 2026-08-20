@@ -417,11 +417,15 @@ function validatePageUrl(context, url) {
 }
 
 async function requestJson(context, pathOrUrl, { allow404 = false, includeResponse = false } = {}) {
+  const token = typeof context.token === "string" ? context.token.trim() : "";
+  if (!token) {
+    throw new Error("GitHub token is required");
+  }
   const url = pathOrUrl instanceof URL ? pathOrUrl : new URL(pathOrUrl, context.apiUrl);
   const response = await context.fetchImpl(url.href, {
     headers: {
       accept: "application/vnd.github+json",
-      authorization: `Bearer ${context.token}`,
+      authorization: `Bearer ${token}`,
       "x-github-api-version": "2022-11-28",
     },
   });
