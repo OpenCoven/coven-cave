@@ -162,7 +162,7 @@ export function ChartRoomChain({
                       ? "landed"
                       : standing === "hold"
                         ? "everything after waits here"
-                        : node.step.needs
+                        : node.step.needs.length > 0
                           ? "waits upstream"
                           : "can start"}
                   </span>
