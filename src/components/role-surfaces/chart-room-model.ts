@@ -3,15 +3,24 @@
  *
  * The room reads the Cave's real board (`/api/board`) and charts a course
  * through it: every step is a real card, every stage is a real board lane, and
- * every move the room offers is a real write. The one thing the board does not
- * record is which step *waits on* which — that is the operator's chart, kept as
- * an overlay in the room's own surface state and drawn over the real cards.
+ * every move the room offers is a real write. Dependencies are canonical on the
+ * card (`Card.dependencies`, phase 1 of cave-wqzf2) and every dependency edit
+ * writes canonically; the room's old per-familiar `dependsOn` overlay survives
+ * only as a read-side legacy store, unioned in until its edges are imported
+ * onto the cards (see `overlayImportPlan`) and the store is retired (phase 7).
  *
  * Everything here is pure and JSX-free so the rules stay unit-testable under
  * plain `node --experimental-strip-types`.
  */
 
-import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type {
+  Card,
+  CardStatus,
+  TaskDependencyKind,
+  TaskDependencyState,
+  TaskRecordOrigin,
+} from "@/lib/cave-board-types";
+import { dependenciesOf, isGraphEdge } from "../../lib/task-orchestration.ts";
 import { COURSE_LANES } from "./navigator-charts.ts";
 
 // ── Stages ───────────────────────────────────────────────────────────────────
@@ -67,6 +76,31 @@ export function previousStage(id: ChartStageId): ChartStage | null {
  *  room never stores a state of its own. */
 export type ChartStepState = "decision" | "overdue" | "running" | "high" | "queued" | "done";
 
+/** Where an upstream edge came from. Canonical records carry their card origin;
+ *  `"overlay"` marks a surviving legacy overlay edge not yet imported. */
+export type ChartEdgeOrigin = TaskRecordOrigin | "overlay";
+
+/** One upstream task edge, with the canonical facts the room reasons over. */
+export type ChartStepEdge = {
+  /** The upstream card id this step waits on. */
+  needs: string;
+  origin: ChartEdgeOrigin;
+  state: TaskDependencyState;
+  /** True when this edge is the card's primary blocker. */
+  primary: boolean;
+  /** True when the primary designation is operator-pinned — never auto-demote. */
+  pinned: boolean;
+};
+
+/** A non-task blocker — GitHub, human, credential, service, execution,
+ *  external. Terminal by contract (invariant I3): it renders as a chip and
+ *  never enters depth or cycle math. */
+export type ChartExternalBlocker = {
+  kind: Exclude<TaskDependencyKind, "task">;
+  label: string;
+  state: TaskDependencyState;
+};
+
 export type ChartStep = {
   /** The real board card id. */
   id: string;
@@ -78,8 +112,13 @@ export type ChartStep = {
   owner: string | null;
   /** Project id, or null when the card is not tied to one. */
   project: string | null;
-  /** What this step waits on — a card id from the operator's chart overlay. */
-  needs?: string;
+  /** Upstream card ids — the union of the card's canonical task dependencies
+   *  and any surviving overlay edge. Empty when nothing blocks it. */
+  needs: string[];
+  /** The same upstreams with their canonical facts, in card priority order. */
+  edges: ChartStepEdge[];
+  /** Non-task blockers, rendered terminally and excluded from graph math. */
+  external: ChartExternalBlocker[];
   /** True when the card is flagged as needing a human. */
   needsHuman: boolean;
   labels: string[];
@@ -106,15 +145,17 @@ export function stepState(
   return "queued";
 }
 
-// ── The chart overlay ────────────────────────────────────────────────────────
+// ── The legacy chart overlay ─────────────────────────────────────────────────
 
 /**
- * The operator's chart: which card waits on which. Kept out of the board on
- * purpose — the board has no dependency field, and inventing one in the client
- * would show every other surface a link it cannot honour.
+ * The room's pre-canonical dependency store: step id → the one step it waits
+ * on, per-familiar and per-browser. Kept read-only so divergent maps from other
+ * navigators or devices are never clobbered — each edge is imported onto the
+ * card (`overlayImportPlan`) and survives here only until that import lands.
+ * Dependency edits write canonically; the only overlay writes left are prunes.
  */
 export type ChartOverlay = {
-  /** step id → the step it waits on. One upstream per step, as the flow draws. */
+  /** step id → the step it waits on. One upstream per step — the legacy shape. */
   dependsOn: Record<string, string>;
 };
 
@@ -139,6 +180,7 @@ export function normalizeOverlay(
   return { dependsOn };
 }
 
+/** Prune one legacy edge — used when a canonical edit supersedes it. */
 export function setDependency(overlay: ChartOverlay, stepId: string, needs: string | null): ChartOverlay {
   const dependsOn = { ...overlay.dependsOn };
   if (needs == null || needs === stepId) delete dependsOn[stepId];
@@ -146,7 +188,7 @@ export function setDependency(overlay: ChartOverlay, stepId: string, needs: stri
   return { dependsOn };
 }
 
-/** Cut every edge into and out of a step — used when its card leaves the board. */
+/** Cut every legacy edge into and out of a step — used when its card leaves the board. */
 export function forgetStep(overlay: ChartOverlay, stepId: string): ChartOverlay {
   const dependsOn: Record<string, string> = {};
   for (const [id, needs] of Object.entries(overlay.dependsOn)) {
@@ -156,6 +198,30 @@ export function forgetStep(overlay: ChartOverlay, stepId: string): ChartOverlay 
   return { dependsOn };
 }
 
+/**
+ * The overlay edges that still need importing as canonical dependencies:
+ * every normalized edge whose card has no canonical task dependency naming the
+ * same upstream, in a deterministic order. The import merges — it never
+ * overwrites a canonical edge — so once an edge is canonical it drops out of
+ * the plan and a re-run is a no-op. Divergent maps from two navigators or two
+ * browsers therefore union instead of clobbering each other.
+ */
+export function overlayImportPlan(
+  cards: readonly Card[],
+  overlay: ChartOverlay | null | undefined,
+): Array<{ stepId: string; needs: string }> {
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  const plan: Array<{ stepId: string; needs: string }> = [];
+  for (const [stepId, needs] of Object.entries(overlay?.dependsOn ?? {})) {
+    if (stepId === needs) continue;
+    const card = byId.get(stepId);
+    if (!card || !byId.has(needs)) continue;
+    const already = dependenciesOf(card).some((dep) => isGraphEdge(dep) && dep.taskId === needs);
+    if (!already) plan.push({ stepId, needs });
+  }
+  return plan.sort((a, b) => a.stepId.localeCompare(b.stepId) || a.needs.localeCompare(b.needs));
+}
+
 // ── Card → step ──────────────────────────────────────────────────────────────
 
 export function toChartSteps(
@@ -163,64 +229,263 @@ export function toChartSteps(
   overlay: ChartOverlay,
   today: string,
 ): ChartStep[] {
-  return cards.map((card) => ({
-    id: card.id,
-    title: card.title,
-    notes: card.notes ?? "",
-    stage: card.status,
-    state: stepState(card, today),
-    owner: card.familiarId ?? null,
-    project: card.projectId ?? null,
-    needs: overlay.dependsOn[card.id],
-    needsHuman: card.needsHuman === true,
-    labels: card.labels ?? [],
-    endDate: card.endDate ?? null,
-    updatedAt: card.updatedAt,
-  }));
+  const live = new Set(cards.map((card) => card.id));
+  return cards.map((card) => {
+    const canonical = dependenciesOf(card);
+    const edges: ChartStepEdge[] = [];
+    for (const dep of canonical) {
+      if (!isGraphEdge(dep)) continue;
+      const target = dep.taskId as string;
+      if (target === card.id || !live.has(target)) continue;
+      const primary = card.primaryBlockerId != null && card.primaryBlockerId === dep.id;
+      const existing = edges.findIndex((edge) => edge.needs === target);
+      const edge: ChartStepEdge = {
+        needs: target,
+        origin: dep.origin,
+        state: dep.state,
+        primary,
+        pinned: primary && card.primaryBlockerPinned === true,
+      };
+      // Two records naming the same upstream collapse to one edge; the primary
+      // record wins so the room never loses the pin.
+      if (existing === -1) edges.push(edge);
+      else if (primary && !edges[existing].primary) edges[existing] = edge;
+    }
+    const legacy = overlay.dependsOn[card.id];
+    if (legacy != null && legacy !== card.id && live.has(legacy) && !edges.some((edge) => edge.needs === legacy)) {
+      edges.push({ needs: legacy, origin: "overlay", state: "unresolved", primary: false, pinned: false });
+    }
+    return {
+      id: card.id,
+      title: card.title,
+      notes: card.notes ?? "",
+      stage: card.status,
+      state: stepState(card, today),
+      owner: card.familiarId ?? null,
+      project: card.projectId ?? null,
+      needs: edges.map((edge) => edge.needs),
+      edges,
+      external: canonical
+        .filter((dep) => !isGraphEdge(dep))
+        .map((dep) => ({
+          kind: dep.kind as ChartExternalBlocker["kind"],
+          label: dep.label,
+          state: dep.state,
+        })),
+      needsHuman: card.needsHuman === true,
+      labels: card.labels ?? [],
+      endDate: card.endDate ?? null,
+      updatedAt: card.updatedAt,
+    };
+  });
 }
 
 // ── Graph walks ──────────────────────────────────────────────────────────────
 
-const GUARD = 200;
+/** Mirrors the canonical validator's traversal guard (task-orchestration.ts):
+ *  a graph this deep is a data fault, not a chart. */
+const GUARD = 1000;
 
 function indexById(steps: readonly ChartStep[]): Map<string, ChartStep> {
   return new Map(steps.map((step) => [step.id, step]));
 }
 
+/** Parent ids of a step that point at real steps. */
+function parentsOf(byId: Map<string, ChartStep>, id: string): string[] {
+  return (byId.get(id)?.needs ?? []).filter((parent) => byId.has(parent));
+}
+
 /** Everything waiting directly on this step. */
 export function dependants(steps: readonly ChartStep[], id: string): ChartStep[] {
-  return steps.filter((step) => step.needs === id);
+  return steps.filter((step) => step.needs.includes(id));
 }
 
 /**
- * The whole route through a step, root first: what it waits on all the way up,
- * then the single longest line of work waiting on it. A lone step is not a
- * route — callers treat a length of one as "no chain".
+ * Every cycle in the chart, each as ids in walk order (each entry waits on the
+ * next, and the last waits on the first). A full DFS over every parent, because
+ * fan-in makes accidental loops easier to close and a linear walk would miss
+ * any loop off the first-parent spine. Mirrors the canonical `detectCycles`.
+ */
+export function stepCycles(steps: readonly ChartStep[]): string[][] {
+  const byId = indexById(steps);
+  const cycles: string[][] = [];
+  const seen = new Set<string>();
+  const settled = new Set<string>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+
+  const walk = (id: string, depth: number): void => {
+    if (depth >= GUARD) return;
+    seen.add(id);
+    stack.push(id);
+    onStack.add(id);
+    for (const parent of parentsOf(byId, id)) {
+      if (onStack.has(parent)) {
+        cycles.push(stack.slice(stack.indexOf(parent)));
+      } else if (!settled.has(parent)) {
+        walk(parent, depth + 1);
+      }
+    }
+    stack.pop();
+    onStack.delete(id);
+    settled.add(id);
+  };
+
+  for (const step of steps) {
+    if (!seen.has(step.id)) walk(step.id, 0);
+  }
+  return cycles;
+}
+
+/** Ids that sit on any cycle. */
+export function cyclicStepIds(steps: readonly ChartStep[]): Set<string> {
+  const out = new Set<string>();
+  for (const cycle of stepCycles(steps)) {
+    for (const id of cycle) out.add(id);
+  }
+  return out;
+}
+
+/**
+ * The loop this step sits in, starting at the step and walking parent-ward, or
+ * null when its routes are sound. Searches every parent branch — the three-step
+ * loops nobody spots by eye now hide behind fan-in as easily as behind length.
+ */
+export function cycleFor(steps: readonly ChartStep[], id: string): string[] | null {
+  const byId = indexById(steps);
+  if (!byId.has(id)) return null;
+  const path: string[] = [];
+  const onPath = new Set<string>();
+  const exhausted = new Set<string>();
+  let found: string[] | null = null;
+
+  const walk = (cursor: string): void => {
+    if (found || path.length >= GUARD) return;
+    path.push(cursor);
+    onPath.add(cursor);
+    for (const parent of parentsOf(byId, cursor)) {
+      if (found) break;
+      if (parent === id) {
+        found = [...path];
+        break;
+      }
+      if (!onPath.has(parent) && !exhausted.has(parent)) walk(parent);
+    }
+    path.pop();
+    onPath.delete(cursor);
+    exhausted.add(cursor);
+  };
+
+  walk(id);
+  return found;
+}
+
+/**
+ * Longest dependency depth. Rank is what the graph and the gantt lay out on:
+ * stage cannot do this job, because two cards in the same lane can be a week
+ * apart when one waits on the other. Depth is max-over-parents — a step with
+ * two upstreams cannot start until the later one lands — and cycle members
+ * resolve to 0 rather than hanging, mirroring the canonical walk.
+ */
+export function dependencyDepth(steps: readonly ChartStep[]): Record<string, number> {
+  const byId = indexById(steps);
+  const cyclic = cyclicStepIds(steps);
+  const memo: Record<string, number> = {};
+  const walk = (id: string, seen: Set<string>): number => {
+    if (cyclic.has(id)) {
+      memo[id] = 0;
+      return 0;
+    }
+    const cached = memo[id];
+    if (cached !== undefined) return cached;
+    if (seen.has(id) || seen.size >= GUARD) return 0;
+    seen.add(id);
+    let depth = 0;
+    for (const parent of parentsOf(byId, id)) {
+      depth = Math.max(depth, walk(parent, seen) + 1);
+    }
+    seen.delete(id);
+    memo[id] = depth;
+    return depth;
+  };
+  for (const step of steps) walk(step.id, new Set());
+  return memo;
+}
+
+/** Every id upstream of this one across every parent branch, so a downstream
+ *  link can never close a loop. */
+export function ancestorsOf(steps: readonly ChartStep[], id: string): Set<string> {
+  const byId = indexById(steps);
+  const out = new Set<string>();
+  const queue = [...parentsOf(byId, id)];
+  while (queue.length > 0 && out.size < GUARD) {
+    const next = queue.shift() as string;
+    if (out.has(next)) continue;
+    out.add(next);
+    queue.push(...parentsOf(byId, next));
+  }
+  return out;
+}
+
+/**
+ * The gate: the parent that actually holds a step, i.e. the deepest one — the
+ * genuine critical path runs through it, because the step cannot start until
+ * its latest-ending upstream lands. Ties break on title then id so the chart
+ * never flickers between reads.
+ */
+export function gateParent(
+  steps: readonly ChartStep[],
+  id: string,
+  depth?: Record<string, number>,
+): ChartStep | undefined {
+  const byId = indexById(steps);
+  const ranks = depth ?? dependencyDepth(steps);
+  let gate: ChartStep | undefined;
+  for (const parent of parentsOf(byId, id)) {
+    const candidate = byId.get(parent);
+    if (!candidate) continue;
+    if (
+      !gate ||
+      (ranks[candidate.id] ?? 0) > (ranks[gate.id] ?? 0) ||
+      ((ranks[candidate.id] ?? 0) === (ranks[gate.id] ?? 0) &&
+        (candidate.title.localeCompare(gate.title) < 0 ||
+          (candidate.title === gate.title && candidate.id < gate.id)))
+    ) {
+      gate = candidate;
+    }
+  }
+  return gate;
+}
+
+/**
+ * The whole route through a step, root first: up the critical path — at each
+ * fan-in the deepest parent, the one the step genuinely waits for — then the
+ * single longest line of work waiting on it. Secondary parents stay visible as
+ * edges in the lenses; the strip flattens to the path that sets the dates. A
+ * lone step is not a route — callers treat a length of one as "no chain".
  */
 export function chainOf(steps: readonly ChartStep[], id: string): ChartStep[] {
   const byId = indexById(steps);
   const self = byId.get(id);
   if (!self) return [];
+  const depth = dependencyDepth(steps);
 
   const up: ChartStep[] = [];
   const seenUp = new Set<string>([id]);
-  let cursor = self.needs ? byId.get(self.needs) : undefined;
+  let cursor = gateParent(steps, id, depth);
   let guard = 0;
   while (cursor && !seenUp.has(cursor.id) && guard++ < GUARD) {
     seenUp.add(cursor.id);
     up.unshift(cursor);
-    cursor = cursor.needs ? byId.get(cursor.needs) : undefined;
+    cursor = gateParent(steps, cursor.id, depth);
   }
 
-  const longestDownstream = (head: string, seen: Set<string>, depth: number): ChartStep[] => {
-    if (depth >= GUARD) return [];
+  const longestDownstream = (head: string, seen: Set<string>, at: number): ChartStep[] => {
+    if (at >= GUARD) return [];
     let longest: ChartStep[] = [];
     for (const next of steps) {
-      if (next.needs !== head || seen.has(next.id)) continue;
-      const branch = [
-        next,
-        ...longestDownstream(next.id, new Set([...seen, next.id]), depth + 1),
-      ];
+      if (!next.needs.includes(head) || seen.has(next.id)) continue;
+      const branch = [next, ...longestDownstream(next.id, new Set([...seen, next.id]), at + 1)];
       if (branch.length > longest.length) longest = branch;
     }
     return longest;
@@ -230,79 +495,20 @@ export function chainOf(steps: readonly ChartStep[], id: string): ChartStep[] {
   return [...up, self, ...down];
 }
 
-/**
- * Longest dependency depth. Rank is what the graph and the gantt lay out on:
- * stage cannot do this job, because two cards in the same lane can be a week
- * apart when one waits on the other. Cycles resolve to 0 rather than hanging.
- */
-export function dependencyDepth(steps: readonly ChartStep[]): Record<string, number> {
-  const byId = indexById(steps);
-  const memo: Record<string, number> = {};
-  const walk = (id: string, seen: Set<string>): number => {
-    const cached = memo[id];
-    if (cached !== undefined) return cached;
-    if (seen.has(id)) return 0;
-    seen.add(id);
-    const step = byId.get(id);
-    const depth = step?.needs && byId.has(step.needs) ? walk(step.needs, seen) + 1 : 0;
-    seen.delete(id);
-    memo[id] = depth;
-    return depth;
-  };
-  for (const step of steps) walk(step.id, new Set());
-  return memo;
-}
-
-/**
- * The loop this step sits in, in walk order, or null when the route is sound.
- * Walks the whole chain rather than checking for a mutual pair — the three-step
- * loops are the ones nobody spots by eye.
- */
-export function cycleFor(steps: readonly ChartStep[], id: string): string[] | null {
-  const byId = indexById(steps);
-  const path = [id];
-  let cursor = byId.get(id)?.needs ? byId.get(byId.get(id)!.needs!) : undefined;
-  let guard = 0;
-  while (cursor && guard++ < GUARD) {
-    if (cursor.id === id) return path;
-    if (path.includes(cursor.id)) return null;
-    path.push(cursor.id);
-    cursor = cursor.needs ? byId.get(cursor.needs) : undefined;
-  }
-  return null;
-}
-
-/** Every id upstream of this one, so a downstream link can never close a loop. */
-export function ancestorsOf(steps: readonly ChartStep[], id: string): Set<string> {
-  const byId = indexById(steps);
-  const out = new Set<string>();
-  let cursor = byId.get(id);
-  let guard = 0;
-  while (cursor?.needs && guard++ < GUARD) {
-    if (out.has(cursor.needs)) break;
-    out.add(cursor.needs);
-    cursor = byId.get(cursor.needs);
-  }
-  return out;
-}
-
-/** The chain lit when a step is hovered or selected: its route up, and every
- *  step downstream of anything on it. */
+/** The chain lit when a step is hovered or selected: everything upstream of it
+ *  across every parent branch, and every step downstream of anything on it. */
 export function routeSet(steps: readonly ChartStep[], focusId: string | null): Set<string> {
   const route = new Set<string>();
   if (focusId == null) return route;
   const byId = indexById(steps);
-  let cursor: string | undefined = focusId;
-  let guard = 0;
-  while (cursor && !route.has(cursor) && guard++ < GUARD) {
-    route.add(cursor);
-    cursor = byId.get(cursor)?.needs;
-  }
+  if (!byId.has(focusId)) return route;
+  route.add(focusId);
+  for (const ancestor of ancestorsOf(steps, focusId)) route.add(ancestor);
   let grew = true;
   while (grew) {
     grew = false;
     for (const step of steps) {
-      if (step.needs && route.has(step.needs) && !route.has(step.id)) {
+      if (!route.has(step.id) && step.needs.some((parent) => route.has(parent))) {
         route.add(step.id);
         grew = true;
       }
@@ -327,12 +533,46 @@ export type ChartProposal = {
 };
 
 export type ChartProposalAction =
-  | { type: "cut-dependency"; stepId: string }
+  | { type: "cut-dependency"; stepId: string; needs: string }
   | { type: "move-stage"; stepId: string; stage: ChartStageId }
   | { type: "trace"; stepId: string };
 
 const clip = (text: string, at = 28): string =>
   text.length > at ? `${text.slice(0, at).trim()}…` : text;
+
+/**
+ * The edge on a loop that costs least to cut, or null when the operator should
+ * pick. Respects the canonical contract: a pinned primary blocker is never
+ * proposed for demotion, and a human-authored edge is never proposed for
+ * automated removal — the room only volunteers edges automation wrote. Among
+ * those it prefers a parent that is already done (or a record already
+ * resolved), then a parent in an earlier lane: the least real blocker.
+ */
+export function weakestCycleEdge(
+  steps: readonly ChartStep[],
+  cycle: readonly string[],
+): { stepId: string; needs: string } | null {
+  const byId = indexById(steps);
+  let best: { stepId: string; needs: string; score: number; key: string } | null = null;
+  for (let index = 0; index < cycle.length; index += 1) {
+    const child = byId.get(cycle[index]);
+    const parent = byId.get(cycle[(index + 1) % cycle.length]);
+    if (!child || !parent) continue;
+    const edge = child.edges.find((entry) => entry.needs === parent.id);
+    if (!edge || edge.pinned || edge.origin === "human") continue;
+    const score =
+      parent.state === "done" || edge.state !== "unresolved"
+        ? 0
+        : stageIndex(parent.stage) < stageIndex(child.stage)
+          ? 1
+          : 2;
+    const key = `${child.id}->${parent.id}`;
+    if (!best || score < best.score || (score === best.score && key < best.key)) {
+      best = { stepId: child.id, needs: parent.id, score, key };
+    }
+  }
+  return best ? { stepId: best.stepId, needs: best.needs } : null;
+}
 
 /**
  * Standing repairs the room would make to the chart. Structural faults only —
@@ -343,58 +583,68 @@ const clip = (text: string, at = 28): string =>
 export function chartProposals(steps: readonly ChartStep[]): ChartProposal[] {
   const byId = indexById(steps);
   const out: ChartProposal[] = [];
+
   const seenCycles = new Set<string>();
+  for (const loop of stepCycles(steps)) {
+    const key = [...loop].sort().join("|");
+    if (seenCycles.has(key)) continue;
+    seenCycles.add(key);
+    const names = loop.map((id) => clip(byId.get(id)?.title ?? id));
+    const cut = weakestCycleEdge(steps, loop);
+    out.push({
+      id: `cycle:${key}`,
+      kind: "cycle",
+      stepId: loop[0],
+      text:
+        loop.length === 2
+          ? `${names[0]} and ${names[1]} wait on each other — neither can start.`
+          : `${loop.length} steps wait on each other in a loop (${names.join(" → ")}) — none of them can start.`,
+      action: cut
+        ? { type: "cut-dependency", stepId: cut.stepId, needs: cut.needs }
+        : { type: "trace", stepId: loop[0] },
+      actionLabel: cut ? "Cut the weakest edge" : "Trace the loop and pick the edge",
+    });
+  }
 
+  const cyclic = cyclicStepIds(steps);
   for (const step of steps) {
-    const dep = step.needs ? byId.get(step.needs) : undefined;
-    if (!dep) continue;
-
-    const loop = cycleFor(steps, step.id);
-    if (loop) {
-      const key = [...loop].sort().join("|");
-      if (seenCycles.has(key)) continue;
-      seenCycles.add(key);
-      const names = loop.map((id) => clip(byId.get(id)?.title ?? id));
-      out.push({
-        id: `cycle:${key}`,
-        kind: "cycle",
-        stepId: step.id,
-        text:
-          loop.length === 2
-            ? `${names[0]} and ${names[1]} wait on each other — neither can start.`
-            : `${loop.length} steps wait on each other in a loop (${names.join(" → ")}) — none of them can start.`,
-        action: { type: "cut-dependency", stepId: step.id },
-        actionLabel: "Cut the weakest edge",
-      });
-      continue;
-    }
+    if (cyclic.has(step.id)) continue;
 
     // Both sides have to be pipeline lanes. Blocked and Done are exception
     // states, not positions — advising a move across them would be nonsense.
     const stepStage = CHART_STAGES[stageIndex(step.stage)];
-    const depStage = CHART_STAGES[stageIndex(dep.stage)];
-    if (stepStage?.pipeline && depStage?.pipeline && stageIndex(dep.stage) > stageIndex(step.stage)) {
-      const to = CHART_STAGES[stageIndex(dep.stage) + 1];
-      if (to && to.id !== step.stage) {
-        out.push({
-          id: `backwards:${step.id}`,
-          kind: "backwards",
-          stepId: step.id,
-          text: `${clip(step.title)} sits before ${clip(dep.title)}, the step it waits on.`,
-          action: { type: "move-stage", stepId: step.id, stage: to.id },
-          actionLabel: `Move to ${to.name}`,
-        });
+    for (const parentId of step.needs) {
+      const dep = byId.get(parentId);
+      if (!dep) continue;
+      const depStage = CHART_STAGES[stageIndex(dep.stage)];
+      if (stepStage?.pipeline && depStage?.pipeline && stageIndex(dep.stage) > stageIndex(step.stage)) {
+        const to = CHART_STAGES[stageIndex(dep.stage) + 1];
+        if (to && to.id !== step.stage) {
+          out.push({
+            id: `backwards:${step.id}`,
+            kind: "backwards",
+            stepId: step.id,
+            text: `${clip(step.title)} sits before ${clip(dep.title)}, the step it waits on.`,
+            action: { type: "move-stage", stepId: step.id, stage: to.id },
+            actionLabel: `Move to ${to.name}`,
+          });
+          break; // One repositioning proposal per step, whichever edge trips first.
+        }
       }
     }
 
-    if (dep.state === "done" && step.stage !== "done") {
+    // Unblocked only when every upstream has landed — with fan-in, one parent
+    // done and another live is still blocked, so the room stays quiet.
+    const parents = step.needs.map((parentId) => byId.get(parentId)).filter(Boolean) as ChartStep[];
+    if (parents.length > 0 && parents.every((parent) => parent.state === "done") && step.stage !== "done") {
+      const gate = gateParent(steps, step.id);
       const to = nextStage(step.stage);
       if (to && to.id !== "blocked") {
         out.push({
           id: `unblocked:${step.id}`,
           kind: "unblocked",
           stepId: step.id,
-          text: `${clip(dep.title)} landed — ${clip(step.title)} is unblocked and still sitting in ${stageName(step.stage)}.`,
+          text: `${clip(gate?.title ?? parents[0].title)} landed — ${clip(step.title)} is unblocked and still sitting in ${stageName(step.stage)}.`,
           action: { type: "move-stage", stepId: step.id, stage: to.id },
           actionLabel: `Move to ${to.name}`,
         });
@@ -438,24 +688,37 @@ export function stepRecommendation(
   steps: readonly ChartStep[],
 ): ChartRecommendation {
   const byId = indexById(steps);
-  const dep = step.needs ? byId.get(step.needs) : undefined;
+  const parents = step.needs.map((parentId) => byId.get(parentId)).filter(Boolean) as ChartStep[];
+  const gate = gateParent(steps, step.id);
   const waiting = dependants(steps, step.id);
   const here = stageName(step.stage);
   const onward = nextStage(step.stage);
 
-  if (cycleFor(steps, step.id)) {
+  const loop = cycleFor(steps, step.id);
+  if (loop) {
+    const cut = weakestCycleEdge(steps, loop);
+    if (cut) {
+      const parent = byId.get(cut.needs);
+      return {
+        iconName: "ph:arrows-clockwise",
+        text: `This step sits in a loop with ${clip(parent?.title ?? "another")} — nothing on it can start. Cut one edge; this is the one to drop.`,
+        action: { type: "cut-dependency", stepId: cut.stepId, needs: cut.needs },
+        actionLabel: "Cut this edge",
+      };
+    }
     return {
       iconName: "ph:arrows-clockwise",
-      text: `This step and ${clip(dep?.title ?? "another")} wait on each other — nothing can start. Cut one edge; this is the one to drop.`,
-      action: { type: "cut-dependency", stepId: step.id },
-      actionLabel: "Cut this edge",
+      text: `This step sits in a loop of ${loop.length} — nothing on it can start. Every edge is operator-made or pinned, so pick the one to cut yourself.`,
+      action: { type: "trace", stepId: step.id },
+      actionLabel: "Trace the loop",
     };
   }
-  if (dep && dep.state === "overdue") {
+  const overdueParent = parents.find((parent) => parent.state === "overdue");
+  if (overdueParent) {
     return {
       iconName: "ph:warning-diamond",
-      text: `Blocked behind ${clip(dep.title)}, which is overdue. Nothing here moves until that does.`,
-      action: { type: "trace", stepId: dep.id },
+      text: `Blocked behind ${clip(overdueParent.title)}, which is overdue. Nothing here moves until that does.`,
+      action: { type: "trace", stepId: overdueParent.id },
       actionLabel: "Open the blocker",
     };
   }
@@ -482,15 +745,15 @@ export function stepRecommendation(
           actionLabel: null,
         };
   }
-  if (dep && dep.state === "done" && onward) {
+  if (parents.length > 0 && parents.every((parent) => parent.state === "done") && onward) {
     return {
       iconName: "ph:arrow-right",
-      text: `${clip(dep.title)} landed, so nothing holds this. Move it to ${onward.name}.`,
+      text: `${clip(gate?.title ?? parents[0].title)} landed, so nothing holds this. Move it to ${onward.name}.`,
       action: { type: "move-stage", stepId: step.id, stage: onward.id },
       actionLabel: `Move to ${onward.name}`,
     };
   }
-  if (!dep && waiting.length >= 2) {
+  if (parents.length === 0 && waiting.length >= 2) {
     return {
       iconName: "ph:flow-arrow",
       text: `${waiting.length} steps wait on this and nothing blocks it — it is the head of the critical path. Start it before anything else in ${here}.`,
@@ -610,7 +873,8 @@ export function lockedSteps(
   }
   const target = steps.find((step) => step.id === lock.id);
   return steps.filter(
-    (step) => step.id === lock.id || step.needs === lock.id || target?.needs === step.id,
+    (step) =>
+      step.id === lock.id || step.needs.includes(lock.id) || (target?.needs ?? []).includes(step.id),
   );
 }
 
@@ -700,30 +964,31 @@ export function flowLayout(
   const byId = indexById(steps);
   const edges: FlowEdge[] = [];
   for (const step of steps) {
-    if (!step.needs) continue;
-    const from = positions[step.needs];
-    const to = positions[step.id];
-    if (!from || !to) continue;
-    const source = byId.get(step.needs);
-    const isLit = onRoute(step.id) && onRoute(step.needs);
-    if (from.column < to.column) {
-      edges.push({
-        id: `${step.needs}->${step.id}`,
-        d: elbowPath(from.right, from.y, to.left, to.y),
-        tone: !isLit ? "muted" : source?.state === "overdue" ? "late" : "live",
-        lit: isLit && focusId != null,
-        dotX: to.left,
-        dotY: to.y,
-      });
-    } else {
-      edges.push({
-        id: `${step.needs}->${step.id}`,
-        d: backArcPath(from.left, from.y, to.right, to.y),
-        tone: isLit ? "backwards" : "muted",
-        lit: false,
-        dotX: to.right,
-        dotY: to.y,
-      });
+    for (const parentId of step.needs) {
+      const from = positions[parentId];
+      const to = positions[step.id];
+      if (!from || !to) continue;
+      const source = byId.get(parentId);
+      const isLit = onRoute(step.id) && onRoute(parentId);
+      if (from.column < to.column) {
+        edges.push({
+          id: `${parentId}->${step.id}`,
+          d: elbowPath(from.right, from.y, to.left, to.y),
+          tone: !isLit ? "muted" : source?.state === "overdue" ? "late" : "live",
+          lit: isLit && focusId != null,
+          dotX: to.left,
+          dotY: to.y,
+        });
+      } else {
+        edges.push({
+          id: `${parentId}->${step.id}`,
+          d: backArcPath(from.left, from.y, to.right, to.y),
+          tone: isLit ? "backwards" : "muted",
+          lit: false,
+          dotX: to.right,
+          dotY: to.y,
+        });
+      }
     }
   }
 
@@ -796,26 +1061,27 @@ export function graphLayout(
   const byId = indexById(steps);
   const edges: GraphLayout["edges"] = [];
   for (const step of steps) {
-    if (!step.needs) continue;
-    const from = positions[step.needs];
-    const to = positions[step.id];
-    if (!from || !to) continue;
-    const source = byId.get(step.needs);
-    const backwards = from.column >= to.column;
-    const isLit = chain.has(step.id) && chain.has(step.needs);
-    const x1 = from.x + nodeWidth;
-    const y1 = from.y + nodeHeight / 2;
-    const x2 = to.x;
-    const y2 = to.y + nodeHeight / 2;
-    edges.push({
-      id: `${step.needs}->${step.id}`,
-      d: backwards
-        ? `M${from.x} ${y1} C${from.x - 60} ${y1}, ${x2 + 60} ${y2 + 70}, ${x2 + nodeWidth / 2} ${to.y + nodeHeight}`
-        : `M${x1} ${y1} C${x1 + columnGap * 0.62} ${y1}, ${x2 - columnGap * 0.62} ${y2}, ${x2 - 7} ${y2}`,
-      tone: backwards ? "backwards" : source?.state === "overdue" ? "late" : "live",
-      lit: isLit,
-      arrow: backwards ? null : `M${x2 - 7} ${y2 - 4.5} L${x2} ${y2} L${x2 - 7} ${y2 + 4.5} Z`,
-    });
+    for (const parentId of step.needs) {
+      const from = positions[parentId];
+      const to = positions[step.id];
+      if (!from || !to) continue;
+      const source = byId.get(parentId);
+      const backwards = from.column >= to.column;
+      const isLit = chain.has(step.id) && chain.has(parentId);
+      const x1 = from.x + nodeWidth;
+      const y1 = from.y + nodeHeight / 2;
+      const x2 = to.x;
+      const y2 = to.y + nodeHeight / 2;
+      edges.push({
+        id: `${parentId}->${step.id}`,
+        d: backwards
+          ? `M${from.x} ${y1} C${from.x - 60} ${y1}, ${x2 + 60} ${y2 + 70}, ${x2 + nodeWidth / 2} ${to.y + nodeHeight}`
+          : `M${x1} ${y1} C${x1 + columnGap * 0.62} ${y1}, ${x2 - columnGap * 0.62} ${y2}, ${x2 - 7} ${y2}`,
+        tone: backwards ? "backwards" : source?.state === "overdue" ? "late" : "live",
+        lit: isLit,
+        arrow: backwards ? null : `M${x2 - 7} ${y2 - 4.5} L${x2} ${y2} L${x2 - 7} ${y2 + 4.5} Z`,
+      });
+    }
   }
 
   return {
@@ -839,14 +1105,15 @@ export type GanttRow = {
   /** Percent of the track. */
   left: number;
   width: number;
-  /** Where the blocker ends, as a percent, or null when nothing blocks it. */
+  /** Where the gating blocker ends, as a percent, or null when nothing blocks it. */
   linkAt: number | null;
   when: string;
 };
 
 /**
  * Bars placed by dependency depth, not by a date nobody entered — a step starts
- * where its blocker ends.
+ * where its blocker ends. With fan-in the connector points at the gate: the
+ * deepest parent, the one that actually sets the start.
  */
 export function ganttRows(steps: readonly ChartStep[]): { rows: GanttRow[]; span: number } {
   const depth = dependencyDepth(steps);
@@ -860,7 +1127,8 @@ export function ganttRows(steps: readonly ChartStep[]): { rows: GanttRow[]; span
     )
     .map((step) => {
       const value = depth[step.id] ?? 0;
-      const blockerDepth = step.needs ? depth[step.needs] : undefined;
+      const gate = gateParent(steps, step.id, depth);
+      const blockerDepth = gate ? depth[gate.id] : undefined;
       return {
         step,
         depth: value,
@@ -895,7 +1163,7 @@ export function filterSteps(
     }
     if (filter === "all") return true;
     if (filter === "attention") return step.state === "overdue" || step.state === "decision";
-    if (filter === "linked") return step.needs != null;
+    if (filter === "linked") return step.needs.length > 0;
     if (filter === "overdue") return step.state === "overdue";
     return step.state === "running";
   });
@@ -919,7 +1187,7 @@ export function sortSteps(
         return step.state;
       case "needs":
         // Unlinked rows sort last in either direction's natural reading.
-        return step.needs ? titleOf(step.needs) : "￿";
+        return step.needs.length > 0 ? titleOf(step.needs[0]) : "￿";
       case "owner":
         return ownerName(step.owner);
       default:
