@@ -80,6 +80,7 @@ export const SUITES = {
     "scripts/eslint/react-hooks-gate.test.mjs",
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
+    "scripts/pdf-worker-asset.test.mjs",
     "scripts/onboarding-feedback-report.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
     "scripts/beads-create.test.mjs",

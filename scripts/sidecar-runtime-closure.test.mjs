@@ -54,6 +54,7 @@ try {
   await write(projectRoot, "marketplace/exports/mcp/mcp.json", "{}\n");
   await write(projectRoot, "marketplace/marketplace.json", "{}\n");
   await write(projectRoot, "marketplace/plugins/example/plugin.json", "{}\n");
+  await write(projectRoot, "public/pdf.worker.min.mjs", "pdf worker\n");
   await write(projectRoot, "public/sandbox/react-runtime.js", "runtime\n");
   await write(projectRoot, "public/sandbox/tailwind.js", "tailwind\n");
   await write(projectRoot, "workflows/example.yaml", "id: example\n");
@@ -180,6 +181,19 @@ try {
   );
   await rm(verifiedDirectory, { recursive: true });
   await write(destination, path.join("node_modules", "next", verifiedDirectoryPath), "next runtime fixture\n");
+
+  // cave-9hc: the pdf.js worker is `.gitignore`d and generated, so a bundle
+  // built from a checkout that never staged it looks complete. It is not: the
+  // research paper viewer's `getDocument()` then rejects during worker setup,
+  // and the only thing the reader sees is "Couldn't render this paper".
+  const pdfWorkerPath = path.join(destination, "public", "pdf.worker.min.mjs");
+  await rm(pdfWorkerPath);
+  await assert.rejects(
+    verifySidecarRuntime(destination),
+    /required sidecar runtime file is missing: public[\\/]pdf\.worker\.min\.mjs/,
+    "a bundle without the pdf.js worker must not verify",
+  );
+  await write(destination, "public/pdf.worker.min.mjs", "pdf worker\n");
 
   const optionalPackage = "@next/swc-linux-x64-gnu";
   await packageFixture(projectRoot, optionalPackage);
