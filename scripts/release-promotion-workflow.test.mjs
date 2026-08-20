@@ -67,6 +67,15 @@ test("candidate validation requires signed tag provenance and calls every deferr
   assert.equal(candidate.concurrency.group, "release-candidate-${{ github.event.inputs.tag || github.ref_name }}");
   assert.equal(candidate.concurrency["cancel-in-progress"], false);
   assert.deepEqual(candidate.jobs.provenance.permissions, { actions: "read", contents: "read" });
+  const candidateCheckout = candidate.jobs.provenance.steps.find((step) =>
+    step.uses?.startsWith("actions/checkout@"),
+  );
+  assert.equal(
+    candidateCheckout?.with?.["fetch-depth"],
+    0,
+    "manual candidate validation must fetch main history to prove an older tag is an ancestor",
+  );
+  assert.equal(candidateCheckout?.with?.["persist-credentials"], false);
   assert.match(
     candidate.jobs.provenance.steps.map((step) => step.run ?? "").join("\n"),
     /node scripts\/release-promotion\.mjs candidate/,
