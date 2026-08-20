@@ -149,9 +149,11 @@ test("revocation remains authoritative across stale store instances", async () =
 test("concurrent real-root and symlink-alias operations preserve revocation authority", async (t) => {
   await withCredentialRoot(async (root) => {
     const alias = `${root}-alias`;
+    let aliasCreated = false;
     try {
       try {
         await symlink(root, alias, process.platform === "win32" ? "junction" : "dir");
+        aliasCreated = true;
       } catch (error) {
         if (isUnsupportedSymlinkError(error)) {
           t.skip(`symlink aliases are unsupported on this platform (${(error as NodeJS.ErrnoException).code})`);
@@ -212,7 +214,9 @@ test("concurrent real-root and symlink-alias operations preserve revocation auth
         "user_requested",
       );
     } finally {
-      await rm(alias, { force: true });
+      if (aliasCreated) {
+        await rm(alias, { force: true });
+      }
     }
   });
 });
@@ -280,6 +284,54 @@ test("invalid persisted record schema is rejected before a cached mutation can o
 
     await assert.rejects(
       store.revoke(issued.credential.id, "user_requested"),
+      /invalid credential record at index 0/i,
+    );
+    assert.equal(await readFile(path, "utf8"), invalid);
+  });
+});
+
+test("revokedAt requires a non-empty revocationReason and issue never overwrites invalid records", async (t) => {
+  for (const revocationReason of [null, ""] as const) {
+    await t.test(
+      revocationReason === null ? "null reason" : "empty reason",
+      async () => {
+        await withCredentialRoot(async (root) => {
+          const store = createCredentialStore({ root, now: () => 10_000 });
+          await store.issue(credentialInput);
+          const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+          const parsed = JSON.parse(await readFile(path, "utf8"));
+          parsed.credentials[0].revokedAt = 11_000;
+          parsed.credentials[0].revocationReason = revocationReason;
+          const invalid = JSON.stringify(parsed, null, 2);
+          await writeFile(path, invalid, { encoding: "utf8", mode: 0o600 });
+
+          await assert.rejects(
+            store.issue({
+              ...credentialInput,
+              installationId: "5e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5c",
+            }),
+            /invalid credential record at index 0/i,
+          );
+          assert.equal(await readFile(path, "utf8"), invalid);
+        });
+      },
+    );
+  }
+});
+
+test("revocationReason without revokedAt is rejected before mutation can overwrite it", async () => {
+  await withCredentialRoot(async (root) => {
+    const store = createCredentialStore({ root, now: () => 12_000 });
+    const issued = await store.issue(credentialInput);
+    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.credentials[0].revokedAt = null;
+    parsed.credentials[0].revocationReason = "user_requested";
+    const invalid = JSON.stringify(parsed, null, 2);
+    await writeFile(path, invalid, { encoding: "utf8", mode: 0o600 });
+
+    await assert.rejects(
+      store.revoke(issued.credential.id, "rotated"),
       /invalid credential record at index 0/i,
     );
     assert.equal(await readFile(path, "utf8"), invalid);

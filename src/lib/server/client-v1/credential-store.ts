@@ -211,7 +211,10 @@ function parseRecord(value: unknown): ClientV1CredentialRecord | null {
       && (typeof record.revokedAt !== "number"
         || !Number.isFinite(record.revokedAt)
         || record.revokedAt < record.createdAt))
-    || (record.revocationReason !== null && typeof record.revocationReason !== "string")
+    || (record.revocationReason !== null
+      && (typeof record.revocationReason !== "string"
+        || !record.revocationReason.trim()))
+    || ((record.revokedAt === null) !== (record.revocationReason === null))
   ) {
     return null;
   }
