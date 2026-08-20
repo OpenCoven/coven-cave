@@ -5,11 +5,13 @@ import { readFile } from "node:fs/promises";
 // a connection drop must NOT tear the tab tree down to the Connect screen.
 // The tabs stay mounted (cached data usable, offline compose keeps queueing)
 // with a "Reconnecting… · last seen Xm" pill narrating recovery. Full-screen
-// Connect is reserved for unconfigured / needsAuth / never-connected.
+// Connect is reserved for unconfigured / needsAuth / never-connected; an
+// initial project-context bootstrap failure gets its own retryable gate.
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const root = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
+const gate = await read("apps/ios/CovenCave/CovenCave/Views/ProjectSwitcherView.swift");
 
 // --- RootView: teardown only when there's nothing worth keeping -------------
 assert.match(
@@ -26,6 +28,31 @@ assert.match(
   root,
   /case \.checking where app\.connection != nil && !app\.hasLoadedSurfaces:\s*\n\s*ConnectingView\(\)/,
   "the Connecting screen is a cold-launch state, not a reconnect state",
+);
+assert.match(
+  root,
+  /case \.projectContextRequired where !app\.hasLoadedSurfaces:\s*\n[\s\S]*?ProjectContextGateView\(\)/,
+  "a first project-context failure should stay out of MainShell and show a dedicated retry gate",
+);
+assert.match(
+  gate,
+  /struct ProjectContextGateView: View[\s\S]*?Button\("Retry"\)/,
+  "the project-context gate should keep a visible retry action",
+);
+assert.match(
+  gate,
+  /struct ProjectContextGateView: View[\s\S]*?Button\("Settings"\)/,
+  "the project-context gate should expose a settings escape hatch",
+);
+assert.match(
+  gate,
+  /if app\.hasLoadedSurfaces \{\s*app\.selectedTab = \.settings\s*\} else \{\s*showingSettings = true\s*\}/,
+  "a warm gate routes into shell settings, while a cold gate opens modal recovery",
+);
+assert.match(
+  gate,
+  /\.sheet\(isPresented: \$showingSettings\) \{\s*SettingsView\(presentedModally: true\)\s*\}/,
+  "cold gate recovery opens settings without mounting the primary shell",
 );
 
 // --- The pill: shown over mounted tabs during a drop, tap = retry now --------
@@ -92,8 +119,8 @@ assert.match(
 );
 assert.match(
   model,
-  /var hasLoadedSurfaces: Bool \{\s*\n\s*!familiars\.isEmpty \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded/,
-  "hasLoadedSurfaces is the single gate for 'the tab tree holds real data'",
+  /var hasLoadedSurfaces: Bool \{\s*\n\s*familiarsLoaded \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded/,
+  "hasLoadedSurfaces should treat successful empty familiar loads as loaded shell state",
 );
 
 console.log("ios-reconnect-pill: OK");

@@ -1,13 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 // Exercise the real OpenClaw route against a deterministic CLI shim. This
 // proves the Gateway-first/local-recovery boundary without a Gateway, a
 // provider, or credentials.
-const home = await mkdtemp(path.join(homedir(), "cave-openclaw-route-"));
+const home = await mkdtemp(path.join(tmpdir(), "cave-openclaw-route-"));
 const bin = path.join(home, "bin");
 const workspace = path.join(home, "workspace");
 const log = path.join(home, "openclaw-calls.jsonl");

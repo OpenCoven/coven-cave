@@ -86,7 +86,7 @@ assert.match(
 // bootstrap fetches familiars + theme + profile together and adopts the theme.
 assert.match(
   model,
-  /private func loadCoreResources\(\) async \{[\s\S]*ConnectionBootstrap\.load\(using: client\)[\s\S]*if case \.success\(let snapshot\) = payload\.theme \{ adopt\(snapshot\) \}/,
+  /private func loadCoreResources\([\s\S]*mirroringProjectContextFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = \[\][\s\S]*\) async \{[\s\S]*async let theme = Result\.capturing \{ try await client\.fetchTheme\(\) \}[\s\S]*await loadProjectContext\(using: client, mirrorFailuresTo: mirroredSurfaces\)[\s\S]*if case \.success\(let snapshot\) = await theme \{ adopt\(snapshot\) \}/,
   "connect bootstrap should fetch and adopt the desktop theme",
 );
 // Anchored inside the refreshConnection body (start of the func declaration to

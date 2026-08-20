@@ -22,6 +22,7 @@ const styles = read("../styles/sidebar-minimal/section-tabs.css");
 const homeChrome = read("../styles/sidebar-minimal/shell-chrome.css");
 const railHeader = read("../styles/globals/rail-header.css");
 const chatChrome = read("../styles/globals/shell-navigation.css");
+const workspaceContextSwitcherCss = read("../styles/globals/workspace-context-switcher.css");
 
 assert.match(
   navSection,
@@ -73,7 +74,7 @@ assert.match(
 );
 assert.match(
   chatSidebar,
-  /<NavSectionTabs section="code" onSectionChange=\{onSectionChange\}[\s\S]*?<SidebarRailHeader[\s\S]*?onNewChat=\{\(\) => onNewChat\(null\)\}[\s\S]*?newChatTitle="New chat \(⌘N\)"/,
+  /<NavSectionTabs section="code" onSectionChange=\{onSectionChange\}[\s\S]*?<SidebarRailHeader[\s\S]*?onNewChat=\{onNewChat\}[\s\S]*?newChatTitle="New chat \(⌘N\)"/,
   "the Chat rail keeps section tabs and the same shared scope + New chat header in order",
 );
 assert.doesNotMatch(
@@ -93,8 +94,8 @@ assert.match(
   "Sidebar options rides at the end of the grouping-tabs row, below the primary action",
 );
 assert.match(
-  railHeader,
-  /\.rail-header__scope \.familiar-switcher__trigger--labeled \{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?width:\s*100%;/,
+  workspaceContextSwitcherCss,
+  /\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?width:\s*100%;/,
   "the shared familiar switcher fills its available header width",
 );
 // The Chat rail no longer declares any of that chrome: it renders the same

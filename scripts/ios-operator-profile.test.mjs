@@ -53,7 +53,7 @@ assert.match(
 );
 assert.match(
   model,
-  /if case \.success\(let profile\) = payload\.profile, operatorProfile != profile \{/,
+  /if case \.success\(let loadedProfile\) = await profile, operatorProfile != loadedProfile \{\s*\n\s*operatorProfile = loadedProfile/,
   "connect/refresh bootstrap adopts the fetched operator profile",
 );
 

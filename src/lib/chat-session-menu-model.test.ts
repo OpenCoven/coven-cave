@@ -14,7 +14,7 @@ const baseCtx = {
   projectRoot: "/Users/dev/coven-cave" as string | null,
   hasTurns: true,
   showThinking: false,
-  instrumentsVisible: true,
+  activityMapVisible: true,
   reflectAvailable: true,
   reflecting: false,
 };
@@ -26,7 +26,7 @@ const baseCtx = {
   const ids = sections.flat().map((i) => i.id);
   assert.deepEqual(
     ids,
-    ["continue-on-phone", "project", "thinking", "instruments", "reflect", "debug"],
+    ["continue-on-phone", "project", "thinking", "activity-map", "reflect", "debug"],
     "full context yields the slim six-item menu in two sections",
   );
   assert.equal(sections.length, 2, "primary and tools sections");
@@ -57,18 +57,20 @@ const baseCtx = {
   assert.equal(sections.length, 1, "empty primary section is dropped (no dangling separator)");
 }
 
-// ---- thread-instruments toggle (cave-xb6g5) -------------------------------
+// ---- activity-map toggle --------------------------------------------------
 
 {
-  const on = sessionMenuSections(baseCtx).flat().find((i) => i.id === "instruments")!;
-  assert.equal(on.checked, true, "a visible instruments state renders the checkmark");
-  assert.match(on.label, /^Hide /, "the label is the ACTION, not the state");
+  const on = sessionMenuSections(baseCtx).flat().find((i) => i.id === "activity-map")!;
+  assert.equal(on.checked, true, "a visible activity map renders the checkmark");
+  assert.equal(on.label, "Hide activity map", "the label names the map users can see");
+  assert.equal(on.title, "Hide the activity timeline and tool summary");
 
-  const off = sessionMenuSections({ ...baseCtx, instrumentsVisible: false })
+  const off = sessionMenuSections({ ...baseCtx, activityMapVisible: false })
     .flat()
-    .find((i) => i.id === "instruments")!;
+    .find((i) => i.id === "activity-map")!;
   assert.equal(off.checked, false);
-  assert.match(off.label, /^Show /);
+  assert.equal(off.label, "Show activity map");
+  assert.equal(off.title, "Show the activity timeline and tool summary");
   assert.equal(on.icon, off.icon, "both states share one curated glyph");
 }
 
@@ -79,7 +81,7 @@ const baseCtx = {
     .flat()
     .map((i) => i.id);
   assert.ok(
-    !ids.includes("instruments"),
+    !ids.includes("activity-map"),
     "an empty transcript has nothing to navigate, so the toggle stays away",
   );
 }

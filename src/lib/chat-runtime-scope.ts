@@ -22,6 +22,7 @@ export class RuntimeScopeError extends Error {
 
 type ResolveLocalRuntimeOptions = {
   homeDir?: string;
+  rootAuthority?: "home" | "authorized-project";
 };
 
 export type RuntimeScope =
@@ -111,6 +112,7 @@ export async function resolveLocalRuntimeCwd(
   requested?: string,
   options: ResolveLocalRuntimeOptions = {},
 ): Promise<string> {
+  const authorizedProjectRoot = options.rootAuthority === "authorized-project";
   const homePath = path.resolve(normalizePath(options.homeDir ?? homedir()));
   const homeRoot = await realpath(homePath);
   const trimmed = requested?.trim();
@@ -124,10 +126,13 @@ export async function resolveLocalRuntimeCwd(
   const candidate = path.resolve(normalizePath(trimmed));
   const relToHome = path.relative(homePath, candidate);
   if (
-    relToHome === ".." ||
-    relToHome.startsWith(".." + path.sep) ||
-    path.isAbsolute(relToHome) ||
-    relToHome.split(path.sep).includes("..")
+    !authorizedProjectRoot &&
+    (
+      relToHome === ".." ||
+      relToHome.startsWith(".." + path.sep) ||
+      path.isAbsolute(relToHome) ||
+      relToHome.split(path.sep).includes("..")
+    )
   ) {
     throw new RuntimeScopeError(
       "project_root_outside_home",
@@ -135,11 +140,16 @@ export async function resolveLocalRuntimeCwd(
     );
   }
 
-  const scopedCandidate = relToHome === "" ? homeRoot : path.join(homeRoot, relToHome);
+  const scopedCandidate = authorizedProjectRoot
+    ? candidate
+    : relToHome === ""
+      ? homeRoot
+      : path.join(homeRoot, relToHome);
   let resolved: string;
   try {
-    // lgtm[js/path-injection] scopedCandidate is built from a home-relative path
-    // validated above and is checked again after symlink resolution below.
+    // lgtm[js/path-injection] home-scoped candidates are containment-checked
+    // above and below; authorized project roots already passed the route's
+    // registration and familiar-access gate.
     resolved = await realpath(scopedCandidate);
   } catch {
     throw new RuntimeScopeError(
@@ -148,7 +158,7 @@ export async function resolveLocalRuntimeCwd(
     );
   }
 
-  if (!isInsideRoot(homeRoot, resolved)) {
+  if (!authorizedProjectRoot && !isInsideRoot(homeRoot, resolved)) {
     throw new RuntimeScopeError(
       "project_root_outside_home",
       "projectRoot must resolve inside the local home directory; refusing to start a homedir-scoped fallback session.",

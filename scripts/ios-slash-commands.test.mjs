@@ -69,6 +69,21 @@ assert.match(
   "Chat slash dispatch should handle /model via switchModel",
 );
 assert.match(
+  iosSlash,
+  /name: "\/diagram"[\s\S]{0,360}availability: \.native[\s\S]{0,80}action: \.startDiagram/,
+  "/diagram should be a native guided chat command",
+);
+assert.match(
+  chatView,
+  /case \.startDiagram:[\s\S]{0,80}startDiagram\(args\)/,
+  "Chat slash dispatch should start the diagram intake",
+);
+assert.match(
+  iosSlash,
+  /enum DiagramCommandPrompt[\s\S]{0,1400}exactly one concise, highest-value question per turn[\s\S]{0,900}exactly one fenced `html` code block/,
+  "iOS should carry the guided intake and artifact contract",
+);
+assert.match(
   chatView,
   /private func selectModel\([\s\S]{0,420}let stagedModel = model \?\? ""[\s\S]{0,240}thread\.pendingModelOverride = stagedModel[\s\S]{0,240}guard sessionId != nil \|\| model == nil else/,
   "switchModel should synchronously retain a model selection or runtime-default clear before any session write",

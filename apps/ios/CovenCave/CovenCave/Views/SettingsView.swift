@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(AppLock.self) private var appLock
     @Environment(\.chrome) private var chrome
+    @Environment(\.dismiss) private var dismiss
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @AppStorage(ChatNotifications.enabledKey) private var chatNotificationsEnabled = true
     @State private var exportArchive: ExportArchive?
@@ -14,6 +15,11 @@ struct SettingsView: View {
     /// Light/Dark used both to preview the theme swatches and as the mode pushed
     /// to the desktop. Seeded from the desktop's published mode on appear.
     @State private var pushMode: ColorScheme = .dark
+    private let presentedModally: Bool
+
+    init(presentedModally: Bool = false) {
+        self.presentedModally = presentedModally
+    }
 
     /// Marketing version + build, e.g. "1.2.0 (34)", read from the bundle.
     private var appVersion: String {
@@ -44,10 +50,15 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { app.navigationDrawerOpen = true } label: {
-                        Image(systemName: "line.3.horizontal")
+                    if presentedModally {
+                        Button("Close") { dismiss() }
+                            .accessibilityLabel("Close")
+                    } else {
+                        Button { app.navigationDrawerOpen = true } label: {
+                            Image(systemName: "line.3.horizontal")
+                        }
+                        .accessibilityLabel("Open navigation")
                     }
-                    .accessibilityLabel("Open navigation")
                 }
                 ToolbarItem(placement: .principal) {
                     EditorialSurfaceTitle(title: "Settings")
@@ -133,7 +144,7 @@ struct SettingsView: View {
     private var statusTint: Color {
         switch app.connectionState {
         case .connected: return .green
-        case .unreachable, .needsAuth: return .orange
+        case .unreachable, .needsAuth, .projectContextRequired: return .orange
         case .checking, .unconfigured: return .secondary
         }
     }
@@ -142,6 +153,7 @@ struct SettingsView: View {
         switch app.connectionState {
         case .connected: return app.connection?.host ?? "Connected"
         case .checking: return "Checking…"
+        case .projectContextRequired: return "Project access needed"
         case .unreachable: return "Unreachable"
         case .needsAuth: return "Needs pairing"
         case .unconfigured: return "Not set up"
@@ -152,6 +164,7 @@ struct SettingsView: View {
         switch app.connectionState {
         case .connected: return "connected to \(app.connection?.host ?? "your desktop")"
         case .checking: return "checking connection"
+        case .projectContextRequired: return "project access needed"
         case .unreachable: return "desktop unreachable"
         case .needsAuth: return "needs pairing"
         case .unconfigured: return "not set up"
@@ -518,6 +531,8 @@ private struct ConnectionSettingsView: View {
                 Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             case .checking:
                 Label("Checking…", systemImage: "clock").foregroundStyle(.secondary)
+            case .projectContextRequired:
+                Label("Project access", systemImage: "folder.badge.questionmark").foregroundStyle(.orange)
             case .unreachable:
                 Label("Unreachable", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             case .needsAuth:

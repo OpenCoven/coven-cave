@@ -1,0 +1,73 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_nested_private_01",
+  "runId": "run_nested_private_01",
+  "digest": "79e4b345621ed9b72672d1ab42bdf2b42de4577ca1c0658c34595ecf5139f36f",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "context": {
+    "contextPackId": "ctx_nested_private_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_nested_private_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "metadata": {
+        "items": [
+          {
+            "privateExcerpt": "private material",
+            "private_contentValue": "private material",
+            "privateCONTENTvalue": "private material",
+            "rawTEXTvalue": "private material",
+            "private_storageKeyValue": "tenant/private/object"
+          }
+        ]
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_nested_private_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "metadata": {
+        "nested": {
+          "local_file_path": "/private/report.md"
+        }
+      }
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "auditMetadata": [
+      {
+        "credentialHint": "tenant/private/object"
+      }
+    ]
+  }
+}

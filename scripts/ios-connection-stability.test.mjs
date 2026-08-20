@@ -210,7 +210,7 @@ assert.match(
 // Persisting the winner is what makes the fast path available next launch.
 assert.match(
   model,
-  /CaveConnection\.saveLastGoodBaseURL\(working, forHost: host\)/,
+  /CaveConnection\.saveLastGoodBaseURL\(\s*working,\s*forHost: host(?:,\s*defaults: projectContextDefaults)?\s*\)/,
   "a successful probe must record the working URL for the next reconnect",
 );
 assert.match(

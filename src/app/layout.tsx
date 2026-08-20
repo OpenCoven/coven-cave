@@ -26,6 +26,7 @@ import { PerfOverlay } from "@/components/perf/perf-overlay";
 import { PreferencesBootstrapController } from "@/components/preferences-bootstrap-controller";
 import { DaemonReleaseAlignmentTrigger } from "@/components/update-available";
 import { createDefaultPreferences } from "@/lib/preferences-schema";
+import { SettingsSaveToast } from "@/components/ui/settings-save-toast";
 
 export const metadata: Metadata = {
   title: "CovenCave",
@@ -107,6 +108,7 @@ export default function RootLayout({
             <WebVitalsReporter />
             <PerfOverlay />
             {children}
+            <SettingsSaveToast />
             </ConfirmProvider>
           </LiveRegionProvider>
         </ShellBannersProvider>

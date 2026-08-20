@@ -11,11 +11,17 @@ const css = readFileSync(new URL("../styles/globals/shell-responsive.css", impor
 test("Workspace threads the explicit scope and canonical mutation path to the Familiar tab", () => {
   assert.match(workspace, /selectedFamiliarIds=\{scopeIds\}/, "full scope reaches ChatSurface");
   assert.match(workspace, /onFamiliarScopeChange=\{selectFamiliarScope\}/, "Workspace remains the scope owner");
-  assert.match(
-    workspace,
-    /opts\?: \{ multi\?: boolean; preserveSurface\?: boolean \}[\s\S]*?if \(opts\?\.multi \|\| opts\?\.preserveSurface\) return/,
-    "intentional detail selection can preserve the current Familiar tab",
+  const selectFamiliarScopeSlice = workspace.slice(
+    workspace.indexOf("const selectFamiliarScope"),
+    workspace.indexOf("const selectFamiliar = useCallback"),
   );
+  assert.match(
+    selectFamiliarScopeSlice,
+    /opts\?: \{ multi\?: boolean; preserveSurface\?: boolean \}/,
+    "selectFamiliarScope keeps preserveSurface compatibility for existing Familiar tab callers",
+  );
+  assert.match(selectFamiliarScopeSlice, /setScopeIds\(/, "selectFamiliarScope still mutates the explicit scope set");
+  assert.doesNotMatch(selectFamiliarScopeSlice, /getLastSurface|setMode/, "Task6 scope changes no longer restore or switch surfaces");
   assert.match(surface, /selectedFamiliarIds=\{selectedFamiliarIds\}/, "scope reaches ChatFamiliarView");
   assert.match(surface, /familiarsLoaded=\{familiarsLoaded\}[\s\S]*?familiarsError=\{familiarsError\}/, "roster lifecycle reaches the tab");
   assert.match(surface, /onFamiliarScopeChange=\{onFamiliarScopeChange\}/, "canonical callback reaches the tab");

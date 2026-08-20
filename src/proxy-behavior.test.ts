@@ -15,6 +15,8 @@
 
 import assert from "node:assert/strict";
 import {
+  accessPromptUrl,
+  shouldBypassMobileAccessGate,
   isLoopbackHost,
   isTailscaleServeHost,
   isAllowedApiHost,
@@ -31,7 +33,27 @@ import {
   isHtmlNavigationRequest,
   accessGatePage,
   ACCESS_TOKEN_QUERY_PARAM,
+  ACCESS_PROMPT_QUERY_PARAM,
 } from "./proxy-helpers.ts";
+
+// ─── accessPromptUrl ──────────────────────────────────────────────────────
+assert.equal(
+  accessPromptUrl("http://127.0.0.1:3000/chat?mode=focus#session-123"),
+  "http://127.0.0.1:3000/chat?mode=focus&coven_access_prompt=1#session-123",
+  "the access prompt URL should preserve the current route, query, and hash",
+);
+
+// ─── shouldBypassMobileAccessGate ─────────────────────────────────────────
+assert.equal(
+  shouldBypassMobileAccessGate(true, false, "GET", "/", "text/html"),
+  true,
+  "ordinary trusted local navigation should still load the app shell",
+);
+assert.equal(
+  shouldBypassMobileAccessGate(true, true, "GET", "/", "text/html"),
+  false,
+  "an explicit access-prompt navigation must reach the credential gate",
+);
 
 // ─── isLoopbackHost ────────────────────────────────────────────────────────
 // Host header per RFC 7230 §5.4: IPv6 must use `[...]` brackets; bare `::1`
@@ -488,6 +510,11 @@ assert.equal(isHtmlNavigationRequest("GET", "/", null), false, "no Accept header
   // The form re-enters the audited query-token exchange — the input MUST be
   // named exactly ACCESS_TOKEN_QUERY_PARAM and submit via GET.
   assert.match(page, new RegExp(`name="${ACCESS_TOKEN_QUERY_PARAM}"`));
+  assert.match(
+    page,
+    new RegExp(`name="${ACCESS_PROMPT_QUERY_PARAM}" value="1"`),
+    "the token form should retain the explicit prompt marker during GET submission",
+  );
   assert.match(page, /method="get"/);
   assert.match(page, /type="password"/, "token input must not echo on screen");
   assert.doesNotMatch(page, /<script/i, "gate page must be script-free (CSP-immune, no new surface)");

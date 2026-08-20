@@ -235,12 +235,12 @@ test("2b — 'Start from' is always visible and launches work that already exist
     /meta: chatsGroup,[\s\S]{0,900}?onPick: \(\) => openSession\(session\.id, session\.familiarId\)/,
     "thread tiles still open through the shared open-session event",
   );
-  // Each band head states how much of its source is on screen — the count now
-  // comes from the shared launcher, so it cannot drift per surface.
+  // Each source tab states how much work it contains — the count comes from
+  // the shared launcher, so it cannot drift per surface.
   assert.match(
     readFileSync(new URL("./chat-start-from-bands.tsx", import.meta.url), "utf8"),
-    /className="cave-sf__band-count">\{meta\.count\}/,
-    "each band states how much of its source is on screen",
+    /className="cave-sf__source-count">\{meta\.count\}/,
+    "each source states how much work it contains",
   );
 });
 

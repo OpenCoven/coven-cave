@@ -1,0 +1,90 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_nested_benign_01",
+  "runId": "run_nested_benign_01",
+  "digest": "7867636d4db3680460fd6c659b8f0fe7c50eb4ab3a0083a131208de33822e507",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "context": {
+    "contextPackId": "ctx_nested_benign_01",
+    "contextPackDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "sources": [
+    {
+      "kind": "context-pack",
+      "id": "ctx_nested_benign_01",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "availability": "device-local",
+      "metadata": {
+        "contextMetadata": {
+          "summaryLabel": "privateExcerpt"
+        },
+        "items": [
+          null,
+          true,
+          1,
+          {
+            "label": "local_file_path"
+          }
+        ]
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact_nested_benign_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z",
+      "metadata": {
+        "nested": [
+          {
+            "label": "safe",
+            "examples": [
+              "credentialHint",
+              "deletedContent"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled",
+    "metadata": {
+      "objectives": "met",
+      "storefront": "closed",
+      "storagelike": "audit-only",
+      "bucketed": true,
+      "keystone": "retention",
+      "deletedcontentmentpayload": "benign",
+      "nested": [
+        {
+          "label": "safe",
+          "note": "objectKey"
+        }
+      ]
+    }
+  }
+}

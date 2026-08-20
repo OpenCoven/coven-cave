@@ -79,11 +79,10 @@ assert.match(
   "cards use --radius-card so the Appearance corner-radius setting applies",
 );
 
-// ── (3) From-task row — built, conditional, explicitly unwired ────────────
+// ── (3) From-task row ─────────────────────────────────────────────────────
 assert.match(fromTask, /if \(!origin\) return null/, "the row renders only with a task origin");
 assert.match(fromTask, /\.slice\(0, 3\)/, "chips cap at three (uniform-row rule)");
 assert.match(fromTask, /From task/, "the accent 'From task' label renders");
-assert.match(composer, /const taskOrigin: HomeTaskOrigin \| null = null;/, "home passes null — no task→home handoff exists yet (see the NOTE)");
 assert.match(
   composer,
   /taskOrigin \? \(\s*<HomeFromTaskRow origin=\{taskOrigin\} onPickSuggestion=\{insertPrompt\} \/>\s*\) : null\}/,

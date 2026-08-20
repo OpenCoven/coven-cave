@@ -10,7 +10,7 @@ const src = await readFile(new URL("./detail-split-host.tsx", import.meta.url), 
 // The single-secondary (2-pane) case keeps its snap-assisted resizable group.
 assert.match(
   src,
-  /secondaryTiles\.length === 1 \?[\s\S]*<Group className="split-host__group"/,
+  /secondaryTiles\.length === 1 \?[\s\S]*<Group\s+className="split-host__group"/,
   "2-pane split renders a resizable Group",
 );
 

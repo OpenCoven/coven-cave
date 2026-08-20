@@ -1,0 +1,31 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_7_days_overflow",
+  "runId": "run_7_days_overflow",
+  "digest": "69de801feb8f0b00465a9bc3247f23f3f0cdd5fcda4fe10374f330cb6fb7134e",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2099-01-01T00:00:00.000Z",
+    "updatedAt": "2026-08-16T20:04:00.000Z"
+  },
+  "deletion": {
+    "status": "scheduled",
+    "requestedAt": "2026-08-16T20:04:00.000Z"
+  }
+}

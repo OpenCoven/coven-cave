@@ -41,6 +41,10 @@ import {
   openAiVoiceDetail,
 } from "@/lib/voice/openai-voices";
 import { useOpenAiVoicePreview } from "@/components/use-openai-voice-preview";
+import {
+  showSettingsSavedAfterPreferencesFlush,
+  showSettingsSavedToast,
+} from "@/lib/settings-save-feedback";
 
 type DefaultProviderValue = "" | SelectableVoiceProviderId;
 type AsyncCatalog<T> = { status: "loading" } | T;
@@ -261,6 +265,7 @@ function CredentialEditor({
     setDraft("");
     setOpen(false);
     announce(`${providerLabel} key saved.`, "polite");
+    showSettingsSavedToast(`${providerLabel} key saved.`);
     await onSaved();
   };
 
@@ -436,6 +441,7 @@ export function VoiceProviderSettings({
     if (!next) {
       updateAppPreferences({ voice: { defaultProvider: "", defaultModel: "", defaultVoice: "" } });
       announce("Default voice provider cleared.", "polite");
+      void showSettingsSavedAfterPreferencesFlush();
       return;
     }
     const definition = getVoiceProviderDefinition(next);
@@ -448,6 +454,7 @@ export function VoiceProviderSettings({
       },
     });
     announce(`Default voice provider set to ${definition.label}.`, "polite");
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const savePreference = (
@@ -457,6 +464,7 @@ export function VoiceProviderSettings({
   ) => {
     updateAppPreferences({ voice: { [key]: value } });
     announce(message, "polite");
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const selectedOpenAiVoice = findOpenAiVoice(voice.defaultVoice);

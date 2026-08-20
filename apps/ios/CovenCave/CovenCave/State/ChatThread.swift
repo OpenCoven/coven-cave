@@ -163,6 +163,40 @@ extension DisplayMessage {
     }
 }
 
+enum ChatSendOutcome: Equatable {
+    case acknowledged
+    case queued
+    case failed
+    case cancelled
+    case noAcknowledgement
+}
+
+struct ChatSendResult: Equatable {
+    var familiarId: String
+    var userMessageId: String?
+    var assistantMessageId: String
+    var outcome: ChatSendOutcome
+}
+
+enum ForwardedLandingHydrationGate {
+    @MainActor
+    static func shouldReload(thread: ChatThread, after result: ChatSendResult) -> Bool {
+        guard result.outcome == .acknowledged,
+              let userMessageId = result.userMessageId,
+              let userMessage = thread.messages.first(where: { $0.id == userMessageId }),
+              !userMessage.isQueued,
+              let assistantMessage = thread.messages.first(where: {
+                  $0.id == result.assistantMessageId
+              }),
+              assistantMessage.role == .assistant,
+              assistantMessage.familiarId == result.familiarId,
+              !assistantMessage.streaming,
+              !assistantMessage.isError
+        else { return false }
+        return true
+    }
+}
+
 /// Plain Codable snapshot used for on-disk persistence.
 struct ThreadSnapshot: Codable, Identifiable, Equatable {
     var id: String
@@ -276,6 +310,7 @@ final class ChatThread: Identifiable, Hashable {
               modelControls: [String: String] = [:],
               modelOverride: String? = nil,
               modelOverrideScope: ChatModelOverrideScope? = nil,
+              onStreamResult: ((ChatSendResult) -> Void)? = nil,
               client: CaveClient, onChange: @escaping () -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // An image with no caption is a valid prompt (the familiar reads it).
@@ -309,7 +344,8 @@ final class ChatThread: Identifiable, Hashable {
                                      modelControls: modelControls,
                                      modelOverride: modelOverride,
                                      modelOverrideScope: modelOverrideScope ?? (modelOverride == nil ? nil : .session),
-                                     client: client, onChange: onChange) }
+                                     client: client, onChange: onChange,
+                                     onStreamResult: onStreamResult) }
         }
     }
 
@@ -572,7 +608,8 @@ final class ChatThread: Identifiable, Hashable {
                         modelControls: [String: String] = [:],
                         modelOverride: String? = nil,
                         modelOverrideScope: ChatModelOverrideScope? = nil,
-                        client: CaveClient, onChange: @escaping () -> Void) async {
+                        client: CaveClient, onChange: @escaping () -> Void,
+                        onStreamResult: ((ChatSendResult) -> Void)? = nil) async {
         // Per-send token: the server keys its resumable run buffer under this
         // (cave-h40l), so even a brand-new chat (no sessionId yet) can
         // re-attach mid-turn after a transport drop.
@@ -594,6 +631,7 @@ final class ChatThread: Identifiable, Hashable {
         // Resume cursor: the last applied frame's SSE id (run-buffer seq).
         var cursor = 0
         var sawDone = false
+        var outcome = ChatSendOutcome.noAcknowledgement
         let coalescer = StreamCoalescer()
         do {
             for try await frame in client.sendStream(body) {
@@ -610,6 +648,12 @@ final class ChatThread: Identifiable, Hashable {
                     $0.activity = settled
                 }
             }
+            outcome = settledSendOutcome(
+                assistantMessageId: messageId,
+                userMessageId: userMessageId,
+                receivedAnyEvent: receivedAnyEvent,
+                sawDone: sawDone
+            )
         } catch {
             // Transport interruption (network handoff, backgrounding, desktop
             // blip). The run is usually STILL LIVE server-side — re-attach to
@@ -653,6 +697,7 @@ final class ChatThread: Identifiable, Hashable {
                     // path — replaying those could double the turn.
                     messages.removeAll { $0.id == messageId }
                     mutate(userMessageId) { $0.queued = true }
+                    outcome = .queued
                 } else {
                     mutate(messageId) {
                         if $0.text.isEmpty { $0.text = error.localizedDescription }
@@ -661,12 +706,28 @@ final class ChatThread: Identifiable, Hashable {
                             $0.activity = settled
                         }
                     }
+                    outcome = error is CancellationError ? .cancelled : .failed
                 }
+            } else {
+                outcome = settledSendOutcome(
+                    assistantMessageId: messageId,
+                    userMessageId: userMessageId,
+                    receivedAnyEvent: receivedAnyEvent,
+                    sawDone: sawDone
+                )
             }
         }
         updatedAt = Date()
         onChange()
         ChatTurnNotifier.shared.turnFinished(thread: self, messageId: messageId)
+        onStreamResult?(
+            ChatSendResult(
+                familiarId: familiarId,
+                userMessageId: userMessageId,
+                assistantMessageId: messageId,
+                outcome: outcome
+            )
+        )
     }
 
     /// Apply one stream event to the thread — shared by the original send
@@ -923,6 +984,25 @@ final class ChatThread: Identifiable, Hashable {
         if let rowIdx = rowPositionByMessageID[messageId] {
             transcriptRows[rowIdx] = .message(message)
         }
+    }
+
+    private func settledSendOutcome(
+        assistantMessageId: String,
+        userMessageId: String?,
+        receivedAnyEvent: Bool,
+        sawDone: Bool
+    ) -> ChatSendOutcome {
+        if let userMessageId,
+           messages.first(where: { $0.id == userMessageId })?.isQueued == true {
+            return .queued
+        }
+        guard let assistantMessage = messages.first(where: { $0.id == assistantMessageId }) else {
+            return receivedAnyEvent ? .failed : .noAcknowledgement
+        }
+        if assistantMessage.isError { return .failed }
+        if sawDone { return .acknowledged }
+        let response = assistantMessage.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return response.isEmpty ? .noAcknowledgement : .acknowledged
     }
 }
 

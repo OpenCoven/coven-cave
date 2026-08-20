@@ -1,0 +1,36 @@
+{
+  "schema": "opencoven.research-run/v1",
+  "id": "run_bad_checkpoint_01",
+  "acceptedTopic": {
+    "question": "Can a queued run claim it is checkpoint-paused?",
+    "editedByUser": true
+  },
+  "execution": {
+    "location": "local",
+    "modelExecution": "cave-device",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "resolve-at-run-start"
+    },
+    "strategy": "single-agent"
+  },
+  "privacy": {
+    "remoteQueries": false,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false
+  },
+  "bounds": {
+    "wallClockMinutes": 15,
+    "maxIterations": 1,
+    "sourceTarget": 2,
+    "checkpointEvery": 1,
+    "stopWhenCostUnavailable": true
+  },
+  "status": "queued",
+  "waitingReason": "checkpoint",
+  "createdAt": "2026-08-17T19:00:00.000Z",
+  "updatedAt": "2026-08-17T19:00:00.000Z",
+  "nextEventSequence": 1
+}

@@ -3,7 +3,12 @@ import XCTest
 
 @MainActor
 final class VoiceCallCoordinatorTests: XCTestCase {
-    private let context = VoiceCallTransportContext(familiarId: "familiar", sessionId: "session", grant: nil)
+    private let context = VoiceCallTransportContext(
+        familiarId: "familiar",
+        sessionId: "session",
+        projectRoot: "/repos/cave",
+        grant: nil
+    )
     func testEndStopsMediaAndTransportOnceAndRejectsLateTransportCallbacks() async {
         let media = FakeVoiceMediaSession()
         let transport = FakeVoiceTransport()
@@ -26,6 +31,36 @@ final class VoiceCallCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.state.phase, .ended)
         XCTAssertTrue(coordinator.state.transcript.isEmpty)
+        XCTAssertEqual(transport.stopCalls, 1)
+        XCTAssertEqual(media.stopCalls, 1)
+    }
+
+    func testLateSessionBindingAfterEndIsAcceptedButOtherLateEventsStaySuppressed() async {
+        let media = FakeVoiceMediaSession()
+        let transport = FakeVoiceTransport()
+        let unboundContext = VoiceCallTransportContext(
+            familiarId: "familiar",
+            sessionId: nil,
+            projectRoot: "/repos/cave",
+            grant: nil
+        )
+        let coordinator = VoiceCallCoordinator(
+            mode: .native, transport: transport, mediaSession: media, context: unboundContext
+        )
+
+        await coordinator.start()
+        transport.emit(.connected)
+        transport.emit(.final(role: .user, text: "Hello", segmentID: "user-1"))
+        transport.emit(.processing)
+
+        coordinator.end()
+        transport.emit(.sessionBound("session-late"))
+        transport.emit(.speaking)
+        transport.emit(.final(role: .assistant, text: "Ignore", segmentID: "assistant-1"))
+
+        XCTAssertEqual(coordinator.state.phase, .ended)
+        XCTAssertEqual(coordinator.state.sessionId, "session-late")
+        XCTAssertEqual(coordinator.state.transcript.map(\.text), ["Hello"])
         XCTAssertEqual(transport.stopCalls, 1)
         XCTAssertEqual(media.stopCalls, 1)
     }

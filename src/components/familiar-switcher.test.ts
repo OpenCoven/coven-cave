@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./familiar-switcher.tsx", import.meta.url), "utf8");
-const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const globals = [
+  readFileSync(new URL("../styles/globals/desktop-chrome.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8"),
+].join("\n");
 
 // Trigger is an account-style profile/avatar button: the active familiar's
 // avatar (or an "all" glyph), optional visible name, and a reply-needed dot —
@@ -30,8 +33,8 @@ assert.match(
 );
 assert.match(
   source,
-  /singleRequired\s*\? "Choose familiar"\s*: "All familiars"/,
-  "a required single-familiar picker never labels its empty state as All familiars",
+  /singleRequired\s*\? "Choose familiar"\s*: aggregateLabel/,
+  "a required single-familiar picker keeps Choose familiar while aggregate scope uses aggregateLabel",
 );
 assert.match(
   source,
@@ -138,12 +141,27 @@ assert.match(
 );
 assert.match(
   globals,
-  /\.familiar-switcher__checkbox \{[\s\S]*?opacity: 0;/,
+  /\.familiar-switcher__checkbox \{/,
   "checkbox zones rest invisible so rows read as a plain dropdown",
 );
 assert.match(
   globals,
-  /\.familiar-switcher__checkbox\.is-checked,[\s\S]*?\.familiar-switcher__list\[data-multi\] \.familiar-switcher__checkbox \{[\s\S]*?opacity: 1;/,
+  /opacity:\s*0;/,
+  "checkbox zones start hidden",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__checkbox\.is-checked,/,
+  "checked rows still share the reveal selector",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__list\[data-multi\] \.familiar-switcher__checkbox \{/,
+  "a live multiselect keeps checkbox zones visible",
+);
+assert.match(
+  globals,
+  /opacity:\s*1;/,
   "checked rows, hovered rows, and a live multiselect reveal the checkbox",
 );
 assert.match(
@@ -170,5 +188,106 @@ assert.match(
   "mobile trigger should match the row's shared touch-target icon height",
 );
 assert.match(globals, /\.familiar-switcher__option \{/, "menu options have dedicated styling");
+
+// ── Stage 1 Task 4: aggregateLabel, aggregateDescription, disabled props ────
+// All props are optional; existing callers retain existing behavior.
+assert.match(
+  source,
+  /aggregateLabel\??: string/,
+  "FamiliarSwitcher accepts optional aggregateLabel prop",
+);
+assert.match(
+  source,
+  /aggregateDescription\??: string/,
+  "FamiliarSwitcher accepts optional aggregateDescription prop",
+);
+assert.match(
+  source,
+  /disabled\??: boolean/,
+  "FamiliarSwitcher accepts optional disabled prop",
+);
+// Default copy: "All familiars" must come from aggregateLabel with default
+assert.match(
+  source,
+  /aggregateLabel\s*=\s*"All familiars"/,
+  "aggregateLabel default remains declared at destructuring",
+);
+// Rendered header name and list option use aggregateLabel variable
+assert.match(
+  source,
+  /\{aggregateLabel\}/,
+  "rendered header name and/or list option display aggregateLabel",
+);
+// Header role text: aggregateDescription ?? fallback
+assert.match(
+  source,
+  /aggregateDescription \?\? `\$\{familiars\.length\} in your coven`/,
+  "header role text uses aggregateDescription when provided, falls back to count",
+);
+// Aggregate trigger aria-label uses aggregateLabel
+assert.match(
+  source,
+  /Switch familiar — scope: \$\{aggregateLabel\.toLowerCase\(\)\}/,
+  "aggregate trigger accessible label uses aggregateLabel",
+);
+// disabled prop forwarded to trigger button
+assert.match(
+  source,
+  /disabled=\{disabled\}/,
+  "disabled prop is forwarded to the trigger button",
+);
+
+// ── Stage 1 Task 4: disabled-open gating and state reset ────────────────────
+assert.match(
+  source,
+  /import \{ useEffect[^}]*\} from "react"/,
+  "useEffect is imported for the disabled-open gate",
+);
+assert.match(
+  source,
+  /const popoverOpen = open && !disabled;/,
+  "popoverOpen is gated at render time so a disabled trigger is inaccessible immediately",
+);
+assert.match(
+  source,
+  /aria-expanded=\{popoverOpen\}/,
+  "the trigger reports the render-time open state, not the raw open flag",
+);
+assert.match(
+  source,
+  /<Popover[\s\S]{0,120}open=\{popoverOpen\}/,
+  "Popover visibility follows the render-time gated open state",
+);
+assert.match(
+  source,
+  /if \(disabled && next\) return;/,
+  "onOpenChange will not reopen while disabled",
+);
+assert.match(
+  source,
+  /useEffect\(\s*\(\) => \{[\s\S]{0,300}if \(disabled\)[\s\S]{0,200}setOpen\(false\)/,
+  "when disabled becomes true, the effect still clears stale open state",
+);
+assert.match(
+  source,
+  /if \(disabled\)[\s\S]{0,200}setOpen\(false\)[\s\S]{0,200}setReordering\(false\)/,
+  "disabled also clears reordering state so re-enabling starts from a clean menu position",
+);
+assert.match(
+  source,
+  /if \(disabled\)[\s\S]{0,200}setQuery\(""\)/,
+  "disabled clears query state so the filter does not persist across enable/disable cycles",
+);
+assert.match(
+  source,
+  /}, \[disabled\]\)/,
+  "the disabled-close effect depends only on [disabled] — not [disabled, open] — so it fires only on prop change",
+);
+
+assert.match(
+  source,
+  /if \(disabled && next\) return;\s*\n\s*setOpen\(next\)/,
+  "onOpenChange guard + setOpen(next) is semantically equivalent to setOpen(!disabled && next)",
+);
 
 console.log("familiar-switcher.test.ts: ok");

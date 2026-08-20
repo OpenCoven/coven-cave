@@ -17,7 +17,7 @@ assert.match(
 assert.match(client, /if let notes \{ try c\.encode\(notes, forKey: \.notes\) \}/, "TaskFieldsPatch should encode notes when set");
 
 // Model exposes an optimistic notes setter that reverts on failure.
-// Scope the match to setTaskNotes' own body by brace matching. The previous
+// Scope the match to one function body by brace matching. The previous
 // form was one regex over the whole file with `[\s\S]*` between clauses, so
 // after `catch` it ran greedily into LATER functions — it passed while
 // setTaskNotes itself still reverted the whole array, because some other
@@ -35,26 +35,42 @@ function blockAfter(src, marker) {
   }
   return null;
 }
-const setNotes = blockAfter(model, "func setTaskNotes(_ card: BoardCard, _ notes: String) async {");
-assert.ok(setNotes, "setTaskNotes should exist");
-assert.match(setNotes, /applyTask\(id: card\.id\) \{ \$0\.notes = trimmed \}/, "setTaskNotes should apply optimistically");
-assert.match(setNotes, /client\.updateTask\(cardId: card\.id, notes: trimmed\)/, "setTaskNotes should PATCH the notes");
+const requestNotes = blockAfter(model, "func requestTaskNotes(_ card: BoardCard, _ notes: String) -> Task<Void, Never>? {");
+assert.ok(requestNotes, "requestTaskNotes should exist");
+assert.match(requestNotes, /applyTask\(id: card\.id\) \{ \$0\.notes = trimmed \}/, "requestTaskNotes should apply optimistically");
 assert.match(
-  setNotes,
-  /catch \{\s*\n\s*revertTask\(id: card\.id, to: previous\)/,
-  "setTaskNotes should revert on failure — and only its own card (cave-rlmot)",
+  requestNotes,
+  /guard trimmed != \(card\.notes \?\? ""\),[\s\S]*let mutation = beginTaskMutation\(id: card\.id, field: \.notes\) else \{ return nil \}/,
+  "requestTaskNotes should register a per-card mutation token before its optimistic update",
 );
 assert.match(
-  model,
-  /guard trimmed != \(card\.notes \?\? ""\) else \{ return \}/,
-  "setTaskNotes should no-op when nothing changed",
+  requestNotes,
+  /scheduleTaskMutationRequest\(mutation\)/,
+  "requestTaskNotes should send through the per-field single-flight coordinator",
+);
+const performNotes = blockAfter(model, "private func performTaskNotesMutation(");
+assert.ok(performNotes, "performTaskNotesMutation should exist");
+assert.match(
+  performNotes,
+  /client\.updateTask\([\s\S]*cardId: cardId,[\s\S]*status: nil,[\s\S]*priority: nil,[\s\S]*steps: nil,[\s\S]*notes: notes[\s\S]*\)/,
+  "performTaskNotesMutation should PATCH the notes through the shared task-field client helper",
+);
+assert.match(
+  performNotes,
+  /_ = applyTaskServerUpdate\(updated, for: mutation\)/,
+  "performTaskNotesMutation should merge only its authoritative fields back from the server response",
+);
+assert.match(
+  performNotes,
+  /catch \{[\s\S]*guard revertTaskMutation\(mutation\) else \{ return \}/,
+  "performTaskNotesMutation should revert only its own optimistic fields when the PATCH fails",
 );
 
 // Detail view edits notes via a sheet, with edit + add affordances.
 assert.match(
   detail,
-  /\.sheet\(isPresented: \$editingNotes\) \{[\s\S]*NotesEditorView\(initialText: live\.notes \?\? ""\) \{ text in[\s\S]*await app\.setTaskNotes\(live, text\)/,
-  "detail view should present a notes editor wired to setTaskNotes",
+  /\.sheet\(isPresented: \$editingNotes\) \{[\s\S]*NotesEditorView\(initialText: live\.notes \?\? ""\) \{ text in[\s\S]*app\.requestTaskNotes\(live, text\)/,
+  "detail view should present a notes editor wired to requestTaskNotes",
 );
 assert.match(detail, /private var notesSection: some View/, "notes section should branch on presence");
 assert.match(detail, /Label\("Add notes", systemImage: "square\.and\.pencil"\)/, "empty notes should show an Add notes action");

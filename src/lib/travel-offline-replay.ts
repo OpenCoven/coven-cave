@@ -111,6 +111,23 @@ export function daemonReplayControlFamilies(payload: Record<string, unknown>): s
   return [...families];
 }
 
+export function daemonReplayAttachmentBlockReason(
+  attachments: ChatAttachment[],
+): string | null {
+  const byteDependent = attachments.filter(
+    (attachment) =>
+      Boolean(attachment.storedId) ||
+      attachment.truncated === true ||
+      (!attachment.text && attachment.size !== 0),
+  );
+  if (byteDependent.length === 0) return null;
+  const names = byteDependent
+    .slice(0, 3)
+    .map((attachment) => attachment.name)
+    .join(", ");
+  return `queued file attachments cannot be replayed through the current hub session contract (${names}); reconnect and resend them`;
+}
+
 function replayError(err: unknown): string {
   return err instanceof Error ? err.message : "sync failed";
 }
@@ -222,6 +239,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const profileBlock = hermesProfileDaemonLaunchBlockReason(binding);
   if (profileBlock) throw new Error(profileBlock);
   const attachments = objectArray<ChatAttachment>(payload.attachments);
+  const attachmentBlock = daemonReplayAttachmentBlockReason(attachments);
+  if (attachmentBlock) throw new Error(attachmentBlock);
   const queuedPayloadModelOverride = stringValue(payload.modelOverride);
   const queuedRunId = stringValue(payload.runId);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });

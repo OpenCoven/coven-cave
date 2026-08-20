@@ -243,9 +243,10 @@ export function FamiliarRosterCard({
         <Link
           href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
           aria-label={`Open analytics for ${familiar.display_name}`}
-          className="focus-ring shrink-0 rounded-[var(--radius-sm)] lowercase text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+          className="familiars-view__analytics-link focus-ring inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1 text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)]"
         >
-          Analytics →
+          <Icon name="ph:chart-line-up" width={11} aria-hidden />
+          Analytics
         </Link>
       </div>
     </div>
@@ -546,6 +547,14 @@ export function FamiliarDetailPanel({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          <Link
+            href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
+            title={`View analytics for ${familiar.display_name}`}
+            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 text-[length:var(--text-xs)] text-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)]"
+          >
+            <Icon name="ph:chart-line-up" width={12} />
+            View analytics
+          </Link>
           <button
             type="button"
             onClick={onStartChat}

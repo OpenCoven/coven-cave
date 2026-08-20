@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { classifyCiPaths } from "./ci-paths.mjs";
@@ -25,6 +26,28 @@ test("workflow and script changes run frontend validation", () => {
   });
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).frontend, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
+});
+
+test("protocol changes run conformance in normal Linux pull-request CI", () => {
+  assert.equal(
+    classifyCiPaths(["schemas/research/v1/run-manifest.schema.json"]).frontend,
+    true,
+  );
+
+  const workflow = readFileSync(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const frontendValidation = workflow.match(
+    /^  frontend-validation:\n[\s\S]*?(?=^  [a-z][a-z-]+:\n)/m,
+  )?.[0];
+  assert.ok(frontendValidation, "CI must retain the frontend validation job");
+  assert.match(workflow, /^  pull_request:\n/m);
+  assert.match(frontendValidation, /^    runs-on: ubuntu-latest$/m);
+  assert.match(
+    frontendValidation,
+    /^          - name: protocol conformance\n            command: test:conformance$/m,
+  );
 });
 
 test("Rust-only changes avoid frontend and E2E work", () => {

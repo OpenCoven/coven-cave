@@ -1,0 +1,36 @@
+{
+  "schema": "opencoven.context-pack/v1",
+  "id": "ctx_01",
+  "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+  "createdAt": "2026-08-15T20:00:00.000Z",
+  "createdBy": { "client": "coven-cave" },
+  "purpose": "research-run",
+  "subject": { "familiarId": "sage", "projectId": "project_01" },
+  "consent": {
+    "selectionMode": "explicit",
+    "allowRemoteQueries": true,
+    "allowRemoteContent": false,
+    "artifactContentSync": false,
+    "retention": "7-days"
+  },
+  "resources": [{
+    "id": "resource_01",
+    "kind": "artifact",
+    "uri": "coven://session/session_01",
+    "digest": "0b9c966e9a7c4831f255cebbba0e7726fc8410ed32998179b32221097b404f9b",
+    "localBlobDigest": "4b94f5f75ee88c0e995251afe98fb468499215b33bbb6c18d01b1dd583f69e9d",
+    "selector": { "type": "pdf-page-span", "page": 0, "start": 12, "end": 12 },
+    "trust": "mixed-conversation",
+    "sensitivity": "private",
+    "capturedAt": "2026-08-15T19:59:00.000Z",
+    "title": "Selected research discussion",
+    "mediaType": "application/pdf"
+  }],
+  "policy": {
+    "treatResourceTextAsData": true,
+    "toolAuthority": "none",
+    "allowedPurposes": ["research-run"]
+  },
+  "transforms": { "secretScanVersion": "1" },
+  "futureExtension": { "preserve": true }
+}

@@ -1,15 +1,151 @@
 import Foundation
 import Network
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 import WidgetKit
 
 /// The primary destinations. Lifted out of the drawer shell so slash commands
 /// (`/board`, `/chats`) can drive selection from anywhere.
-enum AppTab: String, CaseIterable { case chats, tasks, settings }
+enum AppTab: String, CaseIterable, Sendable { case chats, tasks, settings }
 
 extension AppTab {
     static let drawerDestinations: [AppTab] = [.chats, .tasks, .settings]
     static let shortcutOrder: [AppTab] = drawerDestinations
+
+    /// Project search returns to the active project-scoped destination when it
+    /// has one; settings falls back to Chats because it does not render
+    /// project-scoped content of its own.
+    var projectSearchReturnDestination: AppTab {
+        switch self {
+        case .settings:
+            return .chats
+        case .chats, .tasks:
+            return self
+        }
+    }
+}
+
+/// One pending project-aware navigation request. Entity metadata always wins
+/// over the advisory `projectId`, which mainly carries project-scoped deep
+/// links until the catalog hydrates.
+struct ProjectNavigationIntent: Equatable, Hashable, Sendable {
+    enum Entity: Equatable, Hashable, Sendable {
+        case thread(id: String)
+        case task(id: String)
+    }
+
+    let entity: Entity?
+    let destination: AppTab
+    let projectId: String?
+
+    init(entity: Entity? = nil, destination: AppTab, projectId: String? = nil) {
+        self.entity = entity
+        self.destination = destination
+        self.projectId = Self.normalized(projectId)
+    }
+
+    var resolvedDestination: AppTab {
+        switch entity {
+        case .thread?: return .chats
+        case .task?: return .tasks
+        case nil: return destination
+        }
+    }
+
+    var threadId: String? {
+        guard case .thread(let id)? = entity else { return nil }
+        return id
+    }
+
+    var taskId: String? {
+        guard case .task(let id)? = entity else { return nil }
+        return id
+    }
+
+    var targetDescription: String {
+        if let threadId {
+            return "chat \(threadId)"
+        }
+        if let taskId {
+            return "task \(taskId)"
+        }
+        if let projectId {
+            return "project \(projectId)"
+        }
+        return resolvedDestination.rawValue
+    }
+
+    var url: URL? {
+        var components = URLComponents()
+        components.scheme = "covencave"
+        switch entity {
+        case .thread(let id)?:
+            components.host = "thread"
+            components.path = "/" + id
+        case .task(let id)?:
+            components.host = "task"
+            components.path = "/" + id
+        case nil:
+            if let projectId {
+                guard resolvedDestination == .chats || resolvedDestination == .tasks else {
+                    return nil
+                }
+                components.host = "project"
+                components.path = "/\(projectId)/\(resolvedDestination.rawValue)"
+            } else {
+                guard resolvedDestination == .chats || resolvedDestination == .tasks else {
+                    return nil
+                }
+                components.host = resolvedDestination.rawValue
+            }
+        }
+        return components.url
+    }
+
+    init?(url: URL) {
+        guard url.scheme == "covencave" else { return nil }
+        let path = url.path
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+
+        switch url.host {
+        case "thread":
+            guard path.count == 1, let threadId = Self.normalized(path[0]) else { return nil }
+            self = ProjectNavigationIntent(entity: .thread(id: threadId), destination: .chats)
+        case "task":
+            guard path.count == 1, let taskId = Self.normalized(path[0]) else { return nil }
+            self = ProjectNavigationIntent(entity: .task(id: taskId), destination: .tasks)
+        case "tasks":
+            guard path.isEmpty else { return nil }
+            self = ProjectNavigationIntent(destination: .tasks)
+        case "chats":
+            guard path.isEmpty else { return nil }
+            self = ProjectNavigationIntent(destination: .chats)
+        case "reminders":
+            guard path.isEmpty else { return nil }
+            self = ProjectNavigationIntent(destination: .tasks)
+        case "project":
+            guard path.count == 2,
+                  let projectId = Self.normalized(path[0]),
+                  let destination = AppTab(rawValue: path[1]),
+                  destination == .chats || destination == .tasks else {
+                return nil
+            }
+            self = ProjectNavigationIntent(destination: destination, projectId: projectId)
+        default:
+            return nil
+        }
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
 }
 
 struct PairingIntent: Equatable {
@@ -35,6 +171,85 @@ enum PendingPairingProcessorPolicy {
     }
 }
 
+/// The load-bearing project-context inputs AppModel needs from the desktop.
+/// `CaveClient` already supplies these APIs; the protocol only gives tests a
+/// small seam so they can pin fail-closed and cached-refresh behaviour without
+/// a live desktop or a process-global URLProtocol shim.
+protocol ProjectContextLoadingClient: Sendable {
+    func projects() async throws -> [ProjectInfo]
+    func projectGrants() async throws -> ProjectGrantsResponse
+    func familiars() async throws -> [Familiar]
+    func sessions() async throws -> [SessionRow]
+    func tasks() async throws -> [BoardCard]
+}
+
+extension ProjectContextLoadingClient {
+    func sessions() async throws -> [SessionRow] { [] }
+    func tasks() async throws -> [BoardCard] { [] }
+}
+
+protocol AccessTokenRefreshingClient: Sendable {
+    func refreshAccessToken() async -> String?
+}
+
+/// Lets task↔chat reconciliation patch a card's canonical `sessionId`
+/// without forcing tests through a live desktop HTTP client.
+protocol TaskSessionUpdatingClient: Sendable {
+    func updateTaskSession(cardId: String, sessionId: String?) async throws -> BoardCard
+}
+
+/// Lets task detail/status mutations exercise their optimistic concurrency
+/// paths in tests without a process-global URLProtocol shim.
+protocol TaskFieldsUpdatingClient: Sendable {
+    func updateTask(
+        cardId: String,
+        status: CardStatus?,
+        priority: CardPriority?,
+        steps: [CardStep]?,
+        notes: String?
+    ) async throws -> BoardCard
+    func updateTaskTitle(cardId: String, title: String) async throws -> BoardCard
+    func updateTaskDates(cardId: String, startDate: String?, endDate: String?) async throws -> BoardCard
+}
+
+/// Lets recovery flows reassign a task onto a registered project without
+/// reaching for a process-global URLProtocol shim in tests.
+protocol TaskProjectUpdatingClient: Sendable {
+    func updateTaskProject(cardId: String, projectId: String) async throws -> BoardCard
+}
+
+protocol ReminderManagingClient: Sendable {
+    func reminders() async throws -> [Reminder]
+    func bulkInboxAction(_ action: String, ids: [String]) async throws -> CaveClient.BulkInboxOutcome
+    func markReminderDone(id: String) async throws -> Reminder?
+    func dismissReminder(id: String) async throws -> Reminder?
+    func snoozeReminder(id: String, minutes: Int) async throws -> Reminder?
+}
+
+protocol ReminderNotificationScheduling: Sendable {
+    func requestAuthorizationIfNeeded() async
+    func sync(_ reminders: [Reminder]) async
+}
+
+private struct SystemReminderNotificationScheduler: ReminderNotificationScheduling {
+    func requestAuthorizationIfNeeded() async {
+        await ReminderNotifications.requestAuthorizationIfNeeded()
+    }
+
+    func sync(_ reminders: [Reminder]) async {
+        await ReminderNotifications.sync(reminders)
+    }
+}
+
+typealias AppModelCoreResourceClient =
+    ProjectContextLoadingClient & CaveBootstrapClient & AccessTokenRefreshingClient
+
+extension CaveClient: ProjectContextLoadingClient, AccessTokenRefreshingClient, @unchecked Sendable {}
+extension CaveClient: TaskSessionUpdatingClient {}
+extension CaveClient: TaskFieldsUpdatingClient {}
+extension CaveClient: TaskProjectUpdatingClient {}
+extension CaveClient: ReminderManagingClient {}
+
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
     enum Style { case success, info, warning, error }
@@ -47,10 +262,73 @@ struct ToastMessage: Identifiable, Equatable {
 @Observable
 @MainActor
 final class AppModel {
+    private struct ProjectNavigationHydrationToken: Equatable {
+        let generation: UInt64?
+        let requestId: UInt64
+    }
+
+    private struct ProjectNavigationHydrationState {
+        var nextRequestId: UInt64 = 0
+        var inFlight: ProjectNavigationHydrationToken?
+    }
+
+    private struct CoordinatedLoadToken: Equatable {
+        let generation: UInt64?
+        let requestId: UInt64
+    }
+
+    private struct CoordinatedLoadOutput<Value>: @unchecked Sendable {
+        let result: Result<Value, any Error>
+    }
+
+    private struct CoordinatedLoadState<Value> {
+        var nextRequestId: UInt64 = 0
+        var freshest: CoordinatedLoadToken?
+        var lastApplied: CoordinatedLoadToken?
+        var inFlight: (
+            token: CoordinatedLoadToken,
+            task: Task<CoordinatedLoadOutput<Value>, Never>
+        )?
+    }
+
+    nonisolated static let projectContextStorageKeyPrefix = "cave.project-context.v2"
+    nonisolated static let legacyProjectContextStorageKey = "cave.project-context.v1"
+    nonisolated static let unassignedProjectContextStorageValue = "unassigned"
+
+    private enum ProjectContextSelectionSource: Sendable {
+        case restored
+        case automatic
+        case user
+    }
+
+    nonisolated static func projectContextStorageKey(for connection: CaveConnection?) -> String? {
+        guard let identity = projectContextStorageIdentity(for: connection) else { return nil }
+        return "\(projectContextStorageKeyPrefix).\(identity)"
+    }
+
+    nonisolated private static func projectContextStorageIdentity(
+        for connection: CaveConnection?
+    ) -> String? {
+        guard let connection else { return nil }
+        if let baseURL = connection.baseURL,
+           let origin = CaveConnection.credentialOrigin(for: baseURL),
+           !origin.isEmpty {
+            return origin
+        }
+        let normalizedHost = connection.host
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return normalizedHost.isEmpty ? nil : normalizedHost
+    }
+
     enum ConnectionState: Equatable {
         case unconfigured
         case checking
         case connected
+        /// The desktop answered, but the initial project-context bootstrap
+        /// failed, so the shell stays gated behind an actionable retry state
+        /// rather than reading as auth or transport failure.
+        case projectContextRequired
         /// Discovery failed everywhere. Carries the classified diagnosis so
         /// the connect screen can say WHICH way it failed (DNS vs refused vs
         /// timeout…) instead of one generic shrug.
@@ -91,6 +369,7 @@ final class AppModel {
 
     var familiars: [Familiar] = []
     var familiarsError: String?
+    var familiarsLoaded = false
     /// User's preferred familiar order (ids), applied over the server's order
     /// and persisted locally. Unknown/new familiars fall to the end.
 
@@ -102,9 +381,14 @@ final class AppModel {
             .filter { !$0.archived }
             .max { $0.updatedAt < $1.updatedAt }
     }
-    /// Process-lifetime launch intent. It survives destination remounts until a
-    /// matching hydrated thread can be opened, then is consumed exactly once.
-    var launchThreadId: String?
+    /// One pending project-aware open. Cold deep links keep this alive until
+    /// their threads/tasks and any required project catalog data hydrate; it
+    /// clears only after the resolver has published the final open request.
+    var pendingProjectNavigationIntent: ProjectNavigationIntent?
+    @ObservationIgnored private var lastProjectNavigationFailure: ProjectNavigationFailureState?
+    @ObservationIgnored private var projectNavigationProjectsHydration = ProjectNavigationHydrationState()
+    @ObservationIgnored private var projectNavigationSessionsHydration = ProjectNavigationHydrationState()
+    @ObservationIgnored private var projectNavigationTasksHydration = ProjectNavigationHydrationState()
 
     /// Messages whose agent-activity trail the reader has opened.
     ///
@@ -138,12 +422,12 @@ final class AppModel {
         return .chats
     }()
 
-    /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
-    /// the thread, and clears it back to nil (one-shot navigation intent).
+    /// A thread the central resolver asked Chats to open. `ChatsHomeView`
+    /// observes this, pushes the thread, and clears it back to nil.
     var threadToOpen: ChatThread?
 
-    /// A task the user asked to open from a chat. `TasksView` observes this,
-    /// pushes the card, and clears it (mirrors `threadToOpen`).
+    /// A task the central resolver asked Tasks to open. `TasksView` observes
+    /// this, pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
 
     /// Global Claude Design navigation. Any top-level surface can open the
@@ -200,10 +484,942 @@ final class AppModel {
         Haptics.error()
     }
 
-    /// Ask the chat list to open a thread (switches to Chats first).
-    func requestOpen(_ thread: ChatThread) {
-        selectedTab = .chats
-        threadToOpen = thread
+    enum ThreadOpenFailure: Error, Equatable {
+        case projectCatalogUnavailable
+        case invalidProjectMetadata
+
+        var toastText: String {
+            switch self {
+            case .projectCatalogUnavailable:
+                return "Refresh Chats to load project context, then try again."
+            case .invalidProjectMetadata:
+                return "This chat’s project metadata could not be resolved. Refresh Chats or reopen it on your desktop, then try again."
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .projectCatalogUnavailable:
+                return "arrow.clockwise"
+            case .invalidProjectMetadata:
+                return "folder.badge.questionmark"
+            }
+        }
+    }
+
+    enum TaskOpenFailure: Error, Equatable {
+        case projectCatalogUnavailable
+        case invalidProjectMetadata
+
+        var toastText: String {
+            switch self {
+            case .projectCatalogUnavailable:
+                return "Refresh Chats to load project context, then try again."
+            case .invalidProjectMetadata:
+                return "This task is no longer linked to a registered project. Refresh Tasks or reassign it on your desktop, then try again."
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .projectCatalogUnavailable:
+                return "arrow.clockwise"
+            case .invalidProjectMetadata:
+                return "folder.badge.questionmark"
+            }
+        }
+    }
+
+    private enum ProjectDestinationFailure: Error, Equatable {
+        case projectCatalogUnavailable
+        case unknownProject
+
+        var toastText: String {
+            switch self {
+            case .projectCatalogUnavailable:
+                return "Refresh Chats to load project context, then try again."
+            case .unknownProject:
+                return "This project is no longer registered on this device. Refresh Chats or choose another project, then try again."
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .projectCatalogUnavailable:
+                return "arrow.clockwise"
+            case .unknownProject:
+                return "folder.badge.questionmark"
+            }
+        }
+    }
+
+    private struct ProjectNavigationFailure: Equatable {
+        let toastText: String
+        let systemImage: String
+
+        static let threadUnavailable = ProjectNavigationFailure(
+            toastText: "This chat is not available on this device yet. Refresh Chats and try again.",
+            systemImage: "bubble.left.and.exclamationmark.bubble.right"
+        )
+        static let taskUnavailable = ProjectNavigationFailure(
+            toastText: "This task is not available on this device yet. Refresh Tasks and try again.",
+            systemImage: "checklist"
+        )
+    }
+
+    private struct ProjectNavigationFailureState: Equatable {
+        let intent: ProjectNavigationIntent
+        let failure: ProjectNavigationFailure
+    }
+
+    private enum ProjectNavigationResolution {
+        case resolved
+        case pending
+        case failed(ProjectNavigationFailure)
+    }
+
+    private enum ProjectNavigationSurface: Sendable {
+        case projects
+        case sessions
+        case tasks
+
+        var retryInstruction: String {
+            switch self {
+            case .projects, .sessions:
+                return "Refresh Chats or reconnect, then try again."
+            case .tasks:
+                return "Refresh Tasks or reconnect, then try again."
+            }
+        }
+
+        var loadDescription: String {
+            switch self {
+            case .projects:
+                return "project context"
+            case .sessions:
+                return "Chats"
+            case .tasks:
+                return "Tasks"
+            }
+        }
+
+        var failureSystemImage: String {
+            switch self {
+            case .projects:
+                return "folder.badge.questionmark"
+            case .sessions:
+                return "bubble.left.and.exclamationmark.bubble.right"
+            case .tasks:
+                return "checklist"
+            }
+        }
+    }
+
+    private func currentProjectNavigationConnectionGeneration() -> UInt64? {
+        guard connection != nil else { return nil }
+        if projectNavigationConnectionGeneration == 0 {
+            projectNavigationConnectionGeneration = 1
+        }
+        return projectNavigationConnectionGeneration
+    }
+
+    private func advanceProjectNavigationConnectionGeneration() {
+        projectNavigationConnectionGeneration = projectNavigationConnectionGeneration == 0
+            ? 1
+            : projectNavigationConnectionGeneration &+ 1
+        projectNavigationKnownGoodConnectionGeneration = nil
+        invalidateProjectNavigationHydrations()
+    }
+
+    /// Configured project roots used by chat creation and project browsing.
+    var projects: [ProjectInfo] = []
+    var projectsError: String?
+    var projectsLoaded = false
+
+    private func markProjectNavigationConnectionKnownGood(generation: UInt64?) {
+        guard let generation else { return }
+        projectNavigationKnownGoodConnectionGeneration = generation
+    }
+
+    private func noteProjectNavigationSurfaceAttempt(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) {
+        guard let generation else { return }
+        clearProjectNavigationFailureToast(matching: lastProjectNavigationFailure)
+        lastProjectNavigationFailure = nil
+        clearProjectNavigationSurfaceFailure(surface, generation: generation)
+        switch surface {
+        case .projects:
+            projectNavigationProjectsAttemptGeneration = generation
+        case .sessions:
+            projectNavigationSessionsAttemptGeneration = generation
+        case .tasks:
+            projectNavigationTasksAttemptGeneration = generation
+        }
+    }
+
+    private func noteProjectNavigationSurfaceSuccess(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) {
+        guard let generation else { return }
+        markProjectNavigationConnectionKnownGood(generation: generation)
+        clearProjectNavigationSurfaceFailure(surface, generation: generation)
+        switch surface {
+        case .projects:
+            projectNavigationProjectsSuccessGeneration = generation
+        case .sessions:
+            projectNavigationSessionsSuccessGeneration = generation
+        case .tasks:
+            projectNavigationTasksSuccessGeneration = generation
+        }
+    }
+
+    private func noteProjectNavigationSurfaceFailure(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) {
+        guard let generation else { return }
+        switch surface {
+        case .projects:
+            if projectNavigationProjectsAttemptGeneration == generation {
+                projectNavigationProjectsAttemptGeneration = nil
+            }
+            if projectNavigationProjectsSuccessGeneration == generation {
+                projectNavigationProjectsSuccessGeneration = nil
+            }
+            projectNavigationProjectsFailureGeneration = generation
+        case .sessions:
+            if projectNavigationSessionsAttemptGeneration == generation {
+                projectNavigationSessionsAttemptGeneration = nil
+            }
+            if projectNavigationSessionsSuccessGeneration == generation {
+                projectNavigationSessionsSuccessGeneration = nil
+            }
+            projectNavigationSessionsFailureGeneration = generation
+        case .tasks:
+            if projectNavigationTasksAttemptGeneration == generation {
+                projectNavigationTasksAttemptGeneration = nil
+            }
+            if projectNavigationTasksSuccessGeneration == generation {
+                projectNavigationTasksSuccessGeneration = nil
+            }
+            projectNavigationTasksFailureGeneration = generation
+        }
+    }
+
+    private func clearProjectNavigationSurfaceFailure(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) {
+        guard let generation else { return }
+        switch surface {
+        case .projects:
+            if projectNavigationProjectsFailureGeneration == generation {
+                projectNavigationProjectsFailureGeneration = nil
+            }
+        case .sessions:
+            if projectNavigationSessionsFailureGeneration == generation {
+                projectNavigationSessionsFailureGeneration = nil
+            }
+        case .tasks:
+            if projectNavigationTasksFailureGeneration == generation {
+                projectNavigationTasksFailureGeneration = nil
+            }
+        }
+    }
+
+    private func invalidateProjectNavigationHydrations() {
+        projectNavigationProjectsHydration.inFlight = nil
+        projectNavigationSessionsHydration.inFlight = nil
+        projectNavigationTasksHydration.inFlight = nil
+    }
+
+    private func beginProjectNavigationHydration(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) -> ProjectNavigationHydrationToken {
+        switch surface {
+        case .projects:
+            return beginProjectNavigationHydration(
+                &projectNavigationProjectsHydration,
+                generation: generation
+            )
+        case .sessions:
+            return beginProjectNavigationHydration(
+                &projectNavigationSessionsHydration,
+                generation: generation
+            )
+        case .tasks:
+            return beginProjectNavigationHydration(
+                &projectNavigationTasksHydration,
+                generation: generation
+            )
+        }
+    }
+
+    private func beginProjectNavigationHydration(
+        _ state: inout ProjectNavigationHydrationState,
+        generation: UInt64?
+    ) -> ProjectNavigationHydrationToken {
+        state.nextRequestId &+= 1
+        let token = ProjectNavigationHydrationToken(
+            generation: generation,
+            requestId: state.nextRequestId
+        )
+        state.inFlight = token
+        return token
+    }
+
+    @discardableResult
+    private func finishProjectNavigationHydration(
+        _ surface: ProjectNavigationSurface,
+        token: ProjectNavigationHydrationToken
+    ) -> Bool {
+        switch surface {
+        case .projects:
+            return finishProjectNavigationHydration(
+                token,
+                state: &projectNavigationProjectsHydration
+            )
+        case .sessions:
+            return finishProjectNavigationHydration(
+                token,
+                state: &projectNavigationSessionsHydration
+            )
+        case .tasks:
+            return finishProjectNavigationHydration(
+                token,
+                state: &projectNavigationTasksHydration
+            )
+        }
+    }
+
+    @discardableResult
+    private func finishProjectNavigationHydration(
+        _ token: ProjectNavigationHydrationToken,
+        state: inout ProjectNavigationHydrationState
+    ) -> Bool {
+        guard state.inFlight == token else { return true }
+        state.inFlight = nil
+        return false
+    }
+
+    private func projectNavigationSurfaceAttemptedCurrentGeneration(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) -> Bool {
+        guard let generation else { return false }
+        switch surface {
+        case .projects:
+            return projectNavigationProjectsAttemptGeneration == generation
+        case .sessions:
+            return projectNavigationSessionsAttemptGeneration == generation
+        case .tasks:
+            return projectNavigationTasksAttemptGeneration == generation
+        }
+    }
+
+    private func projectNavigationSurfaceSucceededCurrentGeneration(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) -> Bool {
+        guard let generation else { return false }
+        switch surface {
+        case .projects:
+            return projectNavigationProjectsSuccessGeneration == generation
+        case .sessions:
+            return projectNavigationSessionsSuccessGeneration == generation
+        case .tasks:
+            return projectNavigationTasksSuccessGeneration == generation
+        }
+    }
+
+    private func projectNavigationSurfaceFailedCurrentGeneration(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) -> Bool {
+        guard let generation else { return false }
+        switch surface {
+        case .projects:
+            return projectNavigationProjectsFailureGeneration == generation
+        case .sessions:
+            return projectNavigationSessionsFailureGeneration == generation
+        case .tasks:
+            return projectNavigationTasksFailureGeneration == generation
+        }
+    }
+
+    private func projectNavigationSurfaceHydratingCurrentGeneration(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?
+    ) -> Bool {
+        guard let generation else { return false }
+        switch surface {
+        case .projects:
+            return projectNavigationProjectsHydration.inFlight?.generation == generation
+        case .sessions:
+            return projectNavigationSessionsHydration.inFlight?.generation == generation
+        case .tasks:
+            return projectNavigationTasksHydration.inFlight?.generation == generation
+        }
+    }
+
+    private func isProjectNavigationConnectionKnownGood(generation: UInt64?) -> Bool {
+        guard let generation else { return false }
+        return projectNavigationKnownGoodConnectionGeneration == generation
+    }
+
+    private func projectNavigationLoadStillCurrent(generation: UInt64?) -> Bool {
+        guard let generation else { return true }
+        return currentProjectNavigationConnectionGeneration() == generation
+    }
+
+    private func beginCoordinatedLoad<Value>(
+        _ state: inout CoordinatedLoadState<Value>,
+        generation: UInt64?,
+        operation: @escaping @Sendable () async throws -> Value
+    ) -> (
+        token: CoordinatedLoadToken,
+        task: Task<CoordinatedLoadOutput<Value>, Never>
+    ) {
+        if let inFlight = state.inFlight,
+           inFlight.token.generation == generation {
+            return inFlight
+        }
+
+        state.nextRequestId &+= 1
+        let token = CoordinatedLoadToken(
+            generation: generation,
+            requestId: state.nextRequestId
+        )
+        state.freshest = token
+        let task = Task {
+            CoordinatedLoadOutput(
+                result: await Result.capturing { try await operation() }
+            )
+        }
+        let handle = (token: token, task: task)
+        state.inFlight = handle
+        return handle
+    }
+
+    private func finishCoordinatedLoad<Value>(
+        _ handle: (
+            token: CoordinatedLoadToken,
+            task: Task<CoordinatedLoadOutput<Value>, Never>
+        ),
+        state: inout CoordinatedLoadState<Value>
+    ) {
+        guard state.inFlight?.token == handle.token else { return }
+        state.inFlight = nil
+    }
+
+    private func coordinatedLoadShouldApply<Value>(
+        _ token: CoordinatedLoadToken,
+        state: CoordinatedLoadState<Value>
+    ) -> Bool {
+        coordinatedLoadIsCurrentFreshest(token, state: state)
+            && state.lastApplied != token
+    }
+
+    private func coordinatedLoadIsCurrentFreshest<Value>(
+        _ token: CoordinatedLoadToken,
+        state: CoordinatedLoadState<Value>
+    ) -> Bool {
+        projectNavigationLoadStillCurrent(generation: token.generation)
+            && state.freshest == token
+    }
+
+    private func coordinatedSelectionSnapshotIsCurrentFreshest<Value>(
+        _ token: CoordinatedLoadToken?,
+        state: CoordinatedLoadState<Value>
+    ) -> Bool {
+        guard let token else { return true }
+        return coordinatedLoadIsCurrentFreshest(token, state: state)
+    }
+
+    private func markCoordinatedLoadApplied<Value>(
+        _ token: CoordinatedLoadToken,
+        state: inout CoordinatedLoadState<Value>
+    ) {
+        state.lastApplied = token
+    }
+
+    private func coordinatedSessionsLoad(
+        using client: any ProjectContextLoadingClient,
+        generation: UInt64?
+    ) async -> (
+        token: CoordinatedLoadToken,
+        result: Result<[SessionRow], any Error>
+    ) {
+        let handle = beginCoordinatedLoad(&sessionsLoadState, generation: generation) {
+            try await client.sessions()
+        }
+        let output = await handle.task.value
+        finishCoordinatedLoad(handle, state: &sessionsLoadState)
+        return (handle.token, output.result)
+    }
+
+    private func coordinatedTasksLoad(
+        using client: any ProjectContextLoadingClient,
+        generation: UInt64?
+    ) async -> (
+        token: CoordinatedLoadToken,
+        result: Result<[BoardCard], any Error>
+    ) {
+        let handle = beginCoordinatedLoad(&tasksLoadState, generation: generation) {
+            try await client.tasks()
+        }
+        let output = await handle.task.value
+        finishCoordinatedLoad(handle, state: &tasksLoadState)
+        return (handle.token, output.result)
+    }
+
+    private func projectNavigationThread(
+        for navigationID: String,
+        generation: UInt64?
+    ) -> ChatThread? {
+        let trimmedNavigationID = navigationID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedNavigationID.isEmpty else { return nil }
+        if let thread = threads.first(where: { $0.id == trimmedNavigationID }) {
+            return thread
+        }
+
+        if connection != nil {
+            guard projectNavigationSurfaceSucceededCurrentGeneration(.sessions, generation: generation)
+            else { return nil }
+        } else if !sessionsLoaded {
+            return nil
+        }
+
+        guard let row = serverSessions.first(where: {
+            normalizedSessionID($0.id) == trimmedNavigationID
+        }),
+        let familiarId = authoritativeFamiliarID(from: row, fallback: nil) else {
+            return nil
+        }
+        return openServerSession(row, familiarId: familiarId)
+    }
+
+    private func projectNavigationIntentNeedsHydration(
+        _ surface: ProjectNavigationSurface,
+        for intent: ProjectNavigationIntent
+    ) -> Bool {
+        switch surface {
+        case .projects:
+            return intent.projectId != nil || intent.entity != nil
+        case .sessions:
+            return intent.threadId != nil
+        case .tasks:
+            return intent.taskId != nil
+        }
+    }
+
+    private func revisitPendingProjectNavigation(
+        afterStaleHydration surface: ProjectNavigationSurface
+    ) {
+        guard let intent = pendingProjectNavigationIntent,
+              projectNavigationIntentNeedsHydration(surface, for: intent),
+              let generation = currentProjectNavigationConnectionGeneration() else { return }
+        let shouldHydrate = isProjectNavigationConnectionKnownGood(generation: generation)
+            && !projectNavigationSurfaceAttemptedCurrentGeneration(
+                surface,
+                generation: generation
+            )
+            && !projectNavigationSurfaceSucceededCurrentGeneration(
+                surface,
+                generation: generation
+            )
+            && !projectNavigationSurfaceFailedCurrentGeneration(
+                surface,
+                generation: generation
+            )
+            && !projectNavigationSurfaceHydratingCurrentGeneration(
+                surface,
+                generation: generation
+            )
+        _ = resolvePendingProjectNavigationIntent(
+            attemptHydrationIfNeeded: shouldHydrate
+        )
+    }
+
+    private func launchProjectNavigationHydration(
+        _ surface: ProjectNavigationSurface,
+        generation: UInt64?,
+        operation: @escaping @MainActor (AppModel) async -> Void
+    ) {
+        let token = beginProjectNavigationHydration(surface, generation: generation)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await operation(self)
+            let stoodDownStale = finishProjectNavigationHydration(
+                surface,
+                token: token
+            )
+            if stoodDownStale {
+                revisitPendingProjectNavigation(afterStaleHydration: surface)
+            }
+        }
+    }
+
+    private func requestOpenContext(for thread: ChatThread) -> Result<ProjectContext, ThreadOpenFailure> {
+        guard let projectRoot = thread.projectRoot?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !projectRoot.isEmpty else {
+            return .success(.unassigned)
+        }
+        guard projectsLoaded || !projects.isEmpty else {
+            return .failure(.projectCatalogUnavailable)
+        }
+        guard let context = ProjectContext.openContext(for: projectRoot, in: projects) else {
+            return .failure(.invalidProjectMetadata)
+        }
+        return .success(context)
+    }
+
+    private func requestOpenContext(for card: BoardCard) -> Result<ProjectContext, TaskOpenFailure> {
+        guard let rawProjectId = card.projectId else {
+            return .success(.unassigned)
+        }
+        let projectId = rawProjectId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !projectId.isEmpty else { return .success(.unassigned) }
+        guard projectId == rawProjectId else {
+            return .failure(.invalidProjectMetadata)
+        }
+        guard projectsLoaded || !projects.isEmpty else {
+            return .failure(.projectCatalogUnavailable)
+        }
+        guard let project = project(projectId) else {
+            return .success(.unassigned)
+        }
+        return .success(.project(project))
+    }
+
+    private func requestOpenContext(
+        forProjectID projectId: String?
+    ) -> Result<ProjectContext?, ProjectDestinationFailure> {
+        guard let projectId = projectId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !projectId.isEmpty else {
+            return .success(nil)
+        }
+        guard projectsLoaded || !projects.isEmpty else {
+            return .failure(.projectCatalogUnavailable)
+        }
+        guard let project = project(projectId) else {
+            return .failure(.unknownProject)
+        }
+        return .success(.project(project))
+    }
+
+    func validatedOpenContext(for thread: ChatThread) -> ProjectContext? {
+        switch requestOpenContext(for: thread) {
+        case .success(let context):
+            return context
+        case .failure:
+            return nil
+        }
+    }
+
+    func canOpen(_ thread: ChatThread) -> Bool {
+        validatedOpenContext(for: thread) != nil
+    }
+
+    func threadOpenFailure(for thread: ChatThread) -> ThreadOpenFailure? {
+        switch requestOpenContext(for: thread) {
+        case .success:
+            return nil
+        case .failure(let failure):
+            return failure
+        }
+    }
+
+    private func reportProjectNavigationFailure(
+        _ failure: ProjectNavigationFailure,
+        for intent: ProjectNavigationIntent
+    ) {
+        let state = ProjectNavigationFailureState(intent: intent, failure: failure)
+        guard lastProjectNavigationFailure != state else { return }
+        lastProjectNavigationFailure = state
+        showToast(
+            failure.toastText,
+            systemImage: failure.systemImage,
+            style: .warning
+        )
+    }
+
+    private func clearProjectNavigationFailureToast(
+        matching state: ProjectNavigationFailureState?
+    ) {
+        guard let state, state.intent == pendingProjectNavigationIntent, let toast else { return }
+        guard toast.style == .warning,
+              toast.text == state.failure.toastText,
+              toast.systemImage == state.failure.systemImage else { return }
+        self.toast = nil
+    }
+
+    private func hydrateProjectNavigationIfNeeded(for intent: ProjectNavigationIntent) {
+        let generation = currentProjectNavigationConnectionGeneration()
+        let canHydrateRemotely = isProjectNavigationConnectionKnownGood(generation: generation)
+
+        if canHydrateRemotely,
+           projectNavigationIntentNeedsHydration(.projects, for: intent),
+           !projectNavigationSurfaceAttemptedCurrentGeneration(.projects, generation: generation),
+           !projectNavigationSurfaceHydratingCurrentGeneration(.projects, generation: generation),
+           coreResourceClient != nil {
+            launchProjectNavigationHydration(.projects, generation: generation) { app in
+                await app.loadProjects()
+            }
+        }
+
+        if canHydrateRemotely,
+           projectNavigationIntentNeedsHydration(.sessions, for: intent),
+           !projectNavigationSurfaceAttemptedCurrentGeneration(.sessions, generation: generation),
+           !projectNavigationSurfaceHydratingCurrentGeneration(.sessions, generation: generation),
+           sessionLoadingClient != nil {
+            launchProjectNavigationHydration(.sessions, generation: generation) { app in
+                await app.loadSessions()
+            }
+        }
+
+        if canHydrateRemotely,
+           projectNavigationIntentNeedsHydration(.tasks, for: intent),
+           !projectNavigationSurfaceAttemptedCurrentGeneration(.tasks, generation: generation),
+           !projectNavigationSurfaceHydratingCurrentGeneration(.tasks, generation: generation),
+           taskLoadingClient != nil {
+            launchProjectNavigationHydration(.tasks, generation: generation) { app in
+                await app.loadTasks()
+            }
+        }
+    }
+
+    @discardableResult
+    private func beginProjectNavigation(_ intent: ProjectNavigationIntent) -> Bool {
+        pendingProjectNavigationIntent = intent
+        lastProjectNavigationFailure = nil
+        return resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true)
+    }
+
+    @discardableResult
+    func resolvePendingProjectNavigationIntent(
+        attemptHydrationIfNeeded: Bool = false
+    ) -> Bool {
+        guard let intent = pendingProjectNavigationIntent else { return false }
+        if attemptHydrationIfNeeded {
+            hydrateProjectNavigationIfNeeded(for: intent)
+        }
+        switch resolveProjectNavigation(intent) {
+        case .resolved:
+            clearProjectNavigationFailureToast(matching: lastProjectNavigationFailure)
+            pendingProjectNavigationIntent = nil
+            lastProjectNavigationFailure = nil
+            return true
+        case .pending:
+            return false
+        case .failed(let failure):
+            reportProjectNavigationFailure(failure, for: intent)
+            return false
+        }
+    }
+
+    private func projectNavigationHydrationFailure(
+        _ surface: ProjectNavigationSurface,
+        for intent: ProjectNavigationIntent
+    ) -> ProjectNavigationFailure {
+        ProjectNavigationFailure(
+            toastText: "Couldn’t load \(surface.loadDescription) while opening \(intent.targetDescription). \(surface.retryInstruction)",
+            systemImage: surface.failureSystemImage
+        )
+    }
+
+    private func resolveProjectNavigation(_ intent: ProjectNavigationIntent) -> ProjectNavigationResolution {
+        let navigationGeneration = currentProjectNavigationConnectionGeneration()
+
+        switch intent.entity {
+        case .thread(let threadId)?:
+            guard let thread = projectNavigationThread(
+                for: threadId,
+                generation: navigationGeneration
+            ) else {
+                if navigationGeneration != nil {
+                    if projectNavigationSurfaceFailedCurrentGeneration(
+                        .sessions,
+                        generation: navigationGeneration
+                    ) {
+                        return .failed(projectNavigationHydrationFailure(.sessions, for: intent))
+                    }
+                    return (threadsHydrated
+                        && projectNavigationSurfaceSucceededCurrentGeneration(
+                            .sessions,
+                            generation: navigationGeneration
+                        ))
+                        ? .failed(.threadUnavailable)
+                        : .pending
+                }
+                return threadsHydrated ? .failed(.threadUnavailable) : .pending
+            }
+            if navigationGeneration != nil,
+               thread.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+               projectNavigationSurfaceFailedCurrentGeneration(
+                .projects,
+                generation: navigationGeneration
+               ) {
+                return .failed(projectNavigationHydrationFailure(.projects, for: intent))
+            }
+            if navigationGeneration != nil,
+               thread.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+               !projectNavigationSurfaceSucceededCurrentGeneration(
+                .projects,
+                generation: navigationGeneration
+               ) {
+                return .pending
+            }
+            switch requestOpenContext(for: thread) {
+            case .success(let context):
+                completeProjectNavigation(intent, context: context, thread: thread)
+                return .resolved
+            case .failure(.projectCatalogUnavailable):
+                return .pending
+            case .failure(let failure):
+                return .failed(ProjectNavigationFailure(
+                    toastText: failure.toastText,
+                    systemImage: failure.systemImage
+                ))
+            }
+
+        case .task(let taskId)?:
+            if navigationGeneration != nil,
+               projectNavigationSurfaceFailedCurrentGeneration(
+                .tasks,
+                generation: navigationGeneration
+               ) {
+                return .failed(projectNavigationHydrationFailure(.tasks, for: intent))
+            }
+            if navigationGeneration != nil,
+               !projectNavigationSurfaceSucceededCurrentGeneration(
+                .tasks,
+                generation: navigationGeneration
+               ) {
+                return .pending
+            }
+            guard let card = tasks.first(where: { $0.id == taskId }) else {
+                if navigationGeneration != nil {
+                    return projectNavigationSurfaceSucceededCurrentGeneration(
+                        .tasks,
+                        generation: navigationGeneration
+                    ) ? .failed(.taskUnavailable) : .pending
+                }
+                return tasksLoaded ? .failed(.taskUnavailable) : .pending
+            }
+            if navigationGeneration != nil,
+               card.projectId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+               projectNavigationSurfaceFailedCurrentGeneration(
+                .projects,
+                generation: navigationGeneration
+               ) {
+                return .failed(projectNavigationHydrationFailure(.projects, for: intent))
+            }
+            if navigationGeneration != nil,
+               card.projectId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+               !projectNavigationSurfaceSucceededCurrentGeneration(
+                .projects,
+                generation: navigationGeneration
+               ) {
+                return .pending
+            }
+            switch requestOpenContext(for: card) {
+            case .success(let context):
+                completeProjectNavigation(intent, context: context, card: card)
+                return .resolved
+            case .failure(.projectCatalogUnavailable):
+                return .pending
+            case .failure(let failure):
+                return .failed(ProjectNavigationFailure(
+                    toastText: failure.toastText,
+                    systemImage: failure.systemImage
+                ))
+            }
+
+        case nil:
+            if navigationGeneration != nil,
+               projectNavigationSurfaceFailedCurrentGeneration(
+                .projects,
+                generation: navigationGeneration
+               ) {
+                return .failed(projectNavigationHydrationFailure(.projects, for: intent))
+            }
+            if navigationGeneration != nil,
+               !projectNavigationSurfaceSucceededCurrentGeneration(
+                .projects,
+                generation: navigationGeneration
+               ) {
+                return .pending
+            }
+            switch requestOpenContext(forProjectID: intent.projectId) {
+            case .success(let context):
+                completeProjectNavigation(intent, context: context)
+                return .resolved
+            case .failure(.projectCatalogUnavailable):
+                return .pending
+            case .failure(let failure):
+                return .failed(ProjectNavigationFailure(
+                    toastText: failure.toastText,
+                    systemImage: failure.systemImage
+                ))
+            }
+        }
+    }
+
+    private func completeProjectNavigation(
+        _ intent: ProjectNavigationIntent,
+        context: ProjectContext?,
+        thread: ChatThread? = nil,
+        card: BoardCard? = nil
+    ) {
+        let didSwitchProject = context.map { $0.id != projectContext?.id } ?? false
+        if let context, didSwitchProject {
+            switchProject(to: context)
+        }
+        selectedTab = intent.resolvedDestination
+        if let thread {
+            threadToOpen = thread
+        }
+        if let card {
+            cardToOpen = card
+        }
+        if didSwitchProject, let context {
+            announceProjectNavigationSwitch(to: context, for: intent)
+        }
+    }
+
+    private func announceProjectNavigationSwitch(
+        to context: ProjectContext,
+        for intent: ProjectNavigationIntent
+    ) {
+        let announcement: String
+        switch intent.entity {
+        case .thread?:
+            announcement = "Opened chat in \(context.displayName)"
+        case .task?:
+            announcement = "Opened task in \(context.displayName)"
+        case nil:
+            announcement = "Switched to \(context.displayName)"
+        }
+#if canImport(UIKit)
+        UIAccessibility.post(notification: .announcement, argument: announcement)
+#endif
+    }
+
+    /// Ask the chat list to open a thread, first aligning the canonical app
+    /// project context that owns it.
+    @discardableResult
+    func requestOpen(_ thread: ChatThread) -> Bool {
+        beginProjectNavigation(ProjectNavigationIntent(
+            entity: .thread(id: thread.id),
+            destination: .chats,
+            projectId: projectContext(for: thread).projectId
+        ))
     }
 
     /// Switch the visible conversation to one chosen in the session picker.
@@ -215,25 +1431,52 @@ final class AppModel {
     @discardableResult
     func switchConversation(to chosen: ChatThread, currentThreadId: String?) -> Bool {
         guard chosen.id != currentThreadId else { return false }
-        requestOpen(chosen)
-        return true
-    }
-
-    /// Consume the launch-thread intent only after its thread is available.
-    /// A delayed thread restore leaves the id pending for `ChatsHomeView` to
-    /// retry when hydration publishes its matching thread.
-    func consumeLaunchThreadIntent() -> ChatThread? {
-        guard let launchThreadId,
-              let thread = threads.first(where: { $0.id == launchThreadId })
-        else { return nil }
-        self.launchThreadId = nil
-        return thread
+        return requestOpen(chosen)
     }
 
     /// Ask the Tasks destination to open a card's detail (selects Tasks first).
-    func requestOpenTask(_ card: BoardCard) {
-        selectedTab = .tasks
-        cardToOpen = card
+    @discardableResult
+    func requestOpenTask(_ card: BoardCard) -> Bool {
+        beginProjectNavigation(ProjectNavigationIntent(
+            entity: .task(id: card.id),
+            destination: .tasks,
+            projectId: card.projectId
+        ))
+    }
+
+    @discardableResult
+    func requestOpenDestination(_ destination: AppTab, projectId: String? = nil) -> Bool {
+        beginProjectNavigation(ProjectNavigationIntent(
+            destination: destination,
+            projectId: projectId
+        ))
+    }
+
+    @discardableResult
+    func requestOpenProjectSearchResult(_ project: ProjectInfo) -> Bool {
+        requestOpenDestination(selectedTab.projectSearchReturnDestination, projectId: project.id)
+    }
+
+    @discardableResult
+    func requestOpenServerSession(
+        _ row: SessionRow,
+        fallbackFamiliarId: String? = nil,
+        loadHistory shouldLoadHistory: Bool = true
+    ) -> Bool {
+        guard let familiarId = authoritativeFamiliarID(from: row, fallback: fallbackFamiliarId)
+            ?? fallbackFamiliarId
+            ?? row.familiarId
+        else {
+            showToast(
+                "Refresh Chats to load this chat, then try again.",
+                systemImage: "arrow.clockwise",
+                style: .warning
+            )
+            return false
+        }
+
+        let thread = openServerSession(row, familiarId: familiarId, loadHistory: shouldLoadHistory)
+        return requestOpen(thread)
     }
 
     /// Resolve a free-text familiar reference (id or display name, fuzzy) to a
@@ -268,10 +1511,261 @@ final class AppModel {
 
     // MARK: - Developer surface
 
-    /// Configured project roots used by chat creation and project browsing.
-    var projects: [ProjectInfo] = []
-    var projectsError: String?
-    var projectsLoaded = false
+    var projectContext: ProjectContext?
+    var projectContextError: String?
+    var projectMembership = ProjectMembershipIndex()
+    var projectMembershipLoaded = false
+    @ObservationIgnored private var projectContextSelectionSource: ProjectContextSelectionSource?
+
+    var activeProject: ProjectInfo? {
+        guard case .project(let selected)? = projectContext else { return nil }
+        return projects.first { $0.id == selected.id } ?? selected
+    }
+
+    var activeProjectRoot: String? {
+        activeProject?.root
+    }
+
+    var canStartProjectChats: Bool {
+        activeProjectRoot != nil
+    }
+
+    func projectContext(for thread: ChatThread) -> ProjectContext {
+        ProjectContext.openContext(for: thread.projectRoot, in: projects) ?? .unassigned
+    }
+
+    func projectContext(for session: SessionRow) -> ProjectContext {
+        ProjectContext.context(for: session.projectRoot, in: projects)
+    }
+
+    func isRecoveryOnlyThread(_ thread: ChatThread) -> Bool {
+        projectContext(for: thread) == .unassigned && !thread.canChangeProject
+    }
+
+    enum ForwardingRouteDisposition: Equatable {
+        case allowed
+        case recoveryOnly
+        case needsProjectSelection
+    }
+
+    func forwardingRouteDisposition(
+        from source: ChatThread,
+        to destination: ChatThread
+    ) -> ForwardingRouteDisposition {
+        if isRecoveryOnlyThread(source) || isRecoveryOnlyThread(destination) {
+            return .recoveryOnly
+        }
+        if !destination.canSendMessages {
+            return .needsProjectSelection
+        }
+        return .allowed
+    }
+
+    var projectThreads: [ChatThread] {
+        guard let projectContext else { return [] }
+        return threads.filter { projectContext.matches(thread: $0, registeredProjects: projects) }
+    }
+
+    var projectServerSessions: [SessionRow] {
+        guard let projectContext else { return [] }
+        return serverSessions.filter { projectContext.matches(session: $0, registeredProjects: projects) }
+    }
+
+    var projectTasks: [BoardCard] {
+        guard let projectContext else { return [] }
+        return tasks.filter { projectContext.matches(task: $0, registeredProjects: projects) }
+    }
+
+    var projectFamiliars: [Familiar] {
+        guard let projectContext else { return [] }
+        switch projectContext {
+        case .project(let selected):
+            let projectId = activeProject?.id ?? selected.id
+            let allowed = projectMembership.familiarIDs(forProjectID: projectId)
+            guard !allowed.isEmpty else { return [] }
+            return familiars.filter { allowed.contains($0.id) }
+        case .unassigned:
+            let byID = Dictionary(
+                familiars.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let ids = ProjectContext.unassignedFamiliarIDs(
+                threads: threads,
+                sessions: serverSessions,
+                tasks: tasks,
+                registeredProjects: projects
+            )
+            return ids.compactMap { byID[$0] }
+        }
+    }
+
+    var projectMostRecentThread: ChatThread? {
+        projectThreads
+            .filter { !$0.archived }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
+
+    func projectRecentThreads(limit: Int = 5) -> [ChatThread] {
+        Array(
+            projectThreads
+                .filter { !$0.archived }
+                .sorted {
+                    if $0.pinned != $1.pinned { return $0.pinned }
+                    return $0.updatedAt > $1.updatedAt
+                }
+                .prefix(limit)
+        )
+    }
+
+    func directThreads(for familiarId: String, in context: ProjectContext) -> [ChatThread] {
+        threads
+            .filter { context.matches(thread: $0, registeredProjects: projects) }
+            .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
+            .sorted { a, b in
+                if a.pinned != b.pinned { return a.pinned }
+                return a.updatedAt > b.updatedAt
+            }
+    }
+
+    func landingDirectThread(for familiarId: String, in context: ProjectContext) -> ChatThread? {
+        directThreads(for: familiarId, in: context).first { !$0.archived }
+    }
+
+    func serverOnlySessions(for familiarId: String, in context: ProjectContext) -> [SessionRow] {
+        let bound = Set(
+            threads
+                .filter { context.matches(thread: $0, registeredProjects: projects) }
+                .flatMap { $0.sessionIds.values }
+                .filter { !$0.isEmpty }
+        )
+        return serverSessions
+            .filter {
+                context.matches(session: $0, registeredProjects: projects)
+                    && $0.familiarId == familiarId
+                    && $0.archivedAt == nil
+                    && !bound.contains($0.id)
+                    && !$0.isGeneratedRun
+            }
+            .sorted {
+                (caveParseISO($0.updatedAt) ?? .distantPast)
+                    > (caveParseISO($1.updatedAt) ?? .distantPast)
+            }
+    }
+
+    func threadCount(for familiarId: String, in context: ProjectContext) -> Int {
+        directThreads(for: familiarId, in: context).count
+            + serverOnlySessions(for: familiarId, in: context).count
+    }
+
+    func lastActivity(for familiarId: String, in context: ProjectContext) -> Date? {
+        let local = directThreads(for: familiarId, in: context).map(\.updatedAt)
+        let server = serverOnlySessions(for: familiarId, in: context).compactMap {
+            caveParseISO($0.updatedAt)
+        }
+        return (local + server).max()
+    }
+
+    func globalDirectThreads(for familiarId: String) -> [ChatThread] {
+        threads
+            .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
+            .sorted { a, b in
+                if a.pinned != b.pinned { return a.pinned }
+                return a.updatedAt > b.updatedAt
+            }
+    }
+
+    private func globalDirectThreadContexts(for familiarId: String) -> [ProjectContext] {
+        Array(
+            Set(
+                globalDirectThreads(for: familiarId)
+                    .filter { !$0.archived }
+                    .map(projectContext(for:))
+            )
+        )
+        .sorted { lhs, rhs in
+            switch (lhs, rhs) {
+            case (.project(let left), .project(let right)):
+                let order = left.name.localizedCaseInsensitiveCompare(right.name)
+                if order == .orderedSame { return left.id < right.id }
+                return order == .orderedAscending
+            case (.project, .unassigned):
+                return true
+            case (.unassigned, .project):
+                return false
+            case (.unassigned, .unassigned):
+                return false
+            }
+        }
+    }
+
+    func globalLandingDirectThread(for familiarId: String) -> ChatThread? {
+        globalDirectThreadContexts(for: familiarId)
+            .compactMap { landingDirectThread(for: familiarId, in: $0) }
+            .max { lhs, rhs in
+                if lhs.updatedAt == rhs.updatedAt { return lhs.id < rhs.id }
+                return lhs.updatedAt < rhs.updatedAt
+            }
+    }
+
+    func globalServerOnlySessions(for familiarId: String) -> [SessionRow] {
+        let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
+        return serverSessions
+            .filter {
+                $0.familiarId == familiarId
+                    && $0.archivedAt == nil
+                    && !bound.contains($0.id)
+                    && !$0.isGeneratedRun
+            }
+            .sorted {
+                (caveParseISO($0.updatedAt) ?? .distantPast)
+                    > (caveParseISO($1.updatedAt) ?? .distantPast)
+            }
+    }
+
+    func globalThreadCount(for familiarId: String) -> Int {
+        globalDirectThreads(for: familiarId).count
+            + globalServerOnlySessions(for: familiarId).count
+    }
+
+    func globalLastActivity(for familiarId: String) -> Date? {
+        let local = globalDirectThreads(for: familiarId).map(\.updatedAt)
+        let server = globalServerOnlySessions(for: familiarId).compactMap {
+            caveParseISO($0.updatedAt)
+        }
+        return (local + server).max()
+    }
+
+    func projectDirectThreads(for familiarId: String) -> [ChatThread] {
+        guard let projectContext else { return [] }
+        return directThreads(for: familiarId, in: projectContext)
+    }
+
+    func projectLandingDirectThread(for familiarId: String) -> ChatThread? {
+        guard let projectContext else { return nil }
+        return landingDirectThread(for: familiarId, in: projectContext)
+    }
+
+    func projectServerOnlySessions(for familiarId: String) -> [SessionRow] {
+        guard let projectContext else { return [] }
+        return serverOnlySessions(for: familiarId, in: projectContext)
+    }
+
+    func projectThreadCount(for familiarId: String) -> Int {
+        guard let projectContext else { return 0 }
+        return threadCount(for: familiarId, in: projectContext)
+    }
+
+    func projectLastActivity(for familiarId: String) -> Date? {
+        guard let projectContext else { return nil }
+        return lastActivity(for: familiarId, in: projectContext)
+    }
+
+    func projectHasUnread(_ familiarId: String) -> Bool {
+        guard let projectContext,
+              let seen = familiarViewDate(for: familiarId, in: projectContext),
+              let activity = projectLastActivity(for: familiarId) else { return false }
+        return activity > seen
+    }
 
     /// Recently used chat roots, newest first and de-duplicated. Project
     /// pickers filter this list against the current familiar-scoped response.
@@ -377,9 +1871,97 @@ final class AppModel {
         return CaveClient(connection: connection)
     }
 
+    private var coreResourceClient: (any AppModelCoreResourceClient)? {
+        guard let connection else { return nil }
+        return coreResourceClientFactory(connection)
+    }
+
+    private var sessionLoadingClient: (any ProjectContextLoadingClient)? {
+        if let coreResourceClient {
+            return coreResourceClient
+        }
+        if let client {
+            return client
+        }
+        return nil
+    }
+
+    private var taskLoadingClient: (any ProjectContextLoadingClient)? {
+        if let coreResourceClient {
+            return coreResourceClient
+        }
+        if let client {
+            return client
+        }
+        return nil
+    }
+
+    private var taskSessionUpdatingClient: (any TaskSessionUpdatingClient)? {
+        if let coreResourceClient = coreResourceClient as? any TaskSessionUpdatingClient {
+            return coreResourceClient
+        }
+        if let client {
+            return client
+        }
+        return nil
+    }
+
+    private var taskFieldsUpdatingClient: (any TaskFieldsUpdatingClient)? {
+        if let coreResourceClient = coreResourceClient as? any TaskFieldsUpdatingClient {
+            return coreResourceClient
+        }
+        if let client {
+            return client
+        }
+        return nil
+    }
+
+    private var taskProjectUpdatingClient: (any TaskProjectUpdatingClient)? {
+        if let coreResourceClient = coreResourceClient as? any TaskProjectUpdatingClient {
+            return coreResourceClient
+        }
+        if let client {
+            return client
+        }
+        return nil
+    }
+
+    private var reminderClient: (any ReminderManagingClient)? {
+        if let coreResourceClient = coreResourceClient as? any ReminderManagingClient {
+            return coreResourceClient
+        }
+        if let client {
+            return client
+        }
+        return nil
+    }
+
     #if DEBUG
     @ObservationIgnored private var previewChatProjects: [ProjectInfo]?
     #endif
+    @ObservationIgnored private let projectContextDefaults: UserDefaults
+    @ObservationIgnored private let widgetSnapshotDefaults: UserDefaults?
+    @ObservationIgnored private let coreResourceClientFactory: @Sendable (CaveConnection) -> any AppModelCoreResourceClient
+    @ObservationIgnored private let reminderNotificationScheduler: any ReminderNotificationScheduling
+    @ObservationIgnored private let baseURLDiscoverer: @Sendable ([URL]) async -> DiscoveryOutcome
+    @ObservationIgnored private let threadStore: ThreadSnapshotStore
+    @ObservationIgnored private let threadSnapshotLoader: @Sendable () async -> [ThreadSnapshot]
+    /// Incremented for every context load (and on host reset/disconnect) so a
+    /// stale completion can never overwrite newer project membership/selection.
+    @ObservationIgnored private var projectContextLoadNonce: UInt64 = 0
+    @ObservationIgnored private var sessionsLoadState = CoordinatedLoadState<[SessionRow]>()
+    @ObservationIgnored private var tasksLoadState = CoordinatedLoadState<[BoardCard]>()
+    @ObservationIgnored private var projectNavigationConnectionGeneration: UInt64 = 0
+    @ObservationIgnored private var projectNavigationKnownGoodConnectionGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationProjectsAttemptGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationProjectsSuccessGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationProjectsFailureGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationSessionsAttemptGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationSessionsSuccessGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationSessionsFailureGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationTasksAttemptGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationTasksSuccessGeneration: UInt64?
+    @ObservationIgnored private var projectNavigationTasksFailureGeneration: UInt64?
 
     var canLoadChatProjects: Bool {
         #if DEBUG
@@ -410,15 +1992,53 @@ final class AppModel {
     /// "unread" when its latest activity is newer than this. Persisted.
     var familiarViews: [String: Date] = [:]
 
+    private func familiarViewKey(for familiarId: String, in context: ProjectContext?) -> String {
+        guard let context else { return familiarId }
+        return "\(context.id)|\(familiarId)"
+    }
+
+    private func familiarViewDate(for familiarId: String, in context: ProjectContext?) -> Date? {
+        familiarViews[familiarViewKey(for: familiarId, in: context)]
+    }
+
     /// threadId → the operator's unsent composer draft, mirrored from the
     /// per-thread UserDefaults keys so list rows can badge drafted threads
     /// without hitting UserDefaults on every row render. Seeded on hydrate,
     /// kept current by the composer's debounced persistence.
     var threadDrafts: [String: String] = [:]
 
-    init() {
-        connection = CaveConnection.load()
-        launchThreadId = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"]
+    init(
+        defaults: UserDefaults = .standard,
+        restoreLocalState: Bool = true,
+        widgetSnapshotDefaults: UserDefaults? = nil,
+        threadSnapshotLoader: (@Sendable () async -> [ThreadSnapshot])? = nil,
+        coreResourceClientFactory: @escaping @Sendable (CaveConnection) -> any AppModelCoreResourceClient = {
+            CaveClient(connection: $0)
+        },
+        reminderNotificationScheduler: any ReminderNotificationScheduling = SystemReminderNotificationScheduler(),
+        baseURLDiscoverer: @escaping @Sendable ([URL]) async -> DiscoveryOutcome = { candidates in
+            await AppModel.discoverBaseURL(candidates)
+        }
+    ) {
+        let threadStore = ThreadSnapshotStore(url: AppModel.threadsFileURL)
+        self.projectContextDefaults = defaults
+        self.widgetSnapshotDefaults = widgetSnapshotDefaults
+        self.threadStore = threadStore
+        self.threadSnapshotLoader = threadSnapshotLoader ?? {
+            (try? await threadStore.load()) ?? []
+        }
+        self.coreResourceClientFactory = coreResourceClientFactory
+        self.reminderNotificationScheduler = reminderNotificationScheduler
+        self.baseURLDiscoverer = baseURLDiscoverer
+        connection = CaveConnection.load(defaults: defaults)
+        if connection != nil {
+            projectNavigationConnectionGeneration = 1
+        }
+        pendingProjectNavigationIntent = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"]
+            .map { ProjectNavigationIntent(entity: .thread(id: $0), destination: .chats) }
+        if !restoreLocalState {
+            threadsHydrated = true
+        }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-connecting") {
             connection = CaveConnection(host: "cave-desktop.example")
@@ -428,8 +2048,18 @@ final class AppModel {
             return
         }
 
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-project-context-gate") {
+            connection = CaveConnection(host: "cave-desktop.example")
+            connectionState = .projectContextRequired
+            projectContextError = "Choose a project in Cave before opening it on this device."
+            isConnectingPreview = true
+            ChatTurnNotifier.shared.app = self
+            return
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-design-closeout") {
             configureDesignCloseoutPreview()
+            _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
             return
         }
@@ -449,10 +2079,12 @@ final class AppModel {
                     ChatThread(
                         id: "ui-preview-second-chat",
                         title: "Chat with Nyx on Jul 27",
-                        familiarIds: ["nyx"]
+                        familiarIds: ["nyx"],
+                        projectRoot: threads.first?.projectRoot
                     )
                 )
             }
+            _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
             return
         }
@@ -463,14 +2095,17 @@ final class AppModel {
         // `CAVE_OPEN_THREAD=ui-preview-tool-activity`.
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-tool-activity") {
             configureToolActivityPreview()
+            _ = resolvePendingProjectNavigationIntent()
             ChatTurnNotifier.shared.app = self
             return
         }
         #endif
-        // Threads hydrate off-main via the store — no file I/O in init.
-        Task { await self.hydrateThreads() }
-        loadCardLinks()
-        loadFamiliarViews()
+        if restoreLocalState {
+            // Threads hydrate off-main via the store — no file I/O in init.
+            hydrateThreadsTask = Task { await self.hydrateThreads() }
+            loadCardLinks()
+            loadFamiliarViews()
+        }
         if connection != nil { connectionState = .checking }
         ChatTurnNotifier.shared.app = self
     }
@@ -495,6 +2130,7 @@ final class AppModel {
                 memoryFreshness: "Fresh"
             ),
         ]
+        familiarsLoaded = true
 
         func card(
             id: String,
@@ -558,29 +2194,38 @@ final class AppModel {
         ]
         tasksLoaded = true
         sessionsLoaded = true
+        let previewProject = ProjectInfo(
+            id: "coven-app",
+            name: "Coven Cave",
+            root: "/repos/coven-cave",
+            color: nil,
+            updatedAt: nil,
+            access: .write
+        )
         threads = [
             ChatThread(
                 id: "ui-preview-empty-chat",
                 title: "Chat with Nyx on Jul 26",
-                familiarIds: ["nyx"]
+                familiarIds: ["nyx"],
+                projectRoot: previewProject.root
             ),
         ]
+        previewChatProjects = [previewProject]
+        projects = [previewProject]
+        projectsLoaded = true
+        seedPreviewProjectContext()
+
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--ui-preview-new-chat-projects")
-            || arguments.contains("--ui-preview-new-chat-project-retry")
-            || arguments.contains("--ui-preview-new-chat-project-empty-retry") {
-            threads.first?.projectRoot = "/repos/coven-cave"
-            previewChatProjects = [
-                ProjectInfo(
-                    id: "coven-cave",
-                    name: "Coven Cave",
-                    root: "/repos/coven-cave",
-                    color: nil,
-                    updatedAt: nil,
-                    access: .write
-                ),
-            ]
+        if arguments.contains("--ui-preview-new-chat-access-revoked") {
+            projectMembership = ProjectMembershipIndex()
+            projectMembershipLoaded = true
         }
+        if arguments.contains("--ui-preview-new-chat-unassigned") {
+            threads.first?.projectRoot = nil
+            projectContext = .unassigned
+            projectContextSelectionSource = .user
+        }
+
         connectionState = .connected
     }
 
@@ -590,16 +2235,186 @@ final class AppModel {
     private func configureDesignCloseoutPreview() {
         configureEmptyChatPreview()
         let projectRoot = "/Users/buns/Code/coven-cave"
-        projects = [
-            ProjectInfo(
-                id: "coven-app",
-                name: "Coven Cave",
-                root: projectRoot,
+        let docsRoot = "/Users/buns/Code/design-library"
+        let covenProject = ProjectInfo(
+            id: "coven-app",
+            name: "Coven Cave",
+            root: projectRoot,
+            color: nil,
+            updatedAt: "2026-08-06T09:00:00Z"
+        )
+        let designProject = ProjectInfo(
+            id: "design-library",
+            name: "Design Library",
+            root: docsRoot,
+            color: nil,
+            updatedAt: "2026-08-05T11:30:00Z"
+        )
+
+        func previewTask(
+            id: String,
+            title: String,
+            status: CardStatus,
+            priority: CardPriority,
+            familiarId: String?,
+            projectId: String?
+        ) -> BoardCard {
+            BoardCard(
+                id: id,
+                title: title,
+                notes: nil,
+                statusRaw: status.rawValue,
+                priorityRaw: priority.rawValue,
+                familiarId: familiarId,
+                projectId: projectId,
+                sessionId: nil,
+                labels: nil,
+                startDate: nil,
+                endDate: nil,
+                createdAt: nil,
+                updatedAt: nil,
+                needsHuman: nil,
+                steps: nil,
+                github: nil
+            )
+        }
+
+        projects = [covenProject, designProject]
+        previewChatProjects = projects
+        projectsLoaded = true
+        familiars = [
+            Familiar(
+                id: "nyx",
+                displayName: "Nyx",
+                role: "Code familiar",
+                description: "Keeps implementation work moving.",
+                pronouns: nil,
                 color: nil,
-                updatedAt: "2026-08-06T09:00:00Z"
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "moon.stars.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+            Familiar(
+                id: "lyra",
+                displayName: "Lyra",
+                role: "Design familiar",
+                description: "Helps reconcile component and token polish.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "paintpalette.fill",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
+            ),
+            Familiar(
+                id: "ember",
+                displayName: "Ember",
+                role: "Recovery familiar",
+                description: "Finds projectless work that still needs attention.",
+                pronouns: nil,
+                color: nil,
+                status: "active",
+                harness: "codex",
+                model: "gpt-5.6",
+                icon: "sparkles",
+                avatarUrl: nil,
+                activeSessions: 1,
+                memoryFreshness: "Fresh"
             ),
         ]
-        projectsLoaded = true
+        familiarsLoaded = true
+
+        if let currentThread = threads.first {
+            currentThread.projectRoot = projectRoot
+            currentThread.updatedAt = Date(timeIntervalSince1970: 1_000)
+            currentThread.messages = [
+                DisplayMessage(
+                    role: .assistant,
+                    familiarId: "nyx",
+                    text: "The iOS design closeout is ready for review."
+                ),
+            ]
+        }
+        let designThread = ChatThread(
+            id: "ui-preview-lyra-chat",
+            title: "Lyra design review",
+            familiarIds: ["lyra"],
+            projectRoot: docsRoot,
+            messages: [
+                DisplayMessage(
+                    role: .assistant,
+                    familiarId: "lyra",
+                    text: "The typography tokens are aligned with the design library."
+                ),
+            ]
+        )
+        designThread.updatedAt = Date(timeIntervalSince1970: 900)
+        let renamedBoundThread = ChatThread(
+            id: "ui-preview-renamed-local-chat",
+            title: "Renamed local chat",
+            familiarIds: ["nyx"],
+            sessionIds: ["nyx": "ui-preview-bound-rename"],
+            projectRoot: projectRoot,
+            messages: [
+                DisplayMessage(
+                    role: .assistant,
+                    familiarId: "nyx",
+                    text: "The local title differs, but search should still honor the server metadata."
+                ),
+            ]
+        )
+        renamedBoundThread.updatedAt = Date(timeIntervalSince1970: 850)
+        let unassignedThread = ChatThread(
+            id: "ui-preview-orphaned-chat",
+            title: "Recovered draft notes",
+            familiarIds: ["ember"],
+            projectRoot: nil,
+            messages: [
+                DisplayMessage(
+                    role: .assistant,
+                    familiarId: "ember",
+                    text: "Recovered this chat from an unassigned project root."
+                ),
+            ]
+        )
+        unassignedThread.updatedAt = Date(timeIntervalSince1970: 800)
+        threads = Array(threads.prefix(1)) + [designThread, renamedBoundThread, unassignedThread]
+
+        tasks += [
+            previewTask(
+                id: "scope-anchor-current",
+                title: "scope anchor current",
+                status: .running,
+                priority: .medium,
+                familiarId: "nyx",
+                projectId: covenProject.id
+            ),
+            previewTask(
+                id: "scope-anchor-design",
+                title: "scope anchor design",
+                status: .review,
+                priority: .medium,
+                familiarId: "lyra",
+                projectId: designProject.id
+            ),
+            previewTask(
+                id: "scope-anchor-unassigned",
+                title: "scope anchor unassigned",
+                status: .blocked,
+                priority: .medium,
+                familiarId: "ember",
+                projectId: "ghost-project"
+            ),
+        ]
+        tasksLoaded = true
+
         serverSessions = [
             SessionRow(
                 id: "ui-preview-server-only",
@@ -616,20 +2431,57 @@ final class AppModel {
                 origin: nil,
                 generated: false
             ),
+            SessionRow(
+                id: "ui-preview-unassigned-session",
+                title: "Ghost recovery",
+                harness: nil,
+                model: nil,
+                runtime: nil,
+                status: "idle",
+                familiarId: "ember",
+                createdAt: "2026-08-06T01:30:00Z",
+                updatedAt: "2026-08-06T02:00:00Z",
+                archivedAt: nil,
+                projectRoot: "/Users/buns/Code/deleted-project",
+                origin: nil,
+                generated: false
+            ),
+            SessionRow(
+                id: "ui-preview-bound-rename",
+                title: "Authoritative desktop handoff",
+                harness: nil,
+                model: nil,
+                runtime: nil,
+                status: "idle",
+                familiarId: "nyx",
+                createdAt: "2026-08-06T02:30:00Z",
+                updatedAt: "2026-08-06T03:00:00Z",
+                archivedAt: nil,
+                projectRoot: projectRoot,
+                origin: nil,
+                generated: false
+            ),
         ]
         sessionsLoaded = true
 
-        if let thread = threads.first {
-            thread.projectRoot = projectRoot
-            thread.messages = [
-                DisplayMessage(
-                    role: .assistant,
-                    familiarId: "nyx",
-                    text: "The iOS design closeout is ready for review."
-                ),
-            ]
-        }
         cardThreadLinks["cold-launch"] = "ui-preview-empty-chat"
+        projectMembership = ProjectMembershipIndex(
+            familiarIDsByProjectID: [
+                covenProject.id: Set(["nyx"]),
+                designProject.id: Set(["lyra"]),
+            ]
+        )
+        projectMembershipLoaded = true
+        projectContext = .project(covenProject)
+        projectContextSelectionSource = .automatic
+        if ProcessInfo.processInfo.arguments.contains("--ui-preview-search-unassigned") {
+            projectContext = .unassigned
+            projectContextSelectionSource = .user
+        }
+        if let projectContext {
+            seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
+        }
+        projectContextError = nil
         if ProcessInfo.processInfo.arguments.contains("--ui-preview-light") {
             chrome.colorScheme = .light
         }
@@ -658,8 +2510,17 @@ final class AppModel {
                 memoryFreshness: "Fresh"
             ),
         ]
+        familiarsLoaded = true
         tasksLoaded = true
         sessionsLoaded = true
+        let previewProject = ProjectInfo(
+            id: "coven-app",
+            name: "Coven Cave",
+            root: "/repos/coven-cave",
+            color: nil,
+            updatedAt: nil,
+            access: .write
+        )
 
         var reply = DisplayMessage(
             role: .assistant,
@@ -685,13 +2546,41 @@ final class AppModel {
                 id: "ui-preview-tool-activity",
                 title: "Chat with Nyx on Aug 3",
                 familiarIds: ["nyx"],
+                projectRoot: previewProject.root,
                 messages: [
                     DisplayMessage(role: .user, text: "fix the ios tool calls"),
                     reply,
                 ]
             ),
         ]
+        previewChatProjects = [previewProject]
+        projects = [previewProject]
+        projectsLoaded = true
+        seedPreviewProjectContext()
         connectionState = .connected
+    }
+
+    private func seedPreviewProjectContext() {
+        guard !projects.isEmpty else { return }
+        let familiarIDs = Set(familiars.map(\.id))
+        projectMembership = ProjectMembershipIndex(
+            familiarIDsByProjectID: Dictionary(
+                uniqueKeysWithValues: projects.map { ($0.id, familiarIDs) }
+            )
+        )
+        projectMembershipLoaded = true
+        projectContext = ProjectContext.defaultSelection(
+            restored: nil,
+            projects: projects,
+            threads: threads,
+            sessions: serverSessions,
+            tasks: tasks
+        )
+        projectContextSelectionSource = projectContext == nil ? nil : .automatic
+        if let projectContext {
+            seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
+        }
+        projectContextError = nil
     }
     #endif
 
@@ -703,66 +2592,547 @@ final class AppModel {
         projects.first { $0.id == id }
     }
 
+    /// Switch the canonical application context without disturbing the current
+    /// destination. Later tasks will route surfaces through this state; for now
+    /// it persists the chosen context and clears any pending cross-surface handoff.
+    func switchProject(to context: ProjectContext) {
+        let preservedTab = selectedTab
+        switch context {
+        case .project(let selected):
+            if let current = projects.first(where: { $0.id == selected.id }) {
+                applyProjectContextSelection(.project(current), source: .user)
+            } else {
+                applyProjectContextSelection(.project(selected), source: .user)
+            }
+        case .unassigned:
+            applyProjectContextSelection(.unassigned, source: .user)
+        }
+        persistProjectContextSelection(projectContext)
+        threadToOpen = nil
+        cardToOpen = nil
+        newChatRequested = false
+        chatSearchRequested = false
+        selectedTab = preservedTab
+        if let projectContext {
+            seedFamiliarViews(projectFamiliars.map(\.id), in: projectContext)
+        }
+        publishWidgetSnapshot()
+    }
+
     func loadTasks() async {
-        guard let client else { return }
-        do {
-            tasks = try await client.tasks()
+        guard let client = taskLoadingClient else { return }
+        await loadTasks(using: client)
+    }
+
+    func loadTasks(using client: any ProjectContextLoadingClient) async {
+        let navigationGeneration = currentProjectNavigationConnectionGeneration()
+        noteProjectNavigationSurfaceAttempt(.tasks, generation: navigationGeneration)
+        let load = await coordinatedTasksLoad(
+            using: client,
+            generation: navigationGeneration
+        )
+        guard coordinatedLoadShouldApply(load.token, state: tasksLoadState) else { return }
+        markCoordinatedLoadApplied(load.token, state: &tasksLoadState)
+
+        switch load.result {
+        case .success(let loadedTasks):
+            tasks = activeTaskMutationsOverlaying(loadedTasks)
             tasksError = nil
-        } catch {
+            noteProjectNavigationSurfaceSuccess(.tasks, generation: navigationGeneration)
+        case .failure(let error):
             tasksError = handleSurfaceError(error)
+            noteProjectNavigationSurfaceFailure(.tasks, generation: navigationGeneration)
         }
         tasksLoaded = true
         // A task that finished on the desktop should drop its Lock Screen activity.
         await LiveActivityManager.shared.reconcile(tasks)
+        _ = resolvePendingProjectNavigationIntent(
+            attemptHydrationIfNeeded: tasksError == nil
+        )
         publishWidgetSnapshot()
     }
 
     // MARK: - Task actions
 
-    /// Optimistically set a task's status, then reconcile with the server's
-    /// echoed card (it stamps lifecycle/updatedAt). Reverts on failure.
-    /// In-flight status writes, keyed by card id, so a newer intent can cancel
-    /// the one it supersedes (cave-ioswipe.4).
-    @ObservationIgnored private var statusWrites: [String: Task<Void, Never>] = [:]
+    /// Per-card+field single-flight coordination for task mutations. Same-field
+    /// requests cancel/supersede older ones, but unrelated fields stay
+    /// concurrent because the server's PATCH contract is partial.
+    @ObservationIgnored private let taskMutationCoordinator = TaskMutationCoordinator()
+    @ObservationIgnored private var taskFieldGenerations: [String: [TaskMutationField: Int]] = [:]
+    @ObservationIgnored private var nextTaskMutationGeneration = 0
+
+    private enum TaskMutationField: Hashable, Sendable {
+        case status
+        case priority
+        case steps
+        case notes
+        case title
+        case dates
+        case projectId
+        case sessionId
+    }
+
+    @MainActor
+    private final class TaskMutationCoordinator {
+        private struct LaneKey: Hashable {
+            let cardId: String
+            let field: TaskMutationField
+        }
+
+        private struct LaneState {
+            var sequence = 0
+            var task: Task<Void, Never>?
+        }
+
+        private var lanes: [LaneKey: LaneState] = [:]
+
+        @discardableResult
+        func schedule(
+            cardId: String,
+            field: TaskMutationField,
+            operation: @escaping @Sendable @MainActor () async -> Void
+        ) -> Task<Void, Never> {
+            let key = LaneKey(cardId: cardId, field: field)
+            var lane = lanes[key] ?? LaneState()
+            let previousTask = lane.task
+            previousTask?.cancel()
+            lane.sequence &+= 1
+            let sequence = lane.sequence
+            let task = Task { [weak self] in
+                _ = await previousTask?.result
+                guard !Task.isCancelled else {
+                    await MainActor.run { self?.finish(key: key, sequence: sequence) }
+                    return
+                }
+                await operation()
+                await MainActor.run { self?.finish(key: key, sequence: sequence) }
+            }
+            lane.task = task
+            lanes[key] = lane
+            return task
+        }
+
+        private func finish(key: LaneKey, sequence: Int) {
+            guard let lane = lanes[key], lane.sequence == sequence else { return }
+            lanes.removeValue(forKey: key)
+        }
+    }
+
+    private struct TaskMutationToken {
+        let cardId: String
+        let generation: Int
+        let previous: BoardCard
+        let field: TaskMutationField
+    }
+
+    @discardableResult
+    private func scheduleTaskMutationRequest(
+        _ token: TaskMutationToken,
+        operation: @escaping @Sendable @MainActor () async -> Void
+    ) -> Task<Void, Never> {
+        taskMutationCoordinator.schedule(
+            cardId: token.cardId,
+            field: token.field,
+            operation: operation
+        )
+    }
 
     /// Entry point for every status mutation. Views must call this rather than
     /// wrapping `setTaskStatus` in their own `Task { }`: a detached task cannot
     /// be cancelled, so a rapid done/reopen swipe sequence would leave two
     /// writes racing and let the *older* server response land last, snapping the
     /// row back to a status the user already moved off of.
-    func requestTaskStatus(_ card: BoardCard, _ status: CardStatus) {
-        statusWrites[card.id]?.cancel()
-        let cardId = card.id
-        statusWrites[cardId] = Task { [weak self] in
-            await self?.setTaskStatus(card, status)
-            // Drop the finished task so the map tracks only in-flight writes
-            // rather than accumulating one retained Task per card ever touched.
-            // Skip when cancelled: being cancelled means a newer write already
-            // replaced this entry, and clearing would lose the handle needed to
-            // cancel *that* one.
-            guard !Task.isCancelled else { return }
-            self?.statusWrites[cardId] = nil
+    @discardableResult
+    func requestTaskStatus(_ card: BoardCard, _ status: CardStatus) -> Task<Void, Never>? {
+        guard let client = taskFieldsUpdatingClient,
+              status != card.status,
+              let mutation = beginTaskMutation(id: card.id, field: .status) else { return nil }
+        applyTask(id: card.id) { $0.statusRaw = status.rawValue }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskStatusMutation(
+                using: client,
+                cardId: card.id,
+                status: status,
+                mutation: mutation
+            )
         }
     }
 
-    /// Restore a single card, mirroring `revert(_:to:)` for reminders. Assigning
-    /// the whole `tasks` array back would also roll back concurrent edits to
-    /// *other* cards that succeeded while this one was in flight.
-    private func revertTask(id: String, to previous: [BoardCard]) {
-        guard let old = previous.first(where: { $0.id == id }) else { return }
-        applyTask(id: id) { $0 = old }
+    @discardableResult
+    func requestTaskPriority(_ card: BoardCard, _ priority: CardPriority) -> Task<Void, Never>? {
+        guard let client = taskFieldsUpdatingClient,
+              priority != card.priority,
+              let mutation = beginTaskMutation(id: card.id, field: .priority) else { return nil }
+        applyTask(id: card.id) { $0.priorityRaw = priority.rawValue }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskPriorityMutation(
+                using: client,
+                cardId: card.id,
+                priority: priority,
+                mutation: mutation
+            )
+        }
+    }
+
+    @discardableResult
+    func requestToggleTaskStep(_ card: BoardCard, stepId: String) -> Task<Void, Never>? {
+        guard var steps = card.steps,
+              let idx = steps.firstIndex(where: { $0.id == stepId }) else { return nil }
+        steps[idx].done.toggle()
+        return requestTaskSteps(card, steps)
+    }
+
+    @discardableResult
+    func requestAddTaskStep(_ card: BoardCard, text: String) -> Task<Void, Never>? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var steps = card.steps ?? []
+        steps.append(CardStep(id: UUID().uuidString, text: trimmed, done: false, doneAt: nil))
+        return requestTaskSteps(card, steps)
+    }
+
+    @discardableResult
+    func requestDeleteTaskStep(_ card: BoardCard, stepId: String) -> Task<Void, Never>? {
+        guard var steps = card.steps else { return nil }
+        steps.removeAll { $0.id == stepId }
+        return requestTaskSteps(card, steps)
+    }
+
+    @discardableResult
+    func requestMoveTaskStep(_ card: BoardCard, stepId: String, by delta: Int) -> Task<Void, Never>? {
+        guard var steps = card.steps,
+              let index = steps.firstIndex(where: { $0.id == stepId }) else { return nil }
+        let destination = index + delta
+        guard destination >= 0, destination < steps.count else { return nil }
+        steps.swapAt(index, destination)
+        return requestTaskSteps(card, steps)
+    }
+
+    @discardableResult
+    private func requestTaskSteps(_ card: BoardCard, _ steps: [CardStep]) -> Task<Void, Never>? {
+        guard let client = taskFieldsUpdatingClient,
+              let mutation = beginTaskMutation(id: card.id, field: .steps) else { return nil }
+        applyTask(id: card.id) { $0.steps = steps }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskStepsMutation(
+                using: client,
+                cardId: card.id,
+                steps: steps,
+                mutation: mutation
+            )
+        }
+    }
+
+    @discardableResult
+    func requestTaskNotes(_ card: BoardCard, _ notes: String) -> Task<Void, Never>? {
+        guard let client = taskFieldsUpdatingClient else { return nil }
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != (card.notes ?? ""),
+              let mutation = beginTaskMutation(id: card.id, field: .notes) else { return nil }
+        applyTask(id: card.id) { $0.notes = trimmed }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskNotesMutation(
+                using: client,
+                cardId: card.id,
+                notes: trimmed,
+                mutation: mutation
+            )
+        }
+    }
+
+    @discardableResult
+    func requestTaskTitle(_ card: BoardCard, _ title: String) -> Task<Void, Never>? {
+        guard let client = taskFieldsUpdatingClient else { return nil }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed != card.title,
+              let mutation = beginTaskMutation(id: card.id, field: .title) else { return nil }
+        applyTask(id: card.id) { $0.title = trimmed }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskTitleMutation(
+                using: client,
+                cardId: card.id,
+                title: trimmed,
+                mutation: mutation
+            )
+        }
+    }
+
+    @discardableResult
+    func requestTaskDates(
+        _ card: BoardCard,
+        start: String?,
+        end: String?
+    ) -> Task<Void, Never>? {
+        guard let client = taskFieldsUpdatingClient,
+              start != card.startDate || end != card.endDate,
+              let mutation = beginTaskMutation(id: card.id, field: .dates) else { return nil }
+        applyTask(id: card.id) {
+            $0.startDate = start
+            $0.endDate = end
+        }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskDatesMutation(
+                using: client,
+                cardId: card.id,
+                start: start,
+                end: end,
+                mutation: mutation
+            )
+        }
+    }
+
+    @discardableResult
+    func requestTaskProjectMove(
+        _ card: BoardCard,
+        project: ProjectInfo
+    ) -> Task<Void, Never>? {
+        guard let client = taskProjectUpdatingClient else { return nil }
+        let projectId = project.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !projectId.isEmpty else { return nil }
+        let currentProjectId = card.projectId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard currentProjectId != projectId,
+              let mutation = beginTaskMutation(id: card.id, field: .projectId) else { return nil }
+        applyTask(id: card.id) { $0.projectId = projectId }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskProjectMutation(
+                using: client,
+                cardId: card.id,
+                projectId: projectId,
+                projectName: project.name,
+                mutation: mutation
+            )
+        }
+    }
+
+    @discardableResult
+    func requestTaskSession(cardId: String, sessionId: String?) -> Task<Void, Never>? {
+        guard let client = taskSessionUpdatingClient,
+              let card = tasks.first(where: { $0.id == cardId }) else { return nil }
+        let normalizedSessionId = normalizedSessionID(sessionId)
+        guard normalizedSessionID(card.sessionId) != normalizedSessionId,
+              let mutation = beginTaskMutation(id: cardId, field: .sessionId) else { return nil }
+        applyTask(id: cardId) { $0.sessionId = normalizedSessionId }
+        return scheduleTaskMutationRequest(mutation) { [weak self] in
+            await self?.performTaskSessionMutation(
+                using: client,
+                cardId: cardId,
+                sessionId: normalizedSessionId,
+                mutation: mutation
+            )
+        }
+    }
+
+    private func beginTaskMutation(
+        id: String,
+        field: TaskMutationField
+    ) -> TaskMutationToken? {
+        guard let previous = tasks.first(where: { $0.id == id }) else { return nil }
+        nextTaskMutationGeneration &+= 1
+        let generation = nextTaskMutationGeneration
+        var generations = taskFieldGenerations[id] ?? [:]
+        generations[field] = generation
+        taskFieldGenerations[id] = generations
+        return TaskMutationToken(
+            cardId: id,
+            generation: generation,
+            previous: previous,
+            field: field
+        )
+    }
+
+    private func taskMutationIsCurrent(_ token: TaskMutationToken) -> Bool {
+        taskFieldGenerations[token.cardId]?[token.field] == token.generation
+    }
+
+    private func finishTaskMutation(_ token: TaskMutationToken) {
+        guard taskMutationIsCurrent(token) else { return }
+        taskFieldGenerations[token.cardId]?[token.field] = nil
+        if taskFieldGenerations[token.cardId]?.isEmpty == true {
+            taskFieldGenerations[token.cardId] = nil
+        }
+    }
+
+    private func applyTaskServerUpdate(
+        _ updated: BoardCard,
+        for token: TaskMutationToken
+    ) -> Bool {
+        var applied = false
+        applyTask(id: token.cardId) { card in
+            guard taskMutationIsCurrent(token) else { return }
+            switch token.field {
+            case .status:
+                card.statusRaw = updated.statusRaw
+                applied = true
+            case .priority:
+                card.priorityRaw = updated.priorityRaw
+                applied = true
+            case .steps:
+                card.steps = updated.steps
+                applied = true
+            case .notes:
+                card.notes = updated.notes
+                applied = true
+            case .title:
+                card.title = updated.title
+                applied = true
+            case .dates:
+                card.startDate = updated.startDate
+                card.endDate = updated.endDate
+                applied = true
+            case .projectId:
+                card.projectId = updated.projectId
+                applied = true
+            case .sessionId:
+                card.sessionId = updated.sessionId
+                applied = true
+            }
+            if applied {
+                card.updatedAt = mergedTaskUpdatedAt(
+                    current: card.updatedAt,
+                    incoming: updated.updatedAt
+                )
+            }
+        }
+        return applied
+    }
+
+    private func revertTaskMutation(_ token: TaskMutationToken) -> Bool {
+        var reverted = false
+        applyTask(id: token.cardId) { card in
+            guard taskMutationIsCurrent(token) else { return }
+            switch token.field {
+            case .status:
+                card.statusRaw = token.previous.statusRaw
+                reverted = true
+            case .priority:
+                card.priorityRaw = token.previous.priorityRaw
+                reverted = true
+            case .steps:
+                card.steps = token.previous.steps
+                reverted = true
+            case .notes:
+                card.notes = token.previous.notes
+                reverted = true
+            case .title:
+                card.title = token.previous.title
+                reverted = true
+            case .dates:
+                card.startDate = token.previous.startDate
+                card.endDate = token.previous.endDate
+                reverted = true
+            case .projectId:
+                card.projectId = token.previous.projectId
+                reverted = true
+            case .sessionId:
+                card.sessionId = token.previous.sessionId
+                reverted = true
+            }
+        }
+        return reverted
+    }
+
+    private func mergedTaskUpdatedAt(current: String?, incoming: String?) -> String? {
+        guard let incoming = incoming?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !incoming.isEmpty else {
+            return current
+        }
+        guard let current = current?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !current.isEmpty else {
+            return incoming
+        }
+        let currentDate = caveParseISO(current)
+        let incomingDate = caveParseISO(incoming)
+        switch (currentDate, incomingDate) {
+        case let (.some(currentDate), .some(incomingDate)):
+            return incomingDate >= currentDate ? incoming : current
+        case (nil, .some):
+            return incoming
+        case (.some, nil):
+            return current
+        case (nil, nil):
+            return incoming
+        }
+    }
+
+    private func activeTaskMutationsOverlaying(_ loadedTasks: [BoardCard]) -> [BoardCard] {
+        guard !taskFieldGenerations.isEmpty else { return loadedTasks }
+
+        let currentTasksByID = Dictionary(
+            uniqueKeysWithValues: tasks.map { ($0.id, $0) }
+        )
+        var overlaidTasks = loadedTasks
+        var loadedTaskIDs = Set<String>()
+
+        for index in overlaidTasks.indices {
+            let cardID = overlaidTasks[index].id
+            loadedTaskIDs.insert(cardID)
+            guard let activeFields = taskFieldGenerations[cardID]?.keys,
+                  !activeFields.isEmpty,
+                  let current = currentTasksByID[cardID] else { continue }
+
+            for field in activeFields {
+                switch field {
+                case .status:
+                    overlaidTasks[index].statusRaw = current.statusRaw
+                case .priority:
+                    overlaidTasks[index].priorityRaw = current.priorityRaw
+                case .steps:
+                    overlaidTasks[index].steps = current.steps
+                case .notes:
+                    overlaidTasks[index].notes = current.notes
+                case .title:
+                    overlaidTasks[index].title = current.title
+                case .dates:
+                    overlaidTasks[index].startDate = current.startDate
+                    overlaidTasks[index].endDate = current.endDate
+                case .projectId:
+                    overlaidTasks[index].projectId = current.projectId
+                case .sessionId:
+                    overlaidTasks[index].sessionId = current.sessionId
+                }
+            }
+
+            overlaidTasks[index].updatedAt = mergedTaskUpdatedAt(
+                current: overlaidTasks[index].updatedAt,
+                incoming: current.updatedAt
+            )
+        }
+
+        let preservedMutatingCards = tasks.filter { card in
+            !loadedTaskIDs.contains(card.id)
+                && !(taskFieldGenerations[card.id]?.isEmpty ?? true)
+        }
+        return overlaidTasks + preservedMutatingCards
     }
 
     func setTaskStatus(_ card: BoardCard, _ status: CardStatus) async {
-        guard let client, status != card.status else { return }
-        let previous = tasks
-        applyTask(id: card.id) { $0.statusRaw = status.rawValue }
+        if let task = requestTaskStatus(card, status) {
+            await task.value
+        }
+    }
+
+    private func performTaskStatusMutation(
+        using client: any TaskFieldsUpdatingClient,
+        cardId: String,
+        status: CardStatus,
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
         do {
-            let updated = try await client.updateTask(cardId: card.id, status: status)
+            let updated = try await client.updateTask(
+                cardId: cardId,
+                status: status,
+                priority: nil,
+                steps: nil,
+                notes: nil
+            )
             // A newer write for this card already applied its own optimistic
             // state; landing this stale response would undo it.
             guard !Task.isCancelled else { return }
-            applyTask(id: card.id) { $0 = updated }
+            guard applyTaskServerUpdate(updated, for: mutation) else { return }
             Haptics.tap()
             await LiveActivityManager.shared.reconcile(tasks)
             publishWidgetSnapshot()
@@ -770,7 +3140,7 @@ final class AppModel {
             // Cancellation surfaces here as a thrown CancellationError. Reverting
             // on it would clobber the newer intent that did the cancelling.
             guard !Task.isCancelled else { return }
-            revertTask(id: card.id, to: previous)
+            guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
             reportRevert("update the task")
         }
@@ -778,15 +3148,32 @@ final class AppModel {
 
     /// Optimistically set a task's priority; reconcile/revert like status.
     func setTaskPriority(_ card: BoardCard, _ priority: CardPriority) async {
-        guard let client, priority != card.priority else { return }
-        let previous = tasks
-        applyTask(id: card.id) { $0.priorityRaw = priority.rawValue }
+        if let task = requestTaskPriority(card, priority) {
+            await task.value
+        }
+    }
+
+    private func performTaskPriorityMutation(
+        using client: any TaskFieldsUpdatingClient,
+        cardId: String,
+        priority: CardPriority,
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
         do {
-            let updated = try await client.updateTask(cardId: card.id, priority: priority)
-            applyTask(id: card.id) { $0 = updated }
+            let updated = try await client.updateTask(
+                cardId: cardId,
+                status: nil,
+                priority: priority,
+                steps: nil,
+                notes: nil
+            )
+            guard !Task.isCancelled else { return }
+            guard applyTaskServerUpdate(updated, for: mutation) else { return }
             Haptics.tap()
         } catch {
-            revertTask(id: card.id, to: previous)
+            guard !Task.isCancelled else { return }
+            guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
             reportRevert("update the task")
         }
@@ -794,89 +3181,116 @@ final class AppModel {
 
     /// Toggle a checklist step's done flag, persisting the whole step list.
     func toggleStep(_ card: BoardCard, stepId: String) async {
-        guard let client, var steps = card.steps,
-              let idx = steps.firstIndex(where: { $0.id == stepId }) else { return }
-        steps[idx].done.toggle()
-        let newSteps = steps
-        let previous = tasks
-        applyTask(id: card.id) { $0.steps = newSteps }
-        do {
-            let updated = try await client.updateTask(cardId: card.id, steps: newSteps)
-            applyTask(id: card.id) { $0 = updated }
-        } catch {
-            revertTask(id: card.id, to: previous)
-            tasksError = error.localizedDescription
+        if let task = requestToggleTaskStep(card, stepId: stepId) {
+            await task.value
         }
     }
 
     /// Append a new checklist step.
     func addStep(_ card: BoardCard, text: String) async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        var steps = card.steps ?? []
-        steps.append(CardStep(id: UUID().uuidString, text: trimmed, done: false, doneAt: nil))
-        await commitSteps(card, steps)
+        if let task = requestAddTaskStep(card, text: text) {
+            await task.value
+        }
     }
 
     /// Remove a checklist step.
     func deleteStep(_ card: BoardCard, stepId: String) async {
-        guard var steps = card.steps else { return }
-        steps.removeAll { $0.id == stepId }
-        await commitSteps(card, steps)
+        if let task = requestDeleteTaskStep(card, stepId: stepId) {
+            await task.value
+        }
     }
 
     /// Move a step up (delta -1) or down (delta +1) in the list.
     func moveStep(_ card: BoardCard, stepId: String, by delta: Int) async {
-        guard var steps = card.steps, let i = steps.firstIndex(where: { $0.id == stepId }) else { return }
-        let j = i + delta
-        guard j >= 0, j < steps.count else { return }
-        steps.swapAt(i, j)
-        await commitSteps(card, steps)
+        if let task = requestMoveTaskStep(card, stepId: stepId, by: delta) {
+            await task.value
+        }
     }
 
     /// Optimistically persist a new step list, reconciling with the server's
     /// echoed card (reverts on failure) — shared by add/delete/move.
     private func commitSteps(_ card: BoardCard, _ steps: [CardStep]) async {
-        guard let client else { return }
-        let previous = tasks
-        applyTask(id: card.id) { $0.steps = steps }
+        if let task = requestTaskSteps(card, steps) {
+            await task.value
+        }
+    }
+
+    private func performTaskStepsMutation(
+        using client: any TaskFieldsUpdatingClient,
+        cardId: String,
+        steps: [CardStep],
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
         do {
-            let updated = try await client.updateTask(cardId: card.id, steps: steps)
-            applyTask(id: card.id) { $0 = updated }
+            let updated = try await client.updateTask(
+                cardId: cardId,
+                status: nil,
+                priority: nil,
+                steps: steps,
+                notes: nil
+            )
+            guard !Task.isCancelled else { return }
+            _ = applyTaskServerUpdate(updated, for: mutation)
         } catch {
-            revertTask(id: card.id, to: previous)
+            guard !Task.isCancelled else { return }
+            guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
         }
     }
 
     /// Optimistically set a task's notes (pass "" to clear); reconcile/revert.
     func setTaskNotes(_ card: BoardCard, _ notes: String) async {
-        guard let client else { return }
-        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed != (card.notes ?? "") else { return }
-        let previous = tasks
-        applyTask(id: card.id) { $0.notes = trimmed }
+        if let task = requestTaskNotes(card, notes) {
+            await task.value
+        }
+    }
+
+    private func performTaskNotesMutation(
+        using client: any TaskFieldsUpdatingClient,
+        cardId: String,
+        notes: String,
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
         do {
-            let updated = try await client.updateTask(cardId: card.id, notes: trimmed)
-            applyTask(id: card.id) { $0 = updated }
+            let updated = try await client.updateTask(
+                cardId: cardId,
+                status: nil,
+                priority: nil,
+                steps: nil,
+                notes: notes
+            )
+            guard !Task.isCancelled else { return }
+            _ = applyTaskServerUpdate(updated, for: mutation)
         } catch {
-            revertTask(id: card.id, to: previous)
+            guard !Task.isCancelled else { return }
+            guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
         }
     }
 
     /// Optimistically rename a task; reconcile/revert like notes.
     func setTaskTitle(_ card: BoardCard, _ title: String) async {
-        guard let client else { return }
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != card.title else { return }
-        let previous = tasks
-        applyTask(id: card.id) { $0.title = trimmed }
+        if let task = requestTaskTitle(card, title) {
+            await task.value
+        }
+    }
+
+    private func performTaskTitleMutation(
+        using client: any TaskFieldsUpdatingClient,
+        cardId: String,
+        title: String,
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
         do {
-            let updated = try await client.updateTaskTitle(cardId: card.id, title: trimmed)
-            applyTask(id: card.id) { $0 = updated }
+            let updated = try await client.updateTaskTitle(cardId: cardId, title: title)
+            guard !Task.isCancelled else { return }
+            _ = applyTaskServerUpdate(updated, for: mutation)
         } catch {
-            revertTask(id: card.id, to: previous)
+            guard !Task.isCancelled else { return }
+            guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
         }
     }
@@ -884,18 +3298,164 @@ final class AppModel {
     /// Optimistically set a task's start/due dates (date-only strings, nil to
     /// clear); reconcile/revert.
     func setTaskDates(_ card: BoardCard, start: String?, end: String?) async {
-        guard let client, start != card.startDate || end != card.endDate else { return }
-        let previous = tasks
-        applyTask(id: card.id) { $0.startDate = start; $0.endDate = end }
+        if let task = requestTaskDates(card, start: start, end: end) {
+            await task.value
+        }
+    }
+
+    private func performTaskDatesMutation(
+        using client: any TaskFieldsUpdatingClient,
+        cardId: String,
+        start: String?,
+        end: String?,
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
         do {
-            let updated = try await client.updateTaskDates(cardId: card.id, startDate: start, endDate: end)
-            applyTask(id: card.id) { $0 = updated }
+            let updated = try await client.updateTaskDates(cardId: cardId, startDate: start, endDate: end)
+            guard !Task.isCancelled else { return }
+            guard applyTaskServerUpdate(updated, for: mutation) else { return }
             Haptics.tap()
         } catch {
-            revertTask(id: card.id, to: previous)
+            guard !Task.isCancelled else { return }
+            guard revertTaskMutation(mutation) else { return }
             tasksError = error.localizedDescription
             reportRevert("reschedule the task")
         }
+    }
+
+    /// Optimistically attach a projectless/unregistered task to a registered
+    /// project, then reconcile with the server's echoed card. Reverts on
+    /// failure and keeps the explicit server error visible in `tasksError`.
+    func moveTaskToProject(_ card: BoardCard, project: ProjectInfo) async {
+        if let task = requestTaskProjectMove(card, project: project) {
+            await task.value
+        }
+    }
+
+    private func performTaskProjectMutation(
+        using client: any TaskProjectUpdatingClient,
+        cardId: String,
+        projectId: String,
+        projectName: String,
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
+        let originalProjectContext = projectContext
+        let originalProjectContextSelectionSource = projectContextSelectionSource
+        do {
+            let updated = try await client.updateTaskProject(cardId: cardId, projectId: projectId)
+            guard !Task.isCancelled else { return }
+            guard applyTaskServerUpdate(updated, for: mutation) else { return }
+            if let repairIssue = await repairTaskChatScopeAfterProjectMove(cardId: cardId) {
+                restoreProjectContextAfterTaskMoveFailure(
+                    originalProjectContext,
+                    source: originalProjectContextSelectionSource
+                )
+                tasksError = repairIssue
+                reportTaskMoveRepairIssue(projectName: projectName, detail: repairIssue)
+            } else {
+                tasksError = nil
+                reopenMovedTaskAfterProjectMoveIfNeeded(
+                    cardId: cardId,
+                    destinationProjectId: projectId,
+                    previousCard: mutation.previous
+                )
+                showToast("Moved to \(projectName)", systemImage: "folder.badge.plus")
+                Haptics.success()
+            }
+            publishWidgetSnapshot()
+        } catch {
+            guard !Task.isCancelled else { return }
+            guard revertTaskMutation(mutation) else { return }
+            restoreProjectContextAfterTaskMoveFailure(
+                originalProjectContext,
+                source: originalProjectContextSelectionSource
+            )
+            let message = error.localizedDescription
+            tasksError = message
+            reportTaskMoveRevert(message)
+            publishWidgetSnapshot()
+        }
+    }
+
+    private func reopenMovedTaskAfterProjectMoveIfNeeded(
+        cardId: String,
+        destinationProjectId: String,
+        previousCard: BoardCard
+    ) {
+        let sourceWasRecovery = taskMoveRequiresExplicitTaskReopen(previousCard)
+        let destinationContextDiffers = projectContext?.projectId != destinationProjectId
+        guard sourceWasRecovery || destinationContextDiffers,
+              let moved = tasks.first(where: { $0.id == cardId }),
+              let destination = project(destinationProjectId) else {
+            return
+        }
+        completeProjectNavigation(
+            ProjectNavigationIntent(
+                entity: .task(id: cardId),
+                destination: .tasks,
+                projectId: destinationProjectId
+            ),
+            context: .project(destination),
+            card: moved
+        )
+    }
+
+    private func taskMoveRequiresExplicitTaskReopen(_ previousCard: BoardCard) -> Bool {
+        switch requestOpenContext(for: previousCard) {
+        case .success(.unassigned):
+            return true
+        case .success(.project), .failure:
+            return false
+        }
+    }
+
+    private func restoreProjectContextAfterTaskMoveFailure(
+        _ context: ProjectContext?,
+        source: ProjectContextSelectionSource?
+    ) {
+        guard projectContext != context || projectContextSelectionSource != source else {
+            return
+        }
+        applyProjectContextSelection(context, source: source)
+        persistProjectContextSelection(context)
+    }
+
+    private func performTaskSessionMutation(
+        using client: any TaskSessionUpdatingClient,
+        cardId: String,
+        sessionId: String?,
+        mutation: TaskMutationToken
+    ) async {
+        defer { finishTaskMutation(mutation) }
+        do {
+            let updated = try await client.updateTaskSession(cardId: cardId, sessionId: sessionId)
+            guard !Task.isCancelled else { return }
+            _ = applyTaskServerUpdate(updated, for: mutation)
+        } catch {
+            guard !Task.isCancelled else { return }
+            // Non-fatal: the local link still drives in-app navigation.
+            _ = revertTaskMutation(mutation)
+        }
+    }
+
+    private func reportTaskMoveRevert(_ message: String) {
+        let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = detail.isEmpty
+            ? "Couldn’t move the task — reverted"
+            : "Couldn’t move the task — reverted. \(detail)"
+        showToast(text, systemImage: "exclamationmark.triangle.fill", style: .error)
+        Haptics.error()
+    }
+
+    private func reportTaskMoveRepairIssue(projectName: String, detail: String) {
+        let trimmedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = trimmedDetail.isEmpty
+            ? "Moved to \(projectName). Couldn’t repair the previous chat link."
+            : "Moved to \(projectName). \(trimmedDetail)"
+        showToast(text, systemImage: "exclamationmark.triangle.fill", style: .warning)
+        Haptics.error()
     }
 
     /// Optimistically remove a task, then DELETE it. Reinserts on failure.
@@ -930,23 +3490,601 @@ final class AppModel {
         tasks[idx] = card
     }
 
-    // MARK: - Developer surface actions
+    // MARK: - Project context actions
+
+    struct ProjectContextFailureSurfaces: OptionSet, Sendable {
+        let rawValue: Int
+
+        static let projects = Self(rawValue: 1 << 0)
+        static let familiars = Self(rawValue: 1 << 1)
+    }
+
+    private struct ProjectContextSelectionResolution {
+        var context: ProjectContext?
+        var source: ProjectContextSelectionSource?
+        var persistSelection: Bool
+        var fetchedSessions: [SessionRow]? = nil
+        var fetchedTasks: [BoardCard]? = nil
+        var sessionsError: String? = nil
+        var tasksError: String? = nil
+        var sessionsLoadToken: CoordinatedLoadToken? = nil
+        var tasksLoadToken: CoordinatedLoadToken? = nil
+
+        var usedHistoryFallback: Bool {
+            sessionsError != nil || tasksError != nil
+        }
+    }
+
+    private func awaitThreadHydration() async {
+        guard !threadsHydrated else { return }
+        _ = await hydrateThreadsTask?.value
+    }
+
+    private func currentUserProjectContext(in projects: [ProjectInfo]) -> ProjectContext? {
+        guard projectContextSelectionSource == .user,
+              let projectContext else { return nil }
+        switch projectContext {
+        case .project(let project):
+            guard let current = projects.first(where: { $0.id == project.id }) else { return nil }
+            return .project(current)
+        case .unassigned:
+            return .unassigned
+        }
+    }
+
+    private func explicitProjectContextSelectionCandidate(
+        in projects: [ProjectInfo]
+    ) -> (context: ProjectContext?, source: ProjectContextSelectionSource?) {
+        if let currentUserProjectContext = currentUserProjectContext(in: projects) {
+            return (currentUserProjectContext, .user)
+        }
+        if let restoredProjectContext = restoredProjectContext(in: projects) {
+            return (restoredProjectContext, .restored)
+        }
+        return (nil, nil)
+    }
+
+    private func selectionThreadsForProjectContextSelection(
+        from threads: [ChatThread],
+        sessions: [SessionRow]
+    ) -> [ChatThread] {
+        guard !threads.isEmpty, !sessions.isEmpty else { return threads }
+        let sessionsByID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        return threads.map { thread in
+            guard let projectRoot = authoritativeProjectRoot(
+                for: thread,
+                using: sessionsByID
+            ),
+            projectRoot != thread.projectRoot else {
+                return thread
+            }
+            let projected = ChatThread(
+                id: thread.id,
+                title: thread.title,
+                familiarIds: thread.familiarIds,
+                sessionIds: thread.sessionIds,
+                projectRoot: projectRoot
+            )
+            projected.updatedAt = thread.updatedAt
+            return projected
+        }
+    }
+
+    private func resolvedProjectContextSelection(
+        explicitSelection: (context: ProjectContext?, source: ProjectContextSelectionSource?),
+        projects: [ProjectInfo],
+        threads: [ChatThread],
+        sessions: [SessionRow],
+        tasks: [BoardCard],
+        allowAlphabeticalFallback: Bool = true
+    ) -> ProjectContext? {
+        resolvedProjectContextSelectionDecision(
+            explicitSelection: explicitSelection,
+            projects: projects,
+            threads: threads,
+            sessions: sessions,
+            tasks: tasks,
+            allowAlphabeticalFallback: allowAlphabeticalFallback
+        ).context
+    }
+
+    private func resolvedProjectContextSelectionDecision(
+        explicitSelection: (context: ProjectContext?, source: ProjectContextSelectionSource?),
+        projects: [ProjectInfo],
+        threads: [ChatThread],
+        sessions: [SessionRow],
+        tasks: [BoardCard],
+        allowAlphabeticalFallback: Bool = true
+    ) -> ProjectContext.SelectionDecision {
+        if explicitSelection.source == .user, explicitSelection.context == .unassigned {
+            return .init(context: .unassigned, reason: .suppliedSelection)
+        }
+        return ProjectContext.selectionDecision(
+            restored: explicitSelection.context,
+            projects: projects,
+            threads: threads,
+            sessions: sessions,
+            tasks: tasks,
+            allowAlphabeticalFallback: allowAlphabeticalFallback
+        )
+    }
+
+    private func projectContextSelectionResolution(
+        explicitSelection: (context: ProjectContext?, source: ProjectContextSelectionSource?),
+        projects: [ProjectInfo],
+        threads: [ChatThread],
+        sessions: [SessionRow],
+        tasks: [BoardCard],
+        allowAlphabeticalFallback: Bool = true,
+        fetchedSessions: [SessionRow]? = nil,
+        fetchedTasks: [BoardCard]? = nil,
+        sessionsError: String? = nil,
+        tasksError: String? = nil,
+        sessionsLoadToken: CoordinatedLoadToken? = nil,
+        tasksLoadToken: CoordinatedLoadToken? = nil
+    ) -> ProjectContextSelectionResolution {
+        let context = resolvedProjectContextSelection(
+            explicitSelection: explicitSelection,
+            projects: projects,
+            threads: threads,
+            sessions: sessions,
+            tasks: tasks,
+            allowAlphabeticalFallback: allowAlphabeticalFallback
+        )
+        let source = derivedProjectContextSelectionSource(
+            explicitSelection: explicitSelection,
+            resolvedContext: context
+        )
+        return ProjectContextSelectionResolution(
+            context: context,
+            source: source,
+            persistSelection: source != .user && source != .restored,
+            fetchedSessions: fetchedSessions,
+            fetchedTasks: fetchedTasks,
+            sessionsError: sessionsError,
+            tasksError: tasksError,
+            sessionsLoadToken: sessionsLoadToken,
+            tasksLoadToken: tasksLoadToken
+        )
+    }
+
+    private func immediateProjectContextSelectionIsFinal(
+        _ decision: ProjectContext.SelectionDecision,
+        hasUsableSessions: Bool,
+        needsAuthoritativeSessionHistory: Bool
+    ) -> Bool {
+        guard !needsAuthoritativeSessionHistory else { return false }
+        switch decision.reason {
+        case .suppliedSelection, .localThread, .serverSession:
+            return decision.context != nil
+        case .taskHistory:
+            return hasUsableSessions
+        case .alphabeticalFallback, .unassignedFallback, .none:
+            return false
+        }
+    }
+
+    private func shouldFetchTaskHistoryForProjectContextSelection(
+        _ decision: ProjectContext.SelectionDecision,
+        hasUsableTasks: Bool
+    ) -> Bool {
+        guard !hasUsableTasks else { return false }
+        switch decision.reason {
+        case .suppliedSelection, .localThread, .serverSession, .taskHistory:
+            return false
+        case .alphabeticalFallback, .unassignedFallback, .none:
+            return true
+        }
+    }
+
+    private func needsAuthoritativeSessionHistoryForProjectContextSelection(
+        explicitSelection: (context: ProjectContext?, source: ProjectContextSelectionSource?),
+        projects: [ProjectInfo]
+    ) -> Bool {
+        guard explicitSelection.source != .user,
+              explicitSelection.context == .unassigned else { return false }
+        return threads.contains { thread in
+            !thread.sessionIds.values.compactMap(normalizedSessionID).isEmpty
+                && ProjectContext.registeredProject(
+                    for: thread.projectRoot,
+                    in: projects
+                ) == nil
+        }
+    }
+
+    private func resolveProjectContextSelection(
+        using client: any ProjectContextLoadingClient,
+        projects nextProjects: [ProjectInfo],
+        loadNonce: UInt64,
+        navigationGeneration: UInt64?
+    ) async throws -> ProjectContextSelectionResolution {
+        await awaitThreadHydration()
+        guard loadNonce == projectContextLoadNonce else { throw CancellationError() }
+
+        let haveUsableSessions = sessionsLoaded && sessionsError == nil
+        let haveUsableTasks = tasksLoaded && tasksError == nil
+        var resolvedSessions = haveUsableSessions ? serverSessions : []
+        var resolvedTasks = haveUsableTasks ? tasks : []
+        var explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
+        let needsAuthoritativeSessionHistory = !haveUsableSessions
+            && needsAuthoritativeSessionHistoryForProjectContextSelection(
+                explicitSelection: explicitSelection,
+                projects: nextProjects
+            )
+        let immediateThreads = selectionThreadsForProjectContextSelection(
+            from: threads,
+            sessions: resolvedSessions
+        )
+
+        let immediateDecision = resolvedProjectContextSelectionDecision(
+            explicitSelection: explicitSelection,
+            projects: nextProjects,
+            threads: immediateThreads,
+            sessions: resolvedSessions,
+            tasks: resolvedTasks,
+            allowAlphabeticalFallback: false
+        )
+        if immediateProjectContextSelectionIsFinal(
+            immediateDecision,
+            hasUsableSessions: haveUsableSessions,
+            needsAuthoritativeSessionHistory: needsAuthoritativeSessionHistory
+        ) {
+            return projectContextSelectionResolution(
+                explicitSelection: explicitSelection,
+                projects: nextProjects,
+                threads: immediateThreads,
+                sessions: resolvedSessions,
+                tasks: resolvedTasks,
+                allowAlphabeticalFallback: false
+            )
+        }
+
+        // Cold/default selection is intentionally staged: local threads first,
+        // then eligible server sessions, then task history only if sessions
+        // succeeded without identifying a registered project.
+        var fetchedSessions: [SessionRow]?
+        var sessionsError: String?
+        var sessionsLoadToken: CoordinatedLoadToken?
+        if !haveUsableSessions {
+            let loadedSessions = await coordinatedSessionsLoad(
+                using: client,
+                generation: navigationGeneration
+            )
+            sessionsLoadToken = loadedSessions.token
+            switch loadedSessions.result {
+            case .success(let nextSessions):
+                resolvedSessions = nextSessions
+                fetchedSessions = nextSessions
+            case .failure(let error):
+                sessionsError = handleSurfaceError(error)
+            }
+        }
+        guard loadNonce == projectContextLoadNonce else { throw CancellationError() }
+
+        explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
+        let postSessionThreads = selectionThreadsForProjectContextSelection(
+            from: threads,
+            sessions: resolvedSessions
+        )
+        if let sessionsError {
+            return projectContextSelectionResolution(
+                explicitSelection: explicitSelection,
+                projects: nextProjects,
+                threads: postSessionThreads,
+                sessions: resolvedSessions,
+                tasks: [],
+                fetchedSessions: fetchedSessions,
+                sessionsError: sessionsError,
+                sessionsLoadToken: sessionsLoadToken
+            )
+        }
+
+        let postSessionDecision = resolvedProjectContextSelectionDecision(
+            explicitSelection: explicitSelection,
+            projects: nextProjects,
+            threads: postSessionThreads,
+            sessions: resolvedSessions,
+            tasks: [],
+            allowAlphabeticalFallback: false
+        )
+
+        var fetchedTasks: [BoardCard]?
+        var tasksError: String?
+        var tasksLoadToken: CoordinatedLoadToken?
+        if shouldFetchTaskHistoryForProjectContextSelection(
+            postSessionDecision,
+            hasUsableTasks: haveUsableTasks
+        ) {
+            let loadedTasks = await coordinatedTasksLoad(
+                using: client,
+                generation: navigationGeneration
+            )
+            tasksLoadToken = loadedTasks.token
+            switch loadedTasks.result {
+            case .success(let nextTasks):
+                resolvedTasks = nextTasks
+                fetchedTasks = nextTasks
+            case .failure(let error):
+                tasksError = handleSurfaceError(error)
+            }
+        }
+        guard loadNonce == projectContextLoadNonce else { throw CancellationError() }
+
+        explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
+        let finalThreads = selectionThreadsForProjectContextSelection(
+            from: threads,
+            sessions: resolvedSessions
+        )
+        return projectContextSelectionResolution(
+            explicitSelection: explicitSelection,
+            projects: nextProjects,
+            threads: finalThreads,
+            sessions: resolvedSessions,
+            tasks: resolvedTasks,
+            fetchedSessions: fetchedSessions,
+            fetchedTasks: fetchedTasks,
+            tasksError: tasksError,
+            sessionsLoadToken: sessionsLoadToken,
+            tasksLoadToken: tasksLoadToken
+        )
+    }
+
+    private func applyProjectContextSelection(
+        _ context: ProjectContext?,
+        source: ProjectContextSelectionSource?
+    ) {
+        projectContext = context
+        projectContextSelectionSource = source
+        if let context {
+            seedFamiliarViews(projectFamiliars.map(\.id), in: context)
+        }
+    }
+
+    private func derivedProjectContextSelectionSource(
+        explicitSelection: (context: ProjectContext?, source: ProjectContextSelectionSource?),
+        resolvedContext: ProjectContext?
+    ) -> ProjectContextSelectionSource? {
+        if resolvedContext == explicitSelection.context {
+            return explicitSelection.source
+        }
+        if resolvedContext == nil {
+            return nil
+        }
+        return .automatic
+    }
+
+    private func refreshProjectContextSelectionFromCurrentData() {
+        guard projectsLoaded else { return }
+        let explicitSelection = explicitProjectContextSelectionCandidate(in: projects)
+        let resolvedContext = resolvedProjectContextSelection(
+            explicitSelection: explicitSelection,
+            projects: projects,
+            threads: selectionThreadsForProjectContextSelection(
+                from: threads,
+                sessions: serverSessions
+            ),
+            sessions: serverSessions,
+            tasks: tasks
+        )
+        let resolvedSource = derivedProjectContextSelectionSource(
+            explicitSelection: explicitSelection,
+            resolvedContext: resolvedContext
+        )
+        guard resolvedContext != projectContext || resolvedSource != projectContextSelectionSource
+        else { return }
+        applyProjectContextSelection(resolvedContext, source: resolvedSource)
+        if resolvedSource != .user && resolvedSource != .restored {
+            persistProjectContextSelection(resolvedContext)
+        }
+        _ = resolvePendingProjectNavigationIntent()
+    }
+
+    func loadProjectContext() async {
+        guard let client = coreResourceClient else { return }
+        await loadProjectContext(using: client)
+    }
 
     func loadProjects() async {
-        guard let client else { return }
+        guard let client = coreResourceClient else { return }
+        await loadProjectContext(using: client, mirrorFailuresTo: [.projects])
+    }
+
+    func loadProjectContext(
+        using client: any ProjectContextLoadingClient,
+        mirrorFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = []
+    ) async {
+        let navigationGeneration = currentProjectNavigationConnectionGeneration()
+        noteProjectNavigationSurfaceAttempt(.projects, generation: navigationGeneration)
+        projectContextLoadNonce &+= 1
+        let loadNonce = projectContextLoadNonce
+        let hadMembership = projectMembershipLoaded
+
         do {
-            projects = try await client.projects()
+            async let loadedProjects = client.projects()
+            async let loadedGrants = client.projectGrants()
+            async let loadedFamiliars = client.familiars()
+
+            let nextProjects = try await loadedProjects
+            let grants = try await loadedGrants
+            let nextFamiliars = try await loadedFamiliars
+
+            guard loadNonce == projectContextLoadNonce else { return }
+
+            let membership = ProjectMembershipIndex.build(
+                projects: nextProjects,
+                familiars: nextFamiliars,
+                directGrants: grants.grants ?? [],
+                groups: grants.accessGroups ?? [],
+                supremeFamiliarId: grants.supremeFamiliarId
+            )
+            let selectionResolution = try await resolveProjectContextSelection(
+                using: client,
+                projects: nextProjects,
+                loadNonce: loadNonce,
+                navigationGeneration: navigationGeneration
+            )
+
+            guard loadNonce == projectContextLoadNonce else { return }
+
+            projects = nextProjects
             projectsError = nil
+            projectsLoaded = true
+            noteProjectNavigationSurfaceSuccess(.projects, generation: navigationGeneration)
+            familiars = nextFamiliars
+            seedFamiliarViews(nextFamiliars.map(\.id), in: nil)
+            familiarsError = nil
+            familiarsLoaded = true
+            projectMembership = membership
+            projectMembershipLoaded = true
+            if let fetchedSessions = selectionResolution.fetchedSessions,
+               let token = selectionResolution.sessionsLoadToken,
+               coordinatedLoadShouldApply(token, state: sessionsLoadState) {
+                markCoordinatedLoadApplied(token, state: &sessionsLoadState)
+                applyLoadedSessions(
+                    fetchedSessions,
+                    refreshProjectContextSelection: false
+                )
+                noteProjectNavigationSurfaceAttempt(.sessions, generation: navigationGeneration)
+                noteProjectNavigationSurfaceSuccess(.sessions, generation: navigationGeneration)
+            }
+            if let sessionsError = selectionResolution.sessionsError,
+               let token = selectionResolution.sessionsLoadToken,
+               coordinatedLoadShouldApply(token, state: sessionsLoadState) {
+                markCoordinatedLoadApplied(token, state: &sessionsLoadState)
+                noteProjectNavigationSurfaceAttempt(.sessions, generation: navigationGeneration)
+                noteProjectNavigationSurfaceFailure(.sessions, generation: navigationGeneration)
+                self.sessionsError = sessionsError
+            }
+            if let fetchedTasks = selectionResolution.fetchedTasks,
+               let token = selectionResolution.tasksLoadToken,
+               coordinatedLoadShouldApply(token, state: tasksLoadState) {
+                markCoordinatedLoadApplied(token, state: &tasksLoadState)
+                tasks = activeTaskMutationsOverlaying(fetchedTasks)
+                tasksError = nil
+                tasksLoaded = true
+                noteProjectNavigationSurfaceAttempt(.tasks, generation: navigationGeneration)
+                noteProjectNavigationSurfaceSuccess(.tasks, generation: navigationGeneration)
+                await LiveActivityManager.shared.reconcile(tasks)
+            }
+            if let tasksError = selectionResolution.tasksError,
+               let token = selectionResolution.tasksLoadToken,
+               coordinatedLoadShouldApply(token, state: tasksLoadState) {
+                markCoordinatedLoadApplied(token, state: &tasksLoadState)
+                noteProjectNavigationSurfaceAttempt(.tasks, generation: navigationGeneration)
+                noteProjectNavigationSurfaceFailure(.tasks, generation: navigationGeneration)
+                self.tasksError = tasksError
+            }
+            // Any fallback selection derived from fetched history must come
+            // from the freshest coordinated snapshot for this connection
+            // generation; a superseded snapshot leaves the current selection in
+            // place and lets newer state drive the recompute below.
+            let canUseSessionsFallbackSelection = coordinatedSelectionSnapshotIsCurrentFreshest(
+                selectionResolution.sessionsLoadToken,
+                state: sessionsLoadState
+            )
+            let canUseTasksFallbackSelection = coordinatedSelectionSnapshotIsCurrentFreshest(
+                selectionResolution.tasksLoadToken,
+                state: tasksLoadState
+            )
+
+            if selectionResolution.usedHistoryFallback
+                && canUseSessionsFallbackSelection
+                && canUseTasksFallbackSelection {
+                applyProjectContextSelection(
+                    selectionResolution.context,
+                    source: selectionResolution.source
+                )
+                if selectionResolution.persistSelection {
+                    persistProjectContextSelection(selectionResolution.context)
+                }
+            } else {
+                refreshProjectContextSelectionFromCurrentData()
+            }
+            projectContextError = nil
+            _ = resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true)
+            publishWidgetSnapshot()
         } catch {
-            projectsError = handleSurfaceError(error)
+            guard loadNonce == projectContextLoadNonce else { return }
+            let message = handleSurfaceError(error)
+            noteProjectNavigationSurfaceFailure(.projects, generation: navigationGeneration)
+            projectContextError = message
+            if mirroredSurfaces.contains(.projects) {
+                projectsError = message
+            }
+            if mirroredSurfaces.contains(.familiars) {
+                familiarsError = message
+            }
+            if !hadMembership {
+                applyProjectContextSelection(nil, source: nil)
+                if projects.isEmpty { projectsError = message }
+                if familiars.isEmpty { familiarsError = message }
+            }
+            _ = resolvePendingProjectNavigationIntent()
         }
-        projectsLoaded = true
+    }
+
+    private var scopedProjectContextStorageKey: String? {
+        Self.projectContextStorageKey(for: connection)
+    }
+
+    private func clearLegacyProjectContextSelection() {
+        projectContextDefaults.removeObject(forKey: Self.legacyProjectContextStorageKey)
+    }
+
+    private func restoredProjectContext(in projects: [ProjectInfo]) -> ProjectContext? {
+        clearLegacyProjectContextSelection()
+        guard let storageKey = scopedProjectContextStorageKey,
+              let rawValue = projectContextDefaults.string(forKey: storageKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawValue.isEmpty else { return nil }
+        if rawValue == Self.unassignedProjectContextStorageValue {
+            return .unassigned
+        }
+        let projectPrefix = "project:"
+        guard rawValue.hasPrefix(projectPrefix) else { return nil }
+        let projectID = String(rawValue.dropFirst(projectPrefix.count))
+        guard !projectID.isEmpty,
+              let project = projects.first(where: { $0.id == projectID }) else { return nil }
+        return .project(project)
+    }
+
+    private func persistProjectContextSelection(_ context: ProjectContext?) {
+        clearLegacyProjectContextSelection()
+        guard let storageKey = scopedProjectContextStorageKey else { return }
+        switch context {
+        case .project(let project):
+            projectContextDefaults.set(ProjectContext.project(project).id, forKey: storageKey)
+        case .unassigned:
+            projectContextDefaults.set(
+                Self.unassignedProjectContextStorageValue,
+                forKey: storageKey
+            )
+        case nil:
+            projectContextDefaults.removeObject(forKey: storageKey)
+        }
     }
 
     // MARK: - Reminders
 
+    private func reconcileReminderNotifications(
+        requestAuthorizationIfNeeded: Bool = false
+    ) async {
+        if requestAuthorizationIfNeeded {
+            await reminderNotificationScheduler.requestAuthorizationIfNeeded()
+        }
+        await reminderNotificationScheduler.sync(reminders)
+    }
+
+    private func withReminderNotificationReconciliation(
+        requestAuthorizationIfNeeded: Bool = false,
+        _ operation: () async -> Void
+    ) async {
+        await operation()
+        await reconcileReminderNotifications(requestAuthorizationIfNeeded: requestAuthorizationIfNeeded)
+    }
+
     func loadReminders() async {
-        guard let client else { return }
+        guard let client = reminderClient else { return }
         do {
             reminders = try await client.reminders()
             remindersError = nil
@@ -957,8 +4095,7 @@ final class AppModel {
         publishWidgetSnapshot()
         // Mirror upcoming reminders as on-device notifications so the phone buzzes
         // when one is due. Asks for permission the first time reminders load.
-        await ReminderNotifications.requestAuthorizationIfNeeded()
-        await ReminderNotifications.sync(reminders)
+        await reconcileReminderNotifications(requestAuthorizationIfNeeded: true)
     }
 
     /// Publish a compact snapshot to the shared App Group so widgets/controls can
@@ -976,8 +4113,9 @@ final class AppModel {
         WidgetSnapshotStore.write(WidgetSnapshot(
             dueTaskCount: due,
             runningTaskCount: running,
+            projectContextID: projectContext?.id,
             updatedAt: now
-        ))
+        ), defaults: widgetSnapshotDefaults)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -1000,17 +4138,19 @@ final class AppModel {
             pendingPairingIntent = PairingIntent(host: invite.host, token: invite.token)
             return
         }
-        // covencave://thread/<id> — a chat notification / Live Activity tap
-        // jumps straight into its thread via the existing one-shot intent.
-        if let threadId = ChatNotifications.threadId(fromDeepLink: url) {
-            launchThreadId = threadId
-            selectedTab = .chats
-            if let thread = consumeLaunchThreadIntent() { requestOpen(thread) }
+        guard let intent = ProjectNavigationIntent(url: url) else { return }
+        if url.host == DeepLink.reminders.rawValue {
+            deepLink = .reminders
+        } else if intent.resolvedDestination == .tasks {
+            deepLink = .tasks
+        } else {
+            deepLink = nil
+        }
+        pendingProjectNavigationIntent = intent
+        lastProjectNavigationFailure = nil
+        if resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true) {
             return
         }
-        guard let target = DeepLink(rawValue: url.host ?? "") else { return }
-        selectedTab = .tasks
-        deepLink = target
     }
 
     @discardableResult
@@ -1032,21 +4172,23 @@ final class AppModel {
     /// succeeded, leaving the UI disagreeing with the server. Now only the ids
     /// the server did NOT confirm come back.
     func deleteReminders(_ ids: Set<String>) async {
-        guard let client, !ids.isEmpty else { return }
-        let previous = reminders
-        reminders.removeAll { ids.contains($0.id) }
-        do {
-            let outcome = try await client.bulkInboxAction("delete", ids: Array(ids))
-            let deleted = Set(outcome.deletedIds)
-            let missed = ids.subtracting(deleted)
-            guard !missed.isEmpty else { Haptics.success(); return }
-            // Restore only what did not take effect, preserving list order.
-            reminders = previous.filter { !deleted.contains($0.id) }
-            reportPartial(missed.count, of: ids.count, verb: "delete")
-        } catch {
-            reminders = previous
-            remindersError = error.localizedDescription
-            reportRevert(ids.count == 1 ? "delete the reminder" : "delete the reminders")
+        guard let client = reminderClient, !ids.isEmpty else { return }
+        await withReminderNotificationReconciliation {
+            let previous = reminders
+            reminders.removeAll { ids.contains($0.id) }
+            do {
+                let outcome = try await client.bulkInboxAction("delete", ids: Array(ids))
+                let deleted = Set(outcome.deletedIds)
+                let missed = ids.subtracting(deleted)
+                guard !missed.isEmpty else { Haptics.success(); return }
+                // Restore only what did not take effect, preserving list order.
+                reminders = previous.filter { !deleted.contains($0.id) }
+                reportPartial(missed.count, of: ids.count, verb: "delete")
+            } catch {
+                reminders = previous
+                remindersError = error.localizedDescription
+                reportRevert(ids.count == 1 ? "delete the reminder" : "delete the reminders")
+            }
         }
     }
 
@@ -1063,17 +4205,21 @@ final class AppModel {
     /// Optimistically set a reminder's status, run the server action, reconcile
     /// with the echoed item, and revert on failure.
     private func reminderAction(_ reminder: Reminder, optimistic: String,
-                                _ call: (CaveClient) async throws -> Reminder?) async {
-        guard let client else { return }
-        let previous = reminders
-        applyReminder(id: reminder.id) { $0.status = optimistic }
-        do {
-            if let updated = try await call(client) { applyReminder(id: reminder.id) { $0 = updated } }
-            Haptics.success()
-        } catch {
-            reminders = previous
-            remindersError = error.localizedDescription
-            reportRevert("update the reminder")
+                                _ call: (any ReminderManagingClient) async throws -> Reminder?) async {
+        guard let client = reminderClient else { return }
+        await withReminderNotificationReconciliation {
+            let previous = reminders
+            applyReminder(id: reminder.id) { $0.status = optimistic }
+            do {
+                if let updated = try await call(client) {
+                    applyReminder(id: reminder.id) { $0 = updated }
+                }
+                Haptics.success()
+            } catch {
+                reminders = previous
+                remindersError = error.localizedDescription
+                reportRevert("update the reminder")
+            }
         }
     }
 
@@ -1105,25 +4251,27 @@ final class AppModel {
     /// from `action` because the two are not the same vocabulary: the wire
     /// action is "done", the sentence needs "mark done".
     private func bulkServerAction(_ ids: Set<String>, optimistic: String, action: String, verb: String) async {
-        guard let client, !ids.isEmpty else { return }
-        let previous = reminders
-        for id in ids { applyReminder(id: id) { $0.status = optimistic } }
-        do {
-            let outcome = try await client.bulkInboxAction(action, ids: Array(ids))
-            var confirmed = Set<String>()
-            for item in outcome.updated {
-                applyReminder(id: item.id) { $0 = item }
-                confirmed.insert(item.id)
+        guard let client = reminderClient, !ids.isEmpty else { return }
+        await withReminderNotificationReconciliation {
+            let previous = reminders
+            for id in ids { applyReminder(id: id) { $0.status = optimistic } }
+            do {
+                let outcome = try await client.bulkInboxAction(action, ids: Array(ids))
+                var confirmed = Set<String>()
+                for item in outcome.updated {
+                    applyReminder(id: item.id) { $0 = item }
+                    confirmed.insert(item.id)
+                }
+                for id in outcome.deletedIds { confirmed.insert(id) }
+                let missed = ids.subtracting(confirmed)
+                guard !missed.isEmpty else { Haptics.success(); return }
+                revert(missed, to: previous)
+                reportPartial(missed.count, of: ids.count, verb: verb)
+            } catch {
+                reminders = previous
+                remindersError = error.localizedDescription
+                reportRevert("update the reminders")
             }
-            for id in outcome.deletedIds { confirmed.insert(id) }
-            let missed = ids.subtracting(confirmed)
-            guard !missed.isEmpty else { Haptics.success(); return }
-            revert(missed, to: previous)
-            reportPartial(missed.count, of: ids.count, verb: verb)
-        } catch {
-            reminders = previous
-            remindersError = error.localizedDescription
-            reportRevert("update the reminders")
         }
     }
 
@@ -1136,41 +4284,47 @@ final class AppModel {
         _ ids: Set<String>,
         optimistic: String,
         verb: String,
-        _ call: @escaping @Sendable (CaveClient, String) async throws -> Reminder?,
+        _ call: @escaping @Sendable (any ReminderManagingClient, String) async throws -> Reminder?,
     ) async {
-        guard let client, !ids.isEmpty else { return }
-        let previous = reminders
-        for id in ids { applyReminder(id: id) { $0.status = optimistic } }
+        guard let client = reminderClient, !ids.isEmpty else { return }
+        await withReminderNotificationReconciliation {
+            let previous = reminders
+            for id in ids { applyReminder(id: id) { $0.status = optimistic } }
 
-        let ordered = Array(ids)
-        let width = min(Self.reminderFanOutWidth, ordered.count)
-        let results = await withTaskGroup(of: (String, Reminder?, Bool).self) { group -> [(String, Reminder?, Bool)] in
-            var next = 0
-            func addTask() {
-                guard next < ordered.count else { return }
-                let id = ordered[next]
-                next += 1
-                group.addTask {
-                    do { return (id, try await call(client, id), true) }
-                    catch { return (id, nil, false) }
+            let ordered = Array(ids)
+            let width = min(Self.reminderFanOutWidth, ordered.count)
+            let results = await withTaskGroup(of: (String, Reminder?, Bool).self) { group -> [(String, Reminder?, Bool)] in
+                var next = 0
+                func addTask() {
+                    guard next < ordered.count else { return }
+                    let id = ordered[next]
+                    next += 1
+                    group.addTask {
+                        do { return (id, try await call(client, id), true) }
+                        catch { return (id, nil, false) }
+                    }
+                }
+                for _ in 0..<width { addTask() }
+                var out: [(String, Reminder?, Bool)] = []
+                while let finished = await group.next() {
+                    out.append(finished)
+                    addTask()   // keep exactly `width` in flight
+                }
+                return out
+            }
+
+            var failed = Set<String>()
+            for (id, updated, ok) in results {
+                if ok {
+                    if let updated { applyReminder(id: id) { $0 = updated } }
+                } else {
+                    failed.insert(id)
                 }
             }
-            for _ in 0..<width { addTask() }
-            var out: [(String, Reminder?, Bool)] = []
-            while let finished = await group.next() {
-                out.append(finished)
-                addTask()   // keep exactly `width` in flight
-            }
-            return out
+            guard !failed.isEmpty else { Haptics.success(); return }
+            revert(failed, to: previous)
+            reportPartial(failed.count, of: ids.count, verb: verb)
         }
-
-        var failed = Set<String>()
-        for (id, updated, ok) in results {
-            if ok { if let updated { applyReminder(id: id) { $0 = updated } } } else { failed.insert(id) }
-        }
-        guard !failed.isEmpty else { Haptics.success(); return }
-        revert(failed, to: previous)
-        reportPartial(failed.count, of: ids.count, verb: verb)
     }
 
     /// Put back only the named ids, leaving successful siblings applied.
@@ -1212,12 +4366,13 @@ final class AppModel {
             // changes authority or downgrades the same authority to remote HTTP.
             CaveConnection.saveAccessToken(nil)
         }
+        advanceProjectNavigationConnectionGeneration()
         if !isSameEndpoint {
             resetHostScopedStateForNewConnection()
         }
 
         connection = conn
-        conn.save()
+        conn.save(defaults: projectContextDefaults)
         // A probe of the previous endpoint must not be joined as this
         // configuration's outcome.
         await refreshCoordinator.cancelActiveRefresh()
@@ -1225,8 +4380,11 @@ final class AppModel {
     }
 
     private func resetHostScopedStateForNewConnection() {
+        invalidateProjectNavigationHydrations()
+        invalidateProjectContextLoads()
         familiars = []
         familiarsError = nil
+        familiarsLoaded = false
         sessionsLoaded = false
         tasks = []
         tasksError = nil
@@ -1237,6 +4395,10 @@ final class AppModel {
         projects = []
         projectsError = nil
         projectsLoaded = false
+        applyProjectContextSelection(nil, source: nil)
+        projectContextError = nil
+        projectMembership = ProjectMembershipIndex()
+        projectMembershipLoaded = false
         chrome = .fallback
         publishedThemeId = nil
         publishedMode = nil
@@ -1248,10 +4410,22 @@ final class AppModel {
         // any that already resolved.
         let coordinator = refreshCoordinator
         Task { await coordinator.cancelActiveRefresh() }
-        CaveConnection.clear()
+        advanceProjectNavigationConnectionGeneration()
+        invalidateProjectNavigationHydrations()
+        invalidateProjectContextLoads()
+        CaveConnection.clear(defaults: projectContextDefaults)
         connection = nil
         familiars = []
+        familiarsLoaded = false
+        applyProjectContextSelection(nil, source: nil)
+        projectContextError = nil
+        projectMembership = ProjectMembershipIndex()
+        projectMembershipLoaded = false
         connectionState = .unconfigured
+    }
+
+    private func invalidateProjectContextLoads() {
+        projectContextLoadNonce &+= 1
     }
 
     func startConnectionSupervisor() {
@@ -1275,14 +4449,32 @@ final class AppModel {
         await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    /// Any surface holds real data — the primary shell is worth keeping mounted
-    /// through a connection drop (RootView shows the reconnect pill over it
-    /// instead of tearing down to the Connect screen).
+    /// Any surface has completed a load — real data or an intentional empty
+    /// state — so the primary shell is worth keeping mounted through a
+    /// connection drop (RootView shows the reconnect pill over it instead of
+    /// tearing down to the Connect screen).
     var hasLoadedSurfaces: Bool {
-        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded
+        familiarsLoaded || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded
     }
 
     private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
+    private var loadedProjectContextFailureSurfaces: ProjectContextFailureSurfaces {
+        var surfaces: ProjectContextFailureSurfaces = []
+        if projectsLoaded {
+            surfaces.insert(.projects)
+        }
+        if familiarsLoaded {
+            surfaces.insert(.familiars)
+        }
+        return surfaces
+    }
+    /// A first shell mount waits for a successfully loaded membership snapshot
+    /// plus either a concrete selection or the intentional "no projects yet"
+    /// empty state (`projectsLoaded && projects.isEmpty`).
+    private var isProjectContextReadyForShellGate: Bool {
+        guard projectMembershipLoaded else { return false }
+        return projectContext != nil || (projectsLoaded && projects.isEmpty)
+    }
 
     private func pairingMessage() -> String {
         CaveConnection.accessToken == nil
@@ -1347,25 +4539,21 @@ final class AppModel {
         await connectWithRetry()
     }
 
-    /// Familiars + theme + profile fetched concurrently, each applied
-    /// independently — one failing resource must not discard the others.
-    /// Mirrors the semantics of `loadFamiliars`/`loadTheme`/`loadOperatorProfile`.
-    private func loadCoreResources() async {
-        guard let client else { return }
-        let payload = await ConnectionBootstrap.load(using: client)
-        switch payload.familiars {
-        case .success(let loaded):
-            familiars = loaded
-            seedFamiliarViews(familiars.map(\.id))
-            familiarsError = nil
-        case .failure(let error):
-            familiarsError = handleSurfaceError(error)
-        }
+    /// Project context (projects + grants + familiars) loads alongside the
+    /// theme/profile reads so initial connection and reconnect recover one
+    /// coherent scope before the shell relies on it.
+    private func loadCoreResources(
+        mirroringProjectContextFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = []
+    ) async {
+        guard let client = coreResourceClient else { return }
+        async let theme = Result.capturing { try await client.fetchTheme() }
+        async let profile = Result.capturing { try await client.operatorProfile() }
+        await loadProjectContext(using: client, mirrorFailuresTo: mirroredSurfaces)
         // Theme and profile stay best-effort: on failure the last snapshot
         // stands (no flash back to the fallback chrome / "You").
-        if case .success(let snapshot) = payload.theme { adopt(snapshot) }
-        if case .success(let profile) = payload.profile, operatorProfile != profile {
-            operatorProfile = profile
+        if case .success(let snapshot) = await theme { adopt(snapshot) }
+        if case .success(let loadedProfile) = await profile, operatorProfile != loadedProfile {
+            operatorProfile = loadedProfile
         }
     }
 
@@ -1373,12 +4561,16 @@ final class AppModel {
     /// can overlap their network waits — wall time tracks the slowest surface
     /// rather than the sum of all of them.
     private func refreshLoadedSurfaces() async {
+        let mirroredProjectContextFailures = loadedProjectContextFailureSurfaces
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.loadCoreResources() }
+            group.addTask {
+                await self.loadCoreResources(
+                    mirroringProjectContextFailuresTo: mirroredProjectContextFailures
+                )
+            }
             if sessionsLoaded { group.addTask { await self.loadSessions() } }
             if tasksLoaded { group.addTask { await self.loadTasks() } }
             if remindersLoaded { group.addTask { await self.loadReminders() } }
-            if projectsLoaded { group.addTask { await self.loadProjects() } }
         }
     }
 
@@ -1397,7 +4589,7 @@ final class AppModel {
         // applies it — the joiner returning early must not drop it.
         // Last-good first (cave-ioswipe.3): the ordinary reconnect then costs a
         // single probe instead of walking the candidate list.
-        let candidates = connection.prioritizedCandidateBaseURLs
+        let candidates = connection.prioritizedCandidateBaseURLs(defaults: projectContextDefaults)
         // Identity of the endpoint this probe describes. `configure()` cancels
         // the in-flight probe, but a launcher that already passed its
         // `Task.isCancelled` check races that cancel — without this capture it
@@ -1407,7 +4599,7 @@ final class AppModel {
         let refresh = await refreshCoordinator.refresh(requestSurfaceReload: reloadLoadedSurfaces) {
             // Try the configured endpoint first, then auto-relocate to a
             // working port (e.g. a `.ts.net` host typed without `:8443`).
-            let outcome = await Self.discoverBaseURL(candidates)
+            let outcome = await self.baseURLDiscoverer(candidates)
             guard !Task.isCancelled else { return .cancelled }
             switch outcome {
             case .found(let url): return .found(url)
@@ -1432,12 +4624,17 @@ final class AppModel {
             // refresh owns the state.
             return
         case .found(let working):
+            _ = currentProjectNavigationConnectionGeneration()
             // Remember what answered, keyed by the host we probed, so the next
             // reconnect starts here (cave-ioswipe.3). Recorded even when the URL
             // is unchanged: a first success is exactly what makes the fast path
             // available on the following launch.
             if let host = self.connection?.host {
-                CaveConnection.saveLastGoodBaseURL(working, forHost: host)
+                CaveConnection.saveLastGoodBaseURL(
+                    working,
+                    forHost: host,
+                    defaults: projectContextDefaults
+                )
             }
             if working != self.connection?.baseURL {
                 // Relocate: persist the working endpoint so future launches
@@ -1446,21 +4643,45 @@ final class AppModel {
                 // keeps future discovery able to probe alternate ports if the
                 // desktop moves again, while a full URL is treated as
                 // user-explicit and would pin the connection forever.
+                invalidateProjectContextLoads()
+                advanceProjectNavigationConnectionGeneration()
                 let relocated = CaveConnection(host: Self.canonicalHost(for: working))
                 self.connection = relocated
-                relocated.save()
+                relocated.save(defaults: projectContextDefaults)
                 if let port = working.port {
                     showToast("Connected on port \(port)", systemImage: "antenna.radiowaves.left.and.right")
+                }
+            }
+            markProjectNavigationConnectionKnownGood(
+                generation: currentProjectNavigationConnectionGeneration()
+            )
+            let shouldGateShell = !hasLoadedSurfaces
+            if shouldGateShell {
+                if refresh.surfaceReloadRequested {
+                    await refreshLoadedSurfaces()
+                } else {
+                    await loadCoreResources()
+                }
+                if case .needsAuth = connectionState {
+                    return
+                }
+                guard isProjectContextReadyForShellGate else {
+                    if projectContextError != nil {
+                        connectionState = .projectContextRequired
+                    }
+                    return
                 }
             }
             connectionState = .connected
             await refreshAccessTokenIfNeeded()
             flushQueuedMessages()
-            // OR of this launcher's own flag and any joiner's merged intent.
-            if refresh.surfaceReloadRequested {
-                await refreshLoadedSurfaces()
-            } else {
-                await loadCoreResources()
+            if !shouldGateShell {
+                // OR of this launcher's own flag and any joiner's merged intent.
+                if refresh.surfaceReloadRequested {
+                    await refreshLoadedSurfaces()
+                } else {
+                    await loadCoreResources()
+                }
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
@@ -1498,7 +4719,7 @@ final class AppModel {
     /// the current token keeps working until it actually expires, at which
     /// point refreshConnection lands in `.needsAuth` with re-pair guidance.
     private func refreshAccessTokenIfNeeded() async {
-        guard let client, let token = CaveConnection.accessToken else { return }
+        guard let client = coreResourceClient, let token = CaveConnection.accessToken else { return }
         guard let expiry = CaveInvite.tokenExpiry(token) else {
             // Legacy raw-secret pairing: no expiry, so the rolling renewal
             // below can never fire and the device stays on a never-expiring
@@ -1526,7 +4747,9 @@ final class AppModel {
     /// shouldn't read as a configuration failure. Between attempts the state is held
     /// at `.checking` so a transient miss shows the "Connecting…" screen (cold
     /// launch) or recovers invisibly in the background (once familiars are loaded),
-    /// never a flash of the unreachable screen. Drives launch + foreground reconnect.
+    /// never a flash of the unreachable screen. Actionable bootstrap blockers
+    /// (pairing or project context) stop the retry loop and leave their own
+    /// recovery UI mounted. Drives launch + foreground reconnect.
     func connectWithRetry() async {
         guard connection != nil else { connectionState = .unconfigured; return }
         // Delays BETWEEN attempts (4 attempts total, ~7s before giving up).
@@ -1534,6 +4757,8 @@ final class AppModel {
         await refreshConnection(reloadLoadedSurfaces: shouldReloadLoadedSurfaces)
         var attempt = 0
         while connectionState != .connected, attempt < backoffSeconds.count {
+            if case .needsAuth = connectionState { return }
+            if connectionState == .projectContextRequired { return }
             connectionState = .checking
             try? await Task.sleep(nanoseconds: backoffSeconds[attempt] * 1_000_000_000)
             if Task.isCancelled { return }
@@ -1749,14 +4974,8 @@ final class AppModel {
     }
 
     func loadFamiliars() async {
-        guard let client else { return }
-        do {
-            familiars = try await client.familiars()
-            seedFamiliarViews(familiars.map(\.id))
-            familiarsError = nil
-        } catch {
-            familiarsError = handleSurfaceError(error)
-        }
+        guard let client = coreResourceClient else { return }
+        await loadProjectContext(using: client, mirrorFailuresTo: [.familiars])
     }
 
     func applyFamiliarAvatarMutation(id: String, avatarUrl: String?) {
@@ -1771,22 +4990,31 @@ final class AppModel {
     /// so only genuinely new activity — e.g. a reply that arrived on the desktop
     /// — flags as unread, not the entire backlog on first launch.
     func hasUnread(_ familiarId: String) -> Bool {
-        guard let seen = familiarViews[familiarId],
-              let activity = lastActivity(for: familiarId) else { return false }
+        guard let seen = familiarViewDate(for: familiarId, in: nil),
+              let activity = globalLastActivity(for: familiarId) else { return false }
         return activity > seen
     }
 
     /// Earliest "last viewed" date across a thread's familiars — the boundary
     /// the "New Messages" divider is placed against. nil when untracked.
     func seenBoundary(for thread: ChatThread) -> Date? {
-        thread.familiarIds.compactMap { familiarViews[$0] }.min()
+        let context = projectContext(for: thread)
+        return thread.familiarIds.compactMap {
+            familiarViewDate(for: $0, in: context)
+        }.min()
     }
 
     /// Mark a familiar's chats as read (call when opening them).
     func markFamiliarViewed(_ ids: [String]) {
+        markFamiliarViewed(ids, in: projectContext)
+    }
+
+    func markFamiliarViewed(_ ids: [String], in context: ProjectContext?) {
         guard !ids.isEmpty else { return }
         let now = Date()
-        for id in ids { familiarViews[id] = now }
+        for id in ids {
+            familiarViews[familiarViewKey(for: id, in: context)] = now
+        }
         persistFamiliarViews()
     }
 
@@ -1815,10 +5043,16 @@ final class AppModel {
 
     /// Baseline any not-yet-tracked familiar as seen "now" so existing history
     /// isn't all flagged unread; only later activity counts.
-    private func seedFamiliarViews(_ ids: [String]) {
+    private func seedFamiliarViews(_ ids: [String], in context: ProjectContext?) {
         let now = Date()
         var changed = false
-        for id in ids where familiarViews[id] == nil { familiarViews[id] = now; changed = true }
+        for id in ids {
+            let key = familiarViewKey(for: id, in: context)
+            if familiarViews[key] == nil {
+                familiarViews[key] = now
+                changed = true
+            }
+        }
         if changed { persistFamiliarViews() }
     }
 
@@ -1833,15 +5067,32 @@ final class AppModel {
     var sessionsLoaded = false
 
     func loadSessions() async {
-        guard let client else { return }
-        do {
-            serverSessions = try await client.sessions()
-            sessionsError = nil
-        } catch {
+        guard let client = sessionLoadingClient else { return }
+        await loadSessions(using: client)
+    }
+
+    func loadSessions(using client: any ProjectContextLoadingClient) async {
+        let navigationGeneration = currentProjectNavigationConnectionGeneration()
+        noteProjectNavigationSurfaceAttempt(.sessions, generation: navigationGeneration)
+        let load = await coordinatedSessionsLoad(
+            using: client,
+            generation: navigationGeneration
+        )
+        guard coordinatedLoadShouldApply(load.token, state: sessionsLoadState) else { return }
+        markCoordinatedLoadApplied(load.token, state: &sessionsLoadState)
+
+        switch load.result {
+        case .success(let sessions):
+            applyLoadedSessions(sessions)
+            noteProjectNavigationSurfaceSuccess(.sessions, generation: navigationGeneration)
+            _ = resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true)
+        case .failure(let error):
             sessionsError = handleSurfaceError(error)
+            noteProjectNavigationSurfaceFailure(.sessions, generation: navigationGeneration)
+            sessionsLoaded = true
+            lastSessionsLoadedAt = Date()
+            _ = resolvePendingProjectNavigationIntent()
         }
-        sessionsLoaded = true
-        lastSessionsLoadedAt = Date()
     }
 
     /// When the session list was last fetched. Not observable — it gates a
@@ -1872,25 +5123,329 @@ final class AppModel {
         await loadSessions()
     }
 
-    /// Direct (1:1) on-device threads for a familiar, newest-updated first.
-    func directThreads(for familiarId: String) -> [ChatThread] {
-        threads
-            .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
-            .sorted { a, b in
-                if a.pinned != b.pinned { return a.pinned }
-                return a.updatedAt > b.updatedAt
-            }
+    private func normalizedSessionID(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
     }
 
-    /// The thread a familiar's chat lands on: its pinned thread if it has an
-    /// unarchived one, otherwise its newest-updated unarchived direct thread.
-    /// Archived threads are never eligible, pinned or not — `directThreads`
-    /// sorts pinned-first, then by recency, and this takes the first eligible
-    /// entry. Callers that render a timestamp are showing the landing thread's
-    /// activity, which is deliberately NOT always the familiar's latest.
-    /// Nil when the familiar has no eligible thread — callers start a new chat.
-    func landingDirectThread(for familiarId: String) -> ChatThread? {
-        directThreads(for: familiarId).first { !$0.archived }
+    private func normalizedFamiliarID(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
+    }
+
+    private func authoritativeFamiliarID(
+        from row: SessionRow,
+        fallback fallbackFamiliarID: String?
+    ) -> String? {
+        normalizedFamiliarID(row.familiarId) ?? normalizedFamiliarID(fallbackFamiliarID)
+    }
+
+    private func repairedFamiliarIDs(
+        from current: [String],
+        replacing staleFamiliarIDs: Set<String>,
+        with authoritativeFamiliarID: String,
+        isDirectThread: Bool
+    ) -> [String] {
+        if isDirectThread {
+            return [authoritativeFamiliarID]
+        }
+
+        var next: [String] = []
+        var inserted = false
+        for familiarID in current {
+            guard let normalized = normalizedFamiliarID(familiarID) else { continue }
+            if staleFamiliarIDs.contains(normalized) || normalized == authoritativeFamiliarID {
+                if !inserted {
+                    next.append(authoritativeFamiliarID)
+                    inserted = true
+                }
+            } else {
+                next.append(normalized)
+            }
+        }
+        if !inserted {
+            next.insert(authoritativeFamiliarID, at: 0)
+        }
+
+        var seen = Set<String>()
+        return next.compactMap { familiarID in
+            guard seen.insert(familiarID).inserted else { return nil }
+            return familiarID
+        }
+    }
+
+    @discardableResult
+    private func repairThreadSessionBinding(
+        _ thread: ChatThread,
+        with row: SessionRow,
+        fallbackFamiliarID: String?
+    ) -> (familiarId: String?, changed: Bool) {
+        let resolvedFamiliarID = authoritativeFamiliarID(
+            from: row,
+            fallback: fallbackFamiliarID
+        )
+        var changed = false
+
+        if let projectRoot = authoritativeProjectRoot(from: row),
+           thread.projectRoot != projectRoot {
+            thread.projectRoot = projectRoot
+            changed = true
+        }
+
+        guard let sessionID = normalizedSessionID(row.id),
+              let resolvedFamiliarID else {
+            if changed {
+                persistThreads()
+            }
+            return (resolvedFamiliarID, changed)
+        }
+
+        let staleFamiliarIDs: Set<String> = Set(
+            thread.sessionIds.compactMap { entry in
+                guard normalizedSessionID(entry.value) == sessionID else { return nil }
+                return normalizedFamiliarID(entry.key) ?? entry.key
+            }
+        )
+        var nextSessionIDs = thread.sessionIds.filter {
+            normalizedSessionID($0.value) != sessionID
+        }
+        nextSessionIDs[resolvedFamiliarID] = sessionID
+        if nextSessionIDs != thread.sessionIds {
+            thread.sessionIds = nextSessionIDs
+            changed = true
+        }
+
+        // A thread's direct-vs-group shape comes from its participant roster,
+        // not from how many server sessions are currently bound.
+        let isDirectThread = !thread.isGroup
+        let nextFamiliarIDs = repairedFamiliarIDs(
+            from: thread.familiarIds,
+            replacing: staleFamiliarIDs,
+            with: resolvedFamiliarID,
+            isDirectThread: isDirectThread
+        )
+        if nextFamiliarIDs != thread.familiarIds {
+            thread.familiarIds = nextFamiliarIDs
+            changed = true
+        }
+
+        if changed {
+            persistThreads()
+        }
+        return (resolvedFamiliarID, changed)
+    }
+
+    private func authoritativeProjectRoot(from row: SessionRow) -> String? {
+        guard let trimmed = row.projectRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
+    }
+
+    private func authoritativeProjectRoot(
+        for thread: ChatThread,
+        using sessionsByID: [String: SessionRow]
+    ) -> String? {
+        for familiarId in thread.familiarIds {
+            guard let sessionID = normalizedSessionID(thread.sessionIds[familiarId]),
+                  let row = sessionsByID[sessionID],
+                  let projectRoot = authoritativeProjectRoot(from: row)
+            else { continue }
+            return projectRoot
+        }
+        for rawSessionID in thread.sessionIds.values {
+            guard let sessionID = normalizedSessionID(rawSessionID),
+                  let row = sessionsByID[sessionID],
+                  let projectRoot = authoritativeProjectRoot(from: row)
+            else { continue }
+            return projectRoot
+        }
+        return nil
+    }
+
+    @discardableResult
+    private func backfillThreadProjectRoots(from sessions: [SessionRow]) -> Bool {
+        let sessionsByID = Dictionary(
+            uniqueKeysWithValues: sessions.map { ($0.id, $0) }
+        )
+        var changed = false
+        for thread in threads {
+            guard let projectRoot = authoritativeProjectRoot(
+                for: thread,
+                using: sessionsByID
+            ),
+            thread.projectRoot != projectRoot else { continue }
+            thread.projectRoot = projectRoot
+            changed = true
+        }
+        if changed {
+            persistThreads()
+        }
+        return changed
+    }
+
+    private func applyLoadedSessions(
+        _ sessions: [SessionRow],
+        refreshProjectContextSelection: Bool = true
+    ) {
+        serverSessions = sessions
+        sessionsError = nil
+        sessionsLoaded = true
+        lastSessionsLoadedAt = Date()
+        let changed = backfillThreadProjectRoots(from: sessions)
+        if refreshProjectContextSelection
+            && (changed || projectContext == nil || projectContext == .unassigned) {
+            refreshProjectContextSelectionFromCurrentData()
+        }
+        _ = resolvePendingProjectNavigationIntent()
+    }
+
+    private func shouldRefreshAuthoritativeSessionRow(_ sessionID: String) -> Bool {
+        guard sessionsLoaded,
+              sessionsError == nil,
+              let lastSessionsLoadedAt,
+              Date().timeIntervalSince(lastSessionsLoadedAt) < Self.sessionsStaleAfter,
+              let cached = serverSessions.first(where: { $0.id == sessionID }),
+              authoritativeProjectRoot(from: cached) != nil
+        else { return true }
+        return false
+    }
+
+    private enum AuthoritativeSessionRowLookup {
+        case row(SessionRow)
+        case missing
+        case loadFailed
+    }
+
+    private enum TaskLinkedSessionResolution {
+        enum ConfirmedMissingReason {
+            case rowMissing
+            case missingProjectRoot
+
+            var toastText: String {
+                switch self {
+                case .rowMissing:
+                    return "This task’s linked chat could not be verified. Refresh Chats or reopen it on your desktop, then try again."
+                case .missingProjectRoot:
+                    return "This task’s linked chat is missing project metadata. Refresh Chats or reopen it on your desktop, then try again."
+                }
+            }
+
+            var systemImage: String {
+                switch self {
+                case .rowMissing:
+                    return "arrow.clockwise"
+                case .missingProjectRoot:
+                    return "folder.badge.questionmark"
+                }
+            }
+        }
+
+        case resolved(SessionRow)
+        case confirmedMissing(ConfirmedMissingReason)
+        case transientLoadFailure
+
+        var toastText: String? {
+            switch self {
+            case .resolved:
+                return nil
+            case .confirmedMissing(let reason):
+                return reason.toastText
+            case .transientLoadFailure:
+                return "Couldn’t load this task’s linked chat. Refresh Chats or reconnect, then try again."
+            }
+        }
+
+        var systemImage: String? {
+            switch self {
+            case .resolved:
+                return nil
+            case .confirmedMissing(let reason):
+                return reason.systemImage
+            case .transientLoadFailure:
+                return "bubble.left.and.exclamationmark.bubble.right"
+            }
+        }
+    }
+
+    private func authoritativeSessionRowLookup(
+        for sessionID: String
+    ) async -> AuthoritativeSessionRowLookup {
+        guard let sessionID = normalizedSessionID(sessionID) else { return .missing }
+        let shouldRefresh = shouldRefreshAuthoritativeSessionRow(sessionID)
+        let cached = cachedSessionRow(for: sessionID)
+
+        guard shouldRefresh else {
+            return cached.map(AuthoritativeSessionRowLookup.row) ?? .missing
+        }
+        guard let client = sessionLoadingClient else {
+            return cached.map(AuthoritativeSessionRowLookup.row) ?? .loadFailed
+        }
+
+        await loadSessions(using: client)
+        if let row = cachedSessionRow(for: sessionID) {
+            return .row(row)
+        }
+        if sessionsError != nil {
+            return .loadFailed
+        }
+        return .missing
+    }
+
+    private func authoritativeSessionRow(for sessionID: String) async -> SessionRow? {
+        switch await authoritativeSessionRowLookup(for: sessionID) {
+        case .row(let row):
+            return row
+        case .missing, .loadFailed:
+            return nil
+        }
+    }
+
+    private func resolveTaskLinkedSession(
+        sessionID: String
+    ) async -> TaskLinkedSessionResolution {
+        switch await authoritativeSessionRowLookup(for: sessionID) {
+        case .loadFailed:
+            return .transientLoadFailure
+        case .missing:
+            return .confirmedMissing(.rowMissing)
+        case .row(let row):
+            guard authoritativeProjectRoot(from: row) != nil else {
+                return .confirmedMissing(.missingProjectRoot)
+            }
+            return .resolved(row)
+        }
+    }
+
+    private func taskRecoveryThread(
+        for card: BoardCard,
+        sessionID: String
+    ) -> ChatThread? {
+        guard let sessionID = normalizedSessionID(sessionID) else { return nil }
+
+        var candidates: [ChatThread] = []
+        if let explicit = localLinkedThread(for: card.id) {
+            candidates.append(explicit)
+        }
+        if let matching = thread(matchingSessionID: sessionID),
+           !candidates.contains(where: { $0.id == matching.id }) {
+            candidates.append(matching)
+        }
+
+        for thread in candidates where thread.sessionIds.values.contains(where: {
+            normalizedSessionID($0) == sessionID
+        }) {
+            if thread.projectRoot != nil {
+                thread.projectRoot = nil
+                persistThreads()
+            }
+            return thread
+        }
+        return nil
     }
 
     /// Every group thread, newest first — shown as its own rows on the Chats
@@ -1902,43 +5457,42 @@ final class AppModel {
         }
     }
 
-    /// Server sessions for a familiar that no local thread already carries —
-    /// i.e. conversations to surface but not yet materialised on this device.
-    func serverOnlySessions(for familiarId: String) -> [SessionRow] {
-        let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
-        return serverSessions
-            // Generated runs (journal narratives, canvas, crons) are not
-            // conversations — parity with the web chat lists (cave-48aa).
-            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) && !$0.isGeneratedRun }
-            .sorted { (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast) }
-    }
-
-    /// How many conversations a familiar has (local direct + server-only).
-    func threadCount(for familiarId: String) -> Int {
-        directThreads(for: familiarId).count + serverOnlySessions(for: familiarId).count
-    }
-
-    /// Most recent activity across a familiar's local + server conversations.
-    func lastActivity(for familiarId: String) -> Date? {
-        let local = directThreads(for: familiarId).map(\.updatedAt)
-        let server = serverOnlySessions(for: familiarId).compactMap { caveParseISO($0.updatedAt) }
-        return (local + server).max()
-    }
-
     /// Materialise a server session as a local thread (binding its `sessionId`
-    /// and pulling history) and return it, so it opens like any other thread.
-    /// Reuses an existing local thread that already carries the session id.
-    func openServerSession(_ row: SessionRow, familiarId: String) -> ChatThread {
+    /// and optionally pulling history) and return it, so it opens like any
+    /// other thread. Reuses an existing local thread that already carries the
+    /// session id.
+    func openServerSession(
+        _ row: SessionRow,
+        familiarId: String,
+        loadHistory shouldLoadHistory: Bool = true
+    ) -> ChatThread {
+        let changed = backfillThreadProjectRoots(from: [row])
         if let existing = threads.first(where: { $0.sessionIds.values.contains(row.id) }) {
+            let repair = repairThreadSessionBinding(
+                existing,
+                with: row,
+                fallbackFamiliarID: familiarId
+            )
+            if changed || repair.changed {
+                refreshProjectContextSelectionFromCurrentData()
+            }
             return existing
         }
-        let title = row.title.isEmpty ? (familiar(familiarId)?.displayName ?? familiarId) : row.title
-        let thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: row.id],
+        if changed {
+            refreshProjectContextSelectionFromCurrentData()
+        }
+        let resolvedFamiliarID = authoritativeFamiliarID(from: row, fallback: familiarId) ?? familiarId
+        let title = row.title.isEmpty
+            ? (familiar(resolvedFamiliarID)?.displayName ?? resolvedFamiliarID)
+            : row.title
+        let thread = ChatThread(title: title, familiarIds: [resolvedFamiliarID],
+                                sessionIds: [resolvedFamiliarID: row.id],
                                 projectRoot: row.projectRoot)
         threads.insert(thread, at: 0)
         persistThreads()
-        Task { await loadHistory(into: thread, sessionId: row.id) }
+        if shouldLoadHistory {
+            Task { await loadHistory(into: thread, sessionId: row.id) }
+        }
         return thread
     }
 
@@ -1948,12 +5502,28 @@ final class AppModel {
     /// then fall back to matching the card's server `sessionId` to a thread's
     /// per-familiar session (covers links made on another device / the desktop).
     func linkedThread(for card: BoardCard) -> ChatThread? {
-        if let tid = cardThreadLinks[card.id],
-           let thread = threads.first(where: { $0.id == tid }) {
-            return thread
+        let authoritativeSessionID = normalizedSessionID(card.sessionId)
+        let taskAuthoritativeRow = cachedSessionRow(for: authoritativeSessionID)
+        if authoritativeSessionID == nil || taskAuthoritativeRow != nil {
+            if let thread = localLinkedThread(for: card.id),
+               taskLinkMatchesProject(
+                   card,
+                   thread: thread,
+                   authoritativeRow: taskAuthoritativeRow
+                       ?? cachedSessionRow(for: primarySessionId(of: thread))
+               ) {
+                return thread
+            }
         }
-        if let sid = card.sessionId, !sid.isEmpty {
-            return threads.first { $0.sessionIds.values.contains(sid) }
+        if let sessionID = authoritativeSessionID,
+           let thread = thread(matchingSessionID: sessionID),
+           let taskAuthoritativeRow,
+           taskLinkMatchesProject(
+               card,
+               thread: thread,
+               authoritativeRow: taskAuthoritativeRow
+           ) {
+            return thread
         }
         return nil
     }
@@ -1968,13 +5538,35 @@ final class AppModel {
         }
     }
 
+    /// Linked tasks that still belong to the thread's current project context.
+    func projectLinkedTasks(for thread: ChatThread) -> [BoardCard] {
+        let context = projectContext(for: thread)
+        return linkedTasks(for: thread).filter {
+            context.matches(task: $0, registeredProjects: projects)
+        }
+    }
+
+    /// Tasks the sheet may newly link to this chat: first constrain to the
+    /// thread's project context, then apply the familiar/search filters.
+    func projectAssignableTasks(for thread: ChatThread, matching query: String) -> [BoardCard] {
+        let context = projectContext(for: thread)
+        let linkedIds = Set(linkedTasks(for: thread).map(\.id))
+        let chatFamiliars = Set(thread.familiarIds)
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        return tasks.filter { card in
+            guard context.matches(task: card, registeredProjects: projects) else { return false }
+            guard !linkedIds.contains(card.id) else { return false }
+            let owner = normalizedFamiliarID(card.familiarId)
+            let belongsHere = owner == nil || chatFamiliars.contains(owner!)
+            guard belongsHere else { return false }
+            return trimmedQuery.isEmpty || card.title.lowercased().contains(trimmedQuery)
+        }
+    }
+
     /// True when a card has any linked chat (cheap, for list indicators).
     func hasLinkedChat(_ card: BoardCard) -> Bool {
-        if cardThreadLinks[card.id] != nil { return true }
-        if let sid = card.sessionId, !sid.isEmpty {
-            return threads.contains { $0.sessionIds.values.contains(sid) }
-        }
-        return false
+        linkedThread(for: card) != nil || authoritativeTaskSessionPreview(for: card) != nil
     }
 
     /// A thread's primary server session (first familiar's), if assigned.
@@ -1985,59 +5577,479 @@ final class AppModel {
         return thread.sessionIds.values.first { !$0.isEmpty }
     }
 
+    /// Bind a just-established server session onto a local thread. When a
+    /// voice-first task chat receives its FIRST bound session, reconcile any
+    /// linked card so the board gets the same `sessionId` text-first chat
+    /// would patch after streaming finishes.
+    func bindThreadSession(_ sessionId: String, to thread: ChatThread, for familiarId: String) {
+        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, thread.sessionIds[familiarId] != trimmed else { return }
+        let hadAnySession = primarySessionId(of: thread) != nil
+        thread.sessionIds[familiarId] = trimmed
+        touch(thread)
+        if !hadAnySession, cardThreadLinks.values.contains(thread.id) {
+            Task { await reconcileCardLinks(for: thread) }
+        }
+    }
+
+    private func taskLinkedThread(
+        titled title: String,
+        for card: BoardCard,
+        authoritativeRow row: SessionRow,
+        fallbackFamiliarID: String?
+    ) -> ChatThread? {
+        let changed = backfillThreadProjectRoots(from: [row])
+        guard let sessionID = normalizedSessionID(row.id) else { return nil }
+        if let existing = linkedThread(for: card) {
+            let repair = repairThreadSessionBinding(
+                existing,
+                with: row,
+                fallbackFamiliarID: fallbackFamiliarID
+            )
+            if changed || repair.changed {
+                refreshProjectContextSelectionFromCurrentData()
+            }
+            return existing
+        }
+        if let existing = thread(matchingSessionID: sessionID) {
+            let repair = repairThreadSessionBinding(
+                existing,
+                with: row,
+                fallbackFamiliarID: fallbackFamiliarID
+            )
+            if changed || repair.changed {
+                refreshProjectContextSelectionFromCurrentData()
+            }
+            return existing
+        }
+        guard let resolvedFamiliarID = authoritativeFamiliarID(
+            from: row,
+            fallback: fallbackFamiliarID
+        ) else { return nil }
+        if changed {
+            refreshProjectContextSelectionFromCurrentData()
+        }
+        let thread = ChatThread(
+            title: row.title.isEmpty ? title : row.title,
+            familiarIds: [resolvedFamiliarID],
+            sessionIds: [resolvedFamiliarID: sessionID],
+            projectRoot: authoritativeProjectRoot(from: row)
+        )
+        threads.insert(thread, at: 0)
+        persistThreads()
+        Task { await loadHistory(into: thread, sessionId: sessionID) }
+        return thread
+    }
+
+    private func localLinkedThread(for cardId: String) -> ChatThread? {
+        guard let threadID = cardThreadLinks[cardId] else { return nil }
+        return threads.first { $0.id == threadID }
+    }
+
+    private func thread(matchingSessionID sessionID: String) -> ChatThread? {
+        threads.first { thread in
+            thread.sessionIds.values.contains { normalizedSessionID($0) == sessionID }
+        }
+    }
+
+    private func cachedSessionRow(for sessionID: String?) -> SessionRow? {
+        guard let sessionID = normalizedSessionID(sessionID) else { return nil }
+        return serverSessions.first { $0.id == sessionID }
+    }
+
+    struct TaskChatSessionPreview: Equatable {
+        let row: SessionRow
+        let context: ProjectContext
+        let taskProject: ProjectInfo?
+        let mismatchedProject: Bool
+
+        var suggestedProject: ProjectInfo? {
+            guard case .project(let project) = context else { return nil }
+            return project
+        }
+
+        var title: String {
+            row.title.isEmpty ? "Linked chat" : row.title
+        }
+
+        var taskProjectName: String {
+            taskProject?.name ?? "Unassigned"
+        }
+
+        var subtitle: String {
+            if let suggestedProject {
+                return suggestedProject.name
+            }
+            return "Recovery-only linked chat"
+        }
+
+        var warningText: String {
+            if let suggestedProject {
+                return "This task is filed in \(taskProjectName), but its linked chat belongs to \(suggestedProject.name). Opening chat follows the linked session."
+            }
+            return "This task is filed in \(taskProjectName), but its linked chat is recovery-only. Opening chat follows the linked session until you repair or unlink it."
+        }
+
+        var toastText: String {
+            if let suggestedProject {
+                return "This task is filed in \(taskProjectName), but its linked chat belongs to \(suggestedProject.name). Opening the linked chat so you can repair or unlink it."
+            }
+            return "This task’s linked chat is recovery-only. Opening the linked chat so you can repair or unlink it."
+        }
+
+        var repairLabel: String {
+            suggestedProject.map { "Move task to \($0.name)" } ?? "Move to project…"
+        }
+    }
+
+    private func taskProjectInfo(for card: BoardCard) -> ProjectInfo? {
+        guard let projectID = card.projectId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !projectID.isEmpty else { return nil }
+        return project(projectID)
+    }
+
+    private func taskChatSessionPreview(
+        for card: BoardCard,
+        authoritativeRow row: SessionRow
+    ) -> TaskChatSessionPreview? {
+        guard authoritativeProjectRoot(from: row) != nil else { return nil }
+        let context = projectContext(for: row)
+        return TaskChatSessionPreview(
+            row: row,
+            context: context,
+            taskProject: taskProjectInfo(for: card),
+            mismatchedProject: !context.matches(task: card, registeredProjects: projects)
+        )
+    }
+
+    func authoritativeTaskSessionPreview(for card: BoardCard) -> TaskChatSessionPreview? {
+        guard let sessionID = normalizedSessionID(card.sessionId),
+              let row = cachedSessionRow(for: sessionID) else {
+            return nil
+        }
+        return taskChatSessionPreview(for: card, authoritativeRow: row)
+    }
+
+    private func authoritativeSessionRowIfPresent(_ sessionID: String?) async -> SessionRow? {
+        guard let sessionID else { return nil }
+        return await authoritativeSessionRow(for: sessionID)
+    }
+
+    private func taskLinkMatchesProject(
+        _ card: BoardCard,
+        thread: ChatThread?,
+        authoritativeRow: SessionRow?
+    ) -> Bool {
+        if let authoritativeRow {
+            guard authoritativeProjectRoot(from: authoritativeRow) != nil else { return false }
+            return projectContext(for: authoritativeRow).matches(
+                task: card,
+                registeredProjects: projects
+            )
+        }
+        guard let thread else { return false }
+        return projectContext(for: thread).matches(task: card, registeredProjects: projects)
+    }
+
+    private func setLocalTaskThreadLink(_ threadID: String?, for cardId: String) {
+        guard cardThreadLinks[cardId] != threadID else { return }
+        cardThreadLinks[cardId] = threadID
+        persistCardLinks()
+    }
+
+    private func clearLocalTaskThreadLink(for cardId: String) {
+        setLocalTaskThreadLink(nil, for: cardId)
+    }
+
+    private func validatedLocalTaskLinkedThread(
+        for card: BoardCard,
+        fallbackFamiliarID: String?
+    ) async -> ChatThread? {
+        guard let thread = localLinkedThread(for: card.id) else { return nil }
+        let authoritativeRow: SessionRow?
+        if let taskSessionID = normalizedSessionID(card.sessionId) {
+            authoritativeRow = await authoritativeSessionRowIfPresent(taskSessionID)
+            guard authoritativeRow != nil else { return nil }
+        } else {
+            authoritativeRow = await authoritativeSessionRowIfPresent(
+                primarySessionId(of: thread)
+            )
+        }
+        guard taskLinkMatchesProject(
+            card,
+            thread: thread,
+            authoritativeRow: authoritativeRow
+        ) else {
+            return nil
+        }
+        if let authoritativeRow {
+            let repair = repairThreadSessionBinding(
+                thread,
+                with: authoritativeRow,
+                fallbackFamiliarID: fallbackFamiliarID
+            )
+            if repair.changed {
+                refreshProjectContextSelectionFromCurrentData()
+            }
+        }
+        return thread
+    }
+
+    private func repairTaskChatScopeAfterProjectMove(cardId: String) async -> String? {
+        guard let card = tasks.first(where: { $0.id == cardId }) else { return nil }
+
+        let fallbackFamiliarID = normalizedFamiliarID(card.familiarId)
+        let localThread = localLinkedThread(for: card.id)
+        let localThreadSession = await authoritativeSessionRowIfPresent(
+            localThread.flatMap { primarySessionId(of: $0) }
+        )
+        let localThreadCompatible = taskLinkMatchesProject(
+            card,
+            thread: localThread,
+            authoritativeRow: localThreadSession
+        )
+
+        if let localThread,
+           let localThreadSession,
+           localThreadCompatible {
+            let repair = repairThreadSessionBinding(
+                localThread,
+                with: localThreadSession,
+                fallbackFamiliarID: fallbackFamiliarID
+            )
+            if repair.changed {
+                refreshProjectContextSelectionFromCurrentData()
+            }
+        }
+
+        if let sessionID = normalizedSessionID(card.sessionId) {
+            guard let authoritativeSession = await authoritativeSessionRow(for: sessionID),
+                  authoritativeProjectRoot(from: authoritativeSession) != nil else {
+                return "Couldn’t verify the previous chat link, so it was kept."
+            }
+
+            if taskLinkMatchesProject(
+                card,
+                thread: nil,
+                authoritativeRow: authoritativeSession
+            ) {
+                if localThread != nil, !localThreadCompatible {
+                    clearLocalTaskThreadLink(for: card.id)
+                }
+                return nil
+            }
+
+            let preservedThreadID = localThreadCompatible ? localThread?.id : nil
+            guard let unlink = requestTaskSession(cardId: card.id, sessionId: nil) else {
+                return "Couldn’t unlink the previous chat link, so it was kept."
+            }
+
+            await unlink.value
+            guard normalizedSessionID(tasks.first(where: { $0.id == card.id })?.sessionId) == nil
+            else {
+                return "Couldn’t unlink the previous chat link, so it was kept."
+            }
+
+            if let preservedThreadID {
+                setLocalTaskThreadLink(preservedThreadID, for: card.id)
+            } else {
+                clearLocalTaskThreadLink(for: card.id)
+            }
+            return nil
+        }
+
+        if localThread != nil, !localThreadCompatible {
+            clearLocalTaskThreadLink(for: card.id)
+        }
+        return nil
+    }
+
+    private func taskChatLaunchProject(
+        for card: BoardCard,
+        familiarId: String
+    ) -> ProjectInfo? {
+        if projectContext == .unassigned {
+            showToast(
+                "Unassigned tasks are recovery-only. Switch to a registered project in Tasks to start a chat.",
+                systemImage: "folder.badge.questionmark",
+                style: .warning
+            )
+            return nil
+        }
+
+        guard projectMembershipLoaded else {
+            showToast(
+                "Refresh Chats to load project access, then try again.",
+                systemImage: "arrow.clockwise",
+                style: .warning
+            )
+            return nil
+        }
+
+        guard let projectId = card.projectId?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !projectId.isEmpty,
+              let project = project(projectId) else {
+            showToast(
+                "This task is no longer linked to a registered project. Refresh Tasks or reassign it on your desktop, then try again.",
+                systemImage: "folder.badge.questionmark",
+                style: .warning
+            )
+            return nil
+        }
+
+        guard projectMembership.contains(familiarId, in: project) else {
+            let name = familiar(familiarId)?.displayName ?? "This familiar"
+            showToast(
+                "\(name) can’t access \(project.name). Pick a familiar from that project or refresh Tasks, then try again.",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                style: .warning
+            )
+            return nil
+        }
+
+        return project
+    }
+
     /// Open (or create) the chat linked to a card and navigate to it. For an
     /// unlinked card it starts a fresh thread with `familiarId` (the card's
     /// assignee, or a caller-supplied pick) and links it. Returns nil only if no
     /// familiar could be resolved.
     @discardableResult
-    func openChat(for card: BoardCard, familiarId: String? = nil) -> ChatThread? {
-        if let existing = linkedThread(for: card) {
-            cardThreadLinks[card.id] = existing.id   // backfill from a sessionId match
-            persistCardLinks()
-            requestOpen(existing)
-            return existing
-        }
-        guard let familiarId = familiarId ?? card.familiarId else { return nil }
+    func openChat(for card: BoardCard, familiarId: String? = nil) async -> ChatThread? {
+        let requestedFamiliarID = normalizedFamiliarID(familiarId ?? card.familiarId)
         let title = "Task: \(card.title)"
         let thread: ChatThread
-        if let sid = card.sessionId, !sid.isEmpty {
+        if let sessionID = normalizedSessionID(card.sessionId) {
             // The card already points at a server session (e.g. started on the
-            // desktop) but no local thread carries it — bind one and pull history.
-            thread = ChatThread(title: title, familiarIds: [familiarId],
-                                sessionIds: [familiarId: sid],
-                                projectRoot: serverSessions.first {
-                                    $0.id == sid
-                                }?.projectRoot)
-            threads.insert(thread, at: 0)
-            Task { await loadHistory(into: thread, sessionId: sid) }
-        } else {
-            thread = ChatThread(title: title, familiarIds: [familiarId])
-            threads.insert(thread, at: 0)
+            // desktop). Re-check local state AFTER the authoritative await so
+            // concurrent taps reuse/repair the same thread instead of racing a
+            // duplicate insertion.
+            let resolution = await resolveTaskLinkedSession(sessionID: sessionID)
+            switch resolution {
+            case .resolved(let authoritativeRow):
+                guard let materialized = taskLinkedThread(
+                    titled: title,
+                    for: card,
+                    authoritativeRow: authoritativeRow,
+                    fallbackFamiliarID: requestedFamiliarID
+                ) else { return nil }
+                if let preview = taskChatSessionPreview(
+                    for: card,
+                    authoritativeRow: authoritativeRow
+                ),
+                   preview.mismatchedProject {
+                    showToast(
+                        preview.toastText,
+                        systemImage: "exclamationmark.triangle.fill",
+                        style: .warning
+                    )
+                } else {
+                    setLocalTaskThreadLink(materialized.id, for: card.id)
+                }
+                guard requestOpen(materialized) else { return nil }
+                return materialized
+            case .confirmedMissing:
+                if let toastText = resolution.toastText,
+                   let systemImage = resolution.systemImage {
+                    showToast(toastText, systemImage: systemImage, style: .warning)
+                }
+                if let recovery = taskRecoveryThread(for: card, sessionID: sessionID) {
+                    guard requestOpen(recovery) else { return nil }
+                    return recovery
+                }
+                return nil
+            case .transientLoadFailure:
+                if let toastText = resolution.toastText,
+                   let systemImage = resolution.systemImage {
+                    showToast(toastText, systemImage: systemImage, style: .warning)
+                }
+                return nil
+            }
         }
-        cardThreadLinks[card.id] = thread.id
+        if let explicit = await validatedLocalTaskLinkedThread(
+            for: card,
+            fallbackFamiliarID: requestedFamiliarID
+        ) {
+            setLocalTaskThreadLink(explicit.id, for: card.id)
+            guard requestOpen(explicit) else { return nil }
+            return explicit
+        }
+
+        if let existing = linkedThread(for: card) {
+            var canOpenExisting = true
+            if let sessionID = normalizedSessionID(card.sessionId),
+               let session = await authoritativeSessionRow(for: sessionID) {
+                canOpenExisting = taskLinkMatchesProject(
+                    card,
+                    thread: existing,
+                    authoritativeRow: session
+                )
+                if canOpenExisting {
+                    let repair = repairThreadSessionBinding(
+                        existing,
+                        with: session,
+                        fallbackFamiliarID: requestedFamiliarID
+                    )
+                    if repair.changed {
+                        refreshProjectContextSelectionFromCurrentData()
+                    }
+                }
+            }
+            if canOpenExisting {
+                setLocalTaskThreadLink(existing.id, for: card.id)   // backfill from a sessionId match
+                guard requestOpen(existing) else { return nil }
+                return existing
+            }
+        }
+        guard let requestedFamiliarID else { return nil }
+        guard let taskProject = taskChatLaunchProject(
+            for: card,
+            familiarId: requestedFamiliarID
+        )
+        else { return nil }
+        thread = ChatThread(
+            title: title,
+            familiarIds: [requestedFamiliarID],
+            projectRoot: taskProject.root
+        )
+        threads.insert(thread, at: 0)
+        setLocalTaskThreadLink(thread.id, for: card.id)
         persistThreads()
-        persistCardLinks()
-        requestOpen(thread)
+        guard requestOpen(thread) else { return nil }
         return thread
     }
 
     /// Link an existing task to a thread (from the chat side). Best-effort PATCH
     /// of the card's `sessionId` so the desktop board sees the link too.
-    func linkTask(_ card: BoardCard, to thread: ChatThread) {
+    @discardableResult
+    func linkTask(_ card: BoardCard, to thread: ChatThread) -> Task<Void, Never>? {
+        guard projectContext(for: thread).matches(task: card, registeredProjects: projects) else {
+            showToast(
+                "This task belongs to another project. Switch projects or move the task first.",
+                systemImage: "folder.badge.questionmark",
+                style: .warning
+            )
+            return nil
+        }
         cardThreadLinks[card.id] = thread.id
         persistCardLinks()
-        if let sid = primarySessionId(of: thread), card.sessionId != sid {
-            Task { await patchCardSession(cardId: card.id, sessionId: sid) }
+        if let sid = primarySessionId(of: thread),
+           normalizedSessionID(card.sessionId) != normalizedSessionID(sid) {
+            return requestTaskSession(cardId: card.id, sessionId: sid)
         }
+        return nil
     }
 
     /// Remove a card's chat link (local map + server sessionId).
-    func unlinkTask(_ card: BoardCard) {
+    @discardableResult
+    func unlinkTask(_ card: BoardCard) -> Task<Void, Never>? {
         cardThreadLinks[card.id] = nil
         persistCardLinks()
-        if card.sessionId != nil {
-            Task { await patchCardSession(cardId: card.id, sessionId: nil) }
+        if normalizedSessionID(card.sessionId) != nil {
+            return requestTaskSession(cardId: card.id, sessionId: nil)
         }
+        return nil
     }
 
     /// After a thread finishes streaming it may have just acquired its server
@@ -2053,12 +6065,8 @@ final class AppModel {
     }
 
     private func patchCardSession(cardId: String, sessionId: String?) async {
-        guard let client else { return }
-        do {
-            let updated = try await client.updateTaskSession(cardId: cardId, sessionId: sessionId)
-            if let idx = tasks.firstIndex(where: { $0.id == cardId }) { tasks[idx] = updated }
-        } catch {
-            // Non-fatal: the local link still drives in-app navigation.
+        if let task = requestTaskSession(cardId: cardId, sessionId: sessionId) {
+            await task.value
         }
     }
 
@@ -2074,16 +6082,177 @@ final class AppModel {
 
     // MARK: - Threads
 
-    /// Find an existing direct thread for a familiar, or create one.
-    func directThread(for familiarId: String) -> ChatThread {
-        if let existing = threads.first(where: { !$0.isGroup && $0.familiarIds == [familiarId] }) {
+    /// Find an existing direct thread for a familiar in the requested context,
+    /// or create a new project-scoped thread when launch is allowed there.
+    /// Recovery-only scopes (for example Unassigned) never create new threads.
+    func directThread(for familiarId: String, in context: ProjectContext?) -> ChatThread? {
+        guard let context else { return nil }
+        if let existing = landingDirectThread(for: familiarId, in: context) {
             return existing
         }
-        let name = familiar(familiarId)?.displayName ?? familiarId
-        let thread = ChatThread(title: name, familiarIds: [familiarId])
-        threads.insert(thread, at: 0)
-        persistThreads()
-        return thread
+
+        switch context {
+        case .project(let project):
+            let allowed = projectMembership.familiarIDs(forProjectID: project.id)
+            guard allowed.contains(familiarId) else { return nil }
+            let name = familiar(familiarId)?.displayName ?? familiarId
+            let thread = ChatThread(
+                title: name,
+                familiarIds: [familiarId],
+                projectRoot: project.root
+            )
+            threads.insert(thread, at: 0)
+            persistThreads()
+            return thread
+        case .unassigned:
+            return nil
+        }
+    }
+
+    /// Open a familiar's landing direct chat inside one project context:
+    /// reuse the local landing thread first, otherwise materialize the newest
+    /// project-scoped server session, otherwise create a fresh local direct
+    /// thread. Recovery-only scopes never materialize or create. Immediate-send
+    /// paths may skip the background history import so the returned thread is
+    /// safe to mutate synchronously.
+    func openFamiliarLandingThread(
+        for familiarId: String,
+        in context: ProjectContext?,
+        loadHistory shouldLoadHistory: Bool = true
+    ) -> ChatThread? {
+        guard let context else { return nil }
+        if let existing = landingDirectThread(for: familiarId, in: context) {
+            return existing
+        }
+        if case .project = context,
+           let serverOnly = serverOnlySessions(for: familiarId, in: context).first {
+            return openServerSession(
+                serverOnly,
+                familiarId: familiarId,
+                loadHistory: shouldLoadHistory
+            )
+        }
+        return directThread(for: familiarId, in: context)
+    }
+
+    private func globalOpenProjects(for familiarId: String) -> [ProjectInfo] {
+        projectMembership.projectIDs(forFamiliarID: familiarId)
+            .compactMap(project)
+            .sorted {
+                let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+                if order == .orderedSame { return $0.id < $1.id }
+                return order == .orderedAscending
+            }
+    }
+
+    private func reportGlobalFamiliarOpenFailure(for familiarId: String) {
+        let name = familiar(familiarId)?.displayName ?? "This familiar"
+
+        guard projectMembershipLoaded else {
+            showToast(
+                "Refresh Chats to load project access, then try again.",
+                systemImage: "arrow.clockwise",
+                style: .warning
+            )
+            return
+        }
+
+        let candidateProjects = globalOpenProjects(for: familiarId)
+        if let activeProject {
+            if let targetProject = candidateProjects.first(where: { $0.id != activeProject.id }) {
+                showToast(
+                    "\(name) has no chats in \(activeProject.name). Switch to \(targetProject.name) in Chats to start one.",
+                    systemImage: "folder.badge.questionmark",
+                    style: .warning
+                )
+                return
+            }
+
+            showToast(
+                "\(name) isn't available in \(activeProject.name). Refresh Chats or switch projects, then try again.",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                style: .warning
+            )
+            return
+        }
+
+        if let targetProject = candidateProjects.first {
+            showToast(
+                "Switch to \(targetProject.name) in Chats to start a new chat with \(name).",
+                systemImage: "folder.badge.questionmark",
+                style: .warning
+            )
+            return
+        }
+
+        showToast(
+            "Switch to a registered project to start a new chat with \(name).",
+            systemImage: "folder.badge.questionmark",
+            style: .warning
+        )
+    }
+
+    /// Global familiar opens prefer the latest local landing chat across all
+    /// contexts, then any unmaterialized server session, and only then a fresh
+    /// active-project chat when that familiar is available there.
+    @discardableResult
+    func requestOpenGlobalFamiliarLandingThread(for familiarId: String) -> Bool {
+        if let existing = globalLandingDirectThread(for: familiarId) {
+            return requestOpen(existing)
+        }
+
+        if let serverOnly = globalServerOnlySessions(for: familiarId).first {
+            let thread = openServerSession(serverOnly, familiarId: familiarId)
+            return requestOpen(thread)
+        }
+
+        guard let activeProject,
+              projectMembershipLoaded,
+              projectMembership.contains(familiarId, in: activeProject),
+              let fresh = directThread(for: familiarId, in: .project(activeProject))
+        else {
+            reportGlobalFamiliarOpenFailure(for: familiarId)
+            return false
+        }
+
+        return requestOpen(fresh)
+    }
+
+    func startFreshThreadInActiveProject(
+        familiarIds: [String],
+        title: String? = nil
+    ) -> ChatThread? {
+        guard let activeProject, let activeProjectRoot else { return nil }
+        guard projectMembershipLoaded else {
+            showToast(
+                "Refresh Chats to load project access, then try again.",
+                systemImage: "arrow.clockwise",
+                style: .warning
+            )
+            return nil
+        }
+        let invalidFamiliarIDs = familiarIds.filter {
+            !projectMembership.contains($0, in: activeProject)
+        }
+        guard invalidFamiliarIDs.isEmpty else {
+            let invalidNames = invalidFamiliarIDs.map {
+                familiar($0)?.displayName ?? $0
+            }
+            let subject = invalidNames.count == 1
+                ? invalidNames[0]
+                : "Some participants"
+            showToast(
+                "\(subject) can’t access \(activeProject.name). Open New Chat to choose a valid roster or switch projects, then try again.",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                style: .warning
+            )
+            return nil
+        }
+        return startFreshThread(
+            familiarIds: familiarIds,
+            title: title,
+            projectRoot: activeProjectRoot
+        )
     }
 
     func createGroup(
@@ -2108,7 +6277,7 @@ final class AppModel {
     func startFreshThread(
         familiarIds: [String],
         title: String? = nil,
-        projectRoot: String?
+        projectRoot: String
     ) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
         let date = Date.now.formatted(.dateTime.month(.abbreviated).day())
@@ -2385,7 +6554,7 @@ final class AppModel {
         _ text: String,
         fallbackTitle: String = "Imported chat",
         familiarIds preferredFamiliarIds: [String] = [],
-        projectRoot: String? = nil
+        projectRoot: String
     ) -> ChatThread {
         let parsed = parseThreadMarkdown(text)
         func resolve(_ name: String) -> String? {
@@ -2498,10 +6667,6 @@ final class AppModel {
             .appendingPathComponent("cave-threads.json")
     }
 
-    /// Owns all thread-file I/O (reads, JSON coding, atomic writes) off the
-    /// main actor.
-    @ObservationIgnored private let threadStore = ThreadSnapshotStore(url: AppModel.threadsFileURL)
-
     /// Pending debounced thread-persist flush. Not observable state.
     @ObservationIgnored private var persistThreadsTask: Task<Void, Never>?
 
@@ -2521,6 +6686,7 @@ final class AppModel {
     /// the load settles — including the load-failure/empty path, where later
     /// saves are legitimate.
     @ObservationIgnored private var threadsHydrated = false
+    @ObservationIgnored private var hydrateThreadsTask: Task<Void, Never>?
 
     func persistThreads() {
         // Debounce: many call sites (message send/receive, edits, archive,
@@ -2572,10 +6738,13 @@ final class AppModel {
     /// decoded threads in a single assignment. Threads created before the load
     /// lands (unlikely, launch-fast) are kept — restored ones merge in by id.
     private func hydrateThreads() async {
-        let snapshots = (try? await threadStore.load()) ?? []
+        let snapshots = await threadSnapshotLoader()
         // The load has settled: from here on saves can no longer clobber an
         // unread snapshot file, so flushes are safe even if we restored nothing.
-        defer { threadsHydrated = true }
+        defer {
+            threadsHydrated = true
+            _ = resolvePendingProjectNavigationIntent()
+        }
         guard !snapshots.isEmpty else { return }
         let existing = Set(threads.map(\.id))
         let restored = snapshots
