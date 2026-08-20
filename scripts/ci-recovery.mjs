@@ -455,6 +455,7 @@ async function inspectRecoveryDispatch(context, sha) {
     workflow?.jobs?.paths?.if === EXPECTED_JOB_GUARD &&
     workflow?.jobs?.ios?.if === `needs.paths.outputs.ios == 'true' && (${EXPECTED_JOB_GUARD})` &&
     workflow?.jobs?.build?.if === `always() && (${EXPECTED_JOB_GUARD})`;
+  const hasExpectedPrNumberMarker = JSON.stringify(workflow).includes("expected_pr_number");
   if (hasCompleteGuardedContract) {
     return {
       dispatchable: true,
@@ -462,7 +463,10 @@ async function inspectRecoveryDispatch(context, sha) {
       supportsExpectedPrNumber: true,
     };
   }
-  if (hasPreviousGuardedContract || hasMigrationGuardedContract) {
+  if (
+    !hasExpectedPrNumberMarker &&
+    (hasPreviousGuardedContract || hasMigrationGuardedContract)
+  ) {
     return {
       dispatchable: true,
       supportsExpectedSha: true,
@@ -475,7 +479,7 @@ async function inspectRecoveryDispatch(context, sha) {
     hasExpectedInput ||
     hasExpectedPrNumberInput ||
     serialized.includes("inputs.expected_sha") ||
-    serialized.includes("inputs.expected_pr_number");
+    hasExpectedPrNumberMarker;
   if (hasGuardedProtocolMarker) {
     return {
       dispatchable: false,

@@ -131,6 +131,31 @@ const PREVIOUS_GUARDED_CI_WORKFLOW = [
   `    if: ${GUARDED_JOB_IF}`,
   "",
 ].join("\n");
+const MIGRATION_GUARDED_CI_WORKFLOW = [
+  "name: CI",
+  `run-name: ${GUARDED_RUN_NAME}`,
+  "on:",
+  "  workflow_dispatch:",
+  "    inputs:",
+  "      expected_sha:",
+  "        required: true",
+  "        type: string",
+  "concurrency:",
+  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
+  "jobs:",
+  "  paths:",
+  `    if: ${GUARDED_JOB_IF}`,
+  "  ios:",
+  `    if: needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
+  "  build:",
+  `    if: always() && (${GUARDED_JOB_IF})`,
+  "",
+].join("\n");
+const REQUIRED_EXPECTED_PR_NUMBER_INPUT = [
+  "      expected_pr_number:",
+  "        required: true",
+  "        type: string",
+].join("\n");
 
 function githubFixture({ pulls, runsBySha = {}, jobsByRun = {}, workflowsBySha = {} }) {
   const requests = [];
@@ -260,6 +285,34 @@ test("apply preserves expected_sha for the previous complete guarded workflow", 
     ],
   );
 });
+
+for (const [name, workflow] of [
+  ["previous", PREVIOUS_GUARDED_CI_WORKFLOW],
+  ["migration", MIGRATION_GUARDED_CI_WORKFLOW],
+]) {
+  test(
+    `a ${name} guarded workflow with a required expected_pr_number is partial and never dispatched`,
+    async () => {
+      const pr = pull();
+      const fixture = githubFixture({
+        pulls: [pr],
+        workflowsBySha: {
+          [pr.head.sha]: workflow.replace(
+            "concurrency:",
+            `${REQUIRED_EXPECTED_PR_NUMBER_INPUT}\nconcurrency:`,
+          ),
+        },
+      });
+
+      const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+      assert.deepEqual(result.recoveries, []);
+      assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
+      assert.equal(result.degraded, true);
+      assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+    },
+  );
+}
 
 test("apply omits expected_sha only for a legacy head workflow without that input", async () => {
   const pr = pull();
