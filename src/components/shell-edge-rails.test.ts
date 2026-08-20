@@ -82,7 +82,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?\? "Collapse Chat sidebar"[\s\S]*?: "Expand Chat sidebar"[\s\S]*?\? "Collapse navigation to icons"[\s\S]*?: "Expand navigation"\}/,
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?\? "Collapse Chat sidebar"[\s\S]*?: "Expand Chat sidebar"[\s\S]*?\? "Close navigation"[\s\S]*?: "Expand navigation"\}/,
   "nav toggle label reflects both contextual Chat and normal navigation state",
 );
 assert.match(

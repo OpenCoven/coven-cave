@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -20,7 +20,6 @@ import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
-import { ShellPeelReveal } from "@/components/shell-peel-reveal";
 import {
   eventKey,
   getPanelShortcutBindings,
@@ -34,6 +33,7 @@ import {
   resolveShellLayoutPersistence,
   resolveShellNavOpenPreference,
   resolveShellNavPolicyHandoff,
+  resolveShellNavSwipe,
   SHELL_NAV_DEFAULT_PX,
   SHELL_NAV_MAX_PX,
   SHELL_NAV_MIN_PX,
@@ -60,9 +60,9 @@ import {
 //   ⌘\   toggle list
 //   ⌃`   toggle bottom terminal
 
-// v3: the nav now starts minimized to its icon rail by default (see the
-// default-minimize layout effect below) — bumping the key retires v2 saved
-// widths so the new default applies once, then the user's own resize persists.
+// v3 introduced the minimized-by-default nav and retired v2 saved widths.
+// The same key remains valid now that "minimized" means fully closed: expanded
+// widths and the user's open preference still migrate without a reset.
 // v2: panels went percent → pixel (see shell-left-panels-fit.test.ts); v1
 // layouts hold percent widths chosen under the old monitor-scaled defaults.
 const SHELL_GROUP_ID = "cave.shell.widths.v3";
@@ -250,14 +250,15 @@ function writeNavWidthPref(width: number): void {
   }
 }
 
-// The left nav collapses to an icons-only rail (instead of vanishing) so the
-// destination icons stay reachable. Sizes at/below the rail read as "collapsed".
-const NAV_RAIL_PX = 56;
-// The nav Panel's open width (its defaultSize) — the ⌘B / hover-peek expand
-// target, and the basis for the minimized-by-default layout injection (the rail
-// is NAV_RAIL_PX/NAV_OPEN_PX of the open width).
+// Closing the left nav removes it completely. The persistent title-bar toggle
+// and keyboard shortcut remain available to reopen it.
+const NAV_COLLAPSED_PX = 0;
+// The nav Panel's open width (its defaultSize) — the ⌘B expand target and the
+// basis for the minimized-by-default layout injection.
 const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;
-const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
+const NAV_OPEN_THRESHOLD_PX = NAV_COLLAPSED_PX + 1;
+const NAV_EDGE_SWIPE_START_PX = 24;
+const NAV_SWIPE_VERTICAL_CANCEL_PX = 12;
 
 export type ShellHandle = {
   openNav: () => void;
@@ -341,6 +342,12 @@ function ShellInner({
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
   const rightChatRef = useRef<PanelImperativeHandle | null>(null);
   const rightChatToggleRef = useRef<HTMLButtonElement | null>(null);
+  const navSwipeRef = useRef<{
+    pointerId: number;
+    intent: "open" | "close";
+    startX: number;
+    startY: number;
+  } | null>(null);
   // Code-rail ↔ nav coupling bookkeeping (desktop only). When the code rail
   // opens we collapse the nav and remember that WE did it
   // (railAutoCollapsedNavRef); on rail close we restore it — unless the user
@@ -485,7 +492,7 @@ function ShellInner({
     if (isMobile) {
       setMobileDrawer("right-chat");
     } else {
-      const navWidth = navRef.current?.getSize().inPixels ?? NAV_RAIL_PX;
+      const navWidth = navRef.current?.getSize().inPixels ?? NAV_COLLAPSED_PX;
       const listWidth = twoPane ? 0 : listRef.current?.getSize().inPixels ?? 0;
       if (
         shouldAutoCollapseNavForRightChat({
@@ -608,7 +615,7 @@ function ShellInner({
   const groupRef = useRef<GroupImperativeHandle | null>(null);
   const groupElementRef = useRef<HTMLDivElement | null>(null);
 
-  // Non-contextual navigation defaults to its icon rail, so SSR and hydration
+  // Non-contextual navigation defaults fully closed, so SSR and hydration
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
@@ -618,20 +625,7 @@ function ShellInner({
   const navOpenRef = useRef(navOpen);
   navOpenRef.current = navOpen;
   const defaultNavSize =
-    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
-
-  // Hover-to-peek: when the desktop nav is collapsed to its icon rail, hovering
-  // floats it open as an overlay (navPeeking) without changing the collapse
-  // state. Reset whenever the rail goes away (expanded or mobile).
-  const [navPeeking, setNavPeeking] = useState(false);
-  // Every desktop policy now collapses to the rail, so peek applies to all of
-  // them. It used to be remembered-only because Chat collapsed to zero width,
-  // leaving nothing to hover.
-  const navPeekEnabled = !isMobile && !navOpen;
-  const navPeekVisible = navPeekEnabled && navPeeking;
-  useEffect(() => {
-    if (!navPeekEnabled) setNavPeeking(false);
-  }, [navPeekEnabled]);
+    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_COLLAPSED_PX}px`;
 
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
@@ -690,7 +684,7 @@ function ShellInner({
 
   // Minimize remembered and visit-collapsed navigation by default. Once the group
   // has settled (the library has applied its initial open layout), replace the
-  // WHOLE layout with one where the nav is at its rail width and the freed width
+  // WHOLE layout with one where the nav is fully closed and the freed width
   // goes to the detail pane, via the group-level setLayout. Once per fresh
   // groupId; a group the user has resized (a saved layout) is respected. Chat's
   // contextual sidebar opens at its dedicated list-like width instead.
@@ -703,12 +697,16 @@ function ShellInner({
     const cur = group.getLayout();
     const nav = cur.nav;
     if (typeof nav !== "number" || typeof cur.detail !== "number") return;
-    const railPct = nav * (NAV_RAIL_PX / preferredNavWidth);
-    if (railPct >= nav) return; // already at/under the rail
+    const collapsedPct = nav * (NAV_COLLAPSED_PX / preferredNavWidth);
+    if (collapsedPct >= nav) return;
     minimizedGroupsRef.current.add(groupId);
     seedNavOpenPref(false);
     markShellMinimizeApplied(groupId);
-    group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
+    group.setLayout({
+      ...cur,
+      nav: collapsedPct,
+      detail: cur.detail + (nav - collapsedPct),
+    });
   }, [settled, isMobile, groupId, chatContextual, preferredNavWidth]);
 
   // Policy handoff — MUST stay declared above the destination-layout effect
@@ -719,7 +717,7 @@ function ShellInner({
   // so the restore effect re-reads `cave:shell:nav-open`. Chat never maintains
   // that key (its persistence branch is gated on the remembered policy) while
   // first-run minimization seeds it to `false` — so the sidebar the user was
-  // looking at, and had just clicked "Home" inside, collapsed to the rail. Carry
+  // looking at, and had just clicked "Home" inside, closed completely. Carry
   // the visible state across instead. An explicit user collapse still wins; see
   // resolveShellNavPolicyHandoff.
   const navHandoffPolicyRef = useRef<ShellNavPolicy | null>(null);
@@ -777,7 +775,7 @@ function ShellInner({
       0,
     );
     // Still gated on !chatContextual: Chat must never write the REMEMBERED
-    // preference (cave:shell:nav-open). Chat collapsing to a rail changes what
+    // preference (cave:shell:nav-open). Closing Chat navigation changes what
     // the panel looks like, not who owns that preference — the handoff added in
     // #4404 depends on Chat leaving it alone.
     if (
@@ -786,7 +784,7 @@ function ShellInner({
         layout: defaultLayout,
         panelIds,
         groupSize,
-        collapsedNavPixels: NAV_RAIL_PX,
+        collapsedNavPixels: NAV_COLLAPSED_PX,
       })
     ) {
       seedNavOpenPref(false);
@@ -806,9 +804,7 @@ function ShellInner({
         ...(desktopRightChat && { "right-chat": rightChatOpen ? preferredRightChatWidth : 0 }),
       },
       preferredNavPixels: preferredNavWidth,
-      // Matches the Panel's collapsedSize below — Chat collapses to the rail
-      // now, not to zero, so the restored layout must describe the same width.
-      collapsedNavPixels: isMobile ? 0 : NAV_RAIL_PX,
+      collapsedNavPixels: NAV_COLLAPSED_PX,
       isMobile,
     });
     if (!destinationLayout) return;
@@ -1092,6 +1088,70 @@ function ShellInner({
     }
   }, [isMobile]);
 
+  const handleShellPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isMobile || event.pointerType !== "touch" || !event.isPrimary) return;
+
+      if (mobileDrawer === null) {
+        if (event.clientX > NAV_EDGE_SWIPE_START_PX) return;
+        navSwipeRef.current = {
+          pointerId: event.pointerId,
+          intent: "open",
+          startX: event.clientX,
+          startY: event.clientY,
+        };
+        return;
+      }
+
+      if (mobileDrawer !== "nav") return;
+      const navPanel = document.querySelector<HTMLElement>(".shell-nav-panel");
+      if (!(event.target instanceof Node) || !navPanel?.contains(event.target)) {
+        return;
+      }
+      navSwipeRef.current = {
+        pointerId: event.pointerId,
+        intent: "close",
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+    },
+    [isMobile, mobileDrawer],
+  );
+
+  const handleShellPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const swipe = navSwipeRef.current;
+      if (!swipe || event.pointerId !== swipe.pointerId) return;
+      const deltaX = event.clientX - swipe.startX;
+      const deltaY = event.clientY - swipe.startY;
+      if (
+        Math.abs(deltaY) >= NAV_SWIPE_VERTICAL_CANCEL_PX &&
+        Math.abs(deltaY) > Math.abs(deltaX)
+      ) {
+        navSwipeRef.current = null;
+        return;
+      }
+      const resolution = resolveShellNavSwipe({
+        intent: swipe.intent,
+        deltaX,
+        deltaY,
+      });
+      if (!resolution) return;
+      navSwipeRef.current = null;
+      setMobileDrawer(resolution === "open" ? "nav" : null);
+    },
+    [],
+  );
+
+  const clearShellPointer = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (navSwipeRef.current?.pointerId === event.pointerId) {
+        navSwipeRef.current = null;
+      }
+    },
+    [],
+  );
+
   const horizontalGroup = (
     <Group
       className="shell-root flex-1 min-h-0"
@@ -1157,19 +1217,14 @@ function ShellInner({
         id="nav"
         className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
         // Chat uses list-like sizing for contextual workspace/session content.
-        // Normal navigation keeps NAV_OPEN_PX as the ⌘B / hover-peek target.
+        // Normal navigation keeps NAV_OPEN_PX as the ⌘B expansion target.
         defaultSize={defaultNavSize}
         minSize={`${SHELL_NAV_MIN_PX}px`}
         maxSize={`${SHELL_NAV_MAX_PX}px`}
         collapsible
-        // Contextual Chat and mobile drawers close fully; normal desktop
-        // navigation collapses to its icons-only rail.
-        // Mobile drawers close fully (they overlay the content). Every desktop
-        // surface — Chat included — collapses to the icons-only rail instead,
-        // so the destinations stay reachable. Chat used to collapse to zero,
-        // which left no rail, no peek target, and no visible way to reach any
-        // other surface.
-        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
+        // Every shell policy closes to zero. Desktop reopens from the persistent
+        // title-bar toggle or shortcut; touch layouts also support edge swipe.
+        collapsedSize={NAV_COLLAPSED_PX}
         panelRef={navRef}
         onResize={(size) => {
           const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
@@ -1194,15 +1249,17 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !navOpen ? (navPeekVisible ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
+          className="shell-nav"
           aria-label="Sidebar"
-          onMouseEnter={navPeekEnabled ? () => setNavPeeking(true) : undefined}
-          onMouseLeave={navPeekEnabled ? () => setNavPeeking(false) : undefined}
+          aria-hidden={isMobile ? mobileDrawer !== "nav" : !navOpen}
+          inert={isMobile ? mobileDrawer !== "nav" : !navOpen}
         >
           {nav}
         </aside>
       </Panel>
-      <Separator className="shell-separator" />
+      <Separator
+        className={`shell-separator${!isMobile && !navOpen ? " shell-separator--collapsed-nav" : ""}`}
+      />
       {!twoPane && (
         <>
           <Panel
@@ -1222,26 +1279,20 @@ function ShellInner({
       )}
       <Panel id="detail" className="shell-detail-panel" minSize={`${SHELL_DETAIL_MIN_PX}px`}>
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
-          {/* Peel-reveal (cave-3vgd): decorative page-curl toward the collapsed
-              rail on HTML-in-canvas browsers; a bare Fragment everywhere else
-              (no wrapper elements, so the `.shell-detail > .cave-mode-fade`
-              chains keep matching). The interactive reveal stays the hover-peek. */}
-          <ShellPeelReveal active={navPeekEnabled} under={nav}>
-            <UpdateBannerTrigger />
-            <OpenCovenToolsBannerTrigger />
-            <CaveHomeMigrationBannerTrigger />
-            <ShellBannerStrip />
-            <DetailSplitHost
-              primary={detail}
-              secondaryTiles={splitTiles}
-              secondarySide={splitSide}
-              onClose={() => onCloseSplit?.()}
-              onCloseTile={(id) => onCloseSplitTile?.(id)}
-              onPromoteTile={(id) => onPromoteSplitTile?.(id)}
-              onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
-              enableDrop={!isMobile}
-            />
-          </ShellPeelReveal>
+          <UpdateBannerTrigger />
+          <OpenCovenToolsBannerTrigger />
+          <CaveHomeMigrationBannerTrigger />
+          <ShellBannerStrip />
+          <DetailSplitHost
+            primary={detail}
+            secondaryTiles={splitTiles}
+            secondarySide={splitSide}
+            onClose={() => onCloseSplit?.()}
+            onCloseTile={(id) => onCloseSplitTile?.(id)}
+            onPromoteTile={(id) => onPromoteSplitTile?.(id)}
+            onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
+            enableDrop={!isMobile}
+          />
         </main>
       </Panel>
       {desktopRightChat ? (
@@ -1304,7 +1355,7 @@ function ShellInner({
           ? "Collapse Chat sidebar"
           : "Expand Chat sidebar"
         : navOpen
-          ? "Collapse navigation to icons"
+          ? "Close navigation"
           : "Expand navigation"}
       aria-expanded={navOpen}
       title={chatContextual
@@ -1372,6 +1423,10 @@ function ShellInner({
       className="shell-frame flex h-full w-full flex-col"
       style={shellFrameStyle}
       data-settled={settled ? "" : undefined}
+      onPointerDown={handleShellPointerDown}
+      onPointerMove={handleShellPointerMove}
+      onPointerUp={clearShellPointer}
+      onPointerCancel={clearShellPointer}
     >
       {/* Keyboard/SR users can jump straight past the chrome to the active
           surface. Visually hidden until focused (see .skip-link in globals). */}

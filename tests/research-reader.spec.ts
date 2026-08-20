@@ -113,7 +113,7 @@ async function openReader(page: Page) {
   );
 
   await page.goto("/");
-  await page.getByRole("navigation").first().waitFor({ timeout: 60_000 });
+  await page.locator(".shell-frame").waitFor({ timeout: 60_000 });
   await expect(async () => {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "surface:researcher-desk" } })),

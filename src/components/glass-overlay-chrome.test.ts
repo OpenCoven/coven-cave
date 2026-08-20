@@ -97,7 +97,6 @@ assert.match(bell, /notification-bell__popover glass-overlay/, "the notification
 // nothing goes see-through where the blur can't render.
 const GLASS_RE = String.raw`background: var\(--glass-(?:elevated|raised)\);\s*\n\s*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);`;
 const frostedGlobals = [
-  String.raw`\.shell-nav-panel > \.shell-nav--peek`,
   String.raw`\.ui-dock-chat`,
   String.raw`\.ui-tooltip`,
   String.raw`\.familiar-switcher__popover`,
@@ -116,7 +115,7 @@ for (const sel of frostedGlobals) {
 // Both fallback blocks restore an opaque fill for every frosted global.
 const supportsBlock = css.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\) \{[\s\S]*?\n\}/)?.[0] ?? "";
 const reducedBlock = css.match(/@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*?\n\}/)?.[0] ?? "";
-for (const sel of ["shell-nav--peek", "ui-dock-chat", "ui-tooltip", "familiar-switcher__popover", "cave-cal-detail-panel", "familiar-studio__drawer", "quick-chat-overlay", "ui-undo-toast"]) {
+for (const sel of ["ui-dock-chat", "ui-tooltip", "familiar-switcher__popover", "cave-cal-detail-panel", "familiar-studio__drawer", "quick-chat-overlay", "ui-undo-toast"]) {
   assert.ok(supportsBlock.includes(sel), `${sel} has an opaque no-backdrop-filter fallback`);
   assert.ok(reducedBlock.includes(sel), `${sel} respects reduced transparency`);
 }
