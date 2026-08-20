@@ -48,8 +48,13 @@
   overflow: visible !important;
 }
 
-/* The navigation stays on the shell floor. */
-.shell-nav-panel { position: relative; }
+/* Keep chrome above the centered Home composer when it paints outside detail. */
+.shell-nav-panel,
+.shell-list-panel,
+.shell-right-chat-panel {
+  position: relative;
+  z-index: 1;
+}
 
 .shell-nav-panel > .shell-nav,
 .shell-list-panel > .shell-list,

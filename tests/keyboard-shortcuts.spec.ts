@@ -68,8 +68,8 @@ const GROUPS = ["Panels & navigation", "Browser", "Composer", "Slash menu", "Oth
 test.describe("keyboard shortcuts sheet", () => {
   test("opens with ?, lists every catalog group, closes with Escape", async ({ page }) => {
     await gotoApp(page);
-    // Focus the page chrome (not a text field) so the `?` guard lets it through.
-    await page.mouse.click(640, 5);
+    // Leave editable controls unfocused so the global `?` guard lets it through.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("?");
 
     await expect(sheet(page)).toBeVisible();
@@ -89,7 +89,7 @@ test.describe("keyboard shortcuts sheet", () => {
 
   test("⌘/ also opens the sheet", async ({ page }) => {
     await gotoApp(page);
-    await page.mouse.click(640, 5);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("Meta+/");
     await expect(sheet(page)).toBeVisible();
   });
