@@ -6,6 +6,7 @@ import {
   buildThreadReflectPrompt,
   buildThreadSignalBatchResolutionPrompt,
   buildThreadSignalResolutionPrompt,
+  buildThreadSignalReviewQueue,
   buildThreadSignalRows,
   buildThreadSignalScoreTiles,
   compositeTone,
@@ -513,6 +514,62 @@ describe("aggregateThreadSignals stale signal clearing", () => {
     const aggregate = aggregateThreadSignals([staleOnly, older, newest]);
     assert.deepEqual(aggregate.persistentBlockers.map((item) => item.id), ["still-active"]);
     assert.equal(aggregate.persistentBlockers[0].frequency, 3);
+  });
+
+  it("clears recovered context-pressure and low-score review rows using the newest report", () => {
+    const stale = reportAt("session-old", "2026-08-20T12:00:00.000Z", {
+      overallConfidence: 38,
+      toolReliability: { score: 45, failedTools: ["harness"], unreliableTools: [] },
+      contextPressure: "critical",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 38,
+      fileLocatabilityScore: 45,
+      persistentBlockers: [],
+    });
+    const recovered = reportAt("session-new", "2026-08-20T13:00:00.000Z", {
+      overallConfidence: 96,
+      toolReliability: { score: 98, failedTools: [], unreliableTools: [] },
+      contextPressure: "adequate",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 100,
+      fileLocatabilityScore: 98,
+      persistentBlockers: [],
+    });
+
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      const queue = buildThreadSignalReviewQueue(aggregateThreadSignals(reports));
+      assert.equal(queue.some((item) => item.kind === "context-pressure"), false);
+      assert.equal(queue.some((item) => item.kind === "low-score"), false);
+    }
+  });
+
+  it("keeps valid zero scores visible in the current review queue", () => {
+    const current = reportAt("session-zero", "2026-08-20T14:00:00.000Z", {
+      overallConfidence: 0,
+      toolReliability: { score: 0, failedTools: ["harness"], unreliableTools: [] },
+      contextPressure: "adequate",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 0,
+      fileLocatabilityScore: 0,
+      persistentBlockers: [],
+    });
+
+    const lowScores = buildThreadSignalReviewQueue(aggregateThreadSignals([current]))
+      .filter((item) => item.kind === "low-score");
+    assert.equal(lowScores.length, 4);
+    assert.ok(lowScores.every((item) => item.severity === "critical"));
   });
 });
 

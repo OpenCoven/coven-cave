@@ -273,10 +273,10 @@ import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
-  cleanupStagedImageFiles,
-  persistImageAttachments,
+  cleanupStagedAttachmentFiles,
+  persistChatAttachments,
   resolveMentionedFiles,
-  writeImageAttachmentsToRuntime,
+  writeAttachmentsToRuntime,
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
@@ -1693,12 +1693,10 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  // Persisted transcripts keep attachment metadata only — base64 image
-  // payloads stay out of the conversation store. Images additionally get a
-  // durable copy in the attachment store, and the transcript records its id,
-  // so reopening the thread can show the picture again instead of degrading
-  // to a filename chip (cave-cysu4).
-  const persistedAttachments = await persistImageAttachments(
+  // Persisted transcripts keep metadata plus a durable store id; base64
+  // payloads stay out of the conversation JSON. Reloads and retries can then
+  // render images/media or rematerialize source files for a local harness.
+  const persistedAttachments = await persistChatAttachments(
     stripPreviewOnlyAttachmentFields(attachments),
     attachments,
   );
@@ -2666,8 +2664,8 @@ export async function POST(req: Request) {
   const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
     !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
   const attachmentStagingRoot = resolvedFamiliarWorkspace ?? cwd;
-  const imageFilePaths = imagesSupported
-    ? await writeImageAttachmentsToRuntime(attachments, attachmentStagingRoot)
+  const attachmentFilePaths = imagesSupported
+    ? await writeAttachmentsToRuntime(attachments, attachmentStagingRoot)
     : new Map<number, string>();
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
@@ -2746,7 +2744,8 @@ export async function POST(req: Request) {
                   buildPromptWithResponseControls(
                     buildPromptWithAttachments(promptText, attachments, {
                       imagesSupported,
-                      imageFilePaths,
+                      filesSupported: imagesSupported,
+                      attachmentFilePaths,
                     }),
                     { modelControls: promptModelControls },
                   ),
@@ -5938,7 +5937,7 @@ export async function POST(req: Request) {
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
-      cleanupStagedImageFiles(imageFilePaths);
+      cleanupStagedAttachmentFiles(attachmentFilePaths);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
       runBuffer?.finish();

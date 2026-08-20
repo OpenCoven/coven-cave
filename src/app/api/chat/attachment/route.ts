@@ -15,8 +15,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Serve a chat image attachment the send route stored durably, so a reopened
- * transcript can render the picture instead of a filename chip.
+ * Serve a chat attachment the send route stored durably. Images and media may
+ * render inline; source/doc files download rather than execute at Cave's origin.
  *
  * Fetch this through `AuthedImage` / the patched `window.fetch`, never a bare
  * `<img src="/api/...">`: in the packaged app the sidecar gates `/api/*` on a
@@ -37,6 +37,9 @@ export async function GET(req: Request) {
 
   try {
     const { data, mimeType } = await readChatImageAttachment(id);
+    const inline = mimeType.startsWith("image/") ||
+      mimeType.startsWith("audio/") ||
+      mimeType.startsWith("video/");
     return new Response(new Uint8Array(data), {
       status: 200,
       headers: {
@@ -47,7 +50,7 @@ export async function GET(req: Request) {
         // out of shared caches.
         "x-content-type-options": "nosniff",
         "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-        "content-disposition": "inline",
+        "content-disposition": inline ? "inline" : "attachment",
         "cache-control": "private, max-age=3600",
       },
     });

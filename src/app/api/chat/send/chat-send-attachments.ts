@@ -1,13 +1,16 @@
 import { lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  cleanFileDataUrl,
+  cleanImageDataUrl,
   cleanMediaDataUrl,
-  MAX_ATTACHMENT_IMAGE_BYTES,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import {
   saveChatImageAttachment,
+  saveChatFileAttachment,
   saveChatMediaAttachment,
+  readChatImageAttachment,
   sweepChatImageAttachments,
 } from "@/lib/server/chat-attachment-store";
 
@@ -22,16 +25,16 @@ const STAGED_FILE_MAX_AGE_MS = 60 * 60 * 1000;
 const STAGING_SWEEP_SCAN_LIMIT = 200;
 /**
  * Exactly the shape the write path below produces: `crypto.randomUUID()` plus
- * the extension `imageExtension()` allows (`[a-z0-9]{1,8}`, or its `img`
- * fallback). The sweep matches this and nothing else.
+ * the safe extension `attachmentExtension()` allows. The sweep matches this
+ * and nothing else.
  */
 const STAGED_FILE_NAME =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,12}$/;
 
 /**
- * Remove staged image files a previous turn failed to clean up.
+ * Remove staged attachment files a previous turn failed to clean up.
  *
- * `cleanupStagedImageFiles` runs at ONE site near the end of the chat stream
+ * `cleanupStagedAttachmentFiles` runs at ONE site near the end of the chat stream
  * callback, and nothing wraps that callback in `finally`, so a throw above it
  * strands the files. That was harmless while they lived in OS temp storage,
  * which the system reaps; inside the familiar's granted workspace they are
@@ -80,8 +83,16 @@ function imageExtension(mimeType?: string): string {
   return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
 }
 
-/** Write validated image payloads to owner-only files inside a granted root. */
-export async function writeImageAttachmentsToRuntime(
+function attachmentExtension(attachment: ChatAttachment): string {
+  const source = path.extname(attachment.name).slice(1).toLowerCase();
+  if (/^[a-z0-9]{1,12}$/.test(source)) return source;
+  return attachment.mimeType?.startsWith("image/")
+    ? imageExtension(attachment.mimeType)
+    : "bin";
+}
+
+/** Write validated attachment payloads to owner-only files inside a granted root. */
+export async function writeAttachmentsToRuntime(
   attachments: ChatAttachment[],
   stagingRoot: string,
 ): Promise<Map<number, string>> {
@@ -96,17 +107,33 @@ export async function writeImageAttachmentsToRuntime(
   const stagingDir = path.join(realStagingRoot, ATTACHMENT_STAGING_DIR);
   await sweepStaleStagedFiles(stagingDir);
   for (const [index, attachment] of attachments.entries()) {
-    if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
-    const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
-    const payload = Buffer.from(base64, "base64");
-    if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
+    const payload = cleanImageDataUrl(attachment.dataUrl) ??
+      cleanFileDataUrl(attachment.dataUrl);
+    let bytes: Buffer;
+    let mimeType = payload?.mimeType;
+    if (payload) {
+      const base64 = payload.dataUrl.slice(payload.dataUrl.indexOf(",") + 1);
+      bytes = Buffer.from(base64, "base64");
+    } else if (attachment.storedId) {
+      try {
+        const stored = await readChatImageAttachment(attachment.storedId);
+        bytes = stored.data;
+        mimeType = stored.mimeType;
+        if (mimeType.startsWith("audio/") || mimeType.startsWith("video/")) continue;
+      } catch {
+        continue;
+      }
+    } else {
+      continue;
+    }
+    if (bytes.byteLength === 0) continue;
     try {
       await mkdir(stagingDir, { recursive: true, mode: 0o700 });
       const filePath = path.join(
         stagingDir,
-        `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
+        `${crypto.randomUUID()}.${attachmentExtension({ ...attachment, mimeType })}`,
       );
-      await writeFile(filePath, payload, { mode: 0o600 });
+      await writeFile(filePath, bytes, { mode: 0o600 });
       filePaths.set(index, filePath);
     } catch {
       // Best effort: callers render a not-delivered attachment notice instead.
@@ -116,22 +143,26 @@ export async function writeImageAttachmentsToRuntime(
 }
 
 /**
- * Give each image and playable-media attachment a durable copy and stamp its
- * id onto the record the transcript will keep. `persisted` is the
+ * Give each supported attachment a durable copy and stamp its id onto the
+ * record the transcript will keep. `persisted` is the
  * metadata-only shape (payloads already stripped); `source` still holds the
  * bytes.
  *
  * Best effort by design: a store failure leaves that attachment exactly as it
  * was before — metadata only — rather than failing the send.
  */
-export async function persistImageAttachments(
+export async function persistChatAttachments(
   persisted: ChatAttachment[],
   source: ChatAttachment[],
 ): Promise<ChatAttachment[]> {
   const anyPayloads = source.some(
     (attachment) =>
       attachment.dataUrl &&
-      (attachment.mimeType?.startsWith("image/") || cleanMediaDataUrl(attachment.dataUrl)),
+      (
+        attachment.mimeType?.startsWith("image/") ||
+        cleanMediaDataUrl(attachment.dataUrl) ||
+        cleanFileDataUrl(attachment.dataUrl)
+      ),
   );
   if (!anyPayloads) return persisted;
   const stored = await Promise.all(
@@ -143,7 +174,14 @@ export async function persistImageAttachments(
         storedId = await saveChatImageAttachment(origin.dataUrl, origin.mimeType);
       } else {
         const media = cleanMediaDataUrl(origin.dataUrl);
-        if (media) storedId = await saveChatMediaAttachment(media.dataUrl, media.mimeType);
+        if (media) {
+          storedId = await saveChatMediaAttachment(media.dataUrl, media.mimeType);
+        } else {
+          const file = cleanFileDataUrl(origin.dataUrl);
+          if (file) {
+            storedId = await saveChatFileAttachment(file.dataUrl, file.mimeType, origin.name);
+          }
+        }
       }
       return storedId ? { ...attachment, storedId } : attachment;
     }),
@@ -153,7 +191,7 @@ export async function persistImageAttachments(
   return stored;
 }
 
-export function cleanupStagedImageFiles(filePaths: ReadonlyMap<number, string>) {
+export function cleanupStagedAttachmentFiles(filePaths: ReadonlyMap<number, string>) {
   const stagingDirs = new Set<string>();
   for (const filePath of filePaths.values()) {
     stagingDirs.add(path.dirname(filePath));
