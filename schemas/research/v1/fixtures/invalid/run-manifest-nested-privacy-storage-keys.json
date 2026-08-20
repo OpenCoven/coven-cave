@@ -1,0 +1,36 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_nested_privacy_storage_keys_01",
+  "runId": "run_nested_privacy_storage_keys_01",
+  "digest": "11a40ee3d3fa53c763baae2edf453c5f295d1e1447a4bf027751cd0a67952fa3",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z",
+    "extensionMetadata": {
+      "items": [
+        {
+          "privacyStorageKeys": ["tenant/private/object"]
+        }
+      ]
+    }
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  }
+}

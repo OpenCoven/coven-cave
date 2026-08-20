@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencoven.topic-proposal/v1",
+  "title": "OpenCoven Topic Proposal v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "id",
+    "discoveryJobId",
+    "contextPackId",
+    "title",
+    "question",
+    "whyNow",
+    "evidence",
+    "counterevidence",
+    "scores",
+    "suggested",
+    "uncertainty",
+    "relatedMissionIds",
+    "createdAt"
+  ],
+  "properties": {
+    "schema": { "const": "opencoven.topic-proposal/v1" },
+    "id": { "$ref": "#/$defs/topicProposalId" },
+    "discoveryJobId": { "$ref": "#/$defs/topicDiscoveryJobId" },
+    "contextPackId": { "$ref": "#/$defs/contextPackId" },
+    "title": { "type": "string" },
+    "question": { "type": "string" },
+    "whyNow": { "type": "string" },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/topicEvidenceRef" }
+    },
+    "counterevidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/topicEvidenceRef" }
+    },
+    "scores": { "$ref": "#/$defs/scores" },
+    "suggested": { "$ref": "#/$defs/suggested" },
+    "uncertainty": { "type": "string" },
+    "relatedMissionIds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/missionId" },
+      "uniqueItems": true
+    },
+    "createdAt": { "$ref": "#/$defs/utcTimestamp" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 20,
+      "maxLength": 30,
+      "pattern": "^(?:(?:\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d)|(?:1972-(?:06-30|12-31)|197[3-9]-12-31|198[1235]-06-30|198[79]-12-31|1990-12-31|199[2347]-06-30|199[58]-12-31|200[58]-12-31|201[25]-06-30|2016-12-31)T23:59:60)(?:\\.\\d{1,9})?Z$"
+    },
+    "contextPackId": {
+      "type": "string",
+      "pattern": "^ctx_[A-Za-z0-9_-]+$"
+    },
+    "resourceId": {
+      "type": "string",
+      "pattern": "^resource_[A-Za-z0-9_-]+$"
+    },
+    "missionId": {
+      "type": "string",
+      "pattern": "^mission_[A-Za-z0-9_-]+$"
+    },
+    "topicDiscoveryJobId": {
+      "type": "string",
+      "pattern": "^topicjob_[A-Za-z0-9_-]+$"
+    },
+    "topicProposalId": {
+      "type": "string",
+      "pattern": "^proposal_[A-Za-z0-9_-]+$"
+    },
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4
+    },
+    "selector": {
+      "oneOf": [
+        { "$ref": "#/$defs/turnRangeSelector" },
+        { "$ref": "#/$defs/jsonPointerSelector" },
+        { "$ref": "#/$defs/textSpanSelector" },
+        { "$ref": "#/$defs/markdownSectionSelector" },
+        { "$ref": "#/$defs/pdfPageSpanSelector" },
+        { "$ref": "#/$defs/wholeResourceSelector" }
+      ]
+    },
+    "turnRangeSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "start", "end"],
+      "properties": {
+        "type": { "const": "turn-range" },
+        "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "jsonPointerSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "pointer"],
+      "properties": {
+        "type": { "const": "json-pointer" },
+        "pointer": {
+          "type": "string",
+          "pattern": "^(?:$|/(?:[^~/]|~0|~1)*(?:/(?:[^~/]|~0|~1)*)*)$"
+        }
+      }
+    },
+    "textSpanSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "start", "end"],
+      "properties": {
+        "type": { "const": "text-span" },
+        "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "markdownSectionSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "headingPath"],
+      "properties": {
+        "type": { "const": "markdown-section" },
+        "headingPath": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "pdfPageSpanSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "page", "start", "end"],
+      "properties": {
+        "type": { "const": "pdf-page-span" },
+        "page": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "start": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "end": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "wholeResourceSelector": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "whole-resource" }
+      }
+    },
+    "topicEvidenceRef": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["resourceId", "selector", "excerpt", "excerptDigest"],
+      "properties": {
+        "resourceId": { "$ref": "#/$defs/resourceId" },
+        "selector": { "$ref": "#/$defs/selector" },
+        "excerpt": { "type": "string" },
+        "excerptDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "groundability",
+        "decisionValue",
+        "unresolvedness",
+        "recurrence",
+        "novelty",
+        "timeliness",
+        "familiarFit",
+        "feasibility",
+        "humanResonance",
+        "riskPenalty",
+        "visibleTotal"
+      ],
+      "properties": {
+        "groundability": { "$ref": "#/$defs/score" },
+        "decisionValue": { "$ref": "#/$defs/score" },
+        "unresolvedness": { "$ref": "#/$defs/score" },
+        "recurrence": { "$ref": "#/$defs/score" },
+        "novelty": { "$ref": "#/$defs/score" },
+        "timeliness": { "$ref": "#/$defs/score" },
+        "familiarFit": { "$ref": "#/$defs/score" },
+        "feasibility": { "$ref": "#/$defs/score" },
+        "humanResonance": { "$ref": "#/$defs/score" },
+        "riskPenalty": { "$ref": "#/$defs/score" },
+        "visibleTotal": {
+          "type": "number",
+          "minimum": -0.8,
+          "maximum": 4,
+          "multipleOf": 0.01
+        }
+      }
+    },
+    "suggested": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["mode", "deliverable", "sourceTarget", "wallClockMinutes"],
+      "properties": {
+        "mode": { "enum": ["brief", "sweep", "paper", "autoresearch"] },
+        "deliverable": { "type": "string" },
+        "sourceTarget": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "wallClockMinutes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    }
+  }
+}
