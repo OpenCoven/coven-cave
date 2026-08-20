@@ -82,6 +82,7 @@ export type { Destination } from "@/components/home/home-destinations";
 type Props = {
   familiars: ResolvedFamiliar[];
   project: CaveProject | null;
+  taskOrigin?: HomeTaskOrigin | null;
   actingFamiliarId: string | null;
   onRequestActingFamiliar: (
     actionLabel: string,
@@ -133,6 +134,7 @@ const HOME_COMPOSER_MAX_HEIGHT = 332;
 export function HomeComposer({
   familiars,
   project,
+  taskOrigin = null,
   actingFamiliarId,
   onRequestActingFamiliar,
   onValidateActingFamiliar,
@@ -457,12 +459,6 @@ export function HomeComposer({
       .filter(Boolean)
       .join(" · ");
   }, [selectedFamiliar]);
-
-  // From-task row (chat revamp 1a): prop-driven and ready, but UNWIRED — no
-  // surface routes a task into the home composer today (board cards open
-  // chats directly via pending-chat-action). First task→home handoff sets
-  // this from its payload and the row lights up. See home-from-task.tsx.
-  const taskOrigin: HomeTaskOrigin | null = null;
 
   // Auto-grow textarea — chat-composer sizing, shared hook (use-autogrow-textarea).
   useAutogrowTextarea(textareaRef, text, {

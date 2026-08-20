@@ -1388,10 +1388,9 @@ function ShellInner({
         onClick={toggleRightChat}
       >
         <Icon
-          name={rightChatOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
           width={CAVE_ICON_SIZE.shellToggle}
           height={CAVE_ICON_SIZE.shellToggle}
-          className="shell-top-toggle__icon--mirrored"
         />
       </button>
     ) : null
@@ -1438,13 +1437,7 @@ function ShellInner({
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
       <div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">
-        <div className="shell-window-titlebar__controls">
-          {navToggle}
-          {historyNav}
-        </div>
-        <div className="shell-window-titlebar__rail" data-tauri-drag-region="deep">
-          <span className="shell-window-titlebar__title">Coven</span>
-        </div>
+        <span className="shell-window-titlebar__title">Coven</span>
       </div>
       {/* `deep` (not the bare attribute) matters: drag.js's bare value only
           drags on DIRECT presses on the attributed element, so empty chrome

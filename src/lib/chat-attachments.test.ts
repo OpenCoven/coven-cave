@@ -78,6 +78,46 @@ assert.match(
 );
 assert.doesNotMatch(mediaPrompt, /\(content unavailable\)/);
 
+// Disposition is explicit for every non-image family: embedded text reaches
+// the prompt, while archives and unknown binary files retain their bytes for
+// materialization but never pretend those bytes were decoded as text.
+{
+  const binary = Buffer.from("opaque payload").toString("base64");
+  const dispositionAttachments = normalizeChatAttachments([
+    {
+      name: "readme.txt",
+      type: "text/plain",
+      size: 11,
+      text: "hello world",
+    },
+    {
+      name: "sources.zip",
+      type: "application/zip",
+      size: 14,
+      dataUrl: `data:application/zip;base64,${binary}`,
+    },
+    {
+      name: "artifact.bin",
+      type: "application/octet-stream",
+      size: 14,
+      dataUrl: `data:application/octet-stream;base64,${binary}`,
+    },
+  ]);
+  assert.equal(dispositionAttachments[0].text, "hello world");
+  assert.ok(dispositionAttachments[1].dataUrl, "archive bytes survive for runtime materialization");
+  assert.ok(dispositionAttachments[2].dataUrl, "unknown file bytes survive for runtime materialization");
+  const dispositionPrompt = buildPromptWithAttachments("Inspect.", dispositionAttachments);
+  assert.match(dispositionPrompt, /readme\.txt[\s\S]*```text\nhello world\n```/);
+  assert.match(
+    dispositionPrompt,
+    /sources\.zip[\s\S]*\(file attached as metadata only — text content was not available\)/,
+  );
+  assert.match(
+    dispositionPrompt,
+    /artifact\.bin[\s\S]*\(file attached as metadata only — text content was not available\)/,
+  );
+}
+
 // Audio gets its own metadata-only wording, distinct from video's.
 {
   const audioPrompt = buildPromptWithAttachments("Listen.", normalizeChatAttachments([

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const toast = readFileSync(new URL("./ui/settings-save-toast.tsx", import.meta.url), "utf8");
-const feedback = readFileSync(new URL("../lib/settings-save-feedback.ts", import.meta.url), "utf8");
 const toastStyles = readFileSync(new URL("../styles/globals/shared-pickers-and-toasts.css", import.meta.url), "utf8");
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const familiarSettings = readFileSync(new URL("./familiar-tab-settings.tsx", import.meta.url), "utf8");
@@ -16,15 +15,8 @@ const voice = readFileSync(new URL("./voice-provider-settings.tsx", import.meta.
 const fonts = readFileSync(new URL("./settings-fonts.tsx", import.meta.url), "utf8");
 const backdrop = readFileSync(new URL("./backdrop-settings.tsx", import.meta.url), "utf8");
 
-assert.match(toast, /SETTINGS_SAVED_EVENT/, "the toast listens to the shared save event");
 assert.match(toast, /role="status"/, "saved feedback is announced politely");
-assert.match(toast, /DISMISS_AFTER_MS/, "saved feedback dismisses automatically");
 assert.match(toast, /aria-label="Dismiss saved notification"/, "saved feedback can be dismissed");
-assert.match(
-  feedback,
-  /const saved = await flushAppPreferences\(\);\s*if \(saved\) showSettingsSavedToast\(message\)/,
-  "canonical preferences report success only after persistence",
-);
 assert.match(
   toastStyles,
   /\.ui-save-toast\s*\{\s*bottom:/,

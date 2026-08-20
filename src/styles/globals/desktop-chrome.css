@@ -77,22 +77,6 @@ button:active > .edge-rail-chip {
   display: none;
 }
 
-.shell-window-titlebar__controls {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-width: 0;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
-.shell-window-titlebar__controls :is(button, a, input, [role="button"]) {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
 .shell-top__bar {
   display: flex;
   align-items: center;
@@ -104,9 +88,8 @@ button:active > .edge-rail-chip {
 
 .shell-top .menu-bar {
   width: 100%;
-  height: 34px;
   min-height: 34px;
-  padding: 0;
+  padding-inline: 0;
   border-bottom: 0;
   background: transparent;
 }
@@ -115,8 +98,7 @@ button:active > .edge-rail-chip {
    Layered macOS title bar (Tauri desktop)
    The native title bar is set to `Overlay` (see src-tauri/src/lib.rs), so the
    webview fills to the very top and the traffic-light buttons float over a
-   dedicated identity strip. Workspace search and actions share that same row,
-   beginning at the live left-rail edge.
+   dedicated identity strip. The functional toolbar sits beneath it.
    The actual window drag is NOT these `app-region` hints: WebKit ignores them
    on external-URL webviews (the app loads from http://127.0.0.1), so dragging
    is driven by the `data-tauri-drag-region="deep"` attributes in shell.tsx +
@@ -132,33 +114,22 @@ button:active > .edge-rail-chip {
    inset at standard macOS metrics. */
 :root[data-tauri-titlebar] {
   --titlebar-lights-inset: 78px;
-  --shell-native-titlebar-height: 34px;
-  --shell-nav-chrome-width: 56px;
-}
-
-:root[data-tauri-titlebar][data-traffic-lights="hidden"],
-:root[data-tauri-titlebar][data-window-fullscreen] {
-  --titlebar-lights-inset: 0px;
 }
 
 /* Native identity strip: the centered title is positioned against the whole
    window rather than the traffic-light-safe content area. */
 :root[data-tauri-titlebar] .shell-window-titlebar {
   position: relative;
-  display: flex;
-  align-items: center;
-  flex: 0 0 var(--shell-native-titlebar-height);
-  min-height: var(--shell-native-titlebar-height);
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  min-height: 30px;
   padding: 0 var(--space-3) 0 var(--titlebar-lights-inset);
   background: color-mix(in oklch, var(--bg-base) 46%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border-bottom: 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
   -webkit-app-region: drag;
   app-region: drag;
-}
-
-.shell-window-titlebar__rail {
-  display: contents;
 }
 
 :root[data-tauri-titlebar] .shell-window-titlebar__title {
@@ -173,15 +144,13 @@ button:active > .edge-rail-chip {
   user-select: none;
 }
 
-/* Outside the desktop connected-rail layout this remains a compact route bar. */
+/* Functional controls remain in their own compact row below native chrome. */
 :root[data-tauri-titlebar] .shell-top {
-  box-sizing: border-box;
-  height: var(--shell-native-titlebar-height);
   min-height: 34px;
   padding-left: var(--space-3);
   background: var(--bg-base);
   backdrop-filter: none;
-  border-bottom: 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root[data-tauri-titlebar] .shell-window-titlebar { background: var(--bg-base); }
@@ -196,8 +165,8 @@ button:active > .edge-rail-chip {
 /* Full-window route bands: Settings, Dashboard/Reports, and the analytics
    page render in the same overlay-titlebar window once the app navigates
    away from the workspace shell — their leading controls (Back, breadcrumbs)
-   need the same reserve until the destination shell mounts its own native
-   title strip and applies the current navigation state. */
+   need the same reserve. The shell restores the native lights on unmount, so
+   these never need a hidden-state variant. */
 :root[data-tauri-titlebar] .settings-shell__header {
   padding-left: var(--titlebar-lights-inset);
 }
@@ -214,90 +183,6 @@ button:active > .edge-rail-chip {
 }
 
 @media (min-width: 1024px) {
-  /* Dia-style connected rail: the resizable left navigation owns the window's
-     top-left corner, including the native traffic-light/title area. Workspace
-     chrome starts at the live rail edge instead of spanning above it. */
-  :root[data-tauri-titlebar] .shell-frame {
-    position: relative;
-  }
-
-  :root[data-tauri-titlebar] .shell-window-titlebar {
-    position: absolute;
-    inset: 0 0 auto 0;
-    z-index: 142;
-    padding: 0 var(--space-3) 0 0;
-  }
-
-  :root[data-tauri-titlebar] .shell-window-titlebar__rail {
-    order: -1;
-    display: flex;
-    align-items: center;
-    flex: 0 0 var(--shell-nav-chrome-width);
-    width: var(--shell-nav-chrome-width);
-    height: 100%;
-    min-width: 0;
-    padding-left: max(var(--titlebar-lights-inset), var(--space-3));
-    overflow: hidden;
-    background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
-    border-right: 1px solid var(--border-hairline);
-    transition: width var(--duration-base) var(--ease-standard),
-      flex-basis var(--duration-base) var(--ease-standard);
-  }
-
-  :root[data-tauri-titlebar] .shell-window-titlebar__controls {
-    display: none;
-  }
-
-  :root[data-tauri-titlebar] .shell-window-titlebar__title {
-    position: static;
-    flex: 0 0 auto;
-    transform: none;
-    white-space: nowrap;
-  }
-
-  :root[data-tauri-titlebar][data-traffic-lights="hidden"] .shell-window-titlebar__rail,
-  :root[data-tauri-titlebar][data-window-fullscreen] .shell-window-titlebar__rail {
-    padding-left: var(--space-3);
-  }
-
-  :root[data-tauri-titlebar][data-traffic-lights="hidden"] .shell-window-titlebar__title {
-    visibility: hidden;
-  }
-
-  :root[data-tauri-titlebar] .shell-top {
-    position: absolute;
-    top: 0;
-    right: 0;
-    left: var(--shell-nav-chrome-width);
-    z-index: 143;
-    width: auto;
-    transition: left var(--duration-base) var(--ease-standard);
-  }
-
-  :root[data-tauri-titlebar] .shell-body {
-    height: 100%;
-    min-height: 0;
-  }
-
-  :root[data-tauri-titlebar] .shell-nav {
-    padding-top: calc(var(--shell-native-titlebar-height) + var(--space-2));
-  }
-
-  :root[data-tauri-titlebar] .shell-nav-panel {
-    box-shadow: inset -1px 0 0 var(--border-hairline);
-  }
-
-  :root[data-tauri-titlebar] :is(
-    .shell-list-panel,
-    .shell-right-chat-panel
-  ) {
-    padding-top: var(--shell-native-titlebar-height);
-  }
-
-  :root[data-tauri-titlebar] .shell-detail-panel {
-    padding-top: calc(var(--shell-native-titlebar-height) + var(--space-2));
-  }
-
   /* Destination shells provide their own visible top-level shell bar on
      desktop, so it owns the traffic-light reserve. Their route-local headers
      sit below it and must keep their normal content alignment rather than
@@ -322,10 +207,6 @@ button:active > .edge-rail-chip {
     pointer-events: none;
     -webkit-app-region: drag;
     app-region: drag;
-  }
-
-  :root[data-tauri-titlebar] .aps-top {
-    display: none;
   }
 
   :root[data-tauri-titlebar] :is(
@@ -363,12 +244,6 @@ button:active > .edge-rail-chip {
   }
 }
 
-@media (max-width: 1023px) {
-  :root[data-tauri-titlebar] .shell-window-titlebar__controls {
-    display: none;
-  }
-}
-
 .shell-top-toggle {
   display: inline-flex;
   align-items: center;
@@ -403,10 +278,6 @@ button:active > .edge-rail-chip {
   color: var(--text-muted);
   cursor: not-allowed;
   opacity: 0.45;
-}
-
-.shell-top-toggle__icon--mirrored {
-  transform: scaleX(-1);
 }
 
 /* History Back/Forward — quiet chevrons right of the nav toggle (Codex-style).
