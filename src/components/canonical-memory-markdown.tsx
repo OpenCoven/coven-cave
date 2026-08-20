@@ -174,7 +174,7 @@ function renderBlockNode(block: Block, key: string): ReactNode {
         : "h2";
       return createElement(
         tag,
-        { key, className: "document-reader__nested-heading" },
+        { key, className: "document-reader__heading" },
         renderInline(block.content, key),
         children,
       );
