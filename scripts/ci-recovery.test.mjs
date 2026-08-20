@@ -338,6 +338,34 @@ test("a partial guard contract is skipped without blocking the other candidates"
   assert.equal(messages.some((message) => message.includes("needs attention")), true);
 });
 
+test("an expected_pr_number-only contract is skipped and never dispatched", async () => {
+  const pr = pull();
+  const expectedPrNumberOnlyWorkflow = [
+    "name: CI",
+    "on:",
+    "  workflow_dispatch:",
+    "    inputs:",
+    "      expected_pr_number:",
+    "        required: true",
+    "        type: string",
+    "jobs:",
+    "  build:",
+    "    if: ${{ inputs.expected_pr_number }}",
+    "",
+  ].join("\n");
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: { [pr.head.sha]: expectedPrNumberOnlyWorkflow },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
+  assert.equal(result.degraded, true);
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
 test("a required job missing the expected SHA failure is skipped, never dispatched", async () => {
   const pr = pull();
   const fixture = githubFixture({

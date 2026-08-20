@@ -326,8 +326,7 @@ async function findCandidateEvidence(context, final, commit) {
     eligible.push({ run, parsed, runUrl });
   }
 
-  eligible.sort((a, b) => compareCandidateRcDescending(a.parsed, b.parsed));
-
+  eligible.sort((left, right) => compareCandidateRcDescending(left.parsed, right.parsed));
   for (const { run, parsed, runUrl } of eligible) {
     const jobsPath =
       `${context.repositoryPath}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`;

@@ -422,6 +422,7 @@ async function inspectRecoveryDispatch(context, sha) {
     Object.hasOwn(inputs, "expected_pr_number")
       ? inputs.expected_pr_number
       : null;
+  const hasExpectedPrNumberInput = expectedPrNumberInput !== null;
   const hasCompleteExpectedPrNumberInput =
     expectedPrNumberInput !== null &&
     typeof expectedPrNumberInput === "object" &&
@@ -472,6 +473,7 @@ async function inspectRecoveryDispatch(context, sha) {
   const serialized = JSON.stringify(workflow);
   const hasGuardedProtocolMarker =
     hasExpectedInput ||
+    hasExpectedPrNumberInput ||
     serialized.includes("inputs.expected_sha") ||
     serialized.includes("inputs.expected_pr_number");
   if (hasGuardedProtocolMarker) {

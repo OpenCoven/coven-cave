@@ -58,7 +58,7 @@ test("exports strict tag patterns and parsing contracts", () => {
 test("candidate ordering works correctly with valid large safe integers", async () => {
   const lower = "v1.2.3-rc.9007199254740990";
   const higher = "v1.2.3-rc.9007199254740991";
-  const { fetchImpl } = githubFixture({
+  const { fetchImpl, calls } = githubFixture({
     routes: ({ pathname }) => {
       if (pathname.endsWith("/actions/workflows/release-candidate.yml/runs")) {
         return jsonResponse({
@@ -82,6 +82,51 @@ test("candidate ordering works correctly with valid large safe integers", async 
   );
   assert.equal(result.candidateTag, higher);
   assert.equal(result.candidateRunId, 22);
+  assert.equal(
+    calls.some((call) => new URL(call.url).pathname.endsWith("/actions/runs/21/jobs")),
+    false,
+    "a lower candidate's jobs are not queried after the higher candidate succeeds",
+  );
+  assert.equal(
+    calls.some((call) => new URL(call.url).pathname.endsWith(`/git/ref/tags/${lower}`)),
+    false,
+    "a lower candidate's tag is not queried after the higher candidate succeeds",
+  );
+});
+
+test("an invalid higher candidate falls through to a valid lower candidate", async () => {
+  const lower = "v1.2.3-rc.1";
+  const higher = "v1.2.3-rc.2";
+  const { fetchImpl, calls } = githubFixture({
+    routes: ({ pathname }) => {
+      if (pathname.endsWith("/actions/workflows/release-candidate.yml/runs")) {
+        return jsonResponse({
+          workflow_runs: [
+            candidateRun({ id: 21, tag: lower }),
+            candidateRun({ id: 22, tag: higher }),
+          ],
+        });
+      }
+      if (pathname.endsWith("/actions/runs/22/jobs")) {
+        return jsonResponse({ jobs: [rollupJob(), rollupJob()] });
+      }
+      if (pathname.endsWith("/actions/runs/21/jobs")) {
+        return jsonResponse({ jobs: [rollupJob()] });
+      }
+    },
+  });
+
+  const result = await authorizeRelease(
+    baseOptions({ tag: "v1.2.3", fetchImpl, git: gitFixture() }),
+  );
+
+  assert.equal(result.candidateTag, lower);
+  assert.equal(result.candidateRunId, 21);
+  assert.equal(
+    calls.some((call) => new URL(call.url).pathname.endsWith("/actions/runs/22/jobs")),
+    true,
+    "the invalid higher candidate is inspected first",
+  );
 });
 
 test("authorizes a signed candidate push and proves its local main ancestry", async () => {
@@ -179,6 +224,18 @@ test("candidate authorization rejects lightweight, unsigned, mismatched, and off
       /not contained in origin\/main/,
     );
   });
+});
+
+test("candidate authorization rejects a blank GitHub token before making a request", async () => {
+  const { fetchImpl, calls } = githubFixture();
+  await assert.rejects(
+    authorizeCandidate({
+      ...baseOptions({ tag: "v1.2.3-rc.1", fetchImpl, git: gitFixture() }),
+      token: " \t",
+    }),
+    /GitHub token is required/,
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("authorizes the highest valid candidate across bounded pagination", async () => {
