@@ -194,6 +194,33 @@ test("playable media keeps its existing metadata-only harness behavior", async (
   }
 });
 
+test("reloaded media stays metadata-only instead of staging from its stored id", async () => {
+  const grantedRoot = mkdtempSync(join(tmpdir(), "cave-granted-media-retry-"));
+  const payload = Buffer.from("fake media bytes");
+  const source = normalizeChatAttachments([
+    {
+      name: "demo.mp4",
+      type: "video/mp4",
+      mimeType: "video/mp4",
+      size: payload.byteLength,
+      dataUrl: `data:video/mp4;base64,${payload.toString("base64")}`,
+    },
+  ]);
+  try {
+    const persisted = await persistChatAttachments(
+      stripPreviewOnlyAttachmentFields(source),
+      source,
+    );
+    const reloaded = normalizeChatAttachments(persisted);
+    if (!reloaded[0]?.storedId) return;
+    assert.equal(reloaded[0].dataUrl, undefined, "the transcript excludes media bytes");
+    const files = await writeAttachmentsToRuntime(reloaded, grantedRoot);
+    assert.equal(files.size, 0, "a stored media source is not staged for the Read tool");
+  } finally {
+    rmSync(grantedRoot, { recursive: true, force: true });
+  }
+});
+
 test("a storedId survives the round trip through normalization", async () => {
   const attachments = normalizeChatAttachments([IMAGE]);
   const [persisted] = await persistChatAttachments(

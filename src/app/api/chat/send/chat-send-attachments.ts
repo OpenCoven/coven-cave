@@ -119,6 +119,7 @@ export async function writeAttachmentsToRuntime(
         const stored = await readChatImageAttachment(attachment.storedId);
         bytes = stored.data;
         mimeType = stored.mimeType;
+        if (mimeType.startsWith("audio/") || mimeType.startsWith("video/")) continue;
       } catch {
         continue;
       }
