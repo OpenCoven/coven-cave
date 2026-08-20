@@ -26,6 +26,25 @@ assert.ok(
   "proxy should exempt only the exact public pdf.js worker filename",
 );
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
+assert.match(
+  source,
+  /process\.env\.COVEN_CAVE_DEV_PROBE_TOKEN[\s\S]*?req\.method === "GET"[\s\S]*?req\.nextUrl\.pathname === "\/"[\s\S]*?req\.nextUrl\.searchParams\.get\("__devShellProbe"\) === "1"/,
+  "the dev readiness credential must be scoped to the exact root-document probe",
+);
+assert.match(
+  source,
+  /isAuthenticatedDevReadinessProbe\(req, trustedLocalPeer\)[\s\S]*?response\.headers\.set\(DEV_READINESS_PROOF_HEADER, "1"\)/,
+  "an authenticated local dev probe must receive explicit server readiness proof",
+);
+const readinessHelper = source.slice(
+  source.indexOf("function isAuthenticatedDevReadinessProbe"),
+  source.indexOf("function bearerToken"),
+);
+assert.doesNotMatch(
+  readinessHelper,
+  /COVEN_CAVE_ACCESS_TOKEN|authorization/,
+  "dev readiness must not reuse or transmit the persisted mobile-access credential",
+);
 assert.match(source, /isValidResearchMediaTicketRequest/, "proxy should accept only the restricted native media ticket when a media element cannot send the sidecar header");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
 assert.match(

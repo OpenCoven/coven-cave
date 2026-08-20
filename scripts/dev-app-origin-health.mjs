@@ -1,7 +1,3 @@
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 /**
  * Bounded loopback-origin readiness probe for the Tauri development launcher.
  * A listening TCP port is not sufficient: a wedged Next compiler can accept
@@ -14,6 +10,8 @@ const READY_PATH = "/?__devShellProbe=1";
 const DEFAULT_TIMEOUT_MS = 1_500;
 const MAX_TIMEOUT_MS = 300_000;
 const RETRY_DELAY_MS = 50;
+const READINESS_TOKEN_HEADER = "x-coven-cave-readiness-token";
+const READINESS_PROOF_HEADER = "x-coven-cave-readiness";
 
 export function parsePort(value) {
   if (!/^\d+$/.test(value ?? "")) return null;
@@ -30,27 +28,8 @@ export function parseTimeout(value) {
     : null;
 }
 
-export function resolveProbeAccessToken({
-  port,
-  env = process.env,
-  homeDir = homedir(),
-  readFileImpl = readFileSync,
-} = {}) {
-  const explicit = env.COVEN_CAVE_ACCESS_TOKEN?.trim();
-  if (explicit) return explicit;
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) return "";
-
-  const stateRoot =
-    env.COVEN_CAVE_MOBILE_STATE_ROOT?.trim()
-    || join(env.XDG_STATE_HOME?.trim() || join(homeDir, ".local", "state"), "coven-cave");
-  const stateDir =
-    env.COVEN_CAVE_MOBILE_STATE_DIR?.trim()
-    || join(stateRoot, `mobile-tailscale-${port}`);
-  try {
-    return readFileImpl(join(stateDir, "access-token"), "utf8").trim();
-  } catch {
-    return "";
-  }
+export function resolveProbeToken(env = process.env) {
+  return env.COVEN_CAVE_DEV_PROBE_TOKEN?.trim() ?? "";
 }
 
 async function awaitByDeadline(promise, deadline) {
@@ -75,7 +54,7 @@ export async function loopbackOriginResponds({
   port,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fetchImpl = fetch,
-  accessToken = "",
+  probeToken = resolveProbeToken(),
 } = {}) {
   if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) return false;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) return false;
@@ -87,12 +66,19 @@ export async function loopbackOriginResponds({
       const response = await fetchImpl(`http://127.0.0.1:${port}${READY_PATH}`, {
         method: "GET",
         redirect: "manual",
-        headers: accessToken
-          ? { authorization: ["Bearer", accessToken].join(" ") }
-          : undefined,
+        headers: {
+          accept: "text/html",
+          ...(probeToken ? { [READINESS_TOKEN_HEADER]: probeToken } : {}),
+        },
         signal: AbortSignal.timeout(remainingMs),
       });
-      if (response.status >= 200 && response.status < 400) return true;
+      if (
+        response.status >= 200
+        && response.status < 400
+        && response.headers?.get?.(READINESS_PROOF_HEADER) === "1"
+      ) {
+        return true;
+      }
       await awaitByDeadline(response.body?.cancel(), deadline);
     } catch {}
 
@@ -116,6 +102,5 @@ function cliArgs(argv) {
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) {
   const options = cliArgs(process.argv.slice(2));
-  const accessToken = options ? resolveProbeAccessToken({ port: options.port }) : "";
-  process.exitCode = options && await loopbackOriginResponds({ ...options, accessToken }) ? 0 : 1;
+  process.exitCode = options && await loopbackOriginResponds(options) ? 0 : 1;
 }
