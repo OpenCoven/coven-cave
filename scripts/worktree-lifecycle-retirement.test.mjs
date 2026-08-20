@@ -1869,7 +1869,7 @@ test("real git adapter reads tag retention from the remote, peeling annotated ta
   }
 });
 
-test("createGitRetirementOperations rejects path traversal, absolute paths, and symlink cleanup", () => {
+test("createGitRetirementOperations rejects unsafe paths and unlinks terminal symlinks", () => {
   const fixture = createGitFixture();
   try {
     const gate = withPathPrefix(fixture.bin, () =>
@@ -1924,16 +1924,31 @@ test("createGitRetirementOperations rejects path traversal, absolute paths, and 
 
     assert.deepEqual(operations.removeDisposableIgnored({
       ...baseItem,
-      ignoredPaths: ["target/linked"],
+      ignoredPaths: ["target/linked/owned.txt"],
     }), {
       ok: false,
-      reason: "refused disposable ignored cleanup through a symbolic link: target/linked",
+      reason: "refused disposable ignored cleanup through a symbolic link: target/linked/owned.txt",
     });
 
+    assert.equal(existsSync(path.join(worktree, "target", "linked")), true);
+    assert.deepEqual(
+      withPathPrefix(fixture.bin, () =>
+        operations.removeDisposableIgnored({
+          ...baseItem,
+          ignoredPaths: ["target/linked"],
+        }),
+      ),
+      { ok: true },
+    );
+    assert.equal(
+      existsSync(path.join(worktree, "target", "linked")),
+      false,
+      "terminal symlink cleanup removes only the link",
+    );
     assert.equal(
       existsSync(path.join(fixture.fixtureRoot, "outside", "owned.txt")),
       true,
-      "cleanup rejection must not delete the symlink target",
+      "symlink cleanup must not delete the target",
     );
 
     const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));

@@ -98,7 +98,7 @@ describe("Familiar growth view", () => {
     assert.match(view, /if \(quiet && !silent\) announce\("Growth data refreshed\."\)/, "polls refresh without announcing; manual refresh still announces");
   });
 
-  it("keeps canonical memory failures unavailable instead of reporting zero", () => {
+  it("combines canonical and workspace memory without reporting false zeroes", () => {
     assert.match(
       view,
       /loadCanonicalMemoryList\(\)/,
@@ -107,6 +107,11 @@ describe("Familiar growth view", () => {
     assert.match(
       view,
       /memoryAvailability:\s*memoryJson\.state === "ready" \? "ready" : "unavailable"/,
+    );
+    assert.match(view, /getJson<FileMemoryResponse>\("\/api\/memory"/);
+    assert.match(
+      view,
+      /fileMemoryAvailability:\s*fileMemoryReady \? "ready" : "unavailable"/,
     );
     assert.match(
       view,

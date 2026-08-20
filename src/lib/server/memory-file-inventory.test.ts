@@ -23,6 +23,14 @@ const covenWorkspaceFile = path.join(
   "memory",
   "workspace.md",
 );
+const covenWorkspaceIndexFile = path.join(
+  home,
+  ".coven",
+  "workspaces",
+  "familiars",
+  "sage",
+  "MEMORY.md",
+);
 const openclawRuntimeFile = path.join(home, ".openclaw", "workspace", "memory", "runtime.md");
 const openclawFamiliarFile = path.join(
   home,
@@ -43,6 +51,7 @@ try {
   for (const file of [
     canonicalFile,
     covenWorkspaceFile,
+    covenWorkspaceIndexFile,
     openclawRuntimeFile,
     openclawFamiliarFile,
     openclawIndexFile,
@@ -59,6 +68,7 @@ try {
     "---\nsource_context: chat with sage\n---\n\nFirst body line of the note.\n",
     "utf8",
   );
+  await writeFile(covenWorkspaceIndexFile, "# Sage memory index\n", "utf8");
   await writeFile(openclawRuntimeFile, "OpenClaw runtime body.", "utf8");
   await writeFile(openclawFamiliarFile, "OpenClaw familiar body.", "utf8");
   await writeFile(openclawIndexFile, "# OpenClaw index", "utf8");
@@ -110,6 +120,10 @@ try {
   assert.equal(note.relPath, "workspace.md");
   assert.equal(note.sourceKindLabel, "Coven workspace files");
   assert.equal(note.rootLabel, "Coven workspace files");
+  const covenIndex = first.find((entry) => entry.fullPath === covenWorkspaceIndexFile);
+  assert.ok(covenIndex, "Coven familiar MEMORY.md is inventoried");
+  assert.equal(covenIndex.familiarId, "sage");
+  assert.equal(covenIndex.relPath, "MEMORY.md");
   for (const retainedPath of [
     openclawRuntimeFile,
     openclawFamiliarFile,

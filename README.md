@@ -176,6 +176,14 @@ to describe current behavior. For deeper design context, start with
 [`docs/coven-design-language.md`](docs/coven-design-language.md), and
 [`docs/multi-session-coordination.md`](docs/multi-session-coordination.md).
 
+For interface direction explored outside this repository,
+[**OpenCoven UI**](https://ui.opencoven.ai) is a standalone, dependency-free
+browser of chat-surface specimens — composer, messages, context, and actions.
+It is an exploration workspace
+([`OpenCoven/ui`](https://github.com/OpenCoven/ui)), not a component library and
+not the canonical source for anything in `src/components/`; shipped Cave code
+and `docs/coven-design-language.md` remain authoritative.
+
 ---
 
 ## Development

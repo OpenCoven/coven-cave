@@ -435,4 +435,6 @@ roster + voice samples) · `docs/superpowers/specs/` (per-surface `*-design.md`
 decisions; `docs/specs/` holds the frozen predecessors) ·
 `src/styles/globals/foundations.css` (the annotated token contract) ·
 `src/styles/globals/themes.css` (per-theme palettes) ·
-`src/styles/globals/primitives.css` (shared `.ui-*` classes).*
+`src/styles/globals/primitives.css` (shared `.ui-*` classes) ·
+[ui.opencoven.ai](https://ui.opencoven.ai) (standalone chat-surface specimens —
+exploratory direction only, never authoritative over shipped code).*
