@@ -1589,6 +1589,7 @@ export const SUITES = {
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
+    "scripts/release-promotion.test.mjs",
     "scripts/stamp-release.test.mjs",
     "src/app/api/daemon/start/route.test.ts",
     "src/lib/github-token.test.ts",
