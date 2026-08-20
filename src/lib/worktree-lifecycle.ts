@@ -345,6 +345,10 @@ const DISPOSABLE_IGNORED_ROOTS = [
   "test-results",
 ];
 
+const DISPOSABLE_IGNORED_FILES = new Set([
+  "public/pdf.worker.min.mjs",
+]);
+
 /** Hook artifacts written under `.claude/` that are machine-local bookkeeping,
  *  gitignored, and safe to discard during worktree retirement. */
 const DISPOSABLE_HOOK_ARTIFACTS = new Set([
@@ -381,6 +385,9 @@ export function isDisposableIgnoredPath(candidate: string): boolean {
     normalized === "next-env.d.ts" ||
     normalized.endsWith(".tsbuildinfo")
   ) {
+    return true;
+  }
+  if (DISPOSABLE_IGNORED_FILES.has(normalized)) {
     return true;
   }
   if (DISPOSABLE_HOOK_ARTIFACTS.has(normalized)) {

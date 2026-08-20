@@ -39,6 +39,7 @@ button:active > .edge-rail-chip {
    ──────────────────────────────────────────────── */
 .shell-top {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   flex-wrap: nowrap;

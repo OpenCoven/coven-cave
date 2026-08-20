@@ -32,6 +32,7 @@ type CanonicalMemoryReaderProps = {
   onMissing: () => void;
   onRefresh: () => void | Promise<void>;
   onBack?: () => void;
+  onExpand?: () => void;
   onStartDaemon?: () => void;
   loadDetail?: CanonicalMemoryDetailLoader;
 };
@@ -105,6 +106,7 @@ export function CanonicalMemoryReader({
   onMissing,
   onRefresh,
   onBack,
+  onExpand,
   onStartDaemon,
   loadDetail = fetchCanonicalMemoryDetail,
 }: CanonicalMemoryReaderProps) {
@@ -345,39 +347,50 @@ export function CanonicalMemoryReader({
               ))}
             </div>
           ) : null}
+          {onExpand ? (
+            <button
+              type="button"
+              onClick={onExpand}
+              aria-label="Expand to fullscreen reader"
+              title="Fullscreen"
+              className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
+            </button>
+          ) : null}
         </div>
-        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[length:var(--text-2xs)] @min-[560px]/memview:grid-cols-4">
-          <div>
+        <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[length:var(--text-2xs)]">
+          <div className="flex min-w-0 items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Source</dt>
             <dd className="truncate text-[var(--text-secondary)]">
               {detail.source.label}
             </dd>
           </div>
-          <div>
+          <div className="flex items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Privacy</dt>
             <dd className="text-[var(--text-secondary)]">
               {detail.privacy.classification ?? "unclassified"}
             </dd>
           </div>
-          <div>
+          <div className="flex items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Verification</dt>
             <dd className="text-[var(--text-secondary)]">
               {detail.verification.state}
             </dd>
           </div>
-          <div>
+          <div className="flex items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Attestation fields</dt>
             <dd className="text-[var(--text-secondary)]">
               {detail.attestationMetadata?.fieldCount ?? "Unavailable"}
             </dd>
           </div>
-          <div>
+          <div className="flex min-w-0 items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Supersedes</dt>
             <dd className="truncate text-[var(--text-secondary)]">
               {detail.supersession.supersedes ?? "None"}
             </dd>
           </div>
-          <div>
+          <div className="flex min-w-0 items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Superseded by</dt>
             <dd className="truncate text-[var(--text-secondary)]">
               {detail.supersession.supersededBy ?? "None"}

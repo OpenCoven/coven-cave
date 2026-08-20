@@ -11,9 +11,10 @@ assert.match(
   /\{ row: CanonicalMemoryRow; onDelete\?: never \}\s*\|\s*\{ row: FileMemoryRow; onDelete\?: \(\) => void \}/,
   "the prop union makes delete unrepresentable for canonical rows",
 );
-// two-line: title + age on line 1, source/size/stale on line 2
+// unified grammar: title + age, excerpt/path, then meaningful metadata
 assert.match(source, /\{row\.title\}/, "row renders the title");
 assert.match(source, /\{age\}/, "row renders the age label passed in");
+assert.match(source, /row\.kind === "canonical" \? row\.excerpt : compactRowPath\(row\.path\)/);
 assert.match(source, /\{row\.sourceLabel\}/, "row renders the source label");
 // selected styling via accent border
 assert.match(source, /selected/, "row reacts to a selected prop");

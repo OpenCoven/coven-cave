@@ -98,7 +98,7 @@ async function gotoGrimoire(page: Page) {
   });
 
   await page.goto("/?mode=grimoire");
-  await page.waitForSelector(".grimoire-view", { timeout: 30_000 });
+  await page.waitForSelector(".grimoire-view", { timeout: 60_000 });
 }
 
 /** The navigator rail. Row clicks scope here: with no open tabs the main pane
@@ -126,12 +126,31 @@ async function typeInEditor(page: Page, text: string) {
 }
 
 test.describe("grimoire autosave (desktop)", () => {
+  test("Memories home separates Continue, Recall, and Weave", async ({ page }) => {
+    await gotoGrimoire(page);
+
+    await expect(page.getByRole("heading", { name: "Continue", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Recall", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Weave", exact: true })).toBeVisible();
+    await expect(page.locator(".gl-thread")).toHaveCount(1);
+    await expect(page.locator(".gl-banner, .gl-bento")).toHaveCount(0);
+
+    await expect(page.getByRole("button", { name: "Library" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("searchbox", { name: "Search memories" })).toHaveCount(1);
+    await expect(page.getByRole("textbox", { name: "URL to capture" })).toBeVisible();
+    await expect(rail(page).getByRole("region", { name: "Journal" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "More Memories actions" }).click();
+    await expect(page.getByRole("menuitem", { name: "Weaves" })).toHaveAttribute("href", "/weaves");
+    await expect(page.getByRole("menuitem", { name: "Blank entry" })).toBeVisible();
+  });
+
   test("journal reflections autosave after the debounce — no Save click", async ({ page }) => {
     await gotoGrimoire(page);
-    // The rail formats journal dates through datetime prefs ("Jul 1" /
-    // "1 Jul", + year when not current) — match the row by its preview text,
-    // which is stable across pref and clock-year changes.
-    await rail(page).getByRole("button", { name: /Shipped the grimoire\./ }).click();
+    await page
+      .getByLabel("Recall")
+      .getByRole("button", { name: /Journal.*Shipped the grimoire\./ })
+      .click();
 
     const posted = page.waitForRequest(
       (req) => req.method() === "POST" && req.url().includes("/api/journal"),

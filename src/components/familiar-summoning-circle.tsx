@@ -888,31 +888,44 @@ function StageVessel({
   return (
     <div className="flex flex-col gap-3">
       <div role="radiogroup" aria-label="Vessel" className="summoning-vessels">
-        {vessels.map((v) => (
-          <button
-            key={v.kind}
-            type="button"
-            role="radio"
-            aria-checked={vessel === v.kind}
-            onClick={() => {
-              setVessel(v.kind);
-              // A previously selected local Grok runtime must not survive a
-              // switch to SSH: native Grok sessions are deliberately local-only.
-              if (v.kind === "ssh" && harness === "grok") setHarness(null);
-              if (v.kind === "hermes") setHarness("hermes");
-            }}
-            className={`focus-ring summoning-vessel${vessel === v.kind ? " summoning-vessel--active" : ""}`}
-          >
-            <Icon name={v.icon} width={18} className="summoning-vessel__icon" />
-            <span className="summoning-vessel__title">{v.title}</span>
-            <span className="summoning-vessel__hint">{v.hint}</span>
-          </button>
-        ))}
+        {vessels.map((v) => {
+          const active = vessel === v.kind;
+          return (
+            <button
+              key={v.kind}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => {
+                setVessel(v.kind);
+                // A previously selected local Grok runtime must not survive a
+                // switch to SSH: native Grok sessions are deliberately local-only.
+                if (v.kind === "ssh" && harness === "grok") setHarness(null);
+                if (v.kind === "hermes") setHarness("hermes");
+              }}
+              className={`focus-ring summoning-vessel${active ? " summoning-vessel--active" : ""}${active && v.kind === "local" ? " summoning-vessel--expanded" : ""}`}
+            >
+              <Icon name={v.icon} width={18} className="summoning-vessel__icon" />
+              <span className="summoning-vessel__title">{v.title}</span>
+              <span className="summoning-vessel__hint">{v.hint}</span>
+              <span className="summoning-vessel__action" aria-hidden>
+                {active ? "Selected" : "Choose"}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {vessel === "local" || vessel === "ssh" ? (
-        <div>
-          <span className={labelClass}>Runtime</span>
+        <div className="summoning-runtime-panel">
+          <div className="summoning-runtime-panel__heading">
+            <span className={labelClass}>Available runtimes</span>
+            <p className="summoning-runtime-panel__hint">
+              {vessel === "local"
+                ? `Choose what powers this familiar on ${localHost ?? "this Cave host"}.`
+                : "Choose the installed runtime to launch over SSH."}
+            </p>
+          </div>
           {harnesses === null ? (
             <p className="text-[length:var(--text-xs)] text-[var(--text-muted)]">Looking for installed runtimes…</p>
           ) : installedHarnesses.length === 0 ? (
@@ -932,7 +945,7 @@ function StageVessel({
               </button>
             </div>
           ) : (
-            <div role="radiogroup" aria-label="Runtime" className="summoning-chiprow">
+            <div role="radiogroup" aria-label="Runtime" className="summoning-runtime-grid">
               {installedHarnesses.map((h) => (
                 <button
                   key={h.id}
@@ -940,10 +953,13 @@ function StageVessel({
                   role="radio"
                   aria-checked={harness === h.id}
                   onClick={() => setHarness(h.id)}
-                  className={`focus-ring summoning-chip${harness === h.id ? " summoning-chip--active" : ""}`}
+                  className={`focus-ring summoning-runtime-option${harness === h.id ? " summoning-runtime-option--active" : ""}`}
                 >
-                  <Icon name="ph:terminal-window" width={12} />
-                  {h.label}
+                  <span className="summoning-runtime-option__identity">
+                    <Icon name="ph:terminal-window" width={14} />
+                    <span>{h.label}</span>
+                  </span>
+                  {harness === h.id ? <Icon name="ph:check-circle-fill" width={14} aria-hidden /> : null}
                 </button>
               ))}
             </div>

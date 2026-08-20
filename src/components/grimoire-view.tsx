@@ -3,16 +3,16 @@
 /**
  * Grimoire — the Cave's dedicated markdown-document surface.
  *
- * One OpenKnowledge-style home for every markdown document the coven keeps:
+ * One library for every markdown document the coven keeps:
  *
  *   - Stitches — the knowledge vault (~/.coven/knowledge): curated reference
  *     entries sewn from pinned sources or written by hand, edited here (title/tags frontmatter map to the vault schema).
  *   - Memory files — every allow-listed memory root, editable in place with
  *     mtime-guarded saves (agents also write these; conflicts surface, never
  *     silently lose an update).
- *   - Journal reflections — daily entries, editable as plain markdown bodies.
+ * Journal remains a top-level mode rather than a duplicate navigator group.
  *
- * Left: a searchable navigator grouped by source. Right: the shared MdEditor
+ * Left: a searchable Library navigator. Right: the shared MdEditor
  * (VISUAL WYSIWYG / MARKDOWN raw) wired to the matching transport.
  *
  * Deep link: `#grimoire:<kind>:<id>` selects a document on entry.
@@ -38,6 +38,8 @@ import {
   type DateTimePrefs,
 } from "@/lib/datetime-format";
 import { SearchInput } from "@/components/ui/search-input";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -412,7 +414,7 @@ function NavRow({
 const RAIL_COLLAPSED_STORAGE_KEY = "cave:grimoire:rail-collapsed";
 const NAVIGATOR_COLLAPSED_STORAGE_KEY = "cave:grimoire:navigator-collapsed:v1";
 
-type RailSectionId = "knowledge" | "memory" | "journal";
+type RailSectionId = "knowledge" | "memory";
 
 const MEMORY_GROUPS_STORAGE_KEY = "cave:grimoire:memory-groups-collapsed";
 const STITCH_GROUPS_STORAGE_KEY = "cave:grimoire:stitch-groups-collapsed";
@@ -437,14 +439,13 @@ function readCollapsedStitchGroups(): Record<string, boolean> {
 }
 
 function readCollapsedSections(): Record<RailSectionId, boolean> {
-  const none = { knowledge: false, memory: false, journal: false };
+  const none = { knowledge: false, memory: false };
   if (typeof window === "undefined") return none;
   try {
     const parsed = JSON.parse(window.localStorage.getItem(RAIL_COLLAPSED_STORAGE_KEY) ?? "{}");
     return {
       knowledge: parsed?.knowledge === true,
       memory: parsed?.memory === true,
-      journal: parsed?.journal === true,
     };
   } catch {
     return none;
@@ -1170,27 +1171,22 @@ export function GrimoireView({
   // Big groups (1000s of runtime files) would swamp the DOM — render each in
   // pages of 100 with an explicit "show more".
   const [memoryGroupLimits, setMemoryGroupLimits] = useState<Record<string, number>>({});
-  const visibleJournal = useMemo(
-    () => (journal ?? []).filter((d) => matches(d.date, d.preview)),
-    [journal, matches],
-  );
-
   // (grimoire-audit cave-gsvf) The only search feedback was the visual section
   // counters — announce result counts to screen readers, debounced past the
   // keystroke burst.
   useEffect(() => {
     if (!q) return;
     const t = window.setTimeout(() => {
-      const total = visibleKnowledge.length + visibleMemory.length + visibleJournal.length;
+      const total = visibleKnowledge.length + visibleMemory.length;
       announce(
         total === 0
           ? "No documents match"
-          : `${total} ${total === 1 ? "match" : "matches"} — ${visibleKnowledge.length} stitches, ${visibleMemory.length} memory, ${visibleJournal.length} journal`,
+          : `${total} ${total === 1 ? "match" : "matches"} — ${visibleKnowledge.length} stitches, ${visibleMemory.length} memory`,
         "polite",
       );
     }, 400);
     return () => window.clearTimeout(t);
-  }, [q, visibleKnowledge.length, visibleMemory.length, visibleJournal.length, announce]);
+  }, [q, visibleKnowledge.length, visibleMemory.length, announce]);
 
   const loading = knowledge === null || collections === null || memory === null || journal === null;
   const selectedKey = selection ? selectionKey(selection) : null;
@@ -1385,15 +1381,16 @@ export function GrimoireView({
 
   const detail =
     openTabs.length === 0 ? (
-      // No open tabs → the Knowledge launcher ("Memories Prototype"): aurora
-      // banner, one big search-or-capture field, and a bento of live entry
-      // points — all driven by the lists this view already loaded.
+      // No open tabs → Continue / Recall / Weave, driven only by the loaded
+      // library, familiar-memory, journal, and relation data.
       <GrimoireLauncher
         knowledge={knowledge ?? []}
         memory={scopedMemory}
         journal={journal ?? []}
         graph={scopedGraph}
         scopeLabel={memoryScopeLabel}
+        query={query}
+        onQueryChange={setQuery}
         journalTitle={(date) => journalDayLabel(date, dateTimePrefs)}
         onOpen={openDoc}
         onNewStitch={openStitchNew}
@@ -1494,9 +1491,9 @@ export function GrimoireView({
 
   return (
     <div className="grimoire-view flex h-full min-h-0 flex-col @container/grimoire">
-      {/* Compact band, launcher-era layout: title left, the Knowledge/Journal/
+      {/* Compact band: title left, the Library/Journal/
           Relations segmented tabs centered, contextual verbs right (the dashed
-          "New stitch" pill only makes sense on the Knowledge tab). */}
+          "New stitch" control only makes sense in Library). */}
       <header className="surface-compact-header grimoire-header">
         <h1 className="surface-compact-title">Memories</h1>
         <div role="group" aria-label="Memories view" className="grimoire-tabs">
@@ -1506,7 +1503,7 @@ export function GrimoireView({
             onClick={() => setView("docs")}
             className="focus-ring grimoire-tab"
           >
-            Knowledge
+            Library
           </button>
           <button
             type="button"
@@ -1526,11 +1523,10 @@ export function GrimoireView({
           </button>
         </div>
         <div className="surface-compact-actions">
-          {/* Doc search lives up here beside the tabs (it used to sit inside
-              the navigator rail). Same query state — it still filters the
-              rail's Stitches/Memory/Journal sections. Hidden on Relations,
-              where nothing consumes the query. */}
-          {view !== "graph" ? (
+          {/* The landing owns Recall search. Once a document is open, this
+              compact field edits the same Library query without rendering a
+              second visible search. */}
+          {view === "docs" && openTabs.length > 0 ? (
             <SearchInput
               value={query}
               onValueChange={setQuery}
@@ -1540,33 +1536,33 @@ export function GrimoireView({
               containerClassName="surface-compact-search"
             />
           ) : null}
-          <Link
-            href="/weaves"
-            className="focus-ring inline-flex h-[26px] shrink-0 items-center gap-1 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:path" width={11} aria-hidden />
-            Weaves
-          </Link>
           {view === "docs" ? (
-            <>
-              <button
-                type="button"
-                onClick={() => openStitchNew()}
-                className="focus-ring grimoire-newstitch"
-              >
-                <Icon name="ph:push-pin" width={11} aria-hidden />
-                New stitch
-              </button>
-              <button
-                type="button"
-                onClick={() => openDoc({ kind: "knowledge-new" })}
-                className="focus-ring inline-flex h-[26px] shrink-0 items-center gap-1 whitespace-nowrap rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2 text-[length:var(--text-xs)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:plus" width={11} aria-hidden />
-                Blank entry
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => openStitchNew()}
+              className="focus-ring grimoire-newstitch"
+            >
+              <Icon name="ph:push-pin" width={11} aria-hidden />
+              New stitch
+            </button>
           ) : null}
+          <OverflowMenu ariaLabel="More Memories actions">
+            <Link
+              href="/weaves"
+              role="menuitem"
+              className="ui-popover-item focus-ring"
+            >
+              <span>Weaves</span>
+            </Link>
+            {view === "docs" ? (
+              <>
+                <PopoverSeparator />
+                <PopoverItem onSelect={() => openDoc({ kind: "knowledge-new" })}>
+                  Blank entry
+                </PopoverItem>
+              </>
+            ) : null}
+          </OverflowMenu>
         </div>
       </header>
       <div className="flex min-h-0 flex-1 gap-3 p-3">
@@ -1627,15 +1623,6 @@ export function GrimoireView({
               className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:brain" width={14} aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => revealNavigatorSection("journal")}
-              aria-label="Open Journal navigator"
-              title="Open Journal navigator"
-              className="focus-ring-inset inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              <Icon name="ph:calendar-blank" width={14} aria-hidden />
             </button>
           </nav>
         ) : (
@@ -1832,31 +1819,6 @@ export function GrimoireView({
                       </div>
                     );
                   })
-                )}
-              </RailSection>
-              <RailSection
-                ariaLabel="Journal"
-                icon="ph:calendar-blank"
-                label="Journal"
-                description="One reflection per day, written by a familiar or by you"
-                count={visibleJournal.length}
-                collapsed={!q && collapsedSections.journal}
-                onToggle={() => toggleSection("journal")}
-              >
-                {visibleJournal.length === 0 ? (
-                  <p className="px-2 py-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                    {q ? "No matches." : "No journal entries yet — the Journal tab's Generate writes today's."}
-                  </p>
-                ) : (
-                  visibleJournal.map((day) => (
-                    <NavRow
-                      key={day.date}
-                      selected={selectedKey === `journal:${day.date}`}
-                      title={journalDayLabel(day.date, dateTimePrefs)}
-                      subtitle={day.preview}
-                      onClick={() => openDoc({ kind: "journal", date: day.date })}
-                    />
-                  ))
                 )}
               </RailSection>
             </>
