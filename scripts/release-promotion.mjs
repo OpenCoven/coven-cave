@@ -326,7 +326,8 @@ async function findCandidateEvidence(context, final, commit) {
     eligible.push({ run, parsed, runUrl });
   }
 
-  const survivors = [];
+  eligible.sort((a, b) => compareCandidateRcDescending(a.parsed, b.parsed));
+
   for (const { run, parsed, runUrl } of eligible) {
     const jobsPath =
       `${context.repositoryPath}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`;
@@ -353,16 +354,15 @@ async function findCandidateEvidence(context, final, commit) {
       if (error instanceof InvalidEvidenceError) continue;
       throw error;
     }
-    survivors.push({
+    return {
       rcText: parsed.rcText,
       tag: parsed.tag,
       runId: run.id,
       runUrl,
-    });
+    };
   }
 
-  survivors.sort(compareCandidateRcDescending);
-  return survivors[0] ?? null;
+  return null;
 }
 
 function compareCandidateRcDescending(left, right) {

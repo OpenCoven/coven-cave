@@ -469,8 +469,11 @@ async function inspectRecoveryDispatch(context, sha) {
     };
   }
 
+  const serialized = JSON.stringify(workflow);
   const hasGuardedProtocolMarker =
-    hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
+    hasExpectedInput ||
+    serialized.includes("inputs.expected_sha") ||
+    serialized.includes("inputs.expected_pr_number");
   if (hasGuardedProtocolMarker) {
     return {
       dispatchable: false,
