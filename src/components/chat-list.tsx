@@ -1246,7 +1246,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
           >
             <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {displayGroups.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => {
+            {displayGroups.map(({ projectRoot, sessions: rows }) => {
               // Flat "All sessions" view (the phone surface): split the list into a
               // counted PINNED section and a counted SESSIONS section, mirroring
               // the desktop rail. firstPinnedIdx/firstRestIdx place each header
@@ -1269,17 +1269,6 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                     </span>
                     <span className="shrink-0 text-[length:var(--text-xs)] text-[var(--text-muted)]">{rows.length}</span>
                     <span aria-hidden className="h-px min-w-0 flex-1 bg-gradient-to-r from-[var(--border-hairline)] to-transparent" />
-                    <button
-                      className="chat-list-group-new touch-always-visible flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNewChat(projectRoot ?? undefined, defaultFamiliarId ?? scopedFamiliarId);
-                      }}
-                      title={`New session in ${projectRoot ? repoName(projectRoot) : "no project"}`}
-                      aria-label={`New session in ${projectRoot ? repoName(projectRoot) : "no project"}`}
-                    >
-                      <Icon name="ph:plus" width="0.7rem" height="0.7rem" />
-                    </button>
                   </div>
                 )}
                 <ul className="chat-session-list divide-y divide-[var(--border-hairline)]">

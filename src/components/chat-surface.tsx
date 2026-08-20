@@ -24,10 +24,10 @@ import { Icon } from "@/lib/icon";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
 import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
-import type { InitialCommandControls } from "@/lib/command-controls";
 import { requestSummonFamiliar } from "@/lib/summon-events";
+import type { AgentsNewChatRequest } from "@/lib/agents-new-chat";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
 
@@ -80,6 +80,7 @@ type Props = {
   /** Roster-load failure + retry, forwarded to ChatRouter's empty state (cave-atzv). */
   familiarsError?: string | null;
   onRetryFamiliars?: () => void;
+  onRequestNewChat?: (request?: AgentsNewChatRequest) => void;
   pendingProjectRoot: string | null;
   pendingChatAction?: PendingChatAction;
   onSetActiveFamiliar: (id: string | null) => void;
@@ -122,6 +123,7 @@ export function ChatSurface({
   familiarsLoaded,
   familiarsError,
   onRetryFamiliars,
+  onRequestNewChat,
   pendingProjectRoot,
   pendingChatAction,
   onSetActiveFamiliar,
@@ -228,7 +230,12 @@ export function ChatSurface({
   // Window events
   useEffect(() => {
     const onNewChat = (e: Event) => {
-      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null; origin?: SessionOrigin; initialControls?: InitialCommandControls | null }>).detail;
+      const d = (e as CustomEvent<AgentsNewChatRequest>).detail;
+      if (onRequestNewChat) {
+        setScope("conversation");
+        onRequestNewChat(d ?? {});
+        return;
+      }
       if (d?.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
       window.setTimeout(
@@ -266,7 +273,7 @@ export function ChatSurface({
       window.removeEventListener("cave:agents-open-session", onOpenSession);
       window.removeEventListener("cave:familiar-select", onFamiliarSelect);
     };
-  }, [onSetActiveFamiliar, routerRef]);
+  }, [onRequestNewChat, onSetActiveFamiliar, routerRef]);
 
   // The thread rail's advanced-operations launchers reach this surface through
   // window-event bridges (same shape as the cave:agents-* events above).
@@ -301,7 +308,7 @@ export function ChatSurface({
           pendingChatAction.projectRoot ?? undefined,
           pendingChatAction.initialPrompt ?? undefined,
           pendingChatAction.familiarId,
-          undefined,
+          pendingChatAction.origin,
           pendingChatAction.initialControls ?? undefined,
           pendingChatAction.initialAttachments ?? undefined,
         ),
@@ -338,6 +345,10 @@ export function ChatSurface({
   // Hero "New chat" bridge: land on the conversation tab with a fresh session
   // for this familiar (same latch-then-route shape as the handlers above).
   function startFamiliarHeroChat(familiarId: string) {
+    if (onRequestNewChat) {
+      onRequestNewChat({ familiarId });
+      return;
+    }
     onSetActiveFamiliar(familiarId);
     setScope("conversation");
     window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, familiarId), 0);
@@ -510,6 +521,7 @@ export function ChatSurface({
                   familiarsLoaded={familiarsLoaded}
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
+                  onRequestNewChat={onRequestNewChat}
                   hideRail={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionsChanged={onSessionsChanged}

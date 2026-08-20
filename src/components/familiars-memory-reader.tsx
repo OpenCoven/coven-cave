@@ -64,11 +64,11 @@ export function MemoryReaderPane({
 
   if (!row) {
     return (
-      <div className="grid h-full min-h-0 place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-8">
+      <div className="fm-reader-empty">
         <EmptyState
           icon="ph:book-open"
-          headline="Select a memory to read"
-          subtitle="Pick an entry on the left to view its contents."
+          headline="Choose a memory"
+          subtitle="Select an entry to read its contents, provenance, and freshness."
         />
       </div>
     );
@@ -85,8 +85,8 @@ export function MemoryReaderPane({
   const fileError = error;
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
-      <div className="shrink-0 border-b border-[var(--border-hairline)] p-3">
+    <div className="fm-reader-shell flex h-full min-h-0 flex-col">
+      <div className="fm-reader-header shrink-0">
         <div className="flex items-start justify-between gap-2">
           {onBack ? (
             <button
@@ -104,7 +104,7 @@ export function MemoryReaderPane({
           >
             {row.title}
           </h3>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="fm-reader-actions flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={() => {
@@ -168,7 +168,7 @@ export function MemoryReaderPane({
             ) : null}
           </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+        <div className="fm-reader-meta">
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
             File
           </span>
@@ -183,7 +183,7 @@ export function MemoryReaderPane({
             </span>
           ) : null}
         </div>
-        <div className="mt-2 flex items-center gap-1">
+        <div className="fm-reader-path">
           <code
             className="min-w-0 flex-1 truncate font-mono text-[length:var(--text-2xs)] text-[var(--text-muted)]"
             title={row.path}
@@ -193,7 +193,7 @@ export function MemoryReaderPane({
         </div>
       </div>
       {editing ? (
-        <div className="min-h-0 flex-1">
+        <div className="fm-reader-body min-h-0 flex-1">
           <MemoryMdEditor
             path={row.contentPath}
             sourceLabel={row.sourceLabel}
@@ -204,7 +204,7 @@ export function MemoryReaderPane({
           />
         </div>
       ) : (
-        <div className="min-h-0 flex-1">
+        <div className="fm-reader-body min-h-0 flex-1">
           {fileError ? (
             <div className="p-4">
               <ErrorState

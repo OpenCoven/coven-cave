@@ -59,7 +59,7 @@ const queueIndex = chatRoute.indexOf(
   "const offlineChatResponse = await maybeQueueOfflineChat",
   postIndex,
 );
-const imageWriteIndex = chatRoute.indexOf("writeImageAttachmentsToRuntime", queueIndex);
+const imageWriteIndex = chatRoute.indexOf("writeAttachmentsToRuntime", queueIndex);
 const harnessPromptIndex = chatRoute.indexOf("const harnessPrompt =", queueIndex);
 
 assert.ok(postIndex >= 0, "Chat send POST handler should exist");

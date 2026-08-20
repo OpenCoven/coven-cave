@@ -26,6 +26,7 @@ const railHeader = read("./sidebar-rail-header.tsx");
 const homeSidebar = read("./sidebar-minimal.tsx");
 const chatSidebar = read("./workspace-sidebar.tsx");
 const railHeaderCss = read("../styles/globals/rail-header.css");
+const workspaceContextSwitcherCss = read("../styles/globals/workspace-context-switcher.css");
 const homeCss = read("../styles/sidebar-minimal/shell-chrome.css");
 const homeRailCss = read("../styles/sidebar-minimal/activity-rail.css");
 const chatCss = read("../styles/globals/shell-navigation.css");
@@ -57,6 +58,24 @@ assert.doesNotMatch(
   "the Chat rail reaches the familiar switcher only through the shared header",
 );
 
+// Neither sidebar mounts ProjectPicker directly — both reach it through WorkspaceContextSwitcher.
+assert.doesNotMatch(homeSidebar, /<ProjectPicker/, "the Home rail does not mount ProjectPicker directly");
+assert.doesNotMatch(chatSidebar, /<ProjectPicker/, "the Chat rail does not mount ProjectPicker directly");
+
+// The shared header now owns WorkspaceContextSwitcher and does NOT mount
+// FamiliarSwitcher directly — the composition is WorkspaceContextSwitcher's job.
+assert.match(
+  railHeader,
+  /import \{ WorkspaceContextSwitcher \} from "@\/components\/workspace-context-switcher";/,
+  "the shared header imports WorkspaceContextSwitcher",
+);
+assert.match(railHeader, /<WorkspaceContextSwitcher/, "the shared header renders WorkspaceContextSwitcher");
+assert.doesNotMatch(
+  railHeader,
+  /<FamiliarSwitcher/,
+  "the shared header delegates to WorkspaceContextSwitcher, not FamiliarSwitcher directly",
+);
+
 // Chat's ⌘N hint rides the shared button's trailing slot rather than forking it.
 assert.match(
   chatSidebar,
@@ -71,6 +90,11 @@ assert.match(
 
 // ── One namespace, declared once ────────────────────────────────────────────
 assert.match(globals, /@import "\.\.\/styles\/globals\/rail-header\.css";/, "the shared sheet is imported");
+assert.match(
+  globals,
+  /@import "\.\.\/styles\/globals\/workspace-context-switcher\.css";/,
+  "the workspace context switcher sheet is imported",
+);
 
 for (const [name, css] of [
   ["Home", homeCss + homeRailCss],
@@ -97,7 +121,13 @@ assert.doesNotMatch(
 );
 
 // ── The parity-critical properties resolve from the shared rule ─────────────
-const scopeRule = railHeaderCss.match(/\.rail-header__scope \.familiar-switcher__trigger--labeled \{[\s\S]*?\n\}/)?.[0] ?? "";
+// Selector-specific layout for the crew/project triggers moved from
+// rail-header.css into workspace-context-switcher.css (Task 5). The New-chat
+// rule stays in rail-header.css unchanged.
+const scopeRule =
+  workspaceContextSwitcherCss.match(
+    /\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?\n\}/,
+  )?.[0] ?? "";
 const newRule = railHeaderCss.match(/\.rail-header__new \{[\s\S]*?\n\}/)?.[0] ?? "";
 
 assert.notEqual(scopeRule, "", "the shared scope-trigger rule exists");
@@ -134,8 +164,8 @@ for (const [label, rule] of [
 
 assert.match(newRule, /font-size: var\(--text-base\);/, "the New chat label uses the rail's base type size");
 assert.match(
-  railHeaderCss,
-  /\.rail-header__scope \.familiar-switcher__trigger-label \{[\s\S]*?font-size: var\(--text-base\);/,
+  workspaceContextSwitcherCss,
+  /\.workspace-context-switcher__crew \.familiar-switcher__trigger-label \{[\s\S]*?font-size: var\(--text-base\);/,
   "the scope trigger's label uses the same base type size as the button below it",
 );
 
@@ -219,3 +249,139 @@ assert.doesNotMatch(railHeaderCss, /#[0-9a-fA-F]{3,8}\b/, "no hardcoded colors i
 assert.match(railHeaderCss, /\.shell-nav--rail \.rail-header/, "the shared header has a collapsed-rail story");
 assert.match(railHeaderCss, /@media \(max-width: 1023px\)/, "the shared header meets the mobile touch target");
 assert.match(railHeader, /className="rail-header__new focus-ring"/, "the primary action carries the shared focus ring");
+
+// ── createProjectOrThrow: optional, no throwing default ─────────────────────
+// Task 6 callers will provide this; before Task 6 the prop is simply absent
+// (undefined). A throwing default in the component itself would fire at the
+// first render whenever the caller omits it, which is exactly what the
+// transitional period requires not happen.
+assert.doesNotMatch(
+  railHeader,
+  /createProjectOrThrow\s*=\s*async[\s\S]*?throw new Error/,
+  "SidebarRailHeader must not inject a throwing default for createProjectOrThrow",
+);
+// The type declares it optional (?:); the destructuring carries no default so
+// the prop is genuinely undefined when the caller omits it.
+assert.match(
+  railHeader,
+  /createProjectOrThrow\?:/,
+  "createProjectOrThrow is declared optional in SidebarRailHeaderProps",
+);
+assert.doesNotMatch(
+  railHeader,
+  /createProjectOrThrow\s*=\s*(async\s*)?\(/,
+  "createProjectOrThrow destructuring carries no default value",
+);
+// The optional prop threads through to WorkspaceContextSwitcher unchanged.
+assert.match(
+  railHeader,
+  /createProjectOrThrow=\{createProjectOrThrow\}/,
+  "the optional createProjectOrThrow is passed through to WorkspaceContextSwitcher",
+);
+
+// ── Module-level stable identities — no render-local allocations ─────────────
+// Arrays/sets/functions created during render have a new identity on every call,
+// forcing downstream consumers to re-render needlessly. All stable fallbacks for
+// Task6 props must be module-level constants, never inline defaults.
+assert.match(
+  railHeader,
+  /^const EMPTY_PROJECTS: CaveProject\[\] = \[\];/m,
+  "EMPTY_PROJECTS is a module-level stable constant",
+);
+assert.match(
+  railHeader,
+  /^const EMPTY_CREW: ResolvedFamiliar\[\] = \[\];/m,
+  "EMPTY_CREW is a module-level stable constant",
+);
+assert.match(
+  railHeader,
+  /^const EMPTY_SELECTED_FAMILIAR_IDS: ReadonlySet<string> = new Set<string>\(\);/m,
+  "EMPTY_SELECTED_FAMILIAR_IDS is a module-level stable constant",
+);
+assert.doesNotMatch(
+  railHeader,
+  /onProjectChange\s*=\s*\(\s*\)\s*=>/,
+  "onProjectChange must not have an inline arrow-function default — use the module-level NOOP",
+);
+assert.doesNotMatch(
+  railHeader,
+  /reloadProjects\s*=\s*\(\s*\)\s*=>/,
+  "reloadProjects must not have an inline arrow-function default — use the module-level NOOP",
+);
+assert.doesNotMatch(
+  railHeader,
+  /selectedFamiliarIds \?\? new Set\(\)/,
+  "selectedFamiliarIds must not fall back to an inline new Set() — use EMPTY_SELECTED_FAMILIAR_IDS",
+);
+assert.match(
+  railHeader,
+  /selectedFamiliarIds \?\? EMPTY_SELECTED_FAMILIAR_IDS/,
+  "selectedFamiliarIds falls back to the stable module-level constant",
+);
+
+// ── workspaceContextReady: Task6 readiness fail-closed ──────────────────────
+// The component detects when Task6 callers have wired all required props.
+// Until then both controls are forced loading so no fake no-op selector appears.
+assert.match(
+  railHeader,
+  /const workspaceContextReady/,
+  "workspaceContextReady is derived to detect Task6 prop wiring",
+);
+assert.match(
+  railHeader,
+  /projects !== undefined/,
+  "readiness requires projects to be supplied",
+);
+assert.match(
+  railHeader,
+  /projectId !== undefined/,
+  "readiness requires projectId to be supplied (null is ok, undefined is not)",
+);
+// createProjectOrThrow must NOT be part of readiness — creation can be unavailable.
+assert.doesNotMatch(
+  railHeader,
+  /createProjectOrThrow !== undefined/,
+  "createProjectOrThrow must not appear in the workspaceContextReady check",
+);
+// Both controls are forced loading when context is not ready.
+assert.match(
+  railHeader,
+  /projectLoading=\{!workspaceContextReady/,
+  "project control is forced loading when context is not ready",
+);
+assert.match(
+  railHeader,
+  /projectCrewLoading=\{!workspaceContextReady/,
+  "crew control is forced loading when context is not ready",
+);
+
+// ── Crew trigger border: exact plan recipe ────────────────────────────────────
+assert.match(
+  workspaceContextSwitcherCss,
+  /border: 1px solid color-mix\(in oklch, var\(--accent-presence\) 38%, var\(--border-hairline\)\)/,
+  "crew trigger border is exactly 1px with the accent-presence 38% color-mix recipe",
+);
+assert.doesNotMatch(
+  workspaceContextSwitcherCss,
+  /border: 2px solid var\(--accent-presence\)/,
+  "crew trigger must not use the old 2px solid accent border",
+);
+
+// ── No raw 10px gaps in workspace-context-switcher.css ──────────────────────
+assert.doesNotMatch(
+  workspaceContextSwitcherCss,
+  /\bgap:\s*10px\b/,
+  "workspace-context-switcher.css gap uses spacing tokens, not raw 10px",
+);
+
+// ── Collapsed caret: stable class, not generated icon class ─────────────────
+assert.match(
+  workspaceContextSwitcherCss,
+  /cave-project-picker__trigger-caret/,
+  "collapsed CSS targets the stable caret class",
+);
+assert.doesNotMatch(
+  workspaceContextSwitcherCss,
+  /\.ph-caret-up-down-bold/,
+  "collapsed CSS must not target the generated icon class name — use the stable caret class",
+);

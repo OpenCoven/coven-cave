@@ -15,6 +15,30 @@ enum ReminderNotifications {
     /// iOS keeps at most 64 pending requests per app; stay comfortably under.
     private static let maxScheduled = 60
 
+    nonisolated static func deepLinkURL(taskId: String? = nil) -> URL? {
+        if let taskId = taskId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !taskId.isEmpty {
+            return ProjectNavigationIntent(
+                entity: .task(id: taskId),
+                destination: .tasks
+            ).url
+        }
+        return ProjectNavigationIntent(destination: .tasks).url
+    }
+
+    nonisolated static func deepLinkURL(for reminder: Reminder) -> URL? {
+        if let threadId = reminder.link?.resolvedThreadNavigationID {
+            return ProjectNavigationIntent(
+                entity: .thread(id: threadId),
+                destination: .chats
+            ).url
+        }
+        if let taskId = reminder.link?.resolvedTaskID {
+            return deepLinkURL(taskId: taskId)
+        }
+        return deepLinkURL()
+    }
+
     /// Ask once. Safe to call repeatedly — the system only prompts while the
     /// status is undetermined; afterwards this is a cheap no-op.
     static func requestAuthorizationIfNeeded() async {
@@ -52,9 +76,9 @@ enum ReminderNotifications {
             content.title = "Reminder"
             content.body = reminder.title
             content.sound = .default
-            // Tapping routes to Tasks via the app's deep-link handler.
-            // TODO: add a needs-attention Tasks filter when one is available.
-            content.userInfo = ["deepLink": "covencave://tasks"]
+            if let url = deepLinkURL(for: reminder) {
+                content.userInfo = ["deepLink": url.absoluteString]
+            }
             let comps = Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: fireDate)
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
@@ -103,7 +127,7 @@ final class CaveNotificationDelegate: NSObject, UNUserNotificationCenterDelegate
         [.banner, .sound]
     }
 
-    /// A tapped reminder opens Tasks.
+    /// A tapped reminder re-enters the linked chat/task when one is known.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse

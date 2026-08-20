@@ -1,6 +1,10 @@
 import type { ContractReport, ContractViolation } from "@/lib/familiar-contract";
 import type { FamiliarGrowthReport, GrowthSignal } from "@/lib/familiar-growth-signals";
-import type { BlockerCategory, ThreadSignalsAggregate } from "@/lib/thread-self-report";
+import type {
+  BlockerCategory,
+  ThreadSelfReport,
+  ThreadSignalsAggregate,
+} from "@/lib/thread-self-report";
 
 export type HealSource = "contract" | "growth-signal" | "self-report-aggregate";
 export type HealActionKind = "fix-contract" | "write-memory" | "request-skill" | "manual";
@@ -15,6 +19,10 @@ export type SelfHealRequest = {
   suggestedAction: string;
   actionKind: HealActionKind;
   createdAt: string;
+  /** Real Cave session backing a self-report-derived request. Derived contract
+   * and growth requests deliberately omit this because they have no thread. */
+  traceSessionId?: string;
+  traceThreadTitle?: string;
   /** Consumers honour this; no producer sets it yet.
    *
    *  Every request in this file is DERIVED — from contract violations, growth
@@ -126,12 +134,16 @@ export function escalateBlockers(
   familiarId: string,
   aggregate: ThreadSignalsAggregate,
   existingRequests: SelfHealRequest[],
+  reports: ThreadSelfReport[] = [],
 ): SelfHealRequest[] {
   const existingIds = new Set(existingRequests.map((request) => request.id));
   return aggregate.persistentBlockers
     .filter((blocker) => blocker.crit && !existingIds.has(blocker.id))
     .map((blocker) => {
       const actionKind = actionKindForBlockerCategory(blocker.category);
+      const sourceReport = [...reports]
+        .filter((report) => report.persistentBlockers.some((candidate) => candidate.id === blocker.id))
+        .sort((a, b) => Date.parse(b.reportedAt) - Date.parse(a.reportedAt))[0];
       return {
         id: blocker.id,
         familiarId,
@@ -144,6 +156,8 @@ export function escalateBlockers(
           "Review the recurring blocker and choose the next manual intervention.",
         actionKind,
         createdAt: blocker.firstSeenAt ?? STATIC_CREATED_AT,
+        traceSessionId: sourceReport?.sessionId,
+        traceThreadTitle: sourceReport?.threadTitle,
         resolved: false,
       };
     });

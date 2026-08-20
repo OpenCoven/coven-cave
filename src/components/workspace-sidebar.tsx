@@ -42,7 +42,7 @@ import {
 } from "@/lib/chat-split";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import { addChatProject, projectNameForRoot, type CreateProjectOptions } from "@/lib/chat-add-project";
 import {
   chatProjectOrganizationGroups,
   organizationExpansionKey,
@@ -50,6 +50,7 @@ import {
 import { NavSectionTabs } from "@/components/nav-section-tabs";
 import type { NavSection } from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { CaveProject } from "@/lib/cave-projects-types";
 
 type WorkspaceSidebarMode = "home";
 
@@ -60,6 +61,7 @@ type Props = {
   /** Selected familiar (null = "All familiars"). Scopes the project list, the
    *  per-project session rows, and the project grant when registering. */
   activeFamiliarId?: string | null;
+  selectedFamiliarIds: ReadonlySet<string>;
   activeSessionId?: string | null;
   responseNeeded?: Set<string>;
   /** Change the familiar scope from the header switcher (`null` = All). */
@@ -75,7 +77,7 @@ type Props = {
   /** Global section switcher (Home | Chat). This sidebar hosts the Code room,
    *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
   onSectionChange?: (section: NavSection) => void;
-  onNewChat: (projectRoot: string | null) => void;
+  onNewChat: () => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
    *  the row leaves (or re-enters) the live list without waiting a cycle. */
@@ -86,6 +88,24 @@ type Props = {
   /** Opens Settings — powers the shared footer so Chat keeps the same
    *  Dashboard/Settings footer as every other surface. */
   onOpenSettings: () => void;
+  // ── Project / workspace context (Task 6) ──────────────────────────────────
+  projects: CaveProject[];
+  projectId: string | null;
+  project: CaveProject | null;
+  projectLoading: boolean;
+  projectError: string | null;
+  reloadProjects: () => void;
+  onProjectChange: (projectId: string | null) => void;
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
+  projectCrew: ResolvedFamiliar[];
+  projectCrewLoading: boolean;
+  projectCrewError: string | null;
+  reloadProjectCrew: () => void;
+  contextNotice: string | null;
 };
 
 const THREADS_PREVIEW = 6;
@@ -501,6 +521,7 @@ export function WorkspaceSidebar({
   sessions,
   familiars,
   activeFamiliarId = null,
+  selectedFamiliarIds,
   activeSessionId,
   responseNeeded,
   onSelectFamiliar,
@@ -513,6 +534,19 @@ export function WorkspaceSidebar({
   onSessionsChanged,
   onOpenUrl,
   onOpenSettings,
+  projects: workspaceProjects,
+  projectId: workspaceProjectId,
+  project: workspaceProject,
+  projectLoading: workspaceProjectLoading,
+  projectError: workspaceProjectError,
+  reloadProjects: reloadWorkspaceProjects,
+  onProjectChange,
+  createProjectOrThrow: createWorkspaceProjectOrThrow,
+  projectCrew: workspaceProjectCrew,
+  projectCrewLoading: workspaceProjectCrewLoading,
+  projectCrewError: workspaceProjectCrewError,
+  reloadProjectCrew: reloadWorkspaceProjectCrew,
+  contextNotice: workspaceContextNotice,
 }: Props) {
   const { projects, createProject, createProjectOrThrow, reload } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
@@ -802,18 +836,6 @@ export function WorkspaceSidebar({
               <Icon name={registering ? "ph:arrows-clockwise" : "ph:folders-bold"} width={13} className={registering ? "animate-spin" : undefined} aria-hidden />
             </button>
           ) : null}
-          <button
-            type="button"
-            // (cave-gg5d) A "cave:code-select-project" dispatch used
-            // to precede this — its only listener lived in the
-            // retired (now deleted) ComuxView; onNewChat does the work.
-            onClick={() => onNewChat(group.projectRoot)}
-            title={`New chat in ${label}`}
-            aria-label={`New chat in ${label}`}
-            className="cnav__icon-btn focus-ring"
-          >
-            <Icon name="ph:plus" width={12} aria-hidden />
-          </button>
         </div>
         {expanded ? (
           group.sessions.length === 0 ? (
@@ -886,12 +908,26 @@ export function WorkspaceSidebar({
         <SidebarRailHeader
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
+          selectedFamiliarIds={selectedFamiliarIds}
           sessions={sessions}
           responseNeeded={responseNeeded}
           onSelectFamiliar={onSelectFamiliar}
-          onNewChat={() => onNewChat(null)}
+          onNewChat={onNewChat}
           newChatTitle="New chat (⌘N)"
           newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
+          projects={workspaceProjects}
+          projectId={workspaceProjectId}
+          project={workspaceProject}
+          projectLoading={workspaceProjectLoading}
+          projectError={workspaceProjectError}
+          reloadProjects={reloadWorkspaceProjects}
+          onProjectChange={onProjectChange}
+          createProjectOrThrow={createWorkspaceProjectOrThrow}
+          projectCrew={workspaceProjectCrew}
+          projectCrewLoading={workspaceProjectCrewLoading}
+          projectCrewError={workspaceProjectCrewError}
+          reloadProjectCrew={reloadWorkspaceProjectCrew}
+          contextNotice={workspaceContextNotice}
         />
 
         {/* Grouping tabs share their row with the overflow menu. The standalone

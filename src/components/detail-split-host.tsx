@@ -89,10 +89,34 @@ export function DetailSplitHost({
   );
   const variant = workspaceTileVariant(tiles.length);
   const [activeTileId, setActiveTileId] = React.useState("primary");
+  const [pinnedTileId, setPinnedTileId] = React.useState<string | null>(null);
+  const [previewTileId, setPreviewTileId] = React.useState<string | null>(null);
+  const focusVisibleTileId = previewTileId ?? pinnedTileId;
 
   React.useEffect(() => {
     if (!tiles.some((tile) => tile.id === activeTileId)) setActiveTileId("primary");
   }, [activeTileId, tiles]);
+  React.useEffect(() => {
+    if (pinnedTileId && !tiles.some((tile) => tile.id === pinnedTileId)) {
+      setPinnedTileId(null);
+      setPreviewTileId(null);
+    }
+  }, [pinnedTileId, tiles]);
+
+  const pinTile = React.useCallback((tileId: string) => {
+    setActiveTileId(tileId);
+    setPinnedTileId(tileId);
+    setPreviewTileId(null);
+  }, []);
+
+  const toggleFocusedPane = React.useCallback(() => {
+    if (pinnedTileId) {
+      setPinnedTileId(null);
+      setPreviewTileId(null);
+      return;
+    }
+    pinTile(activeTileId);
+  }, [activeTileId, pinTile, pinnedTileId]);
 
   // ---- Drag-to-split drop zone -------------------------------------------
   const [pageDrag, setPageDrag] = React.useState<PageDragDetail | null>(null);
@@ -309,15 +333,21 @@ export function DetailSplitHost({
   const secondaryPanel = legacySecondaryTile ? (
     <Panel
       id="split-secondary"
+      minSize="10%"
       className="split-host__pane-panel split-host__tile-panel flex min-h-0 min-w-0"
       data-active={activeTileId === legacySecondaryTile.id}
+      data-tile-id={legacySecondaryTile.id}
+      data-focus-visible={focusVisibleTileId === legacySecondaryTile.id ? "true" : undefined}
       panelRef={secRef}
       defaultSize={PCT(SPLIT_DEFAULT_RATIO)}
-      minSize="10%"
       maxSize={PCT(SPLIT_MAX_RATIO)}
       onResize={onSecondaryResize}
     >
-      <section className="split-host__pane split-host__tile" aria-label={`${legacySecondaryTile.title} (split)`}>
+      <section
+        className="split-host__pane split-host__tile"
+        aria-label={`${legacySecondaryTile.title} (split)`}
+        onPointerDownCapture={() => setActiveTileId(legacySecondaryTile.id)}
+      >
         <header className="split-host__pane-head">
           <span className="split-host__pane-title">
             <Icon name="ph:columns" width={14} height={14} aria-hidden />
@@ -345,11 +375,19 @@ export function DetailSplitHost({
       id="split-primary"
       className="split-host__tile-panel flex min-h-0 min-w-0"
       data-active={activeTileId === "primary"}
+      data-tile-id="primary"
+      data-focus-visible={focusVisibleTileId === "primary" ? "true" : undefined}
       // Mirrors the secondary's 10% min so the divider can be dragged wide
       // enough to enter the far-edge collapse zone (secondary → SPLIT_MAX_RATIO).
       minSize="10%"
     >
-      <div className="split-host__pane-body">{primary}</div>
+      <section
+        className="split-host__pane split-host__tile split-host__tile--primary"
+        aria-label="Current pane"
+        onPointerDownCapture={() => setActiveTileId("primary")}
+      >
+        <div className="split-host__pane-body">{primary}</div>
+      </section>
     </Panel>
   );
 
@@ -361,6 +399,7 @@ export function DetailSplitHost({
         className={`split-host__pane split-host__tile${isPrimary ? " split-host__tile--primary" : ""}`}
         data-active={activeTileId === tile.id}
         aria-label={isPrimary ? tile.title : `${tile.title} (split)`}
+        onPointerDownCapture={() => setActiveTileId(tile.id)}
       >
         <header className="split-host__pane-head">
           <span className="split-host__pane-title">
@@ -418,7 +457,15 @@ export function DetailSplitHost({
         secondaryTiles.length === 1 ? (
           <>
             {mobileSwitcher}
-            <Group className="split-host__group" data-variant={variant} data-presentation={presentation} data-resizing={dragRatio != null ? "" : undefined} orientation="horizontal" elementRef={groupElRef}>
+            <Group
+              className="split-host__group"
+              data-variant={variant}
+              data-presentation={presentation}
+              data-focus-mode={pinnedTileId ? "true" : undefined}
+              data-resizing={dragRatio != null ? "" : undefined}
+              orientation="horizontal"
+              elementRef={groupElRef}
+            >
               {secondarySide === "left" ? (
                 <>
                   {secondaryPanel}
@@ -451,6 +498,7 @@ export function DetailSplitHost({
               className="split-host__group"
               data-variant={variant}
               data-presentation={presentation}
+              data-focus-mode={pinnedTileId ? "true" : undefined}
               orientation="horizontal"
             >
               {tiles.map((tile, i) => (
@@ -464,6 +512,8 @@ export function DetailSplitHost({
                     id={`split-tile-${tile.id}`}
                     className="split-host__pane-panel split-host__tile-panel flex min-h-0 min-w-0"
                     data-active={activeTileId === tile.id}
+                    data-tile-id={tile.id}
+                    data-focus-visible={focusVisibleTileId === tile.id ? "true" : undefined}
                     minSize="10%"
                   >
                     {renderGridTile(tile)}
@@ -476,6 +526,61 @@ export function DetailSplitHost({
       ) : (
         primary
       )}
+
+      {hasSplit ? (
+        <button
+          type="button"
+          className="focus-ring split-host__focus-trigger"
+          aria-pressed={Boolean(pinnedTileId)}
+          aria-label={pinnedTileId ? "Show all panes" : "Focus current pane"}
+          title={pinnedTileId ? "Show all panes" : "Focus current pane"}
+          onClick={toggleFocusedPane}
+        >
+          <Icon
+            name={pinnedTileId ? "ph:arrows-in-simple" : "ph:corners-out"}
+            width={14}
+            height={14}
+            aria-hidden
+          />
+        </button>
+      ) : null}
+
+      {pinnedTileId ? (
+        <div
+          className="split-host__carousel"
+          role="listbox"
+          aria-label="Open panes"
+          onPointerLeave={() => setPreviewTileId(null)}
+        >
+          {tiles.map((tile, index) => {
+            const selected = tile.id === pinnedTileId;
+            return (
+              <button
+                key={tile.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className="focus-ring split-host__carousel-item"
+                data-previewing={tile.id === previewTileId ? "true" : undefined}
+                onPointerEnter={() => setPreviewTileId(tile.id)}
+                onFocus={() => setPreviewTileId(tile.id)}
+                onBlur={() => setPreviewTileId(null)}
+                onClick={() => pinTile(tile.id)}
+                title={`${tile.title}${selected ? " · pinned" : ""}`}
+              >
+                <span className="split-host__carousel-index">{index + 1}</span>
+                <Icon
+                  name={selected ? "ph:push-pin-fill" : "ph:columns"}
+                  width={13}
+                  height={13}
+                  aria-hidden
+                />
+                <span className="sr-only">{tile.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       {guide}
 

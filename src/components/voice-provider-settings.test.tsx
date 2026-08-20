@@ -12,11 +12,13 @@ const preferences = vi.hoisted(() => ({
   voice: { defaultProvider: "", defaultModel: "", defaultVoice: "" },
 }));
 const updateAppPreferences = vi.hoisted(() => vi.fn());
+const flushAppPreferences = vi.hoisted(() => vi.fn(async () => true));
 const announce = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/app-preferences", () => ({
   useAppPreferences: () => ({ voice: preferences.voice }),
   updateAppPreferences,
+  flushAppPreferences,
 }));
 
 vi.mock("@/components/ui/live-region", () => ({
@@ -179,6 +181,8 @@ beforeEach(() => {
   });
   preferences.voice = { defaultProvider: "", defaultModel: "", defaultVoice: "" };
   updateAppPreferences.mockReset();
+  flushAppPreferences.mockReset();
+  flushAppPreferences.mockResolvedValue(true);
   announce.mockReset();
   installFetch();
   play = vi.fn(async () => undefined);

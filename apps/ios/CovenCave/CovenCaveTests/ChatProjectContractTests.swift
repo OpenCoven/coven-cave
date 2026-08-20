@@ -2,6 +2,17 @@ import XCTest
 @testable import CovenCave
 
 final class ChatProjectContractTests: XCTestCase {
+    private func project(_ id: String, _ name: String, root: String? = nil) -> ProjectInfo {
+        ProjectInfo(
+            id: id,
+            name: name,
+            root: root ?? "/repos/\(id)",
+            color: nil,
+            updatedAt: nil,
+            access: nil
+        )
+    }
+
     @MainActor
     func testFirstTurnBodyUsesPersistedProjectWithoutSession() throws {
         let thread = ChatThread(
@@ -277,6 +288,183 @@ final class ChatProjectContractTests: XCTestCase {
         thread.sessionIds = [:]
         thread.projectRoot = "/repos/shared"
         XCTAssertTrue(thread.canSendMessages)
+    }
+
+    @MainActor
+    func testForwardingRouteBlocksRecoveryOnlySourceThread() {
+        let app = AppModel(restoreLocalState: false)
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+
+        let source = ChatThread(
+            title: "Recovered source",
+            familiarIds: ["nova"],
+            sessionIds: ["nova": "source-session"]
+        )
+        let destination = ChatThread(
+            title: "Nova",
+            familiarIds: ["nova"],
+            projectRoot: alpha.root
+        )
+
+        XCTAssertEqual(
+            app.forwardingRouteDisposition(from: source, to: destination),
+            .recoveryOnly
+        )
+    }
+
+    @MainActor
+    func testForwardingRouteBlocksRecoveryOnlyDestinationEvenWhenItCanSendMessages() {
+        let app = AppModel(restoreLocalState: false)
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+
+        let source = ChatThread(
+            title: "Project source",
+            familiarIds: ["nova"],
+            projectRoot: alpha.root
+        )
+        let destination = ChatThread(
+            title: "Recovered destination",
+            familiarIds: ["sage"],
+            sessionIds: ["sage": "destination-session"]
+        )
+
+        XCTAssertTrue(destination.canSendMessages)
+        XCTAssertEqual(
+            app.forwardingRouteDisposition(from: source, to: destination),
+            .recoveryOnly
+        )
+    }
+
+    @MainActor
+    func testForwardingRouteAllowsRegisteredProjectForwarding() {
+        let app = AppModel(restoreLocalState: false)
+        let alpha = project("alpha", "Alpha")
+        app.projects = [alpha]
+        app.projectsLoaded = true
+
+        let source = ChatThread(
+            title: "Project source",
+            familiarIds: ["nova"],
+            projectRoot: alpha.root
+        )
+        let destination = ChatThread(
+            title: "Project destination",
+            familiarIds: ["sage"],
+            projectRoot: alpha.root
+        )
+
+        XCTAssertEqual(
+            app.forwardingRouteDisposition(from: source, to: destination),
+            .allowed
+        )
+    }
+
+    @MainActor
+    func testForwardedLandingHydrationReloadsAcknowledgedSend() {
+        let thread = ChatThread(
+            title: "Nova",
+            familiarIds: ["nova"],
+            sessionIds: ["nova": "session-1"],
+            projectRoot: "/repos/alpha"
+        )
+        let userMessage = DisplayMessage(role: .user, text: "Forwarded")
+        let assistantMessage = DisplayMessage(
+            role: .assistant,
+            familiarId: "nova",
+            text: "I can help with that."
+        )
+        thread.messages = [userMessage, assistantMessage]
+
+        let result = ChatSendResult(
+            familiarId: "nova",
+            userMessageId: userMessage.id,
+            assistantMessageId: assistantMessage.id,
+            outcome: .acknowledged
+        )
+
+        XCTAssertTrue(ForwardedLandingHydrationGate.shouldReload(thread: thread, after: result))
+    }
+
+    @MainActor
+    func testForwardedLandingHydrationPreservesQueuedForwardTranscript() {
+        let thread = ChatThread(
+            title: "Nova",
+            familiarIds: ["nova"],
+            sessionIds: ["nova": "session-1"],
+            projectRoot: "/repos/alpha"
+        )
+        var userMessage = DisplayMessage(role: .user, text: "Forwarded")
+        userMessage.queued = true
+        thread.messages = [userMessage]
+
+        let result = ChatSendResult(
+            familiarId: "nova",
+            userMessageId: userMessage.id,
+            assistantMessageId: "assistant-placeholder",
+            outcome: .queued
+        )
+
+        XCTAssertFalse(ForwardedLandingHydrationGate.shouldReload(thread: thread, after: result))
+    }
+
+    @MainActor
+    func testForwardedLandingHydrationPreservesPreStreamFailureTranscript() {
+        let thread = ChatThread(
+            title: "Nova",
+            familiarIds: ["nova"],
+            sessionIds: ["nova": "session-1"],
+            projectRoot: "/repos/alpha"
+        )
+        let userMessage = DisplayMessage(role: .user, text: "Forwarded")
+        let assistantMessage = DisplayMessage(
+            id: "assistant-placeholder",
+            role: .assistant,
+            familiarId: "nova",
+            text: "Project access denied.",
+            streaming: false,
+            isError: true
+        )
+        thread.messages = [userMessage, assistantMessage]
+
+        let result = ChatSendResult(
+            familiarId: "nova",
+            userMessageId: userMessage.id,
+            assistantMessageId: assistantMessage.id,
+            outcome: .failed
+        )
+
+        XCTAssertFalse(ForwardedLandingHydrationGate.shouldReload(thread: thread, after: result))
+    }
+
+    @MainActor
+    func testForwardedLandingHydrationPreservesUnacknowledgedForwardTranscript() {
+        let thread = ChatThread(
+            title: "Nova",
+            familiarIds: ["nova"],
+            sessionIds: ["nova": "session-1"],
+            projectRoot: "/repos/alpha"
+        )
+        let userMessage = DisplayMessage(role: .user, text: "Forwarded")
+        let assistantMessage = DisplayMessage(
+            id: "assistant-placeholder",
+            role: .assistant,
+            familiarId: "nova",
+            text: ""
+        )
+        thread.messages = [userMessage, assistantMessage]
+
+        let result = ChatSendResult(
+            familiarId: "nova",
+            userMessageId: userMessage.id,
+            assistantMessageId: assistantMessage.id,
+            outcome: .noAcknowledgement
+        )
+
+        XCTAssertFalse(ForwardedLandingHydrationGate.shouldReload(thread: thread, after: result))
     }
 
     func testProjectLoadKeyIsSortedAndDistinct() {

@@ -77,6 +77,13 @@ const THREAD_METRIC_COPY: Record<ThreadMetricKey, string> = {
   fileLocatability: "How easily the familiar found the files it needed.",
 };
 
+const THREAD_METRIC_IMPROVEMENT_COPY: Record<ThreadMetricKey, string> = {
+  confidence: "Close threads with a concise outcome, remaining uncertainty, and the next verified step.",
+  toolReliability: "Review failed tool paths and make the reliable fallback explicit in the familiar's loadout.",
+  memoryRecall: "Capture durable decisions and retrieval cues before context pressure rises.",
+  fileLocatability: "Pin canonical paths and search landmarks in the familiar's working memory.",
+};
+
 const CONTEXT_PRESSURES: ContextPressure[] = ["adequate", "tight", "excess", "critical"];
 
 // Plain-language explanation of each context-pressure bucket, for the pill tooltip.
@@ -103,6 +110,7 @@ function ThreadMetricBar({
   trend?: MetricTrend;
 }) {
   const tip = `${desc} Weighted at ${Math.round(weight * 100)}% — adds up to ${Math.round(weight * 100)} points of the headline score's 100.`;
+  const contribution = value * weight;
   return (
     <div className="fa-thread-score">
       <div>
@@ -121,6 +129,9 @@ function ThreadMetricBar({
       <div className="fa-factor-bar" aria-label={`${label} ${value} of 100`}>
         <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
       </div>
+      <p className="fa-thread-score__meta">
+        Weight {Math.round(weight * 100)}% · contributes {contribution.toFixed(1)} points
+      </p>
     </div>
   );
 }
@@ -260,9 +271,46 @@ const ThreadAnalysisBody = memo(function ThreadAnalysisBody({
       />
     );
   }
+  const priorities = [...confidence.metrics]
+    .map((metric) => ({
+      ...metric,
+      gap: Math.max(0, 80 - metric.value),
+      trend: trendByKey.get(metric.key),
+    }))
+    .sort((a, b) => b.gap - a.gap || b.weight - a.weight)
+    .slice(0, 3);
+  const pressuredReports =
+    confidence.contextCounts.tight +
+    confidence.contextCounts.excess +
+    confidence.contextCounts.critical;
+  const pressurePercent =
+    confidence.reportCount > 0 ? Math.round((pressuredReports / confidence.reportCount) * 100) : 0;
   return (
     <div className="fa-thread-analysis">
-      <ThreadTrendBlock trends={trends} />
+      <div className="fa-thread-analysis__top">
+        <ThreadTrendBlock trends={trends} />
+        <aside className="fa-thread-priorities" aria-label="Prioritized areas for improvement">
+          <div className="fa-thread-priorities__head">
+            <span>Improve next</span>
+            <b>{priorities.filter((item) => item.gap > 0).length}</b>
+          </div>
+          <ol>
+            {priorities.map((metric, index) => (
+              <li key={metric.key}>
+                <span className="fa-thread-priorities__rank" aria-hidden>{index + 1}</span>
+                <div>
+                  <b>{metric.label}</b>
+                  <span>
+                    {metric.gap > 0 ? `${metric.gap} points to Trusted` : "Trusted threshold reached"}
+                    {metric.trend?.delta != null ? ` · ${formatDelta(metric.trend.delta)} trend` : ""}
+                  </span>
+                  <p>{THREAD_METRIC_IMPROVEMENT_COPY[metric.key]}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      </div>
       <div className="fa-thread-score-grid">
         {confidence.metrics.map((metric) => (
           <ThreadMetricBar
@@ -275,16 +323,26 @@ const ThreadAnalysisBody = memo(function ThreadAnalysisBody({
           />
         ))}
       </div>
-      <div className="fa-thread-contexts" aria-label="Context pressure distribution">
-        {CONTEXT_PRESSURES.map((pressure) => (
-          <span
-            key={pressure}
-            className={`fa-thread-pill fa-thread-pill--${pressure}`}
-            title={`${pressure} — ${CONTEXT_PRESSURE_HINT[pressure]}`}
-          >
-            {pressure} <b>{confidence.contextCounts[pressure]}</b>
-          </span>
-        ))}
+      <div className="fa-thread-context-card">
+        <div>
+          <span className="fa-thread-context-card__eyebrow">Context pressure</span>
+          <b>{pressurePercent}% constrained</b>
+          <p>
+            {pressuredReports} of {confidence.reportCount} thread report
+            {confidence.reportCount === 1 ? "" : "s"} ran tight, excess, or critical.
+          </p>
+        </div>
+        <div className="fa-thread-contexts" aria-label="Context pressure distribution">
+          {CONTEXT_PRESSURES.map((pressure) => (
+            <span
+              key={pressure}
+              className={`fa-thread-pill fa-thread-pill--${pressure}`}
+              title={`${pressure} — ${CONTEXT_PRESSURE_HINT[pressure]}`}
+            >
+              {pressure} <b>{confidence.contextCounts[pressure]}</b>
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1357,63 +1415,80 @@ function HealBoardModal({
   }, [groupBy, requests, severityFilter, sortBy]);
 
   const shown = groups.reduce((sum, group) => sum + group.rows.length, 0);
+  const criticalCount = requests.filter((request) => request.severity === "crit").length;
+  const warningCount = requests.filter((request) => request.severity === "warn").length;
+  const traceableCount = requests.filter((request) => Boolean(request.traceSessionId)).length;
 
   return (
     <Modal open wide onClose={onClose} breadcrumb={["Self-heal", "Board"]}>
-      <div className="fa-board-tools">
-        <span className="fa-board-tools__count">
-          <b>{shown}</b>
-          <span>/ {requests.length}</span>
-        </span>
-        <span className="fa-ledger-tools__label">Group</span>
-        <div className="fa-segmented" role="group" aria-label="Group requests by">
-          {BOARD_GROUPS.map((group) => (
-            <button
-              key={group.id}
-              type="button"
-              className={`fa-segmented__btn${groupBy === group.id ? " is-active" : ""} focus-ring`}
-              aria-pressed={groupBy === group.id}
-              title={group.title}
-              onClick={() => setGroupBy(group.id)}
-            >
-              {group.label}
-            </button>
-          ))}
+      <div className="fa-board__summary">
+        <div className="fa-board__summary-copy">
+          <span>Intervention queue</span>
+          <b>{requests.length === 0 ? "No repairs waiting" : `${requests.length} open repair${requests.length === 1 ? "" : "s"}`}</b>
+          <p>Resolve the highest-impact issue first. Thread evidence appears only when the request came from a real session report.</p>
         </div>
-        <span className="fa-ledger-tools__label">Sort</span>
-        <div className="fa-segmented" role="group" aria-label="Sort requests by">
-          {BOARD_SORTS.map((sort) => (
-            <button
-              key={sort.id}
-              type="button"
-              className={`fa-segmented__btn${sortBy === sort.id ? " is-active" : ""} focus-ring`}
-              aria-pressed={sortBy === sort.id}
-              title={sort.title}
-              onClick={() => setSortBy(sort.id)}
-            >
-              {sort.label}
-            </button>
-          ))}
+        <div className="fa-board__summary-stats">
+          <span className="fa-board__summary-stat fa-board__summary-stat--crit"><b>{criticalCount}</b> critical</span>
+          <span className="fa-board__summary-stat fa-board__summary-stat--warn"><b>{warningCount}</b> warning</span>
+          <span className="fa-board__summary-stat"><b>{traceableCount}</b> traceable</span>
         </div>
       </div>
-      <div className="fa-board-filters">
-        {(["all", "crit", "warn", "info"] as const).map((filter) => {
-          const n = filter === "all"
-            ? requests.length
-            : requests.filter((request) => request.severity === filter).length;
-          return (
-            <button
-              key={filter}
-              type="button"
-              className={`fa-chip${severityFilter === filter ? " is-active" : ""} focus-ring`}
-              aria-pressed={severityFilter === filter}
-              onClick={() => setSeverityFilter(filter)}
-            >
-              {filter === "all" ? "All" : SEV_META[filter].label}
-              <b className="fa-chip__n">{n}</b>
-            </button>
-          );
-        })}
+      <div className="fa-board__toolbar">
+        <div className="fa-board-tools">
+          <span className="fa-board-tools__count">
+            <b>{shown}</b>
+            <span>/ {requests.length}</span>
+          </span>
+          <span className="fa-ledger-tools__label">Group</span>
+          <div className="fa-segmented" role="group" aria-label="Group requests by">
+            {BOARD_GROUPS.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                className={`fa-segmented__btn${groupBy === group.id ? " is-active" : ""} focus-ring`}
+                aria-pressed={groupBy === group.id}
+                title={group.title}
+                onClick={() => setGroupBy(group.id)}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+          <span className="fa-ledger-tools__label">Sort</span>
+          <div className="fa-segmented" role="group" aria-label="Sort requests by">
+            {BOARD_SORTS.map((sort) => (
+              <button
+                key={sort.id}
+                type="button"
+                className={`fa-segmented__btn${sortBy === sort.id ? " is-active" : ""} focus-ring`}
+                aria-pressed={sortBy === sort.id}
+                title={sort.title}
+                onClick={() => setSortBy(sort.id)}
+              >
+                {sort.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="fa-board-filters">
+          {(["all", "crit", "warn", "info"] as const).map((filter) => {
+            const n = filter === "all"
+              ? requests.length
+              : requests.filter((request) => request.severity === filter).length;
+            return (
+              <button
+                key={filter}
+                type="button"
+                className={`fa-chip${severityFilter === filter ? " is-active" : ""} focus-ring`}
+                aria-pressed={severityFilter === filter}
+                onClick={() => setSeverityFilter(filter)}
+              >
+                {filter === "all" ? "All" : SEV_META[filter].label}
+                <b className="fa-chip__n">{n}</b>
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="fa-board">
         {groups.map((group) => (
@@ -1442,24 +1517,36 @@ function HealBoardModal({
                       <span className="fa-heal-card__source">{request.source}</span>
                     </span>
                   </button>
-                  <p className="fa-heal-card__detail">{request.detail}</p>
+                  <div className="fa-heal-card__evidence">
+                    <span>Evidence</span>
+                    <p className="fa-heal-card__detail">{request.detail}</p>
+                  </div>
                   <div className="fa-heal-card__foot">
                     <button
                       type="button"
                       className="fa-heal-card__btn focus-ring"
                       onClick={() => onAction(request)}
                     >
-                      {request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind]}
+                      <span className="fa-heal-card__next-label">Next step</span>
+                      <span>{request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind]}</span>
                     </button>
-                    <button
-                      type="button"
-                      className="fa-heal-card__trace focus-ring"
-                      title="Trace the thread behind this request"
-                      aria-label={`Trace ${request.title}`}
-                      onClick={() => onTrace(request)}
-                    >
-                      <Icon name="ph:tree-structure" width={11} aria-hidden />
-                    </button>
+                    {request.traceSessionId ? (
+                      <button
+                        type="button"
+                        className="fa-heal-card__trace focus-ring"
+                        title="Trace source thread"
+                        aria-label={`Trace ${request.title}`}
+                        onClick={() => onTrace(request)}
+                      >
+                        <Icon name="ph:tree-structure" width={12} aria-hidden />
+                        <span>Trace source thread</span>
+                      </button>
+                    ) : (
+                      <span className="fa-heal-card__trace-note">
+                        <Icon name="ph:info" width={12} aria-hidden />
+                        No source thread
+                      </span>
+                    )}
                   </div>
                 </article>
               ))}
@@ -1677,7 +1764,7 @@ function TrustModal({
   const current = confidence.hasData ? confidenceTier(confidence.label) : null;
   const trendByKey = new Map(trends.metrics.map((metric) => [metric.key, metric]));
   return (
-    <Modal open onClose={onClose} breadcrumb={["Trust", `How ${confidence.hasData ? confidence.score : "this"} is computed`]}>
+    <Modal open onClose={onClose} wide breadcrumb={["Trust", `How ${confidence.hasData ? confidence.score : "this"} is computed`]}>
       {confidence.hasData ? (
         <>
           <div className="fa-trust-modal">
@@ -1685,6 +1772,7 @@ function TrustModal({
             <div className="fa-trust-modal__rows">
               {confidence.metrics.map((metric) => {
                 const trend = trendByKey.get(metric.key);
+                const contribution = metric.value * metric.weight;
                 return (
                   <div key={metric.key} className="fa-trust-row">
                     <span className="fa-trust-row__label">{metric.label}</span>
@@ -1694,15 +1782,34 @@ function TrustModal({
                     <span className="fa-trust-row__value">
                       {metric.value} × {metric.weight.toFixed(2)}
                     </span>
+                    <span className="fa-trust-row__contribution">{contribution.toFixed(1)} pts</span>
                     {trend ? <TrendDeltaChip label={metric.label} trend={trend} /> : null}
                   </div>
                 );
               })}
-              <p className="fa-trust-modal__formula">
-                Headline = Σ metric × weight, averaged across {confidence.reportCount} thread self-report
-                {confidence.reportCount === 1 ? "" : "s"}.
-              </p>
+              <div className="fa-trust-modal__equation">
+                <span>Weighted equation</span>
+                <b>
+                  {confidence.metrics.map((metric) => `${metric.value} × ${metric.weight.toFixed(2)}`).join(" + ")}
+                  {" = "}{confidence.score}
+                </b>
+                <p>
+                  Averaged across {confidence.reportCount} thread self-report
+                  {confidence.reportCount === 1 ? "" : "s"}.
+                </p>
+              </div>
             </div>
+          </div>
+          <div className="fa-trust-context">
+            <div>
+              <span>Evidence coverage</span>
+              <b>{confidence.reportCount} thread report{confidence.reportCount === 1 ? "" : "s"}</b>
+            </div>
+            {CONTEXT_PRESSURES.map((pressure) => (
+              <span key={pressure} className={`fa-thread-pill fa-thread-pill--${pressure}`}>
+                {pressure} <b>{confidence.contextCounts[pressure]}</b>
+              </span>
+            ))}
           </div>
           <div className="fa-trust-bands">
             {TRUST_BANDS.map((band) => (
@@ -1856,9 +1963,14 @@ export function FamiliarAnalyticsContent({
   );
   const allHealRequests = useMemo(() => {
     if (!threadSignalsAggregate) return model.healRequests;
-    const escalated = escalateBlockers(model.familiarId, threadSignalsAggregate, model.healRequests);
+    const escalated = escalateBlockers(
+      model.familiarId,
+      threadSignalsAggregate,
+      model.healRequests,
+      windowReports,
+    );
     return [...escalated, ...model.healRequests];
-  }, [model.familiarId, model.healRequests, threadSignalsAggregate]);
+  }, [model.familiarId, model.healRequests, threadSignalsAggregate, windowReports]);
   const healRequests = useMemo(
     () => allHealRequests.filter((request) => matchesLens(request, lens)),
     [allHealRequests, lens],
@@ -1885,9 +1997,16 @@ export function FamiliarAnalyticsContent({
   }, []);
   const traceRequest = useCallback((request: SelfHealRequest) => {
     setBoardOpen(false);
-    setTraceTarget({ id: request.id, title: request.title });
+    if (!request.traceSessionId) {
+      announce("No source thread is available for this request.");
+      return;
+    }
+    setTraceTarget({
+      id: request.traceSessionId,
+      title: request.traceThreadTitle ?? request.title,
+    });
     setActionModal(null);
-  }, []);
+  }, [announce]);
   // Confirming an action launches a primed working thread with the familiar —
   // the cave's real self-heal path (shared with the thread-signals queue).
   const confirmAction = useCallback(() => {

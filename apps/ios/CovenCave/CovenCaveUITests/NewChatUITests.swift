@@ -1,13 +1,12 @@
 import XCTest
 
 final class NewChatUITests: XCTestCase {
-    private func launchContextualNewChat(projectArgument: String) -> XCUIApplication {
+    private func launchContextualNewChat(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-preview-empty-chat",
-            projectArgument,
             "--ui-open-contextual-new-chat",
-        ]
+        ] + extraArguments
         app.launch()
         XCTAssertTrue(app.navigationBars["New chat"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["Choose familiars"].exists)
@@ -16,35 +15,44 @@ final class NewChatUITests: XCTestCase {
     }
 
     @MainActor
-    func testContextualNewChatRetriesProjectFailureWithoutFamiliarReselection() {
-        let app = launchContextualNewChat(
-            projectArgument: "--ui-preview-new-chat-project-retry"
-        )
+    func testContextualNewChatUsesActiveProjectWithoutIndependentPicker() {
+        let app = launchContextualNewChat()
 
-        let retry = app.buttons["Retry"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 10), "project failure offers Retry")
-        retry.tap()
-
-        XCTAssertTrue(app.buttons["New chat project"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Coven Cave"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["New chat project"].exists)
         XCTAssertTrue(app.buttons["Start"].isEnabled)
     }
 
     @MainActor
-    func testEmptyProjectStateRetriesWithoutFamiliarReselection() {
+    func testContextualNewChatBlocksStartWhenFixedFamiliarLeavesActiveProject() {
         let app = launchContextualNewChat(
-            projectArgument: "--ui-preview-new-chat-project-empty-retry"
+            extraArguments: ["--ui-preview-new-chat-access-revoked"]
         )
 
         XCTAssertTrue(
-            app.staticTexts["This familiar has no accessible projects."]
+            app.staticTexts["This familiar is no longer in Coven Cave."]
                 .waitForExistence(timeout: 10)
         )
-        let retry = app.buttons["Retry"]
-        XCTAssertTrue(retry.exists, "empty project state offers Retry")
-        XCTAssertTrue(app.buttons["Project access"].exists)
-        retry.tap()
+        XCTAssertFalse(app.buttons["Start"].isEnabled)
+        XCTAssertFalse(app.buttons["New chat project"].exists)
+    }
 
-        XCTAssertTrue(app.buttons["New chat project"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Start"].isEnabled)
+    @MainActor
+    func testContextualNewChatShowsRecoveryOnlyGuidanceForUnassigned() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-preview-empty-chat",
+            "--ui-preview-new-chat-unassigned",
+            "--ui-open-contextual-new-chat",
+        ]
+        app.launch()
+
+        XCTAssertFalse(
+            app.navigationBars["New chat"].waitForExistence(timeout: 3),
+            "Unassigned recovery mode must not open the New Chat sheet"
+        )
+        XCTAssertTrue(
+            app.buttons["Project context button"].waitForExistence(timeout: 10)
+        )
     }
 }

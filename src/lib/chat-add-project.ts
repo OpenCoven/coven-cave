@@ -1,4 +1,5 @@
 import type { CaveProject } from "./cave-projects.ts";
+import { publishProjectAccessChanged } from "./project-access-events.ts";
 import { projectErrorCode, type ProjectCreationError } from "./project-errors.ts";
 import { emitProjectRegistryMutation } from "./project-registry-events.ts";
 
@@ -131,6 +132,7 @@ export async function addChatProject(args: {
     }
   }
 
+  if (args.familiarId) publishProjectAccessChanged(projectId);
   emitProjectRegistryMutation();
   return { ok: true, projectId };
 }

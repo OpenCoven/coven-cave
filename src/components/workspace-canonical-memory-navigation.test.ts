@@ -99,7 +99,7 @@ assert.match(
 );
 assert.match(
   rosterLoad,
-  /\} finally \{\s*if \(isCurrent\(\)\) setFamiliarsLoaded\(true\);\s*\}/,
+  /\} finally \{\s*if \(isCurrent\(\)\) \{\s*setFamiliarsLoaded\(true\);\s*setFamiliarRosterLoading\(false\);\s*\}\s*\}/,
   "an older request cannot publish settled loading state",
 );
 assert.match(

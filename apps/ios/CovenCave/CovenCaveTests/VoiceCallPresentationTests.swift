@@ -66,6 +66,14 @@ final class VoiceCallPresentationTests: XCTestCase {
         }
     }
 
+    func testMissingProjectGuidanceDismissesWithoutFallback() {
+        let copy = VoiceCallCopy.error(for: "voice_turn_project_required", mode: .native)
+
+        XCTAssertEqual(copy.recovery, .dismiss)
+        XCTAssertFalse(copy.offersOnDeviceFallback)
+        XCTAssertTrue(copy.message.contains("registered project"))
+    }
+
     func testAudioInterruptionOffersFallbackOnlyWhenRealtime() {
         XCTAssertTrue(VoiceCallCopy.error(for: "audio_interrupted", mode: .realtime).offersOnDeviceFallback)
         XCTAssertFalse(VoiceCallCopy.error(for: "audio_interrupted", mode: .native).offersOnDeviceFallback)

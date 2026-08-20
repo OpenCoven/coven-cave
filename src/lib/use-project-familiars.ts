@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
+import {
+  PROJECT_ACCESS_CHANGED_EVENT,
+  projectAccessChangedId,
+} from "./project-access-events.ts";
+
+const EMPTY_FAMILIARS: Familiar[] = [];
 
 export type ProjectFamiliarsState = {
   familiars: Familiar[];
   loading: boolean;
+  error: string | null;
+  reload: () => void;
   loadedSuccessfully: boolean;
 };
 
@@ -27,28 +35,52 @@ export function useProjectFamiliars({
   projectId: string | null;
   enabled?: boolean;
 }): ProjectFamiliarsState {
-  const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  const [familiars, setFamiliars] = useState<Familiar[]>(EMPTY_FAMILIARS);
   const [loading, setLoading] = useState(false);
   // Keep the result tied to the project that produced it. Effects run after
   // render, so clearing state inside the effect alone would briefly expose
   // the previous project's roster after projectId changes.
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+  const [errorProjectId, setErrorProjectId] = useState<string | null>(null);
+  const [reloadEpoch, setReloadEpoch] = useState(0);
   const generationRef = useRef(0);
+  // Synchronously invalidate any in-flight generation, clear stale UI state,
+  // and establish loading before the effect re-fires. The identity is stable
+  // unless enabled or projectId changes so callers may memoize it.
+  const reload = useCallback(() => {
+    generationRef.current += 1;
+    setFamiliars(EMPTY_FAMILIARS);
+    setLoadedProjectId(null);
+    setErrorProjectId(null);
+    setLoading(enabled && projectId !== null);
+    setReloadEpoch((epoch) => epoch + 1);
+  }, [enabled, projectId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onProjectAccessChanged = (event: Event) => {
+      if (projectAccessChangedId(event) === projectId) reload();
+    };
+    window.addEventListener(PROJECT_ACCESS_CHANGED_EVENT, onProjectAccessChanged);
+    return () => window.removeEventListener(PROJECT_ACCESS_CHANGED_EVENT, onProjectAccessChanged);
+  }, [projectId, reload]);
 
   useEffect(() => {
     generationRef.current += 1;
     const generation = generationRef.current;
 
     if (!enabled || !projectId) {
-      setFamiliars([]);
+      setFamiliars(EMPTY_FAMILIARS);
       setLoading(false);
       setLoadedProjectId(null);
+      setErrorProjectId(null);
       return;
     }
 
-    setFamiliars([]);
+    setFamiliars(EMPTY_FAMILIARS);
     setLoading(true);
     setLoadedProjectId(null);
+    setErrorProjectId(null);
     void (async () => {
       try {
         const response = await fetch(`/api/familiars?projectId=${encodeURIComponent(projectId)}`, {
@@ -56,23 +88,34 @@ export function useProjectFamiliars({
         });
         const payload = await response.json().catch(() => null) as { ok?: boolean; familiars?: Familiar[] } | null;
         if (generationRef.current !== generation) return;
-        if (response.ok && payload?.ok) {
-          setFamiliars(Array.isArray(payload.familiars) ? payload.familiars : []);
-          setLoadedProjectId(projectId);
+        if (!response.ok || !payload?.ok || !Array.isArray(payload.familiars)) {
+          setErrorProjectId(projectId);
+          return;
         }
+        setFamiliars(payload.familiars);
+        setLoadedProjectId(projectId);
       } catch {
-        // Keep the picker disabled and show its existing load-failure state.
-        // Fetch can reject when a locally hosted or remote Cave is restarting.
+        if (generationRef.current === generation) {
+          setErrorProjectId(projectId);
+        }
       } finally {
         if (generationRef.current === generation) setLoading(false);
       }
     })();
-  }, [enabled, projectId]);
+  }, [enabled, projectId, reloadEpoch]);
+
+  const currentError = enabled && projectId !== null && errorProjectId === projectId ? "Couldn't load project crew" : null;
+  const currentFamiliars = enabled && projectId !== null && loadedProjectId === projectId ? familiars : EMPTY_FAMILIARS;
+  const currentLoading = Boolean(
+    enabled && projectId !== null && currentError === null && (loading || loadedProjectId !== projectId),
+  );
 
   return {
-    familiars,
-    loading,
-    loadedSuccessfully: enabled && Boolean(projectId) && loadedProjectId === projectId,
+    familiars: currentFamiliars,
+    loading: currentLoading,
+    error: currentError,
+    reload,
+    loadedSuccessfully: enabled && projectId !== null && loadedProjectId === projectId && currentError === null,
   };
 }
 

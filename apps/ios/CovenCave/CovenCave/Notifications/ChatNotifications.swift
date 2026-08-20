@@ -51,18 +51,15 @@ enum ChatNotifications {
     /// `covencave://thread/<id>` — routed by `AppModel.handleDeepLink` to the
     /// existing `requestOpen` one-shot (same hook the chat list already uses).
     nonisolated static func deepLinkURL(threadId: String) -> URL? {
-        var comps = URLComponents()
-        comps.scheme = "covencave"
-        comps.host = "thread"
-        comps.path = "/" + threadId
-        return comps.url
+        ProjectNavigationIntent(
+            entity: .thread(id: threadId),
+            destination: .chats
+        ).url
     }
 
     /// The thread id carried by a chat deep link, or nil for any other URL.
     nonisolated static func threadId(fromDeepLink url: URL) -> String? {
-        guard url.scheme == "covencave", url.host == "thread" else { return nil }
-        let id = url.pathComponents.count > 1 ? url.pathComponents[1] : ""
-        return id.isEmpty ? nil : id
+        ProjectNavigationIntent(url: url)?.threadId
     }
 
     // MARK: - Posting

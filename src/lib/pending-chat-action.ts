@@ -1,5 +1,6 @@
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import type { SessionOrigin } from "@/lib/types";
 
 export type PendingChatAction =
   | {
@@ -12,6 +13,7 @@ export type PendingChatAction =
       /** Files handed off with the prompt; included in the auto-sent message. */
       initialAttachments?: ChatAttachment[] | null;
       initialControls?: InitialCommandControls | null;
+      origin?: SessionOrigin;
       nonce: number;
     }
   | {

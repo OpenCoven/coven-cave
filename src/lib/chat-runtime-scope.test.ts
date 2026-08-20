@@ -84,6 +84,15 @@ await assert.rejects(
   "project roots outside home should be refused instead of downgraded to home",
 );
 
+assert.equal(
+  await resolveLocalRuntimeCwd(outside, {
+    homeDir: home,
+    rootAuthority: "authorized-project",
+  }),
+  realpathSync(outside),
+  "an already-authorized project root may live outside home",
+);
+
 await assert.rejects(
   () => resolveLocalRuntimeCwd(filePath, { homeDir: home }),
   (error) =>
