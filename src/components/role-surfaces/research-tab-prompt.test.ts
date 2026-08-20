@@ -10,6 +10,10 @@ import { buildPromptEnhancement } from "../../lib/prompt-enhancer.ts";
 
 const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./research-mission-composer.tsx", import.meta.url), "utf8");
+const recommendationContext = readFileSync(
+  new URL("../../lib/research-recommendation-context.ts", import.meta.url),
+  "utf8",
+);
 // The prompt sheet rides with the mode-gated surface (bundle budget, #3264
 // pattern), so selector pins read the sheet itself, not the root globals.
 const css = readFileSync(new URL("../../styles/globals/surface-research-prompt.css", import.meta.url), "utf8");
@@ -174,7 +178,10 @@ test("quick saves materialize saved Articles and attach ordinary sources via the
   // Attach happens before the desk hand-off, and the hand-off follows the
   // mission (the pre-redesign contract).
   const attachIndex = promptTab.indexOf('action: "attach-source"');
-  const navigateIndex = promptTab.indexOf('onNavigate("desk", { missionId: result.mission.id })');
+  const navigateIndex = promptTab.indexOf(
+    'onNavigate("desk", { missionId: result.mission.id })',
+    attachIndex,
+  );
   assert.ok(attachIndex !== -1 && navigateIndex !== -1 && attachIndex < navigateIndex);
   // The panel links out to the full Resources tab.
   assert.match(promptTab, /All in Resources →/);
@@ -196,8 +203,69 @@ test("a failed attach never abandons a started mission", () => {
   // The announcement happens before the hand-off, and the hand-off is inside
   // the success branch but outside any per-link condition.
   const announceIndex = promptTab.indexOf("failed to attach.");
-  const navigateIndex = promptTab.indexOf('onNavigate("desk", { missionId: result.mission.id })');
+  const navigateIndex = promptTab.indexOf(
+    'onNavigate("desk", { missionId: result.mission.id })',
+    announceIndex,
+  );
   assert.ok(announceIndex !== -1 && navigateIndex !== -1 && announceIndex < navigateIndex);
+});
+
+// ── Contextual next topics: bounded GET, explicit actions, no draft refresh ─
+
+test("agentic topic recommendations keep client and server evidence freshness separate", () => {
+  // The shared lifecycle sees durable client-visible Desk state only. The
+  // composer draft remains absent, so ordinary typing never starts a request.
+  assert.match(promptTab, /caveAgenticRecommendations\(\)/);
+  assert.match(promptTab, /useAgenticRecommendations<ResearchRecommendationClientContext>/);
+  assert.match(promptTab, /buildResearchRecommendationContext/);
+  assert.match(recommendationContext, /MAX_CLIENT_RECOMMENDATION_MISSIONS = 12/);
+  assert.match(recommendationContext, /MAX_CLIENT_RECOMMENDATION_SAVED_LINKS = 12/);
+  assert.match(recommendationContext, /familiarId,/);
+  assert.match(recommendationContext, /intentRevision: textRevision\(mission\.intent\)/);
+  assert.match(recommendationContext, /mission\.sources/);
+  assert.match(recommendationContext, /mission\.artifacts/);
+  assert.match(recommendationContext, /const bounded = value\.slice\(0, MAX_REVISION_TEXT_CHARS\)/);
+  assert.doesNotMatch(recommendationContext, /intent: mission\.intent/);
+  assert.match(promptTab, /enabled: agenticRecommendationsEnabled/);
+  // The backend's fingerprint is the bounded revision for server-only X and
+  // Vault evidence. It must survive transport and gate every explicit action.
+  assert.match(promptTab, /serverContextFingerprint: body\.contextFingerprint/);
+  assert.match(promptTab, /async function revalidateResearchRecommendation/);
+  assert.match(promptTab, /contextFingerprint=\$\{encodeURIComponent\(recommendation\.contextFingerprint\)\}/);
+  assert.match(promptTab, /current\.contextFingerprint !== recommendation\.contextFingerprint/);
+  // The route remains read-only; mutation happens only after revalidation.
+  assert.match(promptTab, /fetch\(\s*`\/api\/research\/recommendations\?familiarId=/);
+  assert.match(promptTab, /method: "GET"/);
+  assert.match(promptTab, /cache: "no-store"/);
+  assert.match(promptTab, /revision=1/);
+  assert.match(promptTab, /addEventListener\("focus", onForeground\)/);
+  assert.match(promptTab, /addEventListener\("visibilitychange", onForeground\)/);
+  assert.match(promptTab, /function didFocusEnterRecommendations/);
+  assert.match(promptTab, /event\.currentTarget\.contains\(event\.relatedTarget\)/);
+  assert.match(promptTab, /revisionRequestRef/);
+});
+
+test("suggested topics use shared grounded cards and retain explicit Research actions", () => {
+  assert.match(promptTab, /AgenticRecommendationCard/);
+  assert.match(promptTab, /Suggested next topics/);
+  assert.match(promptTab, /Add to prompt/);
+  assert.match(promptTab, /Start mission/);
+  assert.match(promptTab, /Refine mission/);
+  assert.match(promptTab, /Review mission/);
+  assert.match(promptTab, /Vault context is unavailable — using Research Desk evidence\./);
+  // Applying a visible action is announced; loading, empty, and route failure
+  // states stay delegated to the shared accessible card primitives.
+  assert.match(promptTab, /Added ".+" to the prompt\./);
+  assert.match(promptTab, /Started mission ".+"\./);
+  assert.match(promptTab, /Refined mission ".+"\./);
+  assert.match(promptTab, /state=\{agenticCardState/);
+  assert.match(composer, /export function createRecommendedResearchMissionInput/);
+  assert.match(composer, /inferResearchMissionMode\(intent\)/);
+  assert.match(composer, /modeSource: "auto"/);
+  assert.doesNotMatch(promptTab, /title: payload\.topic/);
+  assert.match(promptTab, /function focusResearchDesk/);
+  assert.match(promptTab, /const draftRef = useRef\(draft\)/);
+  assert.match(promptTab, /draftRef\.current !== draftAtActivation/);
 });
 
 // ── Bounds editor: explicit submit only, dirty latch, clearable inputs ───────
@@ -275,4 +343,7 @@ test("prompt tab styles are token-driven and container-responsive", () => {
   // No Nocturne hexes in the prompt sheet's classes: the accent-glow card and
   // mode cards must ride the scoped research tokens.
   assert.match(css, /\.research-mode-card\[data-selected="true"\] \{[^}]*var\(--research-accent\)/);
+  assert.match(css, /\.research-topic-recommendations \{/);
+  assert.match(css, /\.research-topic-recommendations__card \.agentic-recommendation-card__actions \{/);
+  assert.match(css, /@container research-desk \(max-width: 560px\) \{[\s\S]*\.research-topic-recommendations/);
 });

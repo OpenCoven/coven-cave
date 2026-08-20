@@ -681,6 +681,12 @@
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-lg, 0 18px 48px oklch(0 0 0 / 35%));
 }
+.research-res-overlay__dialog[data-expanded] {
+  width: calc(100vw - var(--space-8));
+  height: calc(100vh - var(--space-8));
+  max-height: none;
+  overflow: hidden;
+}
 .research-res-overlay__head {
   display: flex;
   align-items: flex-start;
@@ -726,6 +732,12 @@
   font-size: 16px;
 }
 .research-res-overlay__sub { font-size: var(--text-sm); line-height: 1.5; color: var(--text-muted); }
+.research-res-overlay__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
 .research-res-overlay__close {
   display: grid;
   place-items: center;
@@ -785,6 +797,11 @@
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-5) 18px;
+}
+.research-res-overlay__dialog[data-expanded] .research-res-overlay__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 .research-res-overlay__article-provenance {
   display: flex;
@@ -1056,6 +1073,10 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+}
+.research-res-overlay__dialog[data-expanded] .research-paper-view__stage {
+  max-height: none;
+  min-height: 60vh;
 }
 .research-paper-view__page {
   position: relative;

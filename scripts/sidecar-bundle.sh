@@ -480,6 +480,13 @@ if [ ! -f "$STANDALONE/server.js" ]; then
   exit 1
 fi
 
+# The research paper viewer's pdf.js worker is a generated, gitignored asset in
+# public/. `prebuild` stages it; this asserts the result before the expensive
+# assembly, because a bundle missing it verifies as complete everywhere except
+# in front of a reader, who is told only "Couldn't render this paper" (cave-9hc).
+echo "==> verifying staged pdf.js worker"
+node "$ROOT/scripts/copy-pdf-worker.mjs" --verify >&2
+
 echo "==> staging Node runtime for bundled sidecar"
 if [ "$BUILD_PLATFORM" = "win32" ]; then
   NODE_BIN="$(command -v node.exe || command -v node || true)"

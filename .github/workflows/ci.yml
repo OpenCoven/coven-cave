@@ -258,6 +258,15 @@ jobs:
         if: needs.paths.outputs.e2e == 'true'
         run: pnpm exec playwright test
 
+      # This is a separate Playwright invocation, so its webServer starts with
+      # the explicit public capability while the default-off suite above has
+      # already stopped its own server.
+      - name: Validate flag-enabled agentic journeys
+        if: needs.paths.outputs.e2e == 'true'
+        env:
+          NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
+        run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+
       - name: Report skipped suites
         if: needs.paths.outputs.frontend != 'true' || needs.paths.outputs.rust != 'true' || needs.paths.outputs.e2e != 'true' || needs.paths.outputs.ios != 'true' || needs.paths.outputs.docs != 'true'
         run: |
