@@ -12,6 +12,13 @@ function formatBytes(n: number | undefined): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function compactRowPath(path: string): string {
+  const home = path.replace(/^\/Users\/[^/]+/, "~");
+  const parts = home.split("/").filter(Boolean);
+  if (home.length <= 64 || parts.length <= 4) return home;
+  return `${home.startsWith("~") ? "~" : `/${parts[0]}`}/…/${parts.slice(-3).join("/")}`;
+}
+
 type MemoryRowItemProps = {
   age: string;
   selected: boolean;
@@ -58,7 +65,10 @@ export function MemoryRowItem({
             </span>
             <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{age}</span>
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
+          <span className="mt-0.5 block truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]">
+            {row.kind === "canonical" ? row.excerpt : compactRowPath(row.path)}
+          </span>
+          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
             <span className="truncate">{row.sourceLabel}</span>
             {row.kind === "canonical" ? (
               <>
@@ -70,9 +80,9 @@ export function MemoryRowItem({
             ) : null}
             {size ? <><span aria-hidden>·</span><span>{size}</span></> : null}
             {row.stale ? (
-              <span className="inline-flex items-center gap-1" title="Stale — suggested for cleanup">
+              <span className="inline-flex items-center gap-1 text-[var(--color-warning)]" title="Stale — suggested for cleanup">
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)]" />
-                <span className="sr-only">stale</span>
+                <span>stale</span>
               </span>
             ) : null}
           </span>

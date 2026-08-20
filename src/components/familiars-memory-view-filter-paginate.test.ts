@@ -6,7 +6,7 @@ const source = [
   await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
 ].join("\n");
 
-// ───────── Source-kind filter chips ─────────
+// ───────── Source-kind filter popover ─────────
 
 assert.match(
   source,
@@ -31,27 +31,13 @@ assert.match(
   "Memory files must be filtered by the active source-kind filter",
 );
 
-assert.match(
-  source,
-  /function SourceFilterChip\(/,
-  "A SourceFilterChip component must exist for the interactive stats",
-);
-
-assert.match(
-  source,
-  /aria-pressed=\{active\}/,
-  "Source filter chips must expose pressed state for accessibility",
-);
-
+assert.match(source, /ariaLabel="Memory filters"/, "filters use the shared focus-return popover");
+assert.match(source, /id=\{sourceSummaryId\}[\s\S]*Sources: \{memorySourceSummary\}[\s\S]*aria-describedby=\{sourceSummaryId\}/, "the compact trigger describes all source counts for assistive technology");
+assert.match(source, /label="Source"[\s\S]*?value=\{sourceFilter\}[\s\S]*?onChange=\{setSourceFilter\}/, "source is selected inside the filter popover");
 for (const wired of ["coven-origin", "external-harness", "runtime"]) {
-  assert.match(
-    source,
-    new RegExp(
-      `current === "${wired}"\\s*\\?\\s*"all"\\s*:\\s*"${wired}"`,
-    ),
-    `Clicking the ${wired} chip must toggle the filter on/off`,
-  );
+  assert.ok(source.includes(`{ value: "${wired}",`), `${wired} remains an explicit source option`);
 }
+assert.match(source, /activeFilterSummary/, "the trigger summarizes active filters");
 
 // ───────── Honest count + show-more pagination ─────────
 
