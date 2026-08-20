@@ -103,7 +103,9 @@ async function openHome(page: Page) {
 /** Smart enhance is one item deep in the composer "+" menu (chat revamp 1d). */
 async function clickEnhance(page: Page) {
   await page.getByRole("button", { name: "Composer actions" }).click();
-  await page.getByRole("menuitem", { name: "Enhance prompt" }).click();
+  const menu = page.getByRole("menu", { name: "Composer actions" });
+  await expect(menu.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Enhance prompt" }).click();
 }
 
 function homeEnhanceStatus(page: Page, text: string) {
@@ -230,7 +232,9 @@ async function openChat(page: Page) {
 
 async function clickChatEnhance(page: Page, chat: Locator) {
   await chat.getByRole("button", { name: "Tools" }).click();
-  await page.getByRole("menu", { name: "Tools" }).getByRole("menuitem", { name: "Enhance prompt" }).click();
+  const menu = page.getByRole("menu", { name: "Tools" });
+  await expect(menu.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Enhance prompt" }).click();
 }
 
 function chatEnhanceStatus(chat: Locator, text: string) {
@@ -506,8 +510,12 @@ test.describe("Chat agentic prompt enhancement", () => {
     });
     await chat.getByRole("button", { name: "Mark task done: Fix the login regression" }).click();
     await chat.getByRole("button", { name: "Tools" }).click();
-    await page.getByRole("menu", { name: "Tools" }).getByRole("menuitem", { name: "Model & tuning…" }).click();
-    await page.getByRole("menu", { name: "Runtime and model" }).getByRole("menuitemradio", { name: "GPT-5.4", exact: true }).click();
+    const toolsMenu = page.getByRole("menu", { name: "Tools" });
+    await expect(toolsMenu.getByRole("menuitem", { name: "Model & tuning…" })).toBeVisible();
+    await toolsMenu.getByRole("menuitem", { name: "Model & tuning…" }).click();
+    const runtimeMenu = page.getByRole("menu", { name: "Runtime and model" });
+    await expect(runtimeMenu.getByRole("menuitemradio", { name: "GPT-5.4", exact: true })).toBeVisible();
+    await runtimeMenu.getByRole("menuitemradio", { name: "GPT-5.4", exact: true }).click();
     expect(fixture.modelPatches).toHaveLength(1);
 
     await expect(() => expect(
