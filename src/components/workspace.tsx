@@ -95,6 +95,7 @@ import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
 import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
 import {
@@ -2498,16 +2499,18 @@ export function Workspace() {
 
   const refreshOpenTaskCards = useCallback(async () => {
     try {
-      const res = await fetch("/api/board", { cache: "no-store" });
-      const json = await res.json();
-      if (json.ok && Array.isArray(json.cards)) {
-        const cards = json.cards as Array<{
+      const { data: json } = await readSurfaceResource<{
+        ok?: boolean;
+        cards?: Array<{
           id?: string;
           title?: string;
           status?: string;
           familiarId?: string | null;
           endDate?: string | null;
         }>;
+      }>("board:cards");
+      if (json.ok && Array.isArray(json.cards)) {
+        const cards = json.cards;
         // The 60s board poll rebuilds these arrays each tick; keep the previous
         // reference when the content is unchanged so an idle board doesn't
         // re-render the Tasks badge / calendar deadline markers for nothing.

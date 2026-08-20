@@ -523,6 +523,20 @@ assert.match(
   /usePausablePoll\(\(\) => void refreshOpenTaskCards\(\), 60_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
   "Workspace pauses the task-card poll while a mobile text input is active",
 );
+assert.match(
+  workspace,
+  /readSurfaceResource<[\s\S]*?>\("board:cards"\)/,
+  "Workspace shares the board landing resource for task badges and deadlines",
+);
+const openTaskRefresh = workspace.match(
+  /const refreshOpenTaskCards = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[\]\);/,
+)?.[0];
+assert.ok(openTaskRefresh, "Workspace keeps a bounded task-card refresh callback");
+assert.doesNotMatch(
+  openTaskRefresh,
+  /fetch\("\/api\/board"/,
+  "Workspace must not bypass board request coalescing with an independent raw fetch",
+);
 
 assert.doesNotMatch(
   workspace,

@@ -584,6 +584,15 @@
   min-width: 0;
   overflow: hidden;
 }
+/* The flex (non-grid) panel lays its tile out on the ROW axis, so a pane with
+   no flex basis shrink-to-fits its own content instead of filling the panel.
+   Surfaces with wide intrinsic content hid this; a narrow one (the browser
+   pane, whose toolbar is only ~120px wide) collapsed to a slice with dead
+   space beside it. The grid path is untouched — it sizes tiles by track. */
+.split-host__tile-panel > .split-host__pane {
+  flex: 1 1 auto;
+  width: 100%;
+}
 .split-host__pane-head {
   display: flex;
   align-items: center;
