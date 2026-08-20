@@ -251,7 +251,7 @@ test("an external-only blocker is a terminal chip, never a graph edge", () => {
   const a = steps.find((s) => s.id === "a");
   assert.deepEqual(a?.needs, [], "external blockers never enter the graph");
   assert.deepEqual(a?.external, [
-    { kind: "github", label: "Merge OpenCoven/coven-cave#4527", state: "unresolved" },
+    { kind: "github", label: "Merge OpenCoven/coven-cave#4527", state: "unresolved", primary: false, pinned: false },
   ]);
   const depth = dependencyDepth(steps);
   assert.equal(depth.a, 0, "lays out at its own depth");

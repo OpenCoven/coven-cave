@@ -99,6 +99,10 @@ export type ChartExternalBlocker = {
   kind: Exclude<TaskDependencyKind, "task">;
   label: string;
   state: TaskDependencyState;
+  /** True when this blocker is the card's primary blocker. */
+  primary: boolean;
+  /** True when the primary designation is operator-pinned — never auto-demote. */
+  pinned: boolean;
 };
 
 export type ChartStep = {
@@ -267,11 +271,16 @@ export function toChartSteps(
       edges,
       external: canonical
         .filter((dep) => !isGraphEdge(dep))
-        .map((dep) => ({
-          kind: dep.kind as ChartExternalBlocker["kind"],
-          label: dep.label,
-          state: dep.state,
-        })),
+        .map((dep) => {
+          const isPrimary = card.primaryBlockerId != null && card.primaryBlockerId === dep.id;
+          return {
+            kind: dep.kind as ChartExternalBlocker["kind"],
+            label: dep.label,
+            state: dep.state,
+            primary: isPrimary,
+            pinned: isPrimary && card.primaryBlockerPinned === true,
+          };
+        }),
       needsHuman: card.needsHuman === true,
       labels: card.labels ?? [],
       endDate: card.endDate ?? null,
