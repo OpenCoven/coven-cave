@@ -35,6 +35,9 @@ test("exports strict tag patterns and parsing contracts", () => {
     rc: 1,
   });
   assert.deepEqual(parseFinalTag("v1.2.3"), { tag: "v1.2.3", version: "1.2.3" });
+  const largeCandidate = parseCandidateTag("v1.2.3-rc.9007199254740993");
+  assert.equal(typeof largeCandidate.rc, "number");
+  assert.equal(largeCandidate.tag, "v1.2.3-rc.9007199254740993");
 
   for (const tag of ["v1.2.3", "v1.2.3-rc.0", "v1.2.3-rc.01", "v1.2", "v1.2.3-beta.1"]) {
     assert.throws(() => parseCandidateTag(tag), /valid release-candidate tag/);
@@ -42,6 +45,35 @@ test("exports strict tag patterns and parsing contracts", () => {
   for (const tag of ["v1.2.3-rc.1", "v1.2.3-beta.1", "1.2.3", "v01.2.3"]) {
     assert.throws(() => parseFinalTag(tag), /valid final release tag/);
   }
+});
+
+test("candidate ordering remains exact above the safe-integer range", async () => {
+  const lower = "v1.2.3-rc.9007199254740992";
+  const higher = "v1.2.3-rc.9007199254740993";
+  const { fetchImpl } = githubFixture({
+    routes: ({ pathname }) => {
+      if (pathname.endsWith("/actions/workflows/release-candidate.yml/runs")) {
+        return jsonResponse({
+          workflow_runs: [
+            candidateRun({ id: 21, tag: lower }),
+            candidateRun({ id: 22, tag: higher }),
+          ],
+        });
+      }
+      if (pathname.endsWith("/actions/runs/21/jobs")) {
+        return jsonResponse({ jobs: [rollupJob()] });
+      }
+      if (pathname.endsWith("/actions/runs/22/jobs")) {
+        return jsonResponse({ jobs: [rollupJob()] });
+      }
+    },
+  });
+
+  const result = await authorizeRelease(
+    baseOptions({ tag: "v1.2.3", fetchImpl, git: gitFixture() }),
+  );
+  assert.equal(result.candidateTag, higher);
+  assert.equal(result.candidateRunId, 22);
 });
 
 test("authorizes a signed candidate push and proves its local main ancestry", async () => {
@@ -178,7 +210,7 @@ test("authorizes the highest valid candidate across bounded pagination", async (
     commit: COMMIT,
     candidateTag: "v1.2.3-rc.2",
     candidateRunId: 12,
-    candidateRunUrl: "https://github.test/runs/12",
+    candidateRunUrl: "https://github.test/OpenCoven/coven-cave/actions/runs/12",
     legacyRecovery: false,
     legacyRunId: null,
     legacyRunUrl: null,
@@ -197,7 +229,11 @@ test("candidate release evidence rejects wrong run and rollup data", async (t) =
     ["substring rollup", { jobs: [{ ...rollupJob(), name: "Release candidate validated later" }] }],
     ["duplicate rollups", { jobs: [rollupJob(), rollupJob({ name: "other / Release candidate validated" })] }],
     ["cancelled rollup", { jobs: [rollupJob({ conclusion: "cancelled" })] }],
+    ["skipped rollup", { jobs: [rollupJob({ conclusion: "skipped" })] }],
     ["missing rollup", { jobs: [{ name: "build", status: "completed", conclusion: "success" }] }],
+    ["blank run URL", { run: { htmlUrl: " " } }],
+    ["malformed run URL", { run: { htmlUrl: "not a URL" } }],
+    ["cross-origin run URL", { run: { htmlUrl: "https://evil.test/OpenCoven/coven-cave/actions/runs/11" } }],
     ["moved current ref", { currentTagCommit: OTHER_COMMIT }],
     ["unsigned current ref", { currentTagVerified: false }],
   ];
@@ -275,7 +311,7 @@ test("manual final release authorizes matching pre-cutoff legacy evidence", asyn
     candidateRunId: null,
     candidateRunUrl: null,
     legacyRunId: 700,
-    legacyRunUrl: "https://github.test/runs/700",
+    legacyRunUrl: "https://github.test/OpenCoven/coven-cave/actions/runs/700",
   });
 });
 
@@ -301,9 +337,21 @@ test("legacy recovery requires all historical evidence and otherwise falls throu
     ["push invocation", { eventName: "push" }],
     ["post-cutoff release", { release: { published_at: "2026-08-17T08:21:59Z" } }],
     ["missing publication", { release: { published_at: null } }],
+    ["impossible publication date", { release: { published_at: "2026-02-30T08:21:58Z" } }],
     ["wrong historical event", { legacyRun: { event: "workflow_dispatch" } }],
     ["mismatched historical SHA", { legacyRun: { head_sha: OTHER_COMMIT } }],
+    ["missing historical status", { legacyRun: { status: undefined } }],
+    ["non-completed historical status", { legacyRun: { status: "queued" } }],
+    ["malformed created timestamp", { legacyRun: { created_at: "yesterday" } }],
+    ["impossible updated date", { legacyRun: { updated_at: "2026-02-30T08:21:58Z" } }],
+    ["post-cutoff creation", { legacyRun: { created_at: "2026-08-17T08:21:59Z" } }],
     ["post-cutoff rerun", { legacyRun: { updated_at: "2026-08-17T08:21:59Z" } }],
+    ["blank historical run URL", { legacyRun: { html_url: " " } }],
+    ["malformed historical run URL", { legacyRun: { html_url: "not a URL" } }],
+    [
+      "cross-origin historical run URL",
+      { legacyRun: { html_url: "https://evil.test/OpenCoven/coven-cave/actions/runs/700" } },
+    ],
   ];
   for (const [name, fixture] of cases) {
     await t.test(name, async () => {
@@ -435,6 +483,9 @@ function releaseEvidenceFixture({
               tag: run.tag,
               event: run.event,
               headSha: run.headSha,
+              htmlUrl: run.htmlUrl,
+              status: run.status,
+              conclusion: run.conclusion,
             }),
           ],
         });
@@ -473,8 +524,9 @@ function legacyFixture({
           workflow_runs: [
             {
               id: 700,
-              html_url: "https://github.test/runs/700",
+              html_url: "https://github.test/OpenCoven/coven-cave/actions/runs/700",
               event: "push",
+              status: "completed",
               conclusion: "success",
               head_branch: "v1.2.3",
               head_sha: COMMIT,
@@ -494,13 +546,16 @@ function candidateRun({
   tag = "v1.2.3-rc.1",
   event = "push",
   headSha = COMMIT,
+  htmlUrl = `https://github.test/OpenCoven/coven-cave/actions/runs/${id}`,
+  status = "completed",
+  conclusion = "success",
 } = {}) {
   return {
     id,
-    html_url: `https://github.test/runs/${id}`,
+    html_url: htmlUrl,
     event,
-    status: "completed",
-    conclusion: "success",
+    status,
+    conclusion,
     head_branch: tag,
     head_sha: headSha,
   };

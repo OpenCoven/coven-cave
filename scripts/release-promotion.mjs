@@ -11,6 +11,8 @@ export const LEGACY_RELEASE_PUBLISHED_BEFORE = Date.parse("2026-08-17T08:21:59Z"
 export const LEGACY_RELEASE_WORKFLOW_ID = 286550155;
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const ISO_TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/;
 const MAX_API_PAGES = 20;
 const ROLLUP_JOB_NAME = "Release candidate validated";
 const execFileAsync = promisify(execFile);
@@ -18,17 +20,19 @@ const execFileAsync = promisify(execFile);
 class InvalidEvidenceError extends Error {}
 
 export function parseCandidateTag(tag) {
+  const { rcText: _rcText, ...candidate } = parseCandidateTagParts(tag);
+  return candidate;
+}
+
+function parseCandidateTagParts(tag) {
   const match = typeof tag === "string" ? RC_TAG_PATTERN.exec(tag) : null;
   if (!match) {
     throw new Error(`'${String(tag)}' is not a valid release-candidate tag`);
   }
   const [, major, minor, patch, rcText] = match;
   const rc = Number(rcText);
-  if (!Number.isSafeInteger(rc)) {
-    throw new Error(`'${tag}' is not a valid release-candidate tag`);
-  }
   const version = `${major}.${minor}.${patch}`;
-  return { tag, baseTag: `v${version}`, version, rc };
+  return { tag, baseTag: `v${version}`, version, rc, rcText };
 }
 
 export function parseFinalTag(tag) {
@@ -108,6 +112,7 @@ function createContext(options) {
   const [owner, repo] = resolveRepository(options);
   const apiUrl = (options.apiUrl || "https://api.github.com").replace(/\/+$/, "");
   const origin = new URL(apiUrl).origin;
+  const webOrigin = resolveGitHubWebOrigin(apiUrl);
   const repositoryPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   const eventName = options.eventName || "push";
   if (eventName !== "push" && eventName !== "workflow_dispatch") {
@@ -118,6 +123,7 @@ function createContext(options) {
     repo,
     apiUrl,
     origin,
+    webOrigin,
     repositoryPath,
     token: options.token || "",
     eventName,
@@ -125,6 +131,14 @@ function createContext(options) {
     fetchImpl: options.fetchImpl || globalThis.fetch,
     execFileImpl: options.execFileImpl || execFileAsync,
   };
+}
+
+function resolveGitHubWebOrigin(apiUrl) {
+  const url = new URL(apiUrl);
+  if (url.hostname.startsWith("api.")) {
+    url.hostname = url.hostname.slice(4);
+  }
+  return url.origin;
 }
 
 function resolveRepository(options) {
@@ -240,15 +254,18 @@ async function findLegacyRecovery(context, finalTag, commit) {
       typeof run === "object" &&
       Number.isInteger(run.id) &&
       run.id > 0 &&
-      typeof run.html_url === "string" &&
+      validRunUrl(context, run.html_url, run.id) !== null &&
       run.event === "push" &&
+      run.status === "completed" &&
       run.conclusion === "success" &&
       run.head_branch === finalTag &&
       normalizeSha(run.head_sha) === commit &&
       isBeforeCutoff(run.created_at) &&
       isBeforeCutoff(run.updated_at),
   );
-  return match ? { id: match.id, htmlUrl: match.html_url } : null;
+  return match
+    ? { id: match.id, htmlUrl: validRunUrl(context, match.html_url, match.id) }
+    : null;
 }
 
 async function findCandidateEvidence(context, final, commit) {
@@ -262,27 +279,29 @@ async function findCandidateEvidence(context, final, commit) {
     if (!run || typeof run !== "object" || typeof run.head_branch !== "string") continue;
     let parsed;
     try {
-      parsed = parseCandidateTag(run.head_branch);
+      parsed = parseCandidateTagParts(run.head_branch);
     } catch {
       continue;
     }
+    const runUrl =
+      Number.isInteger(run.id) && run.id > 0
+        ? validRunUrl(context, run.html_url, run.id)
+        : null;
     if (
       parsed.version !== final.version ||
       run.event !== "push" ||
       run.status !== "completed" ||
       run.conclusion !== "success" ||
       normalizeSha(run.head_sha) !== commit ||
-      !Number.isInteger(run.id) ||
-      run.id <= 0 ||
-      typeof run.html_url !== "string"
+      runUrl === null
     ) {
       continue;
     }
-    eligible.push({ run, parsed });
+    eligible.push({ run, parsed, runUrl });
   }
 
   const survivors = [];
-  for (const { run, parsed } of eligible) {
+  for (const { run, parsed, runUrl } of eligible) {
     const jobsPath =
       `${context.repositoryPath}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`;
     const jobs = await collectPages(context, jobsPath, "jobs");
@@ -309,15 +328,23 @@ async function findCandidateEvidence(context, final, commit) {
       throw error;
     }
     survivors.push({
-      rc: parsed.rc,
+      rcText: parsed.rcText,
       tag: parsed.tag,
       runId: run.id,
-      runUrl: run.html_url,
+      runUrl,
     });
   }
 
-  survivors.sort((left, right) => right.rc - left.rc);
+  survivors.sort(compareCandidateRcDescending);
   return survivors[0] ?? null;
+}
+
+function compareCandidateRcDescending(left, right) {
+  if (left.rcText.length !== right.rcText.length) {
+    return right.rcText.length - left.rcText.length;
+  }
+  if (left.rcText === right.rcText) return 0;
+  return left.rcText < right.rcText ? 1 : -1;
 }
 
 async function collectPages(context, initialPath, arrayKey) {
@@ -386,9 +413,62 @@ async function requestJson(context, pathOrUrl, { allow404 = false, includeRespon
 }
 
 function isBeforeCutoff(value) {
-  if (typeof value !== "string" || !value) return false;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) && timestamp < LEGACY_RELEASE_PUBLISHED_BEFORE;
+  const timestamp = parseStrictIsoTimestamp(value);
+  return timestamp !== null && timestamp < LEGACY_RELEASE_PUBLISHED_BEFORE;
+}
+
+function parseStrictIsoTimestamp(value) {
+  const match = typeof value === "string" ? ISO_TIMESTAMP_PATTERN.exec(value) : null;
+  if (!match) return null;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = ""] =
+    match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const millisecond = Number(fraction.padEnd(3, "0"));
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, millisecond);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day ||
+    date.getUTCHours() !== hour ||
+    date.getUTCMinutes() !== minute ||
+    date.getUTCSeconds() !== second ||
+    date.getUTCMilliseconds() !== millisecond
+  ) {
+    return null;
+  }
+  return date.getTime();
+}
+
+function validRunUrl(context, value, runId) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const expectedPath =
+    `/${encodeURIComponent(context.owner)}/${encodeURIComponent(context.repo)}` +
+    `/actions/runs/${runId}`;
+  if (
+    url.origin !== context.webOrigin ||
+    url.username ||
+    url.password ||
+    url.pathname !== expectedPath ||
+    url.search ||
+    url.hash
+  ) {
+    return null;
+  }
+  return url.href;
 }
 
 function isSha(value) {
