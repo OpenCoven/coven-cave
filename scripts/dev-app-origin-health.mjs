@@ -87,7 +87,9 @@ export async function loopbackOriginResponds({
       const response = await fetchImpl(`http://127.0.0.1:${port}${READY_PATH}`, {
         method: "GET",
         redirect: "manual",
-        headers: accessToken ? { authorization: `Bearer ${accessToken}` } : undefined,
+        headers: accessToken
+          ? { authorization: ["Bearer", accessToken].join(" ") }
+          : undefined,
         signal: AbortSignal.timeout(remainingMs),
       });
       if (response.status >= 200 && response.status < 400) return true;
