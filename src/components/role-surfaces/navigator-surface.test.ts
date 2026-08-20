@@ -52,6 +52,10 @@ test("moves, renames, reassignments, answers, adds and removals are real writes"
 });
 
 test("dependency edits write canonical card fields while the legacy overlay is import-and-prune only", () => {
+  // Dependencies are canonical on the card (`Card.dependencies`), so the board
+  // write carries that field and nothing else. The overlay survives only as a
+  // legacy read-side store the room may import from or cut, never as a
+  // client-invented `dependsOn` the rest of the Cave could not honour.
   assert.match(surface, /overlay: ChartOverlay/);
   assert.match(surface, /normalizeOverlay\(state\.overlay, liveIds\)/);
   assert.match(surface, /overlayImportPlan\(cards, overlay\)/);
@@ -59,6 +63,7 @@ test("dependency edits write canonical card fields while the legacy overlay is i
   assert.match(surface, /const body: Record<string, unknown> = \{ dependencies: kept \}/);
   assert.match(surface, /setDependency\(overlay, stepId, null\)/);
   assert.doesNotMatch(surface, /setDependency\(overlay, stepId, parentId\)/);
+  assert.doesNotMatch(surface, /body: JSON\.stringify\(\{[^}]*\bdependsOn\b/);
   assert.match(
     surface,
     /Discard the legacy overlay's surviving links — canonical dependencies on the cards are untouched/,
