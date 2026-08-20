@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   REDACTED_SECRET,
+  containsSecretText,
   redactSecretText,
   redactSecretsDeep,
 } from "./secret-redaction.ts";
@@ -173,6 +174,121 @@ assert.equal(
   `https://example.invalid/callback?token=${REDACTED_SECRET}&safe=visible`,
   "URL query secret redaction remains intact",
 );
+for (const secretParameter of [
+  "client_secret",
+  "access_token",
+  "refresh_token",
+  "api_key",
+  "password",
+]) {
+  const embeddedUrl =
+    `See https://example.invalid/callback?${secretParameter}=query-secret&safe=visible`
+    + `#${secretParameter}=fragment-secret&tab=details`;
+  assert.equal(
+    containsSecretText(embeddedUrl),
+    true,
+    `${secretParameter} URL query and fragment parameters are secret evidence`,
+  );
+  assert.equal(
+    redactSecretText(embeddedUrl),
+    `See https://example.invalid/callback?${secretParameter}=${REDACTED_SECRET}&safe=visible`
+    + `#${secretParameter}=${REDACTED_SECRET}&tab=details`,
+    `${secretParameter} URL query and fragment values are redacted in embedded URLs`,
+  );
+}
+const safeOrdinaryUrl = "See https://example.invalid/callback?state=visible#tab=details";
+assert.equal(
+  containsSecretText(safeOrdinaryUrl),
+  false,
+  "ordinary URL query and fragment parameters remain safe evidence",
+);
+assert.equal(
+  redactSecretText(safeOrdinaryUrl),
+  safeOrdinaryUrl,
+  "ordinary URLs remain intact during redaction",
+);
+const encodedUrlKey = "See https://example.invalid/callback?%6bey=short&safe=visible#%4b%45%59=fragment-secret&tab=details";
+assert.equal(
+  containsSecretText(encodedUrlKey),
+  true,
+  "decoded URL key parameters remain secret evidence",
+);
+assert.equal(
+  redactSecretText(encodedUrlKey),
+  `See https://example.invalid/callback?%6bey=${REDACTED_SECRET}&safe=visible#%4b%45%59=${REDACTED_SECRET}&tab=details`,
+  "decoded URL key parameters redact while preserving the original encoding",
+);
+for (const [url, expected] of [
+  [
+    "/callback?key=relative-secret&safe=visible#key=fragment-secret&tab=details",
+    `/callback?key=${REDACTED_SECRET}&safe=visible#key=${REDACTED_SECRET}&tab=details`,
+  ],
+  [
+    "//example.invalid/callback?%6bey=protocol-relative-secret#%4b%45%59=fragment-secret",
+    `//example.invalid/callback?%6bey=${REDACTED_SECRET}#%4b%45%59=${REDACTED_SECRET}`,
+  ],
+] as const) {
+  assert.equal(
+    containsSecretText(url),
+    true,
+    "relative and protocol-relative URL key parameters remain secret evidence",
+  );
+  assert.equal(
+    redactSecretText(url),
+    expected,
+    "relative and protocol-relative URL key parameters redact without rewriting the URL",
+  );
+}
+const safeRelativeUrl = "/callback?state=visible#tab=details";
+assert.equal(
+  containsSecretText(safeRelativeUrl),
+  false,
+  "ordinary relative URL query and fragment parameters remain safe evidence",
+);
+assert.equal(
+  redactSecretText(safeRelativeUrl),
+  safeRelativeUrl,
+  "ordinary relative URLs remain intact during redaction",
+);
+for (const [ref, expected] of [
+  ["?key=credential", `?key=${REDACTED_SECRET}`],
+  ["#key=credential", `#key=${REDACTED_SECRET}`],
+  ["?%6bey=credential", `?%6bey=${REDACTED_SECRET}`],
+  ["#%6bey=credential", `#%6bey=${REDACTED_SECRET}`],
+] as const) {
+  assert.equal(
+    containsSecretText(ref),
+    true,
+    "query-only and fragment-only relative references with secret parameters remain secret evidence",
+  );
+  assert.equal(
+    redactSecretText(ref),
+    expected,
+    "query-only and fragment-only relative references redact without rewriting the reference",
+  );
+}
+for (const safeReference of ["?state=visible", "#tab=details"] as const) {
+  assert.equal(
+    containsSecretText(safeReference),
+    false,
+    "ordinary query-only and fragment-only relative references remain safe evidence",
+  );
+  assert.equal(
+    redactSecretText(safeReference),
+    safeReference,
+    "ordinary query-only and fragment-only relative references remain intact",
+  );
+}
+assert.equal(
+  containsSecretText("key=value"),
+  false,
+  "ordinary prose key assignments remain safe evidence",
+);
+assert.equal(
+  redactSecretText("key=value"),
+  "key=value",
+  "ordinary prose key assignments remain intact",
+);
 assert.equal(
   redactSecretText("https://user:short-password@example.invalid/path"),
   `https://user:${REDACTED_SECRET}@example.invalid/path`,
@@ -307,6 +423,134 @@ assert.equal(
   "Authorization schemes consume and redact the complete credential",
 );
 assert.equal(
+  containsSecretText("Authorization: Basic authentication is disabled"),
+  false,
+  "Authorization documentation without a credential remains safe evidence",
+);
+assert.equal(
+  containsSecretText("Authorization: Basic dXNlcjpwYXNz"),
+  true,
+  "Basic authorization with a credential-shaped base64 value remains secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: opaque-credential"),
+  true,
+  "Authorization headers with one opaque colon-form token remain secret text",
+);
+assert.equal(
+  redactSecretText("Authorization: opaque-credential"),
+  `Authorization: ${REDACTED_SECRET}`,
+  "Authorization headers redact one opaque colon-form token as a credential",
+);
+assert.equal(
+  containsSecretText("Authorization: Bearer x"),
+  true,
+  "short Bearer authorization credentials remain secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: Token x"),
+  true,
+  "short Token authorization credentials remain secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: DPoP x"),
+  true,
+  "DPoP authorization with a one-token credential remains secret text",
+);
+assert.equal(
+  redactSecretText("Authorization: DPoP x"),
+  `Authorization: ${REDACTED_SECRET}`,
+  "DPoP authorization headers redact the full credential regardless of length",
+);
+assert.equal(
+  containsSecretText("Authorization: Proof_v1+demo x"),
+  true,
+  "arbitrary valid HTTP auth schemes with single-token credentials remain secret text",
+);
+assert.equal(
+  containsSecretText("Authorization: DPoP proof is required"),
+  false,
+  "multi-word authorization documentation remains safe evidence for arbitrary schemes",
+);
+for (const authorization of [
+  "Authorization: Signature keyId=demo,signature=abc123",
+  "Authorization: Signature keyId=demo signature=abc123",
+  "AUTHORIZATION=ApiKey key=abc123",
+]) {
+  assert.equal(
+    containsSecretText(authorization),
+    true,
+    "authorization parameter credentials remain secret text for valid schemes",
+  );
+  assert.equal(
+    redactSecretText(authorization),
+    authorization.startsWith("AUTHORIZATION=")
+      ? `AUTHORIZATION=${REDACTED_SECRET}`
+      : `Authorization: ${REDACTED_SECRET}`,
+    "authorization parameter credentials redact the complete authorization value",
+  );
+}
+assert.equal(
+  containsSecretText("Authorization: Signature request signing is required"),
+  false,
+  "authorization documentation without a credential token or parameter remains safe evidence",
+);
+const digestCredential = 'Authorization: Digest username="Mufasa", realm="test@example.invalid", nonce="abcdef1234567890", response="0123456789abcdef"';
+assert.equal(
+  containsSecretText(digestCredential),
+  true,
+  "Digest Authorization headers with credential parameters remain secret text",
+);
+assert.equal(
+  redactSecretText(digestCredential),
+  `Authorization: ${REDACTED_SECRET}`,
+  "Digest Authorization headers redact all credential parameters as one value",
+);
+assert.equal(
+  containsSecretText("Authorization: Bearer Abc123_def456-ghi789.jkl012Mno345"),
+  true,
+  "Bearer authorization with a token-shaped value remains secret text",
+);
+const ordinaryHexValues = [
+  "0123456789abcdef0123456789abcdef",
+  "0123456789abcdef0123456789abcdef01234567",
+];
+for (const ordinaryHexValue of ordinaryHexValues) {
+  assert.equal(
+    containsSecretText(`value ${ordinaryHexValue}`),
+    true,
+    "ordinary 32- and 40-character hexadecimal values remain secret-shaped globally",
+  );
+  assert.equal(
+    containsSecretText(JSON.stringify({ value: ordinaryHexValue })),
+    true,
+    "ordinary hexadecimal JSON values remain secret-shaped globally",
+  );
+  assert.equal(
+    redactSecretText(`value ${ordinaryHexValue}`),
+    `value ${REDACTED_SECRET}`,
+    "ordinary hexadecimal values are redacted outside scoped GitHub evidence handling",
+  );
+}
+const hexApiKey = "a".repeat(64);
+assert.equal(
+  containsSecretText(`api key ${hexApiKey}`),
+  true,
+  "64-character hexadecimal API keys remain credential material outside explicit evidence handling",
+);
+assert.equal(
+  redactSecretText(`api key ${hexApiKey}`),
+  `api key ${REDACTED_SECRET}`,
+  "64-character hexadecimal API keys are redacted rather than globally exempted",
+);
+assert.equal(
+  containsSecretText(JSON.stringify({
+    token: "QmFzZTY0Q3JlZGVudGlh" + "bFZhbHVlMTIzNDU2",
+  })),
+  true,
+  "credential-shaped base64 in a sensitive JSON field remains secret text",
+);
+assert.equal(
   redactSecretText("TOKEN=$(printf 'literal-secret' && echo exposed"),
   `TOKEN=${REDACTED_SECRET}`,
   "an unclosed command substitution fails closed through the end of the input",
@@ -390,6 +634,16 @@ assert.equal(
   "Authorization headers redact the full line for any scheme",
 );
 assert.equal(
+  containsSecretText("authorization=opaque-credential"),
+  true,
+  "authorization assignments treat opaque nonempty credentials as secret evidence",
+);
+assert.equal(
+  redactSecretText("authorization=opaque-credential"),
+  `authorization=${REDACTED_SECRET}`,
+  "authorization assignments redact opaque non-scheme credential values",
+);
+assert.equal(
   redactSecretText("password=short-secret && echo done\nnext=safe"),
   `password=${REDACTED_SECRET} && echo done\nnext=safe`,
   "equals assignments retain shell suffix operators and following lines",
@@ -404,6 +658,57 @@ assert.deepEqual(
   safeJsonValue,
   "safe complete JSON text remains semantically intact",
 );
+for (const value of [null, false, 0, [], {}]) {
+  const json = JSON.stringify({ token: value });
+  assert.equal(
+    containsSecretText(json),
+    false,
+    `decoded JSON token values such as ${json} use structured traversal without assignment-text false positives`,
+  );
+  assert.deepEqual(JSON.parse(redactSecretText(json)), { token: value });
+}
+const opaqueAuthorizationJson = JSON.stringify({ authorization: "opaque-credential" });
+assert.equal(
+  containsSecretText(opaqueAuthorizationJson),
+  true,
+  "decoded JSON authorization values treat opaque nonempty scalars as secret evidence",
+);
+assert.deepEqual(
+  JSON.parse(redactSecretText(opaqueAuthorizationJson)),
+  { authorization: REDACTED_SECRET },
+  "decoded JSON authorization values redact opaque non-scheme credentials",
+);
+for (const value of [null, false, 0] as const) {
+  const json = JSON.stringify({ authorization: value });
+  assert.equal(
+    containsSecretText(json),
+    false,
+    "authorization preserves the existing safe null/false/0 JSON semantics",
+  );
+  assert.deepEqual(
+    JSON.parse(redactSecretText(json)),
+    { authorization: value },
+    "authorization preserves safe null/false/0 JSON values during redaction",
+  );
+}
+for (const [key, value] of [["password", 123456], ["token", true]] as const) {
+  const json = JSON.stringify({ [key]: value });
+  assert.equal(
+    containsSecretText(json),
+    true,
+    `meaningful ${typeof value} values under ${key} are secret evidence`,
+  );
+  assert.deepEqual(
+    JSON.parse(redactSecretText(json)),
+    { [key]: REDACTED_SECRET },
+    `meaningful ${typeof value} values under ${key} are redacted from JSON`,
+  );
+  assert.deepEqual(
+    redactSecretsDeep({ [key]: value }),
+    { [key]: REDACTED_SECRET },
+    `meaningful ${typeof value} values under ${key} are redacted from objects`,
+  );
+}
 
 let veryDeep: Record<string, unknown> = { leaf: "raw-leaf-value" };
 for (let depth = 0; depth < 20_000; depth += 1) {

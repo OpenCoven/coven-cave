@@ -633,6 +633,104 @@
   background: color-mix(in oklch, var(--research-accent) 10%, transparent);
 }
 
+/* ═══ Contextual topics — narrow, evidence-first companion to the intake ═══ */
+.research-topic-recommendations {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 78%, var(--bg-base));
+}
+.research-topic-recommendations__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.research-topic-recommendations__header > div {
+  display: grid;
+  gap: var(--space-1);
+}
+.research-topic-recommendations__kicker {
+  margin: 0;
+  color: var(--research-accent);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+.research-topic-recommendations h3,
+.research-topic-recommendations__header > div > p:not(.research-topic-recommendations__kicker) {
+  margin: 0;
+}
+.research-topic-recommendations h3 {
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+}
+.research-topic-recommendations__header > div > p:not(.research-topic-recommendations__kicker) {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.research-topic-recommendations__refresh,
+.research-topic-recommendations__action {
+  flex: none;
+  min-height: var(--touch-target);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--research-accent) 40%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--research-accent) 8%, transparent);
+  color: var(--research-accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.research-topic-recommendations__refresh:hover,
+.research-topic-recommendations__action:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--research-accent) 16%, transparent);
+}
+.research-topic-recommendations__action:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.research-topic-recommendations__reduced,
+.research-topic-recommendations__action-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 38%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+}
+.research-topic-recommendations__action-error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+.research-topic-recommendations__cards {
+  display: grid;
+  gap: var(--space-3);
+}
+.research-topic-recommendations__card {
+  display: grid;
+  gap: var(--space-2);
+}
+.research-topic-recommendations__card .agentic-recommendation-card {
+  background: var(--bg-base);
+}
+.research-topic-recommendations__card .agentic-recommendation-card__actions {
+  display: none;
+}
+.research-topic-recommendations__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ═══ Quick saves — a docked bar with a sheet that lifts over the intake ═══ */
 .research-quick-saves__bar {
   position: relative;
@@ -925,6 +1023,15 @@
 
 @container research-desk (max-width: 560px) {
   .research-intake__scroll { padding: var(--space-3) var(--space-3) var(--space-4); }
+  .research-topic-recommendations {
+    padding: var(--space-3);
+  }
+  .research-topic-recommendations__header {
+    align-items: stretch;
+  }
+  .research-topic-recommendations__refresh {
+    width: 100%;
+  }
   .research-quick-saves__bar { padding: 0 var(--space-3); }
   .research-quick-saves__sheet {
     padding-inline: var(--space-3);

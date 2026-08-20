@@ -208,7 +208,7 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import type { NextPath } from "@/lib/next-paths";
+import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
@@ -3697,6 +3697,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         : null,
       selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
       recentThreadTitle: session?.title ?? null,
+      modelScope: `${modelState?.source ?? "runtime-default"}:${composerModelValue}`,
+      recentMessages: turns
+        .filter((turn) => (turn.role === "user" || turn.role === "assistant") && !turn.pending && !turn.error)
+        .slice(-4)
+        .map((turn) => ({ id: turn.id, role: turn.role, text: turn.text })),
+      recentToolOutcomes: turns
+        .flatMap((turn) => turn.tools ?? [])
+        .filter((tool) => tool.status === "ok" || tool.status === "error")
+        .slice(-3)
+        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status, output: tool.output ?? "" })),
+      linkedTask: linkedContext?.task ?? null,
     },
     disabled: busy,
   });
@@ -3871,9 +3882,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractChatRenderedText(last.text).nextPaths;
+    const suggestions = contextualizeNextPaths(extractChatRenderedText(last.text).nextPaths, {
+      messageId: last.id,
+      taskId: linkedContext?.task?.id ?? null,
+      toolOutcomeIds: (last.tools ?? [])
+        .filter((tool) => tool.status === "ok" || tool.status === "error")
+        .map((tool) => tool.id),
+    });
     return suggestions.length ? { suggestions } : empty;
-  }, [activePath]);
+  }, [activePath, linkedContext?.task?.id]);
 
   const handleFollowUp = useCallback((path: NextPath) => {
     if (path.kind === "reply") {
@@ -6702,7 +6719,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // pick its first send used.
   const draftViewKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    const viewKey = `${sessionId ?? ""}|${projectRoot ?? ""}`;
+    const viewKey = sessionId
+      ? `session:${sessionId}`
+      : `draft:${projectRoot ?? ""}`;
     const viewChanged = draftViewKeyRef.current !== viewKey;
     draftViewKeyRef.current = viewKey;
     setProjectIdDraft((prev) => {
@@ -6725,19 +6744,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // Initialise when unset, or always resync on session switch.
       return prev === null ? resolved : resolved ?? prev;
     });
-    setMentionedFiles([]);
-    setRuntimeHost(null);
-    // ChatView is a single instance reused across threads (not keyed by
-    // sessionId in ChatRouter), so per-thread composer context must be cleared
-    // on switch or it bleeds into the next conversation's next send: a
-    // reply-quote and staged attachments would be injected into the wrong
-    // thread, a pending branch parent would mis-parent the turn onto a node
-    // that doesn't exist in the new tree, and the "Prompt improved / Revert"
-    // strip would resurrect the previous thread's pre-enhancement draft.
-    setReplyTarget(null);
-    clearAttachments();
-    setPendingBranchParent(undefined);
-    promptEnhance.reset();
+    if (viewChanged) {
+      setMentionedFiles([]);
+      setRuntimeHost(null);
+      // ChatView is a single instance reused across threads (not keyed by
+      // sessionId in ChatRouter), so per-thread composer context must be cleared
+      // on switch or it bleeds into the next conversation's next send: a
+      // reply-quote and staged attachments would be injected into the wrong
+      // thread, a pending branch parent would mis-parent the turn onto a node
+      // that doesn't exist in the new tree, and the "Prompt improved / Revert"
+      // strip would resurrect the previous thread's pre-enhancement draft.
+      setReplyTarget(null);
+      clearAttachments();
+      setPendingBranchParent(undefined);
+      promptEnhance.reset();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
@@ -7449,6 +7470,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onDismiss={promptEnhance.dismiss}
                 onRevert={promptEnhance.revert}
                 onCancel={promptEnhance.cancel}
+                onFocusComposer={() => inputRef.current?.focus()}
               />
               {queuedMessages.length > 0 ? (
                 <div className="cave-composer-queue" role="group" aria-label="Queued messages">
