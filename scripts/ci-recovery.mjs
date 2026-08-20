@@ -422,6 +422,7 @@ async function inspectRecoveryDispatch(context, sha) {
     Object.hasOwn(inputs, "expected_pr_number")
       ? inputs.expected_pr_number
       : null;
+  const hasExpectedPrNumberInput = expectedPrNumberInput !== null;
   const hasCompleteExpectedPrNumberInput =
     expectedPrNumberInput !== null &&
     typeof expectedPrNumberInput === "object" &&
@@ -470,7 +471,10 @@ async function inspectRecoveryDispatch(context, sha) {
   }
 
   const hasGuardedProtocolMarker =
-    hasExpectedInput || JSON.stringify(workflow).includes("inputs.expected_sha");
+    hasExpectedInput ||
+    hasExpectedPrNumberInput ||
+    JSON.stringify(workflow).includes("inputs.expected_sha") ||
+    JSON.stringify(workflow).includes("inputs.expected_pr_number");
   if (hasGuardedProtocolMarker) {
     return {
       dispatchable: false,
