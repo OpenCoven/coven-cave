@@ -5,6 +5,7 @@ import {
   readdir,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -32,6 +33,52 @@ async function withCredentialRoot(
     await rm(root, { recursive: true, force: true });
   }
 }
+
+function isUnsupportedSymlinkError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "ENOSYS"
+    || code === "ENOTSUP"
+    || code === "EOPNOTSUPP"
+    || (process.platform === "win32" && (code === "EPERM" || code === "EACCES"));
+}
+
+test("first operation creates a private configured root", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "cave-client-v1-root-parent-"));
+  const root = join(parent, "credentials");
+  try {
+    await createCredentialStore({ root }).reload();
+    const metadata = await stat(root);
+    assert.equal(metadata.isDirectory(), true);
+    assert.equal(metadata.mode & 0o777, 0o700);
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("credential file symlinks are rejected instead of followed", async (t) => {
+  await withCredentialRoot(async (root) => {
+    const target = join(root, "credential-target.json");
+    const storePath = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    await writeFile(target, JSON.stringify({ version: 1, credentials: [] }), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    try {
+      await symlink(target, storePath, "file");
+    } catch (error) {
+      if (isUnsupportedSymlinkError(error)) {
+        t.skip(`file symlinks are unsupported on this platform (${(error as NodeJS.ErrnoException).code})`);
+        return;
+      }
+      throw error;
+    }
+
+    await assert.rejects(
+      createCredentialStore({ root }).reload(),
+      /credential store file must be a regular file, not a symlink/i,
+    );
+  });
+});
 
 test("issued bearers are high-entropy URL-safe values and never persist raw", async () => {
   await withCredentialRoot(async (root) => {
@@ -96,6 +143,77 @@ test("revocation remains authoritative across stale store instances", async () =
       persisted.get(issued.credential.id)?.revocationReason,
       "user_requested",
     );
+  });
+});
+
+test("concurrent real-root and symlink-alias operations preserve revocation authority", async (t) => {
+  await withCredentialRoot(async (root) => {
+    const alias = `${root}-alias`;
+    try {
+      try {
+        await symlink(root, alias, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        if (isUnsupportedSymlinkError(error)) {
+          t.skip(`symlink aliases are unsupported on this platform (${(error as NodeJS.ErrnoException).code})`);
+          return;
+        }
+        throw error;
+      }
+
+      const issuingStore = createCredentialStore({ root, now: () => 1_000 });
+      const issued = await issuingStore.issue(credentialInput);
+
+      let announceAliasSnapshot!: () => void;
+      const aliasSnapshotLoaded = new Promise<void>((resolve) => {
+        announceAliasSnapshot = resolve;
+      });
+      let releaseAliasRead!: () => void;
+      const aliasReadRelease = new Promise<void>((resolve) => {
+        releaseAliasRead = resolve;
+      });
+      const aliasStore = createCredentialStore({
+        root: alias,
+        now: () => 61_000,
+        readFile: async (path, encoding) => {
+          const snapshot = await readFile(path, encoding);
+          announceAliasSnapshot();
+          await aliasReadRelease;
+          return snapshot;
+        },
+      });
+
+      const verification = aliasStore.verify(issued.credential.id, issued.bearer);
+      await aliasSnapshotLoaded;
+
+      let authorityReadStarted = false;
+      const authorityStore = createCredentialStore({
+        root,
+        now: () => 2_000,
+        readFile: async (path, encoding) => {
+          authorityReadStarted = true;
+          return readFile(path, encoding);
+        },
+      });
+      const revocation = authorityStore.revoke(
+        issued.credential.id,
+        "user_requested",
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      if (authorityReadStarted) await revocation;
+      releaseAliasRead();
+      assert.equal(await verification, true);
+      await revocation;
+
+      const persisted = await createCredentialStore({ root }).reload();
+      assert.equal(persisted.get(issued.credential.id)?.revokedAt, 61_000);
+      assert.equal(
+        persisted.get(issued.credential.id)?.revocationReason,
+        "user_requested",
+      );
+    } finally {
+      await rm(alias, { force: true });
+    }
   });
 });
 
