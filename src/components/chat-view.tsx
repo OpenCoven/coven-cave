@@ -42,6 +42,7 @@ import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
 import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
+import { buildDiagramGuidePrompt, DIAGRAM_COMMAND_START } from "@/lib/diagram-command";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools } from "@/lib/turn-segments";
@@ -4860,6 +4861,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setInput("");
       const wrapped = buildSketchPrompt(args);
       setTimeout(() => void sendRaw(args, [], [], { promptOverride: wrapped }), 0);
+      return true;
+    }
+    if (command === "/diagram") {
+      const brief = args.trim();
+      setInput("");
+      const wrapped = buildDiagramGuidePrompt(brief);
+      setTimeout(
+        () => void sendRaw(brief || DIAGRAM_COMMAND_START, [], [], { promptOverride: wrapped }),
+        0,
+      );
       return true;
     }
     // Workspace-level commands routed through the parent
