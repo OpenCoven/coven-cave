@@ -895,14 +895,15 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
         ["memory-recall", "Memory recall", aggregate.averageMemoryRecall],
         ["file-locatability", "File locatability", aggregate.averageFileLocatability],
       ];
+  const scoresAreCurrent = aggregate.current !== undefined;
   for (const [sourceId, title, score] of lowScores) {
-    if (score > 0 && score < 60) {
+    if (score < 60 && (scoresAreCurrent || score > 0)) {
       items.push({
         kind: "low-score",
         severity: score < 40 ? "critical" : "warning",
         sourceId,
         title,
-        detail: `Average ${score}/100`,
+        detail: `${scoresAreCurrent ? "Newest report" : "Average"} ${score}/100`,
         rank: score < 40 ? 72 : 42,
       });
     }
