@@ -225,6 +225,9 @@ async function openChat(page: Page) {
   const draft = chat.getByRole("textbox", { name: "Message" });
   await expect(draft).toBeVisible({ timeout: 45_000 });
   await expect(chat.getByText("I found the failing login path.")).toBeVisible();
+  await expect(chat.getByRole("button", { name: /^Project: E2E Project · Full/ })).toBeVisible();
+  await expect(chat.getByRole("button", { name: /^Model: GPT-5\.5/ })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Open linked task: Fix the login regression" })).toBeVisible();
   return { chat, draft };
 }
 

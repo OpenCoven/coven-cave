@@ -1,10 +1,10 @@
 import {
   expect,
   test,
-  type APIRequestContext,
   type Page,
   type Route,
 } from "@playwright/test";
+import { createDefaultPreferences } from "../src/lib/preferences-schema";
 
 const MEMORY_IDS = {
   alpha: "11111111-1111-5111-8111-111111111111",
@@ -128,6 +128,7 @@ type CanonicalErrorCode =
 type SyntheticRouteOptions = {
   listError?: { status: number; code: CanonicalErrorCode };
   detailError?: { status: number; code: CanonicalErrorCode };
+  themeMode?: "light" | "dark";
 };
 
 type SyntheticRouteState = {
@@ -182,12 +183,33 @@ async function fulfillSyntheticApi(
     return;
   }
 
-  if (
-    pathname === "/api/preferences" ||
-    pathname === "/api/theme" ||
-    pathname.startsWith("/api/backdrop")
-  ) {
-    // Playwright's server owns deterministic temporary files for these stores.
+  if (pathname === "/api/preferences" || pathname === "/api/theme") {
+    const preferences = createDefaultPreferences(true);
+    preferences.appearance.theme.modePreference = options.themeMode ?? "dark";
+    preferences.appearance.theme.resolvedMode = options.themeMode ?? "dark";
+    if (pathname === "/api/preferences") {
+      await route.fulfill({ json: { ok: true, preferences } });
+      return;
+    }
+    const theme = preferences.appearance.theme;
+    await route.fulfill({
+      json: {
+        ok: true,
+        theme: {
+          themeId: theme.id,
+          mode: theme.resolvedMode,
+          tokens: theme.tokens,
+          updatedAt: theme.updatedAt,
+          revision: preferences.revision,
+          selectionRevision: theme.selectionRevision,
+          modePreference: theme.modePreference,
+          custom: theme.custom,
+        },
+      },
+    });
+    return;
+  }
+  if (pathname.startsWith("/api/backdrop")) {
     await route.fallback();
     return;
   }
@@ -334,29 +356,13 @@ function rowButton(page: Page, title: string) {
     .first();
 }
 
-async function setThemeMode(
-  request: APIRequestContext,
-  mode: "light" | "dark",
-) {
-  const response = await request.patch("/api/preferences", {
-    data: {
-      appearance: {
-        theme: { modePreference: mode, resolvedMode: mode },
-      },
-    },
-  });
-  expect(response.ok(), `failed to set synthetic ${mode} theme`).toBe(true);
-}
-
 test.describe.configure({ mode: "serial" });
 
 test("local-ready canonical memory renders after shell paint at 1280x720 without file authority", async ({
   page,
-  request,
 }) => {
-  await setThemeMode(request, "dark");
   await page.setViewportSize({ width: 1280, height: 720 });
-  const state = await installSyntheticRoutes(page);
+  const state = await installSyntheticRoutes(page, { themeMode: "dark" });
   const dialog = await openMemory(page);
 
   await expect(page.locator("html")).toHaveAttribute("data-mode", "dark");
@@ -448,70 +454,64 @@ test("local-ready canonical memory renders after shell paint at 1280x720 without
 
 test("narrow master-detail stays keyboard-operable and resets privacy on selection", async ({
   page,
-  request,
 }) => {
-  await setThemeMode(request, "light");
-  try {
-    await page.setViewportSize({ width: 760, height: 720 });
-    const state = await installSyntheticRoutes(page);
-    const dialog = await openMemory(page);
+  await page.setViewportSize({ width: 760, height: 720 });
+  const state = await installSyntheticRoutes(page, { themeMode: "light" });
+  const dialog = await openMemory(page);
 
-    await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
-    const refresh = dialog.getByRole("button", { name: "Refresh memory" });
-    await refresh.focus();
-    await expect(refresh).toBeFocused();
-    await page.keyboard.press("Enter");
+  await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
+  const refresh = dialog.getByRole("button", { name: "Refresh memory" });
+  await refresh.focus();
+  await expect(refresh).toBeFocused();
+  await page.keyboard.press("Enter");
 
-    const alpha = rowButton(page, "Synthetic alpha memory");
-    await alpha.focus();
-    await expect(alpha).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect
-      .poll(() => [...new Set(state.detailRequests)])
-      .toContain(MEMORY_IDS.alpha);
+  const alpha = rowButton(page, "Synthetic alpha memory");
+  await alpha.focus();
+  await expect(alpha).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => [...new Set(state.detailRequests)])
+    .toContain(MEMORY_IDS.alpha);
 
-    const back = dialog.getByRole("button", { name: "Back to list" });
-    await back.focus();
-    await expect(back).toBeFocused();
-    await page.keyboard.press("Tab");
-    const reveal = dialog.getByRole("button", { name: "Reveal" });
-    await expect(reveal).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(dialog.getByText("ALPHA-PRIVATE-MARKER")).toBeVisible();
-    await expect(
-      dialog.getByText("[Image: blocked synthetic image]"),
-    ).toBeVisible();
-    expect(
-      state.imageRequests,
-      "canonical Markdown image syntax must never issue a request",
-    ).toEqual([]);
+  const back = dialog.getByRole("button", { name: "Back to list" });
+  await back.focus();
+  await expect(back).toBeFocused();
+  await page.keyboard.press("Tab");
+  const reveal = dialog.getByRole("button", { name: "Reveal" });
+  await expect(reveal).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByText("ALPHA-PRIVATE-MARKER")).toBeVisible();
+  await expect(
+    dialog.getByText("[Image: blocked synthetic image]"),
+  ).toBeVisible();
+  expect(
+    state.imageRequests,
+    "canonical Markdown image syntax must never issue a request",
+  ).toEqual([]);
 
-    await back.focus();
-    await page.keyboard.press("Tab");
-    const rendered = dialog.getByRole("button", { name: "Rendered" });
-    const raw = dialog.getByRole("button", { name: "Raw" });
-    await expect(rendered).toBeFocused();
-    await page.keyboard.press("Tab");
-    await expect(raw).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(raw).toHaveAttribute("aria-pressed", "true");
-    await expect(dialog.getByText("![blocked synthetic image]")).toBeVisible();
+  await back.focus();
+  await page.keyboard.press("Tab");
+  const rendered = dialog.getByRole("button", { name: "Rendered" });
+  const raw = dialog.getByRole("button", { name: "Raw" });
+  await expect(rendered).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(raw).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(raw).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByText("![blocked synthetic image]")).toBeVisible();
 
-    await back.focus();
-    await page.keyboard.press("Enter");
-    await expect(rowButton(page, "Synthetic beta memory")).toBeVisible();
-    const beta = rowButton(page, "Synthetic beta memory");
-    await beta.focus();
-    await page.keyboard.press("Enter");
-    await expect
-      .poll(() => [...new Set(state.detailRequests)])
-      .toContain(MEMORY_IDS.beta);
-    await expect(dialog.getByRole("button", { name: "Reveal" })).toBeVisible();
-    await expect(dialog.getByText("BETA-PRIVATE-MARKER")).toHaveCount(0);
-    await expect(dialog.getByText("ALPHA-PRIVATE-MARKER")).toHaveCount(0);
-  } finally {
-    await setThemeMode(request, "dark");
-  }
+  await back.focus();
+  await page.keyboard.press("Enter");
+  await expect(rowButton(page, "Synthetic beta memory")).toBeVisible();
+  const beta = rowButton(page, "Synthetic beta memory");
+  await beta.focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => [...new Set(state.detailRequests)])
+    .toContain(MEMORY_IDS.beta);
+  await expect(dialog.getByRole("button", { name: "Reveal" })).toBeVisible();
+  await expect(dialog.getByText("BETA-PRIVATE-MARKER")).toHaveCount(0);
+  await expect(dialog.getByText("ALPHA-PRIVATE-MARKER")).toHaveCount(0);
 });
 
 const approvedErrors = [
