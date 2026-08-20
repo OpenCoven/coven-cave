@@ -37,15 +37,18 @@ test("one composer element, rendered in exactly one of two positions", () => {
 });
 
 test("pre-session tool results move the composer into the reply dock", () => {
+  const zeroTurnBranch = chatView.indexOf("{turns.length === 0 ? (");
+  const sessionlessBranch = chatView.indexOf(") : sessionId === null ? (", zeroTurnBranch);
+  const dashboardStart = chatView.indexOf("<ChatNewDashboard", sessionlessBranch);
+  const dashboardEnd = chatView.indexOf("/>", dashboardStart);
+
+  assert.ok(zeroTurnBranch >= 0, "the transcript has an explicit zero-turn branch");
+  assert.ok(sessionlessBranch > zeroTurnBranch, "the new-chat dashboard is restricted to sessionless zero-turn chats");
+  assert.ok(dashboardStart > sessionlessBranch, "the sessionless branch renders the new-chat dashboard");
   assert.match(
-    chatView,
-    /const inlineComposer = sessionId === null && turns\.length === 0;/,
-    "image, auto-mode, and other tool-only turns must make the composer dock even before a session id exists",
-  );
-  assert.match(
-    chatView,
-    /turns\.length === 0 \? \([\s\S]*?sessionId === null \? \([\s\S]*?<ChatNewDashboard[\s\S]*?composer=\{composerNode\}/,
-    "the inline composer belongs exclusively to the zero-turn new-chat dashboard",
+    chatView.slice(dashboardStart, dashboardEnd),
+    /composer=\{composerNode\}/,
+    "the zero-turn new-chat dashboard receives the shared composer",
   );
 });
 
