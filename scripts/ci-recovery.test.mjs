@@ -67,10 +67,13 @@ function workflowRun({
 
 const GUARDED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
 const GUARDED_CONCURRENCY =
+  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}";
+const PREVIOUS_GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
 const GUARDED_JOB_IFS = {
+  "pr-checks": GUARDED_JOB_IF,
   paths: GUARDED_JOB_IF,
   ios: `needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
   build: `always() && (${GUARDED_JOB_IF})`,
@@ -82,6 +85,9 @@ const GUARDED_CI_WORKFLOW = [
   "  workflow_dispatch:",
   "    inputs:",
   "      expected_sha:",
+  "        required: true",
+  "        type: string",
+  "      expected_pr_number:",
   "        required: true",
   "        type: string",
   "concurrency:",
@@ -103,7 +109,7 @@ const PREVIOUS_GUARDED_CI_WORKFLOW = [
   "        required: true",
   "        type: string",
   "concurrency:",
-  `  group: ${GUARDED_CONCURRENCY}`,
+  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
   "jobs:",
   "  build:",
   `    if: ${GUARDED_JOB_IF}`,
@@ -206,7 +212,10 @@ test("apply dispatches one fresh CI run for a qualifying same-repository head", 
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
+        body: {
+          ref: pr.head.ref,
+          inputs: { expected_sha: pr.head.sha, expected_pr_number: String(pr.number) },
+        },
       },
     ],
   );
@@ -301,7 +310,10 @@ test("a partial guard contract is skipped without blocking the other candidates"
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: healthy.head.ref, inputs: { expected_sha: healthy.head.sha } },
+        body: {
+          ref: healthy.head.ref,
+          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
+        },
       },
     ],
   );
@@ -377,7 +389,10 @@ test("an un-dispatchable head is skipped without blocking the other candidates",
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: healthy.head.ref, inputs: { expected_sha: healthy.head.sha } },
+        body: {
+          ref: healthy.head.ref,
+          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
+        },
       },
     ],
   );
@@ -712,7 +727,10 @@ test("a completed dispatch for a different expected SHA does not cover the curre
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: current.head.ref, inputs: { expected_sha: current.head.sha } },
+        body: {
+          ref: current.head.ref,
+          inputs: { expected_sha: current.head.sha, expected_pr_number: String(current.number) },
+        },
       },
     ],
   );

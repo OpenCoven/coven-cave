@@ -1082,6 +1082,7 @@ assert.doesNotMatch(
   "daemon and Cave releases have independent version lines",
 );
 const sourceVersionJob = workflowJob(yml, "source-version");
+const authorizationJob = workflowJob(yml, "authorize-release-promotion");
 assert.match(
   yml,
   /\npermissions:\s*\n\s+contents: read/,
@@ -1098,8 +1099,13 @@ assert.match(
 );
 assert.match(
   sourceVersionJob,
-  /ref: \$\{\{ steps\.release\.outputs\.ref \}\}[\s\S]*fetch-depth: 0[\s\S]*persist-credentials: false/,
-  "source-version checks out the explicit full tag ref with history and no write credential",
+  /needs: authorize-release-promotion[\s\S]*ref: \$\{\{ needs\.authorize-release-promotion\.outputs\.commit \}\}[\s\S]*fetch-depth: 0[\s\S]*persist-credentials: false/,
+  "source-version checks out the immutable promotion-authorized commit with history and no write credential",
+);
+assert.match(
+  authorizationJob,
+  /node scripts\/release-promotion\.mjs release/,
+  "release authorization proves signed exact-candidate promotion before source validation",
 );
 assert.match(
   sourceVersionJob,
@@ -1139,8 +1145,8 @@ const buildJob = workflowJob(yml, "build");
 assert.match(buildJob, /needs:\s*\n\s+- daemon-package\s*\n\s+- source-version/, "desktop builds wait for both release gates");
 assert.match(
   sourceVersionJob,
-  /outputs:\s*\n\s+release-commit: \$\{\{ steps\.tag\.outputs\.commit \}\}/,
-  "the source gate exposes the immutable commit verified from the signed tag",
+  /outputs:\s*\n\s+release-commit: \$\{\{ steps\.release\.outputs\.commit \}\}/,
+  "the source gate preserves the immutable commit authorized by promotion",
 );
 assert.match(
   buildJob,

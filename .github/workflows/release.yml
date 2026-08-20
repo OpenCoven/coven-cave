@@ -18,8 +18,9 @@ name: Release
 # serves the new release (optional HOMEBREW_TAP_TOKEN secret makes the
 # bump instant; the tap's 6-hourly schedule is the no-secrets fallback).
 #
-# Trigger: push a tag matching `v*` (e.g. `git tag -s v0.0.16 && git push
-# origin v0.0.16`).
+# Trigger: a final signed tag (e.g. `git tag -s v0.0.16 && git push origin
+# v0.0.16`). Release candidates are validated by release-candidate.yml and
+# cannot create assets here.
 #
 # Required repository secrets for the macOS job:
 #   APPLE_CERTIFICATE          base64-encoded .p12 export of the Developer
@@ -65,7 +66,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*", "!v*.*.*-*"]
   workflow_dispatch:
     inputs:
       tag:
@@ -112,8 +113,38 @@ permissions:
   contents: read
 
 jobs:
+  authorize-release-promotion:
+    name: Authorize release promotion
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      commit: ${{ steps.authorization.outputs.commit }}
+      candidate-tag: ${{ steps.authorization.outputs.candidate-tag }}
+      candidate-run-id: ${{ steps.authorization.outputs.candidate-run-id }}
+      candidate-run-url: ${{ steps.authorization.outputs.candidate-run-url }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - id: authorization
+        name: Require signed candidate promotion
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          EXPECTED_COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: node scripts/release-promotion.mjs release
+
   daemon-package:
     name: Verify available Coven daemon package
+    needs: authorize-release-promotion
     runs-on: ubuntu-24.04
     steps:
       - name: Validate Windows diagnostics mode
@@ -155,11 +186,12 @@ jobs:
 
   source-version:
     name: Verify tag matches stamped source
+    needs: authorize-release-promotion
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
-      release-commit: ${{ steps.tag.outputs.commit }}
+      release-commit: ${{ steps.release.outputs.commit }}
     steps:
       - name: Resolve stable release tag
         id: release
@@ -169,6 +201,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
           WORKFLOW_REF: ${{ github.ref }}
+          AUTHORIZED_COMMIT: ${{ needs.authorize-release-promotion.outputs.commit }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$WORKFLOW_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
@@ -184,11 +217,12 @@ jobs:
             echo "tag=$TAG"
             echo "version=${TAG#v}"
             echo "ref=refs/tags/$TAG"
+            echo "commit=$AUTHORIZED_COMMIT"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ steps.release.outputs.ref }}
+          ref: ${{ needs.authorize-release-promotion.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
 

@@ -42,13 +42,11 @@ test("exports strict tag patterns and parsing contracts", () => {
   for (const tag of ["v1.2.3-rc.1", "v1.2.3-beta.1", "1.2.3", "v01.2.3"]) {
     assert.throws(() => parseFinalTag(tag), /valid final release tag/);
   }
-  
   // Reject unsafe integers (beyond Number.MAX_SAFE_INTEGER)
   assert.throws(
     () => parseCandidateTag("v1.2.3-rc.9007199254740992"),
     /valid release-candidate tag/,
   );
-  
   // Reject extremely long digit sequences that overflow to Infinity
   assert.throws(
     () => parseCandidateTag("v1.2.3-rc.99999999999999999999999999999999999999999"),

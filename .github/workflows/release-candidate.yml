@@ -1,0 +1,53 @@
+name: Release candidate
+
+on:
+  push:
+    tags: ["v*-rc.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed candidate tag to validate
+        required: true
+        type: string
+
+concurrency:
+  group: release-candidate-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    name: Verify release candidate provenance
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      commit: ${{ steps.provenance.outputs.commit }}
+      tag: ${{ steps.provenance.outputs.tag }}
+      verification-reason: ${{ steps.provenance.outputs.verification-reason }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - id: provenance
+        name: Require a signed candidate on main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          EXPECTED_COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: node scripts/release-promotion.mjs candidate
+
+  full-validation:
+    needs: provenance
+    uses: ./.github/workflows/full-validation.yml
+    with:
+      ref: ${{ needs.provenance.outputs.commit }}
