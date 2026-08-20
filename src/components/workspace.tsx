@@ -2837,8 +2837,9 @@ export function Workspace() {
         setMode("journal"); // opens the Grimoire on its Journal tab (see setMode)
         return true;
       case "/canvas":
-        // /canvas is chat-inline. Home falls back to a new chat with the exact
-        // command so ChatView can execute it after mounting.
+      case "/diagram":
+        // These commands generate chat-inline. Home falls back to a new chat
+        // with the exact command so ChatView can execute it after mounting.
         return false;
       case "/chats":
       case "/agents":
