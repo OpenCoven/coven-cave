@@ -42,6 +42,7 @@ import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
 import { ChatRunRail } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
+import { buildDiagramGuidePrompt, DIAGRAM_COMMAND_START } from "@/lib/diagram-command";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools } from "@/lib/turn-segments";
@@ -247,6 +248,8 @@ import {
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { ChatSpecCard } from "@/components/chat-spec-card";
+import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-file-reader";
+import { joinProjectPath } from "@/components/message-dom-wiring";
 import { ChatPreviewCard } from "@/components/chat-preview-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
@@ -3801,6 +3804,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [fileRefIndex, transcriptFileRoot],
   );
 
+  // A `.md` ref reads in the chat's own Markdown reader rather than the Code
+  // workspace (Val, 2026-08-20): docs are read, not edited, at the moment they
+  // are cited. The wiring event is cancelable, so claiming it here is what
+  // keeps every other surface on the Code route — and a path this transcript
+  // cannot resolve stays unclaimed and falls through to that route too.
+  const [documentTarget, setDocumentTarget] = useState<ChatFileReaderTarget | null>(null);
+  useEffect(() => {
+    const onOpenDocument = (event: Event) => {
+      // A second transcript (the right-hand chat panel) listens too; the first
+      // to claim it wins, so two readers never stack over one click.
+      if (event.defaultPrevented) return;
+      const detail = (event as CustomEvent<{ path?: string; line?: number }>).detail;
+      const path = typeof detail?.path === "string" ? detail.path : null;
+      if (!path || !transcriptFileRoot || fileRefIndex?.root !== transcriptFileRoot) return;
+      const rel = resolveFileRefTarget({ path }, transcriptFileRoot, fileRefIndex.files);
+      if (!rel) return;
+      event.preventDefault();
+      setDocumentTarget({
+        path: rel,
+        absPath: joinProjectPath(transcriptFileRoot, rel),
+        line: typeof detail?.line === "number" ? detail.line : undefined,
+      });
+    };
+    window.addEventListener("cave:open-markdown-document", onOpenDocument as EventListener);
+    return () => {
+      window.removeEventListener("cave:open-markdown-document", onOpenDocument as EventListener);
+    };
+  }, [transcriptFileRoot, fileRefIndex]);
+
   // Insert the picked path inline, replacing the `@query` token (Claude Code
   // convention: `@src/foo.ts`), and record it for the send body.
   const selectMention = (relPath: string) => {
@@ -4860,6 +4892,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setInput("");
       const wrapped = buildSketchPrompt(args);
       setTimeout(() => void sendRaw(args, [], [], { promptOverride: wrapped }), 0);
+      return true;
+    }
+    if (command === "/diagram") {
+      const brief = args.trim();
+      setInput("");
+      const wrapped = buildDiagramGuidePrompt(brief);
+      setTimeout(
+        () => void sendRaw(brief || DIAGRAM_COMMAND_START, [], [], { promptOverride: wrapped }),
+        0,
+      );
       return true;
     }
     // Workspace-level commands routed through the parent
@@ -8035,6 +8077,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             );
             setReadingTarget(null);
           }}
+        />
+      ) : null}
+      {documentTarget ? (
+        <ChatFileReader
+          target={documentTarget}
+          onClose={() => setDocumentTarget(null)}
+          onOpenUrl={onOpenUrl}
         />
       ) : null}
               {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
