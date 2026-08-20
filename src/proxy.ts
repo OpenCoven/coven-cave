@@ -54,6 +54,23 @@ function configuredMobileAccessToken() {
   return token && token.length > 0 ? token : null;
 }
 
+const DEV_READINESS_TOKEN_HEADER = "x-coven-cave-readiness-token";
+const DEV_READINESS_PROOF_HEADER = "x-coven-cave-readiness";
+
+function isAuthenticatedDevReadinessProbe(req: NextRequest, trustedLocalPeer: boolean) {
+  const expected = process.env.COVEN_CAVE_DEV_PROBE_TOKEN?.trim();
+  const supplied = req.headers.get(DEV_READINESS_TOKEN_HEADER);
+  return Boolean(
+    trustedLocalPeer
+    && expected
+    && supplied
+    && req.method === "GET"
+    && req.nextUrl.pathname === "/"
+    && req.nextUrl.searchParams.get("__devShellProbe") === "1"
+    && timingSafeEqualString(supplied, expected)
+  );
+}
+
 function bearerToken(req: NextRequest) {
   const header = req.headers.get("authorization");
   const prefix = "Bearer ";
@@ -240,6 +257,11 @@ export async function proxy(req: NextRequest) {
     req.headers.get(LOCAL_PEER_HEADER),
     process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
   );
+  if (isAuthenticatedDevReadinessProbe(req, trustedLocalPeer)) {
+    const response = NextResponse.next();
+    response.headers.set(DEV_READINESS_PROOF_HEADER, "1");
+    return response;
+  }
   // Tailnet device context behind a Tailscale-Serve-forwarded request. This is
   // never sufficient authentication because direct loopback clients can forge
   // forwarding headers; it is consumed only after bearer authentication for

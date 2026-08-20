@@ -10,6 +10,8 @@ const READY_PATH = "/?__devShellProbe=1";
 const DEFAULT_TIMEOUT_MS = 1_500;
 const MAX_TIMEOUT_MS = 300_000;
 const RETRY_DELAY_MS = 50;
+const READINESS_TOKEN_HEADER = "x-coven-cave-readiness-token";
+const READINESS_PROOF_HEADER = "x-coven-cave-readiness";
 
 export function parsePort(value) {
   if (!/^\d+$/.test(value ?? "")) return null;
@@ -24,6 +26,10 @@ export function parseTimeout(value) {
   return Number.isSafeInteger(timeoutMs) && timeoutMs >= 100 && timeoutMs <= MAX_TIMEOUT_MS
     ? timeoutMs
     : null;
+}
+
+export function resolveProbeToken(env = process.env) {
+  return env.COVEN_CAVE_DEV_PROBE_TOKEN?.trim() ?? "";
 }
 
 async function awaitByDeadline(promise, deadline) {
@@ -48,6 +54,7 @@ export async function loopbackOriginResponds({
   port,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fetchImpl = fetch,
+  probeToken = resolveProbeToken(),
 } = {}) {
   if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) return false;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > MAX_TIMEOUT_MS) return false;
@@ -59,15 +66,19 @@ export async function loopbackOriginResponds({
       const response = await fetchImpl(`http://127.0.0.1:${port}${READY_PATH}`, {
         method: "GET",
         redirect: "manual",
+        headers: {
+          accept: "text/html",
+          ...(probeToken ? { [READINESS_TOKEN_HEADER]: probeToken } : {}),
+        },
         signal: AbortSignal.timeout(remainingMs),
       });
-      // A persisted mobile-access secret deliberately protects direct browser
-      // navigation with the access gate (401).  The native WebView receives
-      // server.ts's loopback-peer stamp and therefore renders the document;
-      // this unauthenticated probe cannot.  A 401 still proves that Next has
-      // compiled and answered the root document, whereas a transport failure
-      // or 5xx response does not.
-      if ((response.status >= 200 && response.status < 400) || response.status === 401) return true;
+      if (
+        response.status >= 200
+        && response.status < 400
+        && response.headers?.get?.(READINESS_PROOF_HEADER) === "1"
+      ) {
+        return true;
+      }
       await awaitByDeadline(response.body?.cancel(), deadline);
     } catch {}
 

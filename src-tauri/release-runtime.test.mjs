@@ -331,7 +331,7 @@ test("clean release runners have resource glob placeholders", async () => {
     access(new URL("./resources/server/placeholder.txt", import.meta.url)),
     access(new URL("./resources/server-archive/placeholder.txt", import.meta.url)),
     access(new URL("./resources/node/placeholder.txt", import.meta.url)),
-    access(new URL("./resources/whisper/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/whisper/.gitkeep", import.meta.url)),
     access(new URL("./resources/piper/placeholder.txt", import.meta.url)),
     access(new URL("./resources/kokoro/placeholder.txt", import.meta.url)),
   ]);
@@ -356,8 +356,8 @@ test("clean release runners have resource glob placeholders", async () => {
   assert.match(releaseScript, /"\$WHISPER_CLI" --version/, "macOS release must smoke-test the copied Whisper runtime");
   assert.match(
     gitignore,
-    /!src-tauri\/resources\/whisper\/placeholder\.txt/,
-    "Whisper placeholder must be tracked so resources/whisper/**/* matches in clean CI",
+    /!src-tauri\/resources\/whisper\/\.gitkeep/,
+    "Whisper resource root must be tracked so resources/whisper/**/* matches in clean CI",
   );
   assert.match(
     gitignore,
