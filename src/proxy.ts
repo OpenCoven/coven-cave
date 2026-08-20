@@ -420,5 +420,5 @@ export const config = {
   // The pdf.js module worker is a public, immutable build asset. Worker module
   // requests cannot carry the Tauri sidecar header, so gating this one file
   // makes every authenticated desktop PDF load fail before parsing begins.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|pdf.worker.min.mjs).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|pdf\\.worker\\.min\\.mjs$).*)"],
 };
