@@ -74,8 +74,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const nextFamiliarId = group\?\.defaultFamiliarId \?\? familiar\?\.id \?\? null;/,
-  "the project-grouped new chat asks rather than defaulting",
+  /<ChatProjectSidebar[\s\S]*onNewChat=\{\(\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);/,
+  "the project-grouped new chat asks through the shell gate rather than adopting historical ownership",
 );
 
 // `fallbackFamiliar` (no Id) survives for the OTHER flows that still resolve a

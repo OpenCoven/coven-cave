@@ -78,6 +78,7 @@ enum VoiceCallEvent: Equatable, Sendable {
     case listening
     case processing
     case speaking
+    case sessionBound(String)
     case partial(role: VoiceTranscriptRole, text: String, segmentID: String, revision: Int)
     case final(role: VoiceTranscriptRole, text: String, segmentID: String)
     case failed(String)
@@ -86,13 +87,17 @@ enum VoiceCallEvent: Equatable, Sendable {
 /// UI-independent call state shared by the Realtime and Apple-native paths.
 struct VoiceCallState: Equatable, Sendable {
     let mode: VoiceCallMode
+    let projectRoot: String?
     private(set) var phase: VoiceCallPhase = .idle
+    private(set) var sessionId: String?
     private(set) var isMuted = false
     private(set) var isTranscriptExpanded = false
     private(set) var transcript: [VoiceTranscriptRow] = []
 
-    init(mode: VoiceCallMode) {
+    init(mode: VoiceCallMode, sessionId: String? = nil, projectRoot: String? = nil) {
         self.mode = mode
+        self.sessionId = Self.normalized(sessionId)
+        self.projectRoot = Self.normalized(projectRoot)
     }
 
     var isAudioActive: Bool {
@@ -124,6 +129,11 @@ struct VoiceCallState: Equatable, Sendable {
     }
 
     mutating func receive(_ event: VoiceCallEvent) {
+        if case .sessionBound(let sessionId) = event {
+            self.sessionId = Self.normalized(sessionId) ?? self.sessionId
+            return
+        }
+
         guard !phase.isTerminal else { return }
 
         switch event {
@@ -148,6 +158,13 @@ struct VoiceCallState: Equatable, Sendable {
         default:
             break
         }
+    }
+
+    mutating func clearSessionBinding(matching sessionId: String) {
+        guard let normalized = Self.normalized(sessionId),
+              self.sessionId == normalized
+        else { return }
+        self.sessionId = nil
     }
 
     private var acceptsTranscript: Bool {
@@ -197,5 +214,12 @@ struct VoiceCallState: Equatable, Sendable {
     private mutating func fail(_ message: String) {
         isMuted = true
         phase = .error(message)
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else { return nil }
+        return trimmed
     }
 }

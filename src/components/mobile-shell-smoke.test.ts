@@ -144,8 +144,13 @@ assert.match(
 );
 assert.match(
   chatSidebarBlock,
-  /onNewChat=\{\(projectRoot\) => \{[\s\S]*startFamiliarChat\(activeId, projectRoot\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  /onNewChat=\{\(\) => startWorkspaceChat\(\)\}/,
   "Chat new-chat actions should dismiss the mobile contextual nav without changing desktop layout",
+);
+assert.match(
+  workspace,
+  /const startWorkspaceChat = useCallback\(\(request: AgentsNewChatRequest = \{\}\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);/,
+  "the shared actor-gated launcher dismisses the mobile contextual nav",
 );
 assert.match(
   chatSidebarBlock,

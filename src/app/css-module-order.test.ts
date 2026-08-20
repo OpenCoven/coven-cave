@@ -15,6 +15,7 @@ const FACADES: Record<string, string[]> = {
     // after shell-navigation so it lands beside the rail chrome it replaced;
     // its trigger overrides beat desktop-chrome.css by specificity, not order.
     "../styles/globals/rail-header.css",
+    "../styles/globals/workspace-context-switcher.css",
     "../styles/globals/primitives.css",
     "../styles/globals/themes.css",
     "../styles/globals/desktop-chrome.css",

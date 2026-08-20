@@ -59,37 +59,35 @@ assert.match(
 // -- Status-write races ---------------------------------------------------
 assert.match(
   model,
-  /func requestTaskStatus\(_ card: BoardCard, _ status: CardStatus\) \{\s*\n\s*statusWrites\[card\.id\]\?\.cancel\(\)/,
-  "a newer status write must cancel the one it supersedes, keyed by card id",
+  /private final class TaskMutationCoordinator \{[\s\S]*previousTask\?\.cancel\(\)[\s\S]*_ = await previousTask\?\.result/,
+  "a newer same-field write must cancel the older lane task and wait for it before sending",
 );
 
-// The map must track only in-flight writes. Without the clear it grows one
-// retained Task per card ever mutated; without the cancellation guard on the
-// clear, a finishing task would delete the entry belonging to the newer write
-// that superseded it, losing the handle needed to cancel that one.
-const request = model.match(
-  /func requestTaskStatus\(_ card: BoardCard, _ status: CardStatus\) \{[\s\S]*?\n {4}\}/,
+const request = blockAfter(
+  model,
+  "func requestTaskStatus(_ card: BoardCard, _ status: CardStatus) -> Task<Void, Never>? {",
 );
 assert.ok(request, "requestTaskStatus must still exist");
 assert.match(
-  request[0],
-  /guard !Task\.isCancelled else \{ return \}\s*\n\s*self\?\.statusWrites\[cardId\] = nil/,
-  "a finished write must clear its entry, and only when it was not superseded",
+  request,
+  /beginTaskMutation\(id: card\.id, field: \.status\)[\s\S]*applyTask\(id: card\.id\) \{ \$0\.statusRaw = status\.rawValue \}[\s\S]*scheduleTaskMutationRequest\(mutation\)/,
+  "requestTaskStatus must optimistically update status, register a scoped token, and route through the coordinator",
 );
 
 // The two cancellation guards are the substance of the fix. Without the first,
 // a superseded response overwrites newer optimistic state; without the second,
 // the CancellationError thrown by the cancel itself triggers a revert that
 // clobbers the newer intent.
-const setStatus = model.match(
-  /func setTaskStatus\(_ card: BoardCard, _ status: CardStatus\) async \{[\s\S]*?\n {4}\}/,
+const setStatus = blockAfter(
+  model,
+  "private func performTaskStatusMutation(",
 );
-assert.ok(setStatus, "setTaskStatus must still exist");
-const body = setStatus[0];
+assert.ok(setStatus, "performTaskStatusMutation must still exist");
+const body = setStatus;
 assert.match(
   body,
-  /let updated = try await client\.updateTask\(cardId: card\.id, status: status\)\s*\n(?:\s*\/\/[^\n]*\n)*\s*guard !Task\.isCancelled else \{ return \}\s*\n\s*applyTask/,
-  "a superseded response must not be applied — guard cancellation before applyTask",
+  /let updated = try await client\.updateTask\([\s\S]*cardId: cardId,[\s\S]*status: status,[\s\S]*\)\s*\n(?:\s*\/\/[^\n]*\n)*\s*guard !Task\.isCancelled else \{ return \}\s*\n\s*guard applyTaskServerUpdate\(updated, for: mutation\) else \{ return \}/,
+  "a superseded response must not be applied — guard cancellation before the scoped server merge",
 );
 assert.match(
   body,
@@ -103,13 +101,13 @@ assert.doesNotMatch(
 );
 assert.match(
   body,
-  /revertTask\(id: card\.id, to: previous\)/,
-  "failure must revert just the card that failed",
+  /guard revertTaskMutation\(mutation\) else \{ return \}/,
+  "failure must revert only the scoped optimistic fields for the card that failed",
 );
 assert.match(
   model,
-  /private func revertTask\(id: String, to previous: \[BoardCard\]\) \{/,
-  "the per-card revert helper must exist, mirroring revert(_:to:) for reminders",
+  /private func revertTaskMutation\([\s\S]*TaskMutationToken[\s\S]*\) -> Bool/,
+  "the scoped revert helper must exist so stale failures cannot restore an older whole-card snapshot",
 );
 
 // -- No view may re-introduce an uncancellable write ----------------------

@@ -39,8 +39,7 @@ import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
-import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
-import { ChatRunRail } from "@/components/chat-run-rail";
+import { ChatActivityMap } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { buildDiagramGuidePrompt, DIAGRAM_COMMAND_START } from "@/lib/diagram-command";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
@@ -266,8 +265,6 @@ import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
-  DEFAULT_PERMISSION_MODE,
-  PERMISSION_MODES,
   normalizeCommandControls,
   type CommandPermissionMode,
   type CommandResponseSpeed,
@@ -289,7 +286,7 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
+import { useActivityMapVisible } from "@/lib/thread-instruments-visibility";
 import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
@@ -314,6 +311,7 @@ import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
   buildThreadReflectPrompt,
+  shouldAutoReviewThread,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
@@ -1949,6 +1947,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
+  const [busy, setBusy] = useState(false);
   const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
   const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
@@ -2057,7 +2056,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     const status = session?.status?.toLowerCase();
-    const eligible = Boolean(
+    const terminal = Boolean(
       session?.archived_at ||
       status === "closed" ||
       status === "completed" ||
@@ -2065,14 +2064,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       status === "done" ||
       status === "stopped",
     );
+    const settledAssistantTurns = turns.filter(
+      (turn) => turn.role === "assistant" && !turn.pending && !turn.error,
+    ).length;
+    const eligible = shouldAutoReviewThread({
+      settledAssistantTurns,
+      terminal,
+      busy,
+    });
     const previous = autoSelfReportEligibilityRef.current;
-    const reachedClosedState = previous.sessionId === sessionId && !previous.eligible && eligible;
+    const reachedReviewCheckpoint = previous.sessionId === sessionId && !previous.eligible && eligible;
     autoSelfReportEligibilityRef.current = { sessionId, eligible };
-    if (!sessionId || !reachedClosedState || !familiar.autoSelfReport) return;
+    if (!sessionId || !reachedReviewCheckpoint || !familiar.autoSelfReport) return;
     if (autoSelfReportSessionsRef.current.has(sessionId)) return;
     autoSelfReportSessionsRef.current.add(sessionId);
     void autoReflectOnThread(sessionId);
-  }, [autoReflectOnThread, familiar.autoSelfReport, session?.archived_at, session?.status, sessionId]);
+  }, [
+    autoReflectOnThread,
+    busy,
+    familiar.autoSelfReport,
+    session?.archived_at,
+    session?.status,
+    sessionId,
+    turns,
+  ]);
 
   useEffect(() => {
     setThreadSignalReport(null);
@@ -2287,7 +2302,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Reply to Chat: the turn the next message quotes, shown as a composer chip
   // and prepended as a markdown blockquote to the outgoing prompt at send time.
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
-  const [busy, setBusy] = useState(false);
   const [queuedMessages, setQueuedMessages] = useState<QueuedChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   // Debug context for the inline error strip below the chat: which turn failed
@@ -2618,11 +2632,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  // Reader preference for the gutter instruments (spine + minimap). Read here
-  // rather than inside them so an unchecked toggle skips mounting entirely —
-  // hiding them with CSS would leave their scroll measurement and
-  // ResizeObservers running for furniture nobody can see.
-  const [instrumentsVisible] = useThreadInstrumentsVisible();
+  const [activityMapVisible] = useActivityMapVisible();
   const threadRef = useRef<HTMLDivElement | null>(null);
   // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
   // pinned to the newest content". It releases on user INTENT (wheel up /
@@ -3620,13 +3630,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   const composerResponseSections: ComposerOptionSection[] = [
-    {
-      id: "access",
-      label: "Access",
-      value: permissionMode,
-      options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
-      onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
-    },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
       ? [{
           id: "model",
@@ -7038,7 +7041,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // chatContextControls and placed adaptively — footer cluster for new chats
   // (inlineComposer) and session header for active chats (!inlineComposer)
   // so picker state is never duplicated.
-  const inlineComposer = sessionId === null;
+  // Tool-only commands such as /image and /auto can produce transcript turns
+  // before the daemon assigns a session id. The new-chat dashboard disappears
+  // as soon as that happens, so move the same composer into the reply dock.
+  const inlineComposer = sessionId === null && turns.length === 0;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const chatContextControls = (
@@ -7343,7 +7349,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onVoice={() => setVoiceCallOpen(true)}
             />
 
-            <div className="cave-composer-panel">
+            <div className="cave-composer-panel" data-access-mode={permissionMode}>
               <div className="cave-composer-edge-actions">
                 <ComposerActionsMenu
                   attach={{
@@ -7407,7 +7413,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     saveAsTemplateDisabled: !input.trim(),
                     indicator:
                       composerHostValue !== LOCAL_HOST_ID ||
-                      permissionMode !== DEFAULT_PERMISSION_MODE ||
                       thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
                       responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
                   }}
@@ -7568,7 +7573,60 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                 />
                 <div className="cave-composer-control-row">
-                  <div className="cave-composer-utility-row">
+                  <div className="cave-composer-mode-switch" role="group" aria-label="Access mode">
+                    <button
+                      type="button"
+                      className="cave-composer-mode-option focus-ring"
+                      aria-pressed={permissionMode === "read"}
+                      onClick={() => setPermissionMode("read")}
+                      title="Explore — read only"
+                    >
+                      <Icon name="ph:globe" width="var(--icon-md)" aria-hidden />
+                      <span>Explore</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="cave-composer-mode-option focus-ring"
+                      aria-pressed={permissionMode === "full"}
+                      onClick={() => setPermissionMode("full")}
+                      title="Build — full access"
+                    >
+                      <Icon name="ph:flask" width="var(--icon-md)" aria-hidden />
+                      <span>Build</span>
+                    </button>
+                  </div>
+                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                  <div className="cave-composer-submit-row">
+                    {busy && (input.trim() || attachments.length > 0) ? (
+                      <button
+                        type="button"
+                        onClick={() => void send()}
+                        data-typing={input.trim() ? "true" : undefined}
+                        className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
+                        title="Queue message"
+                        aria-label="Queue message"
+                      >
+                        <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
+                      </button>
+                    ) : null}
+                    {busy ? (
+                      <button
+                        type="button"
+                        onClick={cancelSend}
+                        className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
+                        title="Stop response (esc)"
+                        aria-label="Cancel response"
+                        aria-keyshortcuts="Escape"
+                      >
+                        <span>esc · stop</span>
+                      </button>
+                    ) : null}
+                    <EnhanceControl
+                      state={promptEnhance.state}
+                      onEnhance={promptEnhance.enhance}
+                      onCancel={promptEnhance.cancel}
+                      disabled={busy || !input.trim()}
+                    />
                     <button
                       type="button"
                       className="cave-composer-footer-action focus-ring"
@@ -7577,43 +7635,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       title="Voice call"
                       aria-label="Voice call"
                     >
-                      <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
+                      <Icon name="ph:microphone" width="var(--icon-md)" aria-hidden />
                     </button>
-                  </div>
-                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
-                  <div className="cave-composer-submit-row">
-                    <EnhanceControl
-                      state={promptEnhance.state}
-                      onEnhance={promptEnhance.enhance}
-                      onCancel={promptEnhance.cancel}
-                      disabled={busy || !input.trim()}
-                    />
-                    {/* The compact send keeps its queue/cancel behavior in one
-                        stable action slot. */}
-                    {busy ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => void send()}
-                          disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
-                          data-typing={input.trim() ? "true" : undefined}
-                          className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
-                          title="Queue message"
-                          aria-label="Queue message"
-                        >
-                          <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelSend}
-                          className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
-                          title="Cancel (esc)"
-                          aria-label="Cancel response"
-                        >
-                          <Icon name="ph:x-bold" width="var(--icon-md)" aria-hidden />
-                        </button>
-                      </>
-                    ) : (
+                    {!busy ? (
                       <button
                         type="button"
                         onClick={() => void send()}
@@ -7625,7 +7649,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       >
                         <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -7875,24 +7899,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           hasTurns={turns.length > 0}
           onOpenUrl={onOpenUrl}
         />
-        {/* Thread instruments (Chat.dc.html 2a, cave-j86la): the run spine in
-            the left gutter and the thread minimap on the right edge. Both
-            derive from the SAME activePath the transcript renders and gate
-            themselves to wide panes, so narrow layouts never see them. */}
-        {activePath.length > 0 && instrumentsVisible ? (
-          <>
-            <ChatThreadMinimap
-              turns={activePath}
-              scrollRef={scrollRef}
-              familiarName={familiar.display_name}
-            />
-            <ChatThreadSpine
-              turns={activePath}
-              scrollRef={scrollRef}
-              familiarName={familiar.display_name}
-            />
-          </>
-        ) : null}
         <div
           ref={threadRef}
           className="cave-chat-thread"
@@ -8098,8 +8104,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   which put the rail ahead of the conversation for screen
                   readers — `order` moves boxes, never reading order. DOM order
                   is the accessible order, so the annotation follows the log. */}
-              {activePath.length > 0 && instrumentsVisible ? (
-                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
+              {activePath.length > 0 && activityMapVisible ? (
+                <ChatActivityMap turns={activePath} conversationCreatedAt={session?.created_at} />
               ) : null}
       </div>
       </CodeReadingContext.Provider>

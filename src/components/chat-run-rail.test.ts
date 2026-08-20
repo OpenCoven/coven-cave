@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Contract pins for the run rail (cave-w716g). The behavioural half lives in
+// Contract pins for the chat activity map. The behavioural half lives in
 // src/lib/chat-run-rail.test.ts, which exercises the real derivation; this file
 // guards the wiring and the two decisions that are easy to "fix" back into
 // defects.
@@ -12,16 +12,31 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 const facade = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 
 // ── mounted and styled, or it is dead code ──────────────────────────────────
-assert.match(chatView, /^import \{ ChatRunRail \} from "@\/components\/chat-run-rail";$/m, "chat-view imports the rail");
+assert.match(chatView, /^import \{ ChatActivityMap \} from "@\/components\/chat-run-rail";$/m, "chat-view imports the activity map");
 assert.match(
   chatView,
-  /<ChatRunRail\s+turns=\{activePath\}/,
-  "the rail derives from the SAME activePath the transcript renders — a second source could disagree with the thread beside it",
+  /<ChatActivityMap\s+turns=\{activePath\}/,
+  "the activity map derives from the SAME activePath the transcript renders",
 );
 assert.match(
   chatView,
-  /activePath\.length > 0 && instrumentsVisible \? \(\s*\n\s*<ChatRunRail/,
-  "the rail shares the instruments toggle rather than adding a second setting for one idea",
+  /activePath\.length > 0 && activityMapVisible \? \(\s*\n\s*<ChatActivityMap/,
+  "the activity map follows its session-header visibility toggle",
+);
+assert.doesNotMatch(
+  chatView,
+  /ChatThreadMinimap|ChatThreadSpine/,
+  "chat no longer mounts the retired thread spine or minimap",
+);
+assert.match(
+  component,
+  /export function ChatActivityMap\(/,
+  "the user-facing component is named for the activity map",
+);
+assert.match(
+  component,
+  /aria-label="Activity map"/,
+  "assistive technology receives the same activity-map name as the menu",
 );
 // ── DOM order IS reading order (review catch on #4460) ──────────────────────
 // The rail was briefly the row's first child, placed visually with `order: 1`.
@@ -30,7 +45,7 @@ assert.match(
 // conversation. The mount now follows the transcript in the DOM.
 {
   const transcript = chatView.indexOf('className="cave-chat-transcript');
-  const rail = chatView.indexOf("<ChatRunRail");
+  const rail = chatView.indexOf("<ChatActivityMap");
   assert.ok(transcript > 0 && rail > 0, "both the transcript and the rail are mounted");
   assert.ok(
     rail > transcript,
@@ -88,24 +103,17 @@ assert.match(
 // The rail is a column beside the transcript, never a second horizontal scroller
 // inside it (cave-l2hkx).
 assert.match(css, /\.cave-runrail \{[\s\S]*?overflow-x:\s*hidden/, "the rail never scrolls sideways");
-// The gate must spend the rail's own width before comparing — see the review
-// catch: a bare row comparison admits the rail at ~1360px, leaving the
-// transcript below the threshold its sibling instruments measure.
+// The gate reserves a readable transcript beside the activity map.
 assert.match(
   component,
-  /THREAD_INSTRUMENTS_MIN_WIDTH \+ RAIL_MAX_WIDTH/,
-  "the width gate accounts for the rail's own footprint, not just the row",
+  /ACTIVITY_MAP_MIN_ROW_WIDTH/,
+  "the activity map has its own width threshold instead of inheriting the retired thread-map gate",
 );
 
 // ── wide-pane gate ─────────────────────────────────────────────────────────
-// The rail is LAYOUT, unlike the spine and minimap which are overlays. Without
-// this gate it takes up to 300px from the transcript on a narrow pane; with the
-// WRONG gate it oscillates. Both failure modes are pinned.
-assert.match(
-  component,
-  /THREAD_INSTRUMENTS_MIN_WIDTH/,
-  "the rail gates on the same width as the spine and minimap so all three appear together",
-);
+// The map is layout. Without this gate it takes up to 300px from the transcript
+// on a narrow pane; measuring itself would oscillate.
+assert.doesNotMatch(component, /THREAD_INSTRUMENTS_MIN_WIDTH/, "the retired thread-map threshold is not imported");
 assert.match(
   component,
   /ref\.current\?\.parentElement/,

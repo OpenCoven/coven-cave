@@ -6,6 +6,8 @@
    - Expanded (.aps-rail--expanded, desktop only): 240px with icons + labels. */
 
 .aps {
+  --shell-nav-chrome-width: 56px;
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -142,6 +144,23 @@
 /* Expansion is desktop-only in CSS as well as React, so SSR and viewport
    hydration can never flash wide navigation or labels on mobile. */
 @media (min-width: 1024px) {
+  .aps--nav-expanded {
+    --shell-nav-chrome-width: var(--shell-nav-width);
+  }
+
+  :root[data-tauri-titlebar] .aps-body {
+    height: 100%;
+  }
+
+  :root[data-tauri-titlebar] .aps-rail {
+    padding-top: calc(var(--shell-native-titlebar-height) + var(--space-3));
+  }
+
+  :root[data-tauri-titlebar] .aps-main {
+    box-sizing: border-box;
+    padding-top: var(--shell-native-titlebar-height);
+  }
+
   .aps-rail--expanded {
     width: var(--shell-nav-width);
     align-items: stretch;

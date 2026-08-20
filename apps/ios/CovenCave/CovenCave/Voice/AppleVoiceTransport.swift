@@ -6,16 +6,34 @@ import Speech
 /// then speak the completed response before listening again.
 @MainActor
 protocol VoiceTurnSending: AnyObject {
-    func sendRecognizedTurn(_ text: String, familiarId: String, sessionId: String) async throws -> VoiceTurnReply
+    func sendRecognizedTurn(_ text: String, familiarId: String,
+                            sessionId: String?, projectRoot: String?,
+                            onSessionBound: (@MainActor @Sendable (String) -> Void)?) async throws -> VoiceTurnReply
+}
+
+extension VoiceTurnSending {
+    func sendRecognizedTurn(_ text: String, familiarId: String,
+                            sessionId: String?, projectRoot: String?) async throws -> VoiceTurnReply {
+        try await sendRecognizedTurn(
+            text,
+            familiarId: familiarId,
+            sessionId: sessionId,
+            projectRoot: projectRoot,
+            onSessionBound: nil
+        )
+    }
 }
 
 struct VoiceTurnReply: Sendable {
     let segmentID: String
     let text: String
+    let sessionId: String?
 }
 
 @MainActor
 final class AppleVoiceTransport: NSObject, VoiceCallTransport, AVSpeechSynthesizerDelegate {
+    private static let lateReplyBindingGrace: Duration = .seconds(30)
+
     var onEvent: (@MainActor (VoiceCallEvent) -> Void)?
 
     private let recognizer: SFSpeechRecognizer?
@@ -29,8 +47,11 @@ final class AppleVoiceTransport: NSObject, VoiceCallTransport, AVSpeechSynthesiz
     private var active = false
     private var listening = false
     private var muted = false
+    private var currentSessionId: String?
+    private var currentProjectRoot: String?
     private var userRevision = 0
     private var userSegmentID = ""
+    private var lateReplyBindingDeadlineTask: Task<Void, Never>?
 
     init(turnSender: VoiceTurnSending, recognizer: SFSpeechRecognizer? = SFSpeechRecognizer()) {
         self.turnSender = turnSender
@@ -42,6 +63,8 @@ final class AppleVoiceTransport: NSObject, VoiceCallTransport, AVSpeechSynthesiz
     func start(with context: VoiceCallTransportContext) async throws {
         guard !active else { return }
         self.context = context
+        currentSessionId = context.sessionId
+        currentProjectRoot = context.projectRoot
         active = true
         onEvent?(.connected)
         beginListening()
@@ -56,8 +79,11 @@ final class AppleVoiceTransport: NSObject, VoiceCallTransport, AVSpeechSynthesiz
     func stop() {
         guard active else { return }
         active = false
-        responseTask?.cancel()
-        responseTask = nil
+        if currentSessionId != nil {
+            responseTask?.cancel()
+        } else {
+            armLateReplyBindingDeadlineIfNeeded()
+        }
         stopRecognition()
         synthesizer.stopSpeaking(at: .immediate)
         context = nil
@@ -116,16 +142,36 @@ final class AppleVoiceTransport: NSObject, VoiceCallTransport, AVSpeechSynthesiz
             if active { beginListening() }
             return
         }
+        guard currentSessionId != nil || currentProjectRoot != nil else {
+            reportSendFailure(VoiceTurnSendError.missingLaunchContext)
+            return
+        }
         onEvent?(.final(role: .user, text: prompt, segmentID: userSegmentID))
         onEvent?(.processing)
+        clearLateReplyBindingDeadline()
         responseTask = Task { [weak self, turnSender] in
+            defer {
+                self?.clearLateReplyBindingDeadline()
+                self?.responseTask = nil
+            }
             do {
-                let reply = try await turnSender.sendRecognizedTurn(prompt, familiarId: context.familiarId, sessionId: context.sessionId)
+                let reply = try await turnSender.sendRecognizedTurn(
+                    prompt,
+                    familiarId: context.familiarId,
+                    sessionId: self?.currentSessionId ?? context.sessionId,
+                    projectRoot: self?.currentProjectRoot ?? context.projectRoot,
+                    onSessionBound: { [weak self] sessionId in
+                        self?.updateSessionBinding(from: sessionId)
+                        self?.cancelPendingReplyAfterHangupIfNeeded()
+                    }
+                )
                 guard !Task.isCancelled else { return }
+                self?.updateSessionBinding(from: reply.sessionId)
+                self?.cancelPendingReplyAfterHangupIfNeeded()
                 self?.speak(reply)
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.reportSendFailure()
+                self?.reportSendFailure(error)
             }
         }
     }
@@ -137,9 +183,53 @@ final class AppleVoiceTransport: NSObject, VoiceCallTransport, AVSpeechSynthesiz
         synthesizer.speak(AVSpeechUtterance(string: reply.text))
     }
 
-    private func reportSendFailure() {
+    private func updateSessionBinding(from sessionId: String?) {
+        guard let sessionId = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionId.isEmpty,
+              sessionId != currentSessionId
+        else { return }
+        currentSessionId = sessionId
+        onEvent?(.sessionBound(sessionId))
+    }
+
+    private func cancelPendingReplyAfterHangupIfNeeded() {
+        guard !active, currentSessionId != nil else { return }
+        clearLateReplyBindingDeadline()
+        responseTask?.cancel()
+    }
+
+    private func armLateReplyBindingDeadlineIfNeeded() {
+        guard lateReplyBindingDeadlineTask == nil,
+              responseTask != nil
+        else { return }
+        lateReplyBindingDeadlineTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.lateReplyBindingGrace)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.lateReplyBindingDeadlineTask = nil
+                self?.responseTask?.cancel()
+            }
+        }
+    }
+
+    private func clearLateReplyBindingDeadline() {
+        lateReplyBindingDeadlineTask?.cancel()
+        lateReplyBindingDeadlineTask = nil
+    }
+
+    private func reportSendFailure(_ error: Error) {
         guard active else { return }
-        onEvent?(.failed("voice_turn_send_failed"))
+        let code: String
+        if let caveError = error as? CaveError, caveError.requiresProjectSelection {
+            code = VoiceTurnSendError.missingLaunchContext.errorDescription ?? "voice_turn_project_required"
+        } else if let localized = error as? LocalizedError,
+                  let description = localized.errorDescription,
+                  description.hasPrefix("voice_turn_") {
+            code = description
+        } else {
+            code = "voice_turn_send_failed"
+        }
+        onEvent?(.failed(code))
     }
 
     private func stopRecognition() {

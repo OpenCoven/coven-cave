@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * SidebarRailHeader — the siderail's shared top: familiar scope + New chat.
+ * SidebarRailHeader — the siderail's shared top: workspace context + New chat.
  *
  * Both rail sections render this. Home (`SidebarMinimal`) and Chat
  * (`WorkspaceSidebar`) are separate components with separate stylesheets, and
@@ -18,13 +18,27 @@
  *
  * Presentational only: no data fetching, no mode knowledge. Section-specific
  * chrome (Chat's Organize menu, Home's brand mark) stays with its own sidebar.
+ *
+ * New project/crew props are optional with safe defaults so existing Task 6
+ * callers (WorkspaceSidebar, SidebarMinimal) compile before they are wired.
+ * Report: once Task 6 wires the callers, all optional defaults become required.
  */
 
 import type { ReactNode } from "react";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { WorkspaceContextSwitcher } from "@/components/workspace-context-switcher";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
+import type { CaveProject } from "@/lib/cave-projects-types";
+import type { CreateProjectOptions } from "@/lib/chat-add-project";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
+
+// Module-level stable identities — creating arrays/sets/functions during render
+// gives consumers new references on every call, forcing downstream re-renders.
+const EMPTY_PROJECTS: CaveProject[] = [];
+const EMPTY_CREW: ResolvedFamiliar[] = [];
+const EMPTY_SELECTED_FAMILIAR_IDS: ReadonlySet<string> = new Set<string>();
+const NOOP_PROJECT_CHANGE = (_projectId: string | null): void => {};
+const NOOP_RELOAD = (): void => {};
 
 export type SidebarRailHeaderProps = {
   familiars: ResolvedFamiliar[];
@@ -41,6 +55,24 @@ export type SidebarRailHeaderProps = {
   /** Trailing slot inside the New-chat button. Chat puts its ⌘N hint here
    *  rather than forking the button, which is how the two drifted before. */
   newChatTrailing?: ReactNode;
+  // ── Project / workspace context (wired by Task 6 callers) ─────────────────
+  projects?: CaveProject[];
+  projectId?: string | null;
+  onProjectChange?: (projectId: string | null) => void;
+  projectLoading?: boolean;
+  projectError?: string | null;
+  reloadProjects?: () => void;
+  project?: CaveProject | null;
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
+  projectCrew?: ResolvedFamiliar[];
+  projectCrewLoading?: boolean;
+  projectCrewError?: string | null;
+  reloadProjectCrew?: () => void;
+  contextNotice?: string | null;
 };
 
 export function SidebarRailHeader({
@@ -53,19 +85,62 @@ export function SidebarRailHeader({
   onNewChat,
   newChatTitle = "New chat",
   newChatTrailing,
+  // Task 6 props — optional for the transitional period. No inline defaults:
+  // undefined means "not yet wired"; null/false is a valid supplied value.
+  projects,
+  projectId,
+  onProjectChange,
+  projectLoading,
+  projectError,
+  reloadProjects,
+  project,
+  createProjectOrThrow,
+  projectCrew,
+  projectCrewLoading,
+  projectCrewError,
+  reloadProjectCrew,
+  contextNotice,
 }: SidebarRailHeaderProps) {
+  // Context is ready when every required Task6 prop has been supplied. A prop
+  // that is null or false is supplied; undefined means the caller has not wired
+  // it yet. createProjectOrThrow is excluded: creation can legitimately be
+  // unavailable without the context being unready.
+  const workspaceContextReady =
+    projects !== undefined &&
+    projectId !== undefined &&
+    onProjectChange !== undefined &&
+    projectLoading !== undefined &&
+    projectError !== undefined &&
+    reloadProjects !== undefined &&
+    project !== undefined &&
+    projectCrew !== undefined &&
+    projectCrewLoading !== undefined &&
+    projectCrewError !== undefined &&
+    reloadProjectCrew !== undefined;
+
   return (
     <div className="rail-header">
       <div className="rail-header__scope">
-        <FamiliarSwitcher
-          familiars={familiars}
+        <WorkspaceContextSwitcher
+          projects={workspaceContextReady ? projects! : EMPTY_PROJECTS}
+          projectId={workspaceContextReady ? projectId! : null}
+          onProjectChange={workspaceContextReady ? onProjectChange! : NOOP_PROJECT_CHANGE}
+          projectLoading={!workspaceContextReady || Boolean(projectLoading)}
+          projectError={workspaceContextReady ? projectError! : null}
+          reloadProjects={workspaceContextReady ? reloadProjects! : NOOP_RELOAD}
+          project={workspaceContextReady ? project! : null}
+          createProjectOrThrow={createProjectOrThrow}
+          allFamiliars={familiars}
+          projectCrew={workspaceContextReady ? projectCrew! : EMPTY_CREW}
+          projectCrewLoading={!workspaceContextReady || Boolean(projectCrewLoading)}
+          projectCrewError={workspaceContextReady ? projectCrewError! : null}
+          reloadProjectCrew={workspaceContextReady ? reloadProjectCrew! : NOOP_RELOAD}
           activeFamiliarId={activeFamiliarId}
-          selectedFamiliarIds={selectedFamiliarIds}
+          selectedFamiliarIds={selectedFamiliarIds ?? EMPTY_SELECTED_FAMILIAR_IDS}
           sessions={sessions}
           responseNeeded={responseNeeded}
           onSelectFamiliar={onSelectFamiliar}
-          placement="bottom-start"
-          labeled
+          contextNotice={contextNotice}
         />
       </div>
       <div className="rail-header__actions">

@@ -27,6 +27,11 @@ assert.match(
 );
 assert.match(
   model,
+  /func connectWithRetry[\s\S]*?if case \.needsAuth = connectionState \{ return \}[\s\S]*?if connectionState == \.projectContextRequired \{ return \}/,
+  "connectWithRetry should stop on pairing or project-context actions instead of hiding them behind .checking",
+);
+assert.match(
+  model,
   /func connectWithRetry[\s\S]*?if Task\.isCancelled \{ return \}/,
   "connectWithRetry should bail out if the task is cancelled mid-wait",
 );

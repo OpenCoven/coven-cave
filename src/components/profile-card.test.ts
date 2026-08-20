@@ -51,12 +51,13 @@ describe("Profile card wiring (cave-ujbr)", () => {
     assert.match(source, /AuthedImage/);
   });
 
-  it("keeps the card's heatmap legend and footer attribution in the reference language", () => {
+  it("keeps the card's heatmap legend and names its adaptive time range", () => {
     const source = read("./profile-card.tsx");
     assert.match(source, /coven session activity/);
     assert.match(source, /LESS/);
     assert.match(source, /MORE/);
-    assert.match(source, /COVEN CAVE \(based on l12m session data\)/);
+    assert.match(source, /past \$\{vm\.model\.heatmap\.windowDays\} days/);
+    assert.match(source, /COVEN CAVE \(based on the \{activityWindowLabel\}\)/);
     assert.match(source, /top collaborators/);
   });
 
@@ -88,6 +89,21 @@ describe("Profile card wiring (cave-ujbr)", () => {
     const css = readFileSync(new URL("../styles/profile-card.css", import.meta.url), "utf8");
     assert.match(css, /\.pfc-page \{/);
     assert.match(css, /--font-jetbrains-mono/);
+    assert.match(
+      css,
+      /\.pfc-heatmap-grid \{[\s\S]{0,180}?width: 100%;[\s\S]{0,80}?min-width: 0;/,
+      "every adaptive range distributes its week columns across the full width",
+    );
+    assert.match(
+      css,
+      /\n\.pfc-cell \{[\s\S]{0,140}?height: 9px;/,
+      "short-history heatmaps stay compact while spanning the card",
+    );
+    assert.doesNotMatch(
+      css.match(/\n\.pfc-cell \{[^}]*\}/)?.[0] ?? "",
+      /aspect-ratio/,
+      "cell width never increases the profile heatmap height",
+    );
     // The mint activity ramp — all five heatmap levels are styled.
     for (const level of [0, 1, 2, 3, 4]) {
       assert.match(css, new RegExp(`\\.pfc-cell\\[data-level="${level}"\\]`));

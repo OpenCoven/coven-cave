@@ -54,17 +54,23 @@ assert.match(
   "ChatList onNewChat must increment composeInstance",
 );
 
-// ── 4. ChatProjectSidebar onNewChat increments ───────────────────────────────
+// ── 4. ChatProjectSidebar delegates to shell New, with a safe fallback ───────
 
 const sidebarOnNewChat =
-  routerSource.match(/onNewChat=\{\(root\) => \{[\s\S]*?\}\}/)?.[0] ?? "";
+  routerSource.match(/onNewChat=\{\(\) => \{[\s\S]*?\n        \}\}\s*\n        onOpenProjectsTab=/)?.[0] ?? "";
 
 assert.ok(sidebarOnNewChat.length > 0, "ChatProjectSidebar onNewChat handler must be present in router");
 
 assert.match(
   sidebarOnNewChat,
+  /if \(onRequestNewChat\) \{\s*onRequestNewChat\(\);\s*return;/,
+  "ChatProjectSidebar onNewChat must delegate to shell-owned New when wired",
+);
+
+assert.match(
+  sidebarOnNewChat,
   /advanceComposeInstance\(\)/,
-  "ChatProjectSidebar onNewChat must increment composeInstance",
+  "ChatProjectSidebar fallback onNewChat must increment composeInstance",
 );
 
 // ── 5. Familiar-switch increments when creating a new null-session compose ───

@@ -40,30 +40,31 @@ export function MemoryRowItem({
   const size = row.kind === "file" ? formatBytes(row.size) : "";
   return (
     <li
-      className={`group/row relative flex min-w-0 items-stretch gap-1 border-l-2 px-1 transition-colors ${
+      className={`fm-memory-row group/row relative flex min-w-0 items-stretch gap-1 transition-colors ${
         selected
-          ? "border-[var(--accent-presence)] bg-[var(--bg-raised)]/60"
-          : "border-transparent hover:bg-[var(--bg-raised)]"
+          ? "is-selected"
+          : ""
       }`}
     >
       <button
         type="button"
         onClick={onSelect}
         aria-current={selected ? "true" : undefined}
-        className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-2 py-2 text-left"
+        className="fm-memory-row__main focus-ring-inset flex min-w-0 flex-1 items-start gap-3 text-left"
       >
-        <Icon
-          name={row.kind === "canonical" ? "ph:brain" : "ph:file-text"}
-          width={13}
-          className="mt-0.5 shrink-0 text-[var(--text-muted)]"
-          aria-hidden
-        />
+        <span className="fm-memory-row__provenance" data-kind={row.kind}>
+          <Icon
+            name={row.kind === "canonical" ? "ph:brain" : "ph:file-text"}
+            width={13}
+            aria-hidden
+          />
+        </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="block min-w-0 flex-1 truncate text-[length:var(--text-sm)] font-medium text-[var(--text-primary)]" title={row.title}>
+            <span className="fm-memory-row__title block min-w-0 flex-1 truncate" title={row.title}>
               {row.title}
             </span>
-            <span className="shrink-0 text-[length:var(--text-2xs)] text-[var(--text-muted)]">{age}</span>
+            <span className="fm-memory-row__age shrink-0">{age}</span>
           </span>
           <span className="mt-0.5 block truncate text-[length:var(--text-xs)] text-[var(--text-secondary)]">
             {row.kind === "canonical" ? row.excerpt : compactRowPath(row.path)}
@@ -88,7 +89,7 @@ export function MemoryRowItem({
           </span>
         </span>
       </button>
-      <div className="touch-always-visible flex items-center gap-1 pr-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100">
+      <div className="fm-memory-row__actions touch-always-visible flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100">
         <button
           type="button"
           onClick={onExpand}

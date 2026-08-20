@@ -4,6 +4,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
+  cleanFileDataUrl,
+  MAX_ATTACHMENT_FILE_BYTES,
   MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_MEDIA_BYTES,
   MEDIA_EXT_BY_MIME,
@@ -26,8 +28,35 @@ import { caveHome } from "../coven-paths.ts";
  */
 
 /** `<uuid>.<ext>` — the whole of what a caller may ask for. */
-const SAFE_STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/;
+const SAFE_STORED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,12}$/;
 const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = { jpeg: "jpg", "svg+xml": "svg" };
+const FILE_MIME_BY_EXT: Record<string, string> = {
+  css: "text/css",
+  csv: "text/csv",
+  html: "text/html",
+  js: "text/javascript",
+  json: "application/json",
+  jsx: "text/jsx",
+  md: "text/markdown",
+  mjs: "text/javascript",
+  toml: "application/toml",
+  ts: "text/typescript",
+  tsx: "text/tsx",
+  txt: "text/plain",
+  xml: "application/xml",
+  yaml: "application/yaml",
+  yml: "application/yaml",
+  zip: "application/zip",
+};
+const FILE_MIME_ALIASES_BY_EXT: Record<string, readonly string[]> = {
+  js: ["application/javascript", "application/x-javascript"],
+  json: ["text/json"],
+  toml: ["text/toml"],
+  xml: ["text/xml"],
+  yaml: ["text/yaml", "application/x-yaml"],
+  yml: ["text/yaml", "application/x-yaml"],
+  zip: ["application/x-zip-compressed"],
+};
 const MIME_BY_EXT: Record<string, string> = {
   apng: "image/apng",
   avif: "image/avif",
@@ -51,6 +80,7 @@ const MIME_BY_EXT: Record<string, string> = {
   ogg: "audio/ogg",
   wav: "audio/wav",
   webm: "video/webm",
+  ...FILE_MIME_BY_EXT,
 };
 /** Files older than this are swept opportunistically on write. */
 export const CHAT_ATTACHMENT_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
@@ -95,9 +125,12 @@ export function isValidChatAttachmentId(value: unknown): value is string {
  * the tight image cap, playable media get the larger media cap. */
 export function chatAttachmentMaxBytes(storedId: string): number {
   const mimeType = chatAttachmentMimeType(storedId) ?? "";
-  return mimeType.startsWith("audio/") || mimeType.startsWith("video/")
-    ? MAX_ATTACHMENT_MEDIA_BYTES
-    : MAX_ATTACHMENT_IMAGE_BYTES;
+  if (mimeType.startsWith("audio/") || mimeType.startsWith("video/")) {
+    return MAX_ATTACHMENT_MEDIA_BYTES;
+  }
+  return mimeType.startsWith("image/")
+    ? MAX_ATTACHMENT_IMAGE_BYTES
+    : MAX_ATTACHMENT_FILE_BYTES;
 }
 
 function isContained(root: string, candidate: string): boolean {
@@ -184,6 +217,37 @@ export async function saveChatMediaAttachment(
     const target = path.join(/* turbopackIgnore: true */ root, storedId);
     if (!isContained(root, target)) return null;
     await writeFile(/* turbopackIgnore: true */ target, payload, { mode: 0o600, flag: "wx" });
+    return storedId;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist a bounded source/document attachment so transcript retries can
+ * rematerialize the exact bytes for a local harness. */
+export async function saveChatFileAttachment(
+  dataUrl: string,
+  mimeType: string,
+  fileName: string,
+): Promise<string | null> {
+  const payload = cleanFileDataUrl(dataUrl);
+  if (!payload || payload.mimeType !== mimeType.toLowerCase()) return null;
+  const ext = path.extname(fileName).slice(1).toLowerCase();
+  const canonicalMime = FILE_MIME_BY_EXT[ext];
+  const extensionMatchesMime = payload.mimeType === canonicalMime ||
+    payload.mimeType === "application/octet-stream" ||
+    FILE_MIME_ALIASES_BY_EXT[ext]?.includes(payload.mimeType);
+  if (!canonicalMime || !extensionMatchesMime) return null;
+  const comma = payload.dataUrl.indexOf(",");
+  const bytes = Buffer.from(payload.dataUrl.slice(comma + 1), "base64");
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_FILE_BYTES) return null;
+  try {
+    const root = await resolvedRoot(true);
+    const storedId = `${randomUUID()}.${ext}`;
+    if (!SAFE_STORED_ID.test(storedId)) return null;
+    const target = path.join(/* turbopackIgnore: true */ root, storedId);
+    if (!isContained(root, target)) return null;
+    await writeFile(/* turbopackIgnore: true */ target, bytes, { mode: 0o600, flag: "wx" });
     return storedId;
   } catch {
     return null;

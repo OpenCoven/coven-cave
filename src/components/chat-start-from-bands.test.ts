@@ -42,9 +42,9 @@ test("counts and notes come from the shared pure model, never from the caller", 
     /import type \{ StartFromGroupMeta, StartFromKind \} from "@\/lib\/chat-start-from";/,
     "the band's head is typed by the shared group model",
   );
-  assert.match(bands, /className="cave-sf__band-count">\{meta\.count\}/, "the head shows meta.count");
-  assert.match(bands, /className="cave-sf__band-note">\{meta\.note\}/, "the head shows meta.note");
-  assert.match(bands, /className="cave-sf__band-label">\{meta\.label\}/, "the head shows meta.label");
+  assert.match(bands, /className="cave-sf__source-count">\{meta\.count\}/, "the source shows meta.count");
+  assert.match(bands, /title=\{meta\.note\}/, "the source exposes meta.note");
+  assert.match(bands, /className="cave-sf__source-label">\{meta\.label\}/, "the source shows meta.label");
   assert.doesNotMatch(
     bands,
     /\.length \+ " of " \+|\$\{[a-z]+\.length\} of /i,
@@ -52,17 +52,21 @@ test("counts and notes come from the shared pure model, never from the caller", 
   );
 });
 
-test("band anatomy follows the mock: tinted head, caret, strip of tiles", () => {
-  assert.match(bands, /aria-expanded=\{open\}/, "the head is the collapse control, and says so");
+test("launcher uses source tabs and one paged tile deck", () => {
   assert.match(
     bands,
-    /data-kind=\{meta\.kind\} data-open=\{open\}/,
-    "tint and collapse state ride data attributes the sheet reads",
+    /role="tablist" aria-label="Start-from sources"/,
+    "sources switch in one compact tab row",
   );
-  assert.match(bands, /\{open \? \(\s*\n?\s*<div className="cave-sf__strip"/, "collapsing removes the strip");
+  assert.match(bands, /aria-selected=\{active\}/, "the active source is exposed accessibly");
+  assert.match(bands, /className="cave-sf__deck"[\s\S]{0,80}role="tabpanel"/, "only one source deck renders at a time");
+  assert.match(bands, /const START_FROM_PAGE_SIZE = 4;/, "each page is capped to four tiles");
+  assert.match(bands, /pageItems = items\.slice\(pageStart, pageStart \+ START_FROM_PAGE_SIZE\)/, "the deck paginates instead of scrolling");
+  assert.match(bands, /aria-label="Previous start-from page"/, "the deck has explicit previous-page navigation");
+  assert.match(bands, /aria-label="Next start-from page"/, "the deck has explicit next-page navigation");
   // Tile: a clamped title with one short badge, then a dotted mono sub-line.
-  assert.match(bands, /className="cave-sf__tile-title">\{tile\.title\}/, "tiles lead with the title");
-  assert.match(bands, /className="cave-sf__tile-badge">\{tile\.badge\}/, "tiles carry one badge");
+  assert.match(bands, /className="cave-sf__tile-title">\{item\.tile\.title\}/, "tiles lead with the title");
+  assert.match(bands, /className="cave-sf__tile-badge">\{item\.tile\.badge\}/, "tiles carry one badge");
   assert.match(
     bands,
     /className="cave-sf__tile-dot" aria-hidden/,
@@ -70,22 +74,26 @@ test("band anatomy follows the mock: tinted head, caret, strip of tiles", () => 
   );
   assert.match(
     bands,
-    /aria-label=\{tile\.ariaLabel \?\? tile\.title\}/,
+    /aria-label=\{item\.tile\.ariaLabel \?\? item\.tile\.title\}/,
     "every tile has an accessible name, falling back to its title",
   );
 });
 
-test("one tint mechanism — a per-band custom property, not six colour rules", () => {
-  assert.match(css, /\.cave-sf__band \{\s*\n\s*--sf-tint:/, "the band declares the tint variable");
+test("one tint mechanism — a per-source custom property, not six colour rules", () => {
+  assert.match(css, /\.cave-sf__source \{\s*\n\s*--sf-tint:/, "the source tab declares the tint variable");
   for (const kind of ["chats", "tasks", "queue", "reviews"]) {
     assert.match(
       css,
-      new RegExp(`\\.cave-sf__band\\[data-kind="${kind}"\\] \\{\\s*\\n\\s*--sf-tint: [^;]+;\\s*\\n\\}`),
+      new RegExp(`\\.cave-sf \\[data-kind="${kind}"\\] \\{\\s*\\n\\s*--sf-tint: [^;]+;\\s*\\n\\}`),
       `${kind} sets the tint and nothing else`,
     );
   }
   // Every tinted surface derives from the variable, so a new source is one line.
-  for (const surface of ["cave-sf__band-head", "cave-sf__tile", "cave-sf__tile-dot"]) {
+  for (const surface of [
+    'cave-sf__source\\[aria-selected="true"\\]',
+    "cave-sf__tile:hover:not\\(:disabled\\)",
+    "cave-sf__tile-dot",
+  ]) {
     assert.match(
       css.match(new RegExp(`\\.${surface} \\{[\\s\\S]*?\\n\\}`))[0],
       /var\(--sf-tint\)/,
@@ -113,13 +121,18 @@ test("the sheet stays on tokens and ships through the chat facade", () => {
   );
 });
 
-test("the strip scrolls sideways rather than wrapping or growing the band", () => {
-  const strip = css.match(/\.cave-sf__strip \{[\s\S]*?\n\}/)[0];
-  assert.match(strip, /overflow-x: auto/, "overflow scrolls, so band height is independent of count");
-  assert.doesNotMatch(strip, /flex-wrap/, "tiles never wrap into a second row");
+test("the deck stays within one or two rows and never scrolls internally", () => {
+  const deck = css.match(/\.cave-sf__deck \{[\s\S]*?\n\}/)[0];
+  assert.match(deck, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/, "desktop presents one four-card row");
+  assert.match(
+    css,
+    /@media \(max-width: 760px\)[\s\S]*?\.cave-sf__deck \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/,
+    "compact panes use two columns and at most two rows",
+  );
+  assert.doesNotMatch(deck, /overflow-[xy]: auto/, "the deck never hides choices behind a scrollbar");
   assert.match(
     css.match(/\.cave-sf__tile \{[\s\S]*?\n\}/)[0],
-    /width: 224px/,
-    "tiles are the mock's fixed 224px, so the strip reads as a rhythm",
+    /min-width: 0/,
+    "tiles share the available grid width instead of forcing overflow",
   );
 });

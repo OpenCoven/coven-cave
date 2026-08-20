@@ -13,6 +13,20 @@ export type ReflectTranscriptTurn = {
 
 const REFLECT_MAX_TURNS = 36;
 const REFLECT_MAX_CHARS_PER_TURN = 900;
+export const TERMINAL_THREAD_REVIEW_TURNS = 2;
+export const MATURE_THREAD_REVIEW_TURNS = 8;
+
+export function shouldAutoReviewThread(input: {
+  settledAssistantTurns: number;
+  terminal: boolean;
+  busy: boolean;
+}): boolean {
+  if (input.busy || !Number.isInteger(input.settledAssistantTurns)) return false;
+  if (input.settledAssistantTurns < 0) return false;
+  return input.terminal
+    ? input.settledAssistantTurns >= TERMINAL_THREAD_REVIEW_TURNS
+    : input.settledAssistantTurns >= MATURE_THREAD_REVIEW_TURNS;
+}
 
 /** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
 export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {
@@ -314,6 +328,16 @@ export type ThreadSignalsAggregate = {
   averageMemoryRecall: number;
   averageFileLocatability: number;
   contextCounts: Record<ContextPressure, number>;
+  /** Current-state metrics from the newest report. Historical averages/counts
+   * remain available for trends, but the remediation queue uses this snapshot
+   * so a verified recovery clears stale context and score alerts. */
+  current?: {
+    contextPressure: ContextPressure;
+    confidence: number;
+    toolReliability: number;
+    memoryRecall: number;
+    fileLocatability: number;
+  };
   skillsUsedMost: { skillId: string; count: number }[];
   skillsNeedingClarity: ThreadSelfReport["skillsNeedingClarity"];
   skillsNeedingAccess: ThreadSelfReport["skillsNeedingAccess"];
@@ -761,6 +785,17 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     averageMemoryRecall: libAvg(usable.map((r) => r.memoryRecallScore)),
     averageFileLocatability: libAvg(usable.map((r) => r.fileLocatabilityScore)),
     contextCounts,
+    ...(newest
+      ? {
+          current: {
+            contextPressure: newest.contextPressure,
+            confidence: newest.overallConfidence,
+            toolReliability: newest.toolReliability.score,
+            memoryRecall: newest.memoryRecallScore,
+            fileLocatability: newest.fileLocatabilityScore,
+          },
+        }
+      : {}),
     skillsUsedMost: [...skillsUsed.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -809,14 +844,30 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     });
   }
 
-  if (aggregate.contextCounts.critical > 0 || aggregate.contextCounts.tight > 0 || aggregate.contextCounts.excess > 0) {
+  const currentContext = aggregate.current?.contextPressure;
+  const hasCurrentContextPressure = currentContext
+    ? currentContext !== "adequate"
+    : aggregate.contextCounts.critical > 0 ||
+      aggregate.contextCounts.tight > 0 ||
+      aggregate.contextCounts.excess > 0;
+  if (hasCurrentContextPressure) {
+    const historicalDetail =
+      `${aggregate.contextCounts.critical} critical, ${aggregate.contextCounts.tight} tight, ${aggregate.contextCounts.excess} excess`;
     items.push({
       kind: "context-pressure",
-      severity: aggregate.contextCounts.critical > 0 ? "critical" : "warning",
+      severity: currentContext === "critical" ||
+          (!currentContext && aggregate.contextCounts.critical > 0)
+        ? "critical"
+        : "warning",
       sourceId: "context-pressure",
       title: "Context pressure",
-      detail: `${aggregate.contextCounts.critical} critical, ${aggregate.contextCounts.tight} tight, ${aggregate.contextCounts.excess} excess`,
-      rank: aggregate.contextCounts.critical > 0 ? 75 : 55,
+      detail: currentContext
+        ? `Newest report: ${contextPressureLabel(currentContext).label}`
+        : historicalDetail,
+      rank: currentContext === "critical" ||
+          (!currentContext && aggregate.contextCounts.critical > 0)
+        ? 75
+        : 55,
     });
   }
 
@@ -831,12 +882,19 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     });
   }
 
-  const lowScores: [string, ThreadSignalReviewItem["title"], number][] = [
-    ["confidence", "Confidence", aggregate.averageConfidence],
-    ["tool-reliability", "Tool reliability", aggregate.averageToolReliability],
-    ["memory-recall", "Memory recall", aggregate.averageMemoryRecall],
-    ["file-locatability", "File locatability", aggregate.averageFileLocatability],
-  ];
+  const lowScores: [string, ThreadSignalReviewItem["title"], number][] = aggregate.current
+    ? [
+        ["confidence", "Confidence", aggregate.current.confidence],
+        ["tool-reliability", "Tool reliability", aggregate.current.toolReliability],
+        ["memory-recall", "Memory recall", aggregate.current.memoryRecall],
+        ["file-locatability", "File locatability", aggregate.current.fileLocatability],
+      ]
+    : [
+        ["confidence", "Confidence", aggregate.averageConfidence],
+        ["tool-reliability", "Tool reliability", aggregate.averageToolReliability],
+        ["memory-recall", "Memory recall", aggregate.averageMemoryRecall],
+        ["file-locatability", "File locatability", aggregate.averageFileLocatability],
+      ];
   for (const [sourceId, title, score] of lowScores) {
     if (score > 0 && score < 60) {
       items.push({

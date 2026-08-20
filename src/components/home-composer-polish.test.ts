@@ -74,9 +74,8 @@ assert.match(
 // ───────── Command-bar hierarchy ─────────
 // Chat revamp 1d + 2026-07-21 home parity pass: one "+" menu (attach ·
 // dictation · call · enhance · Model & tuning) leads the utility row, then the
-// Chat/Task pills; the circular send hugs the right. The context chips
-// (Project · Model) anchor the footer band beneath — matching the chat
-// composer's grammar.
+// Chat/Task pills; the circular send hugs the right. The model context anchors
+// the footer band beneath; project context is owned by the shell rail.
 assert.match(
   source,
   /cave-composer-utility-row[\s\S]*?<ComposerPlusMenu[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
@@ -107,10 +106,15 @@ assert.doesNotMatch(
   /hc-footer-band/,
   "the legacy hc- footer band stays retired — the shared cave-composer-footer-band carries the context pill",
 );
+assert.doesNotMatch(
+  source,
+  /<FamiliarQuickSwitch/,
+  "Home does not duplicate the shell-owned crew selector",
+);
 assert.match(
   source,
-  /<FamiliarQuickSwitch[\s\S]*labeled[\s\S]*singleRequired/,
-  "the home familiar selector is labeled and constrained to one launch target",
+  /actingFamiliarId: string \| null;[\s\S]*selectedFamiliar \? \(\) => setOptionsOpen\(true\) : undefined/,
+  "Home exposes per-familiar tuning only when the shell resolves one acting familiar",
 );
 assert.doesNotMatch(
   source,

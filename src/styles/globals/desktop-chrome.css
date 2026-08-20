@@ -797,7 +797,8 @@ button:active > .edge-rail-chip {
 
 .menu-bar__new,
 .menu-bar__task,
-.menu-bar__status {
+.menu-bar__status,
+.menu-bar__group--status .notification-bell__trigger {
   position: relative;
   display: inline-flex;
   align-items: center;
