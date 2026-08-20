@@ -173,6 +173,7 @@ test.describe("research reader", () => {
     // Contents rail is hidden until expanded.
     await expect(reader.locator(".rr-toc")).toBeHidden();
     await reader.getByRole("button", { name: "More research reader actions" }).click();
+    await expect(page.getByRole("menuitemcheckbox", { name: "Contents" })).toBeVisible();
     await page.getByRole("menuitemcheckbox", { name: "Contents" }).click();
     await expect(reader).toHaveAttribute("data-expanded", "true");
     await expect(reader).toHaveAttribute("data-toc", "true");
@@ -203,6 +204,7 @@ test.describe("research reader", () => {
     await openReader(page);
     const reader = page.locator(".research-reader");
     await reader.getByRole("button", { name: "More research reader actions" }).click();
+    await expect(page.getByRole("menuitemcheckbox", { name: "Contents" })).toBeVisible();
     await page.getByRole("menuitemcheckbox", { name: "Contents" }).click();
 
     const columns = await reader.locator(".document-reader__layout").evaluate(

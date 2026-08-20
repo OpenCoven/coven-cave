@@ -145,7 +145,8 @@ async function openReader(page: Page, turn: TurnSpec) {
   const responseActions = page.getByRole("button", { name: "More response actions" }).last();
   await expect(responseActions).toBeVisible();
   await responseActions.click();
-  const openReaderItem = page.getByRole("menuitem", { name: "Open reader" });
+  const menu = page.getByRole("menu", { name: "More response actions" });
+  const openReaderItem = menu.getByRole("menuitem", { name: "Open reader" });
   await expect(openReaderItem).toBeVisible({ timeout: 30_000 });
   await openReaderItem.click();
   // The reader is loaded through next/dynamic so its chunk (and stylesheet)
