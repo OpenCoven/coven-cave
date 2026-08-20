@@ -86,7 +86,7 @@ test("remove is a two-step inline confirm wired to useResearchLinks.remove", () 
   // document under paper B's title and start its fetch unasked.
   assert.match(
     source,
-    /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*setArticleDetail\(null\);\s*setArticleLoading\(false\);\s*setArticleError\(null\);\s*\}, \[openId\]\)/,
+    /setConfirmingRemove\(false\);\s*setCopied\(false\);\s*setReading\(false\);\s*setReaderExpanded\(false\);\s*setArticleDetail\(null\);\s*setArticleLoading\(false\);\s*setArticleError\(null\);\s*\}, \[openId\]\)/,
   );
 });
 
@@ -104,7 +104,7 @@ test("grid/rows view persists under cave:research:res-view with an SSR guard", (
 });
 
 test("detail overlay is a focus-trapped dialog with honest copy/open actions", () => {
-  assert.match(source, /useFocusTrap\(Boolean\(openLink\), dialogRef, \{ onEscape: closeOverlay \}\)/);
+  assert.match(source, /useFocusTrap\(Boolean\(openLink\), dialogRef, \{ onEscape: handleOverlayEscape \}\)/);
   assert.match(source, /role="dialog"/);
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /aria-labelledby="research-res-overlay-title"/);
@@ -122,6 +122,19 @@ test("detail overlay is a focus-trapped dialog with honest copy/open actions", (
   assert.doesNotMatch(source, /navigator\.clipboard\.writeText/);
   assert.match(source, /setTimeout\(\(\) => setCopied\(false\), 1200\)/);
   assert.match(source, /context\.openUrl\(openLink\.url\)/);
+});
+
+test("the paper reader expands in place and Escape collapses before closing", () => {
+  assert.match(source, /const \[readerExpanded, setReaderExpanded\] = useState\(false\)/);
+  assert.match(
+    source,
+    /if \(readerExpanded\) \{\s*setReaderExpanded\(false\);\s*return;\s*\}\s*closeOverlay\(\)/,
+  );
+  assert.match(source, /data-expanded=\{readerExpanded \|\| undefined\}/);
+  assert.match(source, /aria-label=\{readerExpanded \? "Collapse paper reader" : "Expand paper reader"\}/);
+  assert.match(source, /name=\{readerExpanded \? "ph:corners-in" : "ph:corners-out"\}/);
+  assert.match(styles, /\.research-res-overlay__dialog\[data-expanded\]/);
+  assert.match(styles, /\.research-res-overlay__dialog\[data-expanded\] \.research-paper-view__stage/);
 });
 
 test("resources expose a labeled multiline batch intake with truthful preview", () => {
