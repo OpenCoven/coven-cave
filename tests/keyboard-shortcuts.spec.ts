@@ -17,7 +17,7 @@ async function gotoApp(page: Page) {
   // shortcuts. Prove that exact handler is attached through its idempotent ⌘K
   // path before exercising either shortcut-sheet binding.
   await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-  await page.mouse.click(5, 5);
+  await page.mouse.click(640, 5);
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect
     .poll(
@@ -69,7 +69,7 @@ test.describe("keyboard shortcuts sheet", () => {
   test("opens with ?, lists every catalog group, closes with Escape", async ({ page }) => {
     await gotoApp(page);
     // Focus the page chrome (not a text field) so the `?` guard lets it through.
-    await page.mouse.click(5, 5);
+    await page.mouse.click(640, 5);
     await page.keyboard.press("?");
 
     await expect(sheet(page)).toBeVisible();
@@ -89,7 +89,7 @@ test.describe("keyboard shortcuts sheet", () => {
 
   test("⌘/ also opens the sheet", async ({ page }) => {
     await gotoApp(page);
-    await page.mouse.click(5, 5);
+    await page.mouse.click(640, 5);
     await page.keyboard.press("Meta+/");
     await expect(sheet(page)).toBeVisible();
   });

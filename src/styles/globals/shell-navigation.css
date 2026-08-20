@@ -41,13 +41,6 @@
   flex-direction: column;
 }
 
-/* Home composer spans the viewport width when one or both side panels are
- * open; it needs overflow: visible on the detail panel to paint outside its
- * bounds when translateX shifts the composer. */
-.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .workspace-detail-content > .home-composer-root) {
-  overflow: visible !important;
-}
-
 /* The navigation stays on the shell floor. */
 .shell-nav-panel { position: relative; }
 

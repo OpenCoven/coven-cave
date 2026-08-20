@@ -153,7 +153,7 @@ async function mockReviewDeck(page: Page) {
 }
 
 async function enterReviewDeck(page: Page) {
-  await page.getByRole("navigation").first().waitFor({ timeout: 60_000 });
+  await page.locator(".shell-frame").waitFor({ timeout: 60_000 });
   await expect(async () => {
     await page.evaluate(() =>
       window.dispatchEvent(
