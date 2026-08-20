@@ -1511,10 +1511,6 @@ final class AppModel {
 
     // MARK: - Developer surface
 
-    /// Configured project roots, shared across the Code and Terminal surfaces.
-    var projects: [ProjectInfo] = []
-    var projectsError: String?
-    var projectsLoaded = false
     var projectContext: ProjectContext?
     var projectContextError: String?
     var projectMembership = ProjectMembershipIndex()

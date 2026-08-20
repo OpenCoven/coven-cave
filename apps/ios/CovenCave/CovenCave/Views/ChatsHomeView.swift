@@ -330,10 +330,6 @@ struct ChatsHomeView: View {
                 large: true
             )
             Spacer()
-            CircularIconButton(systemImage: "folder",
-                               label: "Projects") {
-                showProjects = true
-            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)

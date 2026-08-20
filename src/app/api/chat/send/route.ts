@@ -309,7 +309,6 @@ import {
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import {
-  conversationCwd,
   daemonSessionCwd,
   filterUsableLocalDirectories,
   resolveFamiliarWorkspace,
@@ -719,6 +718,7 @@ function openClawChatResponse(args: {
   promptText: string;
   harnessPrompt: string;
   attachments: ChatAttachment[];
+  cwd: string;
   desiredModel: string;
   modelState: ChatModelState;
   initialModelIntent: string | null;
@@ -802,32 +802,11 @@ function openClawChatResponse(args: {
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
-      let cwd: string;
-      try {
-        cwd = await resolveLocalRuntimeCwd(
-          args.body.projectRoot ??
-            (await conversationCwd(args.body.sessionId)) ??
-            (await daemonSessionCwd(args.body.sessionId)),
-        );
-      } catch (error) {
-        if (error instanceof RuntimeScopeError) {
-          pushProgress("openclaw-start", "OpenClaw bridge not started", "error", error.message);
-          push({ kind: "error", code: error.code, message: error.message });
-          push({
-            kind: "done",
-            durationMs: Date.now() - startedAt,
-            isError: true,
-          });
-          close();
-          return;
-        }
-        throw error;
-      }
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
         model: args.desiredModel,
-        runtime: `local:${cwd}`,
+        runtime: `local:${args.cwd}`,
         requestedModel: args.body.modelOverride === ""
           ? ""
           : cleanModelId(args.body.modelOverride) ?? undefined,
@@ -1209,7 +1188,7 @@ function openClawChatResponse(args: {
         env: openclawEnv,
         requiredFiles: openclawLaunch.requiredFiles,
         unresolvedWindowsShim: openclawLaunch.unresolvedWindowsShim === true,
-        cwd,
+        cwd: args.cwd,
       });
       if (openclawAvailability.state !== "ready") {
         pushProgress(
@@ -1241,7 +1220,7 @@ function openClawChatResponse(args: {
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
         return spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
-          cwd,
+          cwd: args.cwd,
           stdio: ["ignore", "pipe", "pipe"],
           env: openclawEnv,
           shell: false,
@@ -1575,7 +1554,7 @@ function openClawChatResponse(args: {
         await sleep(20);
         close();
       }
-      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
+      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", args.cwd);
       child = spawnChild(executionMode);
       attachChild(child);
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
@@ -2238,7 +2217,11 @@ export async function POST(req: Request) {
   }
   let cwd: string;
   try {
-    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(authorizedProjectRoot);
+    cwd = sshRuntime
+      ? homedir()
+      : await resolveLocalRuntimeCwd(authorizedProjectRoot, {
+          rootAuthority: "authorized-project",
+        });
   } catch (error) {
     if (error instanceof RuntimeScopeError) {
       return new Response(
@@ -2777,6 +2760,7 @@ export async function POST(req: Request) {
       promptText,
       harnessPrompt,
       attachments: persistedAttachments,
+      cwd,
       desiredModel,
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,

@@ -485,7 +485,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /import \{[\s\S]{0,200}conversationCwd,[\s\S]{0,200}daemonSessionCwd,[\s\S]{0,200}filterUsableLocalDirectories,[\s\S]{0,200}resolveFamiliarWorkspace,[\s\S]{0,50}\} from "\.\/chat-send-runtime";/,
+  /import \{[\s\S]{0,200}daemonSessionCwd,[\s\S]{0,200}filterUsableLocalDirectories,[\s\S]{0,200}resolveFamiliarWorkspace,[\s\S]{0,50}\} from "\.\/chat-send-runtime";/,
   "The daemon-session resume fallback comes from the shared chat-send-runtime helper",
 );
 const sendRuntimeHelpers = await readFile(
@@ -497,10 +497,15 @@ assert.match(
   /export async function daemonSessionCwd\(sessionId\?: string\): Promise<string \| undefined> \{[\s\S]*?callDaemon<DaemonSessionRow\[\]>\(\{ path: "\/api\/v1\/sessions" \}\)[\s\S]*?path\.isAbsolute\(root\)[\s\S]*?\n\}/,
   "daemonSessionCwd resolves the session's project_root from the daemon's own session list and only trusts absolute paths",
 );
-assert.match(
+assert.doesNotMatch(
   chatRoute,
   /args\.body\.projectRoot \?\?\s*\(await conversationCwd\(args\.body\.sessionId\)\) \?\?\s*\(await daemonSessionCwd\(args\.body\.sessionId\)\)/,
-  "The OpenClaw bridge resume gets the same daemon-session cwd fallback",
+  "The OpenClaw bridge must not bypass the shared project launch gate by resolving its own raw root",
+);
+assert.match(
+  chatRoute,
+  /openClawChatResponse\(\{[\s\S]*?attachments: persistedAttachments,[\s\S]*?\bcwd,[\s\S]*?desiredModel,/,
+  "The OpenClaw bridge receives the same authorized runtime cwd as every other local harness",
 );
 
 assert.match(
