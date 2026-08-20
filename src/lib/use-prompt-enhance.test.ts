@@ -11,30 +11,35 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./use-prompt-enhance.ts", import.meta.url), "utf8");
 
-// ── Race safety ──────────────────────────────────────────────────────────────
+// ── Shared lifecycle + race safety ───────────────────────────────────────────
 assert.match(
   source,
-  /const generationRef = useRef\(0\)/,
-  "a generation counter makes stale completions inert",
+  /useAgenticRecommendations/,
+  "Chat Enhance delegates cancellation and stale-fingerprint handling to the shared lifecycle",
 );
 assert.match(
   source,
-  /if \(gen !== generationRef\.current\) return; \/\/ stale completion — inert/,
-  "finish() drops completions from superseded requests",
+  /autoGenerate: false/,
+  "prompt typing updates context but never requests a recommendation by itself",
 );
 assert.match(
   source,
-  /settleEnhance\(baseDraft, draftRef\.current\)/,
+  /agentic\.refresh\(\)/,
+  "an explicit Enhance action starts the shared lifecycle",
+);
+assert.match(
+  source,
+  /settleEnhance\(activeRequest\.baseDraft, draftRef\.current\)/,
   "completion settles against the CURRENT draft, not the one captured at request time",
 );
 assert.match(
   source,
-  /\{ phase: "suggested", enhanced: text, offline \}/,
+  /phase: "suggested",[\s\S]*?enhanced: recommendation\.payload\.enhanced,[\s\S]*?offline,[\s\S]*?recommendation,/,
   "a draft edited mid-flight downgrades the rewrite to a suggestion instead of overwriting",
 );
 assert.match(
   source,
-  /\{ phase: "applied", original: baseDraft, offline \}/,
+  /original: activeRequest\.baseDraft,[\s\S]*?offline,[\s\S]*?recommendation,/,
   "the pre-enhance original only exists in the applied phase, so typing mid-flight has nothing to lose",
 );
 assert.match(
@@ -44,22 +49,67 @@ assert.match(
 );
 assert.match(
   source,
-  /prev\.phase === "applied" \|\| prev\.phase === "error" \? \{ phase: "idle" \} : prev/,
+  /previous\.phase === "applied" \|\| previous\.phase === "error" \? \{ phase: "idle" \} : previous/,
   "a user edit clears applied/error but leaves loading and suggested alive",
 );
+assert.match(
+  source,
+  /createPromptEnhancementRecommendation/,
+  "strict enhanced text is wrapped as a shared Chat recommendation",
+);
+assert.match(
+  source,
+  /serializePromptEnhancementRecommendation/,
+  "the wrapper is re-read through strict shared recommendation extraction",
+);
+assert.match(
+  source,
+  /parseOutput: parsePromptEnhancementRecommendationOutput/,
+  "Chat uses its bounded prompt-specific parser without relaxing shared limits",
+);
+assert.match(
+  source,
+  /extractCompleteEnhancedPrompt\(text\)/,
+  "only a complete enhanced frame becomes a recommendation; malformed output retries",
+);
+assert.match(
+  source,
+  /return enhanced \? toRecommendationOutput\(enhanced, false\) : "\{\}";/,
+  "tagless or unterminated frames stay malformed for the shared one-retry path",
+);
+assert.match(
+  source,
+  /isPromptEnhancementRecommendationCurrent/,
+  "stale suggestions are cleared and rejected before Apply",
+);
+{
+  const completion = source.match(
+    /const item = agentic\.state\.items\.find[\s\S]*?announce\("Enhanced prompt ready — apply or dismiss\.", "polite"\);/,
+  )?.[0] ?? "";
+  const freshness = completion.search(
+    /isPromptEnhancementRecommendationCurrent\(\s*recommendation,\s*currentContextFingerprintRef\.current,\s*\)/,
+  );
+  const handled = completion.indexOf("handledRecommendationRef.current = recommendation.id");
+  const settle = completion.indexOf("settleEnhance(activeRequest.baseDraft, draftRef.current)");
+  assert.ok(freshness >= 0, "completion rechecks the newest context fingerprint");
+  assert.ok(
+    freshness < handled && freshness < settle,
+    "a same-act deferred completion cannot mark or auto-apply after files, task, or model scope changed",
+  );
+}
 
 // ── Model call: ephemeral, hidden, cheap, abortable ──────────────────────────
 assert.match(source, /origin: "enhance"/, "enhance runs carry the hidden 'enhance' session origin");
 assert.doesNotMatch(source, /sessionId:/, "enhance runs are ephemeral — no session resume");
 assert.match(source, /permissionMode: "read"/, "enhance runs force read-only harness permissions");
-assert.match(source, /runId,/, "enhance runs include a stop-targetable run id");
+assert.match(source, /runId: request\.runId/, "enhance runs include a stop-targetable run id");
 assert.match(source, /reasoningEffort: "low"/, "enhance runs use low reasoning effort");
 assert.match(source, /responseSpeed: "fast"/, "enhance runs request fast responses");
-assert.match(source, /signal: controller\.signal/, "the stream is abortable (cancel + unmount)");
+assert.match(source, /signal: controller\.signal/, "the stream is abortable through the shared lifecycle");
 assert.match(
   source,
-  /useEffect\(\(\) => \(\) => \{[\s\S]*stopEnhanceRun\(runIdRef\.current\)[\s\S]*abortRef\.current\?\.abort\(\);[\s\S]*\}, \[\]\)/,
-  "unmount stops and aborts an in-flight stream",
+  /cancelRun: stopEnhanceRun/,
+  "shared lifecycle cancellation stops the ephemeral familiar run",
 );
 assert.match(
   source,
@@ -75,12 +125,12 @@ assert.match(
 );
 assert.match(
   source,
-  /buildPromptEnhancement\(\{ draft: baseDraft, mode, context \}\)/,
+  /draft: activeRequest\.baseDraft,[\s\S]*?mode,[\s\S]*?context: contextRef\.current/,
   "the local rule engine survives as the offline/failure fallback",
 );
 assert.match(
   source,
-  /if \(!familiarId\) \{/,
+  /if \(!familiarIdRef\.current\)/,
   "no familiar selected → immediate local fallback (no doomed stream attempt)",
 );
 assert.doesNotMatch(

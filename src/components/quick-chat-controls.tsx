@@ -815,6 +815,7 @@ export function QuickChatComposer({
         onDismiss={promptEnhance.dismiss}
         onRevert={promptEnhance.revert}
         onCancel={promptEnhance.cancel}
+        onFocusComposer={() => composerRef?.current?.focus()}
       />
       <div className="quick-chat-overlay__actions">
         {leading}

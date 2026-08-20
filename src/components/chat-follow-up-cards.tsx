@@ -51,28 +51,45 @@ export function FollowUpCards({ paths, onActivate, recommended = true }: FollowU
           const isRecommended = recommended && index === 0;
           const accessibleName = `${meta.label}: ${path.label}. ${meta.outcome}${
             isRecommended ? ". Recommended." : ""
-          }`;
+          }${path.metadata ? ` Why this: ${path.metadata.rationale}` : ""}`;
           return (
-            <button
-              key={`${path.kind}:${path.label}:${index}`}
-              type="button"
-              className="cave-followup-card focus-ring"
-              onClick={() => onActivate(path)}
-              aria-label={accessibleName}
-            >
-              <span className="cave-followup-card__type">
-                <Icon name={meta.icon} width={14} aria-hidden />
-                {meta.label}
-                {isRecommended ? (
-                  <span className="cave-followup-card__recommended">Recommended</span>
-                ) : null}
-              </span>
-              <span className="cave-followup-card__separator" aria-hidden>
-                ·
-              </span>
-              <strong className="cave-followup-card__title">{path.label}</strong>
-              <span className="cave-followup-card__outcome">{meta.outcome}</span>
-            </button>
+            <article className="cave-followup-card__entry" key={`${path.kind}:${path.label}:${index}`}>
+              <button
+                type="button"
+                className="cave-followup-card focus-ring"
+                onClick={() => onActivate(path)}
+                aria-label={accessibleName}
+              >
+                <span className="cave-followup-card__type">
+                  <Icon name={meta.icon} width={14} aria-hidden />
+                  {meta.label}
+                  {isRecommended ? (
+                    <span className="cave-followup-card__recommended">Recommended</span>
+                  ) : null}
+                </span>
+                <span className="cave-followup-card__separator" aria-hidden>
+                  ·
+                </span>
+                <strong className="cave-followup-card__title">{path.label}</strong>
+                <span className="cave-followup-card__outcome">{meta.outcome}</span>
+              </button>
+              {path.metadata ? (
+                <details className="cave-followup-card__details">
+                  <summary className="focus-ring">Why this?</summary>
+                  <p>{path.metadata.rationale}</p>
+                  <div className="cave-followup-card__evidence" aria-label="Evidence">
+                    <span>Evidence</span>
+                    <div>
+                      {path.metadata.evidenceRefs.map((evidence) => (
+                        <span className="ui-pill" key={`${evidence.kind}:${evidence.id}`}>
+                          {evidence.kind}: {evidence.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              ) : null}
+            </article>
           );
         })}
       </div>
