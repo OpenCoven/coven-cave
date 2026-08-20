@@ -3,10 +3,15 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CanonicalMemoryMarkdown } from "./canonical-memory-markdown.tsx";
+import { LiveRegionProvider } from "./ui/live-region.tsx";
 
 function render(content: string, mode: "rendered" | "raw" = "rendered"): string {
   return renderToStaticMarkup(
-    createElement(CanonicalMemoryMarkdown, { content, mode }),
+    createElement(
+      LiveRegionProvider,
+      null,
+      createElement(CanonicalMemoryMarkdown, { content, mode }),
+    ),
   );
 }
 
@@ -60,7 +65,11 @@ test("safe links preserve only the intended navigation behavior", () => {
 test("Mermaid stays plain code without diagram or DOM post-processing", () => {
   const markup = render("```mermaid\ngraph TD; A-->B\n```");
   assertNoActiveContent(markup);
-  assert.match(markup, /<pre><code[^>]*>graph TD; A--&gt;B<\/code><\/pre>/);
+  assert.match(markup, /class="document-reader__code-frame document-reader__wide-block"/);
+  assert.match(markup, />mermaid</);
+  assert.match(markup, /aria-label="Copy code"/);
+  assert.match(markup, /aria-label="Wrap code"/);
+  assert.match(markup, /<pre[^>]*><code[^>]*>graph TD; A--&gt;B<\/code><\/pre>/);
 });
 
 test("raw mode is React-escaped text", () => {
@@ -88,9 +97,12 @@ test("lists, tables, and callouts use escaped semantic elements", () => {
     ].join("\n"),
   );
   assertNoActiveContent(markup);
-  assert.match(markup, /<ul>/);
+  assert.match(markup, /<ul class="document-reader__list document-reader__list--unordered">/);
   assert.match(markup, /<li>.*&lt;b&gt;first&lt;\/b&gt;.*<\/li>/);
   assert.match(markup, /<table>/);
+  assert.match(markup, /class="document-reader__table-frame document-reader__wide-block focus-ring"/);
+  assert.match(markup, /tabindex="0"/);
+  assert.match(markup, /scope="col"/);
   assert.match(markup, /<thead>/);
   assert.match(markup, /<tbody>/);
   assert.match(markup, /&lt;script&gt;never&lt;\/script&gt;/);

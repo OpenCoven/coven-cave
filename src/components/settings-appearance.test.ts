@@ -392,7 +392,7 @@ assert.match(
 );
 
 for (const independentApply of [
-  "applyFontPair", "applyScreenScale", "applyReadingLeading", "applyReadingTracking",
+  "applyFontPair", "applyScreenScale", "applyReadingSize", "applyReadingLeading", "applyReadingTracking",
   "applyReadingAlign", "applyReadingWidth", "applyReadingWeight", "applyReadingHyphens",
   "applyCornerRadius", "applyBackdropToDocument",
 ]) {

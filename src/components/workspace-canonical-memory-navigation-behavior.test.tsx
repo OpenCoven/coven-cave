@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -35,6 +35,28 @@ vi.mock("@/components/canonical-memory-reader", () => ({
     title: "Memory unavailable",
     subtitle: "Try again.",
   }),
+}));
+vi.mock("@/components/ui/live-region", () => ({
+  useAnnouncer: () => ({ announce: vi.fn() }),
+}));
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: { children: ReactNode }) => <>{children}</>,
+  PopoverBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PopoverLabel: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  PopoverItem: ({
+    children,
+    onSelect,
+    checked,
+  }: {
+    children: ReactNode;
+    onSelect?: () => void;
+    checked?: boolean;
+  }) => (
+    <button type="button" aria-pressed={checked} onClick={onSelect}>
+      {children}
+    </button>
+  ),
+  PopoverSeparator: () => <hr />,
 }));
 vi.mock("@/lib/surface-preferences", async () => {
   const { useState } = await import("react");
@@ -118,11 +140,20 @@ function canonicalReaderCount(renderer: ReactTestRenderer): number {
   ).length;
 }
 
+function renderedText(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(renderedText).join("");
+  if (value && typeof value === "object" && "children" in value) {
+    return renderedText((value as { children: unknown }).children);
+  }
+  return "";
+}
+
 function staleButton(renderer: ReactTestRenderer) {
   const button = renderer.root.findAllByType("button").find(
     (candidate) =>
       candidate.props["aria-pressed"] !== undefined &&
-      candidate.children.join("").includes("Stale"),
+      renderedText(candidate.children).startsWith("Stale only"),
   );
   expect(button).toBeTruthy();
   return button!;
@@ -290,12 +321,7 @@ describe("canonical palette handoff into the mounted memory view", () => {
       renderer.root.findByProps({ "data-testid": "parent-pending" }).children,
     ).toEqual(["cleared"]);
     expect(acknowledgements).toEqual([entry.id]);
-    const staleButton = renderer.root.findAllByType("button").find(
-      (button) =>
-        button.props["aria-pressed"] !== undefined &&
-        button.children.join("").includes("Stale"),
-    );
-    expect(staleButton?.props["aria-pressed"]).toBe(true);
+    expect(staleButton(renderer).props["aria-pressed"]).toBe(true);
     await act(async () => renderer.unmount());
   });
 

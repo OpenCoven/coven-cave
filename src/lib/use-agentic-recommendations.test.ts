@@ -117,6 +117,17 @@ async function flush() {
   await flush();
   assert.equal(calls, 1, "manual refresh starts one shared recommendation run");
   assert.equal(lifecycle.getState().phase, "review");
+  lifecycle.update({ ...context, rawDraft: "Draft two" });
+  assert.equal(
+    lifecycle.getState().phase,
+    "review",
+    "a same-context rerender preserves a manual recommendation under review",
+  );
+  assert.equal(
+    lifecycle.getState().items[0]?.recommendation.id,
+    "chat-recommendation",
+    "a same-context rerender keeps the review item available",
+  );
 }
 
 // The debounce is keyed to durable meaning, not the full context fingerprint.
