@@ -6,6 +6,10 @@ import {
   isUtcTimestamp,
   utcTimestampToProtocolNanoseconds,
 } from "./common.ts";
+import {
+  snapshotProtocolArrayElements,
+  snapshotProtocolObjectProperties,
+} from "./option-shell.ts";
 
 test("UTC RFC 3339 timestamps accept ordinary timestamps and historical leap seconds", () => {
   for (const value of [
@@ -122,4 +126,159 @@ test("the protocol timeline counts positive leap seconds in elapsed durations", 
       utcTimestampToProtocolNanoseconds("2016-12-31T12:00:00Z"),
     BigInt(86_400) * second,
   );
+});
+
+test("protocol option shells accept only ordinary data containers", () => {
+  assert.equal(
+    snapshotProtocolObjectProperties(
+      Object.freeze({ freshConsent: true }),
+      "$.options",
+      "options",
+    ).ok,
+    true,
+  );
+  assert.equal(
+    snapshotProtocolArrayElements(
+      Object.freeze([{ freshConsent: true }]),
+      "$.options",
+      "options",
+    ).ok,
+    true,
+  );
+
+  for (const value of [
+    new Map([["freshConsent", true]]),
+    Object.create({ freshConsent: true }),
+    Object.defineProperty({}, "freshConsent", {
+      enumerable: true,
+      get() {
+        throw new Error("must not execute");
+      },
+    }),
+    Object.defineProperty({}, Symbol("hidden"), {
+      enumerable: true,
+      value: true,
+    }),
+    new Proxy({}, {
+      ownKeys() {
+        throw new Error("must not execute");
+      },
+    }),
+  ]) {
+    assert.equal(
+      snapshotProtocolObjectProperties(value, "$.options", "options").ok,
+      false,
+    );
+  }
+});
+
+test("protocol option shells reject frozen Web intrinsics after prototype spoofing", () => {
+  const factories: Array<readonly [string, () => object]> = [
+    ["URLSearchParams", () => new URLSearchParams("freshConsent=true")],
+    ["Headers", () => new Headers({ accept: "application/json" })],
+    ["Request", () => new Request("https://example.com/research")],
+    ["Response", () => new Response(null, { status: 204 })],
+    ["FormData", () => new FormData()],
+    ["Blob", () => new Blob(["research"])],
+    ["AbortController", () => new AbortController()],
+    ["AbortSignal", () => new AbortController().signal],
+    ["ReadableStream", () => new ReadableStream()],
+    ["WritableStream", () => new WritableStream()],
+    ["TransformStream", () => new TransformStream()],
+    ["TextEncoder", () => new TextEncoder()],
+    ["TextDecoder", () => new TextDecoder()],
+    ["DOMException", () => new DOMException("research", "DataError")],
+    ["Intl.Collator", () => new Intl.Collator()],
+    ["Intl.DateTimeFormat", () => new Intl.DateTimeFormat()],
+    ["Intl.NumberFormat", () => new Intl.NumberFormat()],
+    ["Intl.PluralRules", () => new Intl.PluralRules()],
+    ["Intl.RelativeTimeFormat", () => new Intl.RelativeTimeFormat()],
+  ];
+  if (typeof Intl.DisplayNames === "function") {
+    factories.push([
+      "Intl.DisplayNames",
+      () => new Intl.DisplayNames(["en"], { type: "language" }),
+    ]);
+  }
+  if (typeof Intl.ListFormat === "function") {
+    factories.push(["Intl.ListFormat", () => new Intl.ListFormat()]);
+  }
+  if (typeof Intl.Segmenter === "function") {
+    factories.push(["Intl.Segmenter", () => new Intl.Segmenter()]);
+  }
+  factories.push(
+    [
+      "WebAssembly.Module",
+      () => new WebAssembly.Module(
+        Uint8Array.of(0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00),
+      ),
+    ],
+    ["WebAssembly.Memory", () => new WebAssembly.Memory({ initial: 1 })],
+    [
+      "WebAssembly.Table",
+      () => new WebAssembly.Table({ element: "externref", initial: 0 }),
+    ],
+    [
+      "WebAssembly.Global",
+      () => new WebAssembly.Global({ value: "i32" }, 0),
+    ],
+  );
+
+  for (const [label, create] of factories) {
+    for (const prototype of [Object.prototype, null]) {
+      const value = create();
+      Object.setPrototypeOf(value, prototype);
+      Object.assign(value, { freshConsent: true });
+      Object.freeze(value);
+      const result = snapshotProtocolObjectProperties(
+        value,
+        "$.options",
+        "options",
+      );
+      assert.equal(result.ok, false, label);
+    }
+  }
+});
+
+test("protocol option probing fails closed on nested proxies and preserves fetch state", () => {
+  const nestedProxy = new Proxy({}, {
+    ownKeys() {
+      throw new Error("must not execute");
+    },
+  });
+  assert.equal(
+    snapshotProtocolObjectProperties(
+      { manifestHistory: [nestedProxy] },
+      "$.options",
+      "options",
+    ).ok,
+    false,
+  );
+
+  let deep: Record<string, unknown> = { leaf: true };
+  for (let index = 0; index < 1_000; index += 1) {
+    deep = { nested: deep };
+  }
+  assert.equal(
+    snapshotProtocolObjectProperties(
+      { manifestHistory: [deep] },
+      "$.options",
+      "options",
+    ).ok,
+    true,
+  );
+
+  const request = new Request("https://example.com/research", {
+    method: "POST",
+    body: "research",
+  });
+  const originalPrototype = Object.getPrototypeOf(request);
+  const result = snapshotProtocolObjectProperties(
+    request,
+    "$.options",
+    "options",
+  );
+  assert.equal(result.ok, false);
+  assert.equal(Object.getPrototypeOf(request), originalPrototype);
+  assert.equal(request.bodyUsed, false);
 });
