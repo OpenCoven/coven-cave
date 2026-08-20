@@ -559,7 +559,7 @@ export function weakestCycleEdge(
     const parent = byId.get(cycle[(index + 1) % cycle.length]);
     if (!child || !parent) continue;
     const edge = child.edges.find((entry) => entry.needs === parent.id);
-    if (!edge || edge.pinned || edge.origin === "human") continue;
+    if (!edge || edge.pinned || edge.origin === "human" || edge.origin === "overlay") continue;
     const score =
       parent.state === "done" || edge.state !== "unresolved"
         ? 0
