@@ -4,6 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import {
   FINAL_TAG_PATTERN,
+  LEGACY_RECOVERY_FINAL_VERSION_EXCLUSIVE,
   LEGACY_RELEASE_PUBLISHED_BEFORE,
   LEGACY_RELEASE_WORKFLOW_ID,
   RC_TAG_PATTERN,
@@ -294,15 +295,16 @@ test("candidate evidence pagination refuses cross-origin links and more than 20 
 });
 
 test("legacy recovery constants are pinned", () => {
+  assert.equal(LEGACY_RECOVERY_FINAL_VERSION_EXCLUSIVE, "0.2.4");
   assert.equal(LEGACY_RELEASE_PUBLISHED_BEFORE, Date.parse("2026-08-17T08:21:59Z"));
   assert.equal(LEGACY_RELEASE_WORKFLOW_ID, 286550155);
 });
 
-test("manual final release authorizes matching pre-cutoff legacy evidence", async () => {
-  const { fetchImpl } = legacyFixture();
+test("manual final release authorizes matching pre-cutoff legacy evidence only before v0.2.4", async () => {
+  const { fetchImpl } = legacyFixture({ finalTag: "v0.2.3" });
   const result = await authorizeRelease(
     baseOptions({
-      tag: "v1.2.3",
+      tag: "v0.2.3",
       eventName: "workflow_dispatch",
       expectedCommit: undefined,
       fetchImpl,
@@ -310,8 +312,8 @@ test("manual final release authorizes matching pre-cutoff legacy evidence", asyn
     }),
   );
   assert.deepEqual(result, {
-    finalTag: "v1.2.3",
-    version: "1.2.3",
+    finalTag: "v0.2.3",
+    version: "0.2.3",
     commit: COMMIT,
     legacyRecovery: true,
     candidateTag: null,
@@ -323,10 +325,10 @@ test("manual final release authorizes matching pre-cutoff legacy evidence", asyn
 });
 
 test("legacy run lookup follows a same-repository next page", async () => {
-  const { fetchImpl, calls } = legacyFixture({ legacyRunPage: 2 });
+  const { fetchImpl, calls } = legacyFixture({ finalTag: "v0.2.3", legacyRunPage: 2 });
   const result = await authorizeRelease(
     baseOptions({
-      tag: "v1.2.3",
+      tag: "v0.2.3",
       eventName: "workflow_dispatch",
       expectedCommit: undefined,
       fetchImpl,
@@ -335,6 +337,26 @@ test("legacy run lookup follows a same-repository next page", async () => {
   );
   assert.equal(result.legacyRunId, 700);
   assert.ok(calls.some((call) => call.url.includes("page=2")));
+});
+
+test("v0.2.4 and later manual finals fall through closed despite legacy-shaped evidence", async (t) => {
+  for (const tag of ["v0.2.4", "v0.3.0"]) {
+    await t.test(tag, async () => {
+      const { fetchImpl } = legacyFixture({ finalTag: tag });
+      await assert.rejects(
+        authorizeRelease(
+          baseOptions({
+            tag,
+            eventName: "workflow_dispatch",
+            expectedCommit: undefined,
+            fetchImpl,
+            git: gitFixture(),
+          }),
+        ),
+        /no valid release-candidate validation run/,
+      );
+    });
+  }
 });
 
 test("legacy recovery requires all historical evidence and otherwise falls through closed", async (t) => {
@@ -362,11 +384,11 @@ test("legacy recovery requires all historical evidence and otherwise falls throu
   ];
   for (const [name, fixture] of cases) {
     await t.test(name, async () => {
-      const { fetchImpl } = legacyFixture(fixture);
+      const { fetchImpl } = legacyFixture({ finalTag: "v0.2.3", ...fixture });
       await assert.rejects(
         authorizeRelease(
           baseOptions({
-            tag: "v1.2.3",
+            tag: "v0.2.3",
             eventName: fixture.eventName ?? "workflow_dispatch",
             expectedCommit: fixture.eventName === "push" ? COMMIT : undefined,
             fetchImpl,
@@ -503,6 +525,7 @@ function releaseEvidenceFixture({
 }
 
 function legacyFixture({
+  finalTag = "v0.2.3",
   releaseStatus = 200,
   release = {},
   legacyRun = {},
@@ -510,7 +533,7 @@ function legacyFixture({
 } = {}) {
   return githubFixture({
     routes: ({ pathname, searchParams }) => {
-      if (pathname.endsWith("/releases/tags/v1.2.3")) {
+      if (pathname.endsWith(`/releases/tags/${finalTag}`)) {
         if (releaseStatus === 404) return jsonResponse({ message: "Not Found" }, {}, 404);
         return jsonResponse({
           draft: false,
@@ -523,7 +546,7 @@ function legacyFixture({
           return jsonResponse(
             { workflow_runs: [] },
             {
-              link: `<${API}/repos/OpenCoven/coven-cave/actions/workflows/${LEGACY_RELEASE_WORKFLOW_ID}/runs?branch=v1.2.3&event=push&status=success&per_page=100&page=2>; rel="next"`,
+              link: `<${API}/repos/OpenCoven/coven-cave/actions/workflows/${LEGACY_RELEASE_WORKFLOW_ID}/runs?branch=${finalTag}&event=push&status=success&per_page=100&page=2>; rel="next"`,
             },
           );
         }
@@ -535,7 +558,7 @@ function legacyFixture({
               event: "push",
               status: "completed",
               conclusion: "success",
-              head_branch: "v1.2.3",
+              head_branch: finalTag,
               head_sha: COMMIT,
               created_at: "2026-08-17T08:21:57Z",
               updated_at: "2026-08-17T08:21:58Z",

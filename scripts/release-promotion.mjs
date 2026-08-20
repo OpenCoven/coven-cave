@@ -9,6 +9,7 @@ export const FINAL_TAG_PATTERN =
   /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 export const LEGACY_RELEASE_PUBLISHED_BEFORE = Date.parse("2026-08-17T08:21:59Z");
 export const LEGACY_RELEASE_WORKFLOW_ID = 286550155;
+export const LEGACY_RECOVERY_FINAL_VERSION_EXCLUSIVE = "0.2.4";
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
 const ISO_TIMESTAMP_PATTERN =
@@ -70,7 +71,7 @@ export async function authorizeRelease(options = {}) {
   await proveMainAncestry(context, final.tag, verifiedFinal.commit);
 
   if (context.eventName === "workflow_dispatch") {
-    const legacy = await findLegacyRecovery(context, final.tag, verifiedFinal.commit);
+    const legacy = await findLegacyRecovery(context, final, verifiedFinal.commit);
     if (legacy) {
       return {
         finalTag: final.tag,
@@ -233,7 +234,12 @@ async function runGit(context, args) {
   };
 }
 
-async function findLegacyRecovery(context, finalTag, commit) {
+async function findLegacyRecovery(context, final, commit) {
+  if (!isVersionBefore(final.version, LEGACY_RECOVERY_FINAL_VERSION_EXCLUSIVE)) {
+    return null;
+  }
+
+  const finalTag = final.tag;
   const release = await requestJson(
     context,
     `${context.repositoryPath}/releases/tags/${encodeURIComponent(finalTag)}`,
@@ -270,6 +276,22 @@ async function findLegacyRecovery(context, finalTag, commit) {
   return match
     ? { id: match.id, htmlUrl: validRunUrl(context, match.html_url, match.id) }
     : null;
+}
+
+function isVersionBefore(version, threshold) {
+  const versionParts = version.split(".");
+  const thresholdParts = threshold.split(".");
+  for (let index = 0; index < versionParts.length; index += 1) {
+    const comparison = compareNumericStrings(versionParts[index], thresholdParts[index]);
+    if (comparison !== 0) return comparison < 0;
+  }
+  return false;
+}
+
+function compareNumericStrings(left, right) {
+  if (left.length !== right.length) return left.length < right.length ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 async function findCandidateEvidence(context, final, commit) {

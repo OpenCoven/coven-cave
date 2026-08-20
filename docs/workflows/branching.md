@@ -74,6 +74,11 @@ Release work should start only after branch consolidation:
    Final release authorization re-verifies both tags through GitHub and rejects
    a different version or commit before packaging, release metadata, updater
    publication, or TestFlight work starts.
+   The only legacy-recovery exception is a manually dispatched final release
+   strictly before `v0.2.4` with an existing non-draft GitHub Release published
+   before the legacy cutoff and a matching successful legacy push run whose
+   creation and update timestamps precede that cutoff. Final versions `v0.2.4`
+   and later always require signed release-candidate promotion.
 9. Record the build/version, candidate and final tags, exact promoted SHA,
    validation run, upload artifacts, and App Store Connect status in the
    release handoff.

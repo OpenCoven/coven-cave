@@ -93,6 +93,9 @@ test("candidate validation requires signed tag provenance and calls every deferr
     "pnpm test:api",
     "pnpm test:mobile",
   ]);
+  assert.deepEqual(full.jobs.frontend.env, {
+    NEXT_PUBLIC_CAVE_CRAFTS: "1",
+  });
   assert.match(
     full.jobs.frontend.steps.at(-1).run,
     /for attempt in 1 2 3; do[\s\S]*pnpm build[\s\S]*rm -rf \.next/,
@@ -103,10 +106,24 @@ test("candidate validation requires signed tag provenance and calls every deferr
     /cargo check --locked[\s\S]*cargo test --locked --lib/,
     "Rust validation includes the persisted mobile-token library coverage",
   );
+  const e2eRuns = full.jobs.e2e.steps.map((step) => step.run ?? "").join("\n");
   assert.match(
-    full.jobs.e2e.steps.map((step) => step.run ?? "").join("\n"),
-    /playwright install --with-deps chromium webkit[\s\S]*pnpm exec playwright test/,
+    e2eRuns,
+    /playwright install --with-deps chromium webkit/,
+    "candidate E2E installs both required browser engines",
   );
+  assert.ok(
+    full.jobs.e2e.steps.some((step) => step.run === "pnpm exec playwright test"),
+    "candidate E2E retains the default Chromium and WebKit coverage",
+  );
+  const agenticE2e = full.jobs.e2e.steps.find(
+    (step) =>
+      step.run ===
+      "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+  );
+  assert.deepEqual(agenticE2e?.env, {
+    NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1",
+  });
   assert.deepEqual(full.jobs.runtime.strategy.matrix.os, [
     "ubuntu-24.04",
     "windows-latest",
