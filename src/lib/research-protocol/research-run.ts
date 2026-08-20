@@ -30,6 +30,10 @@ import {
 import {
   validateSafeDeletionExtensionKeys,
 } from "./privacy-extension.ts";
+import {
+  snapshotProtocolArrayElements,
+  snapshotProtocolObjectProperties,
+} from "./option-shell.ts";
 
 const RESEARCH_RUN_SCHEMA = "opencoven.research-run/v1";
 const RESEARCH_RUN_SCHEMA_RE = /^opencoven\.research-run\/v(\d+)$/;
@@ -241,40 +245,26 @@ function parseReplayRevisionOptions(
   value: readonly ResearchRunManifestRevisionOptionsV1[] | undefined,
 ): ProtocolParseResult<ParsedReplayRevisionOptions[]> {
   if (value === undefined) return pass([]);
-  const wireValue = copyProtocolJsonValue(value);
-  if (!wireValue.ok) {
-    return {
-      ok: false,
-      error: {
-        ...wireValue.error,
-        path: prefixProtocolErrorPath(
-          wireValue.error.path,
-          "$.manifestRevisionOptions",
-        ),
-      },
-    };
-  }
-  if (!Array.isArray(wireValue.value)) {
-    return fail(
-      "invalid_type",
-      "$.manifestRevisionOptions",
-      "manifestRevisionOptions must be an array",
-    );
-  }
+  const wireValue = snapshotProtocolArrayElements(
+    value,
+    "$.manifestRevisionOptions",
+    "manifestRevisionOptions",
+  );
+  if (!wireValue.ok) return wireValue;
 
   const parsed: ParsedReplayRevisionOptions[] = [];
   const revisions = new Set<number>();
   const digests = new Set<string>();
   for (const [index, entryValue] of wireValue.value.entries()) {
     const entryPath = `$.manifestRevisionOptions[${index}]`;
-    if (!isRecord(entryValue)) {
-      return fail(
-        "invalid_type",
-        entryPath,
-        "A manifest revision option must be an object",
-      );
-    }
-    for (const key of Object.keys(entryValue)) {
+    const entry = snapshotProtocolObjectProperties(
+      entryValue,
+      entryPath,
+      "A manifest revision option",
+    );
+    if (!entry.ok) return entry;
+    const entryRecord = entry.value;
+    for (const key of Object.keys(entryRecord)) {
       if (!REPLAY_REVISION_OPTION_FIELDS.has(key)) {
         return fail(
           "invalid_value",
@@ -284,7 +274,7 @@ function parseReplayRevisionOptions(
       }
     }
 
-    const successorRevision = entryValue.successorRevision;
+    const successorRevision = entryRecord.successorRevision;
     if (
       typeof successorRevision !== "number" ||
       !Number.isSafeInteger(successorRevision) ||
@@ -296,7 +286,7 @@ function parseReplayRevisionOptions(
         "successorRevision must be a safe integer of at least 2",
       );
     }
-    const successorDigest = entryValue.successorDigest;
+    const successorDigest = entryRecord.successorDigest;
     if (!isSha256(successorDigest)) {
       return fail(
         "invalid_value",
@@ -322,31 +312,31 @@ function parseReplayRevisionOptions(
     digests.add(successorDigest);
 
     const revisionOptions: ManifestRevisionOptions = {};
-    if (Object.hasOwn(entryValue, "freshConsent")) {
-      if (typeof entryValue.freshConsent !== "boolean") {
+    if (Object.hasOwn(entryRecord, "freshConsent")) {
+      if (typeof entryRecord.freshConsent !== "boolean") {
         return fail(
           "invalid_type",
           `${entryPath}.freshConsent`,
           "freshConsent must be a boolean",
         );
       }
-      revisionOptions.freshConsent = entryValue.freshConsent;
+      revisionOptions.freshConsent = entryRecord.freshConsent;
     }
-    if (Object.hasOwn(entryValue, "freshConsentAt")) {
-      if (!isUtcTimestamp(entryValue.freshConsentAt)) {
+    if (Object.hasOwn(entryRecord, "freshConsentAt")) {
+      if (!isUtcTimestamp(entryRecord.freshConsentAt)) {
         return fail(
           "invalid_value",
           `${entryPath}.freshConsentAt`,
           "freshConsentAt must be a UTC RFC 3339 timestamp",
         );
       }
-      revisionOptions.freshConsentAt = entryValue.freshConsentAt;
+      revisionOptions.freshConsentAt = entryRecord.freshConsentAt;
     }
-    if (Object.hasOwn(entryValue, "contextConsent")) {
+    if (Object.hasOwn(entryRecord, "contextConsent")) {
       if (
-        typeof entryValue.contextConsent !== "string" ||
+        typeof entryRecord.contextConsent !== "string" ||
         !RETENTION_POLICIES.includes(
-          entryValue.contextConsent as RetentionPolicyV1,
+          entryRecord.contextConsent as RetentionPolicyV1,
         )
       ) {
         return fail(
@@ -356,7 +346,7 @@ function parseReplayRevisionOptions(
         );
       }
       revisionOptions.contextConsent =
-        entryValue.contextConsent as RetentionPolicyV1;
+        entryRecord.contextConsent as RetentionPolicyV1;
     }
 
     parsed.push({
@@ -865,8 +855,35 @@ export function validateResearchRunContextPackV1(
   contextPack?: ContextPackV1,
   options: ResearchRunContextPackValidationOptionsV1 = {},
 ): ProtocolParseResult<ResearchRunV1> {
+  const wireOptions = snapshotProtocolObjectProperties(
+    options,
+    "$.options",
+    "Research Run composition options",
+  );
+  if (!wireOptions.ok) return wireOptions;
+  for (const key of Object.keys(wireOptions.value)) {
+    if (key !== "manifestHistory" && key !== "manifestRevisionOptions") {
+      return fail(
+        "invalid_value",
+        childPath("$.options", key),
+        `Unknown Research Run composition option ${key}`,
+      );
+    }
+  }
+  let manifestHistory: readonly unknown[] | undefined;
+  if (Object.hasOwn(wireOptions.value, "manifestHistory")) {
+    const history = snapshotProtocolArrayElements(
+      wireOptions.value.manifestHistory,
+      "$.manifestHistory",
+      "manifestHistory",
+    );
+    if (!history.ok) return history;
+    manifestHistory = history.value;
+  }
   const revisionOptions = parseReplayRevisionOptions(
-    options.manifestRevisionOptions,
+    wireOptions.value.manifestRevisionOptions as
+      | readonly ResearchRunManifestRevisionOptionsV1[]
+      | undefined,
   );
   if (!revisionOptions.ok) return revisionOptions;
   if (!run.context) {
@@ -882,7 +899,7 @@ export function validateResearchRunContextPackV1(
         run.artifactManifest,
         run,
         undefined,
-        options.manifestHistory,
+        manifestHistory,
         revisionOptions.value,
       );
       if (!authority.ok) return authority;
@@ -980,7 +997,7 @@ export function validateResearchRunContextPackV1(
       run.artifactManifest,
       run,
       trustedContextPack,
-      options.manifestHistory,
+      manifestHistory,
       revisionOptions.value,
     );
     if (!authority.ok) return authority;

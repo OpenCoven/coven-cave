@@ -3456,3 +3456,35 @@ test("canonical copying preserves own __proto__ fields and rejects non-JSON obje
   };
   expectError(parseRunManifestV1(withDate), "$", "invalid_value");
 });
+
+test("manifest revision validation rejects exotic option shells before provenance checks", () => {
+  const params = new URLSearchParams("freshConsent=true");
+  Object.setPrototypeOf(params, Object.prototype);
+  Object.freeze(params);
+
+  expectError(
+    validateRunManifestRevisionV1(
+      {} as RunManifestV1,
+      {},
+      params as unknown as Parameters<typeof validateRunManifestRevisionV1>[2],
+    ),
+    "$.options",
+    "invalid_value",
+  );
+
+  const options = Object.defineProperty({}, "freshConsent", {
+    enumerable: true,
+    get() {
+      throw new Error("option getter must not execute");
+    },
+  });
+  expectError(
+    validateRunManifestRevisionV1(
+      {} as RunManifestV1,
+      {},
+      options,
+    ),
+    "$.options",
+    "invalid_value",
+  );
+});
