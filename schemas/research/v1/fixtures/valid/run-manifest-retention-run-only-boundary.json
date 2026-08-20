@@ -1,0 +1,30 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_run_only_boundary",
+  "runId": "run_run_only_boundary",
+  "digest": "7d1f14b750cafb24364d221ededeee8baa41892a03bdfcb44721be3e5ba2bb22",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2026-08-17T20:04:00.000Z",
+    "updatedAt": "2026-08-16T20:04:00.000Z"
+  },
+  "deletion": {
+    "status": "scheduled",
+    "requestedAt": "2026-08-16T20:04:00.000Z"
+  }
+}
