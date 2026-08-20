@@ -79,11 +79,6 @@ description = "Allows opening only a validated X OAuth authorization URL."
 commands.allow = ["open_x_oauth_url"]
 
 [[permission]]
-identifier = "allow-set-traffic-lights-visible"
-description = "Allows trusted app chrome to synchronize macOS traffic-light visibility with the navigation rail."
-commands.allow = ["set_traffic_lights_visible"]
-
-[[permission]]
 identifier = "allow-browser-report-title"
 description = "Allows child browser webviews to report their document title via Rust."
 commands.allow = ["browser_report_title"]

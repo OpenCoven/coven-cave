@@ -109,38 +109,6 @@ mod native_startup_terminal_tests {
     }
 }
 
-/// Keep the native macOS window controls in sync with the primary side panel.
-/// When the side panel is closed the shell asks for them to disappear, Dia-style,
-/// and brings them back the moment the panel (or its hover-peek) opens.
-#[cfg(desktop)]
-#[tauri::command]
-fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
-    #[cfg(target_os = "macos")]
-    {
-        let win = window.clone();
-        let _ = window.run_on_main_thread(move || {
-            let Ok(ns_ptr) = win.ns_window() else { return };
-            unsafe {
-                use objc2::msg_send;
-                use objc2::runtime::AnyObject;
-                let ns_window = ns_ptr as *mut AnyObject;
-                // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
-                for kind in 0u64..=2u64 {
-                    let button: *mut AnyObject =
-                        msg_send![&*ns_window, standardWindowButton: kind];
-                    if !button.is_null() {
-                        let _: () = msg_send![&*button, setHidden: !visible];
-                    }
-                }
-            }
-        });
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (window, visible);
-    }
-}
-
 #[cfg(all(test, desktop))]
 #[path = "shell_open_tests.rs"]
 mod shell_open_tests;
@@ -298,7 +266,6 @@ pub fn run() {
             open_x_oauth_url,
             shell_open_path,
             shell_pick_directory,
-            set_traffic_lights_visible,
             #[cfg(target_os = "macos")]
             microphone::microphone_permission_request,
             #[cfg(target_os = "macos")]
