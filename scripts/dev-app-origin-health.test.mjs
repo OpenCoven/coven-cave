@@ -49,6 +49,26 @@ assert.equal(
 );
 assert.equal(persistedTokenPath, "/tmp/cave-probe-state/access-token");
 
+let capturedAuthorization = "";
+assert.equal(
+  await loopbackOriginResponds({
+    port: 3007,
+    timeoutMs: 500,
+    accessToken: "probe-secret",
+    fetchImpl: async (_url, options) => {
+      capturedAuthorization = options.headers?.authorization ?? "";
+      return { status: 204 };
+    },
+  }),
+  true,
+  "an authenticated readiness response should be accepted",
+);
+assert.equal(
+  capturedAuthorization,
+  ["Bearer", "probe-secret"].join(" "),
+  "the readiness probe must send the access token as a Bearer authorization header",
+);
+
 const ready = http.createServer((_, response) => {
   response.writeHead(204);
   response.end();
