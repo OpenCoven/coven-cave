@@ -391,6 +391,7 @@ export function createAgenticRecommendationsLifecycle<TContext>(
       latestMeaningfulContextKey = meaningfulContextKey;
 
       if (!autoGenerate) {
+        if (!didFingerprintChange) return;
         if (active && didFingerprintChange && !stopActive(active)) return;
         if (active) return;
         setState(newState("idle", {
@@ -547,7 +548,9 @@ export function useAgenticRecommendations<TContext>(
 ) {
   const { context, enabled = true, generate, apply, cancelRun, ...lifecycleOptions } = options;
   const callbacksRef = useRef({ generate, apply, cancelRun });
+  const contextRef = useRef(context);
   callbacksRef.current = { generate, apply, cancelRun };
+  contextRef.current = context;
   const lifecycleRef = useRef<AgenticRecommendationsLifecycle<TContext> | null>(null);
 
   if (!lifecycleRef.current) {
@@ -579,10 +582,14 @@ export function useAgenticRecommendations<TContext>(
     const runId = lifecycle.getState().runId;
     return runId ? lifecycle.cancel(runId) : false;
   }, [lifecycle]);
+  const refresh = useCallback(() => {
+    lifecycle.update(contextRef.current);
+    lifecycle.refresh();
+  }, [lifecycle]);
 
   return {
     state,
-    refresh: lifecycle.refresh,
+    refresh,
     cancel,
     review: lifecycle.review,
     dismiss: lifecycle.dismiss,

@@ -64,6 +64,14 @@ import {
   type ReadingHyphens,
 } from "@/lib/reading-hyphens";
 import {
+  READER_TEXT_SCALE_DEFAULT_INDEX,
+  READER_TEXT_SCALE_STEPS,
+  loadScaleIndex,
+  saveScaleIndex,
+  scaleLabel,
+} from "@/lib/reader-text-scale";
+import { applyReadingSize } from "@/components/reading-size-controller";
+import {
   CLOCK_LABEL,
   CLOCK_OPTIONS,
   DATE_LABEL,
@@ -222,6 +230,7 @@ export function FontSettings() {
   const [pairId, setPairId] = useState<string>(DEFAULT_FONT_PAIR_ID);
   const [scale, setScale] = useState<ScreenScale>(DEFAULT_SCREEN_SCALE);
   const [leading, setLeading] = useState<ReadingLeading>(DEFAULT_READING_LEADING);
+  const [readingSize, setReadingSize] = useState(READER_TEXT_SCALE_DEFAULT_INDEX);
   const [tracking, setTracking] = useState<ReadingTracking>(DEFAULT_READING_TRACKING);
   const [align, setAlign] = useState<ReadingAlign>(DEFAULT_READING_ALIGN);
   const [width, setWidth] = useState<ReadingWidth>(DEFAULT_READING_WIDTH);
@@ -238,6 +247,7 @@ export function FontSettings() {
     // The mounted Screen/Reading controllers already applied these on load;
     // we only mirror them into local UI state.
     setScale(readScreenScale());
+    setReadingSize(loadScaleIndex());
     setLeading(readReadingLeading());
     setTracking(readReadingTracking());
     setAlign(readReadingAlign());
@@ -274,6 +284,12 @@ export function FontSettings() {
     applyReadingLeading(next);
   };
 
+  const setReaderSize = (next: number) => {
+    setReadingSize(next);
+    saveScaleIndex(next);
+    applyReadingSize(next);
+  };
+
   const setLetterSpacing = (next: ReadingTracking) => {
     setTracking(next);
     applyReadingTracking(next);
@@ -302,6 +318,7 @@ export function FontSettings() {
   const reset = () => {
     selectPair(DEFAULT_FONT_PAIR_ID);
     setTextSize(DEFAULT_SCREEN_SCALE);
+    setReaderSize(READER_TEXT_SCALE_DEFAULT_INDEX);
     setLineSpacing(DEFAULT_READING_LEADING);
     setLetterSpacing(DEFAULT_READING_TRACKING);
     setTextAlign(DEFAULT_READING_ALIGN);
@@ -313,6 +330,7 @@ export function FontSettings() {
   const isDefault =
     pairId === DEFAULT_FONT_PAIR_ID &&
     scale === DEFAULT_SCREEN_SCALE &&
+    readingSize === READER_TEXT_SCALE_DEFAULT_INDEX &&
     leading === DEFAULT_READING_LEADING &&
     tracking === DEFAULT_READING_TRACKING &&
     align === DEFAULT_READING_ALIGN &&
@@ -369,6 +387,21 @@ export function FontSettings() {
 
       {/* Reading text — one shared caption, then compact label/control rows. */}
       <SettingsGroup label="Reading text" description="Applies to chat and memory.">
+          <ReadingRow label="Reader size">
+            <div className={segWrap}>
+              {READER_TEXT_SCALE_STEPS.map((_, index) => (
+                <SegmentButton
+                  key={index}
+                  onClick={() => setReaderSize(index)}
+                  aria-pressed={readingSize === index}
+                  aria-label={`Reader size ${scaleLabel(index)}`}
+                  active={readingSize === index}
+                >
+                  {scaleLabel(index)}
+                </SegmentButton>
+              ))}
+            </div>
+          </ReadingRow>
           <ReadingRow label="Line spacing">
             <div className={segWrap}>
               {READING_LEADING_OPTIONS.map((option) => (

@@ -256,6 +256,12 @@ Non-negotiables, all with existing primitives:
 - **Tri-pane shell**: nav (240px, collapses to rail/peek) · list (260px) ·
   detail, resizable. The window never scrolls (`html,body { overflow:hidden }`);
   every pane owns its overflow.
+- **Threaded Reading Room**: long-form `DocumentReader` content uses one
+  preference contract and a default prose measure near 66ch. Tables and code
+  use a separate wider, locally scrolling track; Research adds evidence in an
+  adaptive dock rather than restating base prose typography. The reader outline
+  and Memories Continue / Recall / Weave home share the functional memory
+  thread; reduced motion changes its state instantly.
 - **Container queries over media queries**: surfaces respond to *their pane's*
   width (`@container composer (max-width: 480px)` …), because any surface can
   be split, docked, or narrowed independent of the viewport.
@@ -429,4 +435,6 @@ roster + voice samples) · `docs/superpowers/specs/` (per-surface `*-design.md`
 decisions; `docs/specs/` holds the frozen predecessors) ·
 `src/styles/globals/foundations.css` (the annotated token contract) ·
 `src/styles/globals/themes.css` (per-theme palettes) ·
-`src/styles/globals/primitives.css` (shared `.ui-*` classes).*
+`src/styles/globals/primitives.css` (shared `.ui-*` classes) ·
+[ui.opencoven.ai](https://ui.opencoven.ai) (standalone chat-surface specimens —
+exploratory direction only, never authoritative over shipped code).*

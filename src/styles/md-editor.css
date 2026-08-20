@@ -68,10 +68,18 @@
 /* The ProseMirror page itself: comfortable document measure and the app's
  * reading rhythm instead of Crepe's defaults. */
 .md-editor-visual .milkdown .ProseMirror {
-  padding: var(--space-4) var(--space-5) 48px;
-  font-size: var(--text-base);
-  line-height: 1.65;
+  box-sizing: border-box;
+  width: min(100%, var(--cave-reading-width, 66ch));
+  margin-inline: auto;
+  padding: var(--space-4) var(--space-5) var(--space-12);
   color: var(--text-primary);
+  font-size: calc(var(--text-lg) * var(--cave-reading-size-scale, 1));
+  font-weight: var(--cave-reading-weight, 400);
+  line-height: var(--cave-reading-leading, 1.65);
+  letter-spacing: var(--cave-reading-tracking, 0);
+  text-align: var(--cave-reading-align, left);
+  -webkit-hyphens: var(--cave-reading-hyphens, manual);
+  hyphens: var(--cave-reading-hyphens, manual);
   caret-color: var(--accent-presence);
 }
 

@@ -206,6 +206,20 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
+      "/api/memory?familiarId=cody",
+      {
+        ok: true,
+        entries: score === "trusted"
+          ? []
+          : [{
+              familiarId: "cody",
+              relPath: "MEMORY.md",
+              fullPath: "/tmp/cody/MEMORY.md",
+              modified: "2026-06-25T12:00:00.000Z",
+            }],
+      },
+    ],
+    [
       "/api/retro-runs",
       {
         ok: true,
@@ -512,6 +526,21 @@ describe("FamiliarAnalyticsView", () => {
           }),
         } as unknown as Response;
       }
+      if (String(url) === "/api/memory?familiarId=cody") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            entries: [{
+              familiarId: "cody",
+              relPath: "MEMORY.md",
+              fullPath: "/tmp/cody/MEMORY.md",
+              modified: "2026-06-25T12:00:00.000Z",
+            }],
+          }),
+        } as unknown as Response;
+      }
       return realFetch(url);
     }) as typeof fetch;
 
@@ -520,11 +549,12 @@ describe("FamiliarAnalyticsView", () => {
 
     assert.equal(data.covenEntries.length, 0);
     assert.equal(data.memoryAvailability, "unavailable");
-    assert.ok(model.errors.some((message) => message.includes("memory unavailable")));
-    assert.equal(model.progression?.memoryAvailability, "unavailable");
+    assert.equal(data.fileMemoryAvailability, "ready");
+    assert.ok(model.errors.some((message) => message.includes("canonical memory unavailable")));
+    assert.equal(model.progression?.memoryAvailability, "ready");
     assert.ok(
       !model.growthReport?.signals.some((signal) => signal.kind === "no-memory"),
-      "a failed list must not invent a no-memory growth signal",
+      "workspace memory prevents a false no-memory signal when canonical memory is unavailable",
     );
   });
 

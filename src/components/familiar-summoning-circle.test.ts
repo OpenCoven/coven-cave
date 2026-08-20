@@ -72,6 +72,36 @@ assert.match(
 );
 assert.match(
   source,
+  /active && v\.kind === "local" \? " summoning-vessel--expanded" : ""/,
+  "selecting the first local vessel expands it across the available panel width",
+);
+assert.match(
+  source,
+  /<span className="summoning-vessel__action" aria-hidden>[\s\S]*?\{active \? "Selected" : "Choose"\}/,
+  "vessel cards name the hovered and selected action instead of relying on a border-only cue",
+);
+assert.match(
+  source,
+  /<span className=\{labelClass\}>Available runtimes<\/span>[\s\S]*?className="summoning-runtime-grid"/,
+  "local and SSH vessel selections reveal a clearly labelled full-width runtime panel",
+);
+assert.match(
+  source,
+  /summoning-runtime-option--active[\s\S]*?ph:check-circle-fill/,
+  "the chosen runtime has a persistent checkmark in addition to its color treatment",
+);
+assert.match(
+  css,
+  /\.summoning-vessel:hover,[\s\S]*?background:[\s\S]*?box-shadow:/,
+  "hovered vessel cards receive a visible raised surface treatment",
+);
+assert.match(
+  css,
+  /\.summoning-runtime-panel \{[\s\S]*?width: 100%;[\s\S]*?\.summoning-runtime-grid \{[\s\S]*?width: 100%;/,
+  "the available-runtime panel and option grid consume the full working width",
+);
+assert.match(
+  source,
   /Runs on \$\{localHost\}, the host serving this Cave\./,
   "the local vessel explains what the hostname identifies",
 );

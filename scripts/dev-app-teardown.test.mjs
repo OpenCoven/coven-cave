@@ -79,6 +79,7 @@ writeFileSync(path.join(fakeScripts, "whisper-runtime-dev-env.sh"), "# stub for 
 const fakePnpm = (port, pidFile) => `#!/usr/bin/env bash
 if [ "$1" = "dev" ]; then
 echo "server $$" >>"${pidFile}"
+echo "server_token $COVEN_CAVE_AUTH_TOKEN" >>"${pidFile}"
 node -e '
   const http = require("http");
   const fs = require("fs");
@@ -95,6 +96,7 @@ child=$!
 wait "$child"
 else
 echo "tauri $$" >>"${pidFile}"
+echo "tauri_token $COVEN_CAVE_AUTH_TOKEN" >>"${pidFile}"
 node -e "setInterval(() => {}, 1000)" &
 child=$!
 wait "$child"
@@ -166,6 +168,16 @@ async function assertTeardown(signal) {
     });
     assert.ok(pids.tauri, "the launcher must actually start the Tauri child");
     assert.ok(pids.server, "the Tauri child must own the dev server process");
+    assert.match(
+      pids.server_token,
+      /^[0-9a-f]{64}$/,
+      "an absent dev sidecar token must be minted before the server starts",
+    );
+    assert.equal(
+      pids.tauri_token,
+      pids.server_token,
+      "the Tauri WebView and dev server must receive the same per-launch token",
+    );
 
     process.kill(wrapper.pid, signal);
 

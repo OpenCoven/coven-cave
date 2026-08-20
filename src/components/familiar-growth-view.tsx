@@ -13,6 +13,7 @@ import {
   ACTIVITY_DAYS,
   buildFamiliarCardStats,
   type CanonicalMemoryAvailability,
+  type FamiliarFileMemoryStat,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import { FamiliarGrowthReport } from "@/components/familiar-growth-report";
@@ -36,11 +37,17 @@ type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
   | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
 
+type FileMemoryResponse =
+  | { ok: true; entries: FamiliarFileMemoryStat[] }
+  | { ok: false; entries?: FamiliarFileMemoryStat[]; error?: string };
+
 export type FamiliarGrowthInitialData = {
   familiars: Familiar[];
   sessions: SessionRow[];
   covenEntries: CanonicalMemorySummary[];
   memoryAvailability: CanonicalMemoryAvailability;
+  fileEntries: FamiliarFileMemoryStat[];
+  fileMemoryAvailability: CanonicalMemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
 };
 
@@ -64,6 +71,8 @@ const EMPTY_DATA: FamiliarGrowthInitialData = {
   sessions: [],
   covenEntries: [],
   memoryAvailability: "unavailable",
+  fileEntries: [],
+  fileMemoryAvailability: "unavailable",
   retroSnapshot: EMPTY_SNAPSHOT,
 };
 
@@ -167,28 +176,38 @@ export function FamiliarGrowthView({
     if (quiet) setRefreshing(true);
     else setLoading(true);
     try {
-      const [familiarsJson, sessionsJson, memoryJson, retroJson] = await Promise.all([
+      const [familiarsJson, sessionsJson, memoryJson, fileMemoryJson, retroJson] = await Promise.all([
         getJson<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
         getJson<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
         loadCanonicalMemoryList(),
+        getJson<FileMemoryResponse>("/api/memory", { ok: false, entries: [] }),
         getJson<RetroApiResponse>("/api/retro-runs", { ok: false }),
       ]);
       if (generation.current !== gen) return;
 
+      const fileMemoryReady = fileMemoryJson.ok && Array.isArray(fileMemoryJson.entries);
+      const fileEntries = fileMemoryReady
+        ? fileMemoryJson.entries
+        : [];
       const nextData: FamiliarGrowthInitialData = {
         familiars: familiarsJson.familiars ?? [],
         sessions: sessionsJson.sessions ?? [],
         covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
         memoryAvailability:
           memoryJson.state === "ready" ? "ready" : "unavailable",
+        fileEntries,
+        fileMemoryAvailability: fileMemoryReady ? "ready" : "unavailable",
         retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
       };
       const errors = [
         familiarsJson.ok ? null : familiarsJson.error ?? "familiars unavailable",
         sessionsJson.ok ? null : sessionsJson.error ?? "sessions unavailable",
         memoryJson.state === "error"
-          ? `memory unavailable (${memoryJson.error.code})`
+          ? `canonical memory unavailable (${memoryJson.error.code})`
           : null,
+        fileMemoryJson.ok
+          ? fileMemoryReady ? null : "workspace memory returned invalid payload"
+          : fileMemoryJson.error ?? "workspace memory unavailable",
         retroJson.ok ? null : retroJson.error ?? "retro runs unavailable",
       ].filter(Boolean);
 
@@ -225,9 +244,19 @@ export function FamiliarGrowthView({
       sessions: data.sessions,
       covenEntries: data.covenEntries,
       memoryAvailability: data.memoryAvailability,
+      fileEntries: data.fileEntries,
+      fileMemoryAvailability: data.fileMemoryAvailability,
       now,
     }),
-    [data.covenEntries, data.familiars, data.memoryAvailability, data.sessions, now],
+    [
+      data.covenEntries,
+      data.familiars,
+      data.fileEntries,
+      data.fileMemoryAvailability,
+      data.memoryAvailability,
+      data.sessions,
+      now,
+    ],
   );
   const retroStates = useMemo(() => stateByFamiliar(data.retroSnapshot), [data.retroSnapshot]);
 

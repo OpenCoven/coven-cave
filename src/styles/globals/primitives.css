@@ -1467,7 +1467,6 @@ html[data-backdrop-on] .glass-overlay {
   }
   .ui-modal,
   .ui-dock-chat,
-  .shell-nav-panel > .shell-nav--peek,
   .cave-cal-detail-panel,
   .familiar-studio__drawer {
     background: var(--bg-raised);
@@ -1491,7 +1490,6 @@ html[data-backdrop-on] .glass-overlay {
   }
   .ui-modal,
   .ui-dock-chat,
-  .shell-nav-panel > .shell-nav--peek,
   .cave-cal-detail-panel,
   .familiar-studio__drawer {
     background: var(--bg-raised);

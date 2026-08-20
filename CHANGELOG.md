@@ -7,6 +7,10 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Fixed
+- Verify Cave’s private Coven CLI after first-run installation on Windows even
+  when the inherited environment spells `Path` with different casing.
+
 ## [0.3.7] - 2026-08-19
 
 > A calmer native iOS shell, clearer Chats, and a safer cross-platform foundation.

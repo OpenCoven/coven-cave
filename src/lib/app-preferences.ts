@@ -38,6 +38,7 @@ const LEGACY_KEYS = [
   "cave:font:sans",
   "cave:font:mono",
   "cave:screen-scale",
+  "cave:reader:text-scale",
   "cave:reading-leading",
   "cave:reading-tracking",
   "cave:reading-align",

@@ -222,9 +222,20 @@ export function managedNodeSpawnEnv(
   if (!paths) return null;
   const pathOps = pathApi(paths.platform);
   const nodeBin = pathOps.dirname(paths.node);
-  const parts = [paths.npmBin, nodeBin, base.PATH].filter(Boolean);
+  const basePath =
+    base.PATH ??
+    (paths.platform === "win32"
+      ? Object.entries(base).find(([key]) => key.toUpperCase() === "PATH")?.[1]
+      : undefined);
+  const parts = [paths.npmBin, nodeBin, basePath].filter(Boolean);
+  const env = { ...base };
+  if (paths.platform === "win32") {
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "PATH") delete env[key];
+    }
+  }
   return {
-    ...base,
+    ...env,
     PATH: parts.join(paths.platform === "win32" ? ";" : ":"),
     NPM_CONFIG_PREFIX: paths.npmPrefix,
     npm_config_prefix: paths.npmPrefix,
