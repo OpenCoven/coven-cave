@@ -157,6 +157,15 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
   assert.deepEqual(release.on.push.tags, ["v*.*.*", "!v*.*.*-*"]);
   assert.equal(authorization.name, "Authorize release promotion");
   assert.deepEqual(authorization.permissions, { actions: "read", contents: "read" });
+  const authorizationCheckout = authorization.steps.find((step) =>
+    step.uses?.startsWith("actions/checkout@"),
+  );
+  assert.equal(
+    authorizationCheckout?.with?.["fetch-depth"],
+    0,
+    "authorization must retain full history for merge-base checks on historical manual tags",
+  );
+  assert.equal(authorizationCheckout?.with?.["persist-credentials"], false);
   assert.match(
     authorization.steps.map((step) => step.run ?? "").join("\n"),
     /node scripts\/release-promotion\.mjs release/,
