@@ -957,6 +957,8 @@ export const SUITES = {
     "src/components/image-carousel-fill.test.ts",
     "src/components/chat-spec-card.test.ts",
     "src/components/chat-spec-card-wiring.test.ts",
+    "src/components/chat-markdown-reader.test.ts",
+    "src/lib/file-ref-open.test.ts",
     "src/lib/gh-card-commands.test.ts",
     "src/lib/gh-review-draft.test.ts",
     "src/components/skill-stage-card-wiring.test.ts",
