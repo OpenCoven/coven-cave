@@ -151,6 +151,17 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 
+# The packaged app always gives its sidecar and WebView the same ephemeral
+# credential. Mirror that contract in dev even when the caller did not provide
+# one: server.ts may re-arm the persisted mobile-access gate for this port, and
+# a tokenless WebView would otherwise receive 401s from every API route.
+if [ -z "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
+  COVEN_CAVE_AUTH_TOKEN="$(
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
+  )"
+  export COVEN_CAVE_AUTH_TOKEN
+fi
+
 # The launcher starts both the Tauri dev process and its owned server with this
 # secret. Carry it into the browser-side bridge through the URL fragment so it
 # never participates in Next's module URL resolution or reaches the HTTP server.
