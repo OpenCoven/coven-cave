@@ -1531,7 +1531,7 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
     parseContextPackV1(
       recalculateContextPack({
         ...validContextPack,
-        createdAt: "2026-08-16T20:05:30.000Z",
+        createdAt: "2026-08-16T20:04:30.000Z",
         consent: {
           ...validContextPack.consent,
           retention: "project",
@@ -1616,7 +1616,21 @@ test("embedded retention lengthening requires revision-1-rooted replay and authe
       manifestRevisionOptions: [
         replayConsent(
           extendedManifest,
-          "2026-08-16T20:05:15.000Z",
+          "2026-08-16T20:05:00.000Z",
+          "project",
+        ),
+      ],
+    }),
+    "$.manifestRevisionOptions[0].freshConsentAt",
+    "semantic_conflict",
+  );
+  expectError(
+    validateResearchRunContextPackV1(parsedRun, freshPack, {
+      manifestHistory: serializedHistory,
+      manifestRevisionOptions: [
+        replayConsent(
+          extendedManifest,
+          "2026-08-16T20:06:00.000000001Z",
           "project",
         ),
       ],
@@ -1979,11 +1993,11 @@ test("embedded replay consumes one explicit keyed option per lengthening transit
   for (const [firstConsentAt, path] of [
     [
       "2026-08-16T20:05:00.000Z",
-      "$.manifestHistory[1].retention.contentExpiresAt",
+      "$.manifestRevisionOptions[0].freshConsentAt",
     ],
     [
       "2026-08-16T20:06:00.000000001Z",
-      "$.manifestHistory[1].retention.contentExpiresAt",
+      "$.manifestRevisionOptions[0].freshConsentAt",
     ],
   ] as const) {
     expectError(
