@@ -19,7 +19,11 @@ const nextConfigSource = await readFile(new URL("../next.config.ts", import.meta
 const proxyHelpersSource = await readFile(new URL("./proxy-helpers.ts", import.meta.url), "utf8");
 
 assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16 proxy entrypoint should guard requests");
-assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
+assert.match(
+  source,
+  /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\|pdf\.worker\.min\.mjs\)\.\*\)"\]/,
+  "proxy should guard API and mobile browser routes while leaving the public pdf.js worker loadable",
+);
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
 assert.match(source, /isValidResearchMediaTicketRequest/, "proxy should accept only the restricted native media ticket when a media element cannot send the sidecar header");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
