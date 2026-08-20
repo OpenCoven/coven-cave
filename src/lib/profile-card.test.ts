@@ -82,17 +82,24 @@ describe("subjectSessions", () => {
 });
 
 describe("buildProfileHeatmap", () => {
-  it("spans a trailing 365-day window ending today, in full Sun→Sat columns", () => {
+  it("starts new or empty profiles at a trailing 90-day window", () => {
     const heatmap = buildProfileHeatmap([], NOW);
-    assert.equal(heatmap.windowDays, 365);
+    assert.equal(heatmap.windowDays, 90);
     for (const week of heatmap.weeks) assert.equal(week.length, 7);
     const cells = heatmap.weeks.flat().filter((cell) => cell !== null);
-    assert.equal(cells.length, 365);
+    assert.equal(cells.length, 90);
     assert.equal(cells[cells.length - 1]?.key, "2026-07-14");
-    assert.equal(cells[0]?.key, "2025-07-15");
+    assert.equal(cells[0]?.key, "2026-04-16");
     // 2026-07-14 is a Tuesday — the final column pads Wed..Sat with nulls.
     const lastWeek = heatmap.weeks[heatmap.weeks.length - 1];
     assert.equal(lastWeek.filter((cell) => cell === null).length, 4);
+  });
+
+  it("expands the window from 90 to 180 to 365 days as the profile history matures", () => {
+    assert.equal(buildProfileHeatmap([session({ updated_at: iso(89) })], NOW).windowDays, 90);
+    assert.equal(buildProfileHeatmap([session({ updated_at: iso(90) })], NOW).windowDays, 180);
+    assert.equal(buildProfileHeatmap([session({ updated_at: iso(179) })], NOW).windowDays, 180);
+    assert.equal(buildProfileHeatmap([session({ updated_at: iso(180) })], NOW).windowDays, 365);
   });
 
   it("counts sessions per UTC day and ignores rows outside the window", () => {
@@ -130,7 +137,7 @@ describe("buildProfileHeatmap", () => {
   });
 
   it("labels each month once with no cramped leading label", () => {
-    const heatmap = buildProfileHeatmap([], NOW);
+    const heatmap = buildProfileHeatmap([session({ updated_at: iso(180) })], NOW);
     assert.ok(heatmap.monthLabels.length >= 12 && heatmap.monthLabels.length <= 13);
     for (const label of heatmap.monthLabels) {
       assert.match(label.label, /^[A-Z]{3}$/);

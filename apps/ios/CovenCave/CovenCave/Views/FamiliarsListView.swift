@@ -1,5 +1,96 @@
 import SwiftUI
 
+enum FamiliarsListCopy {
+    static let cachedAccessBanner = "Showing cached familiar access"
+
+    static func emptyState(for context: ProjectContext?) -> (title: String, message: String) {
+        switch context {
+        case .project(let project):
+            return (
+                "No familiars have access",
+                "No familiars have access to \(project.name) yet."
+            )
+        case .unassigned:
+            return ("No recovery familiars", ProjectContextCopy.unassignedRecovery)
+        case nil:
+            return ("Choose a project", "Choose a project in Chats to see its familiar roster.")
+        }
+    }
+}
+
+@MainActor
+struct FamiliarsListPresentation {
+    enum Mode: Equatable {
+        case loading
+        case firstLoadError(String)
+        case empty(title: String, message: String)
+        case list
+    }
+
+    let visibleFamiliars: [Familiar]
+    let showsCachedAccessBanner: Bool
+    let mode: Mode
+
+    init(app: AppModel) {
+        visibleFamiliars = app.projectFamiliars
+        showsCachedAccessBanner = app.projectMembershipLoaded && app.familiarsError != nil
+
+        guard app.projectMembershipLoaded else {
+            if let error = app.familiarsError {
+                mode = .firstLoadError(error)
+            } else {
+                mode = .loading
+            }
+            return
+        }
+
+        if visibleFamiliars.isEmpty {
+            let copy = FamiliarsListCopy.emptyState(for: app.projectContext)
+            mode = .empty(title: copy.title, message: copy.message)
+        } else {
+            mode = .list
+        }
+    }
+}
+
+@MainActor
+struct FamiliarDetailStatsModel {
+    let chats: String
+    let activity: String
+    let tasks: String
+    let memory: String
+
+    static func make(
+        app: AppModel,
+        familiar: Familiar,
+        context: ProjectContext?
+    ) -> FamiliarDetailStatsModel {
+        let chatCount = context.map { app.threadCount(for: familiar.id, in: $0) } ?? 0
+        let assignedTasks = context.map { scopedContext in
+            app.tasks.filter {
+                scopedContext.matches(task: $0, registeredProjects: app.projects)
+                    && $0.familiarId == familiar.id
+                    && $0.status.isActive
+            }
+        } ?? []
+        let taskValue = app.tasksError == nil
+            ? "\(assignedTasks.count)"
+            : app.tasks.isEmpty ? "Unknown" : "\(assignedTasks.count) cached"
+
+        return FamiliarDetailStatsModel(
+            chats: "\(chatCount)",
+            activity: activityValue(for: context.flatMap { app.lastActivity(for: familiar.id, in: $0) }),
+            tasks: taskValue,
+            memory: familiar.memoryFreshness ?? "Unknown"
+        )
+    }
+
+    static func activityValue(for lastActivity: Date?) -> String {
+        guard let lastActivity else { return "No activity yet" }
+        return lastActivity.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
 /// The all-familiars roster (design: "Familiars" drawer destination): every
 /// summoned familiar with its avatar, role, and live presence. Tapping one
 /// dismisses the sheet and routes to that familiar's threads.
@@ -12,9 +103,15 @@ struct FamiliarsListView: View {
     var openFamiliar: (Familiar) -> Void
 
     var body: some View {
+        let presentation = FamiliarsListPresentation(app: app)
         NavigationStack {
             Group {
-                if let error = app.familiarsError, app.familiars.isEmpty {
+                switch presentation.mode {
+                case .loading:
+                    ProgressView("Loading familiars…")
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .firstLoadError(let error):
                     ContentUnavailableView {
                         Label("Couldn’t load familiars", systemImage: "exclamationmark.triangle")
                     } description: {
@@ -23,14 +120,14 @@ struct FamiliarsListView: View {
                         Button("Retry") { Task { await app.loadFamiliars() } }
                             .buttonStyle(.borderedProminent)
                     }
-                } else if app.familiars.isEmpty {
+                case .empty(let title, let message):
                     ContentUnavailableView {
-                        Label("No familiars", systemImage: "cat")
+                        Label(title, systemImage: app.projectContext == .unassigned ? "tray.full" : "cat")
                     } description: {
-                        Text("Familiars summoned on the desktop appear here.")
+                        Text(message)
                     }
-                } else {
-                    List(app.familiars) { familiar in
+                case .list:
+                    List(presentation.visibleFamiliars) { familiar in
                         NavigationLink {
                             FamiliarDetailView(familiar: familiar) {
                                 dismiss()
@@ -47,10 +144,10 @@ struct FamiliarsListView: View {
             }
             .themedListBackground()
             .safeAreaInset(edge: .top, spacing: 0) {
-                if app.familiarsError != nil, !app.familiars.isEmpty {
+                if presentation.showsCachedAccessBanner {
                     HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle")
-                        Text("Showing cached familiars")
+                        Text(FamiliarsListCopy.cachedAccessBanner)
                             .font(.footnote)
                         Spacer()
                         Button("Retry") { Task { await app.loadFamiliars() } }
@@ -140,8 +237,12 @@ struct FamiliarDetailView: View {
     @State private var changingModel = false
     @State private var modelMutationQueue = ChatModelMutationQueue()
 
-    private var assignedTasks: [BoardCard] {
-        app.tasks.filter { $0.familiarId == familiar.id && $0.status.isActive }
+    private var scopedContext: ProjectContext? {
+        app.projectContext
+    }
+
+    private var statsModel: FamiliarDetailStatsModel {
+        FamiliarDetailStatsModel.make(app: app, familiar: familiar, context: scopedContext)
     }
 
     private var modelLoadTarget: ChatModelRequestTarget {
@@ -262,20 +363,10 @@ struct FamiliarDetailView: View {
 
     private var stats: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            statCard("Sessions", value: "\(app.threadCount(for: familiar.id))", icon: "bubble.left")
-            statCard(
-                "Active",
-                value: familiar.activeSessions.map(String.init) ?? "Unknown",
-                icon: "bolt.fill"
-            )
-            statCard(
-                "Tasks",
-                value: app.tasksError == nil
-                    ? "\(assignedTasks.count)"
-                    : app.tasks.isEmpty ? "Unknown" : "\(assignedTasks.count) cached",
-                icon: "checkmark.square"
-            )
-            statCard("Memory", value: familiar.memoryFreshness ?? "Unknown", icon: "brain")
+            statCard("Chats", value: statsModel.chats, icon: "bubble.left")
+            statCard("Activity", value: statsModel.activity, icon: "clock")
+            statCard("Tasks", value: statsModel.tasks, icon: "checkmark.square")
+            statCard("Memory", value: statsModel.memory, icon: "brain")
         }
     }
 

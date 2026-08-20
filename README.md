@@ -346,8 +346,9 @@ lifecycle metadata required for safe retirement. Follow the post-merge
 retirement procedure in [`AGENTS.md`](AGENTS.md) instead of deleting a branch or
 worktree ad hoc.
 
-- **Releases, TestFlight uploads, and updater validation start from clean
-  `main`.**
+- **Releases, TestFlight uploads, and updater validation start from a successful
+  signed release candidate on clean `main`, followed by a signed final tag on
+  that exact commit.**
 - See [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) for the workflow
   notes coding agents follow, and
   [`docs/workflows/branching.md`](docs/workflows/branching.md) for branch/release

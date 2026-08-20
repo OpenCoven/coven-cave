@@ -204,6 +204,16 @@ assert.match(
 assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens should not overwrite the access cookie");
 assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
+assert.match(
+  source,
+  /const accessPromptRequested =\s*req\.nextUrl\.searchParams\.get\(ACCESS_PROMPT_QUERY_PARAM\) === "1"/,
+  "proxy should recognize the explicit browser access-prompt marker",
+);
+assert.match(
+  source,
+  /url\.searchParams\.delete\(ACCESS_TOKEN_QUERY_PARAM\)[\s\S]*url\.searchParams\.delete\(ACCESS_PROMPT_QUERY_PARAM\)/,
+  "successful access-token exchange should remove both authentication query parameters",
+);
 
 // ── User-bound local authentication (cave-ruw4z) ──────────────────────────
 // The local-peer stamp still distinguishes direct from forwarded ingress, but
@@ -232,8 +242,8 @@ assert.match(
 // sockets, so Serve/tailnet traffic can never reach this branch.
 assert.match(
   source,
-  /if \(\s*trustedLocalPeer &&\s*isHtmlNavigationRequest\(req\.method, req\.nextUrl\.pathname, req\.headers\.get\("accept"\)\)\s*\) \{\s*return null;/,
-  "a stamped local-peer document navigation must skip the mobile gate so the app can always load",
+  /if \(\s*shouldBypassMobileAccessGate\(\s*trustedLocalPeer,\s*accessPromptRequested,\s*req\.method,\s*req\.nextUrl\.pathname,\s*req\.headers\.get\("accept"\),?\s*\)\s*\) \{\s*return null;/,
+  "a stamped local-peer document navigation must skip the mobile gate unless it explicitly requests the prompt",
 );
 // The exemption must be navigation-scoped, never a blanket local-peer bypass:
 // `/api/*` keeps requiring the sidecar credential, which is what distinguishes

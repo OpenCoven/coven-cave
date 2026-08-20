@@ -56,6 +56,43 @@ test("DetailSplitHost supports optimized variants for up to four visible pages",
   assert.match(src, /onCloseTile\(tile\.id\)/, "each secondary tile can be closed independently");
 });
 
+test("DetailSplitHost can pin one pane and hover-preview the rest from a right carousel", () => {
+  const src = read("./detail-split-host.tsx");
+  const css = readFileSync(
+    new URL("../styles/globals/surface-chat-overlays.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(src, /const \[pinnedTileId, setPinnedTileId\] = React\.useState<string \| null>\(null\)/);
+  assert.match(src, /const \[previewTileId, setPreviewTileId\] = React\.useState<string \| null>\(null\)/);
+  assert.match(src, /const focusVisibleTileId = previewTileId \?\? pinnedTileId/);
+  assert.match(src, /aria-label=\{pinnedTileId \? "Show all panes" : "Focus current pane"\}/);
+  assert.match(src, /className="split-host__carousel"[\s\S]*role="listbox"/);
+  assert.match(
+    src,
+    /onPointerEnter=\{\(\) => setPreviewTileId\(tile\.id\)\}[\s\S]*onClick=\{\(\) => pinTile\(tile\.id\)\}/,
+    "hover previews and click pins",
+  );
+  assert.match(src, /onPointerLeave=\{\(\) => setPreviewTileId\(null\)\}/);
+  assert.match(src, /data-focus-visible=\{focusVisibleTileId === tile\.id \? "true" : undefined\}/);
+
+  assert.match(
+    css,
+    /\.split-host__pane \{[\s\S]*?border: 0;/,
+    "workspace panes are borderless",
+  );
+  assert.match(
+    css,
+    /\.split-host__group\[data-focus-mode="true"\] \.split-host__tile-panel:not\(\[data-focus-visible="true"\]\) \{[\s\S]*?visibility: hidden;/,
+    "unfocused panes stay mounted but hidden",
+  );
+  assert.match(
+    css,
+    /\.split-host__carousel \{[\s\S]*?position: absolute;[\s\S]*?right: var\(--space-2\);[\s\S]*?flex-direction: column;/,
+    "the pane carousel is a vertical rail on the right",
+  );
+});
+
 test("Shell hosts the split inside the detail main with a drop zone", () => {
   const src = read("./shell.tsx");
   assert.match(src, /import \{ DetailSplitHost, type DetailSplitTile \}/);

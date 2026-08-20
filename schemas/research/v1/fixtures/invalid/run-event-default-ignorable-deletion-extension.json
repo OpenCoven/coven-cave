@@ -1,0 +1,15 @@
+{
+  "expectedSchemaValid": false,
+  "schema": "opencoven.run-event/v1",
+  "runId": "run_deletion_default_ignorable_01",
+  "sequence": 1,
+  "type": "content.deleted",
+  "at": "2026-08-17T19:30:00.000Z",
+  "data": {
+    "deletedObjectCount": 3,
+    "manifestStatus": "deleted",
+    "audit\u2060Trail": {
+      "outcome": "complete"
+    }
+  }
+}

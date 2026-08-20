@@ -249,6 +249,56 @@ try {
   );
   assert.equal((await conversations.loadConversation("offline-chat-1"))?.turns.length, 1);
 
+  await config.recordTravelHubReachability(false, new Date("2026-06-30T12:03:00.000Z"));
+  const archive = Buffer.from("PK durable source bundle");
+  const archiveResponse = await POST(new Request("http://localhost/api/chat/send", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      familiarId: "sage",
+      prompt: "inspect the queued source bundle",
+      projectRoot,
+      sessionId: "offline-chat-attachment",
+      attachments: [{
+        name: "design-handoff.zip",
+        type: "application/zip",
+        mimeType: "application/zip",
+        size: archive.byteLength,
+        dataUrl: `data:application/zip;base64,${archive.toString("base64")}`,
+      }],
+    }),
+  }));
+  const archiveEvents = await readSse(archiveResponse);
+  assert.equal(archiveEvents.findLast((event) => event.kind === "done")?.isError, false);
+  const archiveItem = (await config.loadState()).travel.offlineQueue.find(
+    (item) => item.payload?.sessionId === "offline-chat-attachment",
+  );
+  assert.ok(archiveItem, "the attachment-bearing chat should remain durably queued");
+  const queuedArchive = Array.isArray(archiveItem.payload?.attachments)
+    ? archiveItem.payload.attachments[0]
+    : null;
+  assert.equal(typeof queuedArchive?.storedId, "string");
+  assert.equal("dataUrl" in (queuedArchive ?? {}), false);
+
+  await config.recordTravelHubReachability(true, new Date("2026-06-30T12:04:00.000Z"));
+  const archiveReplay = await replay.syncOfflineTravelQueue(await config.loadConfig(), { maxItems: 1 });
+  assert.equal(archiveReplay.attempted, 1);
+  assert.equal(archiveReplay.synced, 0);
+  assert.equal(archiveReplay.failed, 1);
+  assert.match(
+    archiveReplay.errors[0]?.error ?? "",
+    /queued file attachments cannot be replayed through the current hub session contract/,
+  );
+  assert.equal(
+    sessionRequests.length,
+    1,
+    "an attachment-bearing replay must fail before spawning a lossy hub session",
+  );
+  assert.equal(
+    (await config.loadState()).travel.offlineQueue.find((item) => item.id === archiveItem.id)?.status,
+    "failed",
+  );
+
   console.log("offline-queue-replay.integration.test.ts: ok");
 } finally {
   await closeHub();

@@ -37,24 +37,72 @@ assert.doesNotMatch(
   "no task mutation may reassign the whole tasks array on failure",
 );
 
-// Every in-place mutator reverts just its own card.
+assert.match(model, /private struct TaskMutationToken \{/, "task mutations should carry a per-card token");
+assert.match(model, /private final class TaskMutationCoordinator \{/, "task mutations should have a typed single-flight coordinator");
+assert.match(
+  model,
+  /previousTask\?\.cancel\(\)[\s\S]*_ = await previousTask\?\.result/,
+  "same-field requests should cancel the older task and wait before sending the newer request",
+);
+assert.match(model, /private func beginTaskMutation\(/, "task mutations should register per-card generations");
+assert.match(
+  model,
+  /private func applyTaskServerUpdate\([\s\S]*for token: TaskMutationToken[\s\S]*\) -> Bool/,
+  "task mutations should merge only their authoritative fields back from the server response",
+);
+assert.match(
+  model,
+  /private func revertTaskMutation\([\s\S]*TaskMutationToken[\s\S]*\) -> Bool/,
+  "task mutations should roll back only the fields owned by the failed mutation",
+);
+assert.doesNotMatch(
+  model,
+  /applyTask\(id: card\.id\) \{ \$0 = updated \}/,
+  "task mutations must not replace the whole live card with a stale server echo",
+);
+
+// Every in-place mutator uses the scoped mutation token rather than a whole-card restore.
 for (const fn of [
-  "setTaskStatus",
-  "setTaskPriority",
-  "toggleStep",
-  "commitSteps",
-  "setTaskNotes",
-  "setTaskTitle",
-  "setTaskDates",
+  "requestTaskStatus",
+  "requestTaskPriority",
+  "requestTaskSteps",
+  "requestTaskNotes",
+  "requestTaskTitle",
+  "requestTaskDates",
+  "requestTaskProjectMove",
+  "requestTaskSession",
 ]) {
   const body = blockAfter(model, `func ${fn}(`);
   assert.ok(body, `${fn} must exist`);
   assert.match(
     body,
-    /revertTask\(id: card\.id, to: previous\)/,
-    `${fn} must restore only the card that failed`,
+    /beginTaskMutation\([\s\S]*id: (card\.id|cardId),[\s\S]*field:/,
+    `${fn} must start a scoped task mutation before it writes optimistically`,
+  );
+  assert.match(
+    body,
+    /scheduleTaskMutationRequest\(mutation\)/,
+    `${fn} must run through the task-mutation coordinator`,
+  );
+  assert.doesNotMatch(
+    body,
+    /applyTask\(id: card\.id\) \{ \$0 = updated \}/,
+    `${fn} must not replace the whole card with a stale server echo`,
   );
 }
+
+const move = blockAfter(model, "func requestTaskProjectMove(");
+assert.ok(move, "requestTaskProjectMove must exist");
+assert.match(
+  move,
+  /beginTaskMutation\([\s\S]*id: card\.id,[\s\S]*field: \.projectId[\s\S]*\)/,
+  "moving a task to a project must track projectId with a scoped mutation token",
+);
+assert.match(
+  move,
+  /scheduleTaskMutationRequest\(mutation\)/,
+  "moving a task to a project must route through the same-field coordinator",
+);
 
 // deleteTask is the one that cannot use revertTask: the card is REMOVED, so
 // applyTask finds no index and silently no-ops, dropping the task the delete
@@ -88,15 +136,6 @@ assert.match(
   reinsert,
   /tasks\.insert\(card, at: min\(index, tasks\.count\)\)/,
   "reinsert must clamp the index — the list can be shorter than when the card was removed",
-);
-
-// revertTask itself must stay per-id.
-const revert = blockAfter(model, "private func revertTask(id: String, to previous: [BoardCard]) {");
-assert.ok(revert, "revertTask must exist");
-assert.match(
-  revert,
-  /guard let old = previous\.first\(where: \{ \$0\.id == id \}\) else \{ return \}/,
-  "revertTask must look up a single card by id",
 );
 
 console.log("ios-task-revert-scope: ok");

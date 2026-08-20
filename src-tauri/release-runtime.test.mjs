@@ -523,21 +523,21 @@ test("Windows owned process trees use bounded kernel Job Object cleanup", async 
 
 test("Windows native Rust regression filters are isolated and cannot pass with zero tests", async () => {
   const workflow = await readFile(
-    new URL("../.github/workflows/release.yml", import.meta.url),
+    new URL("../.github/workflows/full-validation.yml", import.meta.url),
     "utf8",
   );
-  const windowsNativeJob = getWorkflowJob(workflow, "release-windows-native");
-  assertWindowsOnlyJob(windowsNativeJob, "release-windows-native");
+  const windowsNativeJob = getWorkflowJob(workflow, "windows-native");
+  assertWindowsOnlyJob(windowsNativeJob, "windows-native");
 
   for (const expected of WINDOWS_NATIVE_RUST_STEPS) {
     assertWindowsNativeRustStep(windowsNativeJob, expected);
   }
   // Checked against BOTH jobs: the filter is cfg-disabled on Windows wherever it
   // is invoked from, so the guard must not lapse just because the steps moved.
-  const sidecarRuntimeJob = getWorkflowJob(workflow, "release-platform-validation");
+  const sidecarRuntimeJob = getWorkflowJob(workflow, "runtime");
   for (const [name, job] of [
-    ["release-windows-native", windowsNativeJob],
-    ["release-platform-validation", sidecarRuntimeJob],
+    ["windows-native", windowsNativeJob],
+    ["runtime", sidecarRuntimeJob],
   ]) {
     assert.doesNotMatch(
       job,
@@ -564,15 +564,15 @@ test("Windows native Rust regression filters are isolated and cannot pass with z
 
 test("Rust mobile access-token coverage follows extracted lifecycle tests", async () => {
   const workflow = await readFile(
-    new URL("../.github/workflows/ci.yml", import.meta.url),
+    new URL("../.github/workflows/full-validation.yml", import.meta.url),
     "utf8",
   );
-  const cargoCheckJob = getWorkflowJob(workflow, "build");
+  const cargoCheckJob = getWorkflowJob(workflow, "rust");
 
   assert.match(
     cargoCheckJob,
     /cargo test --locked --lib/,
-    "path-aware Rust validation must run the full library suite, including persisted mobile-token lifecycle coverage",
+    "candidate Rust validation must run the full library suite, including persisted mobile-token lifecycle coverage",
   );
 });
 
@@ -599,11 +599,11 @@ test("Windows close watchdog helper follows extracted lifecycle tests", async ()
 
 test("Windows conformance runs the native harness parser and DryRun fixture", async () => {
   const workflow = await readFile(
-    new URL("../.github/workflows/release.yml", import.meta.url),
+    new URL("../.github/workflows/full-validation.yml", import.meta.url),
     "utf8",
   );
   const { SUITES } = await import(new URL("../scripts/run-tests.mjs", import.meta.url));
-  const conformanceJob = getWorkflowJob(workflow, "release-platform-validation");
+  const conformanceJob = getWorkflowJob(workflow, "runtime");
   const conformanceStep = getNamedWorkflowStep(
     conformanceJob,
     "Run cross-environment conformance",
@@ -613,7 +613,7 @@ test("Windows conformance runs the native harness parser and DryRun fixture", as
   assert.match(
     conformanceJob,
     /^\s+os: \[ubuntu-24\.04, windows-latest, macos-15\]$/m,
-    "release conformance must retain Linux, Windows, and macOS runners",
+    "candidate conformance must retain Linux, Windows, and macOS runners",
   );
   assert.match(conformanceStep, /^\s+run: pnpm test:conformance$/m);
   assert.deepEqual(

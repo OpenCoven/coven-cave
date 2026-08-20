@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_QUERY_PARAM,
+  ACCESS_PROMPT_QUERY_PARAM,
   TOKEN_PARAM,
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
@@ -19,6 +20,7 @@ import {
   bearerFromReferer,
   bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  shouldBypassMobileAccessGate,
   isTrustedLocalPeer,
   isHtmlNavigationRequest,
   accessGatePage,
@@ -107,6 +109,8 @@ async function mobileAccessGate(
 ) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
+  const accessPromptRequested =
+    req.nextUrl.searchParams.get(ACCESS_PROMPT_QUERY_PARAM) === "1";
 
   // A server.ts-stamped direct loopback DOCUMENT navigation is this machine's
   // own window asking for a page, and it is the one request shape that cannot
@@ -124,8 +128,13 @@ async function mobileAccessGate(
   // the comment on shouldRequireMobileAccessCredential describes, distinguishing
   // the intended local user from other OS users on a shared machine.
   if (
-    trustedLocalPeer &&
-    isHtmlNavigationRequest(req.method, req.nextUrl.pathname, req.headers.get("accept"))
+    shouldBypassMobileAccessGate(
+      trustedLocalPeer,
+      accessPromptRequested,
+      req.method,
+      req.nextUrl.pathname,
+      req.headers.get("accept"),
+    )
   ) {
     return null;
   }
@@ -166,6 +175,7 @@ async function mobileAccessGate(
   if (queryToken && (req.method === "GET" || req.method === "HEAD")) {
     const url = req.nextUrl.clone();
     url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
+    url.searchParams.delete(ACCESS_PROMPT_QUERY_PARAM);
     const res = NextResponse.redirect(url);
     const queryVerification = await isValidMobileAccessCredential({
       supplied: queryToken,

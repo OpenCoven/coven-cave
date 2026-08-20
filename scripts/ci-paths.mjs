@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const FRONTEND_PATH =
-  /^(?:src\/|public\/|server\.(?:mjs|ts)$|scripts\/|tests\/|package\.json$|pnpm-lock\.yaml$|next\.config|playwright\.config|tsconfig|eslint\.config|postcss\.config|\.github\/workflows\/)/;
+  /^(?:src\/|public\/|schemas\/research\/|server\.(?:mjs|ts)$|scripts\/|tests\/|package\.json$|pnpm-lock\.yaml$|next\.config|playwright\.config|tsconfig|eslint\.config|postcss\.config|\.github\/workflows\/)/;
 const RUST_PATH = /^(?:src-tauri\/|Cargo\.(?:toml|lock)$|rust-toolchain)/;
 const ROOT_RUNTIME_PATH = /^[^/]+\.(?:[cm]?[jt]s|tsx?)$/;
 const E2E_PATH =

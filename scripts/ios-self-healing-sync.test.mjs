@@ -35,12 +35,29 @@ assert.match(
   /func recoverConnectionInBackground[\s\S]*?await refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/,
   "background recovery should reload opened surfaces quietly (no .checking blink → no pill flash on healthy path changes)",
 );
-// Refresh became concurrent: core resources (familiars + theme + profile) and
-// every already-opened surface reload in one task group instead of a sequence.
+// Refresh became concurrent: one coherent core-resource reload (project
+// context + familiars + theme + profile) runs beside the remaining already-open
+// surfaces, and reconnect mirrors a failed cached project-context refresh back
+// to the relevant stale-data banners instead of issuing a duplicate load.
 assert.match(
   model,
-  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{ await self\.loadCoreResources\(\) \}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}[\s\S]*?if projectsLoaded \{ group\.addTask \{ await self\.loadProjects\(\) \} \}/,
-  "reconnect should refresh every remaining already-opened surface plus core resources",
+  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?let mirroredProjectContextFailures = loadedProjectContextFailureSurfaces[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{[\s\S]*?await self\.loadCoreResources\([\s\S]*?mirroringProjectContextFailuresTo: mirroredProjectContextFailures[\s\S]*?\)[\s\S]*?\}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}/,
+  "reconnect should refresh remaining loaded surfaces while mirroring cached project-context failures once",
+);
+assert.match(
+  model,
+  /private var loadedProjectContextFailureSurfaces: ProjectContextFailureSurfaces \{[\s\S]*?if projectsLoaded \{[\s\S]*?surfaces\.insert\(\.projects\)[\s\S]*?if familiarsLoaded \{[\s\S]*?surfaces\.insert\(\.familiars\)/,
+  "cached project-context failure mirroring should follow loaded-surface flags, not non-empty arrays",
+);
+assert.doesNotMatch(
+  model,
+  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?group\.addTask \{ await self\.loadProjects\(\) \}/,
+  "reconnect should not duplicate the project-context refresh with a second projects request",
+);
+assert.match(
+  model,
+  /struct ProjectContextFailureSurfaces: OptionSet[\s\S]*?static let projects = Self\(rawValue: 1 << 0\)[\s\S]*?static let familiars = Self\(rawValue: 1 << 1\)/,
+  "project-context failures should be mirrorable to both projects and familiars surfaces",
 );
 assert.match(
   model,
@@ -58,6 +75,21 @@ assert.match(
   model,
   /private func resetHostScopedStateForNewConnection\(\) \{[\s\S]*?familiars = \[\][\s\S]*?sessionsLoaded = false[\s\S]*?tasksLoaded = false[\s\S]*?remindersLoaded = false[\s\S]*?projectsLoaded = false/,
   "new-host reset should drop loaded-surface flags so .checking shows the connection flow instead of stale data",
+);
+assert.match(
+  model,
+  /private func resetHostScopedStateForNewConnection\(\) \{[\s\S]*?familiarsError = nil[\s\S]*?familiarsLoaded = false/,
+  "new-host reset should clear familiar loaded state alongside the roster",
+);
+assert.match(
+  model,
+  /func loadProjectContext\([\s\S]*?familiarsError = nil[\s\S]*?familiarsLoaded = true/,
+  "successful project-context loads should mark familiars as loaded even when the roster is empty",
+);
+assert.match(
+  model,
+  /func loadFamiliars\(\) async \{[\s\S]*?await loadProjectContext\(using: client, mirrorFailuresTo: \[\.familiars\]\)/,
+  "direct familiar refresh should mirror project-context failures to the familiar surface",
 );
 
 // --- Auth failures: expired pairing goes to pairing guidance, not generic offline

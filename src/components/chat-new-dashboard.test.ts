@@ -223,8 +223,8 @@ assert.match(dash, /meta: tasksGroup/, "the Tasks band carries the shared group 
 assert.match(dash, /meta: chatsGroup/, "the Chats band carries the shared group meta");
 assert.match(
   bands,
-  /className="cave-sf__band-count">\{meta\.count\}/,
-  "every band head shows its group's count from the shared model",
+  /className="cave-sf__source-count">\{meta\.count\}/,
+  "every source tab shows its group's count from the shared model",
 );
 // Design order (Chat.dc.html 2b): the threads you were just in, then the
 // board, then what you parked, then what waits on your review.

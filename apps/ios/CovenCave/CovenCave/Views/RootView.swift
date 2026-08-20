@@ -15,6 +15,12 @@ struct RootView: View {
                     ConnectionView()
                 case .checking where app.connection != nil && !app.hasLoadedSurfaces:
                     ConnectingView()
+                case .projectContextRequired where !app.hasLoadedSurfaces:
+                    // The desktop is reachable, but project context is still
+                    // unresolved. Keep destinations unmounted and offer the
+                    // dedicated context gate instead of mislabeling this as
+                    // offline or pairing.
+                    ProjectContextGateView()
                 case .unreachable where !app.hasLoadedSurfaces:
                     // Never got in this session — nothing to keep on screen.
                     ConnectionView()
@@ -177,17 +183,16 @@ struct MainShellView: View {
             return .search
         }
         if ProcessInfo.processInfo.arguments.contains("--ui-open-projects") {
-            return .projects(nil)
+            return .projectSwitcher
         }
         #endif
         return nil
     }()
     @State private var overlayDismissalAction: (() -> Void)?
-
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                selectedDestination
+                shellContent
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .modifier(
                         DrawerDestinationStage(
@@ -201,11 +206,9 @@ struct MainShellView: View {
                         get: { app.navigationDrawerOpen },
                         set: { app.navigationDrawerOpen = $0 }
                     ),
-                    openProjects: { project in
-                        presentedOverlay = .projects(project)
-                    },
+                    openProjectSwitcher: { presentedOverlay = .projectSwitcher },
                     openFamiliars: { presentedOverlay = .familiars },
-                    openThread: { app.requestOpen($0) },
+                    openThread: { _ = app.requestOpen($0) },
                     newChat: {
                         app.selectedTab = .chats
                         app.newChatRequested = true
@@ -217,27 +220,44 @@ struct MainShellView: View {
         }
         .fullScreenCover(item: $presentedOverlay, onDismiss: runOverlayDismissalAction) { overlay in
             switch overlay {
-            case .projects(let project):
-                ProjectsPanel(initialProject: project) {
-                    presentedOverlay = nil
-                }
+            case .projectSwitcher:
+                ProjectSwitcherView()
             case .familiars: FamiliarsListView { familiar in
                 dismissOverlay {
-                    app.requestOpen(app.directThread(for: familiar.id))
+                    if let thread = app.openFamiliarLandingThread(
+                        for: familiar.id,
+                        in: app.projectContext
+                    ) {
+                        _ = app.requestOpen(thread)
+                    } else {
+                        app.showToast(
+                            "Switch to a registered project to start a new chat.",
+                            systemImage: "folder.badge.questionmark",
+                            style: .warning
+                        )
+                    }
                 }
             }
             case .search:
                 GlobalSearchView(
                     dismiss: { presentedOverlay = nil },
                     openThread: { thread in
-                        dismissOverlay { app.requestOpen(thread) }
+                        dismissOverlay { _ = app.requestOpen(thread) }
+                    },
+                    openServerSession: { session, familiarId in
+                        dismissOverlay {
+                            _ = app.requestOpenServerSession(
+                                session,
+                                fallbackFamiliarId: familiarId
+                            )
+                        }
                     },
                     openProject: { project in
-                        presentedOverlay = .projects(project)
+                        dismissOverlay { _ = app.requestOpenProjectSearchResult(project) }
                     },
                     openFamiliar: { familiar in
                         dismissOverlay {
-                            app.requestOpen(app.directThread(for: familiar.id))
+                            _ = app.requestOpenGlobalFamiliarLandingThread(for: familiar.id)
                         }
                     },
                     openTask: { card in
@@ -296,6 +316,21 @@ struct MainShellView: View {
     }
 
     @ViewBuilder
+    private var shellContent: some View {
+        if app.selectedTab == .settings {
+            SettingsView()
+        } else {
+            switch app.projectContextGateState {
+            case .ready:
+                selectedDestination
+                    .id(app.projectContext?.id ?? "__project-context-unset__")
+            case .loading, .retryableError, .noProjects:
+                ProjectContextGateView()
+            }
+        }
+    }
+
+    @ViewBuilder
     private var selectedDestination: some View {
         switch app.selectedTab {
         case .chats:
@@ -345,13 +380,13 @@ private struct DrawerDestinationStage: ViewModifier {
 }
 
 private enum MainOverlay: Identifiable {
-    case projects(ProjectInfo?)
+    case projectSwitcher
     case familiars
     case search
 
     var id: String {
         switch self {
-        case .projects(let project): "projects:\(project?.id ?? "root")"
+        case .projectSwitcher: "project-switcher"
         case .familiars: "familiars"
         case .search: "search"
         }

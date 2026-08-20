@@ -37,6 +37,8 @@ import {
   type WorkspaceNavItem,
   type WorkspaceNavMode,
 } from "@/lib/workspace-navigation";
+import type { CaveProject } from "@/lib/cave-projects-types";
+import type { CreateProjectOptions } from "@/lib/chat-add-project";
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
    *  interprets it, only round-trips it through navigation callbacks. */
@@ -84,6 +86,24 @@ export type SidebarMinimalProps = {
   /** Live counts surfaced as small nav badges (omitted/0 -> no badge). */
   boardOpenCount?: number;
   scheduleNeedsCount?: number;
+  // ── Project / workspace context (Task 6) ──────────────────────────────────
+  projects: CaveProject[];
+  projectId: string | null;
+  project: CaveProject | null;
+  projectLoading: boolean;
+  projectError: string | null;
+  reloadProjects: () => void;
+  onProjectChange: (projectId: string | null) => void;
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
+  projectCrew: ResolvedFamiliar[];
+  projectCrewLoading: boolean;
+  projectCrewError: string | null;
+  reloadProjectCrew: () => void;
+  contextNotice: string | null;
 };
 
 // Format a count as a compact nav badge; 0/undefined yields no badge.
@@ -229,6 +249,19 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         responseNeeded={responseNeeded}
         onSelectFamiliar={onFamiliarScopeChange}
         onNewChat={onNewChat}
+        projects={props.projects}
+        projectId={props.projectId}
+        project={props.project}
+        projectLoading={props.projectLoading}
+        projectError={props.projectError}
+        reloadProjects={props.reloadProjects}
+        onProjectChange={props.onProjectChange}
+        createProjectOrThrow={props.createProjectOrThrow}
+        projectCrew={props.projectCrew}
+        projectCrewLoading={props.projectCrewLoading}
+        projectCrewError={props.projectCrewError}
+        reloadProjectCrew={props.reloadProjectCrew}
+        contextNotice={props.contextNotice}
       />
 
       <div

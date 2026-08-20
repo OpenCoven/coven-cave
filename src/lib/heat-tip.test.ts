@@ -56,15 +56,21 @@ const pfc = readFileSync(new URL("../components/profile-card.tsx", import.meta.u
 describe("heatmap surfaces", () => {
   it("bento dashboard cells expose the hover value via data-tip (no sluggish native title)", () => {
     assert.match(bento, /useHeatTip\(\)/);
-    assert.match(bento, /data-tip=\{c\.future \? undefined : formatHeatTip\(c\.date, c\.count\)\}/);
-    assert.match(bento, /className="bd-heat-grid" \{\.\.\.heatTip\.gridProps\}/);
+    assert.match(bento, /data-tip=\{c\.outside \? undefined : formatHeatTip\(c\.date, c\.count\)\}/);
+    assert.match(
+      bento,
+      /className=\{`bd-heat-grid bd-heat-grid--\$\{heat\.windowDays\}`\}[\s\S]{0,180}?\{\.\.\.heatTip\.gridProps\}/,
+    );
     assert.doesNotMatch(bento, /bd-heat-cell[\s\S]{0,200}?title=/, "heatmap cells no longer rely on the native title tooltip");
   });
 
   it("profile-card cells expose the hover value via data-tip", () => {
     assert.match(pfc, /useHeatTip\(\)/);
     assert.match(pfc, /data-tip=\{formatHeatTip\(cell\.key, cell\.count\)\}/);
-    assert.match(pfc, /className="pfc-heatmap-grid" aria-hidden \{\.\.\.heatTip\.gridProps\}/);
+    assert.match(
+      pfc,
+      /className=\{`pfc-heatmap-grid pfc-heatmap-grid--\$\{heatmap\.windowDays\}`\}[\s\S]{0,80}?aria-hidden[\s\S]{0,80}?\{\.\.\.heatTip\.gridProps\}/,
+    );
     assert.doesNotMatch(pfc, /pfc-cell"[\s\S]{0,200}?title=/, "heatmap cells no longer rely on the native title tooltip");
   });
 });

@@ -14,6 +14,7 @@ import {
 } from "@/lib/cave-backdrop";
 import { BACKDROP_STYLES, type CaveBackdropStyle } from "@/lib/preferences-schema";
 import { useArmedConfirm } from "@/lib/use-armed-confirm";
+import { showSettingsSavedAfterPreferencesFlush } from "@/lib/settings-save-feedback";
 
 const STYLE_LABELS: Record<CaveBackdropStyle, string> = { off: "Off", image: "Image", blaze: "Blaze" };
 const STYLE_TITLES: Record<CaveBackdropStyle, string> = {
@@ -37,6 +38,7 @@ export function BackdropSettings() {
   // Clearing discards the stored image with no undo — two-step (cave-5lsj).
   const clearConfirm = useArmedConfirm();
   const urlRef = useRef<string | null>(null);
+  const intensityDirtyRef = useRef(false);
 
   // Thumbnail of whatever is stored — follows enable/replace/clear.
   useEffect(() => {
@@ -69,6 +71,7 @@ export function BackdropSettings() {
           ? "Backdrop set — accent matched to the image."
           : "Backdrop set. The image has no dominant color, so the theme accent stays.",
       );
+      void showSettingsSavedAfterPreferencesFlush();
     } catch (err) {
       // createImageBitmap rejects when the engine can't decode the format —
       // most commonly HEIC photos outside the desktop app. Name the fix
@@ -93,6 +96,7 @@ export function BackdropSettings() {
       await writeBackdropImage(null);
       writeBackdropPrefs({ enabled: false, accentSeed: null });
       announce("Backdrop cleared.");
+      void showSettingsSavedAfterPreferencesFlush("Backdrop cleared.");
     } finally {
       setBusy(false);
     }
@@ -105,6 +109,7 @@ export function BackdropSettings() {
       if (prefs.style === "off" && !prefs.enabled) return;
       writeBackdropPrefs({ style, enabled: false });
       announce("Backdrop off.");
+      void showSettingsSavedAfterPreferencesFlush();
       return;
     }
     if (style === "blaze") {
@@ -114,6 +119,7 @@ export function BackdropSettings() {
       if (prefs.style === "blaze" && prefs.enabled) return;
       writeBackdropPrefs({ style, enabled: true });
       announce("Backdrop set to Blaze — embers and smoke follow your theme accent.");
+      void showSettingsSavedAfterPreferencesFlush();
       return;
     }
     // Store truth, not the async-hydrating thumbnail: previewUrl can lag the
@@ -126,6 +132,13 @@ export function BackdropSettings() {
         ? "Backdrop set to your image."
         : "Backdrop style set to Image — choose an image to turn it on.",
     );
+    void showSettingsSavedAfterPreferencesFlush();
+  }
+
+  function confirmIntensitySave() {
+    if (!intensityDirtyRef.current) return;
+    intensityDirtyRef.current = false;
+    void showSettingsSavedAfterPreferencesFlush();
   }
 
   return (
@@ -202,7 +215,14 @@ export function BackdropSettings() {
               min={10}
               max={80}
               value={prefs.intensity}
-              onChange={(e) => writeBackdropPrefs({ intensity: Number(e.target.value) })}
+              onChange={(e) => {
+                intensityDirtyRef.current = true;
+                writeBackdropPrefs({ intensity: Number(e.target.value) });
+              }}
+              onPointerUp={confirmIntensitySave}
+              onPointerCancel={confirmIntensitySave}
+              onKeyUp={confirmIntensitySave}
+              onBlur={confirmIntensitySave}
               className="cave-backdrop-intensity min-w-0 flex-1"
               aria-label="Backdrop intensity"
             />
@@ -218,7 +238,10 @@ export function BackdropSettings() {
                 role="switch"
                 aria-checked={prefs.matchAccent}
                 aria-label="Match accent to the image"
-                onClick={() => writeBackdropPrefs({ matchAccent: !prefs.matchAccent })}
+                onClick={() => {
+                  writeBackdropPrefs({ matchAccent: !prefs.matchAccent });
+                  void showSettingsSavedAfterPreferencesFlush();
+                }}
                 className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[length:var(--text-sm)] transition-colors ${
                   prefs.matchAccent
                     ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"

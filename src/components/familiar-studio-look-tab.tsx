@@ -26,6 +26,10 @@ import {
 } from "@/lib/cave-familiar-overrides";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useArmedConfirm } from "@/lib/use-armed-confirm";
+import {
+  showSettingsSavedAfterPreferencesFlush,
+  showSettingsSavedToast,
+} from "@/lib/settings-save-feedback";
 
 type ColorPreset = {
   label: string;
@@ -109,6 +113,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
     } else {
       applyColorToTargets(colorTargets, color);
     }
+    showSettingsSavedToast();
   }
 
   function applyPaletteByFamiliar() {
@@ -116,6 +121,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
       const color = COLOR_PRESETS[index % COLOR_PRESETS.length].color;
       setFamiliarOverride(target.id, { color });
     });
+    showSettingsSavedToast();
   }
 
   function applyPaletteByHarness() {
@@ -132,6 +138,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
       const color = colorByHarness.get(target.harness ?? "unassigned");
       if (color) setFamiliarOverride(target.id, { color });
     }
+    showSettingsSavedToast();
   }
 
   return (
@@ -383,7 +390,10 @@ function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
           role="switch"
           aria-checked={enabled}
           aria-label="Show backdrop while this familiar is active"
-          onClick={() => setFamiliarBackdropEnabled(familiarId, !enabled)}
+          onClick={() => {
+            setFamiliarBackdropEnabled(familiarId, !enabled);
+            void showSettingsSavedAfterPreferencesFlush();
+          }}
           className={`focus-ring rounded-[var(--radius-control)] border px-3 py-1 text-[length:var(--text-sm)] transition-colors ${
             enabled
               ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"

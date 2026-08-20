@@ -250,7 +250,7 @@ assert.match(
 
 assert.match(
   source,
-  /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Cancel \(esc\)"/,
+  /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Stop response \(esc\)"[\s\S]*?aria-label="Cancel response"/,
   "a live response must expose both Queue and Cancel controls",
 );
 
