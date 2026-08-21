@@ -1268,11 +1268,11 @@ test.describe("research desk tabs", () => {
 
     const search = saves.getByRole("textbox", { name: "Search saves" });
     await search.fill("Ordinary research sibling");
-    await saves.getByRole("button", { name: "Select all 1 results" }).click();
+    await saves.getByRole("button", { name: "Select all 1 result" }).click();
     await expect(prompt.getByText("1 ready for the first pass")).toBeVisible();
 
     await search.fill(X_ARTICLE_LINK.title);
-    await saves.getByRole("button", { name: "Select all 1 results" }).click();
+    await saves.getByRole("button", { name: "Select all 1 result" }).click();
     await expect(prompt.getByText("2 ready for the first pass")).toBeVisible();
     await prompt.getByRole("button", { name: /^Quick saves/ }).click();
     await expect(prompt.getByRole("region", { name: "Quick saves" })).toHaveCount(0);

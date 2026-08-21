@@ -145,7 +145,6 @@ export function updateVisibleQuickSaveSelection<TLink extends QuickSaveLink>(
   selected: readonly TLink[],
   visible: readonly TLink[],
 ): TLink[] {
-  if (visible.length === 0) return [...selected];
   const visibleIds = new Set(visible.map((link) => link.id));
   const selectedIds = new Set(selected.map((link) => link.id));
   const clearVisible = visible.every((link) => selectedIds.has(link.id));

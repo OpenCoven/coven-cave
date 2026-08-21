@@ -178,10 +178,11 @@ test("quick saves are included in mission creation before the run starts", () =>
 
 test("quick saves support search-scoped bulk selection without losing hidden picks", () => {
   assert.match(promptTab, /updateVisibleQuickSaveSelection\(links\.links, current, visibleLinks\)/);
-  assert.match(promptTab, /`Clear \$\{visibleLinks\.length\} results`/);
-  assert.match(promptTab, /`Select all \$\{visibleLinks\.length\} results`/);
+  assert.match(promptTab, /visibleResultLabel = `\$\{visibleLinks\.length\} \$\{visibleLinks\.length === 1 \? "result" : "results"\}`/);
+  assert.match(promptTab, /`Clear \$\{visibleResultLabel\}`/);
+  assert.match(promptTab, /`Select all \$\{visibleResultLabel\}`/);
   assert.match(promptTab, /Selected resources are included before the first research pass starts\./);
-  assert.match(promptTab, /announce\(`\$\{action\} \$\{visibleLinks\.length\} search result/);
+  assert.match(promptTab, /announce\(`\$\{action\} \$\{visibleResultLabel\}\.`\)/);
 });
 
 // ── Contextual next topics: bounded GET, explicit actions, no draft refresh ─

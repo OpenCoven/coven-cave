@@ -137,3 +137,15 @@ test("bulk selection drops saves that no longer exist in the current library", (
     allLinks,
   );
 });
+
+test("empty search results preserve selection while restoring canonical order", () => {
+  const links = [
+    link({ id: "a", title: "Alpha" }),
+    link({ id: "b", title: "Beta" }),
+  ];
+  const deleted = link({ id: "deleted", title: "Deleted" });
+  assert.deepEqual(
+    updateVisibleQuickSaveSelection(links, [links[1], deleted, links[0]], []),
+    links,
+  );
+});

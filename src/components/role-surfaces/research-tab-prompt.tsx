@@ -11,9 +11,9 @@
  * the frame's shape, and the reason the intake itself no longer has to compete
  * with a permanently-open list. Rows toggle an attach state that renders as
  * "Related context" chips inside the composer card. On Start research the
- * mission is created first, then ordinary links become `candidate` sources
- * while saved Articles materialize through their immutable saved-link action,
- * and the desk opens on the new mission.
+ * selected IDs cross the creation boundary, so ordinary links and saved
+ * Articles are persisted before the first run begins and the desk opens on
+ * the new mission.
  *
  * Grouping is REAL data only: a "✦ Suggested for this prompt" group matched
  * against the live draft, then one group per saved-link category, then the
@@ -221,10 +221,11 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
   );
   const allVisibleAttached = visibleLinks.length > 0
     && visibleLinks.every((link) => attached.some((entry) => entry.id === link.id));
+  const visibleResultLabel = `${visibleLinks.length} ${visibleLinks.length === 1 ? "result" : "results"}`;
   const toggleVisibleLinks = () => {
     const action = allVisibleAttached ? "Cleared" : "Selected";
     setAttached((current) => updateVisibleQuickSaveSelection(links.links, current, visibleLinks));
-    announce(`${action} ${visibleLinks.length} search result${visibleLinks.length === 1 ? "" : "s"}.`);
+    announce(`${action} ${visibleResultLabel}.`);
   };
 
   const onDraftChange = useCallback((next: string) => setDraft(next), []);
@@ -570,13 +571,13 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
             {visibleLinks.length > 0 ? (
               <button
                 type="button"
-                className="research-quick-saves__select-visible focus-ring"
+                className="research-quick-saves__all focus-ring"
                 aria-pressed={allVisibleAttached}
                 onClick={toggleVisibleLinks}
               >
                 {allVisibleAttached
-                  ? `Clear ${visibleLinks.length} results`
-                  : `Select all ${visibleLinks.length} results`}
+                  ? `Clear ${visibleResultLabel}`
+                  : `Select all ${visibleResultLabel}`}
               </button>
             ) : null}
             <input
