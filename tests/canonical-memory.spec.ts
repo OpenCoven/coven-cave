@@ -373,7 +373,9 @@ test("local-ready canonical memory renders after shell paint at 1280x720 without
   await expect(dialog).toContainText(FAMILIAR.display_name);
   const overviewToggle = dialog.getByRole("button", { name: "Canonical verified" });
   await overviewToggle.click();
-  await expect(dialog.getByLabel("Canonical memory overview")).toContainText("Canonical overview");
+  await expect(
+    dialog.getByLabel("Canonical memory overview").getByRole("heading", { name: "Canonical recall" }),
+  ).toBeVisible();
   await overviewToggle.click();
   await dialog.getByRole("button", { name: "Filters" }).click();
   const filters = page.getByRole("dialog", { name: "Memory filters" });

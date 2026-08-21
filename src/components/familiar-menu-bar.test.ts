@@ -13,6 +13,10 @@ const foundations = readFileSync(
   "utf8",
 );
 const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
+const warmupRegistry = readFileSync(
+  new URL("../lib/surface-warmup-registry.ts", import.meta.url),
+  "utf8",
+);
 // The switcher moved to the sidenav header (cave-vtk9); its compact geometry
 // is pinned in sidebar-minimal.test.ts against the rail rules instead.
 
@@ -246,11 +250,17 @@ assert.doesNotMatch(
   "Workspace should not render a floating Salem perch",
 );
 
-// The open (not-done) board cards are polled from /api/board, kept with their
-// familiar so the Tasks badge can scope the count.
+// The open (not-done) board cards are polled from /api/board — now through the
+// warm-cache resource rather than a bare fetch — and kept with their familiar
+// so the Tasks badge can scope the count.
+assert.match(
+  warmupRegistry,
+  /defineResource\("board:cards", \(signal\) => json\(signal, "\/api\/board"\)/,
+  "the board:cards resource is the one that reads /api/board",
+);
 assert.match(
   workspace,
-  /fetch\("\/api\/board"[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
+  /readSurfaceResource<[\s\S]*?>\(\s*"board:cards",?\s*\)[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
   "open (not-done) board cards are collected with their familiarId",
 );
 
