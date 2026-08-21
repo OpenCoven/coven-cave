@@ -20,7 +20,8 @@ import { applyFixes, audit, classifyUpstreams } from "./remote-hygiene.mjs";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const script = join(repoRoot, "scripts", "remote-hygiene.mjs");
 
-const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
+const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
+const env = { ...process.env, GIT_CONFIG_GLOBAL: NULL_DEVICE, GIT_CONFIG_SYSTEM: NULL_DEVICE };
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", env }).trim();
