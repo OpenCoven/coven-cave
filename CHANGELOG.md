@@ -9,9 +9,12 @@ breaking config changes; patch releases stay additive.
 
 ## [0.3.9] - 2026-08-21
 
-> _One-line teaser — edit before merge._
+> Restores the release pipeline and ships the refreshed desktop chrome.
 
-Patch release on top of v0.3.8.
+Patch release on top of v0.3.8. v0.3.8 tagged but never produced builds: its
+platform validation failed on all three runners, which skipped the iOS
+TestFlight upload. This release repairs that path and the frontend contracts
+that went red behind it.
 
 ### Changes
 - Repair red main frontend contracts (#4797)
