@@ -3,6 +3,10 @@
  * A listening TCP port is not sufficient: a wedged Next compiler can accept
  * connections indefinitely while returning no HTTP response to the WebView.
  */
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 // Probe the same document the initial Tauri WebView loads. A lightweight API
 // route can answer before the root React tree is compiled, which would still
 // leave the desktop window black.
@@ -100,7 +104,31 @@ function cliArgs(argv) {
   return port === null || timeoutMs === null ? null : { port, timeoutMs };
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
+// Compare CANONICAL filesystem paths, not `import.meta.url` against
+// `new URL(process.argv[1], "file:")` (cave-gcb0i). On Windows argv[1] arrives
+// as `C:\...\dev-app-origin-health.mjs`, which the URL parser reads as an
+// opaque `c:` scheme rather than the `file:///C:/...` href this module
+// reports, so the guard is false and the probe never runs. Because
+// `origin_is_ready()` in scripts/dev-app.sh reads this script's exit status, a
+// no-op that exits 0 reads as "the origin is ready" — the launcher then opens
+// the Tauri window against a server that has answered nothing, which is the
+// permanently black window this probe exists to prevent.
+// realpathSync also collapses a symlinked entry point (Node realpaths the main
+// module's URL but leaves argv[1] as the link path) and Windows path casing.
+const canonicalPath = (target) => {
+  const resolved = resolve(target);
+  let real = resolved;
+  try { real = realpathSync.native(resolved); } catch { /* not on disk */ }
+  return process.platform === "win32" ? real.toLowerCase() : real;
+};
+
+export const isDirectRun = (argv1, moduleUrl) => {
+  if (!argv1) return false;
+  try { return canonicalPath(argv1) === canonicalPath(fileURLToPath(moduleUrl)); }
+  catch { return false; }
+};
+
+if (isDirectRun(process.argv[1], import.meta.url)) {
   const options = cliArgs(process.argv.slice(2));
   process.exitCode = options && await loopbackOriginResponds(options) ? 0 : 1;
 }
