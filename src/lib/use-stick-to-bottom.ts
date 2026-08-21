@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
  *   scroll per streamed chunk, which also satisfies prefers-reduced-motion.
  * - Only USER intent releases the stick: wheel-up, a downward touch drag,
  *   PageUp/Home/ArrowUp, or an upward scrollbar drag. The old position
- *   threshold (`gap < 48` on every scroll event) is gone — it re-stuck a
+ *   near-bottom position threshold on every scroll event is gone — it re-stuck a
  *   reader who paused just above the bottom, so the next streamed token
  *   yanked them back down.
  * - Re-stick happens only at the true bottom (≤4px). While stuck that check

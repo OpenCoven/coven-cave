@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import {
   resolveMarketplaceLogo,
   type MarketplaceLogoIdentity,
@@ -18,22 +20,36 @@ export function MarketplaceLogo({
   logo,
   size = "card",
 }: MarketplaceLogoProps) {
+  const [failedAssetPath, setFailedAssetPath] = useState<string | null>(null);
   const bundled = resolveMarketplaceLogo(id, displayName);
   const resolved = logo?.kind === "brand" && !logo.svgPath && bundled.kind === "brand"
     ? { ...logo, svgPath: bundled.svgPath }
     : logo ?? bundled;
+  const brandAssetPath = resolved.kind === "brand" ? resolved.svgPath : undefined;
+  const showsBrand = Boolean(brandAssetPath && failedAssetPath !== brandAssetPath);
+  const renderedKind = showsBrand ? "brand" : "monogram";
+
   return (
     <span
       className={`marketplace-logo marketplace-logo--${size}`}
       aria-hidden
       data-marketplace-logo-id={id}
-      data-marketplace-logo-kind={resolved.kind}
-      title={resolved.kind === "brand" ? `${resolved.title} logo` : undefined}
+      data-marketplace-logo-kind={renderedKind}
+      title={showsBrand ? `${resolved.title} logo` : undefined}
     >
-      {resolved.kind === "brand" && resolved.svgPath ? (
-        <svg viewBox="0 0 24 24" focusable="false">
-          <path d={resolved.svgPath} />
-        </svg>
+      {showsBrand && brandAssetPath ? (
+        // Same-origin generated asset; a failed load falls back to the deterministic monogram.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          className="marketplace-logo__brand"
+          src={brandAssetPath}
+          alt=""
+          width={24}
+          height={24}
+          decoding="async"
+          loading="lazy"
+          onError={() => setFailedAssetPath(brandAssetPath)}
+        />
       ) : (
         <span className="marketplace-logo__monogram">{resolved.monogram}</span>
       )}

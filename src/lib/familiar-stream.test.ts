@@ -18,6 +18,25 @@ function sseResponse(frames: string[], init: { ok?: boolean } = {}) {
   return { ok: init.ok ?? true, body } as unknown as Response;
 }
 
+function sseResponseThenReaderError(frames: string[], readerError: Error) {
+  const value = new TextEncoder().encode(frames.join(""));
+  let delivered = false;
+  const body = {
+    getReader() {
+      return {
+        async read() {
+          if (!delivered) {
+            delivered = true;
+            return { value, done: false };
+          }
+          throw readerError;
+        },
+      };
+    },
+  };
+  return { ok: true, body } as unknown as Response;
+}
+
 function frame(obj: unknown): string {
   return `data: ${JSON.stringify(obj)}\n\n`;
 }
@@ -31,9 +50,39 @@ describe("streamFamiliarText", () => {
       frame({ kind: "done" }),
     ])) as typeof fetch;
 
-    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    const result = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    const { text, error } = result;
     assert.equal(text, "Hello world");
     assert.equal(error, null);
+    assert.equal("cancelled" in result, false);
+  });
+
+  it("preserves a successful done outcome when the next reader read fails", async () => {
+    const metadata: ChatResponseMetadata = {
+      familiarId: "nova",
+      harness: "claude",
+      model: "claude-sonnet-5",
+      runtime: "local:/workspace",
+    };
+    globalThis.fetch = (async () => sseResponseThenReaderError([
+      frame({ kind: "assistant_chunk", text: "Definitive answer" }),
+      frame({ kind: "done", sessionId: "done-before-read-error", responseMetadata: metadata }),
+    ], new Error("socket reset after done"))) as typeof fetch;
+
+    let published: ChatResponseMetadata | undefined;
+    const result = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onResponseMetadata: (value) => {
+        published = value;
+      },
+    });
+    assert.equal(result.text, "Definitive answer");
+    assert.equal(result.error, null);
+    assert.equal("cancelled" in result, false);
+    assert.equal(result.sessionId, "done-before-read-error");
+    assert.deepEqual(result.responseMetadata, metadata);
+    assert.deepEqual(published, metadata);
   });
 
   it("includes sessionId in the request body only when provided", async () => {
@@ -150,7 +199,7 @@ describe("streamFamiliarText", () => {
     assert.equal(published?.requestedControls?.reasoning, "high");
   });
 
-  it("surfaces an error frame", async () => {
+  it("preserves an explicit error frame when EOF arrives without done", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "assistant_chunk", text: "Useful text.<coven:atten" }),
       frame({ kind: "error", message: "boom" }),
@@ -159,6 +208,21 @@ describe("streamFamiliarText", () => {
     const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
     assert.equal(text, "Useful text.");
     assert.equal(error, "boom");
+  });
+
+  it("treats chunk-only EOF as a transport failure and preserves partial text", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "Useful partial answer" }),
+    ])) as typeof fetch;
+
+    const result = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+    });
+    const { text, error } = result;
+    assert.equal(text, "Useful partial answer");
+    assert.equal(error, "the connection closed before the familiar finished responding");
+    assert.equal("cancelled" in result, false);
   });
 
   it("removes a partial attention marker after a failed done frame", async () => {

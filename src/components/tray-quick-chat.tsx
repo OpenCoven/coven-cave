@@ -280,7 +280,7 @@ export function QuickChatTabPane({
     modelControls,
     modelControlsLoading,
     setModelControl,
-    cancel,
+    cancel: cancelQuickChat,
     newThread,
     regenerate,
   } = useQuickChat({ preferredFamiliarId: initialFamiliarId });
@@ -349,6 +349,7 @@ export function QuickChatTabPane({
         familiar={selectedFamiliar}
         onSuggestion={pickSuggestion}
         onRegenerate={sending ? undefined : regenerate}
+        onStop={cancelQuickChat}
       />
 
       <QuickChatComposer
@@ -356,7 +357,6 @@ export function QuickChatTabPane({
         draft={draft}
         onDraftChange={setDraft}
         onSend={(attachments) => void send(attachments)}
-        onCancel={cancel}
         sending={sending}
         disabled={loading}
         launchReady={projectLaunchReady}
