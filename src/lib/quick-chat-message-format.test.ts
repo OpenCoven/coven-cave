@@ -161,6 +161,35 @@ test("streaming and settled replies keep Markdown pieces stable around complete 
   assert.deepEqual(streaming.pieces, settled.pieces);
 });
 
+test("settled prose projection preserves text around ordered GitHub cards and actions", () => {
+  const formatted = formatQuickChatAssistantMessage(
+    [
+      "Before the card.",
+      '<coven:github kind="issue" repo="OpenCoven/coven-cave" number="42" />',
+      "Between the card and action.",
+      '<coven:github-action kind="comment" repo="OpenCoven/coven-cave" number="42" body="Looks good" />',
+      "After the action.",
+    ].join("\n"),
+    false,
+  );
+
+  assert.deepEqual(
+    formatted.pieces.map((piece) => piece.kind),
+    ["text", "card", "text", "action", "text"],
+  );
+  assert.equal(
+    formatted.visibleProse,
+    formatted.pieces
+      .filter((piece) => piece.kind === "text")
+      .map((piece) => piece.text)
+      .join(""),
+  );
+  assert.match(formatted.visibleProse, /Before the card\./);
+  assert.match(formatted.visibleProse, /Between the card and action\./);
+  assert.match(formatted.visibleProse, /After the action\./);
+  assert.doesNotMatch(formatted.visibleProse, /coven:github/);
+});
+
 test("bare GitHub URLs stay visible while streaming and unfurl after settlement", () => {
   const url = "https://github.com/OpenCoven/coven-cave/pull/3982";
 
@@ -168,7 +197,10 @@ test("bare GitHub URLs stay visible while streaming and unfurl after settlement"
   const settled = formatQuickChatAssistantMessage(url, false);
 
   assert.equal(streaming.copyText, url);
+  assert.equal(streaming.visibleProse, url);
   assert.deepEqual(streaming.pieces, [{ kind: "text", text: url }]);
+  assert.equal(settled.copyText, url);
+  assert.equal(settled.visibleProse, "");
   assert.equal(settled.pieces.length, 1);
   assert.equal(settled.pieces[0]?.kind, "card");
 });
@@ -347,4 +379,46 @@ test("inline code examples cannot activate protocol controls", () => {
   assert.deepEqual(formatted.pieces, [{ kind: "text", text }]);
   assert.deepEqual(formatted.skillUpdates, []);
   assert.deepEqual(formatted.suggestions, []);
+});
+
+test("quick-chat strips result markers and exposes familiar-authored results", () => {
+  const formatted = formatQuickChatAssistantMessage(
+    [
+      "Checks complete.",
+      '<coven:result id="tests" state="passed" label="Focused tests passed" />',
+    ].join("\n"),
+    false,
+  );
+
+  assert.equal(formatted.copyText, "Checks complete.");
+  assert.deepEqual(formatted.pieces, [{ kind: "text", text: "Checks complete." }]);
+  assert.deepEqual(formatted.authoredResults, [
+    { id: "tests", state: "passed", label: "Focused tests passed", source: "familiar" },
+  ]);
+  assert.doesNotMatch(formatted.copyText, /coven:result/);
+  assert.ok(
+    formatted.pieces.every((piece) => piece.kind !== "text" || !piece.text.includes("coven:result")),
+  );
+});
+
+test("quick-chat keeps later authored results after backticks inside prior markers", () => {
+  const formatted = formatQuickChatAssistantMessage(
+    [
+      "Checks complete.",
+      '<coven:result id="tests" state="passed" label="`" />',
+      '<coven:result id="lint" state="running" label="Lint running" />',
+    ].join("\n"),
+    false,
+  );
+
+  assert.equal(formatted.copyText, "Checks complete.");
+  assert.deepEqual(formatted.pieces, [{ kind: "text", text: "Checks complete." }]);
+  assert.deepEqual(formatted.authoredResults, [
+    { id: "tests", state: "passed", label: "`", source: "familiar" },
+    { id: "lint", state: "running", label: "Lint running", source: "familiar" },
+  ]);
+  assert.doesNotMatch(formatted.copyText, /coven:result/);
+  assert.ok(
+    formatted.pieces.every((piece) => piece.kind !== "text" || !piece.text.includes("coven:result")),
+  );
 });

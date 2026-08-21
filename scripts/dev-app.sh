@@ -164,6 +164,15 @@ fi
 # The packaged app always gives its sidecar and WebView the same ephemeral
 # credential. Mirror that contract in dev even when the caller did not provide
 # one: server.ts may re-arm the persisted mobile-access gate for this port, and
+if [ -z "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
+  COVEN_CAVE_AUTH_TOKEN="$(
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
+  )"
+  export COVEN_CAVE_AUTH_TOKEN
+fi
+# The packaged app always gives its sidecar and WebView the same ephemeral
+# credential. Mirror that contract in dev even when the caller did not provide
+# one: server.ts may re-arm the persisted mobile-access gate for this port, and
 # a tokenless WebView would otherwise receive 401s from every API route.
 if [ -z "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
   COVEN_CAVE_AUTH_TOKEN="$(

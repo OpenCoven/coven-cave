@@ -99,6 +99,17 @@ assert.ok(
     source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" pnpm dev &'),
   "the readiness-only token must be exported before the owned dev server starts",
 );
+
+assert.match(
+  source,
+  /if \[ -z "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?randomBytes\(32\)\.toString\("hex"\)[\s\S]*?export COVEN_CAVE_AUTH_TOKEN[\s\S]*?if \[ -n "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?encodeURIComponent\(process\.env\.COVEN_CAVE_AUTH_TOKEN\)[\s\S]*?dev_url\+="#covenCaveToken=\$\{sidecar_token_fragment\}"/,
+  "the launcher must mint a missing sidecar token and carry it into the desktop webview",
+);
+assert.ok(
+  source.indexOf("export COVEN_CAVE_AUTH_TOKEN") <
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" pnpm dev &'),
+  "the sidecar token must be exported before the owned dev server starts",
+);
 assert.ok(
   source.indexOf("export COVEN_CAVE_AUTH_TOKEN") <
     source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" pnpm dev &'),

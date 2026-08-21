@@ -2,9 +2,10 @@ import Foundation
 
 /// Native slash-command catalog for the iOS app.
 ///
-/// Mirrors the web/TUI vocabulary (`src/lib/slash-commands.ts` →
+/// Mirrors the applicable web/TUI vocabulary (`src/lib/slash-commands.ts` →
 /// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`
-/// or `/board` does the same thing on the phone as on the desktop.
+/// or `/board` does the same thing on the phone as on the desktop. Terminal
+/// commands are intentionally absent because iOS has no terminal surface.
 /// Aliases are first-class: `/h`, `/cls`, `/q` resolve to their canonical command.
 ///
 /// Each command also carries an `action` (what it does on mobile) and an
@@ -62,8 +63,8 @@ struct SlashCommand: Identifiable, Hashable {
 }
 
 enum SlashCatalog {
-    /// The full catalog, ordered for display. Kept in lock-step with the web
-    /// `SLASH_COMMANDS` array so the two surfaces never drift.
+    /// The full iOS catalog, ordered for display. It tracks the web
+    /// `SLASH_COMMANDS` array except for features deliberately absent on mobile.
     static let all: [SlashCommand] = [
         // MARK: Chat
         SlashCommand(name: "/help", aliases: ["/h"], hint: "show help",

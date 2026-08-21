@@ -212,7 +212,6 @@ export function QuickChatComposer({
   draft,
   onDraftChange,
   onSend,
-  onCancel,
   sending,
   disabled,
   launchReady = true,
@@ -241,7 +240,6 @@ export function QuickChatComposer({
   onDraftChange: (value: string) => void;
   /** Send the trimmed draft with the staged files (already id-stripped). */
   onSend: (attachments: ChatAttachment[]) => void;
-  onCancel: () => void;
   sending: boolean;
   /** Blocks sending while true (e.g. the roster is still loading). */
   disabled?: boolean;
@@ -827,11 +825,6 @@ export function QuickChatComposer({
             disabled={sending || !draft.trim()}
             size="sm"
           />
-          {sending ? (
-            <Button variant="secondary" size="sm" onClick={onCancel}>
-              Stop
-            </Button>
-          ) : null}
           <Button
             variant="primary"
             size="sm"
