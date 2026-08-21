@@ -391,6 +391,56 @@ test("thresholds are overridable but default to the documented values", () => {
     "advance",
     "an explicit threshold override is honored so a drill can exercise the path",
   );
+
+  // The other three defaults have to survive the partial override, or relaxing
+  // one threshold quietly relaxes all of them.
+  const partial = greenState({ thresholds: { minCrashFreeLaunchRate: 0.5 } });
+  partial.metrics.crashFreeLaunchRate = 0.6;
+  partial.metrics.duplicateSendCount = 1;
+  const partialResult = evaluateRolloutGate(partial);
+  assert.equal(partialResult.decision, "rollback", "a partial override keeps every threshold it does not name");
+  assert.ok(
+    partialResult.reasons.some((reason) => reason.class === "duplicate-send"),
+    "the threshold that fired is the untouched default, not the overridden one",
+  );
+});
+
+test("a threshold that cannot be compared against holds instead of disappearing", () => {
+  // `0.1 < null` is false and `900 > NaN` is false, so a spread-merged
+  // threshold of null or "lots" did not relax the gate — it deleted it, and a
+  // 10% crash-free rate advanced with nothing printed.
+  const disabling = [
+    ["minCrashFreeLaunchRate", null, { crashFreeLaunchRate: 0.1 }],
+    ["minCrashFreeLaunchRate", "0.5", { crashFreeLaunchRate: 0.1 }],
+    ["maxDuplicateSends", "lots", { duplicateSendCount: 900 }],
+    ["maxDataIntegrityFailures", undefined, { dataIntegrityFailures: 900 }],
+    ["minPairingSuccessRate", -1, { pairingSuccessRate: 0.1 }],
+  ];
+  for (const [key, value, metrics] of disabling) {
+    const state = greenState({ thresholds: { [key]: value } });
+    Object.assign(state.metrics, metrics);
+    const result = evaluateRolloutGate(state);
+    assert.notEqual(
+      result.decision,
+      "advance",
+      `threshold ${key}=${JSON.stringify(value)} must not advance a rollout that breaches the documented default`,
+    );
+    assert.match(
+      detailsOf(result),
+      /disables the check rather than relaxing it/,
+      "the operator is told their override was refused, rather than silently getting no gate",
+    );
+  }
+
+  const unknown = evaluateRolloutGate(greenState({ thresholds: { maxCrashes: 5 } }));
+  assert.equal(unknown.decision, "hold", "a threshold nothing reads is a typo in a safety gate, not an override");
+  assert.match(detailsOf(unknown), /unknown threshold 'maxCrashes'/, "the typo is named so it can be corrected");
+
+  assert.equal(
+    evaluateRolloutGate(greenState({ thresholds: "strict" })).decision,
+    "hold",
+    "a thresholds value this gate cannot read leaves the defaults in force and says so",
+  );
 });
 
 // ── CLI ───────────────────────────────────────────────────────────────────────

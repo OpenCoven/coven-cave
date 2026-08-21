@@ -172,7 +172,7 @@ export function evaluateRolloutGate(state) {
   const hold = (detail) => reasons.push({ severity: "hold", detail });
   const rollback = (detail, regressionClass) => reasons.push({ severity: "rollback", detail, class: regressionClass });
 
-  const thresholds = { ...DEFAULT_THRESHOLDS, ...(isPlainObject(state.thresholds) ? state.thresholds : {}) };
+  const thresholds = resolveThresholds(state.thresholds, hold);
 
   // 1. Preconditions. These gate the rollout as a whole, not just this stage.
   const acceptanceStatus = String(state.acceptance?.status ?? "missing");
@@ -271,6 +271,41 @@ export function evaluateRolloutGate(state) {
     rollbackBaselineWaived: readiness.waived,
     reasons,
   };
+}
+
+/**
+ * Merge a caller's threshold overrides onto the documented defaults.
+ *
+ * A partial object keeps every threshold it does not mention — that part a
+ * spread already did. What a spread also did was let a threshold be *removed*:
+ * `{"minCrashFreeLaunchRate": null}` made the comparison `0.1 < null`, which is
+ * false, so a 10% crash-free rate advanced the rollout with nothing printed.
+ * `"lots"` disabled a maximum the same way through NaN. A threshold nobody can
+ * compare against is not a relaxed threshold, it is an absent gate, so the
+ * documented default stands and the file that asked for it holds.
+ */
+function resolveThresholds(raw, hold) {
+  const thresholds = { ...DEFAULT_THRESHOLDS };
+  if (raw === undefined) return thresholds;
+  if (!isPlainObject(raw)) {
+    hold("thresholds must be an object; the documented defaults apply");
+    return thresholds;
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (!Object.hasOwn(DEFAULT_THRESHOLDS, key)) {
+      hold(`unknown threshold '${key}'; a threshold nothing reads is not an override`);
+      continue;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      hold(
+        `threshold '${key}' is ${JSON.stringify(value)}, which disables the check rather than relaxing it; ` +
+          `the documented default ${DEFAULT_THRESHOLDS[key]} applies`,
+      );
+      continue;
+    }
+    thresholds[key] = value;
+  }
+  return thresholds;
 }
 
 /**
