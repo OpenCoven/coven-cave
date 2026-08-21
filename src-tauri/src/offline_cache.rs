@@ -660,6 +660,43 @@ fn sweep_staging_files(context: &OfflineCacheContext) {
     }
 }
 
+fn modified_unix_ms(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or(UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
+}
+
+/// How recently anything under an instance's tree changed.
+///
+/// A directory's own mtime moves only when a child is created or removed, and
+/// an established cache does neither: it renames a replacement over an entry
+/// that already exists, which touches the *scope* directory and the entry
+/// file. So a live install's instance directory carries the timestamp of the
+/// last time it gained a scope, which can be arbitrarily long ago. Reading
+/// that stamp alone would eventually reclaim a running install's cache out
+/// from under it. The tree is two levels deep by construction
+/// (`instance/scope/entry.bin`), so this walk is bounded.
+fn newest_activity_unix_ms(instance_dir: &Path) -> u64 {
+    let mut newest = modified_unix_ms(instance_dir);
+    let Ok(scopes) = std::fs::read_dir(instance_dir) else {
+        return newest;
+    };
+    for scope in scopes.flatten() {
+        newest = newest.max(modified_unix_ms(&scope.path()));
+        let Ok(entries) = std::fs::read_dir(scope.path()) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            newest = newest.max(modified_unix_ms(&entry.path()));
+        }
+    }
+    newest
+}
+
 /// Drop generations this build no longer reads, and instance directories that
 /// nothing has touched in a month. Both are pure reclamation: the current
 /// instance's current generation is never a candidate.
@@ -689,17 +726,8 @@ fn purge_incompatible_generations(context: &OfflineCacheContext, now_unix_ms: u6
             if instance.file_name().to_str() == Some(context.instance_id.as_str()) {
                 continue;
             }
-            let Ok(metadata) = instance.metadata() else {
-                continue;
-            };
-            let modified = metadata
-                .modified()
-                .unwrap_or(UNIX_EPOCH)
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-                .min(u128::from(u64::MAX)) as u64;
-            if now_unix_ms.saturating_sub(modified) > FOREIGN_INSTANCE_MAX_AGE_MS {
+            let newest = newest_activity_unix_ms(&instance.path());
+            if now_unix_ms.saturating_sub(newest) > FOREIGN_INSTANCE_MAX_AGE_MS {
                 let _ = std::fs::remove_dir_all(instance.path());
             }
         }
@@ -1008,6 +1036,18 @@ mod tests {
 
     fn cleanup(context: &OfflineCacheContext) {
         let _ = std::fs::remove_dir_all(&context.root);
+    }
+
+    /// Regular files only — opening a directory for write is not portable, and
+    /// the point of the tests that use this is precisely that entry files move
+    /// while their parent directories do not.
+    fn set_modified(path: &Path, unix_ms: u64) {
+        let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_times(
+            std::fs::FileTimes::new()
+                .set_modified(UNIX_EPOCH + std::time::Duration::from_millis(unix_ms)),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1365,6 +1405,28 @@ mod tests {
         purge_incompatible_generations(&mine, now_unix_ms() + FOREIGN_INSTANCE_MAX_AGE_MS + 1);
         assert!(!theirs.instance_dir().exists(), "an abandoned instance is reclaimed");
         assert!(mine.instance_dir().exists(), "the current instance is never a candidate");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_live_foreign_instance_survives_a_stale_directory_stamp() {
+        let root = test_root("foreign-activity");
+        let mine = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 7);
+        let theirs = context_at(root.clone(), "fedcba9876543210fedcba9876543210", 7);
+        write_entry(&theirs, "conversation", "abc", "{\"b\":2}", "r", 1).unwrap();
+
+        // Their directory tree was created now and never gains another scope,
+        // so its own mtime stops moving here. Rewriting the same entry a month
+        // on is exactly what a live install does — and the only thing it
+        // touches is the entry file.
+        let later = now_unix_ms() + FOREIGN_INSTANCE_MAX_AGE_MS + 60_000;
+        set_modified(&theirs.entry_path("conversation", "abc"), later);
+
+        purge_incompatible_generations(&mine, later);
+        assert!(
+            theirs.instance_dir().exists(),
+            "an install still writing entries must not be reclaimed for a stale directory stamp",
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
