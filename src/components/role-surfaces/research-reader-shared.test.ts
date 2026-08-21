@@ -23,6 +23,11 @@ assert.match(
 );
 assert.match(
   source,
+  /block\.kind === "code"[\s\S]*?<MarkdownBlock/,
+  "fenced blocks use the shared Markdown renderer so Mermaid diagrams render",
+);
+assert.match(
+  source,
   /navigation=\{expanded && tocOn \? "rail" : "compact"\}/,
   "Research uses the shared compact outline until the wide rail is available",
 );

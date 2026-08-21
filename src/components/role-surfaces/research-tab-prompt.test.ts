@@ -37,26 +37,30 @@ test("intent keeps the shared min-length gate with aria-invalid wiring", () => {
 
 // ── Mode cards: inference-backed auto pick, manual override, reset ───────────
 
-test("mode cards are backed by the real routing inference", () => {
+test("compact mode selection is backed by the real routing inference", () => {
   assert.match(composer, /inferResearchMissionMode\(intent\)/);
   assert.match(composer, /mode === "auto" \? inferred\.mode : mode/);
   // Deep loop is the display name for autoresearch — no fifth fake mode.
   assert.match(composer, /autoresearch: "Deep loop"/);
   assert.match(composer, /RESEARCH_MISSION_MODES\.map/);
-  // Auto pick highlights, manual click overrides, reset returns to auto.
-  assert.match(composer, /\{manual \? "✓ selected" : "auto pick"\}/);
-  assert.match(composer, /data-selected=\{selected\}/);
-  assert.match(composer, /aria-pressed=\{manual && selected\}/);
-  assert.match(composer, /Reset to Auto/);
-  assert.match(composer, /setMode\("auto"\)/);
+  // Auto and every explicit mode live in one compact select, with the current
+  // plan summarized beside it instead of four persistent cards.
+  assert.match(composer, /<StandardSelect<"auto" \| ResearchMissionMode>/);
+  assert.match(composer, /label="Research mode"/);
+  assert.match(composer, /value=\{mode\}/);
+  assert.match(composer, /onChange=\{setMode\}/);
+  assert.match(composer, /value: "auto"/);
+  assert.match(composer, /`Auto · \$\{MODE_LABELS\[effectiveMode\]\}`/);
+  assert.match(composer, /className="research-mode-picker__summary"/);
+  assert.doesNotMatch(composer, /className="research-mode-card"/);
   // Cross-tab navigation preselects a mode as a manual choice.
   assert.match(composer, /if \(initialMode\) setMode\(initialMode\)/);
   assert.match(promptTab, /initialMode\?: ResearchMissionMode/);
   assert.match(promptTab, /initialMode=\{initialMode\}/);
-  assert.match(css, /\.research-mode-card\[data-selected="true"\]/);
+  assert.match(css, /\.research-mode-picker__select/);
 });
 
-test("mode card meta derives from the real default plans, not design copy", () => {
+test("mode metadata derives from the real default plans, not design copy", () => {
   // modeCardMeta reads defaultResearchPlan — numbers can never drift from the
   // plans the server actually applies.
   assert.match(composer, /const bounds = defaultResearchPlan\(mode\)\.bounds/);
@@ -68,7 +72,7 @@ test("mode card meta derives from the real default plans, not design copy", () =
   assert.equal(paper.sourceTarget, 8);
 });
 
-test("routing inference behaves as the cards advertise", () => {
+test("routing inference behaves as the mode picker advertises", () => {
   assert.equal(inferResearchMissionMode("write a literature review of RAG evals").mode, "paper");
   assert.equal(inferResearchMissionMode("map the landscape of agent frameworks").mode, "sweep");
   assert.equal(inferResearchMissionMode("keep researching until the loop converges").mode, "autoresearch");
@@ -122,25 +126,34 @@ test("commands run real actions and never leave the token in the intent", () => 
 
 // ── ✦ Improve: real enhance route, busy state, honest failure ────────────────
 
-test("Improve POSTs the draft to /api/prompt/enhance in research mode", () => {
-  assert.match(composer, /fetch\("\/api\/prompt\/enhance"/);
-  assert.match(composer, /method: "POST"/);
-  assert.match(composer, /JSON\.stringify\(\{ draft, mode: "research" \}\)/);
-  // Busy label per the design; the note region is a status live region.
-  assert.match(composer, /"✦ Improving…" : "✦ Improve"/);
-  assert.match(composer, /className="research-improve-note" role="status"/);
+test("Improve uses the shared agentic lifecycle in research mode", () => {
+  assert.match(composer, /usePromptEnhance\(\{/);
+  assert.match(composer, /mode: "research"/);
+  assert.match(composer, /familiarId,/);
+  assert.match(composer, /researchMode: effectiveMode/);
+  assert.match(composer, /relatedSources: attachedLinks\.map/);
+  assert.doesNotMatch(composer, /fetch\("\/api\/prompt\/enhance"/);
+  // The active button becomes a stop control, while progress and result
+  // actions stay in an accessible status strip.
+  assert.match(composer, /improving \? "✦ Stop improving" : "✦ Improve"/);
+  assert.match(composer, /className="research-improve-status"/);
+  assert.match(composer, /role=\{promptEnhance\.state\.phase === "error" \? "alert" : "status"\}/);
+  assert.match(composer, /promptEnhance\.apply\(\)/);
+  assert.match(composer, /promptEnhance\.revert\(\)/);
+  assert.match(composer, /promptEnhance\.cancel\(\)/);
   // Too-short drafts disable the button (opacity via CSS, real disabled attr).
-  assert.match(composer, /disabled=\{!improveReady \|\| improving\}/);
+  assert.match(composer, /disabled=\{!improveReady && !improving\}/);
   assert.match(css, /\.research-improve:disabled \{[^}]*opacity/);
 });
 
-test("Improve failure and races stay honest — the draft is never clobbered", () => {
-  // Route failure surfaces a visible message and leaves the draft alone.
-  assert.ok(composer.includes("Improve failed (HTTP ${res.status}) — the draft is unchanged."));
-  assert.ok(composer.includes("Improve is unreachable right now — the draft is unchanged."));
-  // The settle rule: only apply the rewrite to the draft it was asked for.
-  assert.match(composer, /settleEnhance\(draft, intentRef\.current\) === "apply"/);
-  assert.match(composer, /kept your edits/);
+test("Improve exposes race-safe proposals, revert, and offline provenance", () => {
+  assert.match(composer, /promptEnhance\.state\.phase === "suggested"/);
+  assert.match(composer, /An improved version is ready/);
+  assert.match(composer, /offline fallback/);
+  assert.match(composer, /Why this\?/);
+  assert.match(composer, /recommendation\.rationale/);
+  // Slash Improve strips the command before starting the shared lifecycle.
+  assert.match(composer, /promptEnhance\.enhance\("auto", stripped\)/);
 });
 
 test("the enhance route contract matches what Improve sends", () => {
@@ -153,6 +166,19 @@ test("the enhance route contract matches what Improve sends", () => {
   // An empty draft is the 400 path the failure handling covers.
   const bad = buildPromptEnhancement({ draft: "", mode: "research" });
   assert.equal(bad.ok, false);
+});
+
+test("runtime changes reset model and model choices come from that runtime inventory", () => {
+  assert.match(composer, /useRuntimeModelInventory\(harness, familiarId\)/);
+  assert.match(composer, /runtimeModelInventory\.models\.map/);
+  assert.match(composer, /inventoryProvenanceLabel/);
+  assert.match(
+    composer,
+    /onChange=\{\(next\) => \{\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
+  );
+  assert.match(composer, /<StandardSelect[\s\S]*?id="research-runtime-model"/);
+  assert.match(composer, /options=\{modelOptions\}/);
+  assert.doesNotMatch(composer, /id="research-runtime-model"\s*type="text"/);
 });
 
 // ── Quick saves: attach state → candidate sources on the new mission ─────────
@@ -337,12 +363,12 @@ test("prompt tab styles are token-driven and container-responsive", () => {
   assert.match(css, /\.research-intake \{/);
   assert.match(css, /\.research-intake__card \{[^}]*var\(--research-accent\)/);
   assert.match(css, /\.research-intake button:focus-visible/);
-  assert.match(css, /@container research-desk \(max-width: 900px\) \{\s*\.research-intake__modes-grid/);
+  assert.match(css, /@container research-desk \(max-width: 900px\) \{\s*\.research-mode-picker/);
   assert.match(css, /@container research-desk \(max-width: 560px\) \{\s*\.research-intake/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.research-intake \*/);
   // No Nocturne hexes in the prompt sheet's classes: the accent-glow card and
-  // mode cards must ride the scoped research tokens.
-  assert.match(css, /\.research-mode-card\[data-selected="true"\] \{[^}]*var\(--research-accent\)/);
+  // compact mode summary must ride the scoped research tokens.
+  assert.match(css, /\.research-mode-picker__state \{[^}]*var\(--research-accent\)/);
   assert.match(css, /\.research-topic-recommendations \{/);
   assert.match(css, /\.research-topic-recommendations__card \.agentic-recommendation-card__actions \{/);
   assert.match(css, /@container research-desk \(max-width: 560px\) \{[\s\S]*\.research-topic-recommendations/);

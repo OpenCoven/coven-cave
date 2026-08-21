@@ -25,6 +25,7 @@ import {
   DocumentReader,
   type DocumentReaderApi,
 } from "@/components/document-reader";
+import { MarkdownBlock } from "@/components/message-bubble";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
@@ -387,6 +388,17 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
         <ul key={key}>
           {block.items.map((item, i) => <li key={i}>{renderSpans(item, `${key}-li-${i}`)}</li>)}
         </ul>
+      );
+    }
+    if (block.kind === "code") {
+      const fence = "```";
+      return (
+        <div className="rr-codeblock document-reader__wide-block" key={key}>
+          <MarkdownBlock
+            text={`${fence}${block.language}\n${block.code}\n${fence}`}
+            onOpenUrl={openUrl}
+          />
+        </div>
       );
     }
     return (
