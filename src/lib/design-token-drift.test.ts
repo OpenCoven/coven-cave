@@ -87,7 +87,9 @@ const BASELINES = {
 // wrote to desktop-chrome.css, surface-code-room.css and
 // workspace-context-switcher.css is on --space-1..-6 or a named token — and
 // tokenize-css.mjs is a no-op over all three, so tier 1 stays clean.
-BASELINES.offScaleSpacingPx = 1608;
+// -1: the compact Research mode picker replaces an off-grid spacing literal
+// with the shared control rhythm.
+BASELINES.offScaleSpacingPx = 1607;
 BASELINES.inlineTsxStyles = 280;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────

@@ -295,6 +295,16 @@
 .rr-kroverlay__title { font-family: var(--font-eb-garamond); font-size: 22px; font-weight: 600; color: var(--text-primary); line-height: 1.1; }
 .rr-kroverlay__sub { font: 400 11.5px var(--font-mono); color: var(--text-muted); margin-top: 5px; }
 
+.rr-codeblock {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-block: var(--space-2) var(--space-4);
+  margin-inline: 0;
+  transform: none;
+}
+.rr-codeblock .cave-md > .cm-mermaid-diagram { margin: 0; }
+
 /* ── empty state ── */
 .rr-empty { padding: 60px 48px; text-align: center; color: var(--text-muted); font-size: var(--text-md); }
 

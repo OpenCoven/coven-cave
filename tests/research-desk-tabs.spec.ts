@@ -1299,7 +1299,7 @@ test.describe("research desk tabs", () => {
     ).toBeVisible();
   });
 
-  test("Prompt shows the composer, opens the slash palette on '/', and mode cards track typed intent", async ({ page }) => {
+  test("Prompt shows the composer, opens the slash palette on '/', and the mode picker tracks typed intent", async ({ page }) => {
     await openResearchDesk(page);
     await deskTab(page, /^Prompt/).click();
 
@@ -1322,13 +1322,15 @@ test.describe("research desk tabs", () => {
 
     // Auto mode routing reacts to the typed intent: "whitepaper" → Paper.
     await intent.fill("Write a whitepaper on vector databases for our team");
-    const selectedCard = intake.locator('.research-mode-card[data-selected="true"]');
-    await expect(selectedCard).toContainText("Paper");
-    await expect(selectedCard).toContainText("auto pick");
-    await expect(intake.getByText(/Auto picks one from your prompt — Paper for now/)).toBeVisible();
+    const modePicker = intake.getByRole("button", { name: "Research mode" });
+    await expect(modePicker).toContainText("Auto · Paper");
+    await expect(intake.locator(".research-mode-picker__summary")).toContainText("Auto pick");
+    await expect(intake.locator(".research-mode-picker__summary")).toContainText("Paper");
+    await expect(intake.getByText("Auto selected Paper from the prompt.")).toBeVisible();
 
-    // Clicking a card is a manual override, said in plain words.
-    await intake.locator(".research-mode-card", { hasText: "Deep loop" }).click();
+    // Selecting a mode is a manual override, said in plain words.
+    await modePicker.click();
+    await page.getByRole("menuitemradio", { name: /^Deep loop/ }).click();
     await expect(intake.getByText("You chose Deep loop — this run will use it.")).toBeVisible();
 
     // Quick saves is a drawer docked to the bottom edge: collapsed by default
