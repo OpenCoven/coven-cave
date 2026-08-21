@@ -45,7 +45,7 @@ targets:
             done
           fi
           if ! command -v node >/dev/null 2>&1; then
-            echo "warning: node not found — skipping web bundle generation (using fallbacks)"
+            echo "warning: node not found — skipping markdown bundle generation (using fallbacks)"
             exit 0
           fi
           ( cd "$REPO" && node scripts/build-ios-markdown.mjs ) \

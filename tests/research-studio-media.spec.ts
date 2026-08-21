@@ -522,12 +522,19 @@ test.describe("Research Studio media honesty and playback", () => {
     );
   });
 
-  test("defaults short videos to ElevenLabs Rachel at standard length", async ({
+  test("creates, reviews, renders, plays, and downloads a short video", async ({
     page,
   }) => {
     const controls = await boot(page, { ready: true });
     const studio = page.locator(".research-studio");
-    await studio.locator('button[data-kind="short-video"]').click();
+    const shortVideoCard = studio.locator('button[data-kind="short-video"]');
+    await expect(shortVideoCard).toBeEnabled();
+    await expect(shortVideoCard).toHaveCSS("cursor", "pointer");
+    await studio.locator('button[data-kind="podcast"]').focus();
+    await page.keyboard.press("Tab");
+    await expect(shortVideoCard).toBeFocused();
+    await expect(shortVideoCard).toHaveCSS("outline-style", "solid");
+    await shortVideoCard.click();
 
     const config = page.getByRole("dialog", { name: "Generate Short video" });
     await expect(config.getByLabel("Voice provider")).toHaveValue("elevenlabs");
@@ -535,6 +542,13 @@ test.describe("Research Studio media honesty and playback", () => {
       ELEVENLABS_VOICE_ID,
     );
     await expect(config.getByLabel("Length")).toHaveValue("standard");
+    await config.getByLabel("Research run").focus();
+    await page.keyboard.press("Tab");
+    await expect(config.getByLabel("Directions (optional)")).toBeFocused();
+    await expect(config.getByLabel("Directions (optional)")).toHaveCSS(
+      "outline-style",
+      "solid",
+    );
 
     await config
       .getByRole("button", { name: /Draft for review Short video/ })
@@ -549,6 +563,28 @@ test.describe("Research Studio media honesty and playback", () => {
         length: "standard",
       },
     });
+
+    const review = page.getByRole("dialog", {
+      name: "Review before rendering",
+    });
+    await expect(review).toContainText("An extracted finding for the video.");
+    await review.getByRole("button", { name: "Render media" }).click();
+
+    const row = studio.locator('[data-generation-id="gen-short-video-1"]');
+    await expect(row).toContainText("Waiting to render");
+    await expect
+      .poll(() => row.innerText(), { timeout: 20_000 })
+      .toContain("Synthesizing");
+    await expect
+      .poll(() => row.innerText(), { timeout: 20_000 })
+      .toContain("ready");
+    await row.getByRole("button", { name: "↗ Open" }).click();
+
+    const viewer = page.getByRole("dialog", { name: /Short video —/ });
+    await expect(viewer.locator("video[controls]")).toBeVisible();
+    await expect(
+      viewer.getByRole("link", { name: /Download media/ }),
+    ).toHaveAttribute("href", /download=1/);
   });
 
   test("resumes drafts, retries failures, cancels progress, and opens both video players", async ({

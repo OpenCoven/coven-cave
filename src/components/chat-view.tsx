@@ -16,6 +16,7 @@ import {
   CodeReadingContext,
   FileLinkResolverContext,
   MessageBubble,
+  ProgressiveMarkdownBlock,
   SyntaxBlock,
   type CodeReading,
   type MessageBubbleSegment,
@@ -122,6 +123,7 @@ import { ChatEmptyState } from "@/components/chat-empty-state";
 import { ChatNewDashboard } from "@/components/chat-new-dashboard";
 import { ArchiveChatButton, ChatTitleEditable, DeleteChatButton, SessionOverflowMenu, VoiceCallButton } from "@/components/chat-session-header";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
@@ -219,6 +221,11 @@ import {
   chatTurnVisibleText,
   extractChatRenderedText,
 } from "@/lib/chat-rendered-text";
+import { shouldUseEmptySuccessfulFallback } from "@/lib/chat-assistant-output";
+import { verificationEvidenceFromTools } from "@/lib/chat-tool-verification";
+import { createStreamingTurnViewModel } from "@/lib/streaming-turn-view-model";
+import { useStreamingPresentationSource } from "@/lib/use-streaming-presentation-source";
+import { copyText } from "@/lib/clipboard";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
@@ -1285,11 +1292,8 @@ function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
   );
 }
 
-/** The model application trail is separate from controls: a runtime echo can
- * prove forwarding without proving provider application, and a runtime-owned
- * default may intentionally have no model id at all. */
-function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
-  if (!metadata) return null;
+function responseModelStatusLines(metadata?: ChatResponseMetadata): string[] {
+  if (!metadata) return [];
   const requested = metadata.requestedModel;
   const desired = metadata.desiredModel ?? metadata.model;
   const forwarded = metadata.forwardedModel;
@@ -1304,6 +1308,14 @@ function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) 
   else if (metadata.modelApplicationState) lines.push(`Model: ${metadata.modelApplicationState}`);
   if (metadata.modelSource) lines.push(`Source: ${metadata.modelSource}`);
   if (metadata.modelApplicationReason && !confirmed) lines.push(metadata.modelApplicationReason);
+  return lines;
+}
+
+/** The model application trail is separate from controls: a runtime echo can
+ * prove forwarding without proving provider application, and a runtime-owned
+ * default may intentionally have no model id at all. */
+function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+  const lines = responseModelStatusLines(metadata);
   if (lines.length === 0) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response model. ${lines.join(". ")}`}>
@@ -1316,15 +1328,14 @@ function ResponseModelStatus({ metadata }: { metadata?: ChatResponseMetadata }) 
   );
 }
 
-/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
-function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+function responseControlStatusLines(metadata?: ChatResponseMetadata): string[] {
   const requested = Object.entries(metadata?.requestedControls ?? {});
   const rejected = new Set(metadata?.rejectedControlFamilies ?? []);
   const promptOnly = new Set(Object.keys(metadata?.promptGuidanceControls ?? {}));
   const forwarded = new Set(Object.keys(metadata?.forwardedControls ?? {}));
   const applied = new Set(Object.keys(metadata?.appliedControls ?? {}));
-  if (!requested.length && !rejected.size) return null;
-  const lines = [
+  if (!requested.length && !rejected.size) return [];
+  return [
     ...requested.map(([family, value]) => {
       const prefix = rejected.has(family)
         ? "Rejected"
@@ -1340,6 +1351,12 @@ function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }
     ...[...rejected].filter((family) => !requested.some(([requestedFamily]) => requestedFamily === family))
       .map((family) => `Rejected: ${family}`),
   ];
+}
+
+/** Per-turn control outcome: requested, prompt guidance, applied, or rejected. */
+function ResponseControlStatus({ metadata }: { metadata?: ChatResponseMetadata }) {
+  const lines = responseControlStatusLines(metadata);
+  if (lines.length === 0) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5" role="status" aria-label={`Response controls. ${lines.join(". ")}`}>
       {lines.map((line) => (
@@ -1952,6 +1969,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
   const [busy, setBusy] = useState(false);
   const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
+  const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
   const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
     sessionId: null,
@@ -1985,14 +2003,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, []);
 
   const reflectOnThread = useCallback(async () => {
-    if (!sessionId || reflecting) return;
+    if (!sessionId || reflecting || !reflectTranscript) return;
     setReflecting(true);
     setReflectError(null);
     try {
       // Generate the reflection client-side via the chat bridge — the daemon has
       // no LLM endpoint. Run it ephemerally (embed the transcript instead of
       // resuming the session) so it never appends a turn to the user's thread.
-      const prompt = buildThreadReflectPrompt({ sessionId, transcript: buildReflectTranscript(turns) });
+      const prompt = buildThreadReflectPrompt({ sessionId, transcript: reflectTranscript });
       const { text, error } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
@@ -2022,12 +2040,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setReflecting(false);
     }
-  }, [familiar.display_name, familiar.id, onSessionsChanged, reflecting, session?.title, sessionId, turns]);
+  }, [familiar.display_name, familiar.id, onSessionsChanged, reflectTranscript, reflecting, session?.title, sessionId]);
 
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
-    if (!familiar.autoSelfReport) return;
+    if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
-      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: buildReflectTranscript(turns) });
+      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
       const { text, error } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
@@ -2055,7 +2073,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
-  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, session?.title, turns]);
+  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, reflectTranscript, session?.title]);
 
   useEffect(() => {
     const status = session?.status?.toLowerCase();
@@ -2646,7 +2664,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // read the live value without re-subscribing.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
-  const [newTurnsCount, setNewTurnsCount] = useState(0);
+  const [newResponseContent, setNewResponseContent] = useState(false);
+  const observedAssistantTurnIdRef = useRef<string | null>(null);
+  const observedAssistantSourceRef = useRef("");
   // Transcript render cap (see TRANSCRIPT_RENDER_CAP). Sticky for the session:
   // once the reader leaves the bottom we mount the whole transcript and keep it
   // mounted, so re-pinning doesn't churn rows in/out.
@@ -2716,8 +2736,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     followingRef.current = next;
     setFollowing(next);
     if (next) {
-      // Reset count when returning to the bottom
-      setNewTurnsCount(0);
+      setNewResponseContent(false);
       releasedScrollAnchorRef.current = null;
       if (releasedAnchorFrameRef.current !== null) {
         cancelAnimationFrame(releasedAnchorFrameRef.current);
@@ -3900,6 +3919,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
 
+  const activeAssistantResponse = useMemo(() => {
+    const turn = activePath.findLast((turn) => turn.role === "assistant");
+    return {
+      turnId: turn?.id ?? null,
+      source: turn
+        ? JSON.stringify(
+            extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) }),
+          )
+        : "",
+    };
+  }, [activePath]);
+  const activeAssistantTurnId = activeAssistantResponse.turnId;
+  const activeAssistantSource = activeAssistantResponse.source;
+
+  useEffect(() => {
+    const turnChanged = observedAssistantTurnIdRef.current !== activeAssistantTurnId;
+    const sourceChanged = observedAssistantSourceRef.current !== activeAssistantSource;
+    observedAssistantTurnIdRef.current = activeAssistantTurnId;
+    observedAssistantSourceRef.current = activeAssistantSource;
+
+    if (following) {
+      setNewResponseContent(false);
+      return;
+    }
+    if (activeAssistantTurnId !== null && (turnChanged || sourceChanged)) {
+      setNewResponseContent(true);
+    }
+  }, [activeAssistantSource, activeAssistantTurnId, following]);
+
   // The last settled assistant turn's first reply next-path. Typed task/action
   // suggestions are deliberately excluded: keyboard fill may only prepare
   // editable chat text, never start a task or navigate as a side effect.
@@ -4407,13 +4455,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Auto-grow the composer with its content (shared with the home composer).
   useAutogrowTextarea(inputRef, input, { fallbackMaxHeight: COMPOSER_MAX_HEIGHT });
 
-  // CHAT-D10-03: Track new turns arriving while not following
-  const appendTurn = (newTurn: Turn | Turn[]) => {
-    if (!followingRef.current) {
-      setNewTurnsCount((c) => c + (Array.isArray(newTurn) ? newTurn.length : 1));
-    }
-  };
-
   const appendSystem = (text: string) => {
     const newTurn = {
       id: crypto.randomUUID(),
@@ -4421,7 +4462,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       text,
       createdAt: new Date().toISOString(),
     };
-    appendTurn(newTurn);
     // Route through the live registry (cave-7ft): while a response streams the
     // registry is the source of truth — a raw setTurns append would be
     // discarded when the next assistant_chunk mirrors the registry snapshot
@@ -4485,7 +4525,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         { id: "image-gen", label: "Generating image", status: "running", createdAt: now },
       ],
     };
-    appendTurn([userTurn, assistantTurn]);
     updateLiveTurns((prev) => [...prev, userTurn, assistantTurn], assistantTurn.id);
     setActiveLeafId(assistantTurn.id);
     announce("Generating image");
@@ -5287,7 +5326,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     streamOwnerRef.current = true;
     refetchOnSettleRef.current = null;
     const nextTurns = [...turnsRef.current, userTurn, assistantTurn];
-    appendTurn([userTurn, assistantTurn]);
     turnsRef.current = nextTurns;
     setTurns(nextTurns);
     setActiveLeafId(assistantTurn.id);
@@ -5651,6 +5689,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       });
     }
     abortRef.current?.abort();
+    announce("Response stopped.", "polite");
   };
 
   function retryFailedSend(optionOverrides?: Partial<ChatSendOptions>) {
@@ -5975,6 +6014,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       announce(projectLaunchMessage, "assertive");
       return;
     }
+    updateFollowing(true);
+    schedulePin();
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
     // Only mentions whose `@path` token survived editing ride along — a
     // deleted reference must not silently re-enter the prompt.
@@ -6083,6 +6124,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     rerunWithFor,
     send,
   };
+  transcriptHandlersRef.current.cancelSend = cancelSend;
 
   // Auto-send a prompt handed off from the home composer. Deferred one
   // macrotask so it runs after strict-mode's mount-effect replay — sending
@@ -7793,7 +7835,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 promotableFamiliars={promotableFamiliars}
                 onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
-                onReflect={familiar.id ? () => void reflectOnThread() : undefined}
+                onReflect={familiar.id && reflectTranscript ? () => void reflectOnThread() : undefined}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
                 onRegisterCurrentRoot={
                   setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
@@ -8030,28 +8072,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <div ref={tailRef} />
         </div>
 
-        {/* Scroll-to-bottom FAB (CHAT-D10-03: shows count of new messages) */}
+        {/* Released-reader response control (CHAT-D10-03). */}
         {!following && (
           <button
             type="button"
+            className="cave-new-response-content focus-ring"
             onClick={() => {
               updateFollowing(true);
-              const el = scrollRef.current;
-              if (!el) return;
-              // CHAT-D13-03: the global `scroll-behavior: auto !important`
-              // kill switch does NOT override explicit scrollTo options, so
-              // gate the smooth animation on prefers-reduced-motion here.
-              const reduceMotion =
-                typeof window !== "undefined" &&
-                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-              el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
+              schedulePin();
             }}
-            aria-label={`Scroll to bottom${newTurnsCount ? ` (${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""})` : ""}`}
-            className="cave-scroll-bottom-button sticky bottom-4 ml-auto z-[60] flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"
-            title={newTurnsCount ? `${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""}` : undefined}
           >
-            <Icon name="ph:caret-down-bold" width={12} />
-            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[length:var(--text-2xs)] font-semibold text-[var(--accent-presence-foreground)]">{newTurnsCount}</span>}
+            {newResponseContent ? "New response content" : "Latest"}
           </button>
         )}
       </div>
@@ -8496,6 +8527,7 @@ type TranscriptHandlers = {
   askAboutFor: (turn: Turn) => ((quote: string) => void) | undefined;
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
+  cancelSend?: () => void;
   send: (override?: string) => Promise<void>;
 };
 
@@ -8569,6 +8601,8 @@ const TranscriptRows = memo(function TranscriptRows({
     : historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
       ? groupedTurns
       : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
+  const latestAssistantId =
+    allTurns.findLast((turn) => turn.role === "assistant")?.id ?? null;
   const rows = renderGroups.map((g, groupIndex) => {
     if (g.kind === "single") {
       const t = g.turn;
@@ -8607,6 +8641,7 @@ const TranscriptRows = memo(function TranscriptRows({
           key={t.id}
           turn={t}
           familiar={familiar}
+          announceLifecycle={t.id === latestAssistantId}
           showTimestamp={showTimestamp}
           found={foundTurnId === t.id}
           onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8618,6 +8653,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onOpenUrl={onOpenUrl}
           onOpenPreview={onOpenPreview}
           onRequest={(prompt) => void handlers().send(prompt)}
+          handlersRef={handlersRef}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -8673,6 +8709,7 @@ const TranscriptRows = memo(function TranscriptRows({
               key={t.id}
               turn={t}
               familiar={familiar}
+              announceLifecycle={t.id === latestAssistantId}
               showTimestamp={showTimestamp}
               found={foundTurnId === t.id}
               onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
@@ -8684,6 +8721,7 @@ const TranscriptRows = memo(function TranscriptRows({
               onOpenUrl={onOpenUrl}
               onOpenPreview={onOpenPreview}
               onRequest={(prompt) => void handlers().send(prompt)}
+              handlersRef={handlersRef}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -8727,6 +8765,7 @@ const TranscriptRows = memo(function TranscriptRows({
 function TurnRowImpl({
   turn,
   familiar,
+  announceLifecycle,
   showTimestamp = true,
   found = false,
   onEdit,
@@ -8740,13 +8779,17 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onRequest,
+  handlersRef,
   feedbackContext,
   branchNav,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
   onRequest?: (prompt: string) => void;
+  /** Stable latest-ref for stream controls; avoids a fresh Stop callback prop. */
+  handlersRef: React.RefObject<TranscriptHandlers>;
   familiar: Familiar;
+  announceLifecycle: boolean;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
    *  applies the temporary cave-turn-found highlight flash. */
@@ -8821,6 +8864,17 @@ function TurnRowImpl({
   const ghFamiliar = useMemo(
     () => ({ id: familiar.id, name: familiar.display_name }),
     [familiar.id, familiar.display_name],
+  );
+  const rawText = turn.role === "assistant" ? turn.text : "";
+  const pending = turn.role === "assistant" && Boolean(turn.pending);
+  // Main Chat accepts authoritative assistant_replace events in addition to
+  // accumulated chunks. Buffer the raw protocol source in replacement-safe mode,
+  // then project markers; treating the already-projected visible text as
+  // append-only would retain text that a correction deliberately removed.
+  const presentedRawText = useStreamingPresentationSource(
+    rawText,
+    pending,
+    { sourceMode: "replaceable" },
   );
 
   if (turn.role === "system" || turn.role === "user") {
@@ -8904,15 +8958,35 @@ function TurnRowImpl({
     );
   }
 
+  const currentProjection = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
   const {
     visible,
     cardText: visibleWithGh,
     inlineReasoning,
     skillUpdates,
     autoStatusUpdate,
-  } = extractChatRenderedText(turn.text, { pending: Boolean(turn.pending) });
+    authoredResults,
+    attentionRequest,
+    nextPaths,
+  } = currentProjection;
+  const durableAttentionRequest = attentionRequest ?? turn.responseMetadata?.attentionRequest ?? null;
+  const presentedProjection = extractChatRenderedText(
+    presentedRawText,
+    { pending },
+  );
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
+  const streamingModel = createStreamingTurnViewModel({
+    turnId: turn.id,
+    visibleText: pending ? presentedProjection.visible : visible,
+    pending,
+    lifecycle: turnStatus,
+    failed: Boolean(turn.error),
+    progress: turn.progress,
+    tools: turn.tools,
+    authoredResults,
+    verifiedResults: verificationEvidenceFromTools(turn.tools),
+  });
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
   // visible text yet), a Queued/Connecting/Writing chip in the same meta row
   // duplicates it — suppress the chip until text flows or the turn settles.
@@ -8924,7 +8998,18 @@ function TurnRowImpl({
   // ordinary markdown path until markers and fences are complete.
   const artifactCtx = { familiarId: familiar.id };
   let renderSegments: MessageBubbleSegment[] | undefined;
-  if (!turn.pending) {
+  if (turn.pending) {
+    // Streaming: interleave tool blocks inline at their chronological offset so
+    // you can watch them run as live feedback.
+    renderSegments = bubbleSegments;
+  } else {
+    // Settled: prose only (+ artifact viewers + GitHub cards + image
+    // carousels). Tools are NOT woven into the text — they render in the
+    // designated ToolGroup section below. Image splitting runs first, while
+    // every marker is still in one prose span, so `group` decks can cross an
+    // artifact or GitHub card. The later splitters refine only the remaining
+    // prose. MessageBubble still owns `visible` as the complete durable source;
+    // this splitter output owns only the settled inline presentation.
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
@@ -8959,9 +9044,151 @@ function TurnRowImpl({
   // ("<N> calls · <categories>"). These partitions do not depend on pending,
   // so React updates the same instances when the turn settles.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
-  const turnTools = turn.tools ?? [];
-  const editCards = turnTools.filter(isEditCard);
-  const otherTools = turnTools.filter((t) => !isEditCard(t));
+  const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
+  const editCards = settledTools.filter(isEditCard);
+  const otherTools = settledTools.filter((t) => !isEditCard(t));
+  const activityDetails =
+    reasoning
+    || indicatorVisible
+    || turn.progress?.length
+    || (pending && bubbleSegments?.some((segment) => segment.kind === "block"))
+    || (!pending && otherTools.length)
+      ? (
+          <div data-main-chat-activity-details={true}>
+            {reasoning ? (
+              <ReasoningBlock
+                reasoning={reasoning}
+                durationMs={turn.durationMs}
+                pending={pending}
+              />
+            ) : null}
+            {indicatorVisible ? (
+              <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
+            ) : null}
+            {turn.progress?.length ? (
+              <ProgressGroup progress={turn.progress} pending={pending} />
+            ) : null}
+            {pending
+              ? bubbleSegments?.map((segment) =>
+                  segment.kind === "block"
+                    ? <div key={segment.key} className="my-2">{segment.node}</div>
+                    : null,
+                )
+              : null}
+            {!pending && otherTools.length ? (
+              <ToolGroup tools={otherTools} durationMs={turn.durationMs} />
+            ) : null}
+          </div>
+        )
+      : undefined;
+
+  const proseContent =
+    !pending && renderSegments
+      ? renderSegments.map((segment, index) =>
+          segment.kind === "text" ? (
+            <ProgressiveMarkdownBlock
+              key={`rich-prose-${index}`}
+              text={segment.text}
+            />
+          ) : (
+            <div key={segment.key} className="my-2">{segment.node}</div>
+          ),
+        )
+      : undefined;
+  const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
+    emptySuccessful: streamingModel.emptySuccessful,
+    visibleProse: visible,
+    hasRichBlocks: renderSegments?.some((segment) => segment.kind === "block") ?? false,
+    resultCount: streamingModel.results.length,
+    attachmentCount: turn.attachments?.length ?? 0,
+    skillUpdateCount: skillUpdates.length,
+    hasAutoStatusUpdate: autoStatusUpdate != null,
+    editCardCount: editCards.length,
+    followUpCount: nextPaths.length,
+    hasAttentionRequest: durableAttentionRequest != null,
+  });
+
+  const supplementaryContent = (
+    <div data-main-chat-supplementary-content={true}>
+      <ResponseModelStatus metadata={turn.responseMetadata} />
+      <ResponseControlStatus metadata={turn.responseMetadata} />
+      {/* Agent-produced inline attachments: images render full-bleed
+          (e.g. /image generations), audio/video mount as players, and
+          everything else stays a file chip that opens the lightbox. */}
+      {turn.attachments?.length ? (
+        <>
+          <InlineImageAttachments attachments={turn.attachments} />
+          <InlineMediaAttachments attachments={turn.attachments} />
+          {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
+            <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
+          ) : null}
+        </>
+      ) : null}
+      {/* Skill stage cards (design §5): one per skill name per turn,
+          updated in place by repeated <coven:skill> markers. */}
+      {skillUpdates.length ? (
+        <div className="mt-2 space-y-1.5">
+          {skillUpdates.map((update) => (
+            <SkillStageCard
+              key={update.name}
+              name={update.name}
+              stage={update.stage}
+              note={update.note}
+            />
+          ))}
+        </div>
+      ) : null}
+      {autoStatusUpdate ? (
+        <div className="mt-2">
+          <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
+        </div>
+      ) : null}
+      {/* Edit cards stay visible rather than being buried in activity. */}
+      {!pending && turn.tools?.length && editCards.length
+        ? (() => {
+            const editedFiles = Array.from(
+              new Set(
+                editCards
+                  .map((tool) => toolTargetFile(tool.name, tool.input))
+                  .filter((path): path is string => Boolean(path)),
+              ),
+            );
+            return (
+              <div className="cave-edit-cards mt-3 space-y-2">
+                {editedFiles.length > 1 ? (
+                  <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
+                    <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
+                      {editedFiles.length} files changed
+                    </span>
+                    <button
+                      type="button"
+                      className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                      aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
+                      onClick={() =>
+                        window.dispatchEvent(
+                          new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
+                        )
+                      }
+                    >
+                      Review all
+                    </button>
+                  </div>
+                ) : null}
+                {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+              </div>
+            );
+          })()
+        : null}
+      {/* Comment on substantial settled markdown artifacts. */}
+      {!pending && !turn.error && visible.trim().length > 80 ? (
+        <ArtifactComments
+          turnId={turn.id}
+          familiarName={familiar.display_name}
+          onRequest={(prompt) => onRequest?.(prompt)}
+        />
+      ) : null}
+    </div>
+  );
 
   return (
     <div
@@ -9048,142 +9275,61 @@ function TurnRowImpl({
           </div>
 
           <div className="cave-linear-turn-body">
-            <ChatToolActivityLayout
-              leading={
-                reasoning
-                  ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} pending={!!turn.pending} />
-                  : null
-              }
-              activity={otherTools.length ? <ToolGroup tools={otherTools} /> : null}
-              content={
-                <>
-                  {indicatorVisible ? (
-              <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
-            ) : (
-              // `cave-artifact-content` scopes the comment-on-artifact text
-              // selection to this turn's rendered markdown (see ArtifactComments).
-              <div className="cave-artifact-content">
-                <MessageBubble
-                  role="assistant"
-                  content={visible || (turn.pending ? "…" : "")}
-                  timestamp={turn.createdAt}
-                  showTimestamp={false}
-                  pending={turn.pending}
-                  isError={turn.error}
-                  label={familiar.display_name}
-                  messageId={turn.id}
-                  feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                  onRegenerate={onRegenerate}
-                  onReply={onReply}
-                  onOpenUrl={onOpenUrl}
-                  // CHAT-D13-01: with tools hidden, fall back to plain content —
-                  // the text segments concatenate to `visible` anyway, so prose
-                  // renders identically with the tool blocks omitted.
-                  segments={renderSegments}
-                  // The reader's "How this was made" footer reads the same
-                  // settled tool events the stream already renders, so the
-                  // provenance it shows can never disagree with the transcript.
-                  readerTools={turnTools}
-                  readerDurationMs={turn.durationMs}
-                  onAskAbout={onAskAbout}
-                  readerPrompt={readerPrompt}
-                  onRerunWith={onRerunWith}
-                  readerFamiliarId={familiar.id}
-                  branchNav={branchNav}
-                />
-                <ResponseModelStatus metadata={turn.responseMetadata} />
-                <ResponseControlStatus metadata={turn.responseMetadata} />
-              </div>
-                  )}
-                  {/* Agent-produced inline attachments: images render full-bleed
-                (e.g. /image generations), audio/video mount as players, and
-                everything else stays a file chip that opens the lightbox. */}
-            {turn.attachments?.length ? (
-              <>
-                <InlineImageAttachments attachments={turn.attachments} />
-                <InlineMediaAttachments attachments={turn.attachments} />
-                {turn.attachments.some((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a)) ? (
-                  <AttachmentList attachments={turn.attachments.filter((a) => !isInlineImageAttachment(a) && !isInlineMediaAttachment(a))} />
-                ) : null}
-              </>
-            ) : null}
-            {/* Skill stage cards (design §5): one per skill name per turn,
-                updated in place by repeated <coven:skill> markers — live
-                while streaming, settled state after. */}
-            {skillUpdates.length ? (
-              <div className="mt-2 space-y-1.5">
-                {skillUpdates.map((u) => (
-                  <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
-                ))}
-              </div>
-            ) : null}
-            {/* Auto-mission status card: one per turn, updated in place by
-                repeated <coven:auto-status> markers — the human-visible half
-                of the /auto watcher above that fires the blocked/done ping. */}
-            {autoStatusUpdate ? (
-              <div className="mt-2">
-                <AutoStatusCard state={autoStatusUpdate.state} note={autoStatusUpdate.note} />
-              </div>
-            ) : null}
-                  {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-                </>
-              }
-              editCards={
-                editCards.length
-                  ? (() => {
-                  // Golden path 4 (cave-qva4): a multi-file turn gets ONE
-                  // aggregate entry into the working-tree review — the
-                  // per-card Review buttons remain, but "which of these five
-                  // cards do I click" shouldn't be the first question. The
-                  // chip rides the cards' existing cave:open-file-diff
-                  // contract (the Changes panel suffix-matches the path and
-                  // shows every changed file once open).
-                  const editedFiles = Array.from(
-                    new Set(
-                      editCards
-                        .map((t) => toolTargetFile(t.name, t.input))
-                        .filter((p): p is string => Boolean(p)),
-                    ),
-                  );
-                  return (
-                    <div className="cave-edit-cards mt-3 space-y-2">
-                      {!turn.pending && turn.tools?.length && editedFiles.length > 1 ? (
-                        <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
-                          <span className="text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]">
-                            {editedFiles.length} files changed
-                          </span>
-                          <button
-                            type="button"
-                            className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[length:var(--text-2xs)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-                            aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
-                            onClick={() =>
-                              window.dispatchEvent(
-                                new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
-                              )
-                            }
-                          >
-                            Review all
-                          </button>
-                        </div>
-                      ) : null}
-                      {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
-                    </div>
-                  );
-                    })()
-                  : null
-              }
-            />
-            {/* Comment on the markdown artifact this turn produced: select any
-                passage above to leave a comment, then request a revision that
-                sends every comment back to the agent. Settled, substantial
-                assistant turns only (skip tiny replies and errors). */}
-            {!turn.pending && !turn.error && visible.trim().length > 80 ? (
-              <ArtifactComments
-                turnId={turn.id}
-                familiarName={familiar.display_name}
-                onRequest={(prompt) => onRequest?.(prompt)}
+            {/* `cave-artifact-content` keeps artifact selection scoped to this
+                turn while MessageBubble continues owning the exact source and
+                every durable action (copy, reader, feedback, reply, retry). */}
+            <div className="cave-artifact-content">
+              <MessageBubble
+                role="assistant"
+                content={visible || (turn.pending ? "…" : "")}
+                timestamp={turn.createdAt}
+                showTimestamp={false}
+                pending={turn.pending}
+                isError={showEmptySuccessfulFallback}
+                label={familiar.display_name}
+                messageId={turn.id}
+                feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
+                onRegenerate={onRegenerate}
+                onReply={onReply}
+                onOpenUrl={onOpenUrl}
+                assistantBody={
+                  showEmptySuccessfulFallback ? (
+                    <>
+                      {supplementaryContent}
+                      {activityDetails}
+                    </>
+                  ) : (
+                    <StreamingTurnResponse
+                      turnId={turn.id}
+                      familiarName={familiar.display_name}
+                      model={streamingModel}
+                      density="full"
+                      announceLifecycle={announceLifecycle}
+                      onStop={pending ? () => handlersRef.current.cancelSend?.() : undefined}
+                      canContinue={false}
+                      onRetry={turn.error ? onRegenerate : undefined}
+                      onCopyCompleted={
+                        pending && streamingModel.committedText
+                          ? () => { void copyText(streamingModel.committedText); }
+                          : undefined
+                      }
+                      proseContent={proseContent}
+                      activityDetails={activityDetails}
+                      supplementaryContent={supplementaryContent}
+                    />
+                  )
+                }
+                // The reader's "How this was made" footer reads the same
+                // settled tool events the stream already renders.
+                readerTools={settledTools}
+                readerDurationMs={turn.durationMs}
+                onAskAbout={onAskAbout}
+                readerPrompt={readerPrompt}
+                onRerunWith={onRerunWith}
+                readerFamiliarId={familiar.id}
+                branchNav={branchNav}
               />
-            ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -9809,9 +9955,11 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
   return (
     prev.turn === next.turn &&
     prev.familiar === next.familiar &&
+    prev.announceLifecycle === next.announceLifecycle &&
     prev.showTimestamp === next.showTimestamp &&
     prev.found === next.found &&
     prev.expanded === next.expanded &&
+    prev.handlersRef === next.handlersRef &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&

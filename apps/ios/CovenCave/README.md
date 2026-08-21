@@ -25,7 +25,8 @@ available contributor route.
 
 ```bash
 # from the repo root: build the generated Markdown resources the app embeds.
-# Run `pnpm install --frozen-lockfile` first.
+# (Resources/markdown.html — generated & gitignored, the Xcode build can't run
+# node). Run `pnpm install --frozen-lockfile` first.
 pnpm mobile:ios:xcodegen       # builds the bundle, verifies it, then
                                # runs xcodegen — in that order, which matters
                                # (alias for scripts/ios-xcodegen.sh)
