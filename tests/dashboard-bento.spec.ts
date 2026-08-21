@@ -107,13 +107,22 @@ test("stat tiles read live totals and the streak pips render", async ({ page }) 
   await expect(page.locator(".bd-pips-best")).toContainText(/best \d+d/);
 });
 
-test("heatmap is an aria-expanded collapsible with a full year of cells", async ({ page }) => {
+test("heatmap is an aria-expanded collapsible spanning the adaptive activity window", async ({ page }) => {
   await gotoDashboard(page);
 
   const head = page.locator(".bd-heat-head");
   await expect(head).toHaveAttribute("aria-expanded", "true");
-  // 53 week columns × 7 days.
-  await expect(page.locator(".bd-heat-cell")).toHaveCount(53 * 7);
+  // The window is adaptive, not a fixed year: `heatmapCells` picks 30, 90 or
+  // 365 days from the session spread, and the mocked sessions resolve it to 90.
+  // That window is then padded Sunday-first to whole week columns, and how much
+  // padding it takes depends on which weekday the run lands on — 13 columns on
+  // a Friday or Saturday, 14 on any other day. Pinning either number would make
+  // this test fail on five days in seven, so assert the contract instead: whole
+  // week columns, spanning the padded 90-day window.
+  const cellCount = await page.locator(".bd-heat-cell").count();
+  expect(cellCount % 7, "cells fill whole week columns").toBe(0);
+  expect(cellCount).toBeGreaterThanOrEqual(13 * 7);
+  expect(cellCount).toBeLessThanOrEqual(14 * 7);
   // Cells carry human tooltip labels ("N sessions on <date>") via data-tip.
   await expect(page.locator(".bd-heat-cell[data-tip*='session']").first()).toBeAttached();
 
@@ -123,7 +132,9 @@ test("heatmap is an aria-expanded collapsible with a full year of cells", async 
 
   await head.click();
   await expect(head).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator(".bd-heat-cell")).toHaveCount(53 * 7);
+  // Re-expanding restores exactly the grid that was there before, rather than
+  // some other window — a stronger claim than re-counting against a constant.
+  await expect(page.locator(".bd-heat-cell")).toHaveCount(cellCount);
 });
 
 test("board buckets: inbox + review cards need you, running in flight, done capped", async ({ page }) => {
