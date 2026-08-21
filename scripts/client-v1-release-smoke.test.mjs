@@ -196,7 +196,27 @@ test("resolves the probe origin from argv", () => {
   assert.equal(parseOrigin(["--origin", "http://127.0.0.1:3007/ignored"]), "http://127.0.0.1:3007");
   assert.throws(() => parseOrigin(["--origin"]), /--origin requires a URL/);
   assert.throws(() => parseOrigin(["--origin", "--other"]), /--origin requires a URL/);
-  assert.throws(() => parseOrigin(["--origin", "not a url"]), /Invalid URL/);
+  assert.throws(() => parseOrigin(["--origin", "not a url"]), /--origin "not a url" is not an absolute origin/);
+  // Credentials in the flag never reach an error message or a request: `origin`
+  // drops userinfo, path and query.
+  assert.equal(parseOrigin(["--origin", "https://u:p@example.com/a?b=c"]), "https://example.com");
+});
+
+test("refuses an origin with no scheme instead of dying on Invalid URL", () => {
+  // `localhost:3000` is the ordinary way to mistype this flag, and it *parses*:
+  // scheme `localhost:`, non-special, `origin` the string "null". That reached
+  // readHealth, where `new URL(path, "null")` threw a bare "Invalid URL" — the
+  // operator's whole exit-1 line, naming neither the flag, the value, nor the
+  // fix, and raised outside the wrapper that keeps readHealth diagnosable.
+  for (const value of ["localhost:3000", "127.0.0.1:3000", "file:///c/x"]) {
+    assert.throws(
+      () => parseOrigin(["--origin", value]),
+      (error) =>
+        error.message ===
+        `--origin ${JSON.stringify(value)} is not an absolute origin, for example ${DEFAULT_ORIGIN}`,
+      value,
+    );
+  }
 });
 
 test("reads the expected release version from the repository manifest", () => {

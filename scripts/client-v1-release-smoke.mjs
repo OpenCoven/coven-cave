@@ -112,7 +112,24 @@ export function parseOrigin(argv) {
   }
   // Reject a malformed origin here rather than letting fetch fail later with a
   // message that reads like the server is down.
-  return new URL(value).origin;
+  //
+  // `new URL(value).origin` alone does not do that. A scheme-less
+  // `localhost:3000` — the ordinary way to mistype this flag — parses as a
+  // non-special URL whose scheme is `localhost:`, and its `origin` is the
+  // *string* "null". That survives this function and kills readHealth on
+  // `new URL(path, "null")` with a bare "Invalid URL", which names neither the
+  // flag, nor the value, nor the fix, and is thrown outside the wrapper that
+  // exists to keep every readHealth failure diagnosable.
+  let origin;
+  try {
+    origin = new URL(value).origin;
+  } catch {
+    origin = null;
+  }
+  if (!origin || origin === "null") {
+    throw new Error(`--origin ${JSON.stringify(value)} is not an absolute origin, for example ${DEFAULT_ORIGIN}`);
+  }
+  return origin;
 }
 
 /** The three fields judged by comparison against the expectation, not by shape. */
