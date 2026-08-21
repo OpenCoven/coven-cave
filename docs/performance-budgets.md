@@ -47,6 +47,18 @@ read. Grepping for the string is not enough — the catalogue shipped
 with no harness behind them yet; they appear in every report so the gap stays
 visible instead of being mistaken for coverage.
 
+**A `pending` source may be prose only when no code in this repository owns the
+number.** The shell and stream deadlines qualify: nothing declares them, so the
+source names the issue that does. `cli.doctor.p95-ms` did not — it is the exec
+route's own request timeout, and it shipped as the prose "matches
+`EXEC_TIMEOUT_MS` in `src/app/api/coven/exec/route.ts`", a claim about a
+specific constant with no gate to notice when that constant moved. That is the
+900 KB / 2800 KB drift class exactly, one gate short of being caught. Any source
+naming a repository file now takes the same resolvable `<file> (<CONSTANT>)`
+form as a `postbuild` entry, the unit suite reads the declaration and asserts
+the limit equals it, and prose that merely *mentions* a `.ts` or `.mjs` path is
+rejected outright so the checkable case cannot be re-opened by wording.
+
 ## Missing measurements fail closed
 
 An enforced budget whose metric is absent is recorded as `unmeasured`, and an

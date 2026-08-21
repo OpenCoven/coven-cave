@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   budgetFixtureProfile,
+  budgetSourceDerivation,
   enforcedFixtureProfiles,
   evaluatePerformanceBudgets,
   PERFORMANCE_BUDGET_GATES,
@@ -109,11 +110,10 @@ test("every delegated budget names a constant its gate really owns", async () =>
   // word-for-word in that file's own comments and log strings.
   for (const entry of PERFORMANCE_BUDGETS) {
     if (entry.gate !== "postbuild") continue;
-    // Positional groups, not named ones: this project's tsc target predates
-    // ES2018, and `(?<name>…)` is a typecheck error under it.
-    const match = /^([\w./-]+\.mjs) \(([A-Za-z_][\w.]*)\)$/.exec(entry.source);
-    assert.ok(match, `${entry.id}: source must read "<gate script> (<constant>)"`);
-    const [, file, symbol] = match;
+    const derivation = budgetSourceDerivation(entry.source);
+    assert.ok(derivation, `${entry.id}: source must read "<gate script> (<constant>)"`);
+    const { file, symbol } = derivation;
+    assert.ok(file.endsWith(".mjs"), `${entry.id}: a build gate is an .mjs script, not ${file}`);
     const url = new URL(`../../${file}`, import.meta.url);
     const contents = await readFile(url, "utf8");
 
@@ -138,6 +138,51 @@ test("every delegated budget names a constant its gate really owns", async () =>
       );
     }
   }
+});
+
+test("a pending budget derived from repository code is pinned to that constant", async () => {
+  // The last source that was asserted against nothing. `cli.doctor.p95-ms` read
+  // "cave-o8gc4: matches EXEC_TIMEOUT_MS in src/app/api/coven/exec/route.ts" —
+  // a claim about a specific constant, in prose, with no gate to notice when
+  // that constant moved. It is the same drift class as the 900 KB entry against
+  // a 2800 KB gate, one gate short of being caught, and it survived three
+  // review rounds precisely because prose reads exactly like a live delegation.
+  //
+  // So: prose is allowed only for a number nothing in this repository owns. The
+  // moment a source names a repository file it must use the resolvable form,
+  // and the limit must equal what that file actually declares.
+  const repositoryFile = /[\w./-]+\.(?:mjs|cjs|js|ts|tsx)\b/;
+  let checked = 0;
+  for (const entry of PERFORMANCE_BUDGETS) {
+    if (entry.gate !== "pending") continue;
+    const derivation = budgetSourceDerivation(entry.source);
+    if (!derivation) {
+      assert.ok(
+        !repositoryFile.test(entry.source),
+        `${entry.id}: source names a repository file in prose (${entry.source}); ` +
+          `write it as "<file> (<CONSTANT>)" so this test can resolve it`,
+      );
+      continue;
+    }
+    const contents = await readFile(new URL(`../../${derivation.file}`, import.meta.url), "utf8");
+    // Positional groups, not named ones: this project's tsc target predates
+    // ES2018 and rejects `(?<name>…)`.
+    const declaration = new RegExp(
+      `(?:const|let|var)\\s+${derivation.symbol}\\s*(?::[^=]+)?=\\s*([0-9][0-9_]*)\\s*;`,
+    ).exec(contents);
+    assert.ok(
+      declaration,
+      `${entry.id}: ${derivation.file} declares no numeric ${derivation.symbol}`,
+    );
+    assert.equal(
+      entry.limit,
+      Number(declaration[1].replaceAll("_", "")),
+      `${entry.id} is ${entry.limit}, but ${derivation.file} declares ` +
+        `${derivation.symbol} = ${declaration[1]} — move both or neither`,
+    );
+    checked += 1;
+  }
+  assert.ok(checked > 0, "no pending budget resolves a constant; the check above proves nothing");
 });
 
 test("a measurement inside the limit passes with positive headroom", () => {

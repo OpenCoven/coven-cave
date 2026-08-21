@@ -71,15 +71,41 @@ export type PerformanceBudget = {
   /**
    * The fixture, gate, or issue that owns this number.
    *
-   * Two of the three forms are machine-checked, because a `source` nobody
-   * verifies is a dangling pointer that reads exactly like a live delegation:
+   * Every form is machine-checked, because a `source` nobody verifies is a
+   * dangling pointer that reads exactly like a live delegation:
    * - `performance-report` — `<fixture file>#<profile>`, and the profile must
    *   exist in that file.
    * - `postbuild` — `<gate script> (<constant>)`, and the constant must really
    *   be defined by that script.
+   * - `pending` — prose naming the issue that owns the gap, UNLESS the number
+   *   is derived from something in this repository, in which case it takes the
+   *   same `<file> (<constant>)` form and the limit must equal that constant.
+   *   See `budgetSourceDerivation`.
    */
   source: string;
 };
+
+/**
+ * The `<file> (<SYMBOL>)` derivation a `source` names, or `null` for prose.
+ *
+ * `postbuild` sources have been resolved this way since the catalogue recorded
+ * 900 KB for a gate whose own default was 2800 KB. A `pending` source was the
+ * one that stayed prose: `cli.doctor.p95-ms` read "matches EXEC_TIMEOUT_MS in
+ * src/app/api/coven/exec/route.ts" — a claim about a specific constant, with
+ * nothing to notice when that constant moved. Prose is fine for a number no
+ * code owns yet (a shell-boot deadline nothing measures), but the moment an
+ * entry names a file in this repository it has to say so in a form a test can
+ * resolve, and `performance-budgets.test.ts` refuses any source that names a
+ * repository file without using this one.
+ */
+export function budgetSourceDerivation(
+  source: string,
+): { file: string; symbol: string } | null {
+  // Positional groups, not named ones: this project's tsc target predates
+  // ES2018 and rejects `(?<name>…)`.
+  const match = /^([\w./-]+\.(?:mjs|cjs|js|ts|tsx)) \(([A-Za-z_][\w.]*)\)$/.exec(source);
+  return match ? { file: match[1], symbol: match[2] } : null;
+}
 
 const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10k";
 
@@ -208,7 +234,10 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     direction: "lower-is-better",
     limit: 6_000,
     gate: "pending",
-    source: "cave-o8gc4: matches EXEC_TIMEOUT_MS in src/app/api/coven/exec/route.ts",
+    // Not an independently approved number: it is the exec route's own timeout,
+    // so a `coven doctor` slower than this is already a failed request rather
+    // than a slow one. Recorded in resolvable form so the two cannot drift.
+    source: "src/app/api/coven/exec/route.ts (EXEC_TIMEOUT_MS)",
   },
 ];
 
