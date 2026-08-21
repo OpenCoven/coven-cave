@@ -59,7 +59,7 @@
   padding: 0 calc(var(--rail-lead) - 1px);
   justify-content: flex-start;
   border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
   background: var(--bg-subtle);
 }
 

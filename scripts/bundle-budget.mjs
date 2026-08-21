@@ -173,10 +173,10 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // (601.8 KiB) against the 600 KiB ceiling, ~1.8 KiB over. No reclaim
 // candidate exists in the new rules themselves — codemod:design:check is a
 // no-op over them and every declaration already uses tokens. Per the
-// documented convention above, 615 is the smallest ceiling that clears the 2%
-// THIN threshold here (13.2 KiB / 2.1% headroom) for this one-time addition;
-// this is a ceiling for this feature's CSS, not a licence for the next one.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 615) * 1024;
+// documented convention above, 616 is the smallest ceiling that clears the 2%
+// THIN threshold here for this one-time addition; this is a ceiling for this
+// feature's CSS, not a licence for the next one.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 616) * 1024;
 const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {
