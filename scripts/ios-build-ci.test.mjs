@@ -15,6 +15,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+const project = readFileSync(
+  new URL("../apps/ios/CovenCave/project.yml", import.meta.url),
+  "utf8",
+);
 const iosJobStart = workflow.indexOf("  release-ios-build:");
 const iosJobEnd = workflow.indexOf("\n  build:", iosJobStart);
 assert.notEqual(iosJobStart, -1, "release.yml defines the iOS build job delimiter");
@@ -138,27 +142,59 @@ assert.doesNotMatch(
 );
 
 // ── The archive can actually resolve signing ────────────────────────────────
-// `project.yml` sets CODE_SIGN_STYLE: Automatic, and xcodebuild treats that as
-// DISABLED unless `-allowProvisioningUpdates` is passed. Release run
-// 32496765932 failed the archive with "No profiles for 'ai.opencoven.cave' were
-// found ... Automatic signing is disabled" despite the preceding step having
-// installed and validated App Store profiles for both targets. This went
-// unnoticed because every recent release resolved `resume-confirmed` and
-// skipped the archive entirely — the job reported success without ever
-// building. Pin the flags so the reachable path stays signable.
+// Release run 32496765932 failed the archive with "No profiles for
+// 'ai.opencoven.cave' were found ... Automatic signing is disabled", and run
+// 32501746425 — after adding -allowProvisioningUpdates — failed with
+// "Communication with Apple failed: ... (401) ... listTeams.action". The App
+// Store Connect key here is user-scoped (vars.APPLE_API_KEY_SUBJECT=user) and
+// cannot perform team operations, so automatic signing is unavailable no matter
+// how it is invoked. The archive must therefore sign manually against the
+// profiles the preceding step installs and validates.
+//
+// None of this was caught earlier because every recent release resolved
+// `resume-confirmed` and skipped the archive, the export and the upload
+// outright — the job reported success without ever building.
 assert.match(
   iosJob,
-  /-allowProvisioningUpdates/,
-  "the iOS archive must pass -allowProvisioningUpdates; automatic signing is otherwise disabled under xcodebuild",
+  /CODE_SIGN_STYLE=Manual/,
+  "the iOS archive must sign manually; the user-scoped App Store Connect key cannot drive automatic signing",
 );
-for (const flag of [
-  "-authenticationKeyPath",
-  "-authenticationKeyID",
-  "-authenticationKeyIssuerID",
+assert.doesNotMatch(
+  iosJob,
+  /-allowProvisioningUpdates/,
+  "automatic provisioning is unavailable with a user-scoped key and must not be reintroduced",
+);
+// The app and the widget need DIFFERENT profiles, and a build setting passed on
+// the xcodebuild command line applies to every target. Each target therefore
+// reads its own user-defined setting, declared in project.yml.
+for (const [variable, envVar] of [
+  ["CAVE_IOS_APP_PROFILE", "IOS_PROFILE_UUID_APP"],
+  ["CAVE_IOS_WIDGET_PROFILE", "IOS_PROFILE_UUID_WIDGET"],
 ]) {
   assert.ok(
-    iosJob.includes(flag),
-    `the iOS archive must authenticate provisioning with ${flag} so profile resolution is headless`,
+    iosJob.includes(`${variable}="$${envVar}"`),
+    `the iOS archive must pass ${variable} from ${envVar} so each target signs with its own profile`,
+  );
+  assert.match(
+    project,
+    new RegExp(`PROVISIONING_PROFILE_SPECIFIER: \\$\\(${variable}\\)`),
+    `project.yml must route a target's provisioning profile through ${variable}`,
+  );
+  assert.match(
+    iosJob,
+    new RegExp(`${envVar}=\\$uuid|${envVar}_?`),
+    `the signing-asset step must export ${envVar}`,
+  );
+}
+assert.match(
+  iosJob,
+  /<string>manual<\/string>/,
+  "the export options must use manual signing to match the archive",
+);
+for (const bundleId of ["ai.opencoven.cave", "ai.opencoven.cave.widgets"]) {
+  assert.ok(
+    iosJob.includes(`<key>${bundleId}</key>`),
+    `the export options must map ${bundleId} to its provisioning profile`,
   );
 }
 
