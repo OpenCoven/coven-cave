@@ -109,8 +109,12 @@ not a defect.
 
 The validator reports three states:
 
-- **`complete`** — all three operating systems present, every step passed.
-  This is the only state that unblocks rollout.
+- **`complete`** — all three operating systems present, every step passed, and
+  no structural problem anywhere in the file. This is the only state that
+  unblocks rollout. A malformed digest or a mismatched tag therefore keeps a
+  fully passed journey out of `complete`, deliberately: the record is a claim
+  about *which bytes* were accepted, and a record that cannot say which bytes
+  those were has not made it.
 - **`failed`** — at least one step is recorded as a failure. The rollout gate
   treats this as a rollback decision: the candidate must not become the served
   update.
@@ -120,10 +124,18 @@ The validator reports three states:
 ### Do not commit credentials
 
 The record is committed to the repository, so the validator refuses
-credential-shaped strings (GitHub PATs, npm tokens, AWS keys, private-key
-blocks) anywhere in the file and names the JSON path so it can be redacted.
-Sanitize diagnostics before pasting them; reference a diagnostic ID rather than
-its contents.
+credential-shaped strings anywhere in the file and names the JSON path so it can
+be redacted: GitHub PATs (classic and fine-grained), npm tokens, AWS access
+keys, private-key blocks, Slack tokens, `Authorization: Bearer …` headers, and
+`?token=`-style credentials in a URL.
+
+The list is literal prefixes rather than an entropy heuristic, and that is a
+deliberate trade. Every artifact digest and commit SHA in this record is a long
+hex string, so an entropy rule would flag the evidence itself on every run and
+be turned off within a week. The cost is real false negatives — an opaque
+session cookie or a base64 blob with no recognizable prefix passes — so the
+scan is a backstop, not the control. **Sanitize diagnostics before pasting
+them**, and reference a diagnostic ID rather than its contents.
 
 ## Recording acceptance
 

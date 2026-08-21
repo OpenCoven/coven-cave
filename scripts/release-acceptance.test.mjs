@@ -174,13 +174,81 @@ test("credential-shaped text in the evidence is refused", () => {
   assert.equal(found[0].path, "record.notes", "the finding points at the field so it can be redacted");
 });
 
+test("the credential shapes this journey invites are caught", () => {
+  // Assembled rather than written out: GitHub push protection scans this file
+  // too, and it rejects a literal token-shaped string even when the token is
+  // invented. A fixture that cannot be pushed is not a fixture.
+  const slackLookalike = ["xoxb", "2381910230", "2384823281", "notarealslacktoken"].join("-");
+  const bearerLookalike = `Bearer ${["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiJub3QtYS1qd3QifQ"].join(".")}`;
+  const cases = [
+    ["slack-token", `posted to ${slackLookalike}`],
+    ["bearer-credential", `curl -H 'Authorization: ${bearerLookalike}'`],
+    ["credential-in-url", "callback hit http://127.0.0.1:7331/pair?token=s3cr3t-pairing-code-9f21"],
+  ];
+  for (const [id, note] of cases) {
+    const record = passingRecord();
+    record.runs[0].steps["cli-pair"] = { result: "pass", notes: note };
+    assert.ok(
+      validateAcceptanceRecord(record).errors.some((error) => error.includes(id)),
+      `pairing is step four of the journey, so a ${id} is what an operator's own diagnostic paste looks like`,
+    );
+  }
+});
+
 test("a checksum is not mistaken for a secret", () => {
-  const result = validateAcceptanceRecord(passingRecord());
+  // Asserted against findSecrets directly rather than through a passing record:
+  // "the record validates clean" would also pass against a scanner that never
+  // ran, which is the assertion this test exists to not make.
   assert.deepEqual(
-    result.errors,
+    findSecrets({
+      sha256: DIGEST,
+      commit: COMMIT,
+      artifact: `CovenCave-v1.0.0-aarch64.dmg  ${DIGEST}`,
+      url: "https://github.com/OpenCoven/coven-cave/releases/download/v1.0.0/latest.json",
+      prose: "the bearer token was rejected until the client re-paired",
+    }),
     [],
-    "digests are long hex strings; an entropy heuristic would flag every one of them",
+    "digests and commit SHAs are long hex strings; an entropy heuristic would flag every one of them",
   );
+});
+
+test("a deeply nested record is reported on rather than overflowing the stack", () => {
+  // JSON.parse accepts far deeper nesting than a recursive scan survives, so
+  // the recursive form turned a malformed file into RangeError instead of the
+  // error list validateAcceptanceRecord promises to always return.
+  const deep = JSON.parse(`${"[".repeat(20000)}"ghp_abcdefghijklmnopqrstuvwxyz0123456789"${"]".repeat(20000)}`);
+  const record = passingRecord({ artifacts: [{ name: "deep", sha256: DIGEST, notes: deep }] });
+  const errors = validateAcceptanceRecord(record).errors;
+  assert.ok(
+    errors.some((error) => error.includes("github-pat")),
+    "the scan still reaches a credential buried at the bottom of the nesting",
+  );
+
+  const cyclic = { notes: {} };
+  cyclic.notes.parent = cyclic;
+  assert.deepEqual(findSecrets(cyclic), [], "a cycle terminates the walk instead of running until the stack dies");
+});
+
+test("a run whose steps are not an object is a gap, not a pass", () => {
+  for (const steps of [[], "install-cave: pass", null, 7]) {
+    const record = passingRecord();
+    record.runs[0].steps = steps;
+    const result = validateAcceptanceRecord(record);
+    assert.equal(
+      result.status,
+      "incomplete",
+      `steps recorded as ${JSON.stringify(steps)} record nothing, and nothing is not twelve passes`,
+    );
+    assert.ok(
+      result.errors.some((error) => error.includes("steps must be an object")),
+      "the operator is told the shape their evidence has to take",
+    );
+    assert.deepEqual(
+      result.runs.find((run) => run.os === "macos").pendingSteps,
+      REQUIRED_STEP_IDS,
+      "every required step is outstanding, so the report cannot read as partial coverage",
+    );
+  }
 });
 
 test("the CLI validates, templates, and reports exit codes", () => {

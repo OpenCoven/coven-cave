@@ -69,12 +69,25 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 // for a token. These are the shapes that have actually leaked into release
 // notes and issue bodies elsewhere; the list is deliberately short and literal
 // rather than a general entropy heuristic, which would flag every checksum.
+// Every pattern here is anchored on a literal prefix or delimiter a credential
+// carries and a checksum does not, which is why a 64-hex digest and a 40-hex
+// commit SHA — both all over a legitimate record — cannot trip any of them.
 const SECRET_PATTERNS = [
   { id: "github-pat", pattern: /\bgh[pousr]_[A-Za-z0-9]{16,}\b/ },
   { id: "github-fine-grained-pat", pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/ },
   { id: "aws-access-key", pattern: /\bAKIA[0-9A-Z]{16}\b/ },
   { id: "npm-token", pattern: /\bnpm_[A-Za-z0-9]{36}\b/ },
   { id: "private-key", pattern: /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/ },
+  // The three below are the shapes this record in particular invites. The
+  // journey pairs a client and pairs a CLI, so an operator pasting a `cli-pair`
+  // or `pair-approve` diagnostic is pasting exactly an Authorization header, a
+  // callback url, or a workspace token.
+  { id: "slack-token", pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/ },
+  { id: "bearer-credential", pattern: /\b[Bb]earer\s+[A-Za-z0-9._~+/-]{20,}={0,2}/ },
+  {
+    id: "credential-in-url",
+    pattern: /[?&](?:token|access_token|api_key|apikey|secret|password)=[^\s&"']{8,}/i,
+  },
 ];
 
 /** A blank record an operator fills in, with every required step present. */
@@ -264,20 +277,42 @@ function validateSteps(run, index, os, add) {
   return { os, status, failedSteps, pendingSteps };
 }
 
-/** Walk the record and report credential-shaped strings with their JSON path. */
+/**
+ * Walk the record and report credential-shaped strings with their JSON path.
+ *
+ * Iterative on purpose. The recursive form overflowed the stack at about five
+ * thousand levels of nesting, while `JSON.parse` accepts a hundred thousand
+ * without complaint — so a pathological record made `validateAcceptanceRecord`
+ * throw `RangeError: Maximum call stack size exceeded` instead of returning the
+ * problems it documents itself as always returning. `seen` terminates on a
+ * cyclic object too: `JSON.parse` cannot build one, but this is exported and
+ * other callers are not bound by that.
+ */
 export function findSecrets(value, path = "record", found = []) {
-  if (typeof value === "string") {
-    for (const { id, pattern } of SECRET_PATTERNS) {
-      if (pattern.test(value)) found.push({ id, path });
+  const seen = new Set();
+  const stack = [[value, path]];
+  while (stack.length > 0) {
+    const [current, currentPath] = stack.pop();
+    if (typeof current === "string") {
+      for (const { id, pattern } of SECRET_PATTERNS) {
+        if (pattern.test(current)) found.push({ id, path: currentPath });
+      }
+      continue;
     }
-    return found;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) => findSecrets(entry, `${path}[${index}]`, found));
-    return found;
-  }
-  if (isPlainObject(value)) {
-    for (const [key, entry] of Object.entries(value)) findSecrets(entry, `${path}.${key}`, found);
+    if (current === null || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    // Pushed in reverse so the stack pops them in document order, which is the
+    // order an operator reads their own file in.
+    if (Array.isArray(current)) {
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        stack.push([current[index], `${currentPath}[${index}]`]);
+      }
+      continue;
+    }
+    const entries = Object.entries(current);
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      stack.push([entries[index][1], `${currentPath}.${entries[index][0]}`]);
+    }
   }
   return found;
 }
