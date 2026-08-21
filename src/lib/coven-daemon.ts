@@ -168,6 +168,17 @@ type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-statu
  * so the ring's own eviction stays the only backstop.
  */
 const REPORTED_REFUSAL_LIMIT = 32;
+/**
+ * Bounds the refused *value* carried into a key, not the finished key.
+ *
+ * The source name and its separator are prepended after the truncation — that
+ * order is what keeps every intermediate bounded, see {@link
+ * detachedRefusalKey} — so a key runs to this limit plus `source.length + 1`,
+ * i.e. 1043 characters at the longest source. The extra 19 characters are not
+ * worth complicating the truncation for, but the name says `KEY` and the
+ * arithmetic does not, so it is written down rather than left to be
+ * rediscovered.
+ */
 const REPORTED_REFUSAL_KEY_LIMIT = 1024;
 const reportedRefusals = new Set<string>();
 

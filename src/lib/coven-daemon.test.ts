@@ -532,12 +532,14 @@ const {
   clearDaemonDiagnosticEventsForTests();
 }
 
-// The dedupe keys are bounded in bytes, not just in count. Nothing limits how
+// The dedupe keys are bounded in length, not just in count. Nothing limits how
 // long the refused value is — daemon.json is attacker-writable and its socket
 // field is returned verbatim — so 32 entries of a megabyte each is a retention
 // the count bound alone would allow. The cost is that two absurd values
 // sharing a 1024-character prefix dedupe to one event, which is asserted here
-// rather than left as a surprise.
+// rather than left as a surprise. Collapsing them loses nothing: the event
+// carries only the source, so two values refused from the same source produce
+// byte-identical events either way.
 {
   clearDaemonDiagnosticEventsForTests();
   const refuse = (host) =>
@@ -619,7 +621,7 @@ const {
     const detail = `kept ${mib(retained)} MiB of the ${mib(offered)} MiB offered`;
     assert.ok(
       retained < offered / 4,
-      `the dedupe keys must not retain the values they were truncated from: ${detail}, where ${keyCount} keys bounded at 1024 characters is well under 1 MiB`,
+      `the dedupe keys must not retain the values they were truncated from: ${detail}, where ${keyCount} keys of about 1024 characters each is well under 1 MiB`,
     );
     clearDaemonDiagnosticEventsForTests();
   }
