@@ -266,6 +266,11 @@ assert.match(
   "Non-response Markdown keeps user-authored text accessible while its async render settles",
 );
 assert.match(
+  markdownContent,
+  /if \(decorateResponse && !pending && text\.trim\(\)\.length === 0\) \{\s*return null;\s*\}/,
+  "settled response markdown that citation processing reduces to blank should omit loading chrome",
+);
+assert.match(
   source,
   /sanitizedHtml = decorateResponseHtml\(sanitizedHtml\);/,
   "Sanitized Markdown receives app-owned lead and status semantics before mounting",

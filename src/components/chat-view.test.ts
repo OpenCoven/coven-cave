@@ -115,6 +115,18 @@ assert.match(
 
 assert.match(
   source,
+  /if \(!familiar\.autoSelfReport \|\| !reflectTranscript\) return;/,
+  "Automatic self-reporting should skip threads without assessable transcript evidence",
+);
+
+assert.match(
+  source,
+  /onReflect=\{familiar\.id && reflectTranscript \?/,
+  "Empty chats should not expose the manual reflection action",
+);
+
+assert.match(
+  source,
   /catch \{[\s\S]*Auto self-report is best-effort and intentionally silent/,
   "Auto self-report failures should be silent",
 );

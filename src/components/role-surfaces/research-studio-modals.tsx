@@ -475,7 +475,7 @@ export function GenerationReviewModal({
           <span className="research-studio__kicker">Studio · review draft</span>
           <h4 id="research-studio-review-title">Review before rendering</h4>
         </div>
-        <button type="button" className="research-studio-modal__close" onClick={onClose} aria-label="Close dialog">✕</button>
+        <button type="button" className="research-studio-modal__close focus-ring" onClick={onClose} aria-label="Close dialog">✕</button>
       </header>
       <div className="research-studio-modal__body">
         <p className="research-studio-config__note">
@@ -546,7 +546,7 @@ export function GenerationReviewModal({
       </div>
       <footer className="research-studio-modal__footer">
         <button type="button" className="research-studio-act research-studio-act--ghost" onClick={onClose}>Keep draft</button>
-        <button type="button" className="research-studio-act research-studio-act--primary" onClick={onRender} disabled={rendering}>
+        <button type="button" className="research-studio-act research-studio-act--primary focus-ring" onClick={onRender} disabled={rendering}>
           {rendering ? "Queueing…" : "Render media"}
         </button>
       </footer>
@@ -664,7 +664,7 @@ export function GenerationConfigModal({
         </div>
         <button
           type="button"
-          className="research-studio-modal__close"
+          className="research-studio-modal__close focus-ring"
           onClick={onClose}
           aria-label="Close dialog"
         >
@@ -681,7 +681,7 @@ export function GenerationConfigModal({
           </label>
           <select
             id="research-studio-config-source"
-            className="research-studio__select"
+            className="research-studio__select focus-ring"
             value={selectedSourceId ?? ""}
             onChange={(event) => onSelectSource(event.target.value)}
           >
@@ -701,7 +701,7 @@ export function GenerationConfigModal({
           </label>
           <textarea
             id="research-studio-directions"
-            className="research-studio-config__textarea"
+            className="research-studio-config__textarea focus-ring"
             value={directions}
             maxLength={RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
             onChange={(event) => onDirectionsChange(event.target.value)}
@@ -990,7 +990,7 @@ export function GenerationConfigModal({
         </button>
         <button
           type="button"
-          className="research-studio-act research-studio-act--primary"
+          className="research-studio-act research-studio-act--primary focus-ring"
           onClick={onSubmit}
           disabled={
             creating ||
