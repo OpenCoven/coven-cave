@@ -189,6 +189,14 @@ const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10
  * | first seeding, 2026-08-21  |        — |  1039 ms |        — |    82 ms |
  * | idle                       |  1364 ms |  1398 ms |   156 ms |   157 ms |
  * | 3 benchmarks concurrently  |  2603 ms |  2686 ms |   156 ms |   159 ms |
+ * | linux (wsl2), idle         |  1760 ms |  1800 ms |   198 ms |   213 ms |
+ * | linux (wsl2), 3 concurrent |  1639 ms |     — ms |   177 ms |       — |
+ *
+ * The Linux rows exist because these are the numbers the nightly will actually
+ * produce, and every row above them came from a Windows box. Both ms ceilings
+ * hold there with room (cold 1,760 of 5,000; warm 198 of 750), so neither moves
+ * — but "seeded on a platform CI does not use" is exactly what put the ratio
+ * budget below at the wrong number, and it was worth checking here too.
  *
  * The p95/p50 ratio is 1.02-1.04 whenever nothing stalls, which is why the
  * original 3,000 ms ceiling read as generous — against an idle single run it

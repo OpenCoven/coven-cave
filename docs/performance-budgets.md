@@ -167,6 +167,14 @@ Reference machine, `phase-6-list-10k`, 43.6 MB scanned every time:
 | first seeding, 2026-08-21 | — | 1,039 ms | — | 82 ms |
 | idle | 1,364 ms | 1,398 ms | 156 ms | 157 ms |
 | three benchmarks concurrently | 2,603 ms | 2,686 ms | 156 ms | 159 ms |
+| linux (wsl2), idle | 1,760 ms | 1,800 ms | 198 ms | 213 ms |
+| linux (wsl2), three concurrently | 1,639 ms | — | 177 ms | — |
+
+The Linux rows are there because those are the numbers the nightly will actually
+produce and every row above them came from a Windows box. Both ms ceilings hold
+on Linux with room — cold 1,760 of 5,000, warm 198 of 750 — so neither moves.
+Seeding on a platform CI does not use is what put the *relative* budget below at
+the wrong number, which is why it was worth checking here too.
 
 The p95/p50 ratio is 1.02–1.04 whenever nothing stalls, which is why 3,000 ms
 read as generous: against an idle single run it was. Against three concurrent
