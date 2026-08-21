@@ -73,6 +73,31 @@ test("ignores an override that exceeds the contract bound", () => {
   });
 });
 
+test("says so, once, when it ignores an oversized override", () => {
+  const warnings: string[] = [];
+  const previousWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(" "));
+  };
+  try {
+    withCaveHome(() => {
+      // Silently substituting a different id is the failure this guards: the
+      // operator's fleet tooling keys on the id it pinned, and nothing in a 200
+      // response tells it the pin was dropped.
+      // A value no earlier case used: the warning is deduplicated per value, so
+      // reusing one already reported would prove nothing.
+      process.env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID = "j".repeat(CLIENT_V1_LIMITS.instanceIdCharacters + 2);
+      clientV1InstanceId();
+      clientV1InstanceId();
+    });
+  } finally {
+    console.warn = previousWarn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /COVEN_CAVE_CLIENT_V1_INSTANCE_ID/);
+  assert.match(warnings[0], new RegExp(String(CLIENT_V1_LIMITS.instanceIdCharacters)));
+});
+
 test("ignores a corrupt or empty persisted record and re-mints", () => {
   for (const corrupt of ["not json", "[]", "null", '{"instanceId": 42}', '{"instanceId": "  "}', "{}"]) {
     withCaveHome(() => {

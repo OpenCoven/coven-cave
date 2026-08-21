@@ -47,6 +47,28 @@ function remember(file: string, instanceId: string): string {
   return instanceId;
 }
 
+/**
+ * The oversized override this process has already complained about.
+ *
+ * An ignored override is otherwise indistinguishable from a working one from
+ * outside: the operator pins an id, health answers 200 with a *different* id,
+ * and every client pairs against an identity their fleet tooling does not know.
+ * Refusing to answer instead would take the diagnostic surface down over a
+ * misconfiguration it can route around, so say it once and serve a usable id.
+ * Keyed on the value so a corrected-but-still-oversized setting is reported
+ * again, while an unchanged one cannot be replayed per request.
+ */
+let warnedOverride: string | null = null;
+
+function warnOversizedOverride(override: string): void {
+  if (warnedOverride === override) return;
+  warnedOverride = override;
+  console.warn(
+    `[client-v1] ${INSTANCE_ID_ENV} is ${override.length} characters; the Client v1 contract allows ` +
+      `${CLIENT_V1_LIMITS.instanceIdCharacters}. Ignoring it and serving the persisted instance id instead.`,
+  );
+}
+
 export function clientV1InstanceIdFile(): string {
   return path.join(/* turbopackIgnore: true */ caveHome(), "client-v1-instance.json");
 }
@@ -110,7 +132,8 @@ export function clientV1InstanceId(): string {
   // a longer override is served on a 200 that parseClientV1Health then refuses,
   // so the client cannot read the compatibility answer at all and has nothing to
   // fall back on. Ignoring it keeps health answering with a contract-valid id.
-  if (override && override.length <= CLIENT_V1_LIMITS.instanceIdCharacters) return override;
+  if (override && override.length > CLIENT_V1_LIMITS.instanceIdCharacters) warnOversizedOverride(override);
+  else if (override) return override;
 
   const file = clientV1InstanceIdFile();
   if (resolved?.file === file) return resolved.instanceId;
