@@ -12,8 +12,14 @@ const FIXTURES_PATH = path.join(projectRoot, "fixtures", "phase-6", "performance
  * budget a run is judged against and the workload that produced it move
  * together. An explicit env var still wins, because a bisect needs to sweep one
  * dimension without editing a committed fixture.
+ *
+ * Blank reads as "not set", the same way `dimension()` below treats a blank
+ * numeric override — a workflow writing `CAVE_BENCH_PROFILE: ${{ inputs.profile }}`
+ * (the exact shape the iterations input already has) sets an empty string on a
+ * scheduled run, and `??` only catches undefined, so the run died on
+ * `unknown benchmark profile ""` instead of falling back.
  */
-const profileName = process.env.CAVE_BENCH_PROFILE ?? "default";
+const profileName = process.env.CAVE_BENCH_PROFILE?.trim() || "default";
 const fixtures = JSON.parse(await readFile(FIXTURES_PATH, "utf8"));
 const profile = fixtures.profiles?.[profileName];
 if (!profile) {
