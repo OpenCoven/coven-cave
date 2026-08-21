@@ -532,6 +532,71 @@ const {
   clearDaemonDiagnosticEventsForTests();
 }
 
+// The dedupe keys are bounded in bytes, not just in count. Nothing limits how
+// long the refused value is — daemon.json is attacker-writable and its socket
+// field is returned verbatim — so 32 entries of a megabyte each is a retention
+// the count bound alone would allow. The cost is that two absurd values
+// sharing a 1024-character prefix dedupe to one event, which is asserted here
+// rather than left as a surprise.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const refuse = (host) =>
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: String.raw`\\` + host + String.raw`\pipe\coven` },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => "{}",
+    });
+
+  const shared = `key-limit-${"a".repeat(4096)}`;
+  refuse(`${shared}-one`);
+  refuse(`${shared}-two`);
+  assert.equal(
+    listDaemonDiagnosticEvents().filter(
+      (event) => event.operation === "daemon-socket-resolution",
+    ).length,
+    1,
+    "values sharing the truncated key report once",
+  );
+  clearDaemonDiagnosticEventsForTests();
+}
+
+// Recording a refusal must never throw into the resolver. socketPath() calls
+// the resolver on every daemon request, so an exception escaping the
+// diagnostics would take out every request Cave makes — on the one code path
+// that runs only when something is already wrong. A poisoned event store
+// stands in for any failure inside recordDaemonDiagnosticEvent.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const poisoned = {
+    nextGeneration: 1,
+    nextEvent: 1,
+    events: {
+      length: 0,
+      push() {
+        throw new Error("diagnostics store is unavailable");
+      },
+    },
+    seededNativeCorrelations: new Set(),
+  };
+  globalThis.__covenDaemonDiagnosticStore = poisoned;
+  try {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: String.raw`\\throwing-recorder-host\pipe\coven` },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => "{}",
+    });
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /Users\/Sonic\/\.coven\/coven\.sock$/,
+      "a failing recorder must not change what the resolver returns",
+    );
+  } finally {
+    clearDaemonDiagnosticEventsForTests();
+  }
+}
+
 // A whitespace-only COVEN_SOCKET names nothing; it is not a redirection and
 // must not be reported as one. It does not fall through to daemon.json either
 // — the fallthrough is the remedy for a *refusal*, which is the case where a

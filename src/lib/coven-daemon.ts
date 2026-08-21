@@ -114,10 +114,9 @@ const WINDOWS_PARENT_SEGMENT = /(?:^|\\)\.\.(?:\\|$)/;
  * roots above and must not walk back out of it via {@link
  * WINDOWS_PARENT_SEGMENT}; everything else is refused, including spellings
  * nobody has written down yet. The local daemon is owner-local by definition,
- * so a target
- * outside those roots is never it — it is a redirection, and every request
- * Cave would send (commands, conversation content, whatever the daemon is
- * asked to do) would reach the remote listener instead.
+ * so a target outside those roots is never it — it is a redirection, and every
+ * request Cave would send (commands, conversation content, whatever the daemon
+ * is asked to do) would reach the remote listener instead.
  *
  * What this cannot see: a drive letter mapped to a share
  * (`net use Z: \\host\share`) resolves off-machine while spelled `Z:\…`. No
@@ -150,8 +149,25 @@ type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-statu
  * re-report of a value that has not been seen for the last
  * REPORTED_REFUSAL_LIMIT distinct refusals, which is the same trade the event
  * ring itself already makes.
+ *
+ * The entries are bounded in bytes as well as in count, because a count bound
+ * alone does not bound memory here: nothing limits how long the refused value
+ * is. `daemon.json` is attacker-writable and `daemonStatusSocket` returns
+ * whatever string its `socket` field holds, so 32 entries of a megabyte each
+ * is a retention the count bound would happily allow. No real Windows target
+ * approaches the cap (the OS path limit is 32767 characters and a pipe name is
+ * far shorter), so truncation only ever affects a value that was never a
+ * socket. Two absurd values sharing a prefix then dedupe to one event, which
+ * is the same cost eviction already carries.
+ *
+ * What neither bound stops, and what this deliberately does not try to: that
+ * same attacker can still put one event in the ring per distinct value, and so
+ * can still flush it. Refusing to record past a total cap would be worse —
+ * whoever floods first would hide every later refusal, including a real one —
+ * so the ring's own eviction stays the only backstop.
  */
 const REPORTED_REFUSAL_LIMIT = 32;
+const REPORTED_REFUSAL_KEY_LIMIT = 1024;
 const reportedRefusals = new Set<string>();
 
 /**
@@ -167,9 +183,16 @@ const reportedRefusals = new Set<string>();
  * hostname, and this pipeline's contract is that diagnostics retain no paths
  * or addresses. Naming the source is enough: the operator knows what they set,
  * and the source is what they have to change.
+ *
+ * Nothing this function does may throw. It is reached from
+ * `resolveDaemonSocketPath`, which `socketPath()` calls on every daemon
+ * request, so an exception escaping here would not degrade diagnostics — it
+ * would take out every request Cave makes, on the one code path that only runs
+ * when something is already wrong. Losing an event is the strictly smaller
+ * failure, so the recording is contained.
  */
 function reportRefusedRemoteTarget(source: RefusedSocketSource, value: string): void {
-  const key = `${source} ${value}`;
+  const key = `${source} ${value}`.slice(0, REPORTED_REFUSAL_KEY_LIMIT);
   if (reportedRefusals.has(key)) return;
   reportedRefusals.add(key);
   // A Set iterates in insertion order, so the first entry is the oldest.
@@ -178,6 +201,15 @@ function reportRefusedRemoteTarget(source: RefusedSocketSource, value: string): 
     if (oldest.done) break;
     reportedRefusals.delete(oldest.value);
   }
+  try {
+    recordRefusedRemoteTarget(source);
+  } catch {
+    // Deliberately swallowed; see above. The key stays recorded, so a
+    // recorder that is failing does not get retried on every request.
+  }
+}
+
+function recordRefusedRemoteTarget(source: RefusedSocketSource): void {
   recordDaemonDiagnosticEvent(createDaemonDiagnosticContext(), {
     component: "daemon",
     operation: "daemon-socket-resolution",
@@ -186,7 +218,7 @@ function reportRefusedRemoteTarget(source: RefusedSocketSource, value: string): 
     process: { pid: process.pid },
     endpoint: { kind: "none", classification: source },
     error: diagnosticError(
-      "configured daemon target names a path this machine does not own; using the local default",
+      "configured daemon target names a path this machine does not own; it was not dialed",
       "off-machine-target",
     ),
   });
