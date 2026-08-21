@@ -577,6 +577,66 @@ test("a ratio budget with an unjudgeable denominator fails closed rather than re
   }
 });
 
+/**
+ * Every cold-scan/control pair measured while seeding the relative budget, as
+ * `[cold p50, control p50]`.
+ *
+ * The ratio is PLATFORM-sensitive — the read pool only pays off where per-file
+ * I/O overhead dominates, and it dominates far less on Linux — so seeding it on
+ * the review machine alone would have put the ceiling at 75% with the nightly's
+ * own platform reading 63%. Both families are recorded, and the ceiling has to
+ * clear all of the healthy ones while still failing all of the collapsed ones.
+ * That pins the budget from BOTH sides: tightening past a healthy reading or
+ * loosening past a collapse both fail here rather than in a nightly.
+ */
+const MEASURED_HEALTHY_RATIOS: Record<string, [number, number]> = {
+  "windows, idle": [994.7, 4_096.1],
+  "windows, three benchmarks at once": [1_809.08, 4_718.1],
+  "linux (wsl2), idle": [1_759.8, 2_787.94],
+  "linux (wsl2), three benchmarks at once": [1_639.41, 3_117.21],
+};
+
+/** The same fixture with `CONVERSATION_LIST_READ_CONCURRENCY` set to 1. */
+const MEASURED_COLLAPSED_RATIOS: Record<string, [number, number]> = {
+  "windows, read pool 1": [4_397.85, 3_926.19],
+  "linux (wsl2), read pool 1": [3_460.77, 2_718.62],
+};
+
+function ratioVerdict([cold, control]: [number, number]) {
+  return evaluatePerformanceBudgets(
+    [
+      { id: "conversation-list.cold-scan.p50-ms", value: cold },
+      { id: "conversation-list.full-parse.p50-ms", value: control },
+    ],
+    PERFORMANCE_BUDGETS.filter((entry) => entry.id === RATIO_BUDGET_ID),
+    { fixtureProfile: "phase-6-list-10k" },
+  ).results[0];
+}
+
+test("the shipped ratio ceiling clears every healthy run measured, on both platforms", () => {
+  for (const [label, pair] of Object.entries(MEASURED_HEALTHY_RATIOS)) {
+    const result = ratioVerdict(pair);
+    assert.equal(
+      result.verdict,
+      "pass",
+      `${label} measured ${result.value?.toFixed(2)}%, over the shipped ceiling — ` +
+        `a healthy run must not be red`,
+    );
+  }
+});
+
+test("the shipped ratio ceiling still fails every collapsed run measured", () => {
+  for (const [label, pair] of Object.entries(MEASURED_COLLAPSED_RATIOS)) {
+    const result = ratioVerdict(pair);
+    assert.equal(
+      result.verdict,
+      "breach",
+      `${label} measured ${result.value?.toFixed(2)}% and passed — the ceiling has ` +
+        `been loosened past the regression it exists to catch`,
+    );
+  }
+});
+
 test("the shipped ratio budget catches the collapse the absolute ceiling passes", () => {
   // Measured by executing it, not argued: setting
   // CONVERSATION_LIST_READ_CONCURRENCY to 1 in src/lib/cave-conversations.ts and

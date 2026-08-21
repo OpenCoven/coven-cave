@@ -156,8 +156,9 @@ const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10
 /**
  * These are ceilings that catch a collapse, not targets to optimise toward —
  * the report's own 20% regression comparison is what catches slow erosion. Only
- * Cave's own code is budgeted: the benchmark's raw readdir+parse control loop
- * is deliberately absent, since policing it would measure the harness.
+ * Cave's own code carries a ceiling: the benchmark's raw readdir+parse control
+ * loop has none of its own, since policing it would measure the harness. It is
+ * a *divisor* in the relative budget below, not a budgeted quantity.
  *
  * ## The timing budgets grade the median, not the p95
  *
@@ -230,21 +231,37 @@ const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10
  * `conversation-list.cold-scan.share-of-full-parse-pct` grades the cold median
  * as a percentage of the control median from the SAME run. That comparison
  * cannot be defeated by a fast machine, because the machine sets both numbers.
- * Measured on the reference machine:
  *
- * | run                       | cold p50 | control p50 |  ratio |
- * | ------------------------- | -------- | ----------- | ------ |
- * | idle                      |   994.70 |    4,096.10 | 24.28% |
- * | 3 benchmarks concurrently | 1,809.08 |    4,718.10 | 38.34% |
- * | read pool collapsed to 1  | 4,397.85 |    3,926.19 |    112% |
+ * ⚠️ It is **platform**-sensitive, though, and seeding it on the review machine
+ * alone would have shipped a nightly one bad night from red. The nightly runs
+ * on `ubuntu-24.04`, so it was measured on Linux too:
  *
- * The ceiling is **75%**: 1.96x the worst ratio any healthy run has produced,
- * the same multiple over a measured worst that the 5,000 ms cold ceiling uses,
- * and still 37 points under the collapse. It is deliberately loose, because the
- * quotient is load-sensitive in the direction that matters (contention hurts
- * the read-bound cold loop more than the parse-bound control, so the ratio
- * rises); a ratio budget's job here is to catch the collapse an absolute
- * ceiling structurally cannot, not to grade erosion.
+ * | run                                 | cold p50 | control p50 |  ratio |
+ * | ----------------------------------- | -------- | ----------- | ------ |
+ * | windows, idle                       |   994.70 |    4,096.10 | 24.28% |
+ * | windows, 3 benchmarks concurrently  | 1,809.08 |    4,718.10 | 38.34% |
+ * | linux (wsl2), idle                  | 1,759.80 |    2,787.94 | 63.12% |
+ * | linux (wsl2), 3 concurrently        | 1,639.41 |    3,117.21 | 52.59% |
+ * | windows, read pool collapsed to 1   | 4,397.85 |    3,926.19 | 112.01% |
+ * | linux (wsl2), read pool collapsed   | 3,460.77 |    2,718.62 | 127.30% |
+ *
+ * The read pool only pays off where per-file I/O overhead dominates, and it
+ * dominates far less on Linux — so the same code reads 24% on Windows and 63%
+ * on Linux. Note also that contention moves the ratio in OPPOSITE directions on
+ * the two platforms: it raises the Windows number (the read-bound cold loop
+ * suffers more) and lowers the Linux one (the parse-bound control loop does).
+ * The worst healthy reading is therefore an idle Linux run, not a busy one.
+ *
+ * The ceiling is **90%** — near the middle of the 63.12%-112.01% band that
+ * separates every healthy run measured from every collapsed one, 1.43x the
+ * worst healthy and 22 points under the nearest collapse. That is a thinner
+ * multiple than the 1.9x the cold ms ceiling uses, and deliberately so: the 1.9x
+ * exists to absorb scheduling noise, and here the worst case is the QUIET run.
+ * Re-seed from the first real `ubuntu-24.04` nightly; WSL2 is Linux syscalls
+ * over a VM disk, which is the right family but not the right machine.
+ *
+ * A ratio budget's job here is to catch the collapse an absolute ceiling
+ * structurally cannot. Erosion remains the baseline comparison's job.
  */
 export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
   {
@@ -270,14 +287,15 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
   {
     // The machine-relative companion to the ceiling above. Both operands come
     // out of one run, so this is the budget that survives a slow runner — and
-    // the only one that fires when the read pool collapses (measured: 112%
-    // against a 4,397.85 ms cold median that PASSED the absolute ceiling).
+    // the only one that fires when the read pool collapses (measured: 112% on
+    // Windows and 127% on Linux, against cold medians that both PASSED the
+    // absolute ceiling).
     id: "conversation-list.cold-scan.share-of-full-parse-pct",
     surface: "list",
     label: "10k conversation list, cold scan median as a share of the full-parse control median",
     unit: "percent",
     direction: "lower-is-better",
-    limit: 75,
+    limit: 90,
     gate: "performance-report",
     source: LIST_FIXTURE,
     ratioOf: {

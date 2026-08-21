@@ -225,23 +225,42 @@ was picked as a number a regressed scan could not reach, and a quieter reference
 machine measured that regression at 3,892 ms. A ratio has no such anchor to
 lose, because the same box under the same load sets both numbers.
 
+⚠️ **It is platform-sensitive, and seeding it on the review machine alone would
+have shipped a nightly close to red.** The read pool only pays off where
+per-file I/O overhead dominates, and it dominates far less on Linux — the same
+code reads 24% on Windows and 63% on Linux. The nightly runs on `ubuntu-24.04`,
+so it was measured there too:
+
 | run | cold p50 | control p50 | ratio |
 | --- | ---: | ---: | ---: |
-| idle | 994.70 ms | 4,096.10 ms | 24.28% |
-| three benchmarks concurrently | 1,809.08 ms | 4,718.10 ms | 38.34% |
-| read pool collapsed to 1 | 4,397.85 ms | 3,926.19 ms | 112.01% |
+| windows, idle | 994.70 ms | 4,096.10 ms | 24.28% |
+| windows, three benchmarks concurrently | 1,809.08 ms | 4,718.10 ms | 38.34% |
+| linux (wsl2), idle | 1,759.80 ms | 2,787.94 ms | 63.12% |
+| linux (wsl2), three concurrently | 1,639.41 ms | 3,117.21 ms | 52.59% |
+| windows, read pool collapsed to 1 | 4,397.85 ms | 3,926.19 ms | 112.01% |
+| linux (wsl2), read pool collapsed to 1 | 3,460.77 ms | 2,718.62 ms | 127.30% |
 
-The ceiling is **75%** — 1.96x the worst ratio a healthy run has produced, the
-same multiple over a measured worst that the 5,000 ms cold ceiling uses, and 37
-points under the collapse.
+Note that contention moves the ratio in *opposite* directions on the two
+platforms: it raises the Windows number, because the read-bound cold loop
+suffers more, and lowers the Linux one, because the parse-bound control loop
+does. The worst healthy reading is an idle Linux run, not a busy one.
 
-It is deliberately loose. The quotient is *not* load-invariant: the two loops
-are not equally I/O-bound, so contention hurts the read-bound cold scan more
-than the parse-bound control and the ratio rises (24.3% → 38.3% with three
-benchmarks at once). What it cannot do is drift with absolute machine speed,
-which is the one way the absolute ceiling failed. A ratio budget's job here is
-to catch the collapse an absolute ceiling structurally cannot — erosion is still
-the baseline comparison's job.
+The ceiling is **90%** — near the middle of the 63.12%–112.01% band separating
+every healthy run measured from every collapsed one, 1.43x the worst healthy and
+22 points under the nearest collapse. That is a thinner multiple than the 1.9x
+the cold ms ceiling uses, deliberately: 1.9x exists to absorb scheduling noise,
+and here the worst case is the quiet run. Re-seed from the first real
+`ubuntu-24.04` nightly — WSL2 is Linux syscalls over a VM disk, the right family
+but not the right machine.
+
+The unit suite pins the ceiling from *both* sides: every healthy pair in that
+table must pass and every collapsed pair must breach, so tightening past a real
+run and loosening past the regression both fail there rather than in a nightly.
+
+What the quotient cannot do is drift with absolute machine speed, which is the
+one way the absolute ceiling failed. A ratio budget's job here is to catch the
+collapse an absolute ceiling structurally cannot — erosion is still the baseline
+comparison's job.
 
 A relative budget fails closed on the same terms as every other: a missing
 numerator, a missing denominator, or a denominator that is zero or negative all
