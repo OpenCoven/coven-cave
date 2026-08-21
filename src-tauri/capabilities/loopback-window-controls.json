@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-window-controls",
+  "description": "lets the trusted main loopback webview synchronize macOS traffic-light visibility with the navigation rail",
+  "platforms": [
+    "macOS"
+  ],
+  "webviews": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "allow-set-traffic-lights-visible"
+  ]
+}

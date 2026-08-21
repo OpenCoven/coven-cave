@@ -831,6 +831,8 @@ export const SUITES = {
     "src/lib/chat-debug-store.test.ts",
     "src/components/bottom-terminal-ws-bridge.test.ts",
     "src/components/bottom-terminal-startup-watchdog.test.ts",
+    "src/components/bottom-terminal-health.test.ts",
+    "src/components/code-terminal-focus-mode.test.ts",
     "src/components/familiars-memory-view-filter-paginate.test.ts",
     "src/components/familiars-memory-view-detail.test.ts",
     "src/components/familiars-memory-view-compact-path.test.ts",

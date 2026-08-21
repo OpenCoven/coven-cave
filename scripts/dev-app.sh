@@ -186,6 +186,10 @@ fi
 # never participates in Next's module URL resolution or reaches the HTTP server.
 # The bridge stores it in sessionStorage, strips it,
 # and attaches the header to same-origin `/api/` calls.
+if [ -z "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
+  COVEN_CAVE_AUTH_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+  export COVEN_CAVE_AUTH_TOKEN
+fi
 dev_url="http://127.0.0.1:${dev_port}"
 if [ -n "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
   sidecar_token_fragment="$(node -p 'encodeURIComponent(process.env.COVEN_CAVE_AUTH_TOKEN)')"
