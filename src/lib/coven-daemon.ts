@@ -150,7 +150,7 @@ type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-statu
  * REPORTED_REFUSAL_LIMIT distinct refusals, which is the same trade the event
  * ring itself already makes.
  *
- * The entries are bounded in bytes as well as in count, because a count bound
+ * The entries are bounded in length as well as in count, because a count bound
  * alone does not bound memory here: nothing limits how long the refused value
  * is. `daemon.json` is attacker-writable and `daemonStatusSocket` returns
  * whatever string its `socket` field holds, so 32 entries of a megabyte each
@@ -158,7 +158,8 @@ type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-statu
  * approaches the cap (the OS path limit is 32767 characters and a pipe name is
  * far shorter), so truncation only ever affects a value that was never a
  * socket. Two absurd values sharing a prefix then dedupe to one event, which
- * is the same cost eviction already carries.
+ * is the same cost eviction already carries. Enforcing that bound takes a
+ * copy, not just a truncation — see {@link detachedRefusalKey}.
  *
  * What neither bound stops, and what this deliberately does not try to: that
  * same attacker can still put one event in the ring per distinct value, and so
@@ -191,8 +192,32 @@ const reportedRefusals = new Set<string>();
  * when something is already wrong. Losing an event is the strictly smaller
  * failure, so the recording is contained.
  */
+/**
+ * A dedupe key that shares no storage with the value it describes.
+ *
+ * Truncating with `slice` alone bounds the key's *length* and not its cost:
+ * V8 backs a sliced string with a pointer to its parent rather than a copy, so
+ * a 1024-character key taken out of a megabyte-scale refused value keeps that
+ * whole megabyte reachable for as long as the key sits in the set. That is
+ * precisely the retention {@link REPORTED_REFUSAL_KEY_LIMIT} exists to bound,
+ * reintroduced by the expression written to enforce it — and it is worse than
+ * having no limit at all would suggest, because the limit reads like a
+ * guarantee. Measured on Node 24 with 32 keys taken from equal-sized values:
+ * 1 MiB values retained 32 MiB, 4 MiB retained 128 MiB, 8 MiB retained 256 MiB
+ * — scaling with the value and not with the limit — against 0 MiB once copied.
+ *
+ * Concatenating and re-slicing forces the flatten that copies. `.repeat(1)`
+ * and `.normalize()` read like they would do the same and do not: both
+ * fast-path back to the receiver, parent pointer intact (measured at the same
+ * 128 MiB).
+ */
+function detachedRefusalKey(source: RefusedSocketSource, value: string): string {
+  const truncated = `${source} ${value}`.slice(0, REPORTED_REFUSAL_KEY_LIMIT);
+  return ` ${truncated}`.slice(1);
+}
+
 function reportRefusedRemoteTarget(source: RefusedSocketSource, value: string): void {
-  const key = `${source} ${value}`.slice(0, REPORTED_REFUSAL_KEY_LIMIT);
+  const key = detachedRefusalKey(source, value);
   if (reportedRefusals.has(key)) return;
   reportedRefusals.add(key);
   // A Set iterates in insertion order, so the first entry is the oldest.

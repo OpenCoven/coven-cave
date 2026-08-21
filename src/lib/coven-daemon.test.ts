@@ -561,6 +561,70 @@ const {
   clearDaemonDiagnosticEventsForTests();
 }
 
+// ...and the length bound has to bound *memory*, which truncation alone does
+// not. V8 backs a sliced string with a pointer to its parent instead of a copy,
+// so a key sliced straight out of the refused value keeps the whole value
+// reachable for as long as the key is in the set — the exact retention the
+// limit is there to prevent, reintroduced by the expression enforcing it. The
+// assertion above cannot see that: both spellings dedupe identically.
+//
+// Needs a collectable heap, and `--expose-gc` is not on this suite's command
+// line, so it is enabled at runtime. If that ever stops working the block says
+// so rather than passing silently on an assertion it never reached.
+{
+  let gc = null;
+  try {
+    const v8 = await import("node:v8");
+    const vm = await import("node:vm");
+    v8.setFlagsFromString("--expose-gc");
+    gc = vm.runInNewContext("gc");
+    v8.setFlagsFromString("--no-expose-gc");
+  } catch {
+    gc = null;
+  }
+  if (typeof gc !== "function") {
+    console.log("coven-daemon.test.ts: SKIPPED refusal-key retention (no runtime gc)");
+  } else {
+    clearDaemonDiagnosticEventsForTests();
+    const keyCount = 8;
+    // One-byte characters, so a character is a byte of heap.
+    const valueBytes = 2 * 1024 * 1024;
+    const heapUsed = () => {
+      gc();
+      gc();
+      gc();
+      return process.memoryUsage().heapUsed;
+    };
+
+    const before = heapUsed();
+    for (let i = 0; i < keyCount; i += 1) {
+      resolveDaemonSocketPath({
+        platform: "win32",
+        env: {
+          // Distinct inside the truncated prefix, then padded far past it, so
+          // these are eight separate keys over eight megabyte-scale values.
+          COVEN_SOCKET:
+            String.raw`\\retain-probe-` + i + String.raw`\pipe\coven-` + "x".repeat(valueBytes),
+        },
+        homeDir: "C:/Users/Sonic",
+        readFileSync: () => {
+          throw new Error("unused");
+        },
+      });
+    }
+    const retained = heapUsed() - before;
+
+    const offered = keyCount * valueBytes;
+    const mib = (bytes) => (bytes / 1024 / 1024).toFixed(1);
+    const detail = `kept ${mib(retained)} MiB of the ${mib(offered)} MiB offered`;
+    assert.ok(
+      retained < offered / 4,
+      `the dedupe keys must not retain the values they were truncated from: ${detail}, where ${keyCount} keys bounded at 1024 characters is well under 1 MiB`,
+    );
+    clearDaemonDiagnosticEventsForTests();
+  }
+}
+
 // Recording a refusal must never throw into the resolver. socketPath() calls
 // the resolver on every daemon request, so an exception escaping the
 // diagnostics would take out every request Cave makes — on the one code path
