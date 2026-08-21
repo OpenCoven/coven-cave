@@ -1,13 +1,22 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import test from "node:test";
+import { after, test } from "node:test";
 
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import { TOKEN_HEADER } from "@/proxy-helpers.ts";
 
 import { createAdminCredentialsGetHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-admin-credentials-");
+const adminSecret = "sidecar-admin-secret";
+const originalAdminSecret = process.env.COVEN_CAVE_AUTH_TOKEN;
+process.env.COVEN_CAVE_AUTH_TOKEN = adminSecret;
+
+after(() => {
+  if (originalAdminSecret === undefined) delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  else process.env.COVEN_CAVE_AUTH_TOKEN = originalAdminSecret;
+});
 
 test("lists persisted active and revoked credential metadata without bearer material", async () => {
   const root = await mkdtemp(scratchPrefix);
@@ -36,7 +45,11 @@ test("lists persisted active and revoked credential metadata without bearer mate
       loopbackSecret: "loopback-secret",
       now: () => now,
     });
-    const response = await createAdminCredentialsGetHandler(reader)();
+    const response = await createAdminCredentialsGetHandler(reader)(
+      new Request("http://127.0.0.1:3020/api/client/v1/admin/credentials", {
+        headers: { [TOKEN_HEADER]: adminSecret },
+      }),
+    );
     const payload = await response.json() as {
       ok: boolean;
       credentials: Array<Record<string, unknown>>;

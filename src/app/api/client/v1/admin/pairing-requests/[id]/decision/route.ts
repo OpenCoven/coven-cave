@@ -2,6 +2,7 @@ import {
   parseClientV1PairingRequestId,
 } from "@/lib/server/client-v1/contract.ts";
 import type { ClientV1PairingDecision } from "@/lib/server/client-v1/pairing-store.ts";
+import { requireClientV1Admin } from "@/lib/server/client-v1/admin-auth.ts";
 import {
   getClientV1Runtime,
   type ClientV1Runtime,
@@ -35,6 +36,9 @@ export function createAdminPairingDecisionPostHandler(runtime: ClientV1Runtime) 
     req: Request,
     { params: rawParams }: RouteContext,
   ): Promise<Response> {
+    const denied = requireClientV1Admin(req, { mutation: true });
+    if (denied) return denied;
+
     let id: string;
     try {
       id = parseClientV1PairingRequestId((await rawParams).id);

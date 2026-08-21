@@ -1,4 +1,5 @@
 import { clientV1CredentialMetadata } from "@/lib/server/client-v1/credential-store.ts";
+import { requireClientV1Admin } from "@/lib/server/client-v1/admin-auth.ts";
 import {
   getClientV1Runtime,
   type ClientV1Runtime,
@@ -37,6 +38,9 @@ export function createAdminCredentialDeleteHandler(runtime: ClientV1Runtime) {
     req: Request,
     { params: rawParams }: RouteContext,
   ): Promise<Response> {
+    const denied = requireClientV1Admin(req, { mutation: true });
+    if (denied) return denied;
+
     const { id } = await rawParams;
     let body: unknown;
     try {

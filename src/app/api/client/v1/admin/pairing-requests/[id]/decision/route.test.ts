@@ -1,22 +1,37 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import test from "node:test";
+import { after, test } from "node:test";
 
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
+import { TOKEN_HEADER } from "@/proxy-helpers.ts";
 
 import { createAdminPairingDecisionPostHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-admin-decision-");
+const origin = "http://127.0.0.1:3020";
+const adminSecret = "sidecar-admin-secret";
+const originalAdminSecret = process.env.COVEN_CAVE_AUTH_TOKEN;
+process.env.COVEN_CAVE_AUTH_TOKEN = adminSecret;
+
+after(() => {
+  if (originalAdminSecret === undefined) delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  else process.env.COVEN_CAVE_AUTH_TOKEN = originalAdminSecret;
+});
 
 function context(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
 function request(body: string): Request {
-  return new Request("http://127.0.0.1:3020/api/client/v1/admin/pairing-requests/id/decision", {
+  return new Request(`${origin}/api/client/v1/admin/pairing-requests/id/decision`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      [TOKEN_HEADER]: adminSecret,
+      origin,
+      referer: `${origin}/settings`,
+    },
     body,
   });
 }

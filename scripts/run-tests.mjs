@@ -1375,6 +1375,7 @@ export const SUITES = {
     "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
     "src/app/api/client/v1/admin/credentials/route.test.ts",
     "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+    "src/app/api/client/v1/admin/security.e2e.test.ts",
     "src/app/api/x/account-routes.test.ts",
     "src/app/api/x/research-routes.test.ts",
     "src/app/api/research/recommendations/route.test.ts",
@@ -1837,6 +1838,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
   "src/app/api/client/v1/admin/credentials/route.test.ts",
   "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+  "src/app/api/client/v1/admin/security.e2e.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",

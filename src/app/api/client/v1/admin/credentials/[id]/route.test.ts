@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import test from "node:test";
+import { after, test } from "node:test";
 
 import { NextRequest } from "next/server";
 
-import { ACCESS_TOKEN_COOKIE, LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
+import { LOCAL_PEER_HEADER, TOKEN_HEADER } from "@/proxy-helpers.ts";
 import { proxy } from "@/proxy.ts";
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 
@@ -13,15 +13,29 @@ import { createAdminCredentialDeleteHandler } from "./route.ts";
 
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-admin-revoke-");
 const origin = "http://localhost:3000";
+const routeOrigin = "http://127.0.0.1:3020";
+const adminSecret = "sidecar-admin-secret";
+const originalAdminSecret = process.env.COVEN_CAVE_AUTH_TOKEN;
+process.env.COVEN_CAVE_AUTH_TOKEN = adminSecret;
+
+after(() => {
+  if (originalAdminSecret === undefined) delete process.env.COVEN_CAVE_AUTH_TOKEN;
+  else process.env.COVEN_CAVE_AUTH_TOKEN = originalAdminSecret;
+});
 
 function context(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
 function request(body: string): Request {
-  return new Request("http://127.0.0.1:3020/api/client/v1/admin/credentials/id", {
+  return new Request(`${routeOrigin}/api/client/v1/admin/credentials/id`, {
     method: "DELETE",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      [TOKEN_HEADER]: adminSecret,
+      origin: routeOrigin,
+      referer: `${routeOrigin}/settings`,
+    },
     body,
   });
 }
@@ -110,12 +124,10 @@ test("rejects missing reasons, malformed JSON, and unknown credential ids", asyn
 
 test("admin credential mutation remains behind existing authentication and CSRF gates", async () => {
   const original = {
-    access: process.env.COVEN_CAVE_ACCESS_TOKEN,
     auth: process.env.COVEN_CAVE_AUTH_TOKEN,
     local: process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
   };
   try {
-    process.env.COVEN_CAVE_ACCESS_TOKEN = "mobile-secret";
     process.env.COVEN_CAVE_AUTH_TOKEN = "sidecar-secret";
     process.env.COVEN_CAVE_LOCAL_PEER_SECRET = "loopback-secret";
 
@@ -141,7 +153,7 @@ test("admin credential mutation remains behind existing authentication and CSRF 
 
     const crossOrigin = await proxy(makeRequest({
       [LOCAL_PEER_HEADER]: "loopback-secret",
-      cookie: `${ACCESS_TOKEN_COOKIE}=mobile-secret`,
+      [TOKEN_HEADER]: "sidecar-secret",
       origin: "https://attacker.example",
       referer: "https://attacker.example/",
     }));
@@ -149,14 +161,12 @@ test("admin credential mutation remains behind existing authentication and CSRF 
 
     const authenticated = await proxy(makeRequest({
       [LOCAL_PEER_HEADER]: "loopback-secret",
-      cookie: `${ACCESS_TOKEN_COOKIE}=mobile-secret`,
+      [TOKEN_HEADER]: "sidecar-secret",
       origin,
       referer: `${origin}/settings`,
     }));
     assert.equal(authenticated.headers.get("x-middleware-next"), "1");
   } finally {
-    if (original.access === undefined) delete process.env.COVEN_CAVE_ACCESS_TOKEN;
-    else process.env.COVEN_CAVE_ACCESS_TOKEN = original.access;
     if (original.auth === undefined) delete process.env.COVEN_CAVE_AUTH_TOKEN;
     else process.env.COVEN_CAVE_AUTH_TOKEN = original.auth;
     if (original.local === undefined) delete process.env.COVEN_CAVE_LOCAL_PEER_SECRET;
