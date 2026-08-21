@@ -327,6 +327,14 @@ test("scheduled workflow restores history and always uploads report evidence", a
   assert.equal(workflow.permissions.actions, "read");
   assert.match(restore.run, /--status success/);
   assert.match(generate.run, /--baseline/);
+  // A breached budget fails this workflow by exit code and by nothing else, and
+  // the step deliberately runs the report under `set +e` so a failing run still
+  // writes its job summary. That makes one line the whole enforcement: drop
+  // `exit "$report_status"` and the gate goes green on every breach, with no
+  // failing assertion anywhere to say so. Pin the capture and the propagation.
+  assert.match(generate.run, /^\s*set \+e$/m, "the report runs with errexit off");
+  assert.match(generate.run, /^\s*report_status=\$\?$/m, "its exit code is captured");
+  assert.match(generate.run, /^\s*exit "\$report_status"$/m, "and is the step's own exit code");
   assert.equal(upload.if, "always()");
   assert.equal(
     upload.uses,
