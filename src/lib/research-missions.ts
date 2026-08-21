@@ -354,6 +354,8 @@ export type CreateResearchMissionInput = {
   harness?: string;
   /** Harness-specific model id, passed through verbatim when supported. */
   model?: string;
+  /** Saved Research resources made available before iteration one launches. */
+  savedLinkIds?: string[];
 };
 
 export type ResearchMissionActionInput =
@@ -748,6 +750,8 @@ export const RESEARCH_PROJECT_ROOT_MAX_LENGTH = 2_000;
 export const RESEARCH_DIRECTION_MAX_LENGTH = 10_000;
 export const RESEARCH_CONSTRAINT_MAX_COUNT = 20;
 export const RESEARCH_CONSTRAINT_MAX_LENGTH = 500;
+export const RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT = 500;
+export const RESEARCH_SAVED_LINK_ID_MAX_LENGTH = 128;
 
 export function validateCreateResearchMissionInput(
   input: unknown,
@@ -830,6 +834,39 @@ export function validateCreateResearchMissionInput(
     }
     if (constraint) constraints.push(constraint);
   }
+  if (value.savedLinkIds !== undefined && !Array.isArray(value.savedLinkIds)) {
+    return { ok: false, error: "savedLinkIds must be an array of strings" };
+  }
+  const rawSavedLinkIds = value.savedLinkIds ?? [];
+  if (rawSavedLinkIds.length > RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT) {
+    return {
+      ok: false,
+      error: `savedLinkIds must contain at most ${RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT} items`,
+    };
+  }
+  if (rawSavedLinkIds.some((item) => typeof item !== "string")) {
+    return { ok: false, error: "savedLinkIds must be an array of strings" };
+  }
+  const savedLinkIds: string[] = [];
+  const seenSavedLinkIds = new Set<string>();
+  for (const rawSavedLinkId of rawSavedLinkIds as string[]) {
+    const savedLinkId = rawSavedLinkId.trim();
+    if (
+      !savedLinkId
+      || savedLinkId.length > RESEARCH_SAVED_LINK_ID_MAX_LENGTH
+      || savedLinkId.includes("\0")
+      || hasUnpairedUtf16Surrogate(rawSavedLinkId)
+    ) {
+      return {
+        ok: false,
+        error: `each saved link id must be valid Unicode text without NUL and at most ${RESEARCH_SAVED_LINK_ID_MAX_LENGTH} characters`,
+      };
+    }
+    if (!seenSavedLinkIds.has(savedLinkId)) {
+      seenSavedLinkIds.add(savedLinkId);
+      savedLinkIds.push(savedLinkId);
+    }
+  }
   const optionalText = (field: "title" | "audience" | "projectRoot", max: number) => {
     const raw = value[field];
     if (raw === undefined || raw === null || raw === "") return undefined;
@@ -909,6 +946,7 @@ export function validateCreateResearchMissionInput(
       bounds: bounds.value,
       ...(harness ? { harness } : {}),
       ...(model ? { model } : {}),
+      ...(savedLinkIds.length > 0 ? { savedLinkIds } : {}),
     },
   };
 }

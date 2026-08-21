@@ -23,7 +23,43 @@ import { isMacDesktopShell } from "@/lib/tauri-platform";
 export function TauriTitlebarMarker() {
   useEffect(() => {
     if (!isMacDesktopShell()) return;
-    document.documentElement.dataset.tauriTitlebar = "";
+    const root = document.documentElement;
+    root.dataset.tauriTitlebar = "";
+
+    let disposed = false;
+    let request = 0;
+    let unlisten: (() => void) | undefined;
+
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const appWindow = getCurrentWindow();
+        const syncFullscreen = async () => {
+          const currentRequest = ++request;
+          const fullscreen = await appWindow.isFullscreen();
+          if (disposed || currentRequest !== request) return;
+          if (fullscreen) root.dataset.windowFullscreen = "";
+          else delete root.dataset.windowFullscreen;
+        };
+
+        await syncFullscreen();
+        const stop = await appWindow.onResized(() => {
+          void syncFullscreen().catch((error: unknown) => {
+            console.warn("[titlebar] Failed to refresh fullscreen state.", error);
+          });
+        });
+        if (disposed) void stop();
+        else unlisten = stop;
+      } catch (error) {
+        console.warn("[titlebar] Failed to observe fullscreen state.", error);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      delete root.dataset.windowFullscreen;
+      if (unlisten) void unlisten();
+    };
   }, []);
   return null;
 }

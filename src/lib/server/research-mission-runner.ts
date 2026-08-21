@@ -46,6 +46,7 @@ import {
   loadResearchMissionSessionOwner,
   readValidatedMissionFile,
   recordResearchMissionSessionOwner,
+  removeResearchMissionWorkspace,
   researchMissionWorkspacePath,
   saveResearchMission,
   type ResearchMissionSessionOwner,
@@ -135,6 +136,7 @@ type ResearchAutomationCreateInput = {
 
 export type ResearchMissionRunnerDeps = {
   createWorkspace(mission: ResearchMission): Promise<ResearchMission>;
+  removeWorkspace(id: string): Promise<void>;
   loadMission(id: string): Promise<ResearchMission | null>;
   saveMission(mission: ResearchMission): Promise<void>;
   loadSessionOwner(missionId: string): Promise<ResearchMissionSessionOwner | null>;
@@ -1808,7 +1810,42 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       if (!validated.ok) throw new Error(validated.error);
       let mission = createMissionRecord(validated.value, deps.randomId(), deps.now());
       mission = await deps.createWorkspace(mission);
-      await saveMission(mission);
+      const initialResourceRollbacks: Array<() => Promise<void>> = [];
+      const rollbackInitialResources = async (error: unknown): Promise<never> => {
+        const rollbackErrors: unknown[] = [];
+        for (const rollback of initialResourceRollbacks.reverse()) {
+          try {
+            await rollback();
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+          }
+        }
+        try {
+          await deps.removeWorkspace(mission.id);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+        if (rollbackErrors.length > 0) {
+          throw new AggregateError(
+            [error, ...rollbackErrors],
+            "Initial research mission could not be prepared or rolled back",
+          );
+        }
+        throw error;
+      };
+      try {
+        for (const savedLinkId of validated.value.savedLinkIds ?? []) {
+          const materialized = await deps.materializeSavedLink(mission, savedLinkId);
+          initialResourceRollbacks.push(materialized.rollback);
+          mission = {
+            ...mission,
+            sources: [...mission.sources, materialized.source],
+          };
+        }
+        await saveMission(mission);
+      } catch (error) {
+        return rollbackInitialResources(error);
+      }
       // The start sequence shares the per-mission action lock: without it, a
       // concurrent locked act('cancel') landing between the pre-launch save
       // and the launch-result save was silently overwritten back to running.
@@ -2068,6 +2105,7 @@ export async function researchDaemonSessionState(
 export function makeProductionResearchMissionRunner() {
   const deps: ResearchMissionRunnerDeps = {
     createWorkspace: createResearchMissionWorkspace,
+    removeWorkspace: removeResearchMissionWorkspace,
     loadMission: loadResearchMission,
     saveMission: saveResearchMission,
     loadSessionOwner: loadResearchMissionSessionOwner,

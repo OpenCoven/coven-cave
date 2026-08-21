@@ -28,6 +28,7 @@ const chatSidebar = read("./workspace-sidebar.tsx");
 const railHeaderCss = read("../styles/globals/rail-header.css");
 const workspaceContextSwitcherCss = read("../styles/globals/workspace-context-switcher.css");
 const homeCss = read("../styles/sidebar-minimal/shell-chrome.css");
+const sectionTabsCss = read("../styles/sidebar-minimal/section-tabs.css");
 const homeRailCss = read("../styles/sidebar-minimal/activity-rail.css");
 const chatCss = read("../styles/globals/shell-navigation.css");
 const globals = read("../app/globals.css");
@@ -167,6 +168,21 @@ assert.match(
   workspaceContextSwitcherCss,
   /\.workspace-context-switcher__crew \.familiar-switcher__trigger-label \{[\s\S]*?font-size: var\(--text-base\);/,
   "the scope trigger's label uses the same base type size as the button below it",
+);
+assert.match(
+  scopeRule,
+  /border: 1px solid var\(--border-hairline\);/,
+  "the scope selector uses a quiet hairline instead of a heavy accent outline",
+);
+assert.match(
+  scopeRule,
+  /background: var\(--bg-subtle\);/,
+  "the scope selector rests on the rail's subtle surface",
+);
+assert.match(
+  sectionTabsCss,
+  /\.nav-sections \{[\s\S]*?background: transparent;[\s\S]*?border: 0;/,
+  "the Home and Chat switcher integrates into the rail instead of floating in another card",
 );
 
 // ── One panel surface and one content inset ─────────────────────────────────
@@ -355,11 +371,11 @@ assert.match(
   "crew control is forced loading when context is not ready",
 );
 
-// ── Crew trigger border: exact plan recipe ────────────────────────────────────
+// ── Crew trigger border: quiet rail chrome ───────────────────────────────────
 assert.match(
   workspaceContextSwitcherCss,
-  /border: 1px solid color-mix\(in oklch, var\(--accent-presence\) 38%, var\(--border-hairline\)\)/,
-  "crew trigger border is exactly 1px with the accent-presence 38% color-mix recipe",
+  /border: 1px solid var\(--border-hairline\)/,
+  "crew trigger border uses the quiet rail hairline",
 );
 assert.doesNotMatch(
   workspaceContextSwitcherCss,

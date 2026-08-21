@@ -73,52 +73,8 @@ const WORK_SESSION = {
   updated_at: ISO,
 };
 
-/** The prompt the bridge hands to ChatView. Shared by the board chat-start mock
- *  that supplies it and the assertions that count it, so the two cannot drift
- *  apart. */
-const TASK_FIRST_PROMPT = "Add the Coven stateless spoke protocol.";
-
-/** Every POST the page made to /api/chat/send, so a re-send is countable.
- *
- * `entries` exists because the count alone is undiagnosable: a bare
- * "Expected 1, Received 2" says a duplicate send happened but not whether the
- * two were the same turn re-fired (identical runId) or two distinct sends
- * (different runId / sessionId / prompt), which are different bugs with
- * different fixes. Recording the discriminating fields makes the failure
- * self-explaining on a CI runner nobody can attach a debugger to. */
-type SendEntry = { at: number; runId?: string; sessionId?: string | null; prompt?: string };
-type SendLog = { count: number; entries: SendEntry[] };
-
-const newSendLog = (): SendLog => ({ count: 0, entries: [] });
-
-/**
- * The sends that are actually the task's first prompt.
- *
- * `/api/chat/send` is a SHARED endpoint, not the task handoff's private one:
- * the shell generates the daily narrative through it too
- * (`workspace.tsx` -> `generateDailyNarrative`, "Write a short narrative of my
- * day (...) in the cave..."). That call is unrelated background traffic, it
- * fires on its own schedule, and counting it as a re-send made this spec fail
- * whenever it happened to land inside the test window — which is why the
- * failure tracked overall suite load rather than any change to the chat code,
- * and why it reproduced on CI but not on a warm local run.
- *
- * Counting every POST was therefore the wrong instrument for the claim. Select
- * the sends that carry the task's own prompt: a genuine re-send of the first
- * prompt necessarily carries it, so this is strictly more precise than the
- * bare count, not weaker — it drops false positives and keeps every true one.
- */
-const taskSends = (sends: SendLog): SendEntry[] =>
-  sends.entries.filter((entry) => entry.prompt === TASK_FIRST_PROMPT);
-
-/** Compact, quotable rendering of the send log for an assertion message. */
-function describeSends(sends: SendLog): string {
-  if (!sends.entries.length) return "no sends recorded";
-  const first = sends.entries[0]!.at;
-  return sends.entries
-    .map((e, i) => `#${i + 1} +${e.at - first}ms runId=${e.runId ?? "?"} sessionId=${e.sessionId ?? "null"} prompt=${JSON.stringify((e.prompt ?? "").slice(0, 60))}`)
-    .join("; ");
-}
+/** Every matching task handoff POST, so unrelated background sends are ignored. */
+type SendLog = { count: number };
 
 async function openBoard(page: Page, cards: unknown[], sessions: unknown[], sends?: SendLog) {
   await page.addInitScript(() => {
@@ -167,26 +123,15 @@ async function openBoard(page: Page, cards: unknown[], sessions: unknown[], send
         sessionId: "s-bridge",
         familiarId: "nova",
         bridge: "native-chat",
-        initialPrompt: TASK_FIRST_PROMPT,
+        initialPrompt: "Add the Coven stateless spoke protocol.",
         card: { ...FRESH_CARD, sessionId: "s-bridge" },
       },
     }),
   );
   await page.route("**/api/chat/send**", (route) => {
     if (sends && route.request().method() === "POST") {
-      sends.count += 1;
-      let body: Record<string, unknown> = {};
-      try {
-        body = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
-      } catch {
-        // A malformed body is itself worth seeing; keep the entry, drop the fields.
-      }
-      sends.entries.push({
-        at: Date.now(),
-        runId: typeof body.runId === "string" ? body.runId : undefined,
-        sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
-        prompt: typeof body.prompt === "string" ? body.prompt : undefined,
-      });
+      const body = route.request().postDataJSON() as { prompt?: unknown };
+      if (body.prompt === "Add the Coven stateless spoke protocol.") sends.count += 1;
     }
     return route.fulfill({ json: { ok: true } });
   });
@@ -333,23 +278,11 @@ test.describe("Task Work cockpit fit", () => {
   // Its auto-send guard is an instance ref, so before the remount-proof handoff
   // latch that remount re-sent the task's first prompt.
   test("opening the code rail does not re-send the task's first prompt", async ({ page }) => {
-    const sends: SendLog = newSendLog();
+    const sends: SendLog = { count: 0 };
     await openBoard(page, [FRESH_CARD], [], sends);
     await openCockpit(page, "Start work");
 
-    // Settle on the handoff send, then assert nothing followed it. Polling
-    // `.toBe(1)` alone is unsound as a premise check: it passes the instant it
-    // samples 1 and cannot see a second send arriving a tick later, and when it
-    // does fail it reports only a number. Wait for at-least-one, then pin the
-    // exact count with the whole log attached — including the unrelated sends,
-    // so the next failure is readable rather than a bare number.
-    await expect
-      .poll(() => taskSends(sends).length, { timeout: 15_000 })
-      .toBeGreaterThanOrEqual(1);
-    expect(
-      taskSends(sends).length,
-      `the bridge handoff sends the task's first prompt exactly once — all sends: ${describeSends(sends)}`,
-    ).toBe(1);
+    await expect.poll(() => sends.count, { timeout: 15_000 }).toBe(1);
 
     await page.locator(".task-work-cockpit .workspace-rail-reopen").click();
     await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
@@ -360,9 +293,6 @@ test.describe("Task Work cockpit fit", () => {
     await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(800);
 
-    expect(
-      taskSends(sends).length,
-      `the first prompt is sent exactly once across rail remounts — all sends: ${describeSends(sends)}`,
-    ).toBe(1);
+    expect(sends.count, "the first prompt is sent exactly once across rail remounts").toBe(1);
   });
 });
