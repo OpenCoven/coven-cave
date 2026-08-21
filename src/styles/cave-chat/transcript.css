@@ -622,6 +622,32 @@
   white-space: nowrap;
 }
 
+.cave-new-response-content {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 60;
+  display: flex;
+  width: fit-content;
+  min-height: var(--touch-target);
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding-inline: var(--space-3);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+  color: var(--accent-presence);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cave-new-response-content:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+}
+
 @media (max-width: 720px) {
   .cave-chat-workbench-header,
   .cave-chat-linear-header {
@@ -885,16 +911,12 @@
     overflow-x: auto;
   }
 
-  .cave-scroll-bottom-button {
+  .cave-new-response-content {
     /* Sit just above the composer dock. The mobile composer still keeps the
        action strip, the ~84px textarea, one compact action footer, and dock
        padding — ~214px total — so hug just above it rather than floating high
        in the transcript. */
     bottom: calc(214px + var(--sai-bottom));
-    width: var(--touch-target);
-    height: var(--touch-target);
-    border-radius: var(--radius-pill);
-    -webkit-tap-highlight-color: transparent;
   }
 
   .cave-chat-linear .cave-composer-dock {
