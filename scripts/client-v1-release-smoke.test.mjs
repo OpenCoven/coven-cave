@@ -7,12 +7,14 @@ import test from "node:test";
 import {
   CLIENT_V1_HEALTH_PATH,
   DEFAULT_ORIGIN,
+  HEALTH_READ_TIMEOUT_MS,
   checkHealthEnvelope,
   checkInstanceStability,
   contractExpectations,
   contractFixturePath,
   packageVersion,
   parseOrigin,
+  readHealth,
 } from "./client-v1-release-smoke.mjs";
 
 const expected = { apiVersion: "1.0", minimumClientVersion: "0.1.0", releaseVersion: "0.3.6" };
@@ -161,6 +163,27 @@ test("reads the expected release version from the repository manifest", () => {
 
 test("targets the versioned client health route", () => {
   assert.equal(CLIENT_V1_HEALTH_PATH, "/api/client/v1/health");
+});
+
+test("bounds a health read so a wedged release cannot hang the probe", async () => {
+  let seen = null;
+  const body = { apiVersion: "1.0" };
+  const answered = await readHealth(DEFAULT_ORIGIN, (url, init) => {
+    seen = { url, init };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+  });
+  assert.deepEqual(answered, body);
+  assert.equal(String(seen.url), `${DEFAULT_ORIGIN}${CLIENT_V1_HEALTH_PATH}`);
+  // A release that accepts the connection and never answers would otherwise
+  // hang forever, and this script's contract is exit 0 or exit 1.
+  assert.equal(seen.init.signal instanceof AbortSignal, true);
+  assert.equal(seen.init.signal.aborted, false);
+  assert.equal(HEALTH_READ_TIMEOUT_MS > 0, true);
+
+  await assert.rejects(
+    () => readHealth(DEFAULT_ORIGIN, () => Promise.resolve({ ok: false, status: 503 })),
+    /returned HTTP 503/,
+  );
 });
 
 console.log("client-v1-release-smoke contract: ok");

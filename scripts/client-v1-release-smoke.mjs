@@ -169,8 +169,22 @@ export function checkInstanceStability(first, second) {
   return a === b ? [] : [`instanceId changed between reads: ${a} then ${b}`];
 }
 
-async function readHealth(origin) {
-  const response = await fetch(new URL(CLIENT_V1_HEALTH_PATH, origin));
+/**
+ * How long one health read may take before the probe gives up.
+ *
+ * Without it a release that accepts the connection and never answers — a Next
+ * server still compiling, a handler wedged on a synchronous read of a home that
+ * has not mounted — hangs this script forever. That is the one outcome its
+ * contract does not allow: it promises exit 0 or exit 1, and an unbounded wait
+ * turns a diagnosable failure into a CI job timeout with no output. Health does
+ * no work beyond a memoised id, so seconds is already far past generous.
+ */
+export const HEALTH_READ_TIMEOUT_MS = 10_000;
+
+export async function readHealth(origin, fetchImpl = fetch) {
+  const response = await fetchImpl(new URL(CLIENT_V1_HEALTH_PATH, origin), {
+    signal: AbortSignal.timeout(HEALTH_READ_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`GET ${CLIENT_V1_HEALTH_PATH} returned HTTP ${response.status}`);
   }
