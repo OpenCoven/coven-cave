@@ -30,9 +30,10 @@
 // Advisory only: this never blocks a tool call and always exits 0.
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+
+import { isDirectRun as isDirectRunOf } from "./direct-run.mjs";
 
 const THROTTLE_MS = 60_000;
 const REASON_PREFIX = "auto-locked";
@@ -287,24 +288,12 @@ function main() {
   }
 }
 
-// "Am I being run directly?" — compared as REAL paths, not as URL strings, the
-// same way `check-beads-jsonl-duplicates.mjs` does it. The naive
-// `import.meta.url === \`file://${process.argv[1]}\`` fails two ways here, and
-// both make the hook silently never run — the worst outcome for a guard, since
-// worktrees would look protected while nothing locked them:
-//   1. no percent-encoding — a checkout under a path with a space gives
-//      `file:///tmp/a b/x.mjs` while import.meta.url is `file:///tmp/a%20b/x.mjs`;
-//   2. symlinks — on macOS `/tmp` is a symlink to `/private/tmp`, so argv[1]
-//      can be `/tmp/...` while import.meta.url resolves to `/private/tmp/...`.
-// realpathSync on both sides collapses both cases.
+// "Am I being run directly?" — see scripts/direct-run.mjs for the three ways
+// the naive URL-string comparison goes wrong. Getting this wrong here makes the
+// hook silently never run, which is the worst outcome for a guard: worktrees
+// would look protected while nothing locked them.
 function isDirectRun() {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  try {
-    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return false;
-  }
+  return isDirectRunOf(import.meta.url);
 }
 
 // Importable for tests; only acts when run as the hook itself. The hook's JSON
