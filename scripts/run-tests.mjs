@@ -1569,6 +1569,7 @@ export const SUITES = {
     "src/lib/chat-project-access.test.ts",
     "src/lib/chat-history-fallback.test.ts",
     "src/lib/conversation-cache.test.ts",
+    "src/lib/offline-cache.test.ts",
     "src/lib/familiar-identity-scaffold.test.ts",
     "src/lib/session-list-merge.test.ts",
     "src/lib/session-pin-persistence.test.ts",
