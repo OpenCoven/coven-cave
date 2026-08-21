@@ -137,4 +137,29 @@ assert.doesNotMatch(
   "TestFlight publication failures must not block unrelated desktop artifacts",
 );
 
+// ── The archive can actually resolve signing ────────────────────────────────
+// `project.yml` sets CODE_SIGN_STYLE: Automatic, and xcodebuild treats that as
+// DISABLED unless `-allowProvisioningUpdates` is passed. Release run
+// 32496765932 failed the archive with "No profiles for 'ai.opencoven.cave' were
+// found ... Automatic signing is disabled" despite the preceding step having
+// installed and validated App Store profiles for both targets. This went
+// unnoticed because every recent release resolved `resume-confirmed` and
+// skipped the archive entirely — the job reported success without ever
+// building. Pin the flags so the reachable path stays signable.
+assert.match(
+  iosJob,
+  /-allowProvisioningUpdates/,
+  "the iOS archive must pass -allowProvisioningUpdates; automatic signing is otherwise disabled under xcodebuild",
+);
+for (const flag of [
+  "-authenticationKeyPath",
+  "-authenticationKeyID",
+  "-authenticationKeyIssuerID",
+]) {
+  assert.ok(
+    iosJob.includes(flag),
+    `the iOS archive must authenticate provisioning with ${flag} so profile resolution is headless`,
+  );
+}
+
 console.log("ios-build-ci.test.mjs: ok");
