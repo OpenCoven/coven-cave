@@ -1611,6 +1611,8 @@ export const SUITES = {
     "scripts/generate-latest-json.test.mjs",
     "scripts/release-promotion.test.mjs",
     "scripts/release-promotion-workflow.test.mjs",
+    "scripts/release-acceptance.test.mjs",
+    "scripts/release-rollout.test.mjs",
     "scripts/stamp-release.test.mjs",
     "src/app/api/daemon/start/route.test.ts",
     "src/lib/github-token.test.ts",

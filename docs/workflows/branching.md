@@ -82,6 +82,12 @@ Release work should start only after branch consolidation:
 9. Record the build/version, candidate and final tags, exact promoted SHA,
    validation run, upload artifacts, and App Store Connect status in the
    release handoff.
+10. Before widening the audience, run the three-OS acceptance journey and prove
+    a rollback target exists. See [Release Acceptance](release-acceptance.md)
+    for the journey and its evidence format, and
+    [Production Rollout](production-rollout.md) for the staged rollout
+    thresholds and the bounded rollback drill. A release that has shipped a tag
+    has not yet been rolled out.
 
 ```bash
 git fetch origin
