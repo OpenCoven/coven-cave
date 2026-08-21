@@ -156,6 +156,15 @@ jobs:
     name: Verify rollback readiness
     needs: authorize-release-promotion
     runs-on: ubuntu-24.04
+    # A checkout, a node install, at most 20 API pages and one manifest fetch —
+    # seconds in practice. The bound matters because the gate makes network
+    # calls with no per-request deadline of their own, and `updater-manifest`
+    # waits on this job under `!cancelled()`: a hung socket would withhold
+    # latest.json for the default 360 minutes, and withholding latest.json does
+    # not hold auto-update, it takes it DOWN (the release already owns the
+    # `releases/latest` alias, so the endpoint 404s). Ten minutes turns a
+    # six-hour silent outage into a short one with a red job naming it.
+    timeout-minutes: 10
     permissions:
       contents: read
     # No job-level `outputs:` on purpose. Job outputs exist to feed a dependent

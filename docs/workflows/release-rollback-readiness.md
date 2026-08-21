@@ -2,9 +2,13 @@
 
 A staged rollout is only safe if it can be *un*-done — and "un-done" means two
 different things for two different populations, because **the updater never
-downgrades anyone**. The desktop app runs a stock `tauri-plugin-updater` with
-no version comparator of its own (`src-tauri/src/tauri_setup.rs`), so it offers
-an update only when the manifest's version is *newer* than the installed one.
+downgrades anyone**. The desktop app runs `tauri-plugin-updater` (2.10.1, per
+`src-tauri/Cargo.lock`) with no version comparator of its own — the only
+builder call in `src-tauri/src/tauri_setup.rs` is Windows MSI `installer_args`,
+and the JS side calls a bare `check()` — so the plugin's default applies:
+`release.version > self.current_version`. A manifest version equal to or lower
+than the installed one yields no update at all. If you are re-deriving this at
+2am, that comparison is the one line to read (`updater.rs`, `should_update`).
 
 So installs that have not moved yet have to stop moving, which needs the
 previous release's `latest.json` to be intact and pointing at live assets; and
@@ -30,12 +34,14 @@ population, but not the only one:
 | `build` creates the GitHub Release and uploads every installer | `updater-manifest` publishes `latest.json` |
 | `checksums` publishes `SHA256SUMS` | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
 | `homebrew` bumps the tap, so `brew install --cask` serves the new version | |
+| `release-ios-build` archives and uploads to App Store Connect, so the build reaches TestFlight | |
 
 That is deliberate: the shortfall a red gate reports is in the **previous**
 release, and holding the new artifacts hostage to it would leave a broken
 baseline able to block its own fix. But it means a red gate is not containment
 on its own — if the new release must not reach anyone, delete its assets or
-unpublish it by hand as well.
+unpublish it by hand as well, and note that the iOS build has already left for
+App Store Connect and is withdrawn there, not here.
 
 ⚠️ **It also means auto-update is DOWN, not held.** `build` creates the release
 published and not a prerelease, so GitHub makes it `latest` the moment it
@@ -46,6 +52,12 @@ install's update check 404s rather than quietly staying where it is. That is
 the outage `cave-ef6f` was filed for, reached by a new route: nothing is
 auto-updated onto an unprovable rollback target, which is the point, but the
 cost is paid by every install, not only the ones that would have moved.
+
+The failure is at least *visible* to the user rather than silent: a 404 is not
+`204 No Content`, so the plugin returns `ReleaseNotFound` rather than "you are
+current", and `src/components/update-available.tsx` renders that as a "Native
+updater unavailable" banner offering a manual download. Support will hear about
+it, which is the right outcome but not a substitute for acting.
 
 Treat a red gate as time-critical, and pick one of two exits. Repair the
 baseline release, then re-run the cut so `updater-manifest` gets to publish —
@@ -75,8 +87,43 @@ rollback target:
 
 The job publishes the resulting record as step outputs (`ready`,
 `baseline-tag`, `baseline-version`, `baseline-url`, `baseline-waived`,
-`rollback-platforms`) and as a run summary, so the rollout decision has an
-artifact rather than an assumption.
+`rollback-platforms`, `rollback-platforms-missing`) and as a run summary, so
+the rollout decision has an artifact rather than an assumption.
+
+### Partial platform coverage is reported, not refused
+
+An empty `platforms{}` is fatal — nothing can be rolled back. A baseline
+covering *some* of the four keys `generate-latest-json.mjs` emits
+(`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, `windows-x86_64`) is
+**not**, and that is a decision rather than an oversight.
+
+Partial manifests are a sanctioned outcome one job upstream: `updater-manifest`
+publishes an honest partial `latest.json` when a build leg flakes, because the
+alternative it replaced (`if: success()`) skipped the job outright and shipped
+releases with no manifest at all, 404ing every updater (`cave-ef6f`);
+`verify-release-updater.mjs` carries `--allow-partial` for the same reason, and
+the release body already says `N/4` when it happens. Making partial coverage
+fatal *here* would refuse a release whose only defect is that its predecessor's
+Linux leg flaked — a false refusal on a live cut, to protect against a state
+the pipeline deliberately permits.
+
+So the verdict is unchanged and the shortfall is made loud instead. When the
+baseline's manifest omits a platform the gate names it in three places — the
+step summary, the `rollback-platforms-missing` output, and a `::warning::`
+annotation visible from the checks list:
+
+```text
+::warning::Rollback baseline v0.3.7 covers 2/4 updater platforms; no auto-rollback for darwin-x86_64, linux-x86_64.
+```
+
+Read that as: those installs cannot be auto-rolled-back at all, and step 2 of
+[Rolling back](#rolling-back) — the manual reinstall — is their *only* route,
+not their fallback. Empirically every recent cut has been 4/4, so this is a
+latent case; if you are reading the warning, it is not latent any more.
+
+Keys outside that set are recorded but never counted as a shortfall: a new
+target ships before this list learns its name, and reporting it as unexpected
+would be noise on every run until someone edited a constant.
 
 ## Reading a failure
 

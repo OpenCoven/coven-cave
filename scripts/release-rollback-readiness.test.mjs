@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { parse } from "yaml";
 
 import {
+  EXPECTED_ROLLBACK_PLATFORMS,
   RollbackReadinessError,
   collectBaselineArtifactProblems,
   collectManifestProblems,
@@ -482,6 +483,17 @@ test("a complete baseline reports the platforms a rollback can reach", async () 
   assert.equal(result.baseline.tag, "v0.3.7");
   // Sorted, not echoed: the fixture declares windows-x86_64 first.
   assert.deepEqual(result.platforms, ["darwin-aarch64", "windows-x86_64"]);
+  // …and the other half of the same question, which the verdict deliberately
+  // does NOT answer: a 2-of-4 baseline is `ready`, so the platforms with no
+  // rollback path have to be named or the green gate silently overstates what
+  // it proved. Derived from the expected set rather than hard-coded, so a
+  // future target added to EXPECTED_ROLLBACK_PLATFORMS cannot leave this
+  // assertion passing while the shortfall it names goes unreported.
+  assert.deepEqual(
+    result.missingPlatforms,
+    EXPECTED_ROLLBACK_PLATFORMS.filter((platform) => !result.platforms.includes(platform)),
+  );
+  assert.deepEqual(result.missingPlatforms, ["darwin-x86_64", "linux-x86_64"]);
   assert.ok(calls.some((url) => url === MANIFEST_URL), "the baseline manifest is actually read");
 
   // The manifest asset is found by exact name, and no fixture could tell that
@@ -803,8 +815,92 @@ test("a missing baseline is fatal unless it is explicitly waived", async () => {
     baseline: null,
     baselineWaived: true,
     platforms: [],
+    missingPlatforms: [],
     ready: true,
   });
+});
+
+test("partial baseline coverage is reported, never fatal", async () => {
+  // The settled decision, pinned so it cannot drift in either direction.
+  //
+  // FATAL would be wrong: `updater-manifest` publishes an honest partial
+  // manifest when a build leg flakes (cave-ef6f), and `verify-release-updater`
+  // has `--allow-partial` for the same reason — so a 3-of-4 baseline is a
+  // sanctioned state, and refusing it would block a release whose only sin is
+  // that its predecessor's Linux leg flaked. SILENT would be wrong too: a
+  // green gate reads as "the previous version is installable and the updater
+  // can serve it", which is false for the platforms the manifest omits.
+  const full = Object.fromEntries(
+    EXPECTED_ROLLBACK_PLATFORMS.map((platform) => [
+      platform,
+      { url: `${DOWNLOAD_HOST}/v0.3.7/CovenCave_0.3.7_amd64.AppImage`, signature: "dW50cnVzdGVk" },
+    ]),
+  );
+  const complete = await verify({
+    fetchImpl: stubFetch({
+      releases: [release("0.3.7")],
+      manifest: manifest("0.3.7", { platforms: full }),
+    }).fetchImpl,
+  });
+  assert.equal(complete.ready, true);
+  assert.deepEqual(complete.missingPlatforms, [], "full coverage reports no shortfall");
+
+  // One platform short of complete: still ready, and the one gap is named.
+  const { "linux-x86_64": _dropped, ...threeOfFour } = full;
+  const partial = await verify({
+    fetchImpl: stubFetch({
+      releases: [release("0.3.7")],
+      manifest: manifest("0.3.7", { platforms: threeOfFour }),
+    }).fetchImpl,
+  });
+  assert.equal(partial.ready, true, "a flaked predecessor leg does not make the release unshippable");
+  assert.deepEqual(partial.missingPlatforms, ["linux-x86_64"]);
+
+  // A key outside the expected set is NOT a shortfall. The difference is
+  // one-way on purpose: a new target ships before this list learns its name,
+  // and reporting "unexpected platform" would turn that into noise on every
+  // run until someone edited a constant.
+  const extra = await verify({
+    fetchImpl: stubFetch({
+      releases: [release("0.3.7")],
+      manifest: manifest("0.3.7", {
+        platforms: {
+          ...full,
+          "linux-aarch64": {
+            url: `${DOWNLOAD_HOST}/v0.3.7/CovenCave_0.3.7_amd64.AppImage`,
+            signature: "dW50cnVzdGVk",
+          },
+        },
+      }),
+    }).fetchImpl,
+  });
+  assert.deepEqual(extra.missingPlatforms, []);
+  assert.ok(extra.platforms.includes("linux-aarch64"), "an unlisted target is still recorded");
+});
+
+test("the runbook's coverage section still describes what the gate emits", async () => {
+  // A doc that is confidently wrong is worse than a vague one, and this
+  // section is read while a rollout is in trouble. Three things can drift
+  // apart silently: the annotation's wording, the output name an operator
+  // would grep for, and the platform list the "N/4" is out of.
+  const doc = await readFile(
+    new URL("../docs/workflows/release-rollback-readiness.md", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    doc.includes(
+      "::warning::Rollback baseline v0.3.7 covers 2/4 updater platforms; no auto-rollback for darwin-x86_64, linux-x86_64.",
+    ),
+    "the runbook quotes the annotation verbatim, so it must be the annotation this gate writes",
+  );
+  assert.match(doc, /`rollback-platforms-missing`/);
+  for (const platform of EXPECTED_ROLLBACK_PLATFORMS) {
+    assert.ok(doc.includes(`\`${platform}\``), `${platform} is named in the runbook`);
+  }
+  // And the decision itself, in the direction it was settled: reported, not
+  // refused. A later change that makes partial coverage fatal has to rewrite
+  // this sentence rather than leave the runbook promising the old behaviour.
+  assert.match(doc, /Partial platform coverage is reported, not refused/);
 });
 
 test("the CLI publishes the readiness record as job outputs and a summary", async () => {
@@ -817,6 +913,9 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     RELEASE_TAG: "v0.3.8",
     GITHUB_API_URL: API,
   };
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (message) => warnings.push(message);
   try {
     await runCli({
       argv: [],
@@ -839,7 +938,20 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     assert.equal(outputs["baseline-version"], "0.3.7");
     assert.equal(outputs["baseline-waived"], "false");
     assert.equal(outputs["rollback-platforms"], "darwin-aarch64,windows-x86_64");
-    assert.match(readFileSync(summaryPath, "utf8"), /Rollback readiness verified[\s\S]*v0\.3\.7/);
+    assert.equal(outputs["rollback-platforms-missing"], "darwin-x86_64,linux-x86_64");
+    const summaryText = readFileSync(summaryPath, "utf8");
+    assert.match(summaryText, /Rollback readiness verified[\s\S]*v0\.3\.7/);
+    // The record has to carry the shortfall, not merely the coverage: this
+    // fixture is 2-of-4, and a summary listing only what IS covered leaves a
+    // reader to subtract against a list they would have to already know.
+    assert.match(summaryText, /No rollback path for darwin-x86_64, linux-x86_64/);
+    // And a run annotation, so the shortfall is visible from the checks list
+    // without opening the summary. Written to stderr, matching the convention
+    // check-x-app-release.mjs uses for its own override warning.
+    assert.deepEqual(warnings, [
+      "::warning::Rollback baseline v0.3.7 covers 2/4 updater platforms; no auto-rollback for darwin-x86_64, linux-x86_64.",
+    ]);
+    warnings.length = 0;
 
     // The waived branch writes a different record and a different summary line,
     // and neither was reached by any test: `baseline-waived` could have been
@@ -857,7 +969,13 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     assert.match(waived, /^baseline-waived=true$/m);
     assert.match(waived, /^baseline-tag=$/m);
     assert.match(waived, /^rollback-platforms=$/m);
+    assert.match(waived, /^rollback-platforms-missing=$/m);
     assert.match(readFileSync(waivedSummary, "utf8"), /none — waived as a first release/);
+    // A first release has no baseline to be short of, so the coverage warning
+    // must NOT fire here. Computing `missingPlatforms` for the waived branch
+    // the same way as for a real baseline would print "no auto-rollback for"
+    // all four platforms and dereference a null baseline doing it.
+    assert.deepEqual(warnings, [], "the waived branch reports no coverage shortfall");
 
     // And the other half of the same rule, which nothing pinned: that the CLI
     // honours the flag's ABSENCE. Every refusal above calls
@@ -908,6 +1026,7 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
       );
     }
   } finally {
+    console.warn = realWarn;
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -949,6 +1068,15 @@ test("rollout is gated on rollback readiness before the updater moves anyone", a
   assert.equal(job.name, "Verify rollback readiness");
   assert.equal(job.needs, "authorize-release-promotion");
   assert.deepEqual(job.permissions, { contents: "read" });
+  // Bounded, because the gate's own fetches are not. `updater-manifest` waits
+  // on this job under `!cancelled()`, and a withheld latest.json is not a
+  // pause — the release already owns the `releases/latest` alias, so the
+  // updater endpoint 404s for every install. Without a bound a hung socket
+  // holds that outage open for the 360-minute default.
+  assert.ok(
+    Number.isInteger(job["timeout-minutes"]) && job["timeout-minutes"] <= 30,
+    "the gate must fail fast rather than hold latest.json for the default 6 hours",
+  );
   const gateStep = job.steps.find((step) => /release-rollback-readiness\.mjs/.test(step.run ?? ""));
   assert.ok(gateStep, "the job must actually run the gate");
   assert.equal(gateStep.run.trim(), "node scripts/release-rollback-readiness.mjs");

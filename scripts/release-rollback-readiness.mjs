@@ -25,6 +25,11 @@
 // Fails closed. `--allow-missing-baseline` waives only case where no prior
 // stable release exists at all (the genuine first release of a repository);
 // every other shortfall stays fatal.
+//
+// One shortfall is deliberately reported rather than refused: a baseline whose
+// latest.json covers some but not all of EXPECTED_ROLLBACK_PLATFORMS. Partial
+// manifests are a sanctioned outcome upstream, so the gate names the platforms
+// with no rollback path instead of blocking the release over them.
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -38,6 +43,28 @@ const PLATFORM_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const CHECKSUM_ASSET = "SHA256SUMS";
 export const UPDATER_MANIFEST_ASSET = "latest.json";
+
+/**
+ * The platform keys `generate-latest-json.mjs` emits, one per shipped target.
+ *
+ * Deliberately NOT a requirement. `updater-manifest` publishes an honest
+ * partial manifest when a build leg flakes (cave-ef6f: `if: success()` used to
+ * skip the job outright and ship a release with no `latest.json` at all), and
+ * `verify-release-updater.mjs` carries `--allow-partial` for the same reason.
+ * So a baseline covering fewer than these four is a *sanctioned* state, and
+ * refusing it would block a release whose only sin is that its predecessor's
+ * Linux leg flaked. What is not acceptable is that it pass *silently*: a
+ * baseline covering only Windows means a macOS install cannot be auto-rolled
+ * back, which contradicts what a green gate appears to promise. So the
+ * shortfall is named — in the summary, in a job output, and as a run
+ * annotation — and the rollout decision is made with the coverage visible.
+ */
+export const EXPECTED_ROLLBACK_PLATFORMS = [
+  "darwin-aarch64",
+  "darwin-x86_64",
+  "linux-x86_64",
+  "windows-x86_64",
+];
 
 /** Installers a rollback needs, one per supported desktop OS. */
 export const REQUIRED_INSTALLERS = [
@@ -336,6 +363,11 @@ export async function verifyRollbackReadiness(options = {}) {
       baseline: null,
       baselineWaived: true,
       platforms: [],
+      // Empty rather than "all four are missing": there is no baseline at all
+      // here, so naming platforms would report a coverage shortfall against a
+      // release that does not exist. `baselineWaived` is what says so, and the
+      // summary prints the waiver instead of a coverage line.
+      missingPlatforms: [],
       ready: true,
     };
   }
@@ -375,6 +407,13 @@ export async function verifyRollbackReadiness(options = {}) {
     },
     baselineWaived: false,
     platforms: Object.keys(manifest.platforms).sort(),
+    // Reported, never fatal — see EXPECTED_ROLLBACK_PLATFORMS for why. A key
+    // the manifest carries that is not in the expected set is not a shortfall
+    // (a new target ships before this list learns about it), so this is a
+    // one-way difference rather than a set comparison.
+    missingPlatforms: EXPECTED_ROLLBACK_PLATFORMS.filter(
+      (platform) => !Object.hasOwn(manifest.platforms, platform),
+    ),
     ready: true,
   };
 }
@@ -415,17 +454,35 @@ function writeCliResult(result, env) {
       "baseline-url": result.baseline?.url ?? "",
       "baseline-waived": result.baselineWaived,
       "rollback-platforms": result.platforms.join(","),
+      // The shortfall gets its own output rather than being left for a reader
+      // to derive by subtracting `rollback-platforms` from a list it would
+      // have to hard-code. A consumer that only reads this one field still
+      // learns the answer, and "" reads as full coverage only when
+      // `baseline-waived` is false — which is exactly what it means.
+      "rollback-platforms-missing": result.missingPlatforms.join(","),
     })
       .map(([key, value]) => `${key}=${String(value)}`)
       .join("\n") + "\n",
   );
+  const shortfall =
+    result.missingPlatforms.length > 0
+      ? `- ⚠️ **No rollback path for ${result.missingPlatforms.join(", ")}** — those installs cannot be auto-rolled-back to \`${result.baseline.tag}\` and would need a manual reinstall. The baseline shipped a partial \`latest.json\`, which is allowed (see docs/workflows/release-rollback-readiness.md); this is a coverage note, not a failure.\n`
+      : "";
   const detail = result.baseline
-    ? `- Rollback target: \`${result.baseline.tag}\` (published ${result.baseline.publishedAt})\n- Platforms the updater can roll back: ${result.platforms.join(", ")}\n`
+    ? `- Rollback target: \`${result.baseline.tag}\` (published ${result.baseline.publishedAt})\n- Platforms the updater can roll back: ${result.platforms.join(", ")}\n${shortfall}`
     : "- Rollback target: none — waived as a first release\n";
   appendFileSync(
     requiredEnv(env, "GITHUB_STEP_SUMMARY"),
     `### Rollback readiness verified\n\n- Rolling out: \`${result.tag}\`\n${detail}`,
   );
+  // Also as a run annotation, so the shortfall is visible from the checks list
+  // without opening the summary — the same convention `updater-manifest` uses
+  // for its own `$count/4` partial coverage.
+  if (result.missingPlatforms.length > 0) {
+    console.warn(
+      `::warning::Rollback baseline ${result.baseline.tag} covers ${result.platforms.length}/${EXPECTED_ROLLBACK_PLATFORMS.length} updater platforms; no auto-rollback for ${result.missingPlatforms.join(", ")}.`,
+    );
+  }
 }
 
 function requiredEnv(env, name) {

@@ -200,6 +200,41 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
   }
 });
 
+test("no release gate is silently advisory", async () => {
+  const release = await workflow("release.yml");
+
+  // Every gate in this workflow is pinned by a test that asserts the gate is
+  // NAMED — that the step exists and runs the right script. Naming is not
+  // consulting. `continue-on-error: true` leaves every one of those substrings
+  // exactly where it is, on the job or on the step, while the check stops
+  // being able to fail anything: the daemon-package gate, the signed
+  // OpenCode/Grok registry gates, the X app gate, the signed-tag check in
+  // source-version, promotion authorization itself. One line each, and the
+  // release ships with the gate green and unverified.
+  //
+  // `cave-ilh1h` pinned this for `rollback-readiness` alone. This is the same
+  // rule for the whole file, expressed as an inventory rather than a per-gate
+  // assertion so a gate added later is covered from birth. Exactly one
+  // advisory site is expected, and it is deliberate: `homebrew` re-dispatches
+  // a tap bump whose own 6-hourly schedule recovers it, so an unforeseen
+  // failure there must not fail the release run.
+  const advisory = [];
+  for (const [name, job] of Object.entries(release.jobs)) {
+    if (job["continue-on-error"] !== undefined) advisory.push(name);
+    for (const step of job.steps ?? []) {
+      if (step["continue-on-error"] !== undefined) {
+        advisory.push(`${name}: ${step.name ?? step.uses ?? step.id ?? "<step>"}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    advisory.sort(),
+    ["homebrew"],
+    "a new continue-on-error demotes a release gate to advisory — add it here deliberately, with the reason, or remove it",
+  );
+  assert.equal(release.jobs.homebrew["continue-on-error"], true);
+});
+
 test("Phase 1 documentation preserves the live required context during migration", async () => {
   const [crossEnvironment, mergeSkill] = await Promise.all([
     readFile(new URL("docs/cross-environment.md", root), "utf8"),
