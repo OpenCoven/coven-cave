@@ -272,6 +272,8 @@ pub fn run() {
     #[cfg(desktop)]
     let reliability_recorder = Arc::new(ReliabilityRecorder::default());
     #[cfg(desktop)]
+    let offline_cache = Arc::new(offline_cache::OfflineCacheState::default());
+    #[cfg(desktop)]
     let builder = builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
@@ -310,6 +312,10 @@ pub fn run() {
             desktop_reachability_status,
             desktop_reachability_configure,
             record_daemon_reliability_measurement,
+            offline_cache::offline_cache_read,
+            offline_cache::offline_cache_write,
+            offline_cache::offline_cache_clear,
+            offline_cache::offline_cache_status,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
             #[cfg(target_os = "windows")]
@@ -320,6 +326,7 @@ pub fn run() {
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
         .manage(Arc::clone(&reliability_recorder))
+        .manage(Arc::clone(&offline_cache))
         .manage(browser::BrowserLifecycleState::default());
     // Registered on every desktop platform even though the watcher thread is
     // non-Windows: the teardown path reads this flag unconditionally, and a
@@ -336,6 +343,11 @@ pub fn run() {
                     .configure(app_data_dir);
             }
             if let Ok(app_local_data_dir) = app.path().app_local_data_dir() {
+                // Local data, not roaming app data: the offline cache is a
+                // machine-local copy of daemon state and must not follow a
+                // roaming profile onto another machine.
+                app.state::<Arc<offline_cache::OfflineCacheState>>()
+                    .configure(app_local_data_dir.clone());
                 let diagnostics_path =
                     app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
                 if let Err(error) =

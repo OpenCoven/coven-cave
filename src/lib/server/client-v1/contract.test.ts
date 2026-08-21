@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+
+const packageVersion: string = JSON.parse(
+  readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),
+).version;
 
 import {
   CLIENT_V1_API_VERSION,
@@ -12,6 +17,7 @@ import {
   createClientV1ContractFixture,
   parseClientV1Cursor,
   parseClientV1ErrorEnvelope,
+  parseClientV1Health,
   parseClientV1IdempotencyKey,
   parseClientV1Identity,
   type ClientV1Record,
@@ -122,7 +128,64 @@ test("publishes stable client v1 limits", () => {
     errorDetailValueCharacters: 256,
     defaultPageSize: 50,
     maxPageSize: 100,
+    instanceIdCharacters: 64,
+    releaseVersionCharacters: 64,
   });
+});
+
+test("accepts a health record carrying the required release metadata", () => {
+  const health = parseClientV1Health({
+    instanceId: "6f1d2c94-1f0b-4d3e-8a77-6b6f2a4c9d10",
+    pairingRequired: true,
+    releaseVersion: "0.3.6",
+  });
+  assert.equal(health.instanceId, "6f1d2c94-1f0b-4d3e-8a77-6b6f2a4c9d10");
+  assert.equal(health.pairingRequired, true);
+  assert.equal(health.releaseVersion, "0.3.6");
+});
+
+test("refuses health records missing or weakening required release metadata", () => {
+  const valid = {
+    instanceId: "6f1d2c94-1f0b-4d3e-8a77-6b6f2a4c9d10",
+    pairingRequired: true,
+    releaseVersion: "0.3.6",
+  };
+
+  for (const field of ["instanceId", "releaseVersion"] as const) {
+    const missing: Record<string, unknown> = { ...valid };
+    delete missing[field];
+    assert.throws(() => parseClientV1Health(missing), new RegExp(field));
+    assert.throws(() => parseClientV1Health({ ...valid, [field]: "" }), new RegExp(field));
+    assert.throws(() => parseClientV1Health({ ...valid, [field]: "  " }), new RegExp(field));
+  }
+
+  // A client that reads pairingRequired:false would conclude it may skip
+  // pairing entirely, so the parser must refuse it rather than pass it through.
+  assert.throws(
+    () => parseClientV1Health({ ...valid, pairingRequired: false }),
+    /pairingRequired must be true/,
+  );
+  assert.throws(
+    () => parseClientV1Health({ ...valid, instanceId: "x".repeat(CLIENT_V1_LIMITS.instanceIdCharacters + 1) }),
+    /instanceId/,
+  );
+  assert.throws(
+    () =>
+      parseClientV1Health({
+        ...valid,
+        releaseVersion: "x".repeat(CLIENT_V1_LIMITS.releaseVersionCharacters + 1),
+      }),
+    /releaseVersion/,
+  );
+});
+
+test("keeps the release version out of the contract fixture", () => {
+  // The fixture is the file that proves the contract SHAPE did not change. If
+  // it carried the running version, every release stamp would rewrite it and
+  // the diff would stop meaning anything.
+  const rendered = renderClientV1ContractFixture();
+  assert.equal(rendered.includes(packageVersion), false);
+  assert.equal(createClientV1ContractFixture().examples.health.releaseVersion, "0.0.0");
 });
 
 test("freezes exported protocol collections at runtime", () => {
@@ -536,12 +599,18 @@ test("builds a deterministic foundation-only contract fixture with shared primit
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
+    pairingRequired: true,
     pairingScopes: [...CLIENT_V1_SCOPES],
     identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
     errorCodes: [...CLIENT_V1_ERROR_CODES],
     limits: CLIENT_V1_LIMITS,
   });
   assert.deepEqual(fixture.examples.status, { status: "ok" });
+  assert.deepEqual(fixture.examples.health, {
+    instanceId: "00000000-0000-4000-8000-000000000000",
+    pairingRequired: true,
+    releaseVersion: "0.0.0",
+  });
   assert.deepEqual(fixture.examples.identity, {
     kind: "conversation",
     id: "conversation-example",
