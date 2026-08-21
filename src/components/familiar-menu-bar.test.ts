@@ -270,21 +270,19 @@ assert.match(
   "menu bar shows on desktop (≥1024px)",
 );
 
-// Desktop quick-chat entry point: the bar carries the quick-chat trigger (the
-// mobile top bar's copy is hidden ≥1024px), tagged so the popover anchors under
-// it as a dropdown from this menubar.
-assert.match(
+// The persistent right Chat panel toggle owns desktop chat access. Keeping a
+// second chat glyph at the start of the titlebar action cluster made two
+// adjacent controls look like variants of the same action.
+assert.doesNotMatch(
   source,
-  /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label="Quick chat"/,
-  "the desktop menu bar renders a data-quick-chat-trigger button wired to onOpenQuickChat",
+  /onOpenQuickChat|data-quick-chat-trigger|ph:chat-circle-dots/,
+  "the desktop menu bar omits the redundant quick-chat action",
 );
-// cave-xsq.6: the quick-chat trigger jumps straight into a fresh chat with the
-// active familiar (the parallel overlay was retired) rather than opening a
-// duplicate mini-chat popover.
-assert.match(
-  workspace,
-  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{\(\) => startFamiliarChat\(activeId\)\}/,
-  "workspace wires the desktop menu bar's quick-chat trigger to start a chat with the active familiar",
+const familiarMenuBarUsage = workspace.match(/<FamiliarMenuBar[\s\S]*?\/>/)?.[0] ?? "";
+assert.doesNotMatch(
+  familiarMenuBarUsage,
+  /onOpenQuickChat=/,
+  "workspace does not wire a redundant desktop quick-chat action",
 );
 assert.doesNotMatch(
   workspace,

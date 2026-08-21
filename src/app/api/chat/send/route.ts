@@ -808,6 +808,7 @@ function openClawChatResponse(args: {
           args.body.projectRoot ??
             (await conversationCwd(args.body.sessionId)) ??
             (await daemonSessionCwd(args.body.sessionId)),
+          { rootAuthority: "authorized-project" },
         );
       } catch (error) {
         if (error instanceof RuntimeScopeError) {
@@ -2240,7 +2241,11 @@ export async function POST(req: Request) {
   }
   let cwd: string;
   try {
-    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(authorizedProjectRoot);
+    cwd = sshRuntime
+      ? homedir()
+      : await resolveLocalRuntimeCwd(authorizedProjectRoot, {
+          rootAuthority: "authorized-project",
+        });
   } catch (error) {
     if (error instanceof RuntimeScopeError) {
       return new Response(

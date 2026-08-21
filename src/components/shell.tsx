@@ -17,6 +17,7 @@ import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
+import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
 import { useIsMobile } from "@/lib/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
@@ -612,6 +613,9 @@ function ShellInner({
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
+  const [navChromeWidth, setNavChromeWidth] = useState(
+    chatContextual ? NAV_OPEN_PX : NAV_RAIL_PX,
+  );
   // Mirror of navOpen for effects that need the CURRENT visible state without
   // taking navOpen as a dependency (the policy handoff must fire on the policy
   // change, not on every sidebar toggle).
@@ -629,6 +633,8 @@ function ShellInner({
   // leaving nothing to hover.
   const navPeekEnabled = !isMobile && !navOpen;
   const navPeekVisible = navPeekEnabled && navPeeking;
+  const trafficLightsVisible = navOpen || navPeekVisible || isMobile;
+  useMacTrafficLightsForNavState(trafficLightsVisible);
   useEffect(() => {
     if (!navPeekEnabled) setNavPeeking(false);
   }, [navPeekEnabled]);
@@ -1172,7 +1178,9 @@ function ShellInner({
         collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
-          const open = (size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX;
+          const width = size.inPixels ?? 0;
+          if (Number.isFinite(width) && width > 0) setNavChromeWidth(width);
+          const open = width > NAV_OPEN_THRESHOLD_PX;
           setNavOpen(open);
           // Persist user-driven changes only: the group must be armed (boot /
           // group-swap layout churn is programmatic) and the code rail must
@@ -1274,10 +1282,12 @@ function ShellInner({
   const homeCenterShift = 0;
 
   const shellFrameStyle: CSSProperties & {
+    "--shell-nav-chrome-width": string;
     "--shell-left-gap-px": string;
     "--shell-right-gap-px": string;
     "--shell-home-center-shift-px": string;
   } = {
+    "--shell-nav-chrome-width": `${navChromeWidth}px`,
     // The detail panel's real left/right viewport gaps (side panels +
     // separators + edge rails). Surfaces can read these to reason about the
     // chrome around the detail panel; Home now simply fills the detail panel
@@ -1332,9 +1342,10 @@ function ShellInner({
         onClick={toggleRightChat}
       >
         <Icon
-          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
+          name={rightChatOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
           width={CAVE_ICON_SIZE.shellToggle}
           height={CAVE_ICON_SIZE.shellToggle}
+          className="shell-top-toggle__icon--mirrored"
         />
       </button>
     ) : null
@@ -1377,7 +1388,13 @@ function ShellInner({
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
       <div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">
-        <span className="shell-window-titlebar__title">Coven</span>
+        <div className="shell-window-titlebar__controls">
+          {navToggle}
+          {historyNav}
+        </div>
+        <div className="shell-window-titlebar__rail" data-tauri-drag-region="deep">
+          <span className="shell-window-titlebar__title">Coven</span>
+        </div>
       </div>
       {/* `deep` (not the bare attribute) matters: drag.js's bare value only
           drags on DIRECT presses on the attributed element, so empty chrome

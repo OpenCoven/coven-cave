@@ -45,20 +45,18 @@
   max-width: none;
   min-height: var(--rail-control);
   gap: 10px;
-  /* Border-compensated: this control is the only 2px-bordered box on the
-     column, and its edge plus the odd width of the scope glyph would otherwise
-     carry the avatar off the icon column that the (border-less) nav rows below
-     establish. Measured against the rendered box, not derived from the border. */
+  /* Border-compensated so its glyph stays on the same icon column as the
+     border-less navigation rows below. */
   padding: 0 calc(var(--rail-lead) - 1px);
   justify-content: flex-start;
   border-radius: var(--radius-control);
-  border: 2px solid var(--accent-presence);
-  background: transparent;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-subtle);
 }
 
 .rail-header__scope .familiar-switcher__trigger--labeled:hover {
-  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
-  border-color: var(--accent-presence);
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
 }
 
 .rail-header__scope .familiar-switcher__trigger-label {

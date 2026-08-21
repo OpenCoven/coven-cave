@@ -3,7 +3,7 @@
 /**
  * ProfileCard — the Kaito-style stat card for one familiar or the human
  * operator (cave-ujbr): fixed-dark monospace share-card with an identity
- * rail, a four-tile stat band, a trailing-12-month session heatmap, two
+ * rail, a four-tile stat band, an adaptive session heatmap, two
  * metric panels with sparklines, a top-collaborators avatar rail, and a
  * footer attribution. Numbers come from the pure model in
  * src/lib/profile-card.ts; fetching lives in profile-card-data.ts.
@@ -169,6 +169,7 @@ export function ProfileCard({
   const bio = isHuman
     ? [profile?.pronouns, profile?.bio].filter(Boolean).join(" · ") || "operator of this coven"
     : [vm.familiar?.role, vm.familiar?.description].filter(Boolean).join(" · ");
+  const activityWindowLabel = `past ${vm.model.heatmap.windowDays} days`;
 
   return (
     <main className="pfc-page" aria-busy={refreshing ? "true" : undefined}>
@@ -260,10 +261,10 @@ export function ProfileCard({
               series={vm.model.streakPanel.weekly}
               sideLabel="longest streak"
               sideBig={`${vm.model.streakPanel.longest}d`}
-              sideSub="last 12m"
+              sideSub={activityWindowLabel}
               bottomLabel="active days"
               bottomBig={`${vm.model.streakPanel.activeDaysPct}%`}
-              bottomSub="of last 12 months"
+              bottomSub={`of ${activityWindowLabel}`}
             />
           </div>
 
@@ -272,7 +273,7 @@ export function ProfileCard({
 
         <footer className="pfc-foot">
           <span>
-            COVEN CAVE (based on l12m session data)
+            COVEN CAVE (based on the {activityWindowLabel})
             {lastUpdatedAt ? (
               <>
                 {" · Updated "}
@@ -301,11 +302,11 @@ function avatarTint(familiar: Familiar | null): React.CSSProperties | undefined 
 function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
   const columns = heatmap.weeks.length;
   const heatTip = useHeatTip();
-  const summary = `Session activity, last 12 months: ${heatmap.total} session${heatmap.total === 1 ? "" : "s"} across ${heatmap.activeDays} active day${heatmap.activeDays === 1 ? "" : "s"}.`;
+  const summary = `Session activity over the past ${heatmap.windowDays} days: ${heatmap.total} session${heatmap.total === 1 ? "" : "s"} across ${heatmap.activeDays} active day${heatmap.activeDays === 1 ? "" : "s"}.`;
   return (
     <section className="pfc-heatmap-panel">
       <header className="pfc-heatmap-head">
-        <h2>coven session activity</h2>
+        <h2>coven session activity · past {heatmap.windowDays} days</h2>
         <span className="pfc-legend" aria-hidden>
           LESS
           {[0, 1, 2, 3, 4].map((level) => (
@@ -315,7 +316,11 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
         </span>
       </header>
       <div className="pfc-heatmap" role="img" aria-label={summary}>
-        <div className="pfc-heatmap-grid" aria-hidden {...heatTip.gridProps}>
+        <div
+          className={`pfc-heatmap-grid pfc-heatmap-grid--${heatmap.windowDays}`}
+          aria-hidden
+          {...heatTip.gridProps}
+        >
           {heatmap.weeks.map((week, weekIndex) => (
             <div className="pfc-week" key={weekIndex}>
               {week.map((cell, dayIndex) =>
@@ -335,7 +340,7 @@ function HeatmapPanel({ heatmap }: { heatmap: ProfileHeatmap }) {
         </div>
         {heatTip.tip}
         <div
-          className="pfc-heatmap-months"
+          className={`pfc-heatmap-months pfc-heatmap-months--${heatmap.windowDays}`}
           aria-hidden
           style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}
         >

@@ -11,7 +11,7 @@
 }
 
 .cave-composer-panel {
-  overflow: hidden;
+  overflow: visible;
   /* Chat revamp 1d: quieter card — hairline border, 14px radius token. */
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-xl);
@@ -76,12 +76,71 @@
   justify-content: flex-end;
 }
 
+.cave-composer-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ring-offset);
+  padding: var(--ring-offset);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 46%, transparent);
+}
+
+.cave-composer-mode-option {
+  display: inline-flex;
+  min-width: var(--space-8);
+  height: var(--space-8);
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-control) - var(--ring-offset));
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-composer-mode-option span {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition:
+    max-width var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+.cave-composer-mode-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.cave-composer-mode-option[aria-pressed="true"] {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 28%, transparent);
+}
+
+.cave-composer-mode-option[aria-pressed="true"] span {
+  max-width: 5rem;
+  opacity: 1;
+}
+
 .cave-composer-edge-actions {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: var(--space-6);
-  padding: var(--space-1) var(--space-3) 0;
+  min-height: var(--space-8);
+  padding: 0 var(--space-4);
+  transform: translateY(-50%);
 }
 
 .cave-composer-tools-tab,
@@ -89,18 +148,21 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  height: var(--space-6);
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-hairline);
+  height: var(--space-8);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--bg-base) 42%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 94%, var(--bg-base));
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
+  box-shadow:
+    0 var(--space-2) var(--space-4) color-mix(in oklch, var(--bg-base) 58%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
   transition:
     background-color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
@@ -249,6 +311,7 @@
   min-width: 0;
   padding: 6px 10px;
   border-top: 1px solid var(--border-hairline);
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
   background: color-mix(in oklch, var(--bg-base) 62%, transparent);
 }
 
@@ -911,6 +974,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hc-mic-live { animation: none; }
+  .cave-composer-mode-option span { transition: none; }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

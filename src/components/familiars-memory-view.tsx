@@ -1,6 +1,7 @@
 "use client";
 
 import "@/styles/cave-md.css";
+import "@/styles/familiars-memory.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanonicalMemoryOverviewPanel } from "@/components/canonical-memory-overview";
@@ -817,17 +818,17 @@ export function FamiliarsMemoryView({
     rowCount: unifiedRows.length,
   });
   const contentClass = compact
-    ? "flex flex-col gap-4 overflow-y-auto p-4"
-    : "grid min-h-0 gap-4 p-4 @min-[1024px]/memview:grid-cols-[minmax(0,1fr)_minmax(420px,560px)]";
+    ? "fm-content--compact flex flex-col overflow-y-auto"
+    : "fm-content--split grid min-h-0";
   const canonicalError =
     canonicalState.state === "error"
       ? canonicalMemoryErrorCopy(canonicalState.error.code)
       : null;
 
   return (
-    <div className="@container/memview flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
+    <div className="@container/memview fm-workspace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div
-        className={`shrink-0 border-b border-[var(--border-hairline)] ${
+        className={`fm-header shrink-0 border-b border-[var(--border-hairline)] ${
           compact ? "px-3 py-2" : "px-4 py-3"
         }`}
       >
@@ -843,8 +844,8 @@ export function FamiliarsMemoryView({
             }`}
           >
             <div className="min-h-0 overflow-hidden">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
+              <div className="fm-masthead">
+                <div className="fm-masthead__identity">
                   <div className="flex items-center gap-2">
                     <Icon
                       name="ph:brain-bold"
@@ -856,7 +857,7 @@ export function FamiliarsMemoryView({
                     </h2>
                   </div>
                   <p className="mt-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
-                    Trusted canonical recall and local memory files for one familiar.
+                    Find, verify, and revisit what this familiar knows.
                   </p>
                 </div>
                 {lastLoadedAt ? (
@@ -870,10 +871,10 @@ export function FamiliarsMemoryView({
                     Updated {age(lastLoadedAt)}
                   </span>
                 ) : null}
-              </div>
+                </div>
               <div
                 data-testid="memory-stats-inline"
-                className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
+                className="fm-source-strip mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]"
               >
                 <span className="inline-flex items-baseline gap-1 px-1">
                   <span className="text-[var(--text-muted)]">
@@ -948,47 +949,49 @@ export function FamiliarsMemoryView({
         <div
           className={`${
             compact || headerCollapsed ? "" : "mt-3"
-          } flex flex-wrap items-center gap-2 transition-[margin] duration-200`}
+          } fm-toolbar flex flex-wrap items-center gap-2 transition-[margin] duration-200`}
         >
-          <div className={`relative ${compact ? "min-w-0" : "min-w-[220px]"} flex-1`}>
-            <Icon
-              name="ph:magnifying-glass"
-              width={12}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-            />
-            <input
-              ref={searchInputRef}
-              type="search"
-              aria-label={
-                lockToFamiliar && selectedFamiliar?.display_name
-                  ? `Search ${selectedFamiliar.display_name}'s memory`
-                  : "Search memory"
-              }
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && query) {
-                  event.preventDefault();
-                  setQuery("");
+          <div className="fm-search">
+            <div className={`relative ${compact ? "min-w-0" : "min-w-[220px]"} flex-1`}>
+              <Icon
+                name="ph:magnifying-glass"
+                width={13}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+              />
+              <input
+                ref={searchInputRef}
+                type="search"
+                aria-label={
+                  lockToFamiliar && selectedFamiliar?.display_name
+                    ? `Search ${selectedFamiliar.display_name}'s memory`
+                    : "Search memory"
                 }
-              }}
-              placeholder={
-                lockToFamiliar && selectedFamiliar?.display_name
-                  ? `Search ${selectedFamiliar.display_name}'s memory…`
-                  : "Search memory..."
-              }
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-8 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
-            />
-            {query ? (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                aria-label="Clear search"
-                className="focus-ring absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:x-bold" width={10} />
-              </button>
-            ) : null}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && query) {
+                    event.preventDefault();
+                    setQuery("");
+                  }
+                }}
+                placeholder={
+                  lockToFamiliar && selectedFamiliar?.display_name
+                    ? `Search ${selectedFamiliar.display_name}'s memories…`
+                    : "Search memories…"
+                }
+                className="focus-ring h-9 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-sunken)] pl-8 pr-8 text-[length:var(--text-sm)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear search"
+                  className="focus-ring absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                >
+                  <Icon name="ph:x-bold" width={10} />
+                </button>
+              ) : null}
+            </div>
           </div>
           {!lockToFamiliar ? (
             <StandardSelect
@@ -1014,7 +1017,7 @@ export function FamiliarsMemoryView({
         </div>
 
         {!compact ? (
-          <div className="memory-controls mt-3">
+          <div className="memory-controls fm-controls mt-3">
             <label className="memory-control">
               Group
               <StandardSelect<GroupBy>
@@ -1092,7 +1095,7 @@ export function FamiliarsMemoryView({
         ) : null}
       </div>
 
-      <div className={`min-h-0 flex-1 ${contentClass}`}>
+      <div className={`fm-content min-h-0 flex-1 ${contentClass}`}>
         {compact ? (
           <>
             {listPresentation === "empty" ? (
@@ -1240,7 +1243,7 @@ export function FamiliarsMemoryView({
               </div>
               <div
                 onScroll={onListScroll}
-                className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-hairline)]"
+                className="fm-list-pane min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-hairline)]"
               >
                 {listPresentation === "loading" ? (
                   <SkeletonRows count={6} className="p-3" />
@@ -1291,28 +1294,30 @@ export function FamiliarsMemoryView({
                   : "hidden @min-[1024px]/memview:flex"
               }`}
             >
-              {selectedRow?.kind === "canonical" ? (
-                <CanonicalMemoryReader
-                  memoryId={selectedRow.memoryId}
-                  localDaemonReady={localDaemonReady}
-                  onMissing={() => handleMissingCanonicalMemory(selectedRow.memoryId)}
-                  onRefresh={() => load(true)}
-                  onBack={clearMemorySelection}
-                />
-              ) : (
-                <MemoryReaderPane
-                  row={selectedRow?.kind === "file" ? selectedRow : null}
-                  age={selectedRow ? age(selectedRow.sortTime) : ""}
-                  sizeLabel={
-                    selectedRow?.kind === "file"
-                      ? formatBytes(selectedRow.size)
-                      : ""
-                  }
-                  onOpenFile={(path) => onOpenMemoryFile?.(path)}
-                  onExpand={(row) => setExpandRow(row)}
-                  onBack={clearMemorySelection}
-                />
-              )}
+              <div className="fm-reader-pane">
+                {selectedRow?.kind === "canonical" ? (
+                  <CanonicalMemoryReader
+                    memoryId={selectedRow.memoryId}
+                    localDaemonReady={localDaemonReady}
+                    onMissing={() => handleMissingCanonicalMemory(selectedRow.memoryId)}
+                    onRefresh={() => load(true)}
+                    onBack={clearMemorySelection}
+                  />
+                ) : (
+                  <MemoryReaderPane
+                    row={selectedRow?.kind === "file" ? selectedRow : null}
+                    age={selectedRow ? age(selectedRow.sortTime) : ""}
+                    sizeLabel={
+                      selectedRow?.kind === "file"
+                        ? formatBytes(selectedRow.size)
+                        : ""
+                    }
+                    onOpenFile={(path) => onOpenMemoryFile?.(path)}
+                    onExpand={(row) => setExpandRow(row)}
+                    onBack={clearMemorySelection}
+                  />
+                )}
+              </div>
             </div>
           </>
         )}

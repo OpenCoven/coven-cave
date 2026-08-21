@@ -13,6 +13,25 @@ export type ReflectTranscriptTurn = {
 
 const REFLECT_MAX_TURNS = 36;
 const REFLECT_MAX_CHARS_PER_TURN = 900;
+export const TERMINAL_THREAD_REVIEW_TURNS = 2;
+export const MATURE_THREAD_REVIEW_TURNS = 8;
+
+/**
+ * Auto-review once there is enough settled evidence. Terminal threads can be
+ * reviewed sooner; open threads wait through two four-turn title checkpoints
+ * so the report reflects a meaningful body of work rather than an early draft.
+ */
+export function shouldAutoReviewThread(input: {
+  settledAssistantTurns: number;
+  terminal: boolean;
+  busy: boolean;
+}): boolean {
+  if (input.busy || !Number.isInteger(input.settledAssistantTurns)) return false;
+  if (input.settledAssistantTurns < 0) return false;
+  return input.terminal
+    ? input.settledAssistantTurns >= TERMINAL_THREAD_REVIEW_TURNS
+    : input.settledAssistantTurns >= MATURE_THREAD_REVIEW_TURNS;
+}
 
 /** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
 export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {

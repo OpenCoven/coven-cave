@@ -195,11 +195,11 @@ export function CanonicalMemoryReader({
 
   if (!memoryId) {
     return (
-      <div className="grid h-full min-h-0 place-items-center rounded-[var(--radius-card)] border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-8">
+      <div className="fm-reader-empty">
         <EmptyState
           icon="ph:book-open"
-          headline="Select a memory to read"
-          subtitle="Pick a familiar memory from the list."
+          headline="Choose a memory"
+          subtitle="Select a canonical entry to review its evidence and contents."
         />
       </div>
     );
@@ -293,8 +293,8 @@ export function CanonicalMemoryReader({
   const revealed = canReveal && revealedId === memoryId;
 
   return (
-    <article className="flex h-full min-h-0 flex-col rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
-      <header className="shrink-0 border-b border-[var(--border-hairline)] p-3">
+    <article className="fm-reader-shell flex h-full min-h-0 flex-col">
+      <header className="fm-reader-header shrink-0">
         <div className="flex items-start gap-2">
           {onBack ? (
             <button
@@ -346,7 +346,7 @@ export function CanonicalMemoryReader({
             </div>
           ) : null}
         </div>
-        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[length:var(--text-2xs)] @min-[560px]/memview:grid-cols-4">
+        <dl className="fm-reader-meta grid grid-cols-2 gap-x-3 gap-y-1 @min-[560px]/memview:grid-cols-4">
           <div>
             <dt className="text-[var(--text-muted)]">Source</dt>
             <dd className="truncate text-[var(--text-secondary)]">
@@ -385,7 +385,7 @@ export function CanonicalMemoryReader({
           </div>
         </dl>
       </header>
-      <div className="min-h-0 flex-1">
+      <div className="fm-reader-body min-h-0 flex-1">
         {revealed ? (
           mode === "rendered" && readerDocument ? (
             <DocumentReader

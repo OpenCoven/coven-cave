@@ -86,6 +86,11 @@ assert.match(
 
 assert.match(
   source,
+  /if \[ -z "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?randomBytes\(32\)\.toString\("base64url"\)[\s\S]*?export COVEN_CAVE_AUTH_TOKEN[\s\S]*?fi[\s\S]*?HOSTNAME=127\.0\.0\.1 PORT="\$dev_port" pnpm dev &[\s\S]*?pnpm exec tauri dev/,
+  "the launcher must mint and share one sidecar token before starting the server and native app",
+);
+assert.match(
+  source,
   /if \[ -n "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?encodeURIComponent\(process\.env\.COVEN_CAVE_AUTH_TOKEN\)[\s\S]*?dev_url\+="#covenCaveToken=\$\{sidecar_token_fragment\}"/,
   "an inherited sidecar token must reach the desktop webview through the URL hash",
 );
