@@ -41,11 +41,11 @@ assert.ok(projectIndex < familiarIndex, "project picker renders before familiar 
 // ── No raw 10px gaps — spacing must use tokens ──────────────────────────────
 assert.doesNotMatch(css, /\bgap:\s*10px\b/, "CSS gap uses spacing tokens, not raw 10px");
 
-// ── Crew border is exactly the plan recipe ───────────────────────────────────
+// ── Crew border uses quiet rail chrome ───────────────────────────────────────
 assert.match(
   css,
-  /border: 1px solid color-mix\(in oklch, var\(--accent-presence\) 38%, var\(--border-hairline\)\)/,
-  "crew trigger border uses exact 1px color-mix recipe",
+  /border: 1px solid var\(--border-hairline\)/,
+  "crew trigger border uses the quiet rail hairline",
 );
 
 // ── Collapsed caret selector targets the stable class, not a generated icon class ──
