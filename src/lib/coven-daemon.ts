@@ -172,6 +172,39 @@ const REPORTED_REFUSAL_KEY_LIMIT = 1024;
 const reportedRefusals = new Set<string>();
 
 /**
+ * A dedupe key bounded in storage, not merely in length.
+ *
+ * Two things about `String.prototype.slice` make the obvious spelling of this
+ * — `` `${source} ${value}`.slice(0, REPORTED_REFUSAL_KEY_LIMIT) `` — enforce
+ * none of what the limit promises, and the refused value is as long as
+ * whoever wrote `daemon.json` chose.
+ *
+ * It does not copy. V8 backs a sliced string with a pointer to its parent, so
+ * a 1024-character key taken out of a megabyte-scale value keeps that whole
+ * megabyte reachable for as long as the key sits in the set — precisely the
+ * retention the limit exists to bound, reintroduced by the expression written
+ * to enforce it. Measured on Node 24, 32 keys over equal-sized values: 1 MiB
+ * values retained 32 MiB, 4 MiB retained 128 MiB, 8 MiB retained 256 MiB,
+ * scaling with the value and not with the limit, against 0 MiB once copied.
+ * Concatenating and re-slicing forces the flatten that copies; `.repeat(1)`
+ * and `.normalize()` look equivalent and are not, both fast-pathing back to
+ * the receiver with the parent pointer intact.
+ *
+ * And it happens too late. Truncating *after* the concatenation still builds
+ * the joined string first, which flattens a full copy of the value on every
+ * refused request — and raises `RangeError: Invalid string length` outright
+ * once the join crosses V8's maximum string length (measured: a value of
+ * MAX_STRING_LENGTH characters). That RangeError would escape
+ * `resolveDaemonSocketPath` past the containment below, breaking every daemon
+ * request and the module-load `COVEN_SOCKET_PATH` with it. Truncating the
+ * value first keeps every intermediate bounded, so this cannot throw at all.
+ */
+function detachedRefusalKey(source: RefusedSocketSource, value: string): string {
+  const truncated = `${source} ${value.slice(0, REPORTED_REFUSAL_KEY_LIMIT)}`;
+  return ` ${truncated}`.slice(1);
+}
+
+/**
  * Record that a configured target was refused for naming another machine.
  *
  * Without this the refusal is indistinguishable from "no daemon configured",
@@ -192,30 +225,6 @@ const reportedRefusals = new Set<string>();
  * when something is already wrong. Losing an event is the strictly smaller
  * failure, so the recording is contained.
  */
-/**
- * A dedupe key that shares no storage with the value it describes.
- *
- * Truncating with `slice` alone bounds the key's *length* and not its cost:
- * V8 backs a sliced string with a pointer to its parent rather than a copy, so
- * a 1024-character key taken out of a megabyte-scale refused value keeps that
- * whole megabyte reachable for as long as the key sits in the set. That is
- * precisely the retention {@link REPORTED_REFUSAL_KEY_LIMIT} exists to bound,
- * reintroduced by the expression written to enforce it — and it is worse than
- * having no limit at all would suggest, because the limit reads like a
- * guarantee. Measured on Node 24 with 32 keys taken from equal-sized values:
- * 1 MiB values retained 32 MiB, 4 MiB retained 128 MiB, 8 MiB retained 256 MiB
- * — scaling with the value and not with the limit — against 0 MiB once copied.
- *
- * Concatenating and re-slicing forces the flatten that copies. `.repeat(1)`
- * and `.normalize()` read like they would do the same and do not: both
- * fast-path back to the receiver, parent pointer intact (measured at the same
- * 128 MiB).
- */
-function detachedRefusalKey(source: RefusedSocketSource, value: string): string {
-  const truncated = `${source} ${value}`.slice(0, REPORTED_REFUSAL_KEY_LIMIT);
-  return ` ${truncated}`.slice(1);
-}
-
 function reportRefusedRemoteTarget(source: RefusedSocketSource, value: string): void {
   const key = detachedRefusalKey(source, value);
   if (reportedRefusals.has(key)) return;
