@@ -26,7 +26,7 @@
 //   - "is the prior release a usable rollback target?" belongs to the release
 //     workflow's rollback-readiness gate, which resolves the baseline against
 //     live release history. This gate consumes its verdict
-//     (`state.rollbackReadiness.ready`) rather than re-deriving it.
+//     (`state.rollbackReadiness`) rather than re-deriving it.
 //   - "did the three-OS acceptance journey pass?" belongs to
 //     scripts/release-acceptance.mjs, whose summary lands in
 //     `state.acceptance`.
@@ -68,6 +68,44 @@ export const FORBIDDEN_RESTORE_OPERATIONS = [
 
 export function stageById(id) {
   return ROLLOUT_STAGES.find((stage) => stage.id === id) ?? null;
+}
+
+/**
+ * Read `state.rollbackReadiness` in the shape the upstream gate actually
+ * produces. `scripts/release-rollback-readiness.mjs` resolves to
+ *
+ *   { tag, version, baseline: { tag, version, publishedAt, url } | null,
+ *     baselineWaived, platforms, ready }
+ *
+ * and there are three traps in it worth naming, because reading it loosely
+ * yields a rollback decision that does not say what to roll back to:
+ *
+ *   - `version` is the *target's* version — the release being rolled out. The
+ *     rollback target is `baseline.version`, never the top-level one.
+ *   - there is no blocker list. That gate throws `RollbackReadinessError` on
+ *     every shortfall, so a not-ready verdict only ever reaches this state file
+ *     as an operator transcribing the message it threw. That is `error` here.
+ *   - `baselineWaived: true` with `baseline: null` is a real, ready verdict:
+ *     the `--allow-missing-baseline` waiver a repository's genuine first
+ *     release needs. See the waiver note in evaluateRolloutGate().
+ */
+export function readRollbackReadiness(raw) {
+  const verdict = isPlainObject(raw) ? raw : null;
+  const baseline = isPlainObject(verdict?.baseline) ? verdict.baseline : null;
+  const target = firstNonEmptyString(baseline?.version, baseline?.tag);
+  return {
+    ready: verdict?.ready === true,
+    waived: verdict?.baselineWaived === true,
+    target,
+    error: firstNonEmptyString(verdict?.error),
+  };
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 export function nextStageId(id) {
@@ -144,14 +182,24 @@ export function evaluateRolloutGate(state) {
     hold(`release acceptance is '${acceptanceStatus}': three-OS acceptance must be complete before rollout`);
   }
 
-  const rollbackReady = state.rollbackReadiness?.ready === true;
-  if (!rollbackReady) {
-    const blockers = asArray(state.rollbackReadiness?.blockers).map(String);
+  const readiness = readRollbackReadiness(state.rollbackReadiness);
+  if (!readiness.ready) {
     hold(
       "rollback readiness is not proven; a rollout with no verified way back may not begin" +
-        (blockers.length ? `: ${blockers.join("; ")}` : ""),
+        (readiness.error ? `: ${readiness.error}` : ""),
     );
+  } else if (!readiness.target && !readiness.waived) {
+    // `ready: true` with no baseline and no waiver is not a verdict the
+    // upstream gate can produce, so it is a hand-edited or truncated state
+    // file. Fail closed rather than roll out toward an unnamed target.
+    hold("rollback readiness is 'ready' but names no baseline; a rollback target that cannot be named is not one");
   }
+  // The waiver is deliberately NOT a hold. `--allow-missing-baseline` is
+  // already an explicit, attributed decision taken upstream for a repository's
+  // genuine first release, and re-litigating it here would make that release
+  // impossible to roll out at all. It is instead carried on every report, and
+  // `restore-plan` refuses outright, because the only remedy for a waived
+  // baseline is patching forward — there is nothing to restore.
 
   // 2. Hard-stop regressions reported by an operator or a monitor.
   for (const regression of asArray(state.regressions)) {
@@ -212,8 +260,9 @@ export function evaluateRolloutGate(state) {
     stage: stage.id,
     percentage: stage.percentage,
     nextStage: decision === "advance" ? nextStageId(stage.id) : stage.id,
-    rollbackTarget: decision === "rollback" ? (state.rollbackReadiness?.baselineVersion ?? null) : null,
-    rollbackReady,
+    rollbackTarget: decision === "rollback" ? readiness.target : null,
+    rollbackReady: readiness.ready,
+    rollbackBaselineWaived: readiness.waived,
     reasons,
   };
 }
@@ -249,13 +298,27 @@ export function formatGateReport(result) {
     `decision: ${result.decision}`,
     `stage: ${result.stage} (${result.percentage}%)`,
     result.decision === "rollback"
-      ? `rollback target: ${result.rollbackTarget ?? "unknown"} (ready: ${result.rollbackReady})`
+      ? `rollback target: ${describeRollbackTarget(result)}`
       : `next stage: ${result.nextStage ?? "fully rolled out"}`,
   ];
+  // A waived baseline is stated on every decision, not only on a rollback: an
+  // operator advancing a rollout is entitled to know the way back is a patch
+  // forward rather than a restore.
+  if (result.rollbackBaselineWaived) {
+    lines.push("rollback target: none — baseline waived upstream; the only remedy is patching forward");
+  }
   for (const reason of result.reasons) {
     lines.push(`  ${reason.severity === "rollback" ? "✗" : "!"} ${reason.detail}`);
   }
   return lines.join("\n");
+}
+
+function describeRollbackTarget(result) {
+  if (result.rollbackTarget) return `${result.rollbackTarget} (ready: ${result.rollbackReady})`;
+  if (result.rollbackBaselineWaived) return "none — baseline waived; do not ship, and patch forward";
+  // Not a lookup failure: it means nothing upstream proved a way back. Saying
+  // "unknown" would read as one, and send the operator hunting for a version.
+  return "not established — rollback readiness was never proven";
 }
 
 export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSync, log = console.log } = {}) {
@@ -278,6 +341,12 @@ export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSy
     }
 
     if (command === "restore-plan") {
+      if (readRollbackReadiness(state?.rollbackReadiness).waived) {
+        throw new Error(
+          "rollback readiness waived the baseline (a repository's first release), so there is no prior manifest to " +
+            "restore; the remedy for this release is a patch-forward version, not a drill",
+        );
+      }
       for (const operation of assertBoundedRestore(planRollbackRestore(state?.rollbackReadiness?.baseline))) {
         log(`${operation.mutates ? "*" : " "} ${operation.id}: ${operation.detail}`);
       }

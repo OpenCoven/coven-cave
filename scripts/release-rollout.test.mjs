@@ -26,18 +26,35 @@ import {
   stageById,
 } from "./release-rollout.mjs";
 
+// The rollback-readiness verdict is copied verbatim from what
+// scripts/release-rollback-readiness.mjs resolves to, field for field. It is
+// spelled out here rather than reduced to the fields this gate happens to read,
+// because the bug this fixture exists to prevent was reading fields that
+// producer never emits (`baselineVersion`, `blockers`) and getting `undefined`.
+function readinessVerdict(overrides = {}) {
+  return {
+    tag: "v1.0.0",
+    version: "1.0.0",
+    baseline: {
+      tag: "v0.9.4",
+      version: "0.9.4",
+      publishedAt: "2026-07-01T00:00:00Z",
+      url: "https://github.invalid/OpenCoven/coven-cave/releases/tag/v0.9.4",
+    },
+    baselineWaived: false,
+    platforms: ["darwin-aarch64", "windows-x86_64"],
+    ready: true,
+    ...overrides,
+  };
+}
+
 function greenState(overrides = {}) {
   return {
     candidate: { version: "1.0.0", tag: "v1.0.0" },
     stage: "stable-5",
     observedHours: 25,
     acceptance: { status: "complete" },
-    rollbackReadiness: {
-      ready: true,
-      baselineVersion: "0.9.4",
-      baseline: { version: "0.9.4", tag: "v0.9.4" },
-      blockers: [],
-    },
+    rollbackReadiness: readinessVerdict(),
     metrics: {
       crashFreeLaunchRate: 0.999,
       pairingSuccessRate: 0.995,
@@ -187,15 +204,97 @@ test("rollout may not start before acceptance and rollback readiness are proven"
     "a failed acceptance means the candidate must not become the served update",
   );
 
-  const noWayBack = evaluateRolloutGate(greenState({ rollbackReadiness: { ready: false, blockers: ["no baseline"] } }));
+  // The upstream gate throws rather than returning a blocker list, so a
+  // not-ready verdict reaches a state file only as a transcribed message.
+  const noWayBack = evaluateRolloutGate(
+    greenState({
+      rollbackReadiness: { ready: false, error: "v0.9.4 is not a usable rollback target: no Linux AppImage" },
+    }),
+  );
   assert.equal(noWayBack.decision, "hold", "prior artifacts and rollback metadata are verified BEFORE rollout");
   assert.equal(noWayBack.rollbackReady, false, "the gate reports the readiness it was handed");
-  assert.match(detailsOf(noWayBack), /no baseline/, "the upstream gate's blockers are quoted rather than swallowed");
+  assert.match(
+    detailsOf(noWayBack),
+    /no Linux AppImage/,
+    "the upstream failure is quoted rather than swallowed, so the operator is not sent to read a workflow log",
+  );
 });
 
 test("rollback readiness must be asserted, not merely unmentioned", () => {
   const result = evaluateRolloutGate(greenState({ rollbackReadiness: undefined }));
   assert.equal(result.decision, "hold", "a missing verdict fails closed; silence is not proof of a way back");
+});
+
+test("the rollback target is the baseline's version, never the rolling-out release's", () => {
+  const verdict = readinessVerdict();
+  assert.ok(
+    !("baselineVersion" in verdict) && !("blockers" in verdict),
+    "release-rollback-readiness.mjs emits neither field; a gate reading them would silently get undefined",
+  );
+
+  const result = evaluateRolloutGate(greenState({ regressions: [{ class: "crash", id: "diag-1" }] }));
+  assert.equal(
+    result.rollbackTarget,
+    "0.9.4",
+    "a rollback that cannot name what to roll back to is not a decision an operator can execute",
+  );
+  assert.notEqual(
+    result.rollbackTarget,
+    verdict.version,
+    "the verdict's top-level `version` is the release being SHIPPED; rolling back to it would ship the regression again",
+  );
+  assert.match(
+    formatGateReport(result),
+    /rollback target: 0\.9\.4/,
+    "the printed report is what an operator acts on, so it carries the target too",
+  );
+});
+
+test("a baseline named only by tag still yields a usable rollback target", () => {
+  const result = evaluateRolloutGate(
+    greenState({
+      rollbackReadiness: readinessVerdict({ baseline: { tag: "v0.9.4" } }),
+      regressions: [{ class: "crash", id: "diag-1" }],
+    }),
+  );
+  assert.equal(result.rollbackTarget, "v0.9.4", "a tag identifies the release to restore as well as a version does");
+});
+
+test("a 'ready' verdict that names no baseline holds instead of rolling out toward nothing", () => {
+  const result = evaluateRolloutGate(
+    greenState({ rollbackReadiness: { ready: true, baseline: null, baselineWaived: false } }),
+  );
+  assert.equal(
+    result.decision,
+    "hold",
+    "the upstream gate cannot emit this pairing, so it is a hand-edited state file and fails closed",
+  );
+  assert.match(detailsOf(result), /names no baseline/, "the operator is told which half of the verdict is missing");
+});
+
+test("a waived baseline rolls out, but never silently", () => {
+  const waived = greenState({
+    rollbackReadiness: readinessVerdict({ baseline: null, baselineWaived: true, platforms: [] }),
+  });
+
+  const result = evaluateRolloutGate(waived);
+  assert.equal(
+    result.decision,
+    "advance",
+    "--allow-missing-baseline is an explicit upstream decision for a first release; re-litigating it would make that release un-rolloutable",
+  );
+  assert.equal(result.rollbackBaselineWaived, true, "a caller branching on the way back needs to see the waiver");
+  assert.match(
+    formatGateReport(result),
+    /patching forward/,
+    "an operator widening a rollout must know a restore is not available to them",
+  );
+
+  assert.throws(
+    () => runCli({ argv: ["restore-plan", "state.json"], readFileImpl: () => JSON.stringify(waived), log: () => {} }),
+    /no prior manifest to restore/,
+    "printing a placeholder drill for a release with no baseline rehearses a procedure that cannot be run",
+  );
 });
 
 test("an unclassified regression holds instead of being ignored", () => {

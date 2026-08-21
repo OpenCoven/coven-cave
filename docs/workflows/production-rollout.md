@@ -32,6 +32,31 @@ Both are preconditions: the gate holds until acceptance is `complete` and
 `rollbackReadiness.ready` is `true`. A missing verdict fails closed — silence
 is not proof of a way back.
 
+### Recording the rollback-readiness verdict
+
+`rollbackReadiness` is the object that gate resolves to, copied verbatim:
+`{ tag, version, baseline, baselineWaived, platforms, ready }`. Three details
+decide whether the rollout gate can act on it:
+
+- **`version` is the release being shipped, not the one to roll back to.** The
+  rollback target is `baseline.version` (or `baseline.tag`). A state file that
+  puts the shipping version where the baseline belongs names the regression as
+  its own remedy.
+- **There is no blocker list.** The readiness gate throws on every shortfall
+  rather than returning one, so a not-ready verdict exists only because an
+  operator wrote it down. Record it as
+  `{ "ready": false, "error": "<the message it printed>" }` and the rollout gate
+  quotes that message in its hold reason.
+- **`baselineWaived: true` with `baseline: null` is a genuine ready verdict** —
+  the `--allow-missing-baseline` waiver for a repository's first release. The
+  rollout gate honours it rather than re-litigating it, so the rollout may
+  advance; every report then states that there is no rollback target and the
+  only remedy is patching forward, and `restore-plan` refuses, because there is
+  no prior manifest to restore.
+
+`ready: true` with neither a baseline nor the waiver is not a verdict that gate
+can emit, so the rollout gate treats it as a hand-edited file and holds.
+
 ## Stages
 
 | Stage | Audience | Distribution | Minimum observation |
@@ -91,10 +116,12 @@ but the defaults are the documented values above.
   "observedHours": 25,
   "acceptance": { "status": "complete" },
   "rollbackReadiness": {
-    "ready": true,
-    "baselineVersion": "0.9.4",
-    "baseline": { "version": "0.9.4", "tag": "v0.9.4" },
-    "blockers": []
+    "tag": "v1.0.0",
+    "version": "1.0.0",
+    "baseline": { "tag": "v0.9.4", "version": "0.9.4", "publishedAt": "2026-07-01T00:00:00Z", "url": "…" },
+    "baselineWaived": false,
+    "platforms": ["darwin-aarch64", "windows-x86_64"],
+    "ready": true
   },
   "metrics": {
     "crashFreeLaunchRate": 0.999,
