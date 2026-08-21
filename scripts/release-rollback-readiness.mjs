@@ -33,6 +33,9 @@ import { parseFinalTag } from "./release-promotion.mjs";
 const MAX_API_PAGES = 20;
 const PAGE_SIZE = 100;
 
+/** The shape of a Tauri updater platform key, e.g. `darwin-aarch64`. */
+const PLATFORM_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 export const CHECKSUM_ASSET = "SHA256SUMS";
 export const UPDATER_MANIFEST_ASSET = "latest.json";
 
@@ -155,6 +158,17 @@ export function collectManifestProblems(manifest, baseline) {
   }
   const identities = assetIdentities(baseline.release);
   for (const [platform, entry] of entries) {
+    // Every real key `generate-latest-json.mjs` emits is of this shape
+    // (`darwin-aarch64`, `windows-x86_64`, …). Checking it is worth a line
+    // because these keys are the one part of this record that comes from a
+    // fetched document and is written straight into GITHUB_OUTPUT: a key
+    // carrying a newline would append step outputs of its own choosing.
+    if (!PLATFORM_KEY.test(platform)) {
+      problems.push(
+        `${JSON.stringify(platform)} is not a platform key ${UPDATER_MANIFEST_ASSET} can name`,
+      );
+      continue;
+    }
     if (!entry || typeof entry !== "object") {
       problems.push(`${platform}: manifest entry is not an object`);
       continue;

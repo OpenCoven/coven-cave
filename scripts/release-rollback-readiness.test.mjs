@@ -283,6 +283,41 @@ test("an incomplete baseline fails the rollout closed", async () => {
   );
 });
 
+test("a platform key that could forge a job output is refused", () => {
+  const baseline = { tag: "v0.3.7", version: "0.3.7", release: release("0.3.7") };
+  const forged = "darwin-aarch64\nready=false\nbaseline-tag";
+
+  // `rollback-platforms` is written into GITHUB_OUTPUT as `key=value`, and
+  // these keys are the only part of that record read out of a fetched
+  // document rather than a validated tag.
+  assert.deepEqual(
+    collectManifestProblems(
+      { version: "0.3.7", platforms: { [forged]: { url: MANIFEST_URL, signature: "x" } } },
+      baseline,
+    ),
+    [`${JSON.stringify(forged)} is not a platform key latest.json can name`],
+  );
+
+  // The four keys generate-latest-json.mjs actually emits stay accepted.
+  for (const key of ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64"]) {
+    assert.deepEqual(
+      collectManifestProblems(
+        {
+          version: "0.3.7",
+          platforms: {
+            [key]: {
+              url: "https://download.github.test/v0.3.7/CovenCave_0.3.7_amd64.AppImage",
+              signature: "dW50cnVzdGVk",
+            },
+          },
+        },
+        baseline,
+      ),
+      [],
+    );
+  }
+});
+
 test("the listing is paged through, and a listing it cannot exhaust is fatal", async () => {
   // A full page means "there may be more", so the baseline on page two has to
   // be reached before the newest stable release below the rollout is known.
