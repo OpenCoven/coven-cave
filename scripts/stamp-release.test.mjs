@@ -1197,10 +1197,16 @@ assert.match(
   /\(allowPartial \? warn : fail\)\(`missing platform/,
   "missing platform downgrades to a warning under --allow-partial",
 );
+// Counting RECOGNISED targets rather than raw keys is the load-bearing part:
+// `Object.keys(platforms).length` is non-zero for `{"darwin-arm64": …}`,
+// `"abc"` and `["a"]` alike, so under --allow-partial all four real targets
+// downgraded to warnings, the per-platform loop ran zero times, and the script
+// printed PASS having verified no signature. The behavioural pin lives in
+// verify-release-updater.test.mjs; this one stops the expression regressing.
 assert.match(
   verify,
-  /if \(!Object\.keys\(plats\)\.length\) fail\(/,
-  "an EMPTY manifest fails even with --allow-partial",
+  /if \(!TARGETS\.some\(\(t\) => plats\[t\]\)\) \{/,
+  "a manifest naming no known target fails even with --allow-partial",
 );
 
 console.log("stamp-release.test.mjs: ok");

@@ -202,7 +202,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   // the old All/Active segmented control: "Active" was one of five states the
   // daemon actually reports, so it could never answer "what failed?".
   const [statusFilter, setStatusFilter] = useState<ChatSessionStatusFilter>("all");
-  // Work-kind filter — exclusive toggle chips beside the status chips: narrow
+  // Work-kind filter — exclusive options in the toolbar overflow menu: narrow
   // the list to Board-task chats or to chats whose work reached GitHub.
   const [kindFilter, setKindFilter] = useState<ChatSessionKindFilter>("all");
   // Reading order for the list. "recent" additionally groups into activity
@@ -856,15 +856,16 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
         </div>
         )}
 
-        {/* Compact session toolbar — the handoff keeps search, counted status
-            filters, and the named sort on one line. Secondary view controls
-            stay available through one overflow menu instead of widening the
-            primary reading path. */}
+        {/* Compact session toolbar — search, counted status filters, and sort
+            stay on one line. Work-kind and view controls live in the overflow
+            menu so adding a filter cannot wrap the primary reading path. */}
         <div className="chat-sessions-toolbar mt-3 flex flex-wrap items-center gap-2 px-4 pb-3">
           <label
             className={[
               "chat-list-search-control flex h-8 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]",
-              compact ? "max-w-[520px] flex-1" : "w-full max-w-[250px] min-[900px]:w-[250px]",
+              compact
+                ? "max-w-[520px] flex-1"
+                : "min-w-[160px] max-w-[250px] flex-1",
             ].join(" ")}
           >
             <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
@@ -935,32 +936,6 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                   );
                 })}
               </span>
-              {/* Work-kind chips: exclusive toggles — "Tasks only" narrows to
-                  Board-task chats, "GitHub only" to chats wearing the PR
-                  badge. Pressing the active chip clears it back to all. */}
-              <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--border-hairline)]" />
-              <span role="group" aria-label="Filter sessions by work kind" className="flex flex-wrap items-center gap-0.5">
-                {CHAT_SESSION_KIND_ORDER.map((key) => {
-                  const presentation = CHAT_SESSION_KIND[key];
-                  const active = kindFilter === key;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      aria-pressed={active}
-                      disabled={chatStatusChipDisabled(kindCounts[key], active)}
-                      onClick={() => setKindFilter(active ? "all" : key)}
-                      title={presentation.description}
-                      className="chat-status-chip focus-ring"
-                      data-kind={key}
-                    >
-                      <Icon name={presentation.icon} width={11} aria-hidden />
-                      {presentation.label}
-                      <span className="chat-status-chip__count">{kindCounts[key]}</span>
-                    </button>
-                  );
-                })}
-              </span>
               {hasAppliedFilters && !(visibleRows === 0 && !showContentSection) && (
                 <Button
                   variant="ghost"
@@ -983,6 +958,21 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                 className="h-7 w-7 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] text-[var(--text-muted)]"
                 minWidth={216}
               >
+                {CHAT_SESSION_KIND_ORDER.map((key) => {
+                  const presentation = CHAT_SESSION_KIND[key];
+                  return (
+                    <PopoverItem
+                      key={key}
+                      icon={presentation.icon}
+                      checked={kindFilter === key}
+                      disabled={chatStatusChipDisabled(kindCounts[key], kindFilter === key)}
+                      onSelect={() => setKindFilter(kindFilter === key ? "all" : key)}
+                    >
+                      {presentation.label} ({kindCounts[key]})
+                    </PopoverItem>
+                  );
+                })}
+                <PopoverSeparator />
                 <PopoverItem
                   checked={groupBy === "none"}
                   onSelect={() => setGroupBy(normalizeChatGroupBy("none"))}
