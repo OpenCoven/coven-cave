@@ -9060,8 +9060,14 @@ function TurnRowImpl({
   // below the prose — they're the actionable output (Review/Undo), so they
   // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
   // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("<N> calls · <categories>"). These partitions do not depend on pending,
-  // so React updates the same instances when the turn settles.
+  // ("Worked for <duration> · <N> steps · ran <cmd>").
+  //
+  // This partition is deliberately SETTLED-ONLY. A streaming turn weaves its
+  // tools into the prose inline instead (see renderSegments), so lifting them
+  // into these slots while pending would render every tool twice. The comment
+  // here previously claimed the partition did not depend on pending — that
+  // sentence described the pre-streaming code and survived the merge on top of
+  // the streaming implementation, which is the opposite behaviour.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
   const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
   const editCards = settledTools.filter(isEditCard);
