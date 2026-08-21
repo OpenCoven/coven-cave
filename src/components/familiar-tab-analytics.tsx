@@ -339,10 +339,11 @@ function AnalyticsBody({
     sessionsPerDaySeries(sessionPulse),
     cumulativeSeries(sessionPulse),
   ], [sessionPulse]);
-  const heat = useMemo(
-    () => heatmapFromSessions(recentSessions, Date.parse(updatedAt ?? "")),
-    [recentSessions, updatedAt],
-  );
+  const heat = useMemo(() => {
+    const parsed = Date.parse(updatedAt ?? "");
+    const now = Number.isFinite(parsed) ? parsed : Date.now();
+    return heatmapFromSessions(recentSessions, now);
+  }, [recentSessions, updatedAt]);
   const bars = useMemo(() => barsByProject(recentSessions), [recentSessions]);
   const heatColorFor = useCallback((value: number) => {
     if (value === 0) return "var(--bg-raised)";

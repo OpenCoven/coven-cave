@@ -869,7 +869,8 @@
    .chat-list-pr-badge (#2983). Sits as a sibling BEFORE the row's main button
    (a button can't nest inside a button), aligned over the status-dot gutter;
    the following button trades its indent for the badge's. GitHub state colors:
-   open green, merged the presence accent, closed red, draft muted. */
+   open green, merged the presence accent, closed red, draft muted; an
+   unverified state (task lifecycle word) reads muted too. */
 .cnav__pr-badge {
   display: grid;
   place-items: center;
@@ -906,6 +907,9 @@
   color: var(--color-danger);
 }
 .cnav__pr-badge[data-pr-state="draft"] {
+  color: var(--text-muted);
+}
+.cnav__pr-badge[data-pr-state="unknown"] {
   color: var(--text-muted);
 }
 .cnav__thread-title {

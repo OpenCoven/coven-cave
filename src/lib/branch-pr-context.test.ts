@@ -73,6 +73,46 @@ test("parseBranchPr returns null for an empty REST list (no PR for branch)", () 
   assert.equal(parseBranchPr("[]", "main"), null);
 });
 
+// ── Merged detection: REST reports merged PRs as state "closed" ──
+// (merged-ness lives in `merged_at` on list/single and `merged` on single).
+// Without the derivation, merged PRs badge as red "closed" and the merged-chat
+// auto-archive sweep (`state === "merged"`) never fires.
+
+test("REST list shape: closed + merged_at reads as merged", () => {
+  const restList = JSON.stringify([
+    {
+      number: 42,
+      html_url: "https://github.com/OpenCoven/coven-cave/pull/42",
+      state: "closed",
+      draft: false,
+      merged_at: "2026-08-20T12:00:00Z",
+    },
+  ]);
+  assert.equal(parseBranchPr(restList, "feat/x")?.state, "merged");
+});
+
+test("REST single shape: merged boolean reads as merged", () => {
+  const restOne = JSON.stringify({
+    number: 7,
+    html_url: "https://github.com/o/r/pull/7",
+    state: "closed",
+    merged: true,
+    merged_at: null,
+  });
+  assert.equal(parseBranchPr(restOne)?.state, "merged");
+});
+
+test("closed without merged_at stays closed (rejected PR, not merged)", () => {
+  const restOne = JSON.stringify({
+    number: 8,
+    html_url: "https://github.com/o/r/pull/8",
+    state: "closed",
+    merged: false,
+    merged_at: null,
+  });
+  assert.equal(parseBranchPr(restOne)?.state, "closed");
+});
+
 test("first read misses but schedules a background fetch; next read serves it", async () => {
   let calls = 0;
   const cache = createBranchPrCache({

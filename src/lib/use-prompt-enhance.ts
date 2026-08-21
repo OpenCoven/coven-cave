@@ -325,8 +325,8 @@ export function usePromptEnhance({
     setState({ phase: "idle" });
   }, [agentic]);
 
-  const enhance = useCallback((intent: EnhanceIntent = "auto") => {
-    const baseDraft = draftRef.current;
+  const enhance = useCallback((intent: EnhanceIntent = "auto", draftOverride?: string) => {
+    const baseDraft = draftOverride ?? draftRef.current;
     if (!baseDraft.trim() || disabled) return;
     handledRecommendationRef.current = null;
     requestRef.current = { baseDraft, intent };

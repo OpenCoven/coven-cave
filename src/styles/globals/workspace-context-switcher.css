@@ -47,8 +47,8 @@
 }
 
 /* ── Crew / familiar trigger ──────────────────────────────────────────────── */
-/* The crew trigger is bordered like the old scope trigger — same box, same
-   icon column — and uses the accent-presence tint from the design language. */
+/* The crew trigger is bordered like the old scope trigger — same box and icon
+   column — with quiet rail chrome until hover. */
 .workspace-context-switcher__crew .familiar-switcher__trigger--labeled {
   flex: 1 1 auto;
   width: 100%;
@@ -59,8 +59,8 @@
   padding: 0 calc(var(--rail-lead) - 1px);
   justify-content: flex-start;
   border-radius: var(--radius-control);
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
-  background: transparent;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-subtle);
 }
 
 .workspace-context-switcher__crew .familiar-switcher__trigger--labeled:hover {
