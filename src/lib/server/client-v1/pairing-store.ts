@@ -43,12 +43,41 @@ export interface ClientV1PairingApproved {
   status: "approved";
 }
 
+export type ClientV1PairingLookup =
+  | {
+      kind: "found";
+      pairing: {
+        id: string;
+        status: ClientV1PairingStatus["status"] | "expired";
+        expiresAt: number;
+      };
+    }
+  | { kind: "consumed" }
+  | { kind: "not_found" }
+  | { kind: "secret_mismatch" };
+
+export type ClientV1PairingExchangeResult =
+  | { kind: "approved"; pairing: ClientV1PairingApproved }
+  | {
+      kind:
+        | "consumed"
+        | "denied"
+        | "expired"
+        | "not_found"
+        | "pending"
+        | "secret_mismatch";
+    };
+
 export interface PairingStore {
   create(input: ClientV1PairingCreateInput): ClientV1PairingIssued;
   poll(id: string, secret: string): ClientV1PairingStatus | null;
   decide(id: string, decision: ClientV1PairingDecision, now: number): boolean;
   consume(id: string, secret: string): ClientV1PairingApproved | null;
+  consumeForExchange(id: string, secret: string): ClientV1PairingExchangeResult;
+  get(id: string): ClientV1PairingStatus | null;
   inspect(id: string): { secretHash: string } | null;
+  listPending(): ClientV1PairingStatus[];
+  lookup(id: string, secret: string): ClientV1PairingLookup;
 }
 
 export interface PairingStoreOptions {
@@ -58,6 +87,11 @@ export interface PairingStoreOptions {
 
 type PairingRecord = ClientV1PairingStatus & {
   secretHash: string;
+};
+
+type TerminalPairingRecord = {
+  kind: "consumed" | "expired";
+  record: PairingRecord;
 };
 
 const DECOY_SECRET_HASH = createHash("sha256")
@@ -109,6 +143,7 @@ export class ProcessLocalPairingStore implements PairingStore {
   readonly #maxEntries: number;
   readonly #now: () => number;
   readonly #records = new Map<string, PairingRecord>();
+  readonly #terminalRecords = new Map<string, TerminalPairingRecord>();
 
   constructor(options: PairingStoreOptions = {}) {
     const maxEntries = options.maxEntries ?? DEFAULT_PAIRING_MAX_ENTRIES;
@@ -121,7 +156,23 @@ export class ProcessLocalPairingStore implements PairingStore {
 
   #pruneExpired(now: number): void {
     for (const [id, record] of this.#records) {
-      if (record.expiresAt <= now) this.#records.delete(id);
+      if (record.expiresAt <= now) {
+        this.#records.delete(id);
+        this.#rememberTerminal(record, "expired");
+      }
+    }
+  }
+
+  #rememberTerminal(
+    record: PairingRecord,
+    kind: TerminalPairingRecord["kind"],
+  ): void {
+    this.#terminalRecords.delete(record.id);
+    this.#terminalRecords.set(record.id, { kind, record: { ...record } });
+    while (this.#terminalRecords.size > this.#maxEntries) {
+      const oldest = this.#terminalRecords.keys().next();
+      if (oldest.done) break;
+      this.#terminalRecords.delete(oldest.value);
     }
   }
 
@@ -177,22 +228,84 @@ export class ProcessLocalPairingStore implements PairingStore {
   }
 
   consume(id: string, secret: string): ClientV1PairingApproved | null {
+    const result = this.consumeForExchange(id, secret);
+    return result.kind === "approved" ? result.pairing : null;
+  }
+
+  consumeForExchange(id: string, secret: string): ClientV1PairingExchangeResult {
     const now = requireTimestamp(this.#now());
-    const record = this.#recordWithSecret(id, secret, now);
-    if (!record || record.status !== "approved") return null;
+    this.#pruneExpired(now);
+    const record = this.#records.get(id);
+    const terminal = this.#terminalRecords.get(id);
+    const candidateHash = hashSecret(secret);
+    const expectedHash = record?.secretHash
+      ?? terminal?.record.secretHash
+      ?? DECOY_SECRET_HASH;
+    if (!hashesEqual(expectedHash, candidateHash)) {
+      return record || terminal
+        ? { kind: "secret_mismatch" }
+        : { kind: "not_found" };
+    }
+    if (terminal) return { kind: terminal.kind };
+    if (!record) return { kind: "not_found" };
+    if (record.status === "pending") return { kind: "pending" };
+    if (record.status === "denied") return { kind: "denied" };
     this.#records.delete(id);
+    this.#rememberTerminal(record, "consumed");
     return {
-      appName: record.appName,
-      installationId: record.installationId,
-      scopes: [...record.scopes],
-      status: "approved",
+      kind: "approved",
+      pairing: {
+        appName: record.appName,
+        installationId: record.installationId,
+        scopes: [...record.scopes],
+        status: "approved",
+      },
     };
+  }
+
+  get(id: string): ClientV1PairingStatus | null {
+    this.#pruneExpired(requireTimestamp(this.#now()));
+    const record = this.#records.get(id);
+    return record ? publicRecord(record) : null;
   }
 
   inspect(id: string): { secretHash: string } | null {
     this.#pruneExpired(requireTimestamp(this.#now()));
     const record = this.#records.get(id);
     return record ? { secretHash: record.secretHash } : null;
+  }
+
+  listPending(): ClientV1PairingStatus[] {
+    this.#pruneExpired(requireTimestamp(this.#now()));
+    return Array.from(this.#records.values())
+      .filter((record) => record.status === "pending")
+      .map(publicRecord);
+  }
+
+  lookup(id: string, secret: string): ClientV1PairingLookup {
+    this.#pruneExpired(requireTimestamp(this.#now()));
+    const record = this.#records.get(id);
+    const terminal = this.#terminalRecords.get(id);
+    const candidateHash = hashSecret(secret);
+    const expectedHash = record?.secretHash
+      ?? terminal?.record.secretHash
+      ?? DECOY_SECRET_HASH;
+    if (!hashesEqual(expectedHash, candidateHash)) {
+      return record || terminal
+        ? { kind: "secret_mismatch" }
+        : { kind: "not_found" };
+    }
+    if (terminal?.kind === "consumed") return { kind: "consumed" };
+    const found = record ?? terminal?.record;
+    if (!found) return { kind: "not_found" };
+    return {
+      kind: "found",
+      pairing: {
+        id: found.id,
+        status: terminal?.kind === "expired" ? "expired" : found.status,
+        expiresAt: found.expiresAt,
+      },
+    };
   }
 }
 

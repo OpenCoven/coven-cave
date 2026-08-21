@@ -62,6 +62,14 @@ const contracts: RouteContract[] = [
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/canvas", methods: ["GET", "PUT", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/credentials", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
+  { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/client/v1/health", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests/[id]/exchange", methods: ["POST"], kind: "json" },
   { route: "/cave-home-migration", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/chat/attachment", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
@@ -361,7 +369,7 @@ function exportedMethods(source: string): string[] {
 }
 
 function usesJsonResponse(source: string): boolean {
-  return /NextResponse\.json|Response\.json|new Response\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
+  return /NextResponse\.json|Response\.json|new Response\(|clientV1(?:Success|Error|RateLimit)Response\s*\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
 }
 
 function effectiveRouteSource(file: string, source: string): string {
@@ -398,10 +406,19 @@ const routeFiles = walkRoutes(apiRoot);
 const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
-assert.equal(
-  actualRoutes.some((route) => route.startsWith("/client/v1")),
-  false,
-  "Phase 0 must not expose /api/client/v1 routes before the public contract foundation is wired",
+assert.deepEqual(
+  actualRoutes.filter((route) => route.startsWith("/client/v1")),
+  [
+    "/client/v1/admin/credentials",
+    "/client/v1/admin/credentials/[id]",
+    "/client/v1/admin/pairing-requests",
+    "/client/v1/admin/pairing-requests/[id]/decision",
+    "/client/v1/health",
+    "/client/v1/pairing/requests",
+    "/client/v1/pairing/requests/[id]",
+    "/client/v1/pairing/requests/[id]/exchange",
+  ],
+  "Phase 1 must expose exactly the reviewed client-v1 bootstrap and admin routes",
 );
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
 

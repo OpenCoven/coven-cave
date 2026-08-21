@@ -110,9 +110,13 @@ test("iOS sources and generators request the macOS build", () => {
 test("public client v1 changes run Cave API, E2E, and documentation validation", () => {
   for (const file of [
     "src/lib/server/client-v1/contract.ts",
+    "src/lib/server/client-v1/discovery.test.ts",
+    "src/lib/server/client-v1/runtime.ts",
     "src/lib/server/client-v1/contract-fixture.json",
     "scripts/export-client-v1-contract.mjs",
     "src/app/api/client/v1/health/route.ts",
+    "src/app/api/client/v1/health/route.test.ts",
+    "src/app/api/api-contracts.test.ts",
     "docs/api/client-v1.md",
     ".gitattributes",
   ]) {

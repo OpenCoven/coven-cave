@@ -49,6 +49,11 @@ export interface ClientV1IssuedCredential {
   credential: ClientV1CredentialRecord;
 }
 
+export type ClientV1CredentialMetadata = Omit<
+  ClientV1CredentialRecord,
+  "bearerHash"
+>;
+
 export interface CredentialStore {
   issue(input: ClientV1CredentialIssueInput): Promise<ClientV1IssuedCredential>;
   verify(id: string, bearer: string): Promise<boolean>;
@@ -120,6 +125,21 @@ function cloneRecord(record: ClientV1CredentialRecord): ClientV1CredentialRecord
   return {
     ...record,
     scopes: [...record.scopes],
+  };
+}
+
+export function clientV1CredentialMetadata(
+  record: ClientV1CredentialRecord,
+): ClientV1CredentialMetadata {
+  return {
+    id: record.id,
+    appName: record.appName,
+    installationId: record.installationId,
+    scopes: [...record.scopes],
+    createdAt: record.createdAt,
+    lastUsedAt: record.lastUsedAt,
+    revokedAt: record.revokedAt,
+    revocationReason: record.revocationReason,
   };
 }
 

@@ -112,3 +112,66 @@ test("pairing storage is bounded by maxEntries with oldest-first eviction", () =
   assert.equal(store.poll(second.id, second.secret)?.status, "pending");
   assert.equal(store.poll(third.id, third.secret)?.status, "pending");
 });
+
+test("route lookups distinguish bad secrets, expiry, and consumed replay without exposing hashes", () => {
+  let now = 50_000;
+  const store = createPairingStore({ now: () => now });
+  const issued = store.create(pairingInput);
+
+  assert.deepEqual(store.lookup(issued.id, "wrong-secret"), {
+    kind: "secret_mismatch",
+  });
+  assert.deepEqual(store.consumeForExchange(issued.id, issued.secret), {
+    kind: "pending",
+  });
+
+  now = issued.expiresAt;
+  assert.deepEqual(store.lookup(issued.id, issued.secret), {
+    kind: "found",
+    pairing: {
+      id: issued.id,
+      status: "expired",
+      expiresAt: issued.expiresAt,
+    },
+  });
+  assert.deepEqual(store.consumeForExchange(issued.id, issued.secret), {
+    kind: "expired",
+  });
+
+  const approved = store.create({
+    ...pairingInput,
+    installationId: "7e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5e",
+  });
+  now += 1;
+  assert.equal(store.decide(approved.id, "approved", now), true);
+  assert.equal(store.consumeForExchange(approved.id, approved.secret).kind, "approved");
+  assert.deepEqual(store.consumeForExchange(approved.id, approved.secret), {
+    kind: "consumed",
+  });
+  assert.equal(JSON.stringify(store.lookup(approved.id, approved.secret)).includes("Hash"), false);
+});
+
+test("admin inspection lists pending requests and returns decision metadata without secret material", () => {
+  let now = 60_000;
+  const store = createPairingStore({ now: () => now });
+  const pending = store.create(pairingInput);
+  const approved = store.create({
+    ...pairingInput,
+    installationId: "8e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a5f",
+  });
+  now += 10;
+  assert.equal(store.decide(approved.id, "approved", now), true);
+
+  assert.deepEqual(store.listPending(), [{
+    id: pending.id,
+    appName: pairingInput.appName,
+    installationId: pairingInput.installationId,
+    scopes: ["chat:read"],
+    status: "pending",
+    createdAt: 60_000,
+    expiresAt: 60_000 + PAIRING_TTL_MS,
+    decidedAt: null,
+  }]);
+  assert.equal(store.get(approved.id)?.status, "approved");
+  assert.equal(JSON.stringify(store.listPending()).includes(pending.secret), false);
+});
