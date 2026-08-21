@@ -176,7 +176,25 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // documented convention above, 615 is the smallest ceiling that clears the 2%
 // THIN threshold here (13.2 KiB / 2.1% headroom) for this one-time addition;
 // this is a ceiling for this feature's CSS, not a licence for the next one.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 615) * 1024;
+// RAISED root 615→640 (2026-08-21, cave-9g3je): the desktop chrome refresh
+// (#4791) added 151 lines to src/styles/globals/desktop-chrome.css, plus
+// smaller additions to shell-navigation.css and workspace-context-switcher.css.
+// All three are always-loaded shell chrome by design — window controls, the
+// nav rail, and the two context triggers mounted in SidebarRailHeader — so this
+// is genuine root growth, not a #3264 mis-scoping: nothing lazy re-entered
+// src/app/globals.css (the globals import list is unchanged since #4758).
+// Measured: 630,447 B (615.7 KiB) against the 615 KiB ceiling, ~0.7 KiB over.
+//
+// Rate, per the convention above: root ran 601.8 KiB (2026-08-16, cave-ltl38.4)
+// → 615.7 KiB (2026-08-21) = ~2.8 KiB/day, roughly 6x the ~0.5 KiB/day measured
+// on 2026-08-05. A bare 2% ceiling (629) would leave 12.6 KiB — about 4.5 days
+// at that rate — and hand the same failure to whoever ships next, which is the
+// failure mode cave-yizcb documented. 640 leaves 24.3 KiB (3.8%, ~9 days),
+// which absorbs the burst without writing a blank cheque. The observed rate is
+// inflated by one large chrome feature landing at once; re-derive rather than
+// assume it holds. This is a ceiling for this refresh's CSS, not a licence for
+// the next one.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 640) * 1024;
 const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {
