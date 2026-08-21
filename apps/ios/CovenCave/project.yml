@@ -7,7 +7,7 @@ options:
   groupSortPosition: top
 settings:
   base:
-    MARKETING_VERSION: "0.3.8"
+    MARKETING_VERSION: "0.3.9"
     # Build number, YYYYMMDDHH in UTC. App Store Connect requires this to be
     # unique and increasing for the app, and a hand-kept "1" collides on every
     # upload after the first (it rejected the v0.2.3 upload on 2026-08-03).
@@ -15,7 +15,7 @@ settings:
     # `scripts/stamp-release.mjs` refreshes this alongside MARKETING_VERSION on
     # every cut — a release stamp that moved only the marketing version is how
     # v0.2.3 shipped a build number App Store Connect had already seen.
-    CURRENT_PROJECT_VERSION: "2026082021"
+    CURRENT_PROJECT_VERSION: "2026082113"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "9LR8Z8UQ9X"
     CODE_SIGN_STYLE: Automatic
@@ -62,6 +62,15 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         CODE_SIGN_ENTITLEMENTS: CovenCave/CovenCave.entitlements
+        # Release CI signs manually against the App Store profile it installs
+        # and validates, because the App Store Connect key available to the
+        # workflow is user-scoped (vars.APPLE_API_KEY_SUBJECT=user) and Apple
+        # answers xcodebuild's automatic-signing handshake with HTTP 401 on
+        # listTeams. The workflow supplies the profile UUID per target through
+        # this user-defined setting; a build that does not set it resolves to
+        # empty, which CODE_SIGN_STYLE: Automatic above ignores — so local and
+        # Debug builds are unaffected.
+        PROVISIONING_PROFILE_SPECIFIER: $(CAVE_IOS_APP_PROFILE)
     dependencies:
       - package: WebRTC
         product: WebRTC
@@ -123,6 +132,9 @@ targets:
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         SKIP_INSTALL: YES
         CODE_SIGN_ENTITLEMENTS: CovenCaveWidgets/CovenCaveWidgets.entitlements
+        # See the note on the app target: the release workflow passes this
+        # target's own App Store profile UUID, and it is empty everywhere else.
+        PROVISIONING_PROFILE_SPECIFIER: $(CAVE_IOS_WIDGET_PROFILE)
 
 schemes:
   CovenCave:

@@ -147,10 +147,9 @@ test("prompt tab composes the composer + quick saves and follows starts to the d
   assert.match(promptTab, /ResearchMissionComposer/);
   // Quick saves read the same links store as the Resources tab via the shared hook.
   assert.match(promptTab, /useResearchLinks/);
-  // Attached saves land on the new mission as candidate sources through the
-  // ledger's exact attach-source action.
-  assert.match(promptTab, /action: "attach-source"/);
-  assert.match(promptTab, /status: "candidate"/);
+  // Attached saves travel with mission creation so the first pass sees them.
+  assert.match(promptTab, /savedLinkIds: attached\.map\(\(link\) => link\.id\)/);
+  assert.doesNotMatch(promptTab, /action: "attach-source"/);
   assert.match(promptTab, /daemonRunning=\{context\.runtimeState\.daemonRunning\}/);
   assert.match(promptTab, /onNavigate\("desk", \{ missionId: result\.mission\.id \}\)/);
 });

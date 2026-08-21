@@ -88,6 +88,13 @@ import {
 } from "@/lib/chat-session-status";
 import { groupChatRowsByActivity } from "@/lib/chat-session-activity";
 import {
+  CHAT_SESSION_KIND,
+  CHAT_SESSION_KIND_ORDER,
+  countChatSessionKinds,
+  filterChatRowsByKind,
+  type ChatSessionKindFilter,
+} from "@/lib/chat-session-kind";
+import {
   CHAT_SESSION_SORT_HEADING,
   CHAT_SESSION_SORT_KEY,
   CHAT_SESSION_SORT_LABEL,
@@ -195,6 +202,9 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   // the old All/Active segmented control: "Active" was one of five states the
   // daemon actually reports, so it could never answer "what failed?".
   const [statusFilter, setStatusFilter] = useState<ChatSessionStatusFilter>("all");
+  // Work-kind filter — exclusive options in the toolbar overflow menu: narrow
+  // the list to Board-task chats or to chats whose work reached GitHub.
+  const [kindFilter, setKindFilter] = useState<ChatSessionKindFilter>("all");
   // Reading order for the list. "recent" additionally groups into activity
   // bands (Active now / Today / …); the other three are flat named orders.
   const [sessionSort, setSessionSort] = useState<ChatSessionSort>("recent");
@@ -229,6 +239,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   const clearSessionFilters = useCallback(() => {
     setSearch("");
     setStatusFilter("all");
+    setKindFilter("all");
     onSelectionChange("all");
     setShowArchived(false);
   }, [onSelectionChange]);
@@ -293,9 +304,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   // already filtered to failed".
   const searched = useMemo(() => filterChatListRows(mine, search, false), [mine, search]);
   const statusCounts = useMemo(() => countChatSessionStatuses(searched), [searched]);
+  const kindCounts = useMemo(() => countChatSessionKinds(searched), [searched]);
   const filtered = useMemo(
-    () => filterChatRowsByStatus(searched, statusFilter),
-    [searched, statusFilter],
+    () => filterChatRowsByKind(filterChatRowsByStatus(searched, statusFilter), kindFilter),
+    [searched, statusFilter, kindFilter],
   );
 
   const hasAny = mine.length > 0;
@@ -319,6 +331,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   const hasAppliedFilters =
     search.trim().length > 0 ||
     statusFilter !== "all" ||
+    kindFilter !== "all" ||
     effectiveSelection !== "all" ||
     showArchived;
   const scopedGroups = useMemo(
@@ -843,15 +856,16 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
         </div>
         )}
 
-        {/* Compact session toolbar — the handoff keeps search, counted status
-            filters, and the named sort on one line. Secondary view controls
-            stay available through one overflow menu instead of widening the
-            primary reading path. */}
+        {/* Compact session toolbar — search, counted status filters, and sort
+            stay on one line. Work-kind and view controls live in the overflow
+            menu so adding a filter cannot wrap the primary reading path. */}
         <div className="chat-sessions-toolbar mt-3 flex flex-wrap items-center gap-2 px-4 pb-3">
           <label
             className={[
               "chat-list-search-control flex h-8 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]",
-              compact ? "max-w-[520px] flex-1" : "w-full max-w-[250px] min-[900px]:w-[250px]",
+              compact
+                ? "max-w-[520px] flex-1"
+                : "min-w-[160px] max-w-[250px] flex-1",
             ].join(" ")}
           >
             <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
@@ -944,6 +958,21 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                 className="h-7 w-7 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] text-[var(--text-muted)]"
                 minWidth={216}
               >
+                {CHAT_SESSION_KIND_ORDER.map((key) => {
+                  const presentation = CHAT_SESSION_KIND[key];
+                  return (
+                    <PopoverItem
+                      key={key}
+                      icon={presentation.icon}
+                      checked={kindFilter === key}
+                      disabled={chatStatusChipDisabled(kindCounts[key], kindFilter === key)}
+                      onSelect={() => setKindFilter(kindFilter === key ? "all" : key)}
+                    >
+                      {presentation.label} ({kindCounts[key]})
+                    </PopoverItem>
+                  );
+                })}
+                <PopoverSeparator />
                 <PopoverItem
                   checked={groupBy === "none"}
                   onSelect={() => setGroupBy(normalizeChatGroupBy("none"))}

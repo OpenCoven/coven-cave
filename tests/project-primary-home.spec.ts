@@ -82,7 +82,8 @@ test("project scope, aggregate crew, and explicit actor reach one launch", async
   const familiarProjectRequests = await seed(page);
   const launchBodies: Record<string, unknown>[] = [];
   await page.route("**/api/chat/send", (route) => {
-    launchBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (body.prompt === "Ship the project-primary launch.") launchBodies.push(body);
     return fulfillSse(route);
   });
 

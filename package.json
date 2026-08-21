@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "type": "module",
   "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
@@ -86,6 +86,9 @@
     "wt:status:json": "node scripts/worktree-status.mjs --json",
     "wt:prune": "node scripts/worktree-status.mjs --prune",
     "wt:retire-on-exit": "node scripts/worktree-session-exit-retirement.mjs",
+    "remotes:audit": "node scripts/remote-hygiene.mjs",
+    "remotes:audit:json": "node scripts/remote-hygiene.mjs --json",
+    "remotes:fix": "node scripts/remote-hygiene.mjs --fix",
     "beads:worktrees": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave",
     "beads:worktrees:json": "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --json",
     "beads:worktrees:create": "node --experimental-strip-types scripts/worktree-lifecycle-create.ts",
