@@ -281,6 +281,90 @@ test("create/start persists before launch and records the real session", async (
   assert.equal(result.status, "running");
 });
 
+test("create/start materializes selected saved links before the first launch", async () => {
+  const calls: string[] = [];
+  const savedMissionSources: string[][] = [];
+  const runner = makeResearchMissionRunner(deps({
+    createWorkspace: async (mission) => {
+      calls.push("create");
+      return mission;
+    },
+    materializeSavedLink: async (_mission, savedLinkId) => {
+      calls.push(`materialize:${savedLinkId}`);
+      return {
+        source: {
+          id: `saved-${savedLinkId}`,
+          title: `Saved ${savedLinkId}`,
+          url: `https://example.com/${savedLinkId}`,
+          sourceType: "web",
+          status: "candidate",
+        },
+        rollback: async () => {},
+      };
+    },
+    saveMission: async (mission) => {
+      calls.push("save");
+      savedMissionSources.push(mission.sources.map((source) => source.id));
+    },
+    startFlow: async () => {
+      calls.push("start");
+      assert.deepEqual(savedMissionSources.at(-1), ["saved-link-a", "saved-link-b"]);
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+
+  const result = await runner.createAndStart({
+    ...INPUT,
+    savedLinkIds: ["link-a", "link-b"],
+  });
+
+  assert.deepEqual(calls, [
+    "create",
+    "materialize:link-a",
+    "materialize:link-b",
+    "save",
+    "start",
+    "save",
+  ]);
+  assert.deepEqual(result.sources.map((source) => source.id), [
+    "saved-link-a",
+    "saved-link-b",
+  ]);
+});
+
+test("create/start rolls back initial resource files when pre-launch persistence fails", async () => {
+  let rollbackCalls = 0;
+  let startCalls = 0;
+  const runner = makeResearchMissionRunner(deps({
+    materializeSavedLink: async () => ({
+      source: {
+        id: "saved-link-a",
+        title: "Saved link",
+        url: "https://example.com/link-a",
+        sourceType: "web",
+        status: "candidate",
+      },
+      rollback: async () => {
+        rollbackCalls += 1;
+      },
+    }),
+    saveMission: async () => {
+      throw new Error("disk full");
+    },
+    startFlow: async () => {
+      startCalls += 1;
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+
+  await assert.rejects(
+    runner.createAndStart({ ...INPUT, savedLinkIds: ["link-a"] }),
+    /disk full/,
+  );
+  assert.equal(rollbackCalls, 1);
+  assert.equal(startCalls, 0);
+});
+
 test("create/start records exact daemon authority outside public mission state", async () => {
   const sessionAuthority = {
     kind: "owner-local-daemon" as const,

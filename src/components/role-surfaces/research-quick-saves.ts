@@ -135,3 +135,24 @@ export function matchSavedLinks<TLink extends QuickSaveLink>(
 
   return groups;
 }
+
+/**
+ * Toggle every currently visible save while preserving selections hidden by
+ * the search. The returned array follows the canonical saved-link order.
+ */
+export function updateVisibleQuickSaveSelection<TLink extends QuickSaveLink>(
+  allLinks: readonly TLink[],
+  selected: readonly TLink[],
+  visible: readonly TLink[],
+): TLink[] {
+  if (visible.length === 0) return [...selected];
+  const visibleIds = new Set(visible.map((link) => link.id));
+  const selectedIds = new Set(selected.map((link) => link.id));
+  const clearVisible = visible.every((link) => selectedIds.has(link.id));
+  if (clearVisible) {
+    for (const id of visibleIds) selectedIds.delete(id);
+  } else {
+    for (const id of visibleIds) selectedIds.add(id);
+  }
+  return allLinks.filter((link) => selectedIds.has(link.id));
+}

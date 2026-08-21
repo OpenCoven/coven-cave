@@ -897,6 +897,20 @@
   white-space: nowrap;
   font-size: var(--text-2xs);
 }
+.research-quick-saves__select-visible {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--research-accent) 38%, var(--border));
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--research-accent) 9%, transparent);
+  color: var(--research-accent);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.research-quick-saves__select-visible[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--research-accent) 15%, transparent);
+}
 .research-quick-saves__search {
   margin-left: auto;
   max-width: 220px;
