@@ -200,6 +200,43 @@ test("pending and postbuild budgets are reported without failing the run", () =>
   assert.equal(evaluation.enforcedCount, 0);
 });
 
+/**
+ * The workload the enforced limits were approved against.
+ *
+ * A budget's `source` ties it to a profile by NAME, and the name survives any
+ * edit to what that profile contains. Shrinking `phase-6-list-10k` to 200
+ * conversations and running the report reproduced the exact line this catalogue
+ * exists to prevent — `10k conversation list, cold metadata scan p95 | 30.07 ms
+ * | ≤ 3000.00 ms | pass`, with `budgetPass: true`, `status: "pass"` and exit 0
+ * — because the benchmark still reported `profile: "phase-6-list-10k"`.
+ *
+ * Neither existing guard can see that. The profile check compares names, and
+ * the swept-dimension stamp only watches `CAVE_BENCH_*` overrides; a committed
+ * fixture edit trips neither. The scale is therefore as much a part of the
+ * approved budget as the limit is, and is pinned here so shrinking the fixture
+ * costs a deliberate edit instead of a silently green nightly.
+ */
+const SEEDED_WORKLOAD = { fileCount: 10_000, transcriptBytes: 4_096 };
+
+test("the seeded fixture still describes the workload the limits were approved for", async () => {
+  const fixtures = JSON.parse(
+    await readFile(new URL("../../fixtures/phase-6/performance-fixtures.json", import.meta.url), "utf8"),
+  ) as { profiles: Record<string, Record<string, unknown>> };
+  const profileNames = enforcedFixtureProfiles();
+  assert.equal(profileNames.length, 1, "the enforced budgets must agree on one profile");
+  const [profileName] = profileNames;
+  const profile = fixtures.profiles?.[profileName];
+  assert.ok(profile, `the fixture file defines no ${profileName} profile`);
+  for (const [key, expected] of Object.entries(SEEDED_WORKLOAD)) {
+    assert.equal(
+      profile[key],
+      expected,
+      `${profileName}.${key} is ${JSON.stringify(profile[key])}, but every enforced limit was ` +
+        `seeded against ${expected} — reseed the limits in the same commit or restore the fixture`,
+    );
+  }
+});
+
 const SEEDED_MEASUREMENTS = [
   { id: "conversation-list.cold-scan.p95-ms", value: 1_039.39 },
   { id: "conversation-list.cold-scan.bytes", value: 43_608_890 },

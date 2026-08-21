@@ -110,6 +110,21 @@ which matches no catalogue entry, so the enforced budgets read `unmeasured` and
 the run fails. A value equal to the profile's changes nothing and is not a
 sweep.
 
+**What the profile *contains* is pinned as well, because neither guard above
+watches it.** A budget's `source` names its profile by name, and a name survives
+any edit to the profile's contents: shrinking `phase-6-list-10k` to 200
+conversations still reports `profile: "phase-6-list-10k"`, so the name check
+matches, no `CAVE_BENCH_*` override exists to stamp, and the report prints
+
+```text
+| list | 10k conversation list, cold metadata scan p95 | 30.07 ms | ≤ 3000.00 ms | 99.0% | pass |
+```
+
+with `budgetPass: true` and exit 0 — the same certified-smoke-run defect,
+reached through a third door. `src/lib/performance-budgets.test.ts` therefore
+pins the seeded `fileCount` and `transcriptBytes`, so re-scaling the fixture
+costs a deliberate edit that has to reseed the limits in the same commit.
+
 ```bash
 CAVE_BENCH_PROFILE=phase-6-list-10k pnpm bench:conversation-list
 pnpm performance:report            # evaluates the catalogue, exits 1 on a breach
