@@ -337,9 +337,19 @@ function readString(value) {
   return typeof value === "string" ? value : "";
 }
 
-/** Show a value as it sits in the file, so an array does not print as its contents. */
+/**
+ * Show a value as it sits in the file, so an array does not print as its
+ * contents. Total on purpose: `JSON.stringify` throws on a cycle or a BigInt,
+ * and this feeds an error message inside a function that documents itself as
+ * always returning its problems rather than throwing one.
+ */
 function show(value) {
-  return typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 export function formatReport(result) {

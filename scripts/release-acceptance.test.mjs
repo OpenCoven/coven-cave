@@ -227,6 +227,16 @@ test("a deeply nested record is reported on rather than overflowing the stack", 
   const cyclic = { notes: {} };
   cyclic.notes.parent = cyclic;
   assert.deepEqual(findSecrets(cyclic), [], "a cycle terminates the walk instead of running until the stack dies");
+
+  // The same argument reaches the error messages: they print the offending
+  // value, and JSON.stringify throws on a cycle. validateAcceptanceRecord
+  // documents itself as returning its problems rather than throwing one.
+  const cyclicRecord = passingRecord();
+  cyclicRecord.candidate.version = cyclic;
+  cyclicRecord.runs[0].os = cyclic;
+  const cyclicResult = validateAcceptanceRecord(cyclicRecord);
+  assert.notEqual(cyclicResult.status, "complete", "a candidate version that is not a string is not a version");
+  assert.ok(cyclicResult.errors.length > 0, "the problems come back as a list, not as a thrown TypeError");
 });
 
 test("a word wrapped in an array is not the word", () => {
