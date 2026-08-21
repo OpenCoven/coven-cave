@@ -768,6 +768,9 @@ jobs:
             local output_name
             output_name="$(printf '%s' "$label" | tr '[:lower:]' '[:upper:]')"
             echo "IOS_PROFILE_PATH_${output_name}=$PROFILE_DIR/${uuid}.mobileprovision" >> "$GITHUB_ENV"
+            # The archive signs manually against this exact profile, addressed
+            # by UUID so a profile rename cannot silently repoint the build.
+            echo "IOS_PROFILE_UUID_${output_name}=$uuid" >> "$GITHUB_ENV"
           }
           install_profile "$IOS_APP_PROVISIONING_PROFILE_BASE64" app ai.opencoven.cave
           install_profile "$IOS_WIDGET_PROVISIONING_PROFILE_BASE64" widget ai.opencoven.cave.widgets
@@ -779,12 +782,42 @@ jobs:
         working-directory: apps/ios/CovenCave
         shell: bash
         env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           ARCHIVE_PATH="$RUNNER_TEMP/CovenCave.xcarchive"
           EXPORT_PATH="$RUNNER_TEMP/CovenCave-TestFlight"
           EXPORT_OPTIONS_PATH="$RUNNER_TEMP/CovenCave-ExportOptions.plist"
+          # Sign manually against the App Store profiles the previous step
+          # installed and validated. Automatic signing is not available here:
+          # xcodebuild treats it as disabled unless it is told to update
+          # provisioning, and when it is told to, Apple answers the handshake
+          # with
+          #   Communication with Apple failed: ... (401) for URL
+          #   https://appstoreconnect.apple.com/xcbuild/.../listTeams.action
+          # because the App Store Connect key is user-scoped
+          # (vars.APPLE_API_KEY_SUBJECT=user) and cannot perform team
+          # operations. Manual signing needs no Apple round-trip at all.
+          #
+          # CODE_SIGN_STYLE and the identity are the same for both targets, so
+          # they pass as ordinary build settings. The profile is NOT — the app
+          # and the widget need different ones — so each target reads its own
+          # user-defined setting, declared in apps/ios/CovenCave/project.yml.
+          for required in IOS_PROFILE_UUID_APP IOS_PROFILE_UUID_WIDGET; do
+            [ -n "${!required:-}" ] || {
+              echo "::error::$required is required; the signing-asset step must run first"
+              exit 1
+            }
+          done
+          SIGNING_ARGS=(
+            CODE_SIGN_STYLE=Manual
+            CODE_SIGN_IDENTITY="Apple Distribution"
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+            CAVE_IOS_APP_PROFILE="$IOS_PROFILE_UUID_APP"
+            CAVE_IOS_WIDGET_PROFILE="$IOS_PROFILE_UUID_WIDGET"
+          )
           cat > "$EXPORT_OPTIONS_PATH" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -795,9 +828,18 @@ jobs:
             <key>method</key>
             <string>app-store-connect</string>
             <key>signingStyle</key>
-            <string>automatic</string>
+            <string>manual</string>
             <key>teamID</key>
             <string>$APPLE_TEAM_ID</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>ai.opencoven.cave</key>
+              <string>$IOS_PROFILE_UUID_APP</string>
+              <key>ai.opencoven.cave.widgets</key>
+              <string>$IOS_PROFILE_UUID_WIDGET</string>
+            </dict>
           </dict>
           </plist>
           PLIST
@@ -807,6 +849,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$ARCHIVE_PATH" \
+            "${SIGNING_ARGS[@]}" \
             archive
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
@@ -1780,6 +1823,24 @@ jobs:
           if [ "$count" -lt 4 ]; then
             echo "::warning::latest.json has only $count/4 platforms — some platforms lack a signed artifact (auto-update unavailable for those)."
           fi
+
+      # cave-gcb0i: the platform count above proves the manifest is non-empty,
+      # not that a shipped client would ACCEPT it. If the signing key ever
+      # drifts from the pubkey pinned in src-tauri/tauri.conf.json, every
+      # signature here is well-formed, the count is 4/4, and every installed
+      # app rejects the update — a wholly green release that ships a dead
+      # updater. This downloads each artifact and verifies its minisign
+      # signature against that pinned pubkey, which is the exact gate the
+      # updater enforces. Runs before the upload so a manifest that fails
+      # verification is never published.
+      - name: Verify updater signatures against the pinned pubkey
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-release-updater.mjs \
+            --manifest latest.json \
+            --tag "$RELEASE_TAG" \
+            --allow-partial
 
       - name: Upload latest.json to GitHub Release
         shell: bash

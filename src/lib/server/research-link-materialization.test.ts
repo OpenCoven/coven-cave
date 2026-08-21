@@ -166,18 +166,24 @@ test("saved Article author display-name falls back to the X username", async () 
   );
 });
 
-test("missing and non-Article saved links are rejected safely", async () => {
+test("ordinary saved links become candidate web sources without source files", async () => {
   const workspace = await createResearchMissionWorkspace(mission("missing-article"));
   const nonArticle = await saveResearchLinks(["https://example.com/reference"], "desk");
 
   await assert.rejects(
     () => materializeSavedLinkForMission(workspace, "missing-link"),
-    { message: "saved X Article not found" },
+    { message: "saved link not found" },
   );
-  await assert.rejects(
-    () => materializeSavedLinkForMission(workspace, nonArticle.added[0]!.id),
-    { message: "saved X Article not found" },
-  );
+  const materialized = await materializeSavedLinkForMission(workspace, nonArticle.added[0]!.id);
+  assert.deepEqual(materialized.source, {
+    id: materialized.source.id,
+    title: nonArticle.added[0]!.title,
+    url: "https://example.com/reference",
+    sourceType: "web",
+    status: "candidate",
+  });
+  assert.match(materialized.source.id, /^saved-[a-f0-9]{24}$/);
+  await materialized.rollback();
 });
 
 test("rollback restores exact overwritten contents and only removes the newly-created source file", async () => {

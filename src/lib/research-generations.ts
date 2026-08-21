@@ -15,7 +15,9 @@
 
 import {
   isValidElevenLabsModelId,
+  isValidElevenLabsSeed,
   validateElevenLabsVoiceSettings,
+  ELEVENLABS_MAX_SEED,
   type ElevenLabsVoiceSettings,
 } from "./voice/elevenlabs-shared.ts";
 
@@ -160,6 +162,12 @@ export type ResearchMediaRenderConfig = {
    * them verbatim.
    */
   voiceSettings?: ElevenLabsVoiceSettings;
+  /**
+   * Podcast only (ElevenLabs): pins provider sampling so re-rendering the same
+   * script is reproducible and two renders stay comparable. Absent means the
+   * provider samples freely, which is the previous behaviour.
+   */
+  seed?: number;
 };
 
 export type ResearchGenerationProgress = {
@@ -280,6 +288,22 @@ export function validateResearchMediaRenderConfig(
     }
     voiceSettings = normalized;
   }
+  let seed: number | undefined;
+  if (value.seed !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast seed is only valid for podcasts" };
+    }
+    if (value.provider !== "elevenlabs") {
+      return { ok: false, error: "podcast seed is only valid for the ElevenLabs provider" };
+    }
+    if (!isValidElevenLabsSeed(value.seed)) {
+      return {
+        ok: false,
+        error: `podcast seed must be an integer between 0 and ${ELEVENLABS_MAX_SEED}`,
+      };
+    }
+    seed = value.seed;
+  }
   return {
     ok: true,
     value: {
@@ -290,6 +314,7 @@ export function validateResearchMediaRenderConfig(
       ...(style ? { style } : {}),
       ...(model ? { model } : {}),
       ...(voiceSettings ? { voiceSettings } : {}),
+      ...(seed !== undefined ? { seed } : {}),
     },
   };
 }
