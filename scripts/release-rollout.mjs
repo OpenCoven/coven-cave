@@ -260,8 +260,13 @@ export function evaluateRolloutGate(state) {
   // `stable-100`, whose required window is 0, it was the difference between
   // holding and advancing on a window nobody watched.
   const observedHours = state.observedHours;
-  if (typeof observedHours !== "number" || !Number.isFinite(observedHours) || observedHours < 0) {
+  if (typeof observedHours !== "number" || !Number.isFinite(observedHours)) {
     hold("observedHours is not recorded");
+  } else if (observedHours < 0) {
+    // Distinct from the above on purpose: -5 IS recorded, and telling an
+    // operator staring at it that nothing was recorded sends them looking for
+    // a missing field instead of at the one in front of them.
+    hold(`observedHours ${observedHours} is not a length of time, so nothing was observed`);
   } else if (observedHours < stage.minObservationHours) {
     hold(`stage '${stage.id}' has been observed ${observedHours}h of the required ${stage.minObservationHours}h`);
   }

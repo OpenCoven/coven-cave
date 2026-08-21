@@ -323,6 +323,14 @@ test("a failing canary or a short window holds the current stage", () => {
     );
     assert.match(detailsOf(result), /observedHours is not recorded/, "the gap is reported as a gap, not as zero hours");
   }
+
+  const negative = evaluateRolloutGate(greenState({ stage: "stable-100", observedHours: -5 }));
+  assert.equal(negative.decision, "hold", "a window that ran backwards is a broken clock, not an elapsed window");
+  assert.match(
+    detailsOf(negative),
+    /is not a length of time/,
+    "-5 IS recorded; calling it unrecorded sends the operator hunting for a missing field instead of the one in front of them",
+  );
 });
 
 test("rollout may not start before acceptance and rollback readiness are proven", () => {

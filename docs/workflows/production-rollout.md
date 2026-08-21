@@ -109,6 +109,12 @@ health on a counter, breaking the rule above in both directions at once. A
 `regressions` value that is not an array holds for the same reason: a list this
 gate cannot read is not an absence of regressions.
 
+`observedHours` is held to the same standard as a metric, and it is the field
+where it matters most: it must be a non-negative JSON number, or the gate holds
+with `observedHours is not recorded`. `stable-100` requires zero hours, so
+`null` coercing to `0` was the difference between holding and advancing the
+whole install base on a window nobody watched.
+
 The same rule covers the fields that are words rather than numbers.
 `acceptance.status` and each canary result must be a JSON string; anything else
 reads as `unreadable` and holds, because `["complete"]` coerces to `"complete"`
