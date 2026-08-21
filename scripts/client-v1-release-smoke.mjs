@@ -39,6 +39,27 @@ export function packageVersion(root = repositoryRoot) {
   return manifest.version;
 }
 
+/**
+ * The versions a release build must answer with, read from the reviewed
+ * fixture rather than repeated as literals here.
+ *
+ * `minimumClientVersion` is the field that decides whether a client may pair at
+ * all, so a release carrying a lower one silently admits clients the contract
+ * rejects — exactly the release-only break this script exists to catch, and
+ * invisible to a "non-empty string" check. The fixture is the deterministic
+ * serialisation of contract.ts and is sha256-gated, so reading it keeps this
+ * script honest without importing TypeScript into a plain .mjs probe.
+ */
+export function contractExpectations(root = repositoryRoot) {
+  const fixture = JSON.parse(
+    readFileSync(path.join(root, "src", "lib", "server", "client-v1", "contract-fixture.json"), "utf8"),
+  );
+  return {
+    apiVersion: fixture.contract.apiVersion,
+    minimumClientVersion: fixture.contract.minimumClientVersion,
+  };
+}
+
 export function parseOrigin(argv) {
   const index = argv.indexOf("--origin");
   if (index === -1) return DEFAULT_ORIGIN;
@@ -71,8 +92,8 @@ export function checkHealthEnvelope(envelope, expected) {
   record(envelope.error === undefined, "health response carries an error envelope");
   record(envelope.apiVersion === expected.apiVersion, `apiVersion is ${JSON.stringify(envelope.apiVersion)}, expected ${JSON.stringify(expected.apiVersion)}`);
   record(
-    typeof envelope.minimumClientVersion === "string" && envelope.minimumClientVersion.length > 0,
-    "minimumClientVersion is missing or empty",
+    envelope.minimumClientVersion === expected.minimumClientVersion,
+    `minimumClientVersion is ${JSON.stringify(envelope.minimumClientVersion)}, expected ${JSON.stringify(expected.minimumClientVersion)}`,
   );
   record(
     Array.isArray(envelope.capabilities) && envelope.capabilities.length > 0,
@@ -116,7 +137,7 @@ async function readHealth(origin) {
 
 async function main(argv) {
   const origin = parseOrigin(argv);
-  const expected = { apiVersion: "1.0", releaseVersion: packageVersion() };
+  const expected = { ...contractExpectations(), releaseVersion: packageVersion() };
 
   console.log(`client-v1-release-smoke: probing ${origin}${CLIENT_V1_HEALTH_PATH}`);
   const first = await readHealth(origin);

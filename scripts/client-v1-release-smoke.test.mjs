@@ -7,11 +7,12 @@ import {
   DEFAULT_ORIGIN,
   checkHealthEnvelope,
   checkInstanceStability,
+  contractExpectations,
   packageVersion,
   parseOrigin,
 } from "./client-v1-release-smoke.mjs";
 
-const expected = { apiVersion: "1.0", releaseVersion: "0.3.6" };
+const expected = { apiVersion: "1.0", minimumClientVersion: "0.1.0", releaseVersion: "0.3.6" };
 
 function healthEnvelope(overrides = {}, dataOverrides = {}) {
   return {
@@ -43,6 +44,27 @@ test("reports every broken field in one run", () => {
   assert.equal(failures.some((entry) => entry.includes("apiVersion")), true);
   assert.equal(failures.some((entry) => entry.includes("capabilities")), true);
   assert.equal(failures.some((entry) => entry.includes("releaseVersion")), true);
+});
+
+test("catches a release that admits clients the contract rejects", () => {
+  // A non-empty check passed this: minimumClientVersion decides whether a
+  // client may pair at all, so a build carrying a lower one lets every too-old
+  // client through while the smoke reports ok.
+  const failures = checkHealthEnvelope(healthEnvelope({ minimumClientVersion: "0.0.1" }), expected);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /minimumClientVersion is "0\.0\.1", expected "0\.1\.0"/);
+  assert.equal(checkHealthEnvelope(healthEnvelope({ minimumClientVersion: "" }), expected).length, 1);
+});
+
+test("reads the expected versions from the reviewed contract fixture", () => {
+  // Literals here would drift the moment contract.ts changed and nothing would
+  // say so. The fixture is sha256-gated, so it cannot change unreviewed.
+  const fixture = JSON.parse(readFileSync(new URL("../src/lib/server/client-v1/contract-fixture.json", import.meta.url), "utf8"));
+  assert.deepEqual(contractExpectations(), {
+    apiVersion: fixture.contract.apiVersion,
+    minimumClientVersion: fixture.contract.minimumClientVersion,
+  });
+  assert.deepEqual(checkHealthEnvelope(healthEnvelope(), { ...contractExpectations(), releaseVersion: "0.3.6" }), []);
 });
 
 test("catches an unstamped release version", () => {
