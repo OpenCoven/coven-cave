@@ -11,9 +11,16 @@ export type MaterializedSavedLink = {
   rollback(): Promise<void>;
 };
 
-function savedLinkDigest(savedLinkId: string, contentSha256: string): string {
+function savedXArticleDigest(savedLinkId: string, contentSha256: string): string {
   return createHash("sha256")
     .update(`saved-x-article:${savedLinkId}\n${contentSha256}`)
+    .digest("hex")
+    .slice(0, 24);
+}
+
+function savedLinkReferenceDigest(savedLinkId: string, url: string): string {
+  return createHash("sha256")
+    .update(`saved-link:${savedLinkId}\n${url}`)
     .digest("hex")
     .slice(0, 24);
 }
@@ -54,9 +61,24 @@ export async function materializeSavedLinkForMission(
   savedLinkId: string,
 ): Promise<MaterializedSavedLink> {
   const savedLink = await getSavedLinkById(savedLinkId);
-  if (!savedLink?.xArticle) throw new Error("saved X Article not found");
+  if (!savedLink) throw new Error("saved link not found");
 
-  const digest = savedLinkDigest(savedLink.id, savedLink.xArticle.contentSha256);
+  if (!savedLink.xArticle) {
+    const digest = savedLinkReferenceDigest(savedLink.id, savedLink.url);
+    return {
+      source: {
+        id: `saved-${digest}`,
+        title: savedLink.title,
+        url: savedLink.url,
+        sourceType: savedLink.paper ? "paper" : "web",
+        ...(savedLink.paper?.publishedAt ? { publishedAt: savedLink.paper.publishedAt } : {}),
+        status: "candidate",
+      },
+      rollback: async () => {},
+    };
+  }
+
+  const digest = savedXArticleDigest(savedLink.id, savedLink.xArticle.contentSha256);
   const fileName = `x-article-${digest}.md`;
   const labels = authorLabel(savedLink.xArticle.author);
   const written = await writeResearchMissionSourceFile(

@@ -155,29 +155,18 @@ test("the enhance route contract matches what Improve sends", () => {
   assert.equal(bad.ok, false);
 });
 
-// ── Quick saves: attach state → candidate sources on the new mission ─────────
+// ── Quick saves: selected resources are part of the launch contract ──────────
 
-test("quick saves materialize saved Articles and attach ordinary sources via the ledger", () => {
+test("quick saves are included in mission creation before the run starts", () => {
   // Rows are real toggles; chips render with a remove affordance.
   assert.match(promptTab, /aria-pressed=\{isAttached\}/);
   assert.match(promptTab, /useResearchLinks\(\)/);
-  assert.match(composer, /Related context \(\{attachedLinks\.length\}\):/);
+  assert.match(composer, /Resources ready for first pass \(\{attachedLinks\.length\}\):/);
   assert.match(composer, /onRemoveAttached\?\.\(link\.id\)/);
-  // After start, Article quick saves materialize from their saved-link record;
-  // ordinary links retain the evidence ledger's attach-source action.
-  assert.match(
-    promptTab,
-    /if \(link\.xArticle\) \{\s*const attach = await research\.act\(result\.mission\.id, \{\s*action: "attach-saved-link",\s*savedLinkId: link\.id,\s*familiarId: result\.mission\.familiarId,/,
-  );
-  assert.match(
-    promptTab,
-    /const attach = await research\.act\(result\.mission\.id, \{\s*action: "attach-source"/,
-  );
-  assert.match(promptTab, /sourceType: "web"/);
-  assert.match(promptTab, /status: "candidate"/);
-  // Attach happens before the desk hand-off, and the hand-off follows the
-  // mission (the pre-redesign contract).
-  const attachIndex = promptTab.indexOf('action: "attach-source"');
+  assert.match(promptTab, /research\.start\(\{\s*\.\.\.input,\s*savedLinkIds: attached\.map\(\(link\) => link\.id\),\s*\}\)/);
+  assert.doesNotMatch(promptTab, /action: "attach-saved-link"/);
+  assert.doesNotMatch(promptTab, /action: "attach-source"/);
+  const attachIndex = promptTab.indexOf("savedLinkIds: attached.map");
   const navigateIndex = promptTab.indexOf(
     'onNavigate("desk", { missionId: result.mission.id })',
     attachIndex,
@@ -187,27 +176,13 @@ test("quick saves materialize saved Articles and attach ordinary sources via the
   assert.match(promptTab, /All in Resources →/);
 });
 
-test("a failed attach never abandons a started mission", () => {
-  // Once start() succeeds the spend is committed — the desk hand-off ALWAYS
-  // happens. Attach failures are collected without aborting the loop and
-  // surface as a partial-failure announcement, never as a generic "could not
-  // start" that invites a duplicate-spend retry.
-  assert.match(promptTab, /let failedAttaches = 0/);
-  assert.match(promptTab, /\.catch\(\(\) => \(\{ ok: false as const \}\)\)/);
-  assert.match(promptTab, /if \(!attach\.ok\) failedAttaches \+= 1/);
-  assert.match(promptTab, /useAnnouncer/);
-  assert.match(
-    promptTab,
-    /Mission started — \$\{failedAttaches\} link\$\{failedAttaches === 1 \? "" : "s"\} failed to attach\./,
-  );
-  // The announcement happens before the hand-off, and the hand-off is inside
-  // the success branch but outside any per-link condition.
-  const announceIndex = promptTab.indexOf("failed to attach.");
-  const navigateIndex = promptTab.indexOf(
-    'onNavigate("desk", { missionId: result.mission.id })',
-    announceIndex,
-  );
-  assert.ok(announceIndex !== -1 && navigateIndex !== -1 && announceIndex < navigateIndex);
+test("quick saves support search-scoped bulk selection without losing hidden picks", () => {
+  assert.match(promptTab, /updateVisibleQuickSaveSelection\(links\.links, current, visibleLinks\)/);
+  assert.match(promptTab, /visibleResultLabel = `\$\{visibleLinks\.length\} \$\{visibleLinks\.length === 1 \? "result" : "results"\}`/);
+  assert.match(promptTab, /`Clear \$\{visibleResultLabel\}`/);
+  assert.match(promptTab, /`Select all \$\{visibleResultLabel\}`/);
+  assert.match(promptTab, /Selected resources are included before the first research pass starts\./);
+  assert.match(promptTab, /announce\(`\$\{action\} \$\{visibleResultLabel\}\.`\)/);
 });
 
 // ── Contextual next topics: bounded GET, explicit actions, no draft refresh ─

@@ -11,9 +11,9 @@
  * the frame's shape, and the reason the intake itself no longer has to compete
  * with a permanently-open list. Rows toggle an attach state that renders as
  * "Related context" chips inside the composer card. On Start research the
- * mission is created first, then ordinary links become `candidate` sources
- * while saved Articles materialize through their immutable saved-link action,
- * and the desk opens on the new mission.
+ * selected IDs cross the creation boundary, so ordinary links and saved
+ * Articles are persisted before the first run begins and the desk opens on
+ * the new mission.
  *
  * Grouping is REAL data only: a "✦ Suggested for this prompt" group matched
  * against the live draft, then one group per saved-link category, then the
@@ -50,7 +50,11 @@ import type {
 } from "@/lib/research-topic-recommendations";
 import { relativeTime } from "@/lib/relative-time";
 import { useAgenticRecommendations } from "@/lib/use-agentic-recommendations";
-import { matchSavedLinks, type QuickSaveGroup } from "./research-quick-saves";
+import {
+  matchSavedLinks,
+  updateVisibleQuickSaveSelection,
+  type QuickSaveGroup,
+} from "./research-quick-saves";
 import {
   createRecommendedResearchMissionInput,
   ResearchMissionComposer,
@@ -215,6 +219,14 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
     () => matchSavedLinks(visibleLinks, draft),
     [visibleLinks, draft],
   );
+  const allVisibleAttached = visibleLinks.length > 0
+    && visibleLinks.every((link) => attached.some((entry) => entry.id === link.id));
+  const visibleResultLabel = `${visibleLinks.length} ${visibleLinks.length === 1 ? "result" : "results"}`;
+  const toggleVisibleLinks = () => {
+    const action = allVisibleAttached ? "Cleared" : "Selected";
+    setAttached((current) => updateVisibleQuickSaveSelection(links.links, current, visibleLinks));
+    announce(`${action} ${visibleResultLabel}.`);
+  };
 
   const onDraftChange = useCallback((next: string) => setDraft(next), []);
 
@@ -451,40 +463,12 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
             onDraftChange={onDraftChange}
             onOpenResources={() => onNavigate("resources")}
             onStart={async (input) => {
-              const result = await research.start(input);
+              const result = await research.start({
+                ...input,
+                savedLinkIds: attached.map((link) => link.id),
+              });
               if (result.ok) {
-                // Saved Articles must materialize their persisted body; ordinary
-                // links retain the evidence ledger's candidate-source action.
-                // A failed attach is non-fatal: the mission exists (and its spend
-                // is committed), so failures never abort the desk hand-off.
-                let failedAttaches = 0;
-                for (const link of attached) {
-                  if (link.xArticle) {
-                    const attach = await research.act(result.mission.id, {
-                      action: "attach-saved-link",
-                      savedLinkId: link.id,
-                      familiarId: result.mission.familiarId,
-                    }).catch(() => ({ ok: false as const }));
-                    if (!attach.ok) failedAttaches += 1;
-                    continue;
-                  }
-                  const attach = await research.act(result.mission.id, {
-                    action: "attach-source",
-                    source: {
-                      id: `link-${link.id}`,
-                      title: link.title,
-                      url: link.url,
-                      sourceType: "web",
-                      status: "candidate",
-                    },
-                  }).catch(() => ({ ok: false as const }));
-                  if (!attach.ok) failedAttaches += 1;
-                }
                 setAttached([]);
-                if (failedAttaches > 0) {
-                  announce(`Mission started — ${failedAttaches} link${failedAttaches === 1 ? "" : "s"} failed to attach.`);
-                }
-                // A freshly started mission lives on the Desk — follow it there.
                 onNavigate("desk", { missionId: result.mission.id });
               }
               return result;
@@ -582,8 +566,20 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
           <div className="research-quick-saves__head">
             <strong>Quick saves</strong>
             <span className="research-quick-saves__count">
-              tap to attach as context for this investigation
+              Selected resources are included before the first research pass starts.
             </span>
+            {visibleLinks.length > 0 ? (
+              <button
+                type="button"
+                className="research-quick-saves__all focus-ring"
+                aria-pressed={allVisibleAttached}
+                onClick={toggleVisibleLinks}
+              >
+                {allVisibleAttached
+                  ? `Clear ${visibleResultLabel}`
+                  : `Select all ${visibleResultLabel}`}
+              </button>
+            ) : null}
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -679,7 +675,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
         </button>
         {attached.length > 0 ? (
           <span className="research-quick-saves__attached">
-            {attached.length} attached to this run
+            {attached.length} ready for the first pass
           </span>
         ) : null}
         <span className="research-quick-saves__origin">
