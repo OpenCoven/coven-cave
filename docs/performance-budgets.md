@@ -207,8 +207,9 @@ matches, no `CAVE_BENCH_*` override exists to stamp, and the report prints
 
 with `budgetPass: true` and exit 0 — the same certified-smoke-run defect,
 reached through a third door. `src/lib/performance-budgets.test.ts` therefore
-pins the seeded `fileCount` and `transcriptBytes`, so re-scaling the fixture
-costs a deliberate edit that has to reseed the limits in the same commit.
+pins the seeded `fileCount`, `transcriptBytes` and `iterations`, so re-scaling
+the fixture costs a deliberate edit that has to reseed the limits in the same
+commit.
 
 ```bash
 CAVE_BENCH_PROFILE=phase-6-list-10k pnpm bench:conversation-list

@@ -338,8 +338,8 @@ export type PerformanceBudgetEvaluationOptions = {
  * The fixture profile a `performance-report` budget was seeded against.
  *
  * The profile half of `<fixture file>#<profile>` is what makes the number mean
- * anything: "10k conversation list, cold scan p95 ≤ 3,000 ms" says nothing
- * whatsoever about a hundred-conversation run.
+ * anything: "10k conversation list, cold metadata scan median ≤ 5,000 ms" says
+ * nothing whatsoever about a hundred-conversation run.
  */
 export function budgetFixtureProfile(budget: PerformanceBudget): string | null {
   if (budget.gate !== "performance-report") return null;
