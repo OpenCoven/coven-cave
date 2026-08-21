@@ -197,9 +197,16 @@ const reportedRefusals = new Set<string>();
  * to enforce it. Measured on Node 24, 32 keys over equal-sized values: 1 MiB
  * values retained 32 MiB, 4 MiB retained 128 MiB, 8 MiB retained 256 MiB,
  * scaling with the value and not with the limit, against 0 MiB once copied.
- * Concatenating and re-slicing forces the flatten that copies; `.repeat(1)`
- * and `.normalize()` look equivalent and are not, both fast-pathing back to
- * the receiver with the parent pointer intact.
+ * Concatenating and re-slicing forces the flatten that copies. `.repeat(1)`
+ * and `.slice(0)` look equivalent and are not: both fast-path back to the
+ * receiver with the parent pointer intact, measured still retaining 28 of 32
+ * MiB offered. `.normalize()` does happen to copy on Node 24 — measured 0 MiB
+ * — but it is not the thing to reach for either, because that copy is
+ * incidental. It is a Unicode normalization whose contract is about the
+ * *content* of the result and not its storage, and ECMA-402 permits returning
+ * the receiver for a string already in the requested form, which is exactly
+ * what these keys are. Depend on the flatten, which is the operation actually
+ * being asked for.
  *
  * And it happens too late. Truncating *after* the concatenation still builds
  * the joined string first, which flattens a full copy of the value on every
