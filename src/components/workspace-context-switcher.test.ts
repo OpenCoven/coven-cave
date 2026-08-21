@@ -41,11 +41,19 @@ assert.ok(projectIndex < familiarIndex, "project picker renders before familiar 
 // ── No raw 10px gaps — spacing must use tokens ──────────────────────────────
 assert.doesNotMatch(css, /\bgap:\s*10px\b/, "CSS gap uses spacing tokens, not raw 10px");
 
-// ── Crew border is exactly the plan recipe ───────────────────────────────────
+// ── Crew trigger is the same 1px box as the project trigger, quiet until hover ─
+// The rail chrome refresh (#4791) moved the crew trigger to the same quiet box as
+// the project trigger: a 1px hairline border at rest, with the accent-presence
+// color-mix reserved for hover. Pin both halves so neither can drift back.
 assert.match(
   css,
-  /border: 1px solid color-mix\(in oklch, var\(--accent-presence\) 38%, var\(--border-hairline\)\)/,
-  "crew trigger border uses exact 1px color-mix recipe",
+  /\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[^}]*border: 1px solid var\(--border-hairline\);/,
+  "crew trigger rests on a 1px hairline border",
+);
+assert.match(
+  css,
+  /\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled:hover \{[^}]*background: color-mix\(in oklch, var\(--accent-presence\) 20%, transparent\);\s*border-color: var\(--accent-presence\);/,
+  "crew trigger hover uses the accent-presence color-mix recipe",
 );
 
 // ── Collapsed caret selector targets the stable class, not a generated icon class ──
