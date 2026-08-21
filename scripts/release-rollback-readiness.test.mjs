@@ -432,10 +432,19 @@ test("rollout is gated on rollback readiness before the updater moves anyone", a
   assert.equal(job.name, "Verify rollback readiness");
   assert.equal(job.needs, "authorize-release-promotion");
   assert.deepEqual(job.permissions, { contents: "read" });
-  assert.match(
-    job.steps.map((step) => step.run ?? "").join("\n"),
-    /node scripts\/release-rollback-readiness\.mjs/,
+  const gateStep = job.steps.find((step) => /release-rollback-readiness\.mjs/.test(step.run ?? ""));
+  assert.ok(gateStep, "the job must actually run the gate");
+  assert.equal(gateStep.run.trim(), "node scripts/release-rollback-readiness.mjs");
+  // The waiver asserts that no prior release exists at all. CI can never know
+  // that, and it is the one flag that turns this job into a no-op, so its
+  // absence from the workflow is the property worth pinning rather than
+  // rechecking by eye.
+  assert.doesNotMatch(
+    JSON.stringify(job),
+    /--allow-missing-baseline/,
+    "the first-release waiver is a hand-run escape hatch, never a CI default",
   );
+  assert.deepEqual(Object.keys(gateStep.env ?? {}).sort(), ["GITHUB_TOKEN", "RELEASE_TAG"]);
   const updater = release_.jobs["updater-manifest"];
   assert.ok(
     updater.needs.includes("rollback-readiness"),
