@@ -176,7 +176,13 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // documented convention above, 615 is the smallest ceiling that clears the 2%
 // THIN threshold here (13.2 KiB / 2.1% headroom) for this one-time addition;
 // this is a ceiling for this feature's CSS, not a licence for the next one.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 615) * 1024;
+// RAISED root 615→630 (2026-08-21, cave-x4kt4): #4791 added the globally
+// mounted desktop terminal focus carousel and refreshed shell context controls;
+// d272ed0 added the chat/sidebar PR-state badge variants. After coalescing the
+// duplicate draft/unknown selectors, the measured root payload is 630,447 B,
+// 687 B above the old ceiling. 630 KiB is the smallest rounded ceiling that
+// restores the documented 2% headroom (14.7 KiB / 2.3%).
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 630) * 1024;
 const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {

@@ -58,9 +58,7 @@
 .chat-list-pr-badge[data-pr-state="closed"] {
   color: var(--color-danger);
 }
-.chat-list-pr-badge[data-pr-state="draft"] {
-  color: var(--text-muted);
-}
+.chat-list-pr-badge[data-pr-state="draft"],
 .chat-list-pr-badge[data-pr-state="unknown"] {
   color: var(--text-muted);
 }

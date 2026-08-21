@@ -906,9 +906,7 @@
 .cnav__pr-badge[data-pr-state="closed"] {
   color: var(--color-danger);
 }
-.cnav__pr-badge[data-pr-state="draft"] {
-  color: var(--text-muted);
-}
+.cnav__pr-badge[data-pr-state="draft"],
 .cnav__pr-badge[data-pr-state="unknown"] {
   color: var(--text-muted);
 }
