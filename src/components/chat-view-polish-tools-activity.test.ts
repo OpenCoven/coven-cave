@@ -280,7 +280,7 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /\{!turn\.pending && turn\.tools\?\.length && editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  /\{!pending && turn\.tools\?\.length && editCards\.length[\s\S]{0,500}?editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
   "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
 );
 assert.match(
@@ -295,8 +295,8 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup[\s\S]*?<MessageBubble[\s\S]*editCards=\{\s*editCards\.length/,
-  "TurnRowImpl source order: otherTools ToolGroup precedes MessageBubble; editCards section follows MessageBubble — the two sections are separate and in their current intended positions",
+  /const activityDetails =[\s\S]*?<ToolGroup tools=\{otherTools\}[\s\S]*?const supplementaryContent =[\s\S]*?cave-edit-cards[\s\S]*?<MessageBubble[\s\S]*?<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+  "TurnRowImpl keeps collapsed tool activity and visible edit cards in separate response slots",
 );
 
 assert.match(
