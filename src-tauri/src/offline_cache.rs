@@ -177,11 +177,17 @@ pub(super) struct OfflineCacheReadResult {
     pub(super) purged: bool,
 }
 
+/// Occupancy and recent faults, for diagnostics.
+///
+/// Deliberately no instance id. It is a stable per-install identifier and
+/// nothing in the UI needs one — a diagnostic answers "how full, and what has
+/// gone wrong", neither of which requires naming the install. Handing the
+/// webview a durable fingerprint it never asked for is a cost with no
+/// corresponding use.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct OfflineCacheStatus {
     pub(super) schema_version: u16,
-    pub(super) instance_id: String,
     pub(super) entries: usize,
     pub(super) bytes: u64,
     pub(super) max_entries: usize,
@@ -1036,17 +1042,12 @@ pub(super) fn offline_cache_clear(
 pub(super) fn offline_cache_status(
     state: tauri::State<'_, Arc<OfflineCacheState>>,
 ) -> Result<OfflineCacheStatus, String> {
-    let (instance_id, entries, bytes) = state.with_context(|context| {
+    let (entries, bytes) = state.with_context(|context| {
         let files = collect_entries(context)?;
-        Ok((
-            context.instance_id.clone(),
-            files.len(),
-            files.iter().map(|file| file.bytes).sum::<u64>(),
-        ))
+        Ok((files.len(), files.iter().map(|file| file.bytes).sum::<u64>()))
     })?;
     Ok(OfflineCacheStatus {
         schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
-        instance_id,
         entries,
         bytes,
         max_entries: MAX_ENTRIES,
@@ -1721,6 +1722,24 @@ mod tests {
         assert_eq!(hex_decode("000fff"), Some(vec![0x00, 0x0f, 0xff]));
         assert_eq!(hex_decode("abc"), None);
         assert_eq!(hex_decode("zz"), None);
+    }
+
+    #[test]
+    fn the_status_payload_names_no_install() {
+        let status = OfflineCacheStatus {
+            schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
+            entries: 2,
+            bytes: 4096,
+            max_entries: MAX_ENTRIES,
+            max_entry_bytes: MAX_ENTRY_BYTES,
+            max_total_bytes: MAX_TOTAL_BYTES,
+            faults: Vec::new(),
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(
+            !json.contains("instance"),
+            "the webview must not be handed a stable per-install identifier: {json}",
+        );
     }
 
     #[test]

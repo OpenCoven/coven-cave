@@ -318,7 +318,6 @@ test("clearing targets one scope or the whole instance", async () => {
 test("status reports occupancy and the classified faults", async () => {
   const status = {
     schemaVersion: 2,
-    instanceId: "0123456789abcdef0123456789abcdef",
     entries: 2,
     bytes: 4096,
     maxEntries: 256,

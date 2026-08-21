@@ -79,9 +79,14 @@ type NativeOfflineCacheReadResult = {
   purged: boolean;
 };
 
+/**
+ * Occupancy and the recent classified faults. Mirrors `OfflineCacheStatus` in
+ * `offline_cache.rs`, which deliberately withholds the instance id: it is a
+ * stable per-install identifier and a diagnostic needs neither to say how full
+ * the cache is nor what has gone wrong in it.
+ */
 export type OfflineCacheStatus = {
   schemaVersion: number;
-  instanceId: string;
   entries: number;
   bytes: number;
   maxEntries: number;
