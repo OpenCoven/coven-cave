@@ -40,9 +40,26 @@ test("catalogue entries are well formed and uniquely identified", () => {
     assert.ok(!seen.has(entry.id), `duplicate budget id ${entry.id}`);
     seen.add(entry.id);
     assert.ok(PERFORMANCE_BUDGET_GATES.includes(entry.gate), `${entry.id} has an unknown gate`);
-    assert.ok(Number.isFinite(entry.limit) && entry.limit > 0, `${entry.id} needs a positive limit`);
     assert.ok(entry.source.trim().length > 0, `${entry.id} must name what owns its number`);
+    if (entry.gate === "postbuild") {
+      // The gate owns the number. A copy here drifts silently and misreports
+      // the very thing the catalogue exists to make legible.
+      assert.equal(entry.limit, null, `${entry.id} must not restate its gate's limit`);
+    } else {
+      assert.ok(
+        entry.limit !== null && Number.isFinite(entry.limit) && entry.limit > 0,
+        `${entry.id} needs a positive limit`,
+      );
+    }
   }
+});
+
+test("a performance-report entry with no limit fails rather than silently passing", () => {
+  const evaluation = evaluatePerformanceBudgets([{ id: "test.metric", value: 5 }], [
+    budget({ limit: null }),
+  ]);
+  assert.equal(evaluation.pass, false);
+  assert.equal(evaluation.results[0].verdict, "unmeasured");
 });
 
 test("every budget enforced here names the fixture that produces it", async () => {

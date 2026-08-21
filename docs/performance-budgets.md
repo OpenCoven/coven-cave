@@ -27,6 +27,14 @@ entry is treated:
 drift apart, and the build-time gates already fail `pnpm build`. Listing them
 keeps the catalogue complete without duplicating enforcement.
 
+**A `postbuild` entry carries `limit: null`, and the unit suite enforces that.**
+The gate owns the number; restating it here would be the second definition
+`scripts/budget-headroom.mjs` was extracted to avoid. This is not theoretical —
+the first draft of this catalogue recorded 900 KB for the home first-load
+budget while `bundle-budget.mjs` defaulted to 2800 KB, so the directory
+misreported the very thing it exists to make legible. Entries name their gate
+and its constant (`BUNDLE_MAX_HOME_KB`) instead.
+
 `pending` entries are the honest half. The warm/offline shell deadlines, the
 10k-event stream ceiling, and the `coven doctor` deadline are approved numbers
 with no harness behind them yet; they appear in every report so the gap stays

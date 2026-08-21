@@ -309,6 +309,8 @@ function formatDelta(comparison) {
 }
 
 function formatBudgetLimit(result) {
+  // A postbuild entry carries no limit on purpose — its gate owns the number.
+  if (result.budget.limit === null) return "—";
   const comparator = result.budget.direction === "lower-is-better" ? "≤" : "≥";
   return `${comparator} ${formatMetricValue(result.budget.limit, result.budget.unit)}`;
 }

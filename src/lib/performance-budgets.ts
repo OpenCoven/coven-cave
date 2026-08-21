@@ -56,8 +56,17 @@ export type PerformanceBudget = {
   label: string;
   unit: PerformanceBudgetUnit;
   direction: PerformanceBudgetDirection;
-  /** Ceiling for `lower-is-better`, floor for `higher-is-better`. */
-  limit: number;
+  /**
+   * Ceiling for `lower-is-better`, floor for `higher-is-better`.
+   *
+   * `null` for a `postbuild` entry, and deliberately so: that gate owns the
+   * number, and copying it here would create the second definition that
+   * `scripts/budget-headroom.mjs` was extracted to avoid. A copy is not
+   * inert — the first draft of this catalogue recorded 900 KB for the home
+   * first-load budget while the gate's own default was 2800 KB, so the
+   * directory misreported the very thing it exists to make legible.
+   */
+  limit: number | null;
   gate: PerformanceBudgetGate;
   /** The fixture, gate, or issue that owns this number. */
   source: string;
@@ -138,9 +147,9 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     label: "Home route first-load JS",
     unit: "bytes",
     direction: "lower-is-better",
-    limit: 900 * 1024,
+    limit: null,
     gate: "postbuild",
-    source: "scripts/bundle-budget.mjs",
+    source: "scripts/bundle-budget.mjs (BUNDLE_MAX_HOME_KB)",
   },
   {
     id: "package.standalone.bytes",
@@ -148,9 +157,9 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     label: "Next standalone artifact size",
     unit: "bytes",
     direction: "lower-is-better",
-    limit: 480 * 1024 * 1024,
+    limit: null,
     gate: "postbuild",
-    source: "scripts/standalone-budget.mjs",
+    source: "scripts/standalone-budget.mjs (STANDALONE_BUDGETS.bytes)",
   },
   {
     id: "shell.warm-boot.p95-ms",
@@ -218,17 +227,15 @@ export type PerformanceBudgetEvaluation = {
 
 export type PerformanceBudgetMetric = { id: string; value: number };
 
-function headroomOf(budget: PerformanceBudget, value: number): {
+function headroomOf(budget: PerformanceBudget, value: number, limit: number): {
   headroom: number;
   headroomPct: number;
   within: boolean;
 } {
-  const headroom = budget.direction === "lower-is-better"
-    ? budget.limit - value
-    : value - budget.limit;
+  const headroom = budget.direction === "lower-is-better" ? limit - value : value - limit;
   return {
     headroom,
-    headroomPct: budget.limit === 0 ? 0 : (headroom / Math.abs(budget.limit)) * 100,
+    headroomPct: limit === 0 ? 0 : (headroom / Math.abs(limit)) * 100,
     within: headroom >= 0,
   };
 }
@@ -256,10 +263,12 @@ export function evaluatePerformanceBudgets(
       return { budget, value: null, headroom: null, headroomPct: null, verdict: "delegated" };
     }
     const value = measured.get(budget.id);
-    if (value === undefined || !Number.isFinite(value)) {
+    if (value === undefined || !Number.isFinite(value) || budget.limit === null) {
+      // A `performance-report` entry with no limit is a malformed catalogue
+      // entry, not a pass — fail it the same way an absent measurement does.
       return { budget, value: null, headroom: null, headroomPct: null, verdict: "unmeasured" };
     }
-    const { headroom, headroomPct, within } = headroomOf(budget, value);
+    const { headroom, headroomPct, within } = headroomOf(budget, value, budget.limit);
     return {
       budget,
       value,
