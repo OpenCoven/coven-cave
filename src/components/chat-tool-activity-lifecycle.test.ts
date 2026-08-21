@@ -129,22 +129,27 @@ test("stable activity slots preserve a focused repeated tool and open edit revie
   }
 });
 
-test("TurnRow gives tools stable activity and edit-card slots instead of streaming render branches", () => {
+test("TurnRow interleaves live tools and separates settled activity from edit cards", () => {
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /const turnTools = turn\.tools \?\? \[\];\s*const editCards = turnTools\.filter\(isEditCard\);\s*const otherTools = turnTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-    "edit and non-edit tools are partitioned independently of pending state",
+    /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*const bubbleSegments: MessageBubbleSegment\[\] \| undefined = segments\?\.map/,
+    "live tool events are segmented against the visible response text",
   );
   assert.match(
     turnRender,
-    /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}[\s\S]*content=\{[\s\S]*indicatorVisible[\s\S]*<ThinkingIndicator[\s\S]*<MessageBubble[\s\S]*editCards=\{\s*editCards\.length/,
-    "the no-text indicator/answer swap happens between stable activity and edit-card slots",
+    /const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
+    "settled tool events split into compact activity and visible edit cards",
   );
-  assert.doesNotMatch(
+  assert.match(
     turnRender,
-    /segmentTurn\(|bubbleSegments|<ToolRuns/,
-    "TurnRow has no pending-only tool segmentation or duplicate ToolRuns branch",
+    /pending\s*\? bubbleSegments\?\.map[\s\S]*!pending && otherTools\.length[\s\S]*<ToolGroup tools=\{otherTools\}/,
+    "pending tools stay chronological while settled non-edit tools collapse into the activity region",
+  );
+  assert.match(
+    turnRender,
+    /<StreamingTurnResponse[\s\S]*activityDetails=\{activityDetails\}[\s\S]*supplementaryContent=\{supplementaryContent\}/,
+    "the streaming response keeps activity and settled edit-card content in separate regions",
   );
   assert.doesNotMatch(
     source,
