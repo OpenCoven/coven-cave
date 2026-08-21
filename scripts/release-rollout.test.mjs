@@ -26,6 +26,7 @@ import {
   runCli,
   stageById,
 } from "./release-rollout.mjs";
+import { ACCEPTANCE_OSES, REQUIRED_STEP_IDS, summarizeAcceptance } from "./release-acceptance.mjs";
 
 // The rollback-readiness verdict is copied verbatim from what
 // scripts/release-rollback-readiness.mjs resolves to, field for field. It is
@@ -69,6 +70,65 @@ function greenState(overrides = {}) {
 }
 
 const detailsOf = (result) => result.reasons.map((reason) => reason.detail).join("\n");
+
+// ── the seam with scripts/release-acceptance.mjs ──────────────────────────────
+
+test("the acceptance summary this gate reads is the one that script emits", () => {
+  // Every other test here hand-writes `{ status: "complete" }`, which asserts
+  // the gate reads a field rather than that anything produces it. That is the
+  // shape of the #4782 defect these fixtures already guard against on the
+  // readiness side — a consumer reading a field the producer never emits — and
+  // the acceptance seam is the half this PR owns on both ends. Rename `status`
+  // in summarizeAcceptance() and both suites stay green without this.
+  const commit = "a".repeat(40);
+  const digest = "b".repeat(64);
+  const record = (mutate = () => {}) => {
+    const steps = {};
+    for (const id of REQUIRED_STEP_IDS) steps[id] = { result: "pass", diagnosticId: "", notes: "" };
+    const value = {
+      candidate: { version: "1.0.0", tag: "v1.0.0", commit },
+      artifacts: [{ name: "CovenCave-v1.0.0-aarch64.dmg", sha256: digest }],
+      runs: ACCEPTANCE_OSES.map((os) => ({
+        os,
+        osVersion: "15.5",
+        caveVersion: "0.3.6",
+        chatVersion: "1.0.0",
+        cliVersion: "1.0.0",
+        steps: structuredClone(steps),
+      })),
+    };
+    mutate(value);
+    return value;
+  };
+
+  assert.equal(
+    evaluateRolloutGate(greenState({ acceptance: summarizeAcceptance(record()) })).decision,
+    "advance",
+    "a three-OS journey that passed has to reach the gate as one, or acceptance can never unblock a rollout at all",
+  );
+  assert.equal(
+    evaluateRolloutGate(
+      greenState({
+        acceptance: summarizeAcceptance(
+          record((value) => {
+            value.runs[0].steps["restart-history"] = { result: "fail", diagnosticId: "diag-1" };
+          }),
+        ),
+      }),
+    ).decision,
+    "rollback",
+    "a recorded failure must survive the summary; a candidate that failed acceptance may not become the served update",
+  );
+  assert.equal(
+    evaluateRolloutGate(
+      greenState({
+        acceptance: summarizeAcceptance(record((value) => (value.runs = value.runs.filter((run) => run.os !== "windows")))),
+      }),
+    ).decision,
+    "hold",
+    "an OS nobody ran is missing evidence, which holds rather than advancing or rolling back",
+  );
+});
 
 // ── stage table ───────────────────────────────────────────────────────────────
 
