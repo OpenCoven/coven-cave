@@ -143,6 +143,50 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: node scripts/release-promotion.mjs release
 
+  # Pausing a bad rollout is only a remedy if the previous version is still
+  # installable, so prove the rollback target before the updater moves anyone
+  # forward. Runs early to fail the cut before it spends build time;
+  # `updater-manifest` depends on it so no install is auto-updated onto a
+  # release that cannot be undone. Note the blast radius stops there by design:
+  # `build`, `checksums` and `homebrew` do NOT depend on this job, because the
+  # shortfall it reports is in the PREVIOUS release and blocking the new
+  # artifacts would leave a broken baseline able to block its own fix. See
+  # docs/workflows/release-rollback-readiness.md.
+  rollback-readiness:
+    name: Verify rollback readiness
+    needs: authorize-release-promotion
+    runs-on: ubuntu-24.04
+    # A checkout, a node install, at most 20 API pages and one manifest fetch —
+    # seconds in practice. The bound matters because the gate makes network
+    # calls with no per-request deadline of their own, and `updater-manifest`
+    # waits on this job under `!cancelled()`: a hung socket would withhold
+    # latest.json for the default 360 minutes, and withholding latest.json does
+    # not hold auto-update, it takes it DOWN (the release already owns the
+    # `releases/latest` alias, so the endpoint 404s). Ten minutes turns a
+    # six-hour silent outage into a short one with a red job naming it.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # No job-level `outputs:` on purpose. Job outputs exist to feed a dependent
+    # job in the same run, and no job consumes this record; they are not
+    # readable from the run afterwards either. The durable record is the step
+    # summary, and the step outputs stay available inside this job.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - id: readiness
+        name: Require a verified rollback target
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: node scripts/release-rollback-readiness.mjs
+
   daemon-package:
     name: Verify available Coven daemon package
     needs: authorize-release-promotion
@@ -1752,6 +1796,7 @@ jobs:
     needs:
       - build
       - source-version
+      - rollback-readiness
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -1764,7 +1809,11 @@ jobs:
     # cave-updater: also guard against build being *skipped* (upstream job
     # failure, e.g. daemon-package gate), which means no release was ever
     # created — gh release view would return "release not found" in that case.
-    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
+    # cave-ilh1h: `!cancelled()` waives the default "every dependency
+    # succeeded" rule for EVERY dependency, so rollback-readiness has to be
+    # named explicitly or a failed rollback gate would still publish the
+    # manifest that moves users forward.
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && needs.rollback-readiness.result == 'success' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
