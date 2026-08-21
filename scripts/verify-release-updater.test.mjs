@@ -6,9 +6,10 @@
 // against keys generated here, so a regression in the ed25519/blake2b handling
 // fails on a PR rather than on a shipped release nobody can update.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -334,6 +335,143 @@ test("the CLI refuses a --manifest or --tag given without a value", () => {
     const result = runCli(args);
     assert.equal(result.status, 1, `${args.join(" ")} must not fall through to the network path`);
     assert.match(result.stdout, /given without a value/);
+  }
+});
+
+// ── the CLI's verdicts, end to end ─────────────────────────────────────
+// Everything above stops at a usage error or at a pure function, and main()
+// is where the promised verdicts actually live. Measured with mutations:
+// replacing the drift comparison with a constant, forcing the signature
+// verdict to `true`, or deleting either non-ok guard on the asset fetch each
+// left this whole file green — the "exits 0 having verified nothing" state
+// the header calls worse than no gate, reintroduced one line at a time.
+//
+// These drive the real CLI against a loopback origin standing in for the
+// release assets (the manifest's url is whatever the manifest says it is, so
+// no network is needed). The secret matching the pinned pubkey is not in this
+// repo, so a VALID signature cannot be produced here — every pin below is a
+// REJECTION, which is the half that has to keep working anyway.
+const PINNED_PUBKEY = (() => {
+  const conf = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url)), "utf8"),
+  );
+  return (conf.plugins?.updater ?? conf.updater)?.pubkey;
+})();
+
+const manifestNaming = (port, { version = "9.9.9", signature = "unused" } = {}) => {
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "verify-updater-e2e-")), "latest.json");
+  writeFileSync(file, JSON.stringify({
+    version,
+    pub_date: "2026-01-01T00:00:00Z",
+    platforms: { "darwin-aarch64": { url: `http://127.0.0.1:${port}/app.tar.gz`, signature } },
+  }));
+  return file;
+};
+
+// spawnSync would deadlock here: it blocks this process's event loop, so the
+// loopback server below never accepts the connection the child is waiting on
+// and both sides sit there until the timeout. Every test that serves an asset
+// must drive the CLI asynchronously.
+const runCliAsync = (args) => new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [SCRIPT, ...args]);
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.resume();
+  const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+  child.on("error", (error) => { clearTimeout(timer); reject(error); });
+  child.on("close", (status) => { clearTimeout(timer); resolve({ status, stdout }); });
+});
+
+async function servingAsset(handler, run) {
+  const server = http.createServer(handler);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    return await run(server.address().port);
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+const notFound = (_request, response) => { response.writeHead(404); response.end(); };
+
+test("the CLI fails on version drift between the manifest and the tag being released", async () => {
+  // The manifest names the version a client will be offered. If it disagrees
+  // with the tag whose assets it points at, every install is told about an
+  // update that is not what it downloads.
+  await servingAsset(notFound, async (port) => {
+    const result = await runCliAsync([
+      "--manifest", manifestNaming(port, { version: "9.9.8" }),
+      "--tag", "v9.9.9",
+      "--allow-partial",
+    ]);
+    assert.match(result.stdout, /version drift: manifest=9\.9\.8 vs tag=v9\.9\.9/);
+    assert.equal(result.status, 1, "a manifest naming a different version must never be published");
+  });
+});
+
+test("a missing asset is reported as its HTTP status, never as an invalid signature", async () => {
+  // Two shapes, because they clear different guards: the asset is simply gone,
+  // and the HEAD probe succeeds while the download does not — the CDN redirect
+  // that expires between the two requests. Feeding either error page to
+  // verifySignature reports "signature INVALID" and sends whoever cut the
+  // release hunting a key rotation that never happened.
+  for (const [label, headStatus, expected] of [
+    ["asset gone", 404, /darwin-aarch64: asset url HTTP 404/],
+    ["gone between HEAD and GET", 200, /darwin-aarch64: asset download HTTP 404/],
+  ]) {
+    await servingAsset(
+      (request, response) => {
+        response.writeHead(request.method === "HEAD" ? headStatus : 404);
+        response.end();
+      },
+      async (port) => {
+        const result = await runCliAsync(["--manifest", manifestNaming(port), "--tag", "v9.9.9", "--allow-partial"]);
+        assert.match(result.stdout, expected, label);
+        assert.doesNotMatch(result.stdout, /signature INVALID/, `${label}: a 404 body is not a corrupt artifact`);
+        assert.equal(result.status, 1, label);
+      },
+    );
+  }
+});
+
+test("an artifact that does not verify against the pinned pubkey fails the release", async () => {
+  // The release-shaped failure this whole job exists for: the signing key
+  // drifts from the pubkey pinned in src-tauri/tauri.conf.json, every
+  // signature is well-formed, the platform count is green, and every
+  // installed app rejects the update. Both halves of the check are pinned —
+  // the key-id screen a rotation trips, and the ed25519 maths underneath it,
+  // reached by borrowing the pinned key id so the screen cannot short-circuit.
+  assert.ok(PINNED_PUBKEY, "src-tauri/tauri.conf.json must pin an updater pubkey for the gate to check against");
+  const pinnedKeyId = parsePub(PINNED_PUBKEY).keyId;
+  const rotatedKeyId = Buffer.from(pinnedKeyId);
+  rotatedKeyId[0] ^= 0xff;
+
+  for (const [label, keyId] of [["a rotated signing key", rotatedKeyId], ["the pinned key id", pinnedKeyId]]) {
+    const { privateKey } = makeKeypair();
+    const artifact = crypto.randomBytes(1024);
+    const signature = encodeSignature({ privateKey, artifact, algo: "ED", keyId });
+    await servingAsset(
+      (request, response) => {
+        response.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-length": String(artifact.length),
+        });
+        response.end(request.method === "HEAD" ? undefined : artifact);
+      },
+      async (port) => {
+        const result = await runCliAsync([
+          "--manifest", manifestNaming(port, { signature }),
+          "--tag", "v9.9.9",
+          "--allow-partial",
+        ]);
+        assert.match(result.stdout, /darwin-aarch64: signature INVALID/, label);
+        assert.doesNotMatch(result.stdout, /signature VALID/, `${label}: the gate must not pass without looking`);
+        assert.match(result.stdout, /RESULT: 1 FAILURE\(S\)/, `${label}: the signature is the only thing that failed`);
+        assert.equal(result.status, 1, label);
+      },
+    );
   }
 });
 
