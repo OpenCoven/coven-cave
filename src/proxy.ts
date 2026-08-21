@@ -27,6 +27,7 @@ import {
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
+  clientV1IngressKind,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
@@ -271,12 +272,15 @@ export async function proxy(req: NextRequest) {
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
-  const mobileRes = await mobileAccessGate(
-    req,
-    trustedLocalPeer,
-    tailnetPeerVerified,
-    sidecarAuthenticatedAtGate,
-  );
+  const clientV1Ingress = clientV1IngressKind(req.nextUrl.pathname);
+  const mobileRes = clientV1Ingress && trustedLocalPeer
+    ? null
+    : await mobileAccessGate(
+      req,
+      trustedLocalPeer,
+      tailnetPeerVerified,
+      sidecarAuthenticatedAtGate,
+    );
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
@@ -413,6 +417,13 @@ export async function proxy(req: NextRequest) {
   }
   if (!hasSafeContentType(req)) {
     return jsonError(415, "unsupported content-type");
+  }
+
+  if (clientV1Ingress) {
+    if (!trustedLocalPeer || remoteIngress) {
+      return jsonError(403, "forbidden peer: client v1 requires direct loopback");
+    }
+    return nextWithMobileAccessMarker(req, false);
   }
 
   const suppliedToken =
