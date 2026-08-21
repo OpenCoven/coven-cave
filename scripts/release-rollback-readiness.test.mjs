@@ -283,6 +283,36 @@ test("an incomplete baseline fails the rollout closed", async () => {
   );
 });
 
+test("the listing is paged through, and a listing it cannot exhaust is fatal", async () => {
+  // A full page means "there may be more", so the baseline on page two has to
+  // be reached before the newest stable release below the rollout is known.
+  const filler = Array.from({ length: 100 }, (_, index) => release(`0.2.${index}`));
+  const paged = async (url) => {
+    if (!url.startsWith(`${API}/repos/`)) {
+      return { ok: true, status: 200, json: async () => manifest("0.3.7") };
+    }
+    const page = Number(new URL(url).searchParams.get("page"));
+    if (page === 1) return { ok: true, status: 200, json: async () => filler };
+    if (page === 2) return { ok: true, status: 200, json: async () => [release("0.3.7")] };
+    return { ok: true, status: 200, json: async () => [] };
+  };
+
+  const result = await verify({ fetchImpl: paged });
+  assert.equal(result.baseline.tag, "v0.3.7");
+
+  // Never a truncated answer: GitHub orders releases by creation, not version,
+  // so a baseline past the cap could be newer than anything seen so far.
+  await assert.rejects(
+    verify({
+      fetchImpl: async (url) =>
+        url.startsWith(`${API}/repos/`)
+          ? { ok: true, status: 200, json: async () => filler }
+          : { ok: true, status: 200, json: async () => manifest("0.3.7") },
+    }),
+    /release listing did not end within 20 pages of 100/,
+  );
+});
+
 test("the API token never travels to the asset host", async () => {
   const stub = stubFetch({ releases: [release("0.3.7")], manifest: manifest("0.3.7") });
 

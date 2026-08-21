@@ -252,7 +252,15 @@ async function listReleases(context) {
     releases.push(...body);
     if (body.length < PAGE_SIZE) return releases;
   }
-  return releases;
+  // Returning the truncated list here would answer a question this function was
+  // not able to ask. GitHub orders releases by creation, not by version, so the
+  // newest stable release below the rollout can sit on any page — a backported
+  // patch is created after the minor that supersedes it. A truncated listing
+  // therefore does not merely risk a stale baseline, it can silently verify the
+  // wrong release and report the rollout ready.
+  throw new RollbackReadinessError(
+    `release listing did not end within ${MAX_API_PAGES} pages of ${PAGE_SIZE}, so the newest stable release below the rollout cannot be identified; raise MAX_API_PAGES in scripts/release-rollback-readiness.mjs`,
+  );
 }
 
 export async function verifyRollbackReadiness(options = {}) {
