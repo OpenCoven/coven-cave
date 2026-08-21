@@ -471,13 +471,55 @@ test("the picker offers an accessible, session-scoped reveal toggle", () => {
 test("toggling reveal reloads the current folder and drops a stale highlight", () => {
   const src = read("./directory-picker-modal.tsx");
   assert.match(src, /const toggleShowHidden = useCallback\(/, "toggling is a callback, not inline state juggling");
-  assert.match(src, /setSelectedPath\(null\);/, "clears the highlight");
+  // Scoped to the toggle body on purpose: a bare `setSelectedPath(null);`
+  // occurs four times in this file (navigate, filter, close), so an unscoped
+  // match would pass with the toggle's own call deleted. Re-hiding while a dot
+  // folder is highlighted has to drop that highlight.
+  assert.match(
+    src,
+    /const toggleShowHidden = useCallback\(\(\) => \{[\s\S]*?setSelectedPath\(null\);[\s\S]*?void load\(cwd\);/,
+    "the toggle itself clears the highlight before reloading",
+  );
   assert.match(src, /void load\(cwd\);/, "reloads the folder in place rather than returning to $HOME");
-  // Re-hiding while a dot folder is selected would otherwise leave the footer
-  // offering to select a row that is no longer on screen.
   assert.match(src, /writeShowHidden\(next\)/, "the new state is persisted for the session");
   // load() must stay dependency-free of the toggle: a new load identity
   // re-runs the open effect and bounces the user back to $HOME.
   assert.match(src, /const showHiddenRef = useRef\(false\)/, "the flag reaches load through a ref");
   assert.match(src, /\}, \[cwd, load\]\)/, "the toggle depends on the folder it reloads");
+});
+
+test("creating a dot folder reveals it instead of hiding what the user just made", () => {
+  const src = read("./directory-picker-modal.tsx");
+  // The footer resolves its pending selection out of the *visible* entries, so
+  // a new folder that vanishes into the hidden set does not merely disappear —
+  // "Select .config" silently becomes "Select <parent>" and the wrong root gets
+  // registered. Creating it by name is an explicit request to see it.
+  assert.match(
+    src,
+    /requestedName\.startsWith\("\."\) && !showHiddenRef\.current[\s\S]*?showHiddenRef\.current = true/,
+    "a freshly created dot folder flips the reveal on",
+  );
+  assert.match(
+    src,
+    /showHiddenRef\.current = true;\s*setShowHidden\(true\);\s*writeShowHidden\(true\);\s*\}\s*await load\(cwd, sessionGeneration\)/,
+    "the reveal is set before the reload that has to return the new folder",
+  );
+});
+
+test("the picker never reports a folder as empty while it is withholding dot folders", () => {
+  const src = read("./directory-picker-modal.tsx");
+  // "This folder is empty" beside a toggle reading "Hidden folders (3)" is a
+  // flat contradiction, and a filter typed as ".config" would otherwise report
+  // no match for a folder that is really there.
+  assert.match(src, /const withheldHidden = showHidden \? 0 : hiddenCount;/, "the empty state knows what is withheld");
+  assert.match(
+    src,
+    /withheldHidden > 0\s*\? "Only hidden folders here"\s*: "This folder is empty"/,
+    "an all-dot folder is not described as empty",
+  );
+  assert.match(
+    src,
+    /\$\{withheldHidden\} hidden folder\$\{withheldHidden === 1 \? " is" : "s are"\} not shown\./,
+    "the sub-line says how many are withheld, under the no-match copy too",
+  );
 });

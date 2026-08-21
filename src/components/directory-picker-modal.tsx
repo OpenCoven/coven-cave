@@ -336,6 +336,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
   const createFolder = useCallback(async () => {
     if (!cwd || createBusy) return;
+    const requestedName = newFolderName.trim();
     const sessionGeneration = modalSessionRef.current;
     let shouldRefocusInput = false;
     let shouldRefocusCloseButton = false;
@@ -362,6 +363,16 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       // "Select <name>" finishes the flow in one click (the old modal jumped
       // inside the empty folder instead).
       setFilter("");
+      // …but a dot-prefixed folder would land straight into the hidden set and
+      // never come back from the reload, and the footer resolves its pending
+      // selection out of the *visible* entries — so "Select .config" would
+      // silently become "Select <parent>" and register the wrong project root.
+      // Typing the name is as explicit a request to see it as the toggle is.
+      if (requestedName.startsWith(".") && !showHiddenRef.current) {
+        showHiddenRef.current = true;
+        setShowHidden(true);
+        writeShowHidden(true);
+      }
       await load(cwd, sessionGeneration);
       if (sessionGeneration === modalSessionRef.current) {
         setSelectedPath(body.path);
@@ -451,6 +462,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
   const query = filter.trim().toLowerCase();
   const visibleEntries = query ? entries.filter((e) => e.name.toLowerCase().includes(query)) : entries;
+  // Dot folders the listing is currently withholding. The empty state has to
+  // name them: "This folder is empty" would otherwise flatly contradict the
+  // count on the toggle directly above it, and filtering for ".config" would
+  // report no match for a folder that is really there.
+  const withheldHidden = showHidden ? 0 : hiddenCount;
   const selected = selectedPath ? entries.find((e) => e.path === selectedPath) ?? null : null;
 
   const atHomeRoot = cwd !== null && cwd === home;
@@ -683,6 +699,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 flipping to "Hide…" — a toggle whose label changes under the
                 cursor is the classic way to make a pressed control ambiguous
                 to a screen reader. The count varies, the verb never does.
+
+                The visible label reads "Hidden folders" rather than "Hidden"
+                so that it stays a substring of that accessible name (WCAG
+                2.5.3): speech input activates a control by its visible words,
+                and "Hidden (3)" appears nowhere in "Show hidden folders (3)".
               */}
               <Button
                 variant="ghost"
@@ -701,7 +722,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                     : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                 }`}
               >
-                Hidden{!showHidden && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
+                Hidden folders{!showHidden && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
               </Button>
             </div>
 
@@ -770,10 +791,16 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
               ) : visibleEntries.length === 0 && !creatingFolder ? (
                 <div className="flex flex-col items-center gap-1.5 px-5 py-8 text-center">
                   <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
-                    {query ? `No folders match \u201C${filter.trim()}\u201D` : "This folder is empty"}
+                    {query
+                      ? `No folders match \u201C${filter.trim()}\u201D`
+                      : withheldHidden > 0
+                        ? "Only hidden folders here"
+                        : "This folder is empty"}
                   </p>
                   <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                    Try a different name, or create one above.
+                    {withheldHidden > 0
+                      ? `${withheldHidden} hidden folder${withheldHidden === 1 ? " is" : "s are"} not shown.`
+                      : "Try a different name, or create one above."}
                   </p>
                 </div>
               ) : (
