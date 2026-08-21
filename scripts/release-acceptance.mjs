@@ -161,18 +161,18 @@ function validateCandidate(candidate, add) {
     add("candidate must be an object with version, tag, and commit");
     return;
   }
-  if (!VERSION_PATTERN.test(String(candidate.version ?? ""))) {
-    add(`candidate.version '${String(candidate.version)}' is not a release version`);
+  const version = readString(candidate.version);
+  const tag = readString(candidate.tag);
+  const commit = readString(candidate.commit);
+  if (!VERSION_PATTERN.test(version)) {
+    add(`candidate.version '${show(candidate.version)}' is not a release version`);
   }
-  if (!TAG_PATTERN.test(String(candidate.tag ?? ""))) {
-    add(`candidate.tag '${String(candidate.tag)}' is not a release tag`);
-  } else if (
-    VERSION_PATTERN.test(String(candidate.version ?? "")) &&
-    candidate.tag !== `v${candidate.version}`
-  ) {
-    add(`candidate.tag ${candidate.tag} does not match candidate.version ${candidate.version}`);
+  if (!TAG_PATTERN.test(tag)) {
+    add(`candidate.tag '${show(candidate.tag)}' is not a release tag`);
+  } else if (VERSION_PATTERN.test(version) && tag !== `v${version}`) {
+    add(`candidate.tag ${tag} does not match candidate.version ${version}`);
   }
-  if (!COMMIT_PATTERN.test(String(candidate.commit ?? "").toLowerCase())) {
+  if (!COMMIT_PATTERN.test(commit.toLowerCase())) {
     add("candidate.commit must be a 40-hex commit SHA");
   }
 }
@@ -188,11 +188,11 @@ function validateArtifacts(artifacts, add) {
       add(`artifacts[${index}] must be an object`);
       return;
     }
-    const name = String(artifact.name ?? "");
+    const name = readString(artifact.name);
     if (!name.trim()) add(`artifacts[${index}].name is required`);
     else if (seen.has(name)) add(`artifacts[${index}].name '${name}' is duplicated`);
     else seen.add(name);
-    if (!SHA256_PATTERN.test(String(artifact.sha256 ?? "").toLowerCase())) {
+    if (!SHA256_PATTERN.test(readString(artifact.sha256).toLowerCase())) {
       add(`artifacts[${index}].sha256 must be a 64-hex SHA-256 digest`);
     }
   });
@@ -212,9 +212,9 @@ function validateRuns(runs, add) {
       add(`runs[${index}] must be an object`);
       return;
     }
-    const os = String(run.os ?? "");
+    const os = readString(run.os);
     if (!ACCEPTANCE_OSES.includes(os)) {
-      add(`runs[${index}].os '${os}' is not one of ${ACCEPTANCE_OSES.join(", ")}`);
+      add(`runs[${index}].os '${show(run.os)}' is not one of ${ACCEPTANCE_OSES.join(", ")}`);
       return;
     }
     if (seen.has(os)) {
@@ -258,9 +258,9 @@ function validateSteps(run, index, os, add) {
       pendingSteps.push(id);
       continue;
     }
-    const result = String(step.result ?? "");
+    const result = readString(step.result);
     if (!STEP_RESULTS.includes(result)) {
-      add(`runs[${index}].steps.${id}.result '${result}' must be one of ${STEP_RESULTS.join(", ")}`);
+      add(`runs[${index}].steps.${id}.result '${show(step.result)}' must be one of ${STEP_RESULTS.join(", ")}`);
       pendingSteps.push(id);
       continue;
     }
@@ -319,6 +319,27 @@ export function findSecrets(value, path = "record", found = []) {
 
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Read a field whose value has to match a pattern or a fixed vocabulary.
+ *
+ * `String(["pass"])` is `"pass"` and `String(["macos"])` is `"macos"`, so every
+ * allow-list and every regex here accepted a one-element array holding the
+ * right word: a step recorded as `["pass"]` counted as passed, and a record
+ * whose `os`, `version`, `tag`, `commit` and `sha256` were all wrapped that way
+ * validated `complete`. An evidence record is generated as often as it is
+ * typed, and that is exactly the shape a templating mistake produces. A value
+ * that is not a string states nothing, so it reads as the empty string and
+ * fails the check it was pretending to pass.
+ */
+function readString(value) {
+  return typeof value === "string" ? value : "";
+}
+
+/** Show a value as it sits in the file, so an array does not print as its contents. */
+function show(value) {
+  return typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
 }
 
 export function formatReport(result) {

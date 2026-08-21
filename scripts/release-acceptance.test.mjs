@@ -229,6 +229,39 @@ test("a deeply nested record is reported on rather than overflowing the stack", 
   assert.deepEqual(findSecrets(cyclic), [], "a cycle terminates the walk instead of running until the stack dies");
 });
 
+test("a word wrapped in an array is not the word", () => {
+  // `String(["pass"])` is `"pass"`. Every allow-list and every pattern in this
+  // validator ran on a coerced value, so a record whose fields were each
+  // wrapped in a one-element array — what a `jq '[.x]'` or a YAML-to-JSON
+  // conversion produces — validated as `complete` with nothing recorded.
+  const wrapped = passingRecord();
+  wrapped.candidate = { version: ["1.0.0"], tag: ["v1.0.0"], commit: [COMMIT] };
+  wrapped.artifacts = [{ name: ["installer.msi"], sha256: [DIGEST] }];
+  for (const run of wrapped.runs) run.os = [run.os];
+  const wrappedResult = validateAcceptanceRecord(wrapped);
+  assert.notEqual(wrappedResult.status, "complete", "an array holding the right word is not the operator recording it");
+  for (const field of ["version", "tag", "commit", "sha256", "os"]) {
+    assert.ok(
+      wrappedResult.errors.some((error) => error.includes(field)),
+      `${field} was compared against a coerced string, so a wrapped value passed the check it should have failed`,
+    );
+  }
+
+  // The step result is the one that decides whether acceptance happened.
+  const step = passingRecord();
+  step.runs[0].steps["create-send"] = { result: ["pass"], diagnosticId: "", notes: "" };
+  const stepResult = validateAcceptanceRecord(step);
+  assert.notEqual(stepResult.status, "complete", "a step nobody recorded as a string was not recorded as a pass");
+  assert.ok(
+    stepResult.errors.some((error) => error.includes("create-send") && error.includes("must be one of")),
+    "the operator is told which step's result their generator mangled",
+  );
+  assert.ok(
+    stepResult.errors.some((error) => error.includes('["pass"]')),
+    "the value is printed as it sits in the file; printing the coerced form would show a result that looks correct",
+  );
+});
+
 test("a run whose steps are not an object is a gap, not a pass", () => {
   for (const steps of [[], "install-cave: pass", null, 7]) {
     const record = passingRecord();

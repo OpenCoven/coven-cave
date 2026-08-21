@@ -109,6 +109,13 @@ health on a counter, breaking the rule above in both directions at once. A
 `regressions` value that is not an array holds for the same reason: a list this
 gate cannot read is not an absence of regressions.
 
+The same rule covers the fields that are words rather than numbers.
+`acceptance.status` and each canary result must be a JSON string; anything else
+reads as `unreadable` and holds, because `["complete"]` coerces to `"complete"`
+and would otherwise advance a rollout on an acceptance summary that was never
+recorded. A state file assembled by a workflow is exactly where that shape
+comes from.
+
 `rollback` outranks `hold` when both apply, and the report prints every reason
 rather than only the deciding one, so the record shows what was true at that
 stage.

@@ -90,6 +90,13 @@ four results:
 diagnosis. `pending` owes nothing — an unattempted step is a gap in coverage,
 not a defect.
 
+Every field the validator matches against a pattern or one of those four words
+— `os`, `result`, `candidate.version`, `candidate.tag`, `candidate.commit`,
+`artifacts[].name`, `artifacts[].sha256` — has to be a JSON string. A value of
+another type states nothing and fails its check, rather than being coerced:
+`["pass"]` reads as `"pass"` under coercion, which is how a generated record
+would validate `complete` with no result recorded anywhere in it.
+
 ```json
 {
   "candidate": { "version": "1.0.0", "tag": "v1.0.0", "commit": "<40-hex>" },

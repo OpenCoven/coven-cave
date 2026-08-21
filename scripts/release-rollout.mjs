@@ -175,7 +175,7 @@ export function evaluateRolloutGate(state) {
   const thresholds = resolveThresholds(state.thresholds, hold);
 
   // 1. Preconditions. These gate the rollout as a whole, not just this stage.
-  const acceptanceStatus = String(state.acceptance?.status ?? "missing");
+  const acceptanceStatus = readWord(state.acceptance?.status);
   if (acceptanceStatus === "failed") {
     // `acceptance` is deliberately not in HARD_STOP_CLASSES, and that is not an
     // omission. HARD_STOP_CLASSES is the vocabulary for classifying an
@@ -250,7 +250,7 @@ export function evaluateRolloutGate(state) {
   // 4. Functional canaries pause expansion without reversing the release.
   const canaries = isPlainObject(metrics.canaries) ? metrics.canaries : {};
   for (const canary of CANARIES) {
-    const result = String(canaries[canary] ?? "missing");
+    const result = readWord(canaries[canary]);
     if (result !== "pass") hold(`${canary} canary is '${result}'`);
   }
 
@@ -330,6 +330,24 @@ function resolveThresholds(raw, hold) {
  * coerced to a rate the operator never recorded as one. So the fix is the type
  * check, not a wider NaN guard.
  */
+/**
+ * Read a value whose whole job is to match one word from a fixed vocabulary.
+ *
+ * This is `readMetric`'s rule on the other half of the state file. `String()`
+ * coercion let a one-element array pass as the word inside it:
+ * `"acceptance": {"status": ["complete"]}` advanced a rollout that had no
+ * acceptance summary at all, and a canary recorded as `["pass"]` counted as
+ * green. Both shapes come out of a state file assembled by a workflow rather
+ * than typed, which is the case this gate exists for. A value that is not a
+ * string names no status and no canary result, so it reads as the absence it
+ * is — and says which absence, because 'unreadable' and 'never recorded' send
+ * an operator to different places.
+ */
+function readWord(value) {
+  if (typeof value === "string") return value;
+  return value === undefined || value === null ? "missing" : "unreadable";
+}
+
 function readMetric(value, label, hold) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     hold(`${label} is not measured`);

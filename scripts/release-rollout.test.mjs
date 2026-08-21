@@ -249,6 +249,34 @@ test("a measurement outside its own range is broken rather than healthy", () => 
   }
 });
 
+test("a status or a canary wrapped in an array is not the word inside it", () => {
+  // The numeric half of this state file stopped being coerced; the word half
+  // had not. `String(["complete"])` is `"complete"`, so a state file assembled
+  // by a workflow rather than typed could advance a rollout on an acceptance
+  // summary it never had, and on canaries nobody ran.
+  const acceptance = evaluateRolloutGate(greenState({ acceptance: { status: ["complete"] } }));
+  assert.equal(
+    acceptance.decision,
+    "hold",
+    "an array holding the word 'complete' is not a three-OS acceptance journey that completed",
+  );
+  assert.match(detailsOf(acceptance), /unreadable/, "the operator is told the field was unreadable, not that it was absent");
+
+  const canary = greenState();
+  canary.metrics.canaries.send = ["pass"];
+  const canaryResult = evaluateRolloutGate(canary);
+  assert.equal(canaryResult.decision, "hold", "a canary result this gate cannot read is not a canary that passed");
+  assert.match(detailsOf(canaryResult), /send canary is 'unreadable'/, "the failing canary is named");
+
+  // An absent field and an unreadable one send an operator to different places,
+  // so they must not print the same word.
+  assert.match(
+    detailsOf(evaluateRolloutGate(greenState({ acceptance: undefined }))),
+    /is 'missing'/,
+    "acceptance nobody recorded is missing, not unreadable",
+  );
+});
+
 test("a regressions list this gate cannot read is not an absence of regressions", () => {
   for (const malformed of [{ crash: "diag-1" }, "crash", 3]) {
     const result = evaluateRolloutGate(greenState({ regressions: malformed }));
