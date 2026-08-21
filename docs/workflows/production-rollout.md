@@ -167,8 +167,15 @@ gate, it is an absent one, and it would have advanced silently.
 
 ## The rollback drill
 
-Rehearse this before rollout, not during an incident. The procedure is bounded
-to three steps, and **only one of them mutates anything**:
+Rehearse this before rollout, not during an incident. `restore-plan` refuses a
+state file that names no baseline to restore — a missing, empty, or not-ready
+`rollbackReadiness`, or the waiver — because a drill against a placeholder
+rehearses a procedure nobody can run. A baseline that is named but not yet
+proven still prints: the operator knows which release they would be putting
+back.
+
+The procedure is bounded to three steps, and **only one of them mutates
+anything**:
 
 1. `verify-baseline-artifacts` — confirm every asset the baseline manifest
    references is still present and signature-valid. Nothing is written.

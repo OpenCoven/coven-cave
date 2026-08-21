@@ -435,6 +435,42 @@ test("a waived baseline rolls out, but never silently", () => {
   );
 });
 
+test("a drill that cannot name what it would restore is refused, waiver or not", () => {
+  const restorePlan = (state) =>
+    runCli({ argv: ["restore-plan", "state.json"], readFileImpl: () => JSON.stringify(state), log: () => {} });
+
+  // The waived case was already refused. These are the same failure in its
+  // commoner shape — a state file written before the readiness gate ran, or
+  // one holding a not-ready verdict — and each printed a three-step drill
+  // against the literal placeholder `<baseline-tag>`.
+  for (const [label, readiness] of [
+    ["no verdict at all", undefined],
+    ["an empty verdict", {}],
+    ["a not-ready verdict", { ready: false, error: "no published stable release below v1.0.0" }],
+    ["a ready verdict with no baseline", { ready: true, baseline: null, baselineWaived: false }],
+  ]) {
+    assert.throws(
+      () => restorePlan(greenState({ rollbackReadiness: readiness })),
+      /names no rollback baseline/,
+      `${label} names nothing to restore, and a drill against '<baseline-tag>' rehearses a procedure nobody can run`,
+    );
+  }
+
+  assert.throws(
+    () => restorePlan(greenState({ rollbackReadiness: { ready: false, error: "no Linux AppImage" } })),
+    /no Linux AppImage/,
+    "the upstream message is quoted so the operator knows what to fix rather than what to re-run",
+  );
+
+  // A named-but-unproven baseline is still a rehearsal worth printing: the
+  // operator knows which release they would be putting back.
+  assert.equal(
+    restorePlan(greenState({ rollbackReadiness: { ready: false, baseline: { tag: "v0.9.4" } } })),
+    0,
+    "readiness that is merely unproven still names the release the drill would restore",
+  );
+});
+
 test("an unclassified regression holds instead of being ignored", () => {
   const result = evaluateRolloutGate(greenState({ regressions: [{ class: "ui-polish", id: "diag-9" }] }));
   assert.equal(result.decision, "hold", "an unrecognized class is a classification gap, not a clean bill of health");

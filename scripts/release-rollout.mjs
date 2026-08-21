@@ -444,10 +444,23 @@ export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSy
     }
 
     if (command === "restore-plan") {
-      if (readRollbackReadiness(state?.rollbackReadiness).waived) {
+      // Both refusals below are the same rule: a drill is only a rehearsal if
+      // it names the release it would put back. `planRollbackRestore` falls
+      // back to the literal string `<baseline-tag>` so its exported form stays
+      // total, and printing that to an operator rehearses a procedure nobody
+      // can run — the waiver was only the rarer half of that case.
+      const readiness = readRollbackReadiness(state?.rollbackReadiness);
+      if (readiness.waived) {
         throw new Error(
           "rollback readiness waived the baseline (a repository's first release), so there is no prior manifest to " +
             "restore; the remedy for this release is a patch-forward version, not a drill",
+        );
+      }
+      if (!readiness.target) {
+        throw new Error(
+          "rollout state names no rollback baseline, so this drill would rehearse restoring '<baseline-tag>'; record " +
+            "rollbackReadiness.baseline from the rollback-readiness gate first" +
+            (readiness.error ? ` (it reported: ${readiness.error})` : ""),
         );
       }
       for (const operation of assertBoundedRestore(planRollbackRestore(state?.rollbackReadiness?.baseline))) {
