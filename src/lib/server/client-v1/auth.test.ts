@@ -14,6 +14,8 @@ import type {
 } from "./credential-store.ts";
 import { proxy } from "../../../proxy.ts";
 import {
+  ACCESS_TOKEN_COOKIE,
+  ACCESS_TOKEN_QUERY_PARAM,
   CLIENT_V1_PUBLIC_INGRESS,
   LOCAL_PEER_HEADER,
   TAILNET_PEER_HEADER,
@@ -276,6 +278,102 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
       assert.equal(passedThrough(response), false, route);
       assert.equal(response.status, 401, route);
     }
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 ingress is classified before legacy mobile query-token redirects", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+
+    const response = await proxy(proxyRequest(
+      `/api/client/v1/health?${ACCESS_TOKEN_QUERY_PARAM}=configured-mobile-secret`,
+    ));
+
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.has("location"), false);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 admin stays on the private authenticated boundary", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_AUTH_TOKEN: "configured-sidecar-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const baseHeaders = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
+
+    const unauthenticated = await proxy(proxyRequest(
+      "/api/client/v1/admin/credentials",
+      { headers: baseHeaders },
+    ));
+    assert.equal(unauthenticated.status, 401);
+
+    const authenticated = await proxy(proxyRequest(
+      "/api/client/v1/admin/credentials",
+      {
+        headers: {
+          ...baseHeaders,
+          cookie: `${ACCESS_TOKEN_COOKIE}=configured-mobile-secret`,
+        },
+      },
+    ));
+    assert.equal(passedThrough(authenticated), true);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 rejects oversized pairing creation before route handling", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+
+    const response = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+      method: "POST",
+      headers: {
+        [LOCAL_PEER_HEADER]: "loopback-secret",
+        "content-length": String(64 * 1024 + 1),
+        "content-type": "application/json",
+        origin: ORIGIN,
+        referer: `${ORIGIN}/`,
+      },
+    }));
+
+    assert.equal(response.status, 413);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 health is not subjected to a request-body size rule", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+
+    const response = await proxy(proxyRequest("/api/client/v1/health", {
+      headers: {
+        [LOCAL_PEER_HEADER]: "loopback-secret",
+        "content-length": String(64 * 1024 + 1),
+        origin: ORIGIN,
+        referer: `${ORIGIN}/`,
+      },
+    }));
+
+    assert.equal(passedThrough(response), true);
   } finally {
     restoreProxyEnv();
   }

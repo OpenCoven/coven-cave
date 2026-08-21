@@ -208,6 +208,29 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
+// Control requests are small metadata envelopes. Binary uploads keep their
+// separate route-level streaming limits instead of inheriting this cap.
+const CLIENT_V1_CONTROL_BODY_LIMIT_BYTES = 64 * 1024;
+
+function hasSafeClientV1RequestSize(
+  req: NextRequest,
+  clientV1Ingress: ReturnType<typeof clientV1IngressKind>,
+) {
+  if (!clientV1Ingress || !["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+    return true;
+  }
+  const mediaType = req.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  if (mediaType === "multipart/form-data" || mediaType?.startsWith("image/")) {
+    return true;
+  }
+  const contentLength = req.headers.get("content-length");
+  if (!contentLength) return true;
+  return (
+    /^\d+$/.test(contentLength)
+    && Number(contentLength) <= CLIENT_V1_CONTROL_BODY_LIMIT_BYTES
+  );
+}
+
 function isLocalOnlyAutomationRun(pathname: string, method: string) {
   return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
 }
@@ -273,7 +296,7 @@ export async function proxy(req: NextRequest) {
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
   const clientV1Ingress = clientV1IngressKind(req.nextUrl.pathname);
-  const mobileRes = clientV1Ingress && trustedLocalPeer
+  const mobileRes = clientV1Ingress
     ? null
     : await mobileAccessGate(
       req,
@@ -417,6 +440,9 @@ export async function proxy(req: NextRequest) {
   }
   if (!hasSafeContentType(req)) {
     return jsonError(415, "unsupported content-type");
+  }
+  if (!hasSafeClientV1RequestSize(req, clientV1Ingress)) {
+    return jsonError(413, "request body too large");
   }
 
   if (clientV1Ingress) {
