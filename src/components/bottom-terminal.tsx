@@ -661,7 +661,7 @@ export function BottomTerminal({
       term.focus();
 
       healthTimer = setInterval(() => {
-        if (disposed || stopped || !visibleRef.current) return;
+        if (disposed || stopped || !visibleRef.current || document.hidden) return;
         void bridge.invoke<string[]>("pty_list").then((sessions) => {
           if (disposed || stopped || sessions.includes(threadId)) return;
           sendToPtyRef.current = null;
