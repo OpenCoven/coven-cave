@@ -6,6 +6,12 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { THIN_HEADROOM_PCT } from "./budget-headroom.mjs";
+import {
+  evaluatePerformanceBudgets,
+  PERFORMANCE_BUDGETS,
+} from "../src/lib/performance-budgets.ts";
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_REGRESSION_THRESHOLD_PCT = 20;
 const HISTORY_LIMIT = 365;
@@ -30,6 +36,7 @@ function metric(id, label, unit, value, direction, source) {
 function conversationMetrics(conversation) {
   const before = conversation?.before;
   const after = conversation?.after;
+  const cold = conversation?.cold;
   if (!before || !after) throw new Error("conversation benchmark is missing before/after results");
 
   const beforeP95 = finiteNumber(before.p95Ms, "conversation before p95Ms");
@@ -37,7 +44,40 @@ function conversationMetrics(conversation) {
   const beforeBytes = finiteNumber(before.bytesReadPerScan, "conversation before bytesReadPerScan");
   const afterBytes = finiteNumber(after.bytesReadPerScan, "conversation after bytesReadPerScan");
 
+  // `cold` measures Cave's own uncached scan and is what the 10k-list budget
+  // judges. A baseline report captured before it existed simply omits it, so it
+  // stays optional here rather than failing the run that inherits that baseline.
+  const coldMetrics = cold
+    ? [
+        metric(
+          "conversation-list.cold-scan.p50-ms",
+          "Conversation list cold scan p50",
+          "ms",
+          finiteNumber(cold.p50Ms, "conversation cold p50Ms"),
+          "lower-is-better",
+          "conversation-list",
+        ),
+        metric(
+          "conversation-list.cold-scan.p95-ms",
+          "Conversation list cold scan p95",
+          "ms",
+          finiteNumber(cold.p95Ms, "conversation cold p95Ms"),
+          "lower-is-better",
+          "conversation-list",
+        ),
+        metric(
+          "conversation-list.cold-scan.bytes",
+          "Conversation list cold scan bytes",
+          "bytes",
+          finiteNumber(cold.bytesReadPerScan, "conversation cold bytesReadPerScan"),
+          "lower-is-better",
+          "conversation-list",
+        ),
+      ]
+    : [];
+
   return [
+    ...coldMetrics,
     metric(
       "conversation-list.full-parse.p50-ms",
       "Conversation list full parse p50",
@@ -170,6 +210,7 @@ export function buildPerformanceReport({
   metadata,
   baselineReport = null,
   regressionThresholdPct = DEFAULT_REGRESSION_THRESHOLD_PCT,
+  budgetCatalogue = PERFORMANCE_BUDGETS,
 }) {
   finiteNumber(regressionThresholdPct, "regressionThresholdPct");
   if (regressionThresholdPct < 0) throw new Error("regressionThresholdPct must be non-negative");
@@ -192,7 +233,16 @@ export function buildPerformanceReport({
     (entry) => entry.comparison?.verdict === "improvement",
   ).length;
   const reliabilityPass = reliability.pass === true;
-  const status = !reliabilityPass ? "fail" : regressionCount > 0 ? "regression" : "pass";
+  const budgets = evaluatePerformanceBudgets(metrics, budgetCatalogue);
+  // A breached absolute budget is a harder signal than a percentage drift from
+  // the previous run, so it fails the report outright rather than waiting for
+  // --fail-on-regression. Baseline comparison catches erosion; this catches a
+  // number that has left the approved envelope regardless of how it got there.
+  const status = !reliabilityPass || !budgets.pass
+    ? "fail"
+    : regressionCount > 0
+    ? "regression"
+    : "pass";
   const report = {
     schemaVersion: 1,
     repository: metadata.repository,
@@ -222,8 +272,12 @@ export function buildPerformanceReport({
       regressionCount,
       improvementCount,
       reliabilityPass,
+      budgetPass: budgets.pass,
+      budgetBreachCount: budgets.breachCount,
+      budgetUnmeasuredCount: budgets.unmeasuredCount,
       historyPoints: 0,
     },
+    budgets,
     metrics,
     benchmarks: {
       conversationList: conversation,
@@ -252,6 +306,24 @@ function formatDelta(comparison) {
   if (comparison.percentChange === null) return "unrated";
   const sign = comparison.percentChange > 0 ? "+" : "";
   return `${sign}${comparison.percentChange.toFixed(2)}%`;
+}
+
+function formatBudgetLimit(result) {
+  const comparator = result.budget.direction === "lower-is-better" ? "≤" : "≥";
+  return `${comparator} ${formatMetricValue(result.budget.limit, result.budget.unit)}`;
+}
+
+function budgetRow(result) {
+  const value = result.value === null
+    ? "—"
+    : formatMetricValue(result.value, result.budget.unit);
+  const headroom = result.headroomPct === null
+    ? result.budget.gate === "postbuild"
+      ? `enforced by \`${result.budget.source}\``
+      : result.budget.source
+    : `${result.headroomPct.toFixed(1)}%` +
+      (result.headroomPct < THIN_HEADROOM_PCT ? " ⚠ THIN" : "");
+  return `| ${result.budget.surface} | ${result.budget.label} | ${value} | ${formatBudgetLimit(result)} | ${headroom} | ${result.verdict} |`;
 }
 
 export function renderPerformanceReportMarkdown(report) {
@@ -289,6 +361,20 @@ ${baselineLine} A directional change greater than ${report.controls.regressionTh
 | Metric | Current | Previous | Change | Verdict |
 | --- | ---: | ---: | ---: | --- |
 ${rows.join("\n")}
+
+## Production budgets
+
+- Budget verdict: **${report.summary.budgetPass ? "PASS" : "FAIL"}**
+- Enforced here: ${report.budgets.enforcedCount} · breached: ${report.budgets.breachCount} · unmeasured: ${report.budgets.unmeasuredCount}
+- Enforced by a build gate: ${report.budgets.delegatedCount} · awaiting a fixture: ${report.budgets.pendingCount}
+- Fixture profile: \`${report.controls.conversationFixture?.profile ?? "unknown"}\` (${report.controls.conversationFixture?.fileCount ?? "?"} conversations)
+
+An enforced budget with no measurement counts as a failure, not a pass: a
+benchmark that never ran must not read as a clean run.
+
+| Surface | Budget | Measured | Limit | Headroom | Verdict |
+| --- | --- | ---: | ---: | ---: | --- |
+${report.budgets.results.map(budgetRow).join("\n")}
 
 ## Daemon reliability contract
 
@@ -440,13 +526,29 @@ async function main() {
     `${JSON.stringify({
       status: report.summary.status,
       regressions: report.summary.regressionCount,
+      budgetBreaches: report.summary.budgetBreachCount,
+      budgetUnmeasured: report.summary.budgetUnmeasuredCount,
       report: written.reportJsonPath,
       index: written.indexPath,
       pointer: written.pointerPath,
     }, null, 2)}\n`,
   );
+  for (const result of report.budgets.results) {
+    if (result.verdict === "breach") {
+      console.error(
+        `cave-performance-report: ${result.budget.id} breached its budget ` +
+          `(${result.value} vs ${result.budget.direction === "lower-is-better" ? "max" : "min"} ${result.budget.limit} ${result.budget.unit})`,
+      );
+    }
+    if (result.verdict === "unmeasured") {
+      console.error(
+        `cave-performance-report: ${result.budget.id} is enforced but no run produced it (${result.budget.source})`,
+      );
+    }
+  }
   if (
     !report.summary.reliabilityPass ||
+    !report.summary.budgetPass ||
     (options.failOnRegression && report.summary.regressionCount > 0)
   ) {
     process.exitCode = 1;

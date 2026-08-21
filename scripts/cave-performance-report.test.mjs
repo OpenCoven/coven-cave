@@ -12,13 +12,19 @@ import {
   writePerformanceReport,
 } from "./cave-performance-report.mjs";
 
-function conversation({ warmP95 = 8, cacheHitRate = 1 } = {}) {
+function conversation({ warmP95 = 8, cacheHitRate = 1, coldP95 = 900 } = {}) {
   return {
-    fixture: { fileCount: 10, transcriptBytes: 1024, iterations: 5 },
+    fixture: { profile: "phase-6-list-10k", fileCount: 10, transcriptBytes: 1024, iterations: 5 },
     before: {
       label: "full transcript parse",
       p50Ms: 10,
       p95Ms: 20,
+      bytesReadPerScan: 10_000,
+    },
+    cold: {
+      label: "cold metadata scan",
+      p50Ms: 850,
+      p95Ms: coldP95,
       bytesReadPerScan: 10_000,
     },
     after: {
@@ -66,10 +72,14 @@ function metadata(overrides = {}) {
 }
 
 test("report compares metrics in their improvement direction", () => {
+  // Empty catalogue on purpose: this asserts baseline comparison, and the
+  // 0.7 hit rate it needs to force a regression also breaches the shipped
+  // cache-hit budget, which would mask the verdict under a "fail" status.
   const baseline = buildPerformanceReport({
     conversation: conversation(),
     reliability: reliability(),
     metadata: metadata({ sha: "b".repeat(40), runId: "16" }),
+    budgetCatalogue: [],
   });
   const report = buildPerformanceReport({
     conversation: conversation({ warmP95: 12, cacheHitRate: 0.7 }),
@@ -77,6 +87,7 @@ test("report compares metrics in their improvement direction", () => {
     metadata: metadata(),
     baselineReport: baseline,
     regressionThresholdPct: 15,
+    budgetCatalogue: [],
   });
 
   assert.equal(report.summary.status, "regression");
@@ -149,6 +160,66 @@ test("failed daemon reliability contract fails the report summary", () => {
 
   assert.equal(report.summary.status, "fail");
   assert.equal(report.summary.reliabilityPass, false);
+});
+
+test("a run inside every budget reports a passing budget verdict", () => {
+  const report = buildPerformanceReport({
+    conversation: conversation(),
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+
+  assert.equal(report.summary.budgetPass, true);
+  assert.equal(report.summary.budgetBreachCount, 0);
+  assert.equal(report.summary.budgetUnmeasuredCount, 0);
+  assert.equal(report.summary.status, "pass");
+  assert.ok(report.budgets.pendingCount > 0, "pending budgets stay visible in the report");
+});
+
+test("a breached budget fails the report even with no baseline to regress against", () => {
+  const report = buildPerformanceReport({
+    conversation: conversation({ coldP95: 30_000 }),
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+
+  assert.equal(report.summary.status, "fail");
+  assert.equal(report.summary.budgetPass, false);
+  assert.equal(report.summary.budgetBreachCount, 1);
+  assert.equal(
+    report.budgets.results.find(
+      (result) => result.budget.id === "conversation-list.cold-scan.p95-ms",
+    ).verdict,
+    "breach",
+  );
+});
+
+test("a benchmark that produced no cold scan fails closed rather than passing", () => {
+  const withoutCold = conversation();
+  delete withoutCold.cold;
+  const report = buildPerformanceReport({
+    conversation: withoutCold,
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+
+  assert.equal(report.summary.status, "fail");
+  assert.equal(report.summary.budgetUnmeasuredCount, 2);
+});
+
+test("markdown renders the budget table with limits and pending surfaces", () => {
+  const markdown = renderPerformanceReportMarkdown(
+    buildPerformanceReport({
+      conversation: conversation(),
+      reliability: reliability(),
+      metadata: metadata(),
+    }),
+  );
+
+  assert.match(markdown, /## Production budgets/);
+  assert.match(markdown, /Budget verdict: \*\*PASS\*\*/);
+  assert.match(markdown, /Warm shell boot to interactive p95/);
+  assert.match(markdown, /must not read as a clean run/);
 });
 
 test("scheduled workflow restores history and always uploads report evidence", async () => {

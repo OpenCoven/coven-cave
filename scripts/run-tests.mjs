@@ -202,6 +202,7 @@ export const SUITES = {
     "src/lib/daemon-connection-supervisor.test.ts",
     "src/lib/daemon-fault-harness.test.ts",
     "src/lib/daemon-reliability.test.ts",
+    "src/lib/performance-budgets.test.ts",
     "src/lib/daemon-status-classification.test.ts",
     "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/daemon-recovery-presentation.test.ts",
@@ -1800,6 +1801,8 @@ export const SUITES = {
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
+  // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
+  "scripts/cave-performance-report.test.mjs",
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
