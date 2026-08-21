@@ -89,11 +89,11 @@ const RETRY_AFTER_CAP_MS = 60_000;
 // condition that clears in seconds — and worse, the 429 body would then be fed
 // to verifySignature and misreported as an invalid signature.
 const RETRYABLE_STATUS = new Set([408, 425, 429]);
-export const isRetryableStatus = (status) => status >= 500 || RETRYABLE_STATUS.has(status);
+const isRetryableStatus = (status) => status >= 500 || RETRYABLE_STATUS.has(status);
 
 // Honour Retry-After when the server sends one, but cap it: an absurd value
 // must not park the release job for hours.
-export const retryAfterMs = (res) => {
+const retryAfterMs = (res) => {
   const raw = res?.headers?.get?.("retry-after");
   if (!raw) return null;
   const seconds = Number(raw);
@@ -171,8 +171,8 @@ export const verifySignature = (artifact, pubB64, sigB64) => {
 async function main() {
   // A flag that is present but carries no usable value must not fall through
   // to the network path — that would quietly verify a DIFFERENT release than
-  // the caller named. Same failure class as the main-guard above: silently
-  // doing something else is worse than stopping.
+  // the caller named. Same failure class as the isDirectRun guard at the foot
+  // of this file: silently doing something else is worse than stopping.
   for (const name of ["manifest", "tag"]) {
     if (process.argv.includes(`--${name}`) || process.argv.includes(`--${name}=`)) {
       if (!readOption(process.argv, name)) {
