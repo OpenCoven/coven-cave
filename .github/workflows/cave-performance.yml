@@ -6,9 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: Conversation-list benchmark iterations
+        description: Conversation-list benchmark iterations (blank uses the fixture profile; a different value reports the run as swept, so the enforced budgets read unmeasured)
         required: false
-        default: "20"
+        default: ""
+        type: string
+      profile:
+        description: Fixture profile from fixtures/phase-6/performance-fixtures.json
+        required: false
+        default: phase-6-list-10k
         type: string
       fail_on_regression:
         description: Fail when a metric regresses by more than 20 percent
@@ -30,7 +35,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      CAVE_BENCH_ITERATIONS: ${{ inputs.iterations || '20' }}
+      # Blank on a scheduled run, so the fixture profile supplies the scale the
+      # budgets were seeded against. The benchmark rejects a malformed override
+      # rather than coercing it to zero.
+      CAVE_BENCH_ITERATIONS: ${{ inputs.iterations }}
+      CAVE_BENCH_PROFILE: ${{ inputs.profile || 'phase-6-list-10k' }}
       REPORT_ROOT: artifacts/cave-performance
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

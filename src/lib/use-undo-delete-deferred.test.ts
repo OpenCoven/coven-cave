@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { scheduleDeferredDelete } from "./use-undo-delete.ts";
+import { scheduleDeferredDelete } from "./schedule-deferred-delete.ts";
 
 let deletes = 0;
 const cancelled = scheduleDeferredDelete(async () => {
