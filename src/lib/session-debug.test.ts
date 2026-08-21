@@ -498,6 +498,18 @@ assert.doesNotMatch(
   /<ChatToolActivityLayout/,
   "TurnRow no longer routes the shared response through the obsolete fixed-slot layout",
 );
+// Exclusivity, not just existence. The segment assertion above pins that ONE
+// <ToolRuns> renders inside the chronology map; it says nothing about a second
+// one elsewhere in the same turn, which is exactly what renders every tool
+// twice. The predecessor guard was a flat `doesNotMatch(/<ToolRuns/)` — correct
+// while the component was banned outright, and unusable once it became the
+// legitimate path. Counting keeps the protection without the ban.
+assert.equal(
+  (chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "")
+    .match(/<ToolRuns\b/g)?.length ?? 0,
+  1,
+  "TurnRow renders <ToolRuns> exactly once — a second call site double-renders every tool",
+);
 
 // MessageBubble: only the LAST text span streams (progressive markdown);
 // settled spans render with pending=false. The cursor this once also gated
