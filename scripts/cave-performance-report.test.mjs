@@ -22,13 +22,19 @@ function conversation({
   cacheHitRate = 1,
   coldP50 = 850,
   coldP95 = 900,
+  // The naive sequential control loop. It is a budgeted quantity now — the
+  // relative cold-scan budget divides by it — so the synthetic run has to keep
+  // the same shape a real one does (the reference machine measured 994.70 ms
+  // cold against 4,096.10 ms control) rather than the placeholder 10 ms that
+  // would have read as a 8,500% ratio.
+  fullParseP50 = 4_000,
 } = {}) {
   return {
     fixture: { profile: "phase-6-list-10k", fileCount: 10, transcriptBytes: 1024, iterations: 5 },
     before: {
       label: "full transcript parse",
-      p50Ms: 10,
-      p95Ms: 20,
+      p50Ms: fullParseP50,
+      p95Ms: fullParseP50 + 20,
       bytesReadPerScan: 10_000,
     },
     cold: {
@@ -195,7 +201,9 @@ test("a breached budget fails the report even with no baseline to regress agains
 
   assert.equal(report.summary.status, "fail");
   assert.equal(report.summary.budgetPass, false);
-  assert.equal(report.summary.budgetBreachCount, 1);
+  // Both cold-scan budgets: 30,000 ms is over the 5,000 ms ceiling, and it is
+  // also 750% of the 4,000 ms control loop that ran beside it.
+  assert.equal(report.summary.budgetBreachCount, 2);
   assert.equal(
     report.budgets.results.find(
       (result) => result.budget.id === "conversation-list.cold-scan.p50-ms",
@@ -228,7 +236,8 @@ test("a single stalled iteration does not by itself fail the run", () => {
     metadata: metadata(),
   });
   assert.equal(slow.summary.budgetPass, false);
-  assert.equal(slow.summary.budgetBreachCount, 1);
+  // The absolute ceiling and the relative one: 16,058 ms is 401% of the control.
+  assert.equal(slow.summary.budgetBreachCount, 2);
 });
 
 test("a benchmark that produced no cold scan fails closed rather than passing", () => {
@@ -241,7 +250,53 @@ test("a benchmark that produced no cold scan fails closed rather than passing", 
   });
 
   assert.equal(report.summary.status, "fail");
-  assert.equal(report.summary.budgetUnmeasuredCount, 2);
+  // Cold median, cold bytes, and the relative budget that divides the cold
+  // median by the control — a ratio with no numerator is not a pass.
+  assert.equal(report.summary.budgetUnmeasuredCount, 3);
+  assert.match(
+    report.budgets.results.find(
+      (result) => result.budget.id === "conversation-list.cold-scan.share-of-full-parse-pct",
+    ).note,
+    /no run produced conversation-list\.cold-scan\.p50-ms/,
+  );
+});
+
+test("the relative cold-scan budget is graded from the ids this report actually emits", () => {
+  // The operand ids are the whole tie between the catalogue and the report, and
+  // a renamed metric would leave the budget permanently `unmeasured` rather
+  // than wrong — quiet in the JSON, and only visible as a nightly that never
+  // goes green again. Resolve them by building a report instead of trusting.
+  const healthy = buildPerformanceReport({
+    conversation: conversation({ coldP50: 994.7, fullParseP50: 4_096.1 }),
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+  const ratio = healthy.budgets.results.find(
+    (result) => result.budget.id === "conversation-list.cold-scan.share-of-full-parse-pct",
+  );
+  assert.equal(ratio.verdict, "pass");
+  assert.equal(ratio.value.toFixed(2), "24.28");
+
+  // The measured read-pool collapse (CONVERSATION_LIST_READ_CONCURRENCY 8 -> 1):
+  // 4,397.85 ms cold against a 3,926.19 ms control. The absolute 5,000 ms
+  // ceiling passes that run, which is exactly why the relative budget exists.
+  const collapsed = buildPerformanceReport({
+    conversation: conversation({ coldP50: 4_397.85, coldP95: 4_400, fullParseP50: 3_926.19 }),
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+  assert.equal(collapsed.summary.status, "fail");
+  assert.equal(collapsed.summary.budgetBreachCount, 1);
+  assert.equal(
+    collapsed.budgets.results.find(
+      (result) => result.budget.id === "conversation-list.cold-scan.p50-ms",
+    ).verdict,
+    "pass",
+  );
+  assert.match(
+    renderPerformanceReportMarkdown(collapsed),
+    /cold scan median as a share of the full-parse control median/,
+  );
 });
 
 test("a smoke-scale run fails instead of certifying the 10k budgets", () => {

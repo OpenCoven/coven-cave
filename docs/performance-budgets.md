@@ -111,7 +111,9 @@ iterations. The p95 is still measured, still reported, and still compared
 against the baseline; it just does not decide whether the nightly is red.
 
 The unit suite enforces the rule rather than the instance: every enforced `ms`
-budget must be a `.p50-ms` metric whose label says "median", and the fixture's
+budget must be a `.p50-ms` metric whose label says "median", every operand of a
+relative budget must be one too — a quotient of two maxima is exactly as
+decidable by one stalled iteration as a p95 ceiling was — and the fixture's
 `iterations` is pinned alongside `fileCount` and `transcriptBytes` — a median is
 only robust because five samples sit under it, and editing the profile to
 `iterations: 1` would quietly restore the noise-sensitive number with every
@@ -137,43 +139,89 @@ The warm ceiling stays **750 ms** — the warm median moved 156 → 156 ms under
 same contention, and a warm scan that stopped hitting cache would cost the cold
 number and breach immediately.
 
+### What the cold scan actually optimises
+
+Two earlier drafts of this document described the wrong optimisation, and the
+mistake was load-bearing, so it is worth stating plainly: **the cold scan parses
+every transcript.** `readConversationSummary` in `src/lib/cave-conversations.ts`
+reads each file whole and `JSON.parse`s it, exactly as the control loop does,
+then derives signals on top of the parsed object. What the shipped path adds is
+an 8-way read pool (`CONVERSATION_LIST_READ_CONCURRENCY`) and a stat-keyed
+summary cache.
+
+So "a cold scan that regressed back to parsing every transcript" was never a
+describable regression, and `cold-scan.bytes` cannot separate the two loops for
+a simpler reason than the one previously given: both read all 43,608,890 bytes,
+and always did.
+
 ### What 5,000 ms does *not* catch
 
-An earlier draft justified the ceiling by an upper anchor: 5,000 ms sits under
-the 6,411–6,900 ms the benchmark's own full-transcript-parse control loop cost
-on the seeding runs, so a cold scan that regressed all the way back to parsing
-every transcript would still trip it. **That anchor is not
-machine-independent**, and the claim is false on a fast runner. Measured with
-`pnpm performance:report` on the same reference machine, quieter:
+The describable regression is the cold scan costing what the naive sequential
+loop costs. The ceiling does not catch it, and this was measured by causing it
+rather than argued: setting `CONVERSATION_LIST_READ_CONCURRENCY` to 1 and
+running `phase-6-list-10k` produced
 
 | metric | median |
 | --- | ---: |
-| cold metadata scan | 922.92 ms |
-| full-transcript-parse control loop | 3,891.97 ms |
+| cold metadata scan | 4,397.85 ms |
+| full-transcript-parse control loop | 3,926.19 ms |
 
-3,891.97 ms is *below* the ceiling, so a cold scan back at full-parse speed
-passes. Nothing else here closes the gap either: the cold scan reads the
-identical 43,608,890 bytes the control loop does — the optimisation removed
-parsing, not reading — so `cold-scan.bytes` cannot separate them;
-`cache-hit-rate` is taken from the warm loop, so a cold regression does not move
-it; and the 20% baseline comparison does classify it as a `regression`, but the
+4,397.85 ms is *below* the 5,000 ms ceiling — verdict `pass` — with identical
+bytes in both loops, so `cold-scan.bytes` sees nothing. `cache-hit-rate` is
+taken from the warm loop, so a cold-path regression does not move it either;
+and the 20% baseline comparison does classify it as a `regression`, but the
 nightly runs without `--fail-on-regression`, so the run still exits 0.
 
 Tightening the absolute ceiling is not the repair. The slowest legitimate median
-measured is 2,603 ms, so any limit below the 3,891.97 ms control cost leaves
+measured is 2,603 ms, so any limit below the ~3,900 ms control cost leaves
 25–34% headroom and reinstates exactly the noise-driven red nightly that moving
-off p95 was meant to end. The durable fix is a budget expressed *relative* to
-the control loop measured in the same run, on the same machine, under the same
-load — which needs the catalogue to grow a second budget kind, and is tracked as
-`cave-4e1` rather than bolted onto this change.
+off p95 was meant to end.
+
+### The relative budget, and why it survives a slow runner
+
+`conversation-list.cold-scan.share-of-full-parse-pct` (`cave-4e1`) grades the
+cold median as a percentage of the control median **from the same run**. An
+absolute ceiling is a claim about a machine as much as about the code — 5,000 ms
+was picked as a number a regressed scan could not reach, and a quieter reference
+machine measured that regression at 3,892 ms. A ratio has no such anchor to
+lose, because the same box under the same load sets both numbers.
+
+| run | cold p50 | control p50 | ratio |
+| --- | ---: | ---: | ---: |
+| idle | 994.70 ms | 4,096.10 ms | 24.28% |
+| three benchmarks concurrently | 1,809.08 ms | 4,718.10 ms | 38.34% |
+| read pool collapsed to 1 | 4,397.85 ms | 3,926.19 ms | 112.01% |
+
+The ceiling is **75%** — 1.96x the worst ratio a healthy run has produced, the
+same multiple over a measured worst that the 5,000 ms cold ceiling uses, and 37
+points under the collapse.
+
+It is deliberately loose. The quotient is *not* load-invariant: the two loops
+are not equally I/O-bound, so contention hurts the read-bound cold scan more
+than the parse-bound control and the ratio rises (24.3% → 38.3% with three
+benchmarks at once). What it cannot do is drift with absolute machine speed,
+which is the one way the absolute ceiling failed. A ratio budget's job here is
+to catch the collapse an absolute ceiling structurally cannot — erosion is still
+the baseline comparison's job.
+
+A relative budget fails closed on the same terms as every other: a missing
+numerator, a missing denominator, or a denominator that is zero or negative all
+record `unmeasured`. `x / 0` is `Infinity`, which a ceiling would read as a
+breach and a floor as a pass, both by accident; a control loop that measured
+0 ms did not prove the scan free, it proved the run broken.
 
 `src/lib/performance-budgets.test.ts` asserts the shipped limits clear the
-*slowest* run in that table, not the fastest, so tightening a limit past a
-measurement it was seeded from fails the unit suite rather than the nightly.
+*slowest* readings in these tables, not the fastest, so tightening a limit past
+a measurement it was seeded from fails the unit suite rather than the nightly.
+The worst-case entry is an envelope rather than one run: it pairs the slowest
+cold median on record with the fastest control median on record, implying a
+55.2% ratio that no single run measured, because being wrong in the pessimistic
+direction is the safe way for a ceiling test to be wrong.
 
-Only Cave's own code is budgeted. The benchmark's raw `readdir` + `JSON.parse`
-control loop is measured and reported but deliberately carries no budget —
-policing it would measure the harness rather than the product.
+Only Cave's own code carries an absolute budget. The benchmark's raw `readdir` +
+`JSON.parse` control loop is measured and reported but has no ceiling of its
+own — policing it would measure the harness rather than the product. It is a
+*divisor* here, not a budgeted quantity.
 
 ## Fixtures
 

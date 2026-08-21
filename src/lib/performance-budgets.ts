@@ -49,6 +49,29 @@ export type PerformanceBudgetGate = typeof PERFORMANCE_BUDGET_GATES[number];
 export type PerformanceBudgetUnit = "ms" | "bytes" | "percent";
 export type PerformanceBudgetDirection = "lower-is-better" | "higher-is-better";
 
+/**
+ * Two metric ids whose quotient is the budgeted value, as a percentage.
+ *
+ * An absolute ceiling is a claim about a machine as much as about the code:
+ * 5,000 ms was chosen as a number a regressed cold scan could not reach, and a
+ * quieter reference machine then measured that regression at 3,892 ms — under
+ * the ceiling, green. A ratio has no such anchor to lose. Both operands come
+ * out of the SAME benchmark run, on the same box, under the same load, so the
+ * quotient survives a runner that is uniformly slower or uniformly faster.
+ *
+ * It is not perfectly load-invariant and this module does not pretend it is:
+ * the two loops are not equally I/O-bound, so contention moves the quotient
+ * (measured 24.3% idle, 38.3% with three benchmarks running at once). What it
+ * cannot do is drift with absolute machine speed, which is the specific way the
+ * absolute ceiling failed.
+ */
+export type PerformanceBudgetRatio = {
+  /** Metric id supplying the numerator. */
+  numerator: string;
+  /** Metric id supplying the denominator; a non-positive value is unjudgeable. */
+  denominator: string;
+};
+
 export type PerformanceBudget = {
   /** Matches the metric id the performance report emits, when one exists. */
   id: string;
@@ -83,6 +106,12 @@ export type PerformanceBudget = {
    *   See `budgetSourceDerivation`.
    */
   source: string;
+  /**
+   * Present when the budget grades a RATIO of two metrics rather than a metric
+   * of its own. `id` then names the derived quantity and matches no metric the
+   * report emits, so nothing can accidentally satisfy it with a raw reading.
+   */
+  ratioOf?: PerformanceBudgetRatio;
 };
 
 /**
@@ -155,26 +184,52 @@ const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10
  * contention, and a warm scan that stopped hitting cache would cost the cold
  * number and breach immediately.
  *
- * ⚠️ **5,000 ms does not by itself catch a total regression to full-transcript
- * parsing, and an earlier draft of this comment claimed it did.** The claim was
- * that 5,000 ms sits under the 6,411-6,900 ms the benchmark's own control loop
- * cost on the seeding runs, so undoing the optimisation would still trip it.
- * That anchor is not machine-independent: the control loop costs whatever the
- * machine costs. A quieter run of the same reference machine measured a
- * full-parse median of 3,891.97 ms against a cold median of 922.92 ms, so a
- * cold scan back at full-parse speed would read ~3,892 ms and PASS.
+ * ## What the cold scan actually optimises, and why 5,000 ms cannot police it
  *
- * Nothing else here closes that gap. `cold-scan.bytes` reads the identical
- * 43,608,890 bytes in both loops (the optimisation removed parsing, not
- * reading); `cache-hit-rate` is taken from the warm loop, so a cold regression
- * does not move it; and the 20% baseline comparison does flag it, but the
- * nightly runs without `--fail-on-regression`, so the run still exits 0.
+ * ⚠️ Two earlier drafts of this comment described the wrong optimisation. The
+ * cold scan does **not** skip parsing: `readConversationSummary` in
+ * `src/lib/cave-conversations.ts` reads each file whole and `JSON.parse`s it,
+ * exactly like the control loop, then derives signals on top. What the shipped
+ * path adds is an 8-way read pool (`CONVERSATION_LIST_READ_CONCURRENCY`) and a
+ * stat-keyed summary cache. So "a cold scan that regressed back to parsing
+ * every transcript" was never a describable regression, and the reason
+ * `cold-scan.bytes` cannot separate the two loops is not that one stopped
+ * parsing — it is that both read all 43,608,890 bytes and always did.
  *
- * Tightening the ceiling is not the repair — a limit under 3,892 ms leaves
- * ~25-34% headroom over the 2,603 ms contended median and reinstates the
- * noise-driven red nightly that moving off p95 was for. The durable fix is a
- * budget relative to the control loop measured in the same run; that needs a
- * second budget kind and is tracked as `cave-4e1`.
+ * The describable regression is the cold scan costing what the naive
+ * sequential loop costs, and 5,000 ms does not catch it. Measured by executing
+ * it: with `CONVERSATION_LIST_READ_CONCURRENCY` set to 1, `phase-6-list-10k`
+ * reported a cold median of **4,397.85 ms** — inside the 5,000 ms ceiling,
+ * verdict `pass` — against a control median of 3,926.19 ms and identical bytes
+ * in both loops. `cache-hit-rate` comes from the warm loop, so a cold-path
+ * regression does not move it either, and the 20% baseline comparison does
+ * classify it as a regression but the nightly runs without
+ * `--fail-on-regression`, so the run still exits 0.
+ *
+ * Tightening the absolute ceiling is not the repair: a limit under ~3,900 ms
+ * leaves ~25-34% over the 2,603 ms contended median and reinstates the
+ * noise-driven red nightly that moving off p95 was for.
+ *
+ * ## The relative budget is the one that catches it (`cave-4e1`)
+ *
+ * `conversation-list.cold-scan.share-of-full-parse-pct` grades the cold median
+ * as a percentage of the control median from the SAME run. That comparison
+ * cannot be defeated by a fast machine, because the machine sets both numbers.
+ * Measured on the reference machine:
+ *
+ * | run                       | cold p50 | control p50 |  ratio |
+ * | ------------------------- | -------- | ----------- | ------ |
+ * | idle                      |   994.70 |    4,096.10 | 24.28% |
+ * | 3 benchmarks concurrently | 1,809.08 |    4,718.10 | 38.34% |
+ * | read pool collapsed to 1  | 4,397.85 |    3,926.19 |    112% |
+ *
+ * The ceiling is **75%**: 1.96x the worst ratio any healthy run has produced,
+ * the same multiple over a measured worst that the 5,000 ms cold ceiling uses,
+ * and still 37 points under the collapse. It is deliberately loose, because the
+ * quotient is load-sensitive in the direction that matters (contention hurts
+ * the read-bound cold loop more than the parse-bound control, so the ratio
+ * rises); a ratio budget's job here is to catch the collapse an absolute
+ * ceiling structurally cannot, not to grade erosion.
  */
 export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
   {
@@ -196,6 +251,24 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     limit: 750,
     gate: "performance-report",
     source: LIST_FIXTURE,
+  },
+  {
+    // The machine-relative companion to the ceiling above. Both operands come
+    // out of one run, so this is the budget that survives a slow runner — and
+    // the only one that fires when the read pool collapses (measured: 112%
+    // against a 4,397.85 ms cold median that PASSED the absolute ceiling).
+    id: "conversation-list.cold-scan.share-of-full-parse-pct",
+    surface: "list",
+    label: "10k conversation list, cold scan median as a share of the full-parse control median",
+    unit: "percent",
+    direction: "lower-is-better",
+    limit: 75,
+    gate: "performance-report",
+    source: LIST_FIXTURE,
+    ratioOf: {
+      numerator: "conversation-list.cold-scan.p50-ms",
+      denominator: "conversation-list.full-parse.p50-ms",
+    },
   },
   {
     // The cold scan reads every conversation once; the ceiling is what stops
@@ -360,6 +433,36 @@ export function enforcedFixtureProfiles(
   ];
 }
 
+/**
+ * The percentage a ratio budget grades, or the reason it cannot be graded.
+ *
+ * Every failure path here returns a note rather than a number, so a relative
+ * budget fails closed on exactly the same principle an absent metric does. The
+ * denominator guard is not decoration: a control loop that measured 0 ms did
+ * not prove the cold scan free, it proved the run broken, and `x / 0` would
+ * otherwise report `Infinity` — which for `lower-is-better` reads as a breach
+ * by luck rather than a refusal, and for a floor would read as a pass.
+ */
+function ratioPercent(
+  ratio: PerformanceBudgetRatio,
+  measured: ReadonlyMap<string, number>,
+): { value: number } | { note: string } {
+  const numerator = measured.get(ratio.numerator);
+  if (numerator === undefined || !Number.isFinite(numerator)) {
+    return { note: `no run produced ${ratio.numerator}, the numerator of this ratio` };
+  }
+  const denominator = measured.get(ratio.denominator);
+  if (denominator === undefined || !Number.isFinite(denominator)) {
+    return { note: `no run produced ${ratio.denominator}, the denominator of this ratio` };
+  }
+  if (denominator <= 0) {
+    return {
+      note: `${ratio.denominator} measured ${denominator}, so the ratio against it is undefined`,
+    };
+  }
+  return { value: (numerator / denominator) * 100 };
+}
+
 function headroomOf(budget: PerformanceBudget, value: number, limit: number): {
   headroom: number;
   headroomPct: number;
@@ -439,9 +542,17 @@ export function evaluatePerformanceBudgets(
           `${fixtureProfile === null ? "an unidentified fixture" : `${fixtureProfile}`}`,
       );
     }
-    const value = measured.get(budget.id);
-    if (value === undefined || !Number.isFinite(value)) {
-      return unmeasured(budget, "no run produced this metric");
+    let value: number;
+    if (budget.ratioOf) {
+      const resolved = ratioPercent(budget.ratioOf, measured);
+      if ("note" in resolved) return unmeasured(budget, resolved.note);
+      value = resolved.value;
+    } else {
+      const raw = measured.get(budget.id);
+      if (raw === undefined || !Number.isFinite(raw)) {
+        return unmeasured(budget, "no run produced this metric");
+      }
+      value = raw;
     }
     const { headroom, headroomPct, within } = headroomOf(budget, value, budget.limit);
     return {

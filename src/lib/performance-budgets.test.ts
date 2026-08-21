@@ -54,6 +54,20 @@ test("catalogue entries are well formed and uniquely identified", () => {
         `${entry.id} needs a positive limit`,
       );
     }
+    if (entry.ratioOf) {
+      // A ratio is only judgeable where the run supplies both operands, so the
+      // kind belongs to the gate that evaluates metrics and nowhere else.
+      assert.equal(entry.gate, "performance-report", `${entry.id}: only an enforced budget can divide`);
+      assert.equal(entry.unit, "percent", `${entry.id}: a ratio is a percentage`);
+      assert.notEqual(
+        entry.ratioOf.numerator,
+        entry.ratioOf.denominator,
+        `${entry.id}: dividing a metric by itself grades nothing`,
+      );
+      for (const operand of [entry.ratioOf.numerator, entry.ratioOf.denominator]) {
+        assert.notEqual(entry.id, operand, `${entry.id}: a ratio must not name itself as an operand`);
+      }
+    }
   }
 });
 
@@ -290,7 +304,7 @@ test("the seeded fixture still describes the workload the limits were approved f
 });
 
 /**
- * The SLOWEST `phase-6-list-10k` run measured, not the fastest.
+ * The SLOWEST `phase-6-list-10k` readings measured, not the fastest.
  *
  * Seeding from the quiet single run (cold median 1,364 ms) is what made the
  * original 3,000 ms ceiling look like 3x headroom; running three copies of the
@@ -298,9 +312,18 @@ test("the seeded fixture still describes the workload the limits were approved f
  * left 15% — a nightly one busy runner away from red. A ceiling is only honest
  * against the worst legitimate run we have actually observed, so that is what
  * the shipped limits are asserted to clear.
+ *
+ * ⚠️ This is a worst-case ENVELOPE, not one run's output. The absolute readings
+ * come from the three-concurrent set that produced the 2,603 ms cold median;
+ * the control median comes from a later three-concurrent set (4,718.10 ms
+ * against a 1,809.08 ms cold median, a 38.34% ratio). Pairing the slowest cold
+ * median with the fastest recorded control median implies a 55.2% ratio —
+ * worse than either run actually measured, which is the safe direction to be
+ * wrong in for a ceiling test. Do not read 55.2% as an observation.
  */
 const SLOWEST_MEASURED_RUN = [
   { id: "conversation-list.cold-scan.p50-ms", value: 2_603.31 },
+  { id: "conversation-list.full-parse.p50-ms", value: 4_718.10 },
   { id: "conversation-list.cold-scan.bytes", value: 43_608_890 },
   { id: "conversation-list.warm-cache.p50-ms", value: 156.28 },
   { id: "conversation-list.warm-cache.bytes", value: 0 },
@@ -336,7 +359,18 @@ test("no enforced timing budget grades a statistic this sample count cannot supp
     "if p95 has stopped being the maximum, a p95 budget is defensible again",
   );
   for (const entry of PERFORMANCE_BUDGETS) {
-    if (entry.gate !== "performance-report" || entry.unit !== "ms") continue;
+    if (entry.gate !== "performance-report") continue;
+    // A ratio budget grades no percentile of its own, but it inherits the
+    // statistic of whatever it divides — "cold p95 / control p95" would be a
+    // quotient of two maxima and just as decidable by one stalled iteration.
+    for (const operand of entry.ratioOf ? [entry.ratioOf.numerator, entry.ratioOf.denominator] : []) {
+      assert.ok(
+        operand.endsWith(".p50-ms"),
+        `${entry.id} divides ${operand}, which is not a median; a ratio of two ` +
+          `maxima is as noise-decidable as the p95 ceilings this rule replaced`,
+      );
+    }
+    if (entry.unit !== "ms") continue;
     assert.ok(
       entry.id.endsWith(".p50-ms"),
       `${entry.id} enforces a percentile the ${SEEDED_WORKLOAD.iterations}-iteration ` +
@@ -382,6 +416,116 @@ test("measurements from the wrong fixture scale count as unmeasured, not as a pa
   assert.match(
     smoke.results.find((result) => result.budget.id === "conversation-list.cold-scan.p50-ms")!.note!,
     /seeded against the phase-6-list-10k fixture, but this run measured default/,
+  );
+});
+
+const RATIO_BUDGET_ID = "conversation-list.cold-scan.share-of-full-parse-pct";
+
+function ratioBudget(overrides: Partial<PerformanceBudget> = {}): PerformanceBudget {
+  return budget({
+    id: "test.ratio",
+    unit: "percent",
+    limit: 75,
+    ratioOf: { numerator: "test.numerator", denominator: "test.denominator" },
+    ...overrides,
+  });
+}
+
+test("a ratio budget grades one metric as a percentage of another", () => {
+  const evaluation = evaluatePerformanceBudgets(
+    [
+      { id: "test.numerator", value: 994.7 },
+      { id: "test.denominator", value: 4_096.1 },
+    ],
+    [ratioBudget()],
+  );
+  assert.equal(evaluation.results[0].verdict, "pass");
+  assert.equal(evaluation.results[0].value?.toFixed(2), "24.28");
+  assert.equal(evaluation.enforcedCount, 1);
+});
+
+test("a ratio budget ignores a raw metric that happens to share its id", () => {
+  // The whole point of the derived id is that nothing the report emits can
+  // satisfy it directly. If the evaluator fell back to an id lookup, a stray
+  // metric would decide a budget whose operands were never measured.
+  const evaluation = evaluatePerformanceBudgets([{ id: "test.ratio", value: 1 }], [ratioBudget()]);
+  assert.equal(evaluation.results[0].verdict, "unmeasured");
+  assert.match(evaluation.results[0].note!, /no run produced test\.numerator/);
+});
+
+test("a ratio budget over its ceiling breaches", () => {
+  // The measured read-pool collapse: CONVERSATION_LIST_READ_CONCURRENCY 8 -> 1
+  // put the cold median at 4,397.85 ms against a 3,926.19 ms control.
+  const evaluation = evaluatePerformanceBudgets(
+    [
+      { id: "test.numerator", value: 4_397.85 },
+      { id: "test.denominator", value: 3_926.19 },
+    ],
+    [ratioBudget()],
+  );
+  assert.equal(evaluation.results[0].verdict, "breach");
+  assert.equal(evaluation.pass, false);
+});
+
+test("a ratio budget missing either operand fails closed", () => {
+  for (const [present, missing] of [
+    [{ id: "test.denominator", value: 10 }, "test.numerator"],
+    [{ id: "test.numerator", value: 10 }, "test.denominator"],
+  ] as const) {
+    const evaluation = evaluatePerformanceBudgets([present], [ratioBudget()]);
+    assert.equal(evaluation.pass, false, `${missing} absent must not pass`);
+    assert.equal(evaluation.results[0].verdict, "unmeasured");
+    assert.match(evaluation.results[0].note!, new RegExp(missing.replace(".", "\\.")));
+  }
+});
+
+test("a ratio budget with an unjudgeable denominator fails closed rather than reading Infinity", () => {
+  // `x / 0` is `Infinity`, which a lower-is-better comparison would call a
+  // breach and a higher-is-better one would call a pass — both by accident. A
+  // control loop that measured 0 ms did not prove anything; it broke.
+  for (const denominator of [0, -1, Number.NaN]) {
+    const evaluation = evaluatePerformanceBudgets(
+      [
+        { id: "test.numerator", value: 10 },
+        { id: "test.denominator", value: denominator },
+      ],
+      [ratioBudget()],
+    );
+    assert.equal(evaluation.pass, false, `denominator ${denominator} must not be judged`);
+    assert.equal(evaluation.results[0].verdict, "unmeasured");
+  }
+});
+
+test("the shipped ratio budget catches the collapse the absolute ceiling passes", () => {
+  // Measured by executing it, not argued: setting
+  // CONVERSATION_LIST_READ_CONCURRENCY to 1 in src/lib/cave-conversations.ts and
+  // running phase-6-list-10k produced a cold median of 4,397.85 ms against a
+  // 3,926.19 ms control median, with both loops reading the identical
+  // 43,608,890 bytes. The 5,000 ms ceiling, the bytes ceiling and the warm-loop
+  // hit rate all pass that run. The ratio is 112%.
+  const collapsed = evaluatePerformanceBudgets(
+    [
+      { id: "conversation-list.cold-scan.p50-ms", value: 4_397.85 },
+      { id: "conversation-list.full-parse.p50-ms", value: 3_926.19 },
+      { id: "conversation-list.cold-scan.bytes", value: 43_608_890 },
+      { id: "conversation-list.warm-cache.p50-ms", value: 156.28 },
+      { id: "conversation-list.warm-cache.bytes", value: 0 },
+      { id: "conversation-list.cache-hit-rate", value: 100 },
+    ],
+    PERFORMANCE_BUDGETS,
+    { fixtureProfile: "phase-6-list-10k" },
+  );
+  const breached = collapsed.results.filter((result) => result.verdict === "breach");
+  assert.deepEqual(
+    breached.map((result) => result.budget.id),
+    [RATIO_BUDGET_ID],
+    "only the relative budget separates a collapsed read pool from a healthy scan",
+  );
+  assert.equal(
+    collapsed.results.find((result) => result.budget.id === "conversation-list.cold-scan.p50-ms")!
+      .verdict,
+    "pass",
+    "the absolute ceiling passing this run is the defect the ratio budget exists for",
   );
 });
 
