@@ -1727,7 +1727,7 @@ final class AppModel {
     }
 
     func globalLastActivity(for familiarId: String) -> Date? {
-        let local = globalDirectThreads(for familiarId).map(\.updatedAt)
+        let local = globalDirectThreads(for: familiarId).map(\.updatedAt)
         let server = globalServerOnlySessions(for: familiarId).compactMap {
             caveParseISO($0.updatedAt)
         }
