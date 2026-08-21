@@ -121,27 +121,27 @@ test.describe("sessions list", () => {
     await expect(rows(page)).toHaveCount(SEEDS.length);
   });
 
-  test("the reference toolbar keeps its primary and work-kind controls compact", async ({ page }) => {
+  test("the reference toolbar keeps search, status, and sort on one compact line", async ({ page }) => {
     const search = page.getByPlaceholder("Search sessions…");
     const all = chip(page, "All");
-    const tasks = chip(page, "Tasks");
     const sort = page.locator(".chat-sessions-sort");
-    const [searchBox, allBox, tasksBox, sortBox] = await Promise.all([
+    const [searchBox, allBox, sortBox] = await Promise.all([
       search.boundingBox(),
       all.boundingBox(),
-      tasks.boundingBox(),
       sort.boundingBox(),
     ]);
 
     expect(searchBox).not.toBeNull();
     expect(allBox).not.toBeNull();
-    expect(tasksBox).not.toBeNull();
     expect(sortBox).not.toBeNull();
     expect(searchBox!.width).toBeLessThanOrEqual(260);
     expect(Math.abs(searchBox!.y - allBox!.y)).toBeLessThanOrEqual(4);
-    expect(Math.abs(tasksBox!.y - searchBox!.y)).toBeLessThanOrEqual(40);
-    expect(Math.abs(sortBox!.y - tasksBox!.y)).toBeLessThanOrEqual(40);
-    await expect(page.getByRole("button", { name: "Session view options" })).toBeVisible();
+    expect(Math.abs(searchBox!.y - sortBox!.y)).toBeLessThanOrEqual(4);
+    const viewOptions = page.getByRole("button", { name: "Session view options" });
+    await expect(viewOptions).toBeVisible();
+    await viewOptions.click();
+    await expect(page.getByRole("menuitemradio", { name: /^Tasks \(\d+\)$/ })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: /^GitHub \(\d+\)$/ })).toBeVisible();
   });
 
   test("clear filters appears for any applied filter and restores familiar scope", async ({ page }) => {

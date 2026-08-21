@@ -19,6 +19,7 @@ import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import {
@@ -630,6 +631,17 @@ function ShellInner({
   // change, not on every sidebar toggle).
   const navOpenRef = useRef(navOpen);
   navOpenRef.current = navOpen;
+  // The native macOS traffic lights float inside the connected rail's title
+  // strip, so they follow the rail rather than the window: visible while the
+  // navigation is expanded, and on mobile where the rail IS the navigation;
+  // hidden once it collapses to the 56px icon rail, which is narrower than the
+  // 78px inset they need. desktop-chrome.css reads the resulting
+  // [data-traffic-lights] state to drop that inset and hide the centered title.
+  // The hook is inert off the macOS desktop shell. The destination shells
+  // (analytics-page-shell) already do this; the workspace shell is the surface
+  // the connected rail was built for.
+  const trafficLightsVisible = isMobile || navOpen;
+  useMacTrafficLightsForNavState(trafficLightsVisible);
   const defaultNavSize =
     chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
 
@@ -1390,8 +1402,13 @@ function ShellInner({
         title={`${rightChatOpen ? "Close" : "Open"} Chat panel (${rightPanelShortcutLabel})`}
         onClick={toggleRightChat}
       >
+        {/* The two panel toggles are the same control on opposite edges, so
+            they read as a pair: the same sidebar glyph, mirrored, rather than a
+            second chat bubble that says nothing about what the button does.
+            .shell-top-toggle__icon--mirrored is the flip. */}
         <Icon
-          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
+          name={rightChatOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+          className="shell-top-toggle__icon--mirrored"
           width={CAVE_ICON_SIZE.shellToggle}
           height={CAVE_ICON_SIZE.shellToggle}
         />

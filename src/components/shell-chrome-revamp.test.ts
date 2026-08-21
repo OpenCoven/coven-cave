@@ -123,10 +123,32 @@ assert.match(
   /\.shell-top:has\(\.notification-bell__popover\) \{[^}]*z-index: 140;/,
   "an open notification dropdown lifts its title-bar stacking context above shell content",
 );
+// The identity strip used to sit ABOVE the functional toolbar, separated from
+// it by a horizontal hairline. The desktop chrome refresh (#4791) made them one
+// row: the resizable rail owns the window's top-left corner, including the
+// native traffic-light area, and workspace chrome begins at the rail's live
+// edge. So the boundary turned vertical and both `border-bottom` declarations
+// went to 0 — the strip has nothing below it to divide from any more.
+// The guarantee is unchanged and re-pointed at where it now lives: native
+// chrome does not run into workspace chrome, it is divided by a quiet hairline
+// built from the design tokens.
+const nativeTitleRailRule = desktopChrome.match(
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[^}]*\}/,
+)?.[0];
+assert.ok(nativeTitleRailRule, "the native title strip has a rail region");
 assert.match(
-  desktopChrome,
-  /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,500}?border-bottom: 0;/,
-  "native macOS keeps the connected identity strip and functional toolbar seamless",
+  nativeTitleRailRule,
+  /border-right: 1px solid var\(--border-hairline\);/,
+  "native macOS divides the title-strip rail from the workspace chrome beside it with a quiet hairline",
+);
+const nativeNavPanelRule = desktopChrome.match(
+  /:root\[data-tauri-titlebar\] \.shell-nav-panel \{[^}]*\}/,
+)?.[0];
+assert.ok(nativeNavPanelRule, "the native layout styles the nav panel below the strip");
+assert.match(
+  nativeNavPanelRule,
+  /box-shadow: inset -1px 0 0 var\(--border-hairline\);/,
+  "that same hairline continues down the nav panel, so the divide is one unbroken line",
 );
 
 // ── 3. Bottom status bar ─────────────────────────────────────────────────────

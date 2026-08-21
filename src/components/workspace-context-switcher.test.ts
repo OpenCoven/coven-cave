@@ -41,11 +41,37 @@ assert.ok(projectIndex < familiarIndex, "project picker renders before familiar 
 // ── No raw 10px gaps — spacing must use tokens ──────────────────────────────
 assert.doesNotMatch(css, /\bgap:\s*10px\b/, "CSS gap uses spacing tokens, not raw 10px");
 
-// ── Crew border uses quiet rail chrome ───────────────────────────────────────
+// ── Crew trigger: quiet 1px hairline at rest, presence accent on hover ───────
+// The recipe moved in the desktop chrome refresh (#4791): the resting border is
+// now the plain --border-hairline token over --bg-subtle, and --accent-presence
+// marks the control on hover instead of tinting it permanently. That direction
+// is the design language's ("the accent is presence first... never for
+// secondary buttons, links, or decorative colour"), so the contract — not the
+// old color-mix spelling — is what this pin guards: a 1px border whose colour
+// comes from the hairline token, and the presence accent still identifying the
+// familiar control on interaction. Scoped to the crew rule so a hairline border
+// elsewhere in the sheet cannot satisfy it.
+const crewTriggerRule = css.match(
+  /^\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?\n\}/m,
+)?.[0];
+assert.ok(crewTriggerRule, "crew trigger rule is present");
+const crewBorder = crewTriggerRule.match(/\n\s*border:\s*([^;]+);/)?.[1];
+assert.ok(crewBorder, "crew trigger declares a border");
+assert.match(crewBorder, /^1px solid\b/, "crew trigger border is exactly 1px solid");
 assert.match(
-  css,
-  /border: 1px solid var\(--border-hairline\)/,
-  "crew trigger border uses the quiet rail hairline",
+  crewBorder,
+  /var\(--border-hairline\)/,
+  "crew trigger border colour comes from the --border-hairline token",
+);
+
+const crewHoverRule = css.match(
+  /^\.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled:hover \{[\s\S]*?\n\}/m,
+)?.[0];
+assert.ok(crewHoverRule, "crew trigger hover rule is present");
+assert.match(
+  crewHoverRule,
+  /var\(--accent-presence\)/,
+  "the presence accent marks the crew trigger on hover",
 );
 
 // ── Collapsed caret selector targets the stable class, not a generated icon class ──
