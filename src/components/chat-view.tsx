@@ -9176,7 +9176,7 @@ function TurnRowImpl({
           })()
         : null}
       {/* Comment on substantial settled markdown artifacts. */}
-      {!pending && !turn.error && visible.trim().length > 80 ? (
+      {!turn.pending && !turn.error && visible.trim().length > 80 ? (
         <ArtifactComments
           turnId={turn.id}
           familiarName={familiar.display_name}
