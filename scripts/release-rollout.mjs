@@ -369,17 +369,6 @@ function resolveThresholds(raw, hold) {
 }
 
 /**
- * A metric is a number somebody measured, and nothing else counts as one.
- *
- * `Number()` coercion was the trap. `Number(null)` is 0, so a crash-free rate
- * a monitor could not supply read as a total outage and escalated to
- * `rollback`, while a null duplicate-send count read as zero duplicates and
- * ADVANCED the rollout — the same coercion breaking the rule in both
- * directions. `""`, `[]` and `false` coerce to 0 identically, and `"0.99"`
- * coerced to a rate the operator never recorded as one. So the fix is the type
- * check, not a wider NaN guard.
- */
-/**
  * Read a value whose whole job is to match one word from a fixed vocabulary.
  *
  * This is `readMetric`'s rule on the other half of the state file. `String()`
@@ -397,6 +386,17 @@ function readWord(value) {
   return value === undefined || value === null ? "missing" : "unreadable";
 }
 
+/**
+ * A metric is a number somebody measured, and nothing else counts as one.
+ *
+ * `Number()` coercion was the trap. `Number(null)` is 0, so a crash-free rate
+ * a monitor could not supply read as a total outage and escalated to
+ * `rollback`, while a null duplicate-send count read as zero duplicates and
+ * ADVANCED the rollout — the same coercion breaking the rule in both
+ * directions. `""`, `[]` and `false` coerce to 0 identically, and `"0.99"`
+ * coerced to a rate the operator never recorded as one. So the fix is the type
+ * check, not a wider NaN guard.
+ */
 function readMetric(value, label, hold) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     hold(`${label} is not measured`);
