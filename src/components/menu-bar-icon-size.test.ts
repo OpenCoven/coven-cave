@@ -55,7 +55,12 @@ assert.match(css, /\.menu-bar__search \{[\s\S]*?border:\s*1px solid var\(--borde
 assert.match(css, /\.shell-top-history \{/, "history Back/Forward pair has its grouping styles");
 assert.match(css, /\.menu-bar__task-label \{\s*\n\s*display:\s*none/, "task labels are CSS-demoted — the bar shows icons only");
 assert.match(css, /\.menu-bar__task-label--live \{\s*\n\s*display:\s*inline/, "…except live enrich progress, which is information, not chrome");
-assert.match(css, /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,300}?flex: 0 0 30px/, "native macOS renders a dedicated 30px window title strip");
+// The chrome refresh (#4791) moved the strip's height onto a token so the
+// titlebar, .shell-top and the traffic-light inset all derive from one value.
+// Pin the token — not a raw px — and pin the token's definition separately, so
+// the height stays single-sourced and a future change has to move one number.
+assert.match(css, /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,300}?flex: 0 0 var\(--shell-native-titlebar-height\)/, "native macOS renders a dedicated window title strip sized by its token");
+assert.match(css, /--shell-native-titlebar-height: \d+px;/, "the native title strip height is single-sourced as a token");
 assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 34px/, "the functional toolbar keeps its compact 34px row below the title strip");
 assert.match(
   css,
