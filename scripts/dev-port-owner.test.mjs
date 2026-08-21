@@ -91,6 +91,11 @@ assert.equal(args.get("timeout-ms"), "500");
   try {
     const fixtureScript = path.join(fixtureDir, "dev-port-owner.mjs");
     copyFileSync(new URL("./dev-port-owner.mjs", import.meta.url), fixtureScript);
+    // The direct-run guard is a sibling module, so the copy needs it alongside.
+    copyFileSync(
+      new URL("./direct-run.mjs", import.meta.url),
+      path.join(fixtureDir, "direct-run.mjs"),
+    );
     const result = spawnSync(process.execPath, [fixtureScript, "--port", "0"], {
       encoding: "utf8",
     });

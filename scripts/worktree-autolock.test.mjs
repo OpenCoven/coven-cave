@@ -168,6 +168,14 @@ try {
     mkdirSync(spaced);
     const script = path.join(spaced, "worktree-autolock.mjs");
     copyFileSync(fileURLToPath(new URL("./worktree-autolock.mjs", import.meta.url)), script);
+    // The direct-run guard now lives in a sibling module, so the copy needs it
+    // too — otherwise the script dies on ERR_MODULE_NOT_FOUND before reaching
+    // the behaviour under test, which reads as the same silence this case
+    // exists to catch.
+    copyFileSync(
+      fileURLToPath(new URL("./direct-run.mjs", import.meta.url)),
+      path.join(spaced, "direct-run.mjs"),
+    );
 
     // Reach the script through a symlink so argv[1] and import.meta.url differ.
     const linked = path.join(box, "link");

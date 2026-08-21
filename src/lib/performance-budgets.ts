@@ -250,6 +250,7 @@ const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10
  * | windows, 3 benchmarks concurrently  | 1,809.08 |    4,718.10 | 38.34% |
  * | linux (wsl2), idle                  | 1,759.80 |    2,787.94 | 63.12% |
  * | linux (wsl2), 3 concurrently        | 1,639.41 |    3,117.21 | 52.59% |
+ * | **ubuntu-24.04 runner (real CI)**   |   790.20 |    1,485.00 | 53.22% |
  * | windows, read pool collapsed to 1   | 4,397.85 |    3,926.19 | 112.01% |
  * | linux (wsl2), read pool collapsed   | 3,460.77 |    2,718.62 | 127.30% |
  *
@@ -265,8 +266,15 @@ const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10
  * worst healthy and 22 points under the nearest collapse. That is a thinner
  * multiple than the 1.9x the cold ms ceiling uses, and deliberately so: the 1.9x
  * exists to absorb scheduling noise, and here the worst case is the QUIET run.
- * Re-seed from the first real `ubuntu-24.04` nightly; WSL2 is Linux syscalls
- * over a VM disk, which is the right family but not the right machine.
+ *
+ * **Confirmed against a real runner (cave-wxq, 2026-08-21, run 32524317599).**
+ * The seed was built entirely from the review machine, with WSL2 standing in for
+ * the nightly's platform — Linux syscalls over a VM disk, the right family but
+ * not the right machine. The first `ubuntu-24.04` nightly measured **53.22%**,
+ * inside the WSL2 pair that bracketed it and 37 points clear of the ceiling, so
+ * no number moves. WSL2 turned out to be the pessimistic stand-in: real CI is
+ * faster in absolute terms (790 ms cold) yet lands mid-band on the ratio, which
+ * is the property a relative budget is chosen for.
  *
  * A ratio budget's job here is to catch the collapse an absolute ceiling
  * structurally cannot. Erosion remains the baseline comparison's job.
