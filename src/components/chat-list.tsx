@@ -88,6 +88,13 @@ import {
 } from "@/lib/chat-session-status";
 import { groupChatRowsByActivity } from "@/lib/chat-session-activity";
 import {
+  CHAT_SESSION_KIND,
+  CHAT_SESSION_KIND_ORDER,
+  countChatSessionKinds,
+  filterChatRowsByKind,
+  type ChatSessionKindFilter,
+} from "@/lib/chat-session-kind";
+import {
   CHAT_SESSION_SORT_HEADING,
   CHAT_SESSION_SORT_KEY,
   CHAT_SESSION_SORT_LABEL,
@@ -195,6 +202,9 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   // the old All/Active segmented control: "Active" was one of five states the
   // daemon actually reports, so it could never answer "what failed?".
   const [statusFilter, setStatusFilter] = useState<ChatSessionStatusFilter>("all");
+  // Work-kind filter — exclusive toggle chips beside the status chips: narrow
+  // the list to Board-task chats or to chats whose work reached GitHub.
+  const [kindFilter, setKindFilter] = useState<ChatSessionKindFilter>("all");
   // Reading order for the list. "recent" additionally groups into activity
   // bands (Active now / Today / …); the other three are flat named orders.
   const [sessionSort, setSessionSort] = useState<ChatSessionSort>("recent");
@@ -229,6 +239,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   const clearSessionFilters = useCallback(() => {
     setSearch("");
     setStatusFilter("all");
+    setKindFilter("all");
     onSelectionChange("all");
     setShowArchived(false);
   }, [onSelectionChange]);
@@ -293,9 +304,10 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   // already filtered to failed".
   const searched = useMemo(() => filterChatListRows(mine, search, false), [mine, search]);
   const statusCounts = useMemo(() => countChatSessionStatuses(searched), [searched]);
+  const kindCounts = useMemo(() => countChatSessionKinds(searched), [searched]);
   const filtered = useMemo(
-    () => filterChatRowsByStatus(searched, statusFilter),
-    [searched, statusFilter],
+    () => filterChatRowsByKind(filterChatRowsByStatus(searched, statusFilter), kindFilter),
+    [searched, statusFilter, kindFilter],
   );
 
   const hasAny = mine.length > 0;
@@ -319,6 +331,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   const hasAppliedFilters =
     search.trim().length > 0 ||
     statusFilter !== "all" ||
+    kindFilter !== "all" ||
     effectiveSelection !== "all" ||
     showArchived;
   const scopedGroups = useMemo(
@@ -918,6 +931,32 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                       <span aria-hidden className="chat-status-chip__dot" />
                       {presentation.label}
                       <span className="chat-status-chip__count">{statusCounts[key]}</span>
+                    </button>
+                  );
+                })}
+              </span>
+              {/* Work-kind chips: exclusive toggles — "Tasks only" narrows to
+                  Board-task chats, "GitHub only" to chats wearing the PR
+                  badge. Pressing the active chip clears it back to all. */}
+              <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--border-hairline)]" />
+              <span role="group" aria-label="Filter sessions by work kind" className="flex flex-wrap items-center gap-0.5">
+                {CHAT_SESSION_KIND_ORDER.map((key) => {
+                  const presentation = CHAT_SESSION_KIND[key];
+                  const active = kindFilter === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={active}
+                      disabled={chatStatusChipDisabled(kindCounts[key], active)}
+                      onClick={() => setKindFilter(active ? "all" : key)}
+                      title={presentation.description}
+                      className="chat-status-chip focus-ring"
+                      data-kind={key}
+                    >
+                      <Icon name={presentation.icon} width={11} aria-hidden />
+                      {presentation.label}
+                      <span className="chat-status-chip__count">{kindCounts[key]}</span>
                     </button>
                   );
                 })}

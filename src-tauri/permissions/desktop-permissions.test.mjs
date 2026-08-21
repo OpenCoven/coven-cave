@@ -15,6 +15,9 @@ const loopbackMainEventsCapability = JSON.parse(
 const loopbackWindowDragCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-window-drag.json", import.meta.url), "utf8"),
 );
+const loopbackWindowControlsCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-window-controls.json", import.meta.url), "utf8"),
+);
 const loopbackUpdaterCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-updater.json", import.meta.url), "utf8"),
 );
@@ -73,6 +76,7 @@ const requiredPermissionIds = [
   "allow-desktop-reachability-status",
   "allow-desktop-reachability-configure",
   "allow-record-daemon-reliability-measurement",
+  "allow-set-traffic-lights-visible",
 ];
 
 const requiredCommands = [
@@ -98,6 +102,7 @@ const requiredCommands = [
   "desktop_reachability_status",
   "desktop_reachability_configure",
   "record_daemon_reliability_measurement",
+  "set_traffic_lights_visible",
 ];
 
 // Match capability remote URL patterns component-wise, the way Tauri's
@@ -221,6 +226,10 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
   assert.ok(
     capabilityAllowsOrigin(loopbackBrowserCapability, "http://[::1]:64203/"),
     "packaged random IPv6 loopback sidecar port should be allowed restricted browser IPC",
+  );
+  assert.ok(
+    loopbackWindowControlsCapability.permissions.includes("allow-set-traffic-lights-visible"),
+    "trusted loopback titlebar chrome must be allowed to synchronize native traffic-light visibility",
   );
   assertCapabilityDoesNotGrant(loopbackBrowserCapability, [
     "core:event:allow-listen",
@@ -465,6 +474,40 @@ test("loopback app webviews can drive native window drag for the seamless titleb
       '<header className="quick-chat-overlay__header tray-quick-chat__header" data-tauri-drag-region="deep">',
     ),
     "the quick-chat tray header must be a deep Tauri drag region so the decoration-less window can be moved",
+  );
+});
+
+test("macOS main loopback chrome can synchronize native traffic-light visibility", () => {
+  assert.deepEqual(
+    loopbackWindowControlsCapability.webviews,
+    ["main"],
+    "traffic-light authority must stay on the main app webview",
+  );
+  assert.deepEqual(
+    loopbackWindowControlsCapability.platforms,
+    ["macOS"],
+    "traffic-light mutation is a macOS-only capability",
+  );
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+    "http://127.0.0.1:64203/",
+  ]) {
+    assert.ok(
+      capabilityAllowsOrigin(loopbackWindowControlsCapability, origin),
+      `trusted loopback origin ${origin} must be allowed to synchronize titlebar controls`,
+    );
+  }
+  assert.equal(
+    capabilityAllowsOrigin(loopbackWindowControlsCapability, "http://example.com:64203/"),
+    false,
+    "non-loopback origins must not receive native window-control authority",
+  );
+  assert.deepEqual(
+    loopbackWindowControlsCapability.permissions,
+    ["allow-set-traffic-lights-visible"],
+    "the capability grants only traffic-light visibility synchronization",
   );
 });
 
