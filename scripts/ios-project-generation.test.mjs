@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 // succeeds and ships an app with a blank markdown view.
 //
 // The order therefore has to be structural, not documentary: generate the
-// bundles, prove they exist, and only then run xcodegen.
+// bundle, prove it exists, and only then run xcodegen.
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 
 const wrapper = await read("scripts/ios-xcodegen.sh");
@@ -34,6 +34,7 @@ assert.ok(
   genIdx < scanIdx,
   "the markdown bundle must be generated BEFORE xcodegen scans for sources",
 );
+assert.doesNotMatch(wrapper, /build-ios-terminal\.mjs/, "the removed terminal bundle must not be generated");
 assert.match(
   wrapperCode,
   /rm -f "\$RESOURCES\/terminal\.html"/,
@@ -50,7 +51,8 @@ assert.match(
 );
 // wrapperCode, not wrapper: the header comment names all three files, so a
 // full-text search passes even when the check loop does not mention them. This
-// assertion has the same shape as the ordering check above.
+// is the third assertion in this file to have that shape — see the two notes
+// above. Search executable lines only.
 for (const resource of ["markdown.html", "markdown.css"]) {
   assert.ok(
     wrapperCode.includes(resource),

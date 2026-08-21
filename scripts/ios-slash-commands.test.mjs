@@ -52,6 +52,8 @@ assert.doesNotMatch(
   "Commands sheet should not render desktop-only command rows on iOS",
 );
 
+assert.doesNotMatch(iosSlash, /case openTerminal/, "iOS should not expose a terminal navigation action");
+assert.doesNotMatch(chatView, /case \.openTerminal/, "chat dispatch should not route to a terminal");
 assert.doesNotMatch(iosSlash, /name: "\/terminal"|name: "\/comux"/,
   "the retired iOS terminal commands stay out of the native catalog");
 assert.doesNotMatch(chatView, /\.openTerminal|selectedTab = \.terminal/,
