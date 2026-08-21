@@ -38,6 +38,7 @@
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 export const TARGETS = ["darwin-aarch64", "darwin-x86_64", "linux-x86_64", "windows-x86_64"];
@@ -86,6 +87,20 @@ export const verifySignature = (artifact, pubB64, sigB64) => {
 
 // ── run ────────────────────────────────────────────────────────────────
 async function main() {
+  // A flag that is present but carries no usable value must not fall through
+  // to the network path — that would quietly verify a DIFFERENT release than
+  // the caller named. Same failure class as the main-guard above: silently
+  // doing something else is worse than stopping.
+  for (const name of ["manifest", "tag"]) {
+    if (process.argv.includes(`--${name}`) || process.argv.includes(`--${name}=`)) {
+      if (!readOption(process.argv, name)) {
+        console.log(`  ✗ --${name} was given without a value`);
+        console.log("\n=== RESULT: FAIL (usage) ===");
+        process.exit(1);
+      }
+    }
+  }
+
   const manifestPath = readOption(process.argv, "manifest");
   const expectedTag = readOption(process.argv, "tag");
 
@@ -171,6 +186,16 @@ async function main() {
   process.exit(failures ? 1 : 0);
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], "file:").href) {
+// Compare resolved filesystem paths, NOT `import.meta.url` against
+// `new URL(process.argv[1], "file:")`. That URL form is the idiom used
+// elsewhere in scripts/, and it silently fails on Windows: argv[1] arrives as
+// `C:\...\verify-release-updater.mjs`, which does not parse into the
+// `file:///C:/...` href this module reports, so the comparison is false and
+// main() never runs. The script then exits 0 having verified nothing — a
+// signature gate that passes without looking, which is worse than no gate.
+export const isDirectRun = (argv1, moduleUrl) =>
+  Boolean(argv1) && path.resolve(argv1) === path.resolve(fileURLToPath(moduleUrl));
+
+if (isDirectRun(process.argv[1], import.meta.url)) {
   await main();
 }

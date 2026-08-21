@@ -6,10 +6,27 @@
 // against keys generated here, so a regression in the ed25519/blake2b handling
 // fails on a PR rather than on a shipped release nobody can update.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { TARGETS, parsePub, parseSig, readOption, verifySignature } from "./verify-release-updater.mjs";
+import {
+  TARGETS,
+  isDirectRun,
+  parsePub,
+  parseSig,
+  readOption,
+  verifySignature,
+} from "./verify-release-updater.mjs";
+
+const SCRIPT = fileURLToPath(new URL("./verify-release-updater.mjs", import.meta.url));
+
+const runCli = (args) =>
+  spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8", timeout: 60_000 });
 
 // ── minisign fixtures ──────────────────────────────────────────────────
 // A minisign key/signature file is two (or four) lines of text, and Tauri
@@ -125,6 +142,38 @@ test("verifySignature reports a key id mismatch before attempting the maths", ()
   );
   assert.equal(result.ok, false);
   assert.match(result.why, /key id mismatch/);
+});
+
+// ── the CLI actually runs ──────────────────────────────────────────────
+// A signature gate that exits 0 without executing is worse than no gate: the
+// release goes green having verified nothing. The first cut of this script
+// did exactly that, because `import.meta.url === new URL(process.argv[1],
+// "file:").href` is false on Windows, where argv[1] is a `C:\...` path. These
+// tests spawn the real script so a silent no-op fails here instead of shipping.
+test("isDirectRun recognises the script being executed, on POSIX and Windows paths", () => {
+  assert.equal(isDirectRun(SCRIPT, new URL("./verify-release-updater.mjs", import.meta.url).href), true);
+  assert.equal(isDirectRun(SCRIPT, new URL("./generate-latest-json.mjs", import.meta.url).href), false);
+  assert.equal(isDirectRun("", import.meta.url), false);
+  assert.equal(isDirectRun(undefined, import.meta.url), false);
+});
+
+test("the CLI executes and fails an empty manifest even under --allow-partial", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "verify-updater-"));
+  const manifest = path.join(dir, "latest.json");
+  writeFileSync(manifest, JSON.stringify({ version: "9.9.9", pub_date: "2026-01-01T00:00:00Z", platforms: {} }));
+
+  const result = runCli(["--manifest", manifest, "--tag", "v9.9.9", "--allow-partial"]);
+  assert.ok(result.stdout.includes("=== RESULT:"), "the CLI must actually run and print a verdict");
+  assert.match(result.stdout, /platforms\{\} is EMPTY/);
+  assert.equal(result.status, 1, "an empty manifest must fail even with --allow-partial");
+});
+
+test("the CLI refuses a --manifest or --tag given without a value", () => {
+  for (const args of [["--manifest"], ["--manifest="], ["--tag", "--allow-partial"]]) {
+    const result = runCli(args);
+    assert.equal(result.status, 1, `${args.join(" ")} must not fall through to the network path`);
+    assert.match(result.stdout, /given without a value/);
+  }
 });
 
 test("TARGETS covers exactly the four Tauri updater platforms", () => {
