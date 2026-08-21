@@ -481,23 +481,17 @@ assert.match(
   "CHAT-D4-01: turn-segments comments should document mid-paragraph streaming behavior",
 );
 
-// TurnRow keeps stateful tool UI in fixed slots across streaming settlement.
-// The offset model remains available for persisted transcript compatibility,
-// but rendering tools through prose segments would relocate focused controls.
+// TurnRow keeps pending tools in chronological prose slots, then moves settled
+// activity and edit cards into their stable response slots.
 assert.match(
   chatViewSource,
-  /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}[\s\S]*content=\{[\s\S]*<MessageBubble[\s\S]*editCards=\{/,
-  "assistant turns keep non-edit activity, changing turn content, and edit cards in stable render slots",
+  /<MessageBubble[\s\S]*?<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+  "assistant turns pass changing content, settled activity, and edit cards through explicit response slots",
 );
 assert.match(
   chatViewSource,
-  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const editCards = turnTools\.filter\(isEditCard\);[\s\S]*const otherTools = turnTools\.filter/,
-  "pending and settled turns share one edit/non-edit partition",
-);
-assert.doesNotMatch(
-  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "",
-  /<ToolRuns/,
-  "TurnRow does not duplicate ToolRuns in prose or tool-first branches",
+  /renderSegments = bubbleSegments;[\s\S]*const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];[\s\S]*const editCards = settledTools\.filter\(isEditCard\);[\s\S]*const otherTools = settledTools\.filter/,
+  "pending tools remain chronological while settled tools share one edit/non-edit partition",
 );
 
 // MessageBubble: only the LAST text span streams (progressive markdown);
