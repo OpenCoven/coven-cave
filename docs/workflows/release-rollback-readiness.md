@@ -107,6 +107,16 @@ fatal *here* would refuse a release whose only defect is that its predecessor's
 Linux leg flaked — a false refusal on a live cut, to protect against a state
 the pipeline deliberately permits.
 
+And it would not stop at one refusal. A fatal verdict **deadlocks**: v0.3.7
+ships 3/4, so v0.3.8's gate refuses and its manifest is withheld, so v0.3.8
+becomes a baseline with no `latest.json` at all, so v0.3.9 refuses too. The
+release you would cut to repair the baseline is the one the baseline blocks —
+the exact "broken baseline able to block its own fix" that `build`, `checksums`
+and `homebrew` are deliberately kept off this job's dependency graph to avoid.
+The only exits would be a hand-repair of the old release or a CI-side waiver,
+and `--allow-missing-baseline` is kept out of the workflow precisely so no such
+waiver exists to reach for.
+
 So the verdict is unchanged and the shortfall is made loud instead. When the
 baseline's manifest omits a platform the gate names it in three places — the
 step summary, the `rollback-platforms-missing` output, and a `::warning::`

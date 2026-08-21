@@ -53,7 +53,13 @@ export const UPDATER_MANIFEST_ASSET = "latest.json";
  * `verify-release-updater.mjs` carries `--allow-partial` for the same reason.
  * So a baseline covering fewer than these four is a *sanctioned* state, and
  * refusing it would block a release whose only sin is that its predecessor's
- * Linux leg flaked. What is not acceptable is that it pass *silently*: a
+ * Linux leg flaked. Worse, a fatal verdict deadlocks: the refused release then
+ * becomes a baseline with no manifest at all, so the next one is refused too,
+ * and the cut that would repair the baseline is the cut the baseline blocks.
+ * That is the same "broken baseline able to block its own fix" that keeps
+ * `build`, `checksums` and `homebrew` off this job's dependency graph.
+ *
+ * What is not acceptable is that it pass *silently*: a
  * baseline covering only Windows means a macOS install cannot be auto-rolled
  * back, which contradicts what a green gate appears to promise. So the
  * shortfall is named — in the summary, in a job output, and as a run
