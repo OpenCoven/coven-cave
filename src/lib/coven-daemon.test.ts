@@ -291,6 +291,82 @@ const {
   assert.equal(socket, String.raw`\\.\pipe\coven-daemon-abc123.sock`);
 }
 
+// A refusal is reported, once per distinct value, and never carries the value.
+// Without this the operator whose COVEN_HOME really is a share sees a permanent
+// "daemon offline" with no cause, and a probe of the guard leaves no trace.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const resolve = (env) =>
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env,
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => JSON.stringify({ socket: String.raw`\\report-file-host\pipe\coven` }),
+    });
+
+  resolve({ COVEN_SOCKET: String.raw`\\report-socket-host\pipe\coven` });
+  resolve({ COVEN_HOME: String.raw`\\.\UNC\report-home-host\share\.coven` });
+  resolve({});
+
+  const refusals = listDaemonDiagnosticEvents().filter(
+    (event) => event.operation === "daemon-socket-resolution",
+  );
+  assert.deepEqual(
+    refusals.map((event) => event.endpoint.classification),
+    ["coven-socket-env", "coven-home-env", "daemon-status-file"],
+    "each refused source reports under its own classification",
+  );
+  for (const event of refusals) {
+    assert.equal(event.outcome, "failed");
+    assert.equal(event.severity, "error");
+    assert.equal(event.error?.classification, "off-machine-target");
+    assert.doesNotMatch(
+      event.error?.message ?? "",
+      /report-socket-host|report-home-host|report-file-host|UNC/,
+      "a refusal event must not carry the hostname it refused",
+    );
+  }
+
+  // The resolver runs on every daemon request, so a persistently forged value
+  // must not flush the 256-event ring.
+  const before = listDaemonDiagnosticEvents().length;
+  for (let i = 0; i < 20; i += 1) {
+    resolve({ COVEN_SOCKET: String.raw`\\report-socket-host\pipe\coven` });
+  }
+  assert.equal(
+    listDaemonDiagnosticEvents().length,
+    before,
+    "a repeated refusal of the same value reports once",
+  );
+
+  // A distinct value is still worth an event.
+  resolve({ COVEN_SOCKET: String.raw`\\report-socket-host-2\pipe\coven` });
+  assert.equal(listDaemonDiagnosticEvents().length, before + 1);
+  clearDaemonDiagnosticEventsForTests();
+}
+
+// A whitespace-only COVEN_SOCKET names nothing; it is not a redirection and
+// must not be reported as one.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_SOCKET: "   ", COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("daemon.json should not be read when COVEN_SOCKET is set");
+    },
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+  assert.deepEqual(
+    listDaemonDiagnosticEvents().filter(
+      (event) => event.operation === "daemon-socket-resolution",
+    ),
+    [],
+  );
+  clearDaemonDiagnosticEventsForTests();
+}
+
 // extractDaemonError handles the canonical { error: { message } } shape
 {
   const res = {
