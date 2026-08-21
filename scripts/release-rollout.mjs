@@ -92,6 +92,10 @@ export function stageById(id) {
 export function readRollbackReadiness(raw) {
   const verdict = isPlainObject(raw) ? raw : null;
   const baseline = isPlainObject(verdict?.baseline) ? verdict.baseline : null;
+  // Version first: this is the target an operator restores TO, and `version` is
+  // how the rest of the release tooling addresses a release. `baselineName()`
+  // reads the same two fields in the other order for the printed drill, and the
+  // two must stay non-null on exactly the same baselines — see its comment.
   const target = firstNonEmptyString(baseline?.version, baseline?.tag);
   return {
     ready: verdict?.ready === true,
@@ -114,9 +118,29 @@ export function nextStageId(id) {
   return ROLLOUT_STAGES[index + 1].id;
 }
 
+/**
+ * The name a baseline goes by in a printed drill, preferring its tag because
+ * that is what an operator types.
+ *
+ * It reads the same two fields as `readRollbackReadiness`'s `target`, so the
+ * two are non-null on exactly the same baselines. That equivalence is the whole
+ * point: `restore-plan` admits a drill on `target` and then prints *this*, and
+ * while the printer read `tag` alone a baseline recorded as `{"version":
+ * "0.9.4"}` cleared the guard and rehearsed against the literal
+ * `<baseline-tag>` — the placeholder the guard exists to keep off an operator's
+ * screen. `String()` coercion was the other half: a non-string tag printed as
+ * `[object Object]` or `42`.
+ */
+export function baselineName(baseline) {
+  const named = isPlainObject(baseline) ? baseline : null;
+  return firstNonEmptyString(named?.tag, named?.version);
+}
+
 /** The bounded restore procedure, in order. Only one step mutates anything. */
 export function planRollbackRestore(baseline) {
-  const tag = isPlainObject(baseline) ? String(baseline.tag ?? "<baseline-tag>") : "<baseline-tag>";
+  // Still total: a baseline naming nothing yields the placeholder rather than
+  // throwing, and the CLI refuses to print that plan.
+  const tag = baselineName(baseline) ?? "<baseline-tag>";
   return [
     {
       id: "verify-baseline-artifacts",

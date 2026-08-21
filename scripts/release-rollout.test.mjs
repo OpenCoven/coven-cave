@@ -18,6 +18,7 @@ import {
   HARD_STOP_CLASSES,
   ROLLOUT_STAGES,
   assertBoundedRestore,
+  baselineName,
   evaluateRolloutGate,
   formatGateReport,
   nextStageId,
@@ -491,6 +492,63 @@ test("a drill that cannot name what it would restore is refused, waiver or not",
     0,
     "readiness that is merely unproven still names the release the drill would restore",
   );
+});
+
+test("the drill prints the baseline the guard admitted it on, never the placeholder", () => {
+  // The refusal above admits a drill on `readRollbackReadiness().target`, which
+  // reads `baseline.version` OR `baseline.tag`. The plan printed `baseline.tag`
+  // alone, through `String()`. So a baseline recorded as `{"version": "0.9.4"}`
+  // — the mirror of the tag-only case two tests up — passed the guard and then
+  // rehearsed restoring the literal `<baseline-tag>`, and a non-string tag
+  // printed as `[object Object]`.
+  const restorePlan = (baseline) => {
+    const lines = [];
+    runCli({
+      argv: ["restore-plan", "state.json"],
+      readFileImpl: () =>
+        JSON.stringify(greenState({ rollbackReadiness: { ready: true, baseline, baselineWaived: false } })),
+      log: (line) => lines.push(line),
+    });
+    return lines.join("\n");
+  };
+
+  assert.match(restorePlan({ version: "0.9.4" }), /0\.9\.4/, "a baseline named only by version still names the release");
+  assert.match(restorePlan({ tag: "v0.9.4", version: "0.9.4" }), /v0\.9\.4/, "the tag is preferred: it is what an operator types");
+
+  for (const baseline of [
+    { version: "0.9.4" },
+    { version: "0.9.4", tag: "" },
+    { version: "0.9.4", tag: "   " },
+    { version: "0.9.4", tag: null },
+    { version: "0.9.4", tag: 42 },
+    { version: "0.9.4", tag: ["v0.9.4"] },
+    { version: "0.9.4", tag: {} },
+    { tag: "v0.9.4" },
+  ]) {
+    const printed = restorePlan(baseline);
+    assert.doesNotMatch(
+      printed,
+      /<baseline-tag>|\[object Object\]|\b42\b/,
+      `${JSON.stringify(baseline)} cleared the guard, so the drill it prints has to name a release an operator can go and find`,
+    );
+  }
+
+  // The invariant, stated directly: the guard and the printer agree about
+  // whether a baseline was named, so neither can admit what the other cannot
+  // print. Drifting either field order would break this rather than a distant
+  // CLI assertion.
+  for (const baseline of [null, undefined, {}, { tag: "" }, { version: null }, "v0.9.4", ["v0.9.4"], { url: "u" }]) {
+    assert.equal(
+      baselineName(baseline),
+      null,
+      `${JSON.stringify(baseline) ?? String(baseline)} names no release, so the drill must refuse rather than print it`,
+    );
+    assert.match(
+      planRollbackRestore(baseline)[0].detail,
+      /<baseline-tag>/,
+      "planRollbackRestore stays total for an unnamed baseline; refusing to print it is the CLI's job",
+    );
+  }
 });
 
 test("an unclassified regression holds instead of being ignored", () => {

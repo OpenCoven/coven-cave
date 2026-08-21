@@ -178,7 +178,10 @@ state file that names no baseline to restore — a missing, empty, or not-ready
 `rollbackReadiness`, or the waiver — because a drill against a placeholder
 rehearses a procedure nobody can run. A baseline that is named but not yet
 proven still prints: the operator knows which release they would be putting
-back.
+back. "Named" means `baseline.tag` or `baseline.version` — whichever the state
+file records, and the drill prints the tag when there is one, because that is
+what an operator types. The two are decided together, so the drill can never
+be admitted on one field and then printed from the other.
 
 The procedure is bounded to three steps, and **only one of them mutates
 anything**:
