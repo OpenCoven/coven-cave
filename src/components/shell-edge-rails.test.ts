@@ -75,8 +75,8 @@ assert.equal(
 );
 assert.match(
   shell,
-  /<div className="shell-window-titlebar__controls">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<\/div>/,
-  "the native title strip groups its interactive boundary controls",
+  /<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar"/,
+  "the toolbar groups its interactive boundary controls before the rendered top bar",
 );
 assert.match(
   shell,
@@ -214,8 +214,8 @@ assert.match(shell, /aria-expanded=\{rightChatOpen\}/, "the toggle exposes visib
 assert.match(shell, /aria-controls=\{isMobile \? "shell-right-chat-drawer" : "shell-right-chat-panel"\}/, "the toggle controls the active responsive container");
 assert.match(
   shell,
-  /name=\{rightChatOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"\}[\s\S]{0,180}className="shell-top-toggle__icon--mirrored"/,
-  "the right panel toggle mirrors the left sidebar control instead of using a second chat glyph",
+  /name=\{rightChatOpen \? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"\}/,
+  "the right panel toggle uses the dedicated Chat glyph",
 );
 assert.match(shell, /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)/, "the existing right-panel shortcut controls Chat");
 assert.doesNotMatch(shell, /RightPanelKind|companionTabs|agent\?: ReactNode|rightPanelPeek/, "generic companion architecture stays retired");
