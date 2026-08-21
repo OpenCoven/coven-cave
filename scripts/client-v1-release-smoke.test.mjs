@@ -86,6 +86,26 @@ test("refuses to judge a release against an incomplete expectation", () => {
   assert.equal(checkHealthEnvelope(healthEnvelope(), undefined).length, 1);
 });
 
+test("still judges every expectation-independent field under a broken expectation", () => {
+  // Refusing the whole envelope discarded the five checks that never consult the
+  // expectation, so a release serving an error envelope, no capabilities, a
+  // blank instanceId and pairingRequired false reported one failure about the
+  // harness and nothing about itself. Only the three comparisons the broken
+  // expectation actually undermines may be skipped.
+  const broken = healthEnvelope({ error: "boom", capabilities: [] }, { instanceId: "  ", pairingRequired: false });
+  const whole = checkHealthEnvelope(broken, expected);
+  const incomplete = checkHealthEnvelope(broken, undefined);
+  for (const field of ["error envelope", "capabilities", "instanceId", "pairingRequired"]) {
+    assert.equal(incomplete.some((entry) => entry.includes(field)), true, field);
+  }
+  // Every version this envelope carries matches, so the three disabled
+  // comparisons contribute nothing either way: the refusal must add one line,
+  // not replace the four the envelope earned on its own.
+  assert.equal(whole.length, 4);
+  assert.equal(incomplete.length, whole.length + 1);
+  assert.equal(incomplete[0].includes("cannot judge a release"), true);
+});
+
 test("names the fixture when it cannot supply the expected versions", () => {
   // The fixture lives in this checkout, not in the build being probed, so a
   // failure to read it must not be reported as a broken release.

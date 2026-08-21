@@ -115,6 +115,9 @@ export function parseOrigin(argv) {
   return new URL(value).origin;
 }
 
+/** The three fields judged by comparison against the expectation, not by shape. */
+const EXPECTED_VERSION_FIELDS = ["apiVersion", "minimumClientVersion", "releaseVersion"];
+
 /**
  * Assert the health envelope a release build must serve.
  *
@@ -122,8 +125,6 @@ export function parseOrigin(argv) {
  * single run reports every broken field instead of forcing one rebuild per
  * fix. Kept pure and exported so it is unit-testable without a live server.
  */
-const EXPECTED_VERSION_FIELDS = ["apiVersion", "minimumClientVersion", "releaseVersion"];
-
 export function checkHealthEnvelope(envelope, expected) {
   const failures = [];
   const record = (ok, message) => {
@@ -136,22 +137,37 @@ export function checkHealthEnvelope(envelope, expected) {
   // replaced the independent shape checks that used to catch that
   // unconditionally, which leaves this as the only thing between a truncated
   // fixture or an unstamped manifest and a smoke that asserts nothing.
-  const unusable = EXPECTED_VERSION_FIELDS.filter(
-    (field) => typeof expected?.[field] !== "string" || expected[field].trim().length === 0,
+  //
+  // It disables only the three comparisons it actually undermines. Refusing the
+  // whole envelope here also discarded the five checks that never consult the
+  // expectation — the error envelope, capabilities, the data record, instanceId,
+  // pairingRequired — so a broken body scored 1 failure where it scores 7 under
+  // a complete expectation, and the accumulate-every-field contract above held
+  // only while the harness was intact.
+  const unusable = new Set(
+    EXPECTED_VERSION_FIELDS.filter(
+      (field) => typeof expected?.[field] !== "string" || expected[field].trim().length === 0,
+    ),
   );
-  if (unusable.length > 0) {
-    return [`expected ${unusable.join(", ")} unusable; the smoke cannot judge a release against an incomplete expectation`];
+  if (unusable.size > 0) {
+    failures.push(
+      `expected ${[...unusable].join(", ")} unusable; the smoke cannot judge a release against an incomplete expectation`,
+    );
   }
 
   if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) {
-    return ["health response is not a JSON object"];
+    failures.push("health response is not a JSON object");
+    return failures;
   }
 
   record(envelope.error === undefined, "health response carries an error envelope");
-  record(envelope.apiVersion === expected.apiVersion, `apiVersion is ${JSON.stringify(envelope.apiVersion)}, expected ${JSON.stringify(expected.apiVersion)}`);
   record(
-    envelope.minimumClientVersion === expected.minimumClientVersion,
-    `minimumClientVersion is ${JSON.stringify(envelope.minimumClientVersion)}, expected ${JSON.stringify(expected.minimumClientVersion)}`,
+    unusable.has("apiVersion") || envelope.apiVersion === expected.apiVersion,
+    `apiVersion is ${JSON.stringify(envelope?.apiVersion)}, expected ${JSON.stringify(expected?.apiVersion)}`,
+  );
+  record(
+    unusable.has("minimumClientVersion") || envelope.minimumClientVersion === expected.minimumClientVersion,
+    `minimumClientVersion is ${JSON.stringify(envelope?.minimumClientVersion)}, expected ${JSON.stringify(expected?.minimumClientVersion)}`,
   );
   record(
     Array.isArray(envelope.capabilities) && envelope.capabilities.length > 0,
@@ -170,8 +186,8 @@ export function checkHealthEnvelope(envelope, expected) {
   );
   record(data.pairingRequired === true, `pairingRequired is ${JSON.stringify(data.pairingRequired)}, expected true`);
   record(
-    data.releaseVersion === expected.releaseVersion,
-    `releaseVersion is ${JSON.stringify(data.releaseVersion)}, expected ${JSON.stringify(expected.releaseVersion)}`,
+    unusable.has("releaseVersion") || data.releaseVersion === expected.releaseVersion,
+    `releaseVersion is ${JSON.stringify(data.releaseVersion)}, expected ${JSON.stringify(expected?.releaseVersion)}`,
   );
 
   return failures;
