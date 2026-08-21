@@ -34,7 +34,7 @@ assert.doesNotMatch(
   /extractNextPaths\((?:text|reasoningSplit\.visible)\)/,
   "next-paths never runs on text upstream of the skill split",
 );
-assert.match(chatView, /<SkillStageCard key=\{u\.name\} name=\{u\.name\} stage=\{u\.stage\} note=\{u\.note\} \/>/, "assistant turns render one card per skill name");
+assert.match(chatView, /<SkillStageCard[\s\S]*?key=\{update\.name\}[\s\S]*?name=\{update\.name\}[\s\S]*?stage=\{update\.stage\}[\s\S]*?note=\{update\.note\}/, "assistant turns render one card per skill name");
 assert.match(
   chatView,
   /const skillInvocation = turn\.role === "user" \? parseSkillInvocation\(turn\.text\) : null;/,
