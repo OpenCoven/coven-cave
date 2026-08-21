@@ -139,9 +139,19 @@ test("3a — the rail anchors to the DOM the markdown pipeline actually rendered
 });
 
 test("3a — provenance is the turn's own tool events, and absent when there are none", () => {
+  // `turnTools` was renamed when the streaming work made the partition
+  // settled-only. The guarantee is not the name: it is that the reader's
+  // "How this was made" footer is fed the SAME list the transcript's own tool
+  // slots are built from, so provenance cannot drift from what was displayed.
+  // Bind to whatever that partition source is called and require the reader to
+  // receive exactly it — a separately derived list would not satisfy this.
+  const partitionSource = chatView.match(
+    /const (\w+) = [^;]*turn\.tools[^;]*;\s*const editCards = \1\.filter\(isEditCard\);/,
+  )?.[1];
+  assert.ok(partitionSource, "TurnRow should derive its tool slots from one named partition source");
   assert.match(
     chatView,
-    /readerTools=\{turnTools\}/,
+    new RegExp(`readerTools=\\{${partitionSource}\\}`),
     "the reader reads the same tool events the turn carries",
   );
   assert.match(
