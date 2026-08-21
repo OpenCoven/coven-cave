@@ -228,6 +228,22 @@ export function evaluateRolloutGate(state) {
     // upstream gate can produce, so it is a hand-edited or truncated state
     // file. Fail closed rather than roll out toward an unnamed target.
     hold("rollback readiness is 'ready' but names no baseline; a rollback target that cannot be named is not one");
+  } else if (readiness.target && readiness.waived) {
+    // The mirror of the branch above, unproducible for the same reason: the
+    // readiness gate sets `baselineWaived: true` only on the path that returns
+    // `baseline: null`. It reaches a state file the way a not-ready verdict
+    // does — an operator writing `rollbackReadiness` by hand, which this
+    // runbook asks them to do — and a file holding both makes this gate answer
+    // "what do I roll back to" three different ways: an advancing report says
+    // there is no target and to patch forward, a rollback prints the baseline,
+    // and `restore-plan` refuses to rehearse a baseline that is sitting right
+    // there. Under incident pressure the first of those steers an operator away
+    // from a restore that is available. Fail closed on the contradiction rather
+    // than silently picking one of the answers.
+    hold(
+      `rollback readiness waives the baseline yet names '${readiness.target}'; a waiver and a target are two answers ` +
+        "to one question and this file gives both, so correct it before rolling out on either",
+    );
   }
   // The waiver is deliberately NOT a hold. `--allow-missing-baseline` is
   // already an explicit, attributed decision taken upstream for a repository's

@@ -504,6 +504,51 @@ test("a 'ready' verdict that names no baseline holds instead of rolling out towa
   assert.match(detailsOf(result), /names no baseline/, "the operator is told which half of the verdict is missing");
 });
 
+test("a verdict that both waives the baseline and names one holds instead of picking an answer", () => {
+  // The mirror of the test above. `release-rollback-readiness.mjs` returns
+  // `baselineWaived: true` only from the branch that returns `baseline: null`,
+  // so this pairing is as unproducible as `ready: true` with no baseline — and
+  // reaches a state file the same way, through the hand-written
+  // `rollbackReadiness` the runbook asks for when the verdict is not ready.
+  const contradictory = greenState({
+    rollbackReadiness: readinessVerdict({ baselineWaived: true }),
+  });
+  const result = evaluateRolloutGate(contradictory);
+  assert.equal(
+    result.decision,
+    "hold",
+    "advancing on this file tells an operator to patch forward while a restorable baseline sits in the same object",
+  );
+  assert.match(
+    detailsOf(result),
+    /waives the baseline yet names '0\.9\.4'/,
+    "the reason quotes both halves of the contradiction, and names the target the way every other line of this gate does",
+  );
+
+  // The three answers this file used to give, which is why it holds now rather
+  // than resolving in favour of either half.
+  assert.match(
+    formatGateReport(result),
+    /patching forward/,
+    "the advancing report claimed there was no way back at all",
+  );
+  assert.equal(
+    evaluateRolloutGate({ ...contradictory, regressions: [{ class: "crash", id: "diag-1" }] }).rollbackTarget,
+    "0.9.4",
+    "a rollback on the same file named a target, contradicting the report above",
+  );
+  assert.throws(
+    () =>
+      runCli({
+        argv: ["restore-plan", "state.json"],
+        readFileImpl: () => JSON.stringify(contradictory),
+        log: () => {},
+      }),
+    /no prior manifest to restore/,
+    "and the drill refused to rehearse a baseline the same file names",
+  );
+});
+
 test("a waived baseline rolls out, but never silently", () => {
   const waived = greenState({
     rollbackReadiness: readinessVerdict({ baseline: null, baselineWaived: true, platforms: [] }),

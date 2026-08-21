@@ -54,8 +54,21 @@ decide whether the rollout gate can act on it:
   only remedy is patching forward, and `restore-plan` refuses, because there is
   no prior manifest to restore.
 
-`ready: true` with neither a baseline nor the waiver is not a verdict that gate
-can emit, so the rollout gate treats it as a hand-edited file and holds.
+Two pairings that gate cannot emit are therefore hand-edited files, and the
+rollout gate holds on both rather than guessing which half was meant:
+
+- `ready: true` with neither a baseline nor the waiver — a rollback target that
+  cannot be named is not one.
+- `baselineWaived: true` *together with* a baseline. The waiver is only ever
+  returned alongside `baseline: null`, and a file carrying both makes the gate
+  answer "what do I roll back to" three different ways: an advancing report
+  says there is none and to patch forward, a rollback names the baseline, and
+  `restore-plan` refuses to rehearse the baseline sitting in the same object.
+  Under incident pressure the first of those steers you away from a restore
+  that is available.
+
+Both are transcription mistakes, and both are fixed in the state file rather
+than in the gate: copy the verdict as the readiness gate printed it.
 
 ## Stages
 
