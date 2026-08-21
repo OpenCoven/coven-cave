@@ -544,6 +544,30 @@ test("rollout may not start before acceptance and rollback readiness are proven"
 test("rollback readiness must be asserted, not merely unmentioned", () => {
   const result = evaluateRolloutGate(greenState({ rollbackReadiness: undefined }));
   assert.equal(result.decision, "hold", "a missing verdict fails closed; silence is not proof of a way back");
+
+  // This test was passing for a reason other than its name. Every verdict it
+  // and its neighbours exercised omitted `ready` and the baseline *together*,
+  // so the hold always came from the "names no baseline" branch below and the
+  // reading of `ready` itself was unpinned: loosening it to `ready !== false`
+  // left the whole suite green. The shape that separates them is the one the
+  // runbook invites — an operator hand-transcribing `rollbackReadiness` copies
+  // the baseline they can see and drops the boolean they cannot — and on it a
+  // fail-open reading advances the rollout outright, because a named baseline
+  // satisfies every later guard.
+  const unasserted = evaluateRolloutGate(
+    greenState({ rollbackReadiness: readinessVerdict({ ready: undefined }) }),
+  );
+  assert.equal(
+    unasserted.decision,
+    "hold",
+    "a verdict that names a baseline but never claims to be ready has not proven a way back; only `ready: true` does",
+  );
+  assert.equal(unasserted.rollbackReady, false, "an unasserted readiness is reported as unproven, not as ready");
+  assert.match(
+    detailsOf(unasserted),
+    /rollback readiness is not proven/,
+    "the operator is told the verdict is unproven, not that their baseline is missing — it is sitting in the file",
+  );
 });
 
 test("the rollback target is the baseline's version, never the rolling-out release's", () => {
