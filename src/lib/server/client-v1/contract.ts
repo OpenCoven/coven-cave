@@ -1,6 +1,15 @@
 export const CLIENT_V1_API_VERSION = "1.0";
 export const CLIENT_V1_MIN_CLIENT_VERSION = "0.1.0";
 
+/**
+ * Every Client v1 resource route requires a paired credential. Stated as a
+ * contract fact rather than a runtime setting because there is no unpaired
+ * mode to report — a client that reads `false` here would have nowhere to send
+ * an unauthenticated request. It lives in the fixture so that introducing such
+ * a mode has to change the contract in review rather than quietly at runtime.
+ */
+export const CLIENT_V1_PAIRING_REQUIRED = true;
+
 const freezeReadonlyArray = <const T extends readonly string[]>(value: T): T => Object.freeze([...value]) as T;
 const freezeReadonlyObject = <const T extends Record<string, unknown>>(value: T): Readonly<T> =>
   Object.freeze({ ...value });
@@ -62,6 +71,8 @@ export const CLIENT_V1_LIMITS = freezeReadonlyObject({
   errorDetailValueCharacters: 256,
   defaultPageSize: 50,
   maxPageSize: 100,
+  instanceIdCharacters: 64,
+  releaseVersionCharacters: 64,
 } as const);
 
 export type ClientV1Scope = (typeof CLIENT_V1_SCOPES)[number];
@@ -99,6 +110,19 @@ export type ClientV1StatusRecord = {
   status: string;
 } & ClientV1Record;
 
+/**
+ * The `data` half of the Client v1 health response.
+ *
+ * `apiVersion`, `minimumClientVersion` and `capabilities` are deliberately
+ * absent: they ride the shared envelope, and repeating them here would let one
+ * response carry two different answers to the same question.
+ */
+export type ClientV1Health = {
+  instanceId: string;
+  pairingRequired: typeof CLIENT_V1_PAIRING_REQUIRED;
+  releaseVersion: string;
+} & ClientV1Record;
+
 export type ClientV1EnvelopeBase = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
@@ -133,6 +157,7 @@ export type ClientV1ContractManifest = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
   capabilities: ClientV1Capability[];
+  pairingRequired: typeof CLIENT_V1_PAIRING_REQUIRED;
   pairingScopes: ClientV1Scope[];
   identityKinds: ClientV1IdentityKind[];
   errorCodes: ClientV1ErrorCode[];
@@ -143,6 +168,7 @@ export type ClientV1ContractFixture = {
   contract: ClientV1ContractManifest;
   examples: {
     status: ClientV1StatusRecord;
+    health: ClientV1Health;
     identity: ClientV1Identity;
     revision: ClientV1Revision;
     cursor: ClientV1Cursor;
@@ -300,6 +326,16 @@ export function parseClientV1Capabilities(value: unknown): ClientV1Capability[] 
 
 export function parseClientV1RequestId(value: unknown): string {
   return requiredString(value, "requestId", CLIENT_V1_LIMITS.requestIdCharacters);
+}
+
+export function parseClientV1Health(value: unknown): ClientV1Health {
+  const health = requiredRecord(value, "health");
+  requiredString(health.instanceId, "health instanceId", CLIENT_V1_LIMITS.instanceIdCharacters);
+  if (health.pairingRequired !== CLIENT_V1_PAIRING_REQUIRED) {
+    throw new Error("Client v1 health pairingRequired must be true.");
+  }
+  requiredString(health.releaseVersion, "health releaseVersion", CLIENT_V1_LIMITS.releaseVersionCharacters);
+  return health as ClientV1Health;
 }
 
 export function parseClientV1Identity(value: unknown): ClientV1Identity {
@@ -473,6 +509,14 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
   const status: ClientV1StatusRecord = {
     status: "ok",
   };
+  // Placeholder values, never the running instance or release: the fixture is
+  // a shape contract, and stamping the real version into it would make every
+  // release re-write the file that exists to prove the shape did not change.
+  const health: ClientV1Health = {
+    instanceId: "00000000-0000-4000-8000-000000000000",
+    pairingRequired: CLIENT_V1_PAIRING_REQUIRED,
+    releaseVersion: "0.0.0",
+  };
   const identity: ClientV1Identity = {
     kind: "conversation",
     id: "conversation-example",
@@ -493,6 +537,7 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
       apiVersion: CLIENT_V1_API_VERSION,
       minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
       capabilities: defaultCapabilities(),
+      pairingRequired: CLIENT_V1_PAIRING_REQUIRED,
       pairingScopes: [...CLIENT_V1_SCOPES],
       identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
       errorCodes: [...CLIENT_V1_ERROR_CODES],
@@ -502,6 +547,7 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
     // generic envelopes, and no route DTOs or success-shape guessing.
     examples: {
       status,
+      health,
       identity,
       revision,
       cursor,
