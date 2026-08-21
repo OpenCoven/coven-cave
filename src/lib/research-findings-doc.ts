@@ -21,7 +21,8 @@ export type FindingsSpan =
 export type FindingsBlock =
   | { kind: "p"; spans: FindingsSpan[] }
   | { kind: "ul"; items: FindingsSpan[][] }
-  | { kind: "table"; header: FindingsSpan[][]; rows: FindingsSpan[][][] };
+  | { kind: "table"; header: FindingsSpan[][]; rows: FindingsSpan[][][] }
+  | { kind: "code"; language: string; code: string };
 
 export type FindingsSection = {
   /** Stable slug used for the contents rail anchor and scroll-spy. */
@@ -144,6 +145,7 @@ const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*$/;
 const LIST_RE = /^\s*[-*+]\s+(.+)$/;
 const TABLE_ROW_RE = /^\s*\|(.+)\|\s*$/;
 const TABLE_SEP_RE = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
+const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
 
 function splitCells(row: string): string[] {
   return row
@@ -179,6 +181,25 @@ function parseBlocks(lines: string[], resolver: RefResolver): FindingsBlock[] {
     if (!line.trim()) {
       flushParagraph();
       flushList();
+      continue;
+    }
+
+    const fenceMatch = FENCE_RE.exec(line);
+    if (fenceMatch) {
+      flushParagraph();
+      flushList();
+      const marker = fenceMatch[1];
+      const markerCharacter = marker[0];
+      const closingFence = new RegExp(
+        `^\\s{0,3}${escapeRegExp(markerCharacter)}{${marker.length},}\\s*$`,
+      );
+      const language = fenceMatch[2].trim().split(/\s+/, 1)[0] ?? "";
+      const code: string[] = [];
+      i += 1;
+      for (; i < lines.length && !closingFence.test(lines[i]); i += 1) {
+        code.push(lines[i]);
+      }
+      blocks.push({ kind: "code", language, code: code.join("\n") });
       continue;
     }
 
@@ -219,7 +240,7 @@ function sectionRefIds(blocks: FindingsBlock[]): string[] {
   for (const block of blocks) {
     if (block.kind === "p") collectRefIds(block.spans, ids);
     else if (block.kind === "ul") for (const item of block.items) collectRefIds(item, ids);
-    else {
+    else if (block.kind === "table") {
       for (const cell of block.header) collectRefIds(cell, ids);
       for (const row of block.rows) for (const cell of row) collectRefIds(cell, ids);
     }
@@ -257,9 +278,24 @@ export function parseFindingsDoc(markdown: string, sources: ResearchSourceRef[])
   const preamble: string[] = [];
   const groups: Group[] = [];
   let current: Group | null = null;
+  let headingFence: { character: string; length: number } | null = null;
 
   for (const line of lines) {
-    const headingMatch = HEADING_RE.exec(line);
+    const fenceMatch = FENCE_RE.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      if (
+        headingFence &&
+        marker[0] === headingFence.character &&
+        marker.length >= headingFence.length &&
+        !fenceMatch[2].trim()
+      ) {
+        headingFence = null;
+      } else if (!headingFence) {
+        headingFence = { character: marker[0], length: marker.length };
+      }
+    }
+    const headingMatch = headingFence ? null : HEADING_RE.exec(line);
     if (headingMatch) {
       const level = headingMatch[1].length;
       const heading = headingMatch[2].trim();

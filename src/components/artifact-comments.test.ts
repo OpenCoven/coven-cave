@@ -49,9 +49,14 @@ assert.match(
   /<div className="cave-artifact-content">\s*<MessageBubble/,
   "the assistant bubble is wrapped so selection can be scoped to its markdown",
 );
+// The gate is `settled && !errored && substantial`. Accept either spelling of
+// the settled term: the assistant-turn renderer hoists `turn.pending` into a
+// local `const pending = turn.role === "assistant" && Boolean(turn.pending)`,
+// so `!pending` and `!turn.pending` are the same value at this call site. The
+// contract is the three-way predicate, not which alias spells the first term.
 assert.match(
   chatView,
-  /!turn\.pending && !turn\.error && visible\.trim\(\)\.length > 80 \? \(\s*<ArtifactComments/,
+  /!(?:turn\.)?pending && !turn\.error && visible\.trim\(\)\.length > 80 \? \(\s*<ArtifactComments/,
   "ArtifactComments mounts only on settled, substantial assistant turns",
 );
 assert.match(

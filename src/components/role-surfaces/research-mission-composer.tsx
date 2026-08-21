@@ -4,16 +4,16 @@
  * Research intake engine — the "New research" composer (cave-dl74, Phase B1).
  *
  * The design's prompt card: a large intent textarea with a slash-command
- * palette, "✦ Improve" (POST /api/prompt/enhance), suggested-angle chips
- * derived from REAL mission/link titles, attached quick-save chips, four mode
- * cards backed by the shared auto-routing inference, and the original
+ * palette, agentic "✦ Improve", suggested-angle chips derived from REAL
+ * mission/link titles, attached quick-save chips, a compact mode picker backed
+ * by the shared auto-routing inference, and the original
  * collapsible bounds editor (the plan keeps bounds review even though the
  * design omits it). Validation is unchanged: the shared
  * RESEARCH_INTENT_MIN_LENGTH gate, aria-invalid wiring, and the honest
  * daemon-offline note all carry over from the pre-redesign composer.
  *
  * Slash commands map to real actions only: /brief /sweep /paper /deep set the
- * mode (deep = autoresearch, shown as "Deep loop"), /improve runs Improve,
+ * mode (deep = autoresearch, shown as "Deep loop"), /improve runs agentic Improve,
  * /suggest rotates the angle chips (only offered when real seeds exist), and
  * /save jumps to the Resources tab. The design's /task, /find and /chat are
  * omitted here: there is no board-create wiring from the intake, /find belongs
@@ -24,8 +24,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { StandardSelect } from "@/components/ui/select";
-import { settleEnhance } from "@/lib/prompt-enhancer";
+import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
 import {
   defaultResearchPlan,
   inferResearchMissionMode,
@@ -42,6 +41,8 @@ import {
   type ResearchMission,
   type ResearchMissionMode,
 } from "@/lib/research-missions";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
+import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import {
   RESEARCH_BRIEF_FIELDS,
   assembleBrief,
@@ -269,8 +270,6 @@ export function ResearchMissionComposer({
   const [error, setError] = useState<string | null>(null);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [menuCursor, setMenuCursor] = useState(0);
-  const [improving, setImproving] = useState(false);
-  const [improveNote, setImproveNote] = useState<string | null>(null);
   const [angleOffset, setAngleOffset] = useState(0);
   const [builderOpen, setBuilderOpen] = useState(false);
   // The assembled-brief strip appears once the prompt is actually structured —
@@ -336,9 +335,52 @@ export function ResearchMissionComposer({
     onDraftChange?.(intent);
   }, [intent, onDraftChange]);
 
-  // The enhance race rule: only overwrite the draft the rewrite was asked for.
-  const intentRef = useRef(intent);
-  intentRef.current = intent;
+  const runtimeModelInventory = useRuntimeModelInventory(harness, familiarId);
+  const modelOptions = useMemo<StandardSelectOption<string>[]>(() => {
+    const options: StandardSelectOption<string>[] = [
+      {
+        value: "",
+        label: "Runtime default",
+        detail: inventoryProvenanceLabel(
+          runtimeModelInventory.provenance,
+          runtimeModelInventory.loading,
+        ),
+      },
+      ...runtimeModelInventory.models.map((option) => ({
+        value: option.id,
+        label: option.label,
+        detail: option.id,
+      })),
+    ];
+    if (model && !options.some((option) => option.value === model)) {
+      options.push({ value: model, label: model, detail: "Selected model" });
+    }
+    return options;
+  }, [
+    model,
+    runtimeModelInventory.loading,
+    runtimeModelInventory.models,
+    runtimeModelInventory.provenance,
+  ]);
+
+  const promptEnhance = usePromptEnhance({
+    draft: intent,
+    setDraft: setIntent,
+    familiarId,
+    mode: "research",
+    context: {
+      researchMode: effectiveMode,
+      bounds,
+      runtime: harness,
+      model: model || null,
+      relatedSources: attachedLinks.map((link) => ({
+        id: link.id,
+        title: link.title,
+        url: link.url,
+      })),
+    },
+    disabled: submitting || trimmedIntent.length < 3,
+  });
 
   useEffect(() => {
     if (boundsDirtyRef.current) return;
@@ -401,39 +443,10 @@ export function ResearchMissionComposer({
     announce("Suggested new research angles.");
   };
 
-  // ── ✦ Improve: POST /api/prompt/enhance (research mode), replace on apply.
+  // ── ✦ Improve: familiar-backed streaming rewrite with the shared
+  // race-safe apply/suggest/revert lifecycle and local offline fallback.
   const improveReady = trimmedIntent.length >= 3;
-  const improve = async (draft: string) => {
-    if (draft.trim().length < 3 || improving) return;
-    setImproving(true);
-    setImproveNote(null);
-    try {
-      const res = await fetch("/api/prompt/enhance", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ draft, mode: "research" }),
-      });
-      const data = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        enhanced?: string;
-        error?: string;
-      } | null;
-      if (!res.ok || !data?.ok || !data.enhanced) {
-        setImproveNote(data?.error ?? `Improve failed (HTTP ${res.status}) — the draft is unchanged.`);
-        return;
-      }
-      if (settleEnhance(draft, intentRef.current) === "apply") {
-        setIntent(data.enhanced);
-        announce("Draft improved.");
-      } else {
-        setImproveNote("The draft changed while improving — kept your edits.");
-      }
-    } catch {
-      setImproveNote("Improve is unreachable right now — the draft is unchanged.");
-    } finally {
-      setImproving(false);
-    }
-  };
+  const improving = promptEnhance.state.phase === "loading";
 
   // ── Slash-command palette (↑↓ / Tab / Enter / Esc per design 785–811). ────
   const slash = matchSlashCommand(intent);
@@ -455,7 +468,7 @@ export function ResearchMissionComposer({
       setMode(command.mode);
       announce(`${MODE_LABELS[command.mode]} mode selected.`);
     } else if (command.run === "improve") {
-      void improve(stripped);
+      promptEnhance.enhance("auto", stripped);
     } else if (command.run === "suggest") {
       suggestAngles();
     } else if (command.run === "save") {
@@ -520,6 +533,7 @@ export function ResearchMissionComposer({
   };
 
   const manual = mode !== "auto";
+  const focusIntent = () => requestAnimationFrame(() => intentBoxRef.current?.focus());
 
   return (
     <form className="research-mission-composer research-intake__form" onSubmit={start}>
@@ -591,15 +605,17 @@ export function ResearchMissionComposer({
         </div>
 
         {attachedLinks.length > 0 ? (
-          <div className="research-intake__attached" role="group" aria-label="Related context">
-            <span className="research-intake__attached-label">Related context ({attachedLinks.length}):</span>
+          <div className="research-intake__attached" role="group" aria-label="Resources ready for first pass">
+            <span className="research-intake__attached-label">
+              Resources ready for first pass ({attachedLinks.length}):
+            </span>
             {attachedLinks.map((link) => (
               <span key={link.id} className="research-intake__attached-chip">
                 {link.title}
                 <button
                   type="button"
                   className="research-intake__attached-remove"
-                  aria-label={`Remove ${link.title} from related context`}
+                  aria-label={`Remove ${link.title} from the first research pass`}
                   onClick={() => onRemoveAttached?.(link.id)}
                 >
                   ✕
@@ -704,11 +720,20 @@ export function ResearchMissionComposer({
         <div className="research-intake__footer">
           <button
             type="button"
-            className="research-improve"
-            disabled={!improveReady || improving}
-            onClick={() => void improve(intent)}
+            className="research-improve focus-ring"
+            data-active={improving}
+            disabled={!improveReady && !improving}
+            title={improving ? "Cancel prompt improvement" : "Improve this prompt with the familiar"}
+            onClick={() => {
+              if (improving) {
+                promptEnhance.cancel();
+                focusIntent();
+                return;
+              }
+              promptEnhance.enhance();
+            }}
           >
-            {improving ? "✦ Improving…" : "✦ Improve"}
+            {improving ? "✦ Stop improving" : "✦ Improve"}
           </button>
           <button
             type="button"
@@ -735,9 +760,6 @@ export function ResearchMissionComposer({
             </button>
           ) : null}
           <ResearchPromptStrengthMeter strength={strength} showMissing={trimmedIntent.length > 0} />
-          <p className="research-improve-note" role="status">
-            {improving ? "Rewriting the draft for scope and rigor…" : improveNote}
-          </p>
           <Button
             type="submit"
             variant="primary"
@@ -750,6 +772,95 @@ export function ResearchMissionComposer({
             Start research
           </Button>
         </div>
+        {promptEnhance.state.phase !== "idle" ? (
+          <div
+            className="research-improve-status"
+            data-phase={promptEnhance.state.phase}
+          >
+            <span className="research-improve-status__mark" aria-hidden>
+              {promptEnhance.state.phase === "error"
+                ? "!"
+                : promptEnhance.state.phase === "applied"
+                  ? "✓"
+                  : "✦"}
+            </span>
+            <span
+              className="research-improve-status__message"
+              role={promptEnhance.state.phase === "error" ? "alert" : "status"}
+            >
+              {promptEnhance.state.phase === "loading"
+                ? promptEnhance.state.preview || "The familiar is tightening scope, evidence, and output shape…"
+                : promptEnhance.state.phase === "suggested"
+                  ? `An improved version is ready${promptEnhance.state.offline ? " from the offline fallback" : ""}.`
+                  : promptEnhance.state.phase === "applied"
+                    ? `Prompt improved${promptEnhance.state.offline ? " with the offline fallback" : " by the familiar"}.`
+                    : promptEnhance.state.message}
+            </span>
+            <span className="research-improve-status__actions">
+              {promptEnhance.state.phase === "loading" ? (
+                <button type="button" className="focus-ring" onClick={promptEnhance.cancel}>
+                  Cancel
+                </button>
+              ) : promptEnhance.state.phase === "suggested" ? (
+                <>
+                  <button
+                    type="button"
+                    className="focus-ring"
+                    onClick={() => {
+                      promptEnhance.apply();
+                      focusIntent();
+                    }}
+                  >
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    className="focus-ring"
+                    onClick={() => {
+                      promptEnhance.dismiss();
+                      focusIntent();
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </>
+              ) : promptEnhance.state.phase === "applied" ? (
+                <button
+                  type="button"
+                  className="focus-ring"
+                  onClick={() => {
+                    promptEnhance.revert();
+                    focusIntent();
+                  }}
+                >
+                  Revert
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="focus-ring"
+                  onClick={() => {
+                    promptEnhance.dismiss();
+                    focusIntent();
+                  }}
+                >
+                  Dismiss
+                </button>
+              )}
+            </span>
+            {promptEnhance.state.phase === "suggested" ? (
+              <span className="research-improve-status__preview" title={promptEnhance.state.enhanced}>
+                {promptEnhance.state.enhanced}
+              </span>
+            ) : null}
+            {promptEnhance.state.phase === "suggested" || promptEnhance.state.phase === "applied" ? (
+              <details className="research-improve-status__why">
+                <summary className="focus-ring">Why this?</summary>
+                <p>{promptEnhance.state.recommendation.rationale}</p>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <ResearchPromptBuilder
@@ -767,41 +878,39 @@ export function ResearchMissionComposer({
 
       <div className="research-intake__modes">
         <div className="research-intake__modes-head">
-          <h3>Modes</h3>
+          <h3>Research mode</h3>
           <span className="research-intake__modes-note">
             {manual
               ? `You chose ${MODE_LABELS[effectiveMode]} — this run will use it.`
-              : `Auto picks one from your prompt — ${MODE_LABELS[effectiveMode]} for now. Click a card to override.`}
+              : `Auto selected ${MODE_LABELS[effectiveMode]} from the prompt.`}
           </span>
-          {manual ? (
-            <button type="button" className="research-intake__modes-reset" onClick={() => setMode("auto")}>
-              Reset to Auto
-            </button>
-          ) : null}
         </div>
-        <div className="research-intake__modes-grid">
-          {RESEARCH_MISSION_MODES.map((value) => {
-            const selected = value === effectiveMode;
-            return (
-              <button
-                key={value}
-                type="button"
-                className="research-mode-card"
-                data-selected={selected}
-                aria-pressed={manual && selected}
-                onClick={() => setMode(value)}
-              >
-                <span className="research-mode-card__head">
-                  <span className="research-mode-card__name">{MODE_LABELS[value]}</span>
-                  {selected ? (
-                    <span className="research-mode-card__badge">{manual ? "✓ selected" : "auto pick"}</span>
-                  ) : null}
-                </span>
-                <span className="research-mode-card__desc">{MODE_DESCRIPTIONS[value]}</span>
-                <span className="research-mode-card__meta">{modeCardMeta(value)}</span>
-              </button>
-            );
-          })}
+        <div className="research-mode-picker">
+          <StandardSelect<"auto" | ResearchMissionMode>
+            label="Research mode"
+            value={mode}
+            onChange={setMode}
+            className="research-mode-picker__select"
+            popoverClassName="research-mode-picker__popover"
+            options={[
+              {
+                value: "auto",
+                label: `Auto · ${MODE_LABELS[effectiveMode]}`,
+                detail: inferred.reason,
+              },
+              ...RESEARCH_MISSION_MODES.map((value) => ({
+                value,
+                label: MODE_LABELS[value],
+                detail: `${MODE_DESCRIPTIONS[value]} ${modeCardMeta(value)}.`,
+              })),
+            ]}
+          />
+          <div className="research-mode-picker__summary" data-auto={!manual}>
+            <span className="research-mode-picker__state">{manual ? "Selected" : "Auto pick"}</span>
+            <strong>{MODE_LABELS[effectiveMode]}</strong>
+            <span>{MODE_DESCRIPTIONS[effectiveMode]}</span>
+            <code>{modeCardMeta(effectiveMode)}</code>
+          </div>
         </div>
       </div>
 
@@ -879,7 +988,11 @@ export function ResearchMissionComposer({
               id="research-runtime-harness"
               label="Runtime"
               value={harness}
-              onChange={setHarness}
+              className="research-bounds-select"
+              onChange={(next) => {
+                setHarness(next);
+                setModel("");
+              }}
               options={RESEARCH_HARNESS_IDS.map((id) => ({
                 value: id,
                 label: HARNESS_LABELS[id] ?? id,
@@ -888,12 +1001,16 @@ export function ResearchMissionComposer({
           </label>
           <label>
             <span>Model</span>
-            <input
+            <StandardSelect
               id="research-runtime-model"
-              type="text"
+              label={`Model · ${inventoryProvenanceLabel(
+                runtimeModelInventory.provenance,
+                runtimeModelInventory.loading,
+              )}`}
               value={model}
-              placeholder="runtime default"
-              onChange={(event) => setModel(event.target.value)}
+              className="research-bounds-select"
+              onChange={setModel}
+              options={modelOptions}
             />
           </label>
         </div>
