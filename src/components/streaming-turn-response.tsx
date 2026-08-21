@@ -194,7 +194,7 @@ export function StreamingTurnResponse({
       className="streaming-turn-response"
       data-density={density}
       data-streaming-turn-response={true}
-      data-turn-id={turnId}
+      data-streaming-turn-id={turnId}
     >
       {live ? (
         <div

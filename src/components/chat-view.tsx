@@ -45,9 +45,8 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { buildDiagramGuidePrompt, DIAGRAM_COMMAND_START } from "@/lib/diagram-command";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
-import { groupConsecutiveTools } from "@/lib/turn-segments";
+import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
   CHAT_OPEN_COVEN_EVENT,
@@ -8991,6 +8990,17 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
+  const segments = segmentTurn(visible, turn.tools);
+  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((segment, index) =>
+    segment.kind === "text"
+      ? { kind: "text", text: segment.text }
+      : {
+          kind: "block",
+          key: `tools-${segment.tools[0]?.id ?? index}`,
+          node: <ToolRuns tools={segment.tools} />,
+        },
+  );
+
   // Auto-detect renderable artifacts only after settlement. Streaming keeps the
   // ordinary markdown path until markers and fences are complete.
   const artifactCtx = { familiarId: familiar.id };
@@ -9073,24 +9083,26 @@ function TurnRowImpl({
                 )
               : null}
             {!pending && otherTools.length ? (
-              <ToolGroup tools={otherTools} durationMs={turn.durationMs} />
+              <ToolGroup tools={otherTools} />
             ) : null}
           </div>
         )
       : undefined;
 
   const proseContent =
-    !pending && renderSegments
-      ? renderSegments.map((segment, index) =>
-          segment.kind === "text" ? (
-            <ProgressiveMarkdownBlock
-              key={`rich-prose-${index}`}
-              text={segment.text}
-            />
-          ) : (
-            <div key={segment.key} className="my-2">{segment.node}</div>
-          ),
-        )
+    !pending
+      ? renderSegments
+        ? renderSegments.map((segment, index) =>
+            segment.kind === "text" ? (
+              <ProgressiveMarkdownBlock
+                key={`rich-prose-${index}`}
+                text={segment.text}
+              />
+            ) : (
+              <div key={segment.key} className="my-2">{segment.node}</div>
+            ),
+          )
+        : <ProgressiveMarkdownBlock text={visible} />
       : undefined;
   const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
     emptySuccessful: streamingModel.emptySuccessful,
@@ -9177,7 +9189,7 @@ function TurnRowImpl({
           })()
         : null}
       {/* Comment on substantial settled markdown artifacts. */}
-      {!pending && !turn.error && visible.trim().length > 80 ? (
+      {!turn.pending && !turn.error && visible.trim().length > 80 ? (
         <ArtifactComments
           turnId={turn.id}
           familiarName={familiar.display_name}
@@ -9282,11 +9294,11 @@ function TurnRowImpl({
                 timestamp={turn.createdAt}
                 showTimestamp={false}
                 pending={turn.pending}
-                isError={showEmptySuccessfulFallback}
+                isError={Boolean(turn.error) || showEmptySuccessfulFallback}
                 label={familiar.display_name}
                 messageId={turn.id}
                 feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                onRegenerate={onRegenerate}
+                onRegenerate={turn.error ? undefined : onRegenerate}
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 assistantBody={
