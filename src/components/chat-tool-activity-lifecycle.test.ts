@@ -133,8 +133,8 @@ test("TurnRow keeps live tools chronological and settles them into activity and 
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
-    "streaming tools retain their chronological positions in the response",
+    /segmentTurn\(\s*presentedProjection\.visible,\s*turn\.tools,\s*\)[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+    "streaming tools retain their chronological positions in the presented response",
   );
   assert.match(
     turnRender,
