@@ -1,9 +1,16 @@
 # Rollback readiness
 
-A staged rollout is only safe if it can be *un*-done. Pausing a bad release is
-a remedy only when the previous version is still installable and the updater
-can still serve it — otherwise "pause the rollout" leaves every user who
-already updated stranded on the bad build.
+A staged rollout is only safe if it can be *un*-done — and "un-done" means two
+different things for two different populations, because **the updater never
+downgrades anyone**. The desktop app runs a stock `tauri-plugin-updater` with
+no version comparator of its own (`src-tauri/src/tauri_setup.rs`), so it offers
+an update only when the manifest's version is *newer* than the installed one.
+
+So installs that have not moved yet have to stop moving, which needs the
+previous release's `latest.json` to be intact and pointing at live assets; and
+installs that already moved have to be able to get back **by hand**, which
+needs that release's installers and `SHA256SUMS` to still be there. Lose either
+half and pausing the rollout is not a remedy.
 
 `scripts/release-rollback-readiness.mjs` proves that before the updater moves
 anyone forward. It runs as the `rollback-readiness` job in
@@ -21,7 +28,7 @@ population, but not the only one:
 | Still happens when the gate fails | Blocked when the gate fails |
 | --- | --- |
 | `build` creates the GitHub Release and uploads every installer | `updater-manifest` publishes `latest.json` |
-| `checksums` publishes `SHA256SUMS` | in-app auto-update to the new version |
+| `checksums` publishes `SHA256SUMS` | in-app auto-update to the new version — and, until you act, in-app auto-update at all (see below) |
 | `homebrew` bumps the tap, so `brew install --cask` serves the new version | |
 
 That is deliberate: the shortfall a red gate reports is in the **previous**
@@ -29,6 +36,24 @@ release, and holding the new artifacts hostage to it would leave a broken
 baseline able to block its own fix. But it means a red gate is not containment
 on its own — if the new release must not reach anyone, delete its assets or
 unpublish it by hand as well.
+
+⚠️ **It also means auto-update is DOWN, not held.** `build` creates the release
+published and not a prerelease, so GitHub makes it `latest` the moment it
+exists — and the updater endpoint is the alias
+`releases/latest/download/latest.json` (`src-tauri/tauri.conf.json`). With
+`updater-manifest` withheld there is no `latest.json` on that release, so every
+install's update check 404s rather than quietly staying where it is. That is
+the outage `cave-ef6f` was filed for, reached by a new route: nothing is
+auto-updated onto an unprovable rollback target, which is the point, but the
+cost is paid by every install, not only the ones that would have moved.
+
+Treat a red gate as time-critical, and pick one of two exits. Repair the
+baseline release, then re-run the cut so `updater-manifest` gets to publish —
+`workflow_dispatch` with the same `tag` is the reliable way, since `build`
+reuses the existing release and re-uploads with `--clobber`. Or, if the new
+release should not ship at all, demote it with the step-1 command under
+[Rolling back](#rolling-back), which restores the alias to the baseline's
+manifest and ends the outage in one call.
 
 ## What it checks
 
@@ -101,11 +126,30 @@ prior release exists — never that the prior release's artifacts are missing.
 
 ## Rolling back
 
-The baseline this gate verifies is what a rollback consumes:
+The baseline this gate verifies is what a rollback consumes — one half per
+population, in this order.
 
-1. Republish the baseline's `latest.json` as the release-latest manifest, which
-   points every updater check back at the baseline artifacts.
-2. Direct downloads use the baseline's own installers, verified against its
-   `SHA256SUMS`.
-3. Leave the bad release published but no longer latest, so its assets stay
-   available for post-mortem.
+1. **Stop the rollout.** Make the baseline the latest release again, so the
+   updater alias resolves to the baseline's manifest instead of the bad
+   release's:
+
+   ```bash
+   BASELINE=v0.3.7   # the `baseline-tag` this gate recorded
+   gh api -X PATCH \
+     "repos/OpenCoven/coven-cave/releases/$(gh api repos/OpenCoven/coven-cave/releases/tags/$BASELINE --jq .id)" \
+     -f make_latest=true
+   ```
+
+   This is what the manifest half of the gate protects: the endpoint starts
+   serving the baseline's `latest.json` to every install that has not updated
+   yet, so it has to be complete and to point at assets that still exist.
+
+2. **Recover the installs that already moved.** Nothing you do to a manifest
+   moves them — the updater does not downgrade. They need a manual reinstall
+   from the baseline's own `.dmg` / `.msi` / `.AppImage`, checked against its
+   `SHA256SUMS`. That is what the installer half of the gate protects, and it
+   is the only route back for that population, so say so in the incident note
+   rather than waiting for an auto-update that is not coming.
+
+3. **Leave the bad release published**, just no longer latest, so its assets
+   stay available for post-mortem.

@@ -350,6 +350,16 @@ test("rollback metadata must describe artifacts that still exist", () => {
   assert.deepEqual(collectManifestProblems("not json", baseline), [
     "latest.json is not a JSON object",
   ]);
+  // `null` is the half of that guard nothing reached, and it is the one shape
+  // a degraded GitHub actually returns: a bare `null` body parses as valid
+  // JSON, so `requestJson` hands it straight here. `typeof null` is "object"
+  // and it is not an array, so without the `!manifest` half it walks into
+  // `manifest.version` and the operator gets an unhandled TypeError with no
+  // release, no request and no retry advice attached to it.
+  assert.deepEqual(collectManifestProblems(null, baseline), ["latest.json is not a JSON object"]);
+  assert.deepEqual(collectManifestProblems(undefined, baseline), [
+    "latest.json is not a JSON object",
+  ]);
   // A JSON array is `typeof "object"` too, and a manifest that is a list has
   // no platforms to roll anyone back to however long it is.
   assert.deepEqual(collectManifestProblems([], baseline), ["latest.json is not a JSON object"]);
@@ -414,6 +424,30 @@ test("an asset name that exists on another release is not a rollback target", ()
     ),
     [
       "darwin-aarch64: manifest points at 'https://download.github.test.look-alike.test/v0.3.7/CovenCave-v0.3.7-aarch64.app.tar.gz', which is not an asset on v0.3.7",
+    ],
+  );
+
+  // Scheme is part of the origin, and the look-alike case above cannot show
+  // it: that url differs by host too, so `parsed.host` in place of
+  // `parsed.origin` rejects it either way. This one differs ONLY in the
+  // scheme, so it is what makes the comparison scheme-exact — a plaintext url
+  // for the baseline's exact download path is not the asset GitHub published,
+  // and handing the updater one is a downgrade, not a rollback.
+  assert.deepEqual(
+    collectManifestProblems(
+      {
+        version: "0.3.7",
+        platforms: {
+          "darwin-aarch64": {
+            url: "http://download.github.test/v0.3.7/CovenCave-v0.3.7-aarch64.app.tar.gz",
+            signature: "dW50cnVzdGVk",
+          },
+        },
+      },
+      baseline,
+    ),
+    [
+      "darwin-aarch64: manifest points at 'http://download.github.test/v0.3.7/CovenCave-v0.3.7-aarch64.app.tar.gz', which is not an asset on v0.3.7",
     ],
   );
 
@@ -639,12 +673,22 @@ test("a caller that cannot make a request is told so, not told to retry", async 
   // that "could not be sent … retry before treating the release as
   // unshippable". That advises a retry for a permanent defect, which is the
   // exact misreading the retry advice exists to prevent.
-  await assert.rejects(
-    verify({ fetchImpl: "https://example.test" }),
-    (error) =>
-      !(error instanceof RollbackReadinessError) &&
-      error.message === "fetch implementation is required",
-  );
+  //
+  // Both halves of the resolution matter, and only the truthy one was pinned.
+  // `??` refuses a falsy non-function too; `||` written in its place falls
+  // through to `globalThis.fetch` instead, so a caller that passed nothing
+  // usable gets a live call to whatever `apiUrl` names rather than a refusal —
+  // the same one-directional pin that let `allowMissingBaseline` hard-code
+  // itself true.
+  for (const fetchImpl of ["https://example.test", "", 0, false, {}]) {
+    await assert.rejects(
+      verify({ fetchImpl }),
+      (error) =>
+        !(error instanceof RollbackReadinessError) &&
+        error.message === "fetch implementation is required",
+      `${JSON.stringify(fetchImpl)} is not a fetch implementation`,
+    );
+  }
 
   // resolveRepository carried an owner/repo branch no caller used, and its
   // surviving half was reached by no test at all.
@@ -868,6 +912,34 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
   }
 });
 
+/**
+ * Split a GitHub `if:` expression on an operator, ignoring operators nested
+ * inside parentheses. Enough of a parser to answer the only question asked of
+ * it — whether a term sits at the TOP level of the expression, where it decides
+ * the whole thing, or inside a group, where a sibling can satisfy it instead.
+ * (Literals here are bare words in single quotes; a literal containing a
+ * parenthesis would confuse the depth count, and none of them does.)
+ */
+function splitTopLevel(expression, operator) {
+  const parts = [];
+  let depth = 0;
+  let current = "";
+  for (let index = 0; index < expression.length; index += 1) {
+    const character = expression[index];
+    if (character === "(") depth += 1;
+    else if (character === ")") depth -= 1;
+    if (depth === 0 && expression.startsWith(operator, index)) {
+      parts.push(current);
+      current = "";
+      index += operator.length - 1;
+      continue;
+    }
+    current += character;
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim().replace(/\s+/g, " "));
+}
+
 test("rollout is gated on rollback readiness before the updater moves anyone", async () => {
   const release_ = parse(
     await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
@@ -890,6 +962,18 @@ test("rollout is gated on rollback readiness before the updater moves anyone", a
     "the first-release waiver is a hand-run escape hatch, never a CI default",
   );
   assert.deepEqual(Object.keys(gateStep.env ?? {}).sort(), ["GITHUB_TOKEN", "RELEASE_TAG"]);
+  // WHICH tag, not merely that a tag is passed. The gate resolves its baseline
+  // as "newest stable release strictly below RELEASE_TAG", so a step reading
+  // any other ref verifies a different release: point it one version back and
+  // it certifies the baseline's own predecessor while the real rollback target
+  // is the broken one. Naming the variable was pinned; its value was not, so
+  // every substitution — `github.base_ref`, a hard-coded tag, the dispatch
+  // input dropped so recovery runs read a branch name — was invisible here.
+  assert.equal(
+    gateStep.env.RELEASE_TAG,
+    "${{ github.event.inputs.tag || github.ref_name }}",
+    "the gate verifies the tag being released, the same expression every other release job resolves",
+  );
   // A gate is a gate only while it can fail its own job. `continue-on-error`
   // on the job or on the step, or an `if:` on the step, each leave
   // `needs.rollback-readiness.result == 'success'` true with the check never
@@ -913,6 +997,34 @@ test("rollout is gated on rollback readiness before the updater moves anyone", a
     updater.if,
     /needs\.rollback-readiness\.result == 'success'/,
     "`!cancelled()` waives the default needs-succeeded rule, so the gate must be named explicitly",
+  );
+  // Naming the gate is not the same as depending on it, and a substring match
+  // cannot tell the two apart. Appending `|| true`, `|| github.event_name ==
+  // 'workflow_dispatch'`, or a leading `always() ||` leaves that substring
+  // exactly where it is while the expression stops consulting it — and the
+  // dispatch spelling is the worst of them, because workflow_dispatch is the
+  // recovery path an operator reaches for precisely when a release is already
+  // half-broken. Widening the gate's own term is the same defeat one level
+  // down: `(… == 'success' || … == 'skipped')` accepts the result the job
+  // reports when its promotion dependency never ran.
+  //
+  // So pin the SHAPE rather than the spelling. Both assertions stay true for
+  // any further `&& …` a later release gate adds, and for anything added
+  // inside the existing parenthesised group; only a genuine top-level
+  // disjunction — the one edit that neuters the gate — fails them.
+  const guard = updater.if
+    .trim()
+    .replace(/^\$\{\{/, "")
+    .replace(/\}\}$/, "")
+    .trim();
+  assert.equal(
+    splitTopLevel(guard, "||").length,
+    1,
+    "a top-level `||` lets updater-manifest run without the gate; add conditions with `&&`, or nest the alternative in parentheses",
+  );
+  assert.ok(
+    splitTopLevel(guard, "&&").includes("needs.rollback-readiness.result == 'success'"),
+    "the gate must be a top-level `&&` conjunct — inside a group, a sibling `||` can satisfy it instead",
   );
 });
 
