@@ -232,7 +232,7 @@ function main(argv) {
   const after = fix ? audit(root) : report;
 
   if (json) {
-    process.stdout.write(`${JSON.stringify({ ...after, applied: result?.applied ?? [] }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ ...after, applied: result?.applied ?? [], refused: result?.refused ?? [] }, null, 2)}\n`);
   } else if (report.findings.length === 0) {
     process.stdout.write(
       `remote-hygiene: clean — one remote (${CANONICAL_REMOTE}), pruning on, no stray refs, no bogus upstreams.\n` +
