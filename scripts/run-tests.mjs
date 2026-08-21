@@ -226,6 +226,7 @@ export const SUITES = {
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
+    "scripts/cave-performance-report.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/enforce-branch-cap.test.mjs",
     "scripts/branch-cap-workflow.test.mjs",
