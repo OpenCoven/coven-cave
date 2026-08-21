@@ -605,15 +605,17 @@ export function ResearchMissionComposer({
         </div>
 
         {attachedLinks.length > 0 ? (
-          <div className="research-intake__attached" role="group" aria-label="Related context">
-            <span className="research-intake__attached-label">Related context ({attachedLinks.length}):</span>
+          <div className="research-intake__attached" role="group" aria-label="Resources ready for first pass">
+            <span className="research-intake__attached-label">
+              Resources ready for first pass ({attachedLinks.length}):
+            </span>
             {attachedLinks.map((link) => (
               <span key={link.id} className="research-intake__attached-chip">
                 {link.title}
                 <button
                   type="button"
                   className="research-intake__attached-remove"
-                  aria-label={`Remove ${link.title} from related context`}
+                  aria-label={`Remove ${link.title} from the first research pass`}
                   onClick={() => onRemoveAttached?.(link.id)}
                 >
                   ✕

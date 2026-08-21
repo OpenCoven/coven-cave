@@ -43,6 +43,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
   let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
+    removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,

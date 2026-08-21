@@ -227,6 +227,22 @@ assert.equal(truncated.truncated, true);
       assert.ok(attachment.dataUrl, `${file.name} keeps bytes for runtime materialization`);
       assert.equal(attachment.size, file.size);
     }
+
+    // Browsers report .ts source files as MPEG-2 transport stream video. Left
+    // uncanonicalized they take the media path and lose their bytes.
+    const tsFile = new File(["export const a = 1;"], "chat-attachments.ts", {
+      type: "video/mp2t",
+    });
+    const tsAttachment = await fileToAttachment(tsFile);
+    assert.equal(tsAttachment.mimeType, "text/typescript");
+    assert.equal(tsAttachment.type, "text/typescript");
+    assert.ok(tsAttachment.dataUrl?.startsWith("data:text/typescript;base64,"));
+
+    // A genuine transport stream keeps its media identity.
+    const mediaFile = new File([Buffer.from("stream")], "broadcast.m2ts", {
+      type: "video/mp2t",
+    });
+    assert.equal((await fileToAttachment(mediaFile)).mimeType, "video/mp2t");
   } finally {
     if (OriginalFileReader === undefined) delete globalThis.FileReader;
     else globalThis.FileReader = OriginalFileReader;
