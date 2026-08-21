@@ -484,20 +484,41 @@ assert.match(
 // TurnRow keeps stateful tool UI in fixed slots across streaming settlement.
 // The offset model remains available for persisted transcript compatibility,
 // but rendering tools through prose segments would relocate focused controls.
+// `ChatToolActivityLayout` was replaced by StreamingTurnResponse, which takes
+// the same content as three named slots rather than two. The guarantee is
+// unchanged and is what is pinned here: activity, turn content, and edit cards
+// are handed over as separate stable slots, so a focused control inside one of
+// them is not relocated when the turn settles.
 assert.match(
   chatViewSource,
-  /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}[\s\S]*content=\{[\s\S]*<MessageBubble[\s\S]*editCards=\{/,
+  /<StreamingTurnResponse[\s\S]*?proseContent=\{proseContent\}\s*activityDetails=\{activityDetails\}\s*supplementaryContent=\{supplementaryContent\}/,
   "assistant turns keep non-edit activity, changing turn content, and edit cards in stable render slots",
 );
+// One partition, feeding both slots, so they cannot disagree about which tools
+// exist. It is settled-only by design — a streaming turn renders its tools
+// inline through renderSegments, and lifting them here while pending would
+// render each tool twice.
 assert.match(
   chatViewSource,
-  /const turnTools = turn\.tools \?\? \[\];[\s\S]*const editCards = turnTools\.filter\(isEditCard\);[\s\S]*const otherTools = turnTools\.filter/,
-  "pending and settled turns share one edit/non-edit partition",
+  /const settledTools = [^;]*!turn\.pending[^;]*;\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter/,
+  "edit and non-edit cards share one settled-only partition",
 );
-assert.doesNotMatch(
-  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "",
-  /<ToolRuns/,
-  "TurnRow does not duplicate ToolRuns in prose or tool-first branches",
+// Calm streaming reinstated the inline weave, so ToolRuns is expected in
+// TurnRow again. What must not come back is a SECOND call site: one for the
+// streaming path and another for a settled/tool-first path would render the
+// same tool twice. Count the call sites instead of forbidding the name.
+const turnRowImplSource =
+  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
+assert.ok(turnRowImplSource, "TurnRowImpl should be extractable for the duplicate-render check");
+assert.equal(
+  (turnRowImplSource.match(/<ToolRuns\b/g) ?? []).length,
+  1,
+  "TurnRow renders ToolRuns from exactly one place, so tools cannot appear in both prose and a tool-first branch",
+);
+assert.match(
+  turnRowImplSource,
+  /if \(turn\.pending\) \{[\s\S]*?renderSegments = bubbleSegments;\s*\} else \{/,
+  "that single call site is the pending-only inline weave",
 );
 
 // MessageBubble: only the LAST text span streams (progressive markdown);

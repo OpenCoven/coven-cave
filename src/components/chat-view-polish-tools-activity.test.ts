@@ -304,10 +304,38 @@ assert.match(
   /const activityDetails =[\s\S]*?otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the activityDetails ToolGroup",
 );
+// This pinned the old `ChatToolActivityLayout` wrapper and, through it, the
+// source ORDER of two slots. The calm-streaming work replaced that wrapper with
+// StreamingTurnResponse, which owns the ordering itself and renders the
+// collapsed activity as a disclosure after the response rather than as a work
+// line above it. Source order in TurnRowImpl therefore no longer decides
+// anything — all three slots are now props, assembled by the response
+// component — so pinning it here would pin a fact that has stopped being the
+// contract.
+//
+// What has NOT changed, and is what this assertion is really for: the two
+// sections stay SEPARATE. The collapsed activity rollup carries non-edit tools
+// only, the edit cards keep their own visible section, and neither is folded
+// into the other. Pin that instead.
 assert.match(
   turnRow,
-  /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup[\s\S]*?<MessageBubble[\s\S]*editCards=\{\s*editCards\.length/,
-  "TurnRowImpl source order: otherTools ToolGroup precedes MessageBubble; editCards section follows MessageBubble — the two sections are separate and in their current intended positions",
+  /<ToolGroup tools=\{otherTools\} \/>/,
+  "the collapsed activity rollup renders the non-edit tools",
+);
+assert.doesNotMatch(
+  turnRow,
+  /<ToolGroup tools=\{(?:editCards|settledTools|turn\.tools)/,
+  "edit cards must never be swept into the collapsed activity rollup",
+);
+assert.match(
+  turnRow,
+  /const supplementaryContent =[\s\S]*?editCards\.map\(\(tool\) => <ToolBlock/,
+  "edit cards keep their own visible section as individual ToolBlocks",
+);
+assert.match(
+  turnRow,
+  /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}\s*supplementaryContent=\{supplementaryContent\}/,
+  "the activity slot and the edit-card slot reach the response component as two distinct props",
 );
 
 assert.match(
