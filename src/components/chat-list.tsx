@@ -864,7 +864,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
           <label
             className={[
               "chat-list-search-control flex h-8 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]",
-              compact ? "max-w-[520px] flex-1" : "w-full max-w-[250px] min-[900px]:w-[250px]",
+              compact ? "max-w-[520px] flex-1" : "w-full max-w-[250px] min-[900px]:w-[190px]",
             ].join(" ")}
           >
             <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
