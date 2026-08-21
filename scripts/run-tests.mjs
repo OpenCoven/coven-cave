@@ -1431,6 +1431,7 @@ export const SUITES = {
     "src/lib/coven-daemon.test.ts",
     "src/lib/server/canonical-memory-gateway.test.ts",
     "src/lib/coven-bin.test.ts",
+    "src/lib/bd-bin.test.ts",
     "src/lib/harness-version.test.ts",
     "src/lib/hermes-shim.test.ts",
     "src/lib/hermes-responses-stream.test.ts",
