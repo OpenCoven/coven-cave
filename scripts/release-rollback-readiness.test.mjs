@@ -17,20 +17,38 @@ import {
 
 const API = "https://api.github.test";
 const REPOSITORY = "OpenCoven/coven-cave";
-const MANIFEST_URL = "https://download.github.test/v0.3.7/latest.json";
+const DOWNLOAD_HOST = "https://download.github.test";
+const manifestUrlFor = (version) => `${DOWNLOAD_HOST}/v${version}/latest.json`;
+const MANIFEST_URL = manifestUrlFor("0.3.7");
 
+/**
+ * The asset list a real cut publishes, mirrored from v0.3.7 — every signed
+ * artifact ships beside its detached `.sig`, and the `.dmg` ships without one.
+ * That detail is load-bearing: it is the only fixture shape that can tell an
+ * anchored extension match from a substring one, and the only one that can
+ * tell an exact asset-name lookup from a substring lookup.
+ */
 function assets(version) {
   const download = (name) => ({
     name,
-    browser_download_url: `https://download.github.test/v${version}/${name}`,
+    browser_download_url: `${DOWNLOAD_HOST}/v${version}/${name}`,
   });
   return [
     download(`CovenCave-v${version}-aarch64.app.tar.gz`),
+    download(`CovenCave-v${version}-aarch64.app.tar.gz.sig`),
     download(`CovenCave-v${version}-aarch64.dmg`),
+    download(`CovenCave-v${version}-x86_64.app.tar.gz`),
+    download(`CovenCave-v${version}-x86_64.app.tar.gz.sig`),
+    download(`CovenCave-v${version}-x86_64.dmg`),
     download(`CovenCave_${version}_amd64.AppImage`),
+    download(`CovenCave_${version}_amd64.AppImage.sig`),
     download(`CovenCave_${version}_x64_en-US.msi`),
+    download(`CovenCave_${version}_x64_en-US.msi.sig`),
     download("SHA256SUMS"),
-    { name: "latest.json", browser_download_url: MANIFEST_URL },
+    // Version-derived like every other asset. Pinning this to one constant
+    // gave every release in the file the SAME manifest url, so no fixture
+    // could distinguish the baseline's manifest from another release's.
+    download("latest.json"),
   ];
 }
 
@@ -47,17 +65,20 @@ function release(version, overrides = {}) {
 }
 
 function manifest(version, overrides = {}) {
-  const url = (name) => `https://download.github.test/v${version}/${name}`;
+  const url = (name) => `${DOWNLOAD_HOST}/v${version}/${name}`;
   return {
     version,
     pub_date: "2026-08-19T11:53:56.963Z",
+    // Declared windows-first, deliberately. `rollback-platforms` is sorted, and
+    // a fixture whose declaration order is already sorted cannot tell the sort
+    // from an echo of Object.keys — dropping it changed nothing.
     platforms: {
-      "darwin-aarch64": {
-        url: url(`CovenCave-v${version}-aarch64.app.tar.gz`),
-        signature: "dW50cnVzdGVk",
-      },
       "windows-x86_64": {
         url: url(`CovenCave_${version}_x64_en-US.msi`),
+        signature: "dW50cnVzdGVk",
+      },
+      "darwin-aarch64": {
+        url: url(`CovenCave-v${version}-aarch64.app.tar.gz`),
         signature: "dW50cnVzdGVk",
       },
     },
@@ -66,7 +87,7 @@ function manifest(version, overrides = {}) {
 }
 
 /** A fetch double serving one page of releases plus the baseline manifest. */
-function stubFetch({ releases, manifest: body, manifestStatus = 200 }) {
+function stubFetch({ releases, manifest: body, manifestStatus = 200, manifestUrl = MANIFEST_URL }) {
   const calls = [];
   const requests = [];
   return {
@@ -79,7 +100,7 @@ function stubFetch({ releases, manifest: body, manifestStatus = 200 }) {
         const page = Number(new URL(url).searchParams.get("page"));
         return { ok: true, status: 200, json: async () => (page === 1 ? releases : []) };
       }
-      if (url === MANIFEST_URL) {
+      if (url === manifestUrl) {
         return {
           ok: manifestStatus === 200,
           status: manifestStatus,
@@ -170,6 +191,51 @@ test("every missing rollback artifact is named", () => {
   );
 });
 
+test("a signature file is not the artifact it signs", () => {
+  // Every real cut publishes a `.sig` beside each signed artifact, and each
+  // one is a separate `gh release upload` — so a release keeping the signature
+  // while losing the artifact is a shape this gate will actually meet, not a
+  // hypothetical. Nothing pinned it: the two fixtures above are all-assets and
+  // no-assets, and neither holds a name that CONTAINS a required one without
+  // being it. Unanchoring `.dmg`, `.msi` or `.AppImage`, or relaxing either
+  // exact-name lookup to a substring, therefore left the whole suite green
+  // while certifying a rollback target with nothing installable on it.
+  const signaturesOnly = {
+    assets: [
+      "CovenCave-v0.3.7-aarch64.dmg.sig",
+      "CovenCave_0.3.7_x64_en-US.msi.sig",
+      "CovenCave_0.3.7_amd64.AppImage.sig",
+      "SHA256SUMS.sig",
+      "latest.json.sig",
+    ].map((name) => ({ name, browser_download_url: `${DOWNLOAD_HOST}/v0.3.7/${name}` })),
+  };
+
+  assert.deepEqual(collectBaselineArtifactProblems(signaturesOnly), [
+    "no macOS disk image (.dmg) to roll back to",
+    "no Windows installer (.msi) to roll back to",
+    "no Linux AppImage to roll back to",
+    "no SHA256SUMS, so a rollback artifact cannot be checked before it runs",
+    "no latest.json, so the updater cannot serve the rollback",
+  ]);
+});
+
+test("each required installer is named on its own when only that one is gone", () => {
+  // The all-or-nothing fixtures cannot tell the three matchers apart either:
+  // replacing every one of them with the same predicate kept both green. Each
+  // case below removes exactly one installer and leaves its `.sig` behind, so
+  // the matcher under test has to be both specific and anchored.
+  for (const [extension, problem] of [
+    [/\.dmg$/i, "no macOS disk image (.dmg) to roll back to"],
+    [/\.msi$/i, "no Windows installer (.msi) to roll back to"],
+    [/\.AppImage$/i, "no Linux AppImage to roll back to"],
+  ]) {
+    const pruned = {
+      assets: release("0.3.7").assets.filter((asset) => !extension.test(asset.name)),
+    };
+    assert.deepEqual(collectBaselineArtifactProblems(pruned), [problem], `${extension} only`);
+  }
+});
+
 test("rollback metadata must describe artifacts that still exist", () => {
   const baseline = { tag: "v0.3.7", version: "0.3.7", release: release("0.3.7") };
   assert.deepEqual(collectManifestProblems(manifest("0.3.7"), baseline), []);
@@ -178,8 +244,8 @@ test("rollback metadata must describe artifacts that still exist", () => {
   // mismatch is reported first and every stale url after it.
   assert.deepEqual(collectManifestProblems(manifest("0.3.6"), baseline), [
     "latest.json declares version '0.3.6', not the baseline's 0.3.7",
-    "darwin-aarch64: manifest points at 'https://download.github.test/v0.3.6/CovenCave-v0.3.6-aarch64.app.tar.gz', which is not an asset on v0.3.7",
     "windows-x86_64: manifest points at 'https://download.github.test/v0.3.6/CovenCave_0.3.6_x64_en-US.msi', which is not an asset on v0.3.7",
+    "darwin-aarch64: manifest points at 'https://download.github.test/v0.3.6/CovenCave-v0.3.6-aarch64.app.tar.gz', which is not an asset on v0.3.7",
   ]);
   assert.deepEqual(collectManifestProblems(manifest("0.3.7", { platforms: {} }), baseline), [
     "latest.json lists no platforms, so no install can be rolled back",
@@ -242,6 +308,44 @@ test("rollback metadata must describe artifacts that still exist", () => {
       "darwin-x86_64: manifest entry has no url",
       "windows-x86_64: manifest entry is not an object",
     ],
+  );
+  // Both shortfalls on one entry are reported, not just the first. The entry
+  // rules fall through on purpose so a single run names everything an operator
+  // has to repair — and every fixture above pairs a bad signature with a GOOD
+  // url, so making the signature rule `continue` past the identity check was
+  // invisible to the suite.
+  assert.deepEqual(
+    collectManifestProblems(
+      manifest("0.3.7", {
+        platforms: {
+          "linux-x86_64": {
+            url: `${DOWNLOAD_HOST}/v0.3.6/CovenCave_0.3.6_amd64.AppImage`,
+            signature: "",
+          },
+        },
+      }),
+      baseline,
+    ),
+    [
+      "linux-x86_64: manifest entry has no signature, so the updater would reject it",
+      "linux-x86_64: manifest points at 'https://download.github.test/v0.3.6/CovenCave_0.3.6_amd64.AppImage', which is not an asset on v0.3.7",
+    ],
+  );
+  // A url neither side can parse is not a match. `assetIdentities` drops its
+  // own blanks and the entry rule rejects a blank identity; either half alone
+  // is redundant, which is why each survives removal on its own. Together they
+  // are what stops an unresolvable manifest url matching an unresolvable
+  // baseline asset and certifying a rollback nothing ever located.
+  assert.deepEqual(
+    collectManifestProblems(
+      { version: "0.3.7", platforms: { "linux-x86_64": { url: "not a url", signature: "sig" } } },
+      {
+        tag: "v0.3.7",
+        version: "0.3.7",
+        release: { assets: [{ name: "broken", browser_download_url: "not a url" }] },
+      },
+    ),
+    ["linux-x86_64: manifest points at 'not a url', which is not an asset on v0.3.7"],
   );
   assert.deepEqual(collectManifestProblems("not json", baseline), [
     "latest.json is not a JSON object",
@@ -342,8 +446,24 @@ test("a complete baseline reports the platforms a rollback can reach", async () 
   assert.equal(result.ready, true);
   assert.equal(result.baselineWaived, false);
   assert.equal(result.baseline.tag, "v0.3.7");
+  // Sorted, not echoed: the fixture declares windows-x86_64 first.
   assert.deepEqual(result.platforms, ["darwin-aarch64", "windows-x86_64"]);
   assert.ok(calls.some((url) => url === MANIFEST_URL), "the baseline manifest is actually read");
+
+  // The manifest asset is found by exact name, and no fixture could tell that
+  // from a substring match: nothing in a release's asset list CONTAINS
+  // "latest.json" without being it. A decoy that does — a stray `.sig`, a
+  // `.bak` left by a repair — is picked first by a substring `find`, and the
+  // gate then verifies a document that is not the manifest the updater serves.
+  const decoyUrl = `${DOWNLOAD_HOST}/v0.3.7/latest.json.sig`;
+  const decoyed = release("0.3.7");
+  decoyed.assets = [{ name: "latest.json.sig", browser_download_url: decoyUrl }, ...decoyed.assets];
+  const exact = stubFetch({ releases: [decoyed], manifest: manifest("0.3.7") });
+
+  await verify({ fetchImpl: exact.fetchImpl });
+
+  assert.ok(exact.calls.includes(MANIFEST_URL), "the manifest itself is read");
+  assert.ok(!exact.calls.includes(decoyUrl), "and the decoy beside it is not");
 });
 
 test("an incomplete baseline fails the rollout closed", async () => {
@@ -485,6 +605,58 @@ test("the API token never travels to the asset host", async () => {
     // The download url is public and redirects off GitHub entirely; the token
     // authenticates us to the API and has no business on that hop.
     assert.equal(request.headers.authorization, undefined);
+  }
+
+  // The api origin is compared whole, never as a prefix. Every asset url in
+  // this file until now differed from the API origin at the first label, which
+  // is the one shape that cannot tell `originOf(url) === apiOrigin` from a
+  // `url.startsWith(apiOrigin)` written in its place — and `api.github.test`
+  // is a prefix of `api.github.test.look-alike.test`, so that spelling hands
+  // the token to a host chosen by whoever wrote the download url.
+  const lookAlike = `${API}.look-alike.test/v0.3.7/latest.json`;
+  const rehosted = release("0.3.7");
+  rehosted.assets = rehosted.assets.map((asset) =>
+    asset.name === "latest.json" ? { ...asset, browser_download_url: lookAlike } : asset,
+  );
+  const prefixed = stubFetch({
+    releases: [rehosted],
+    manifest: manifest("0.3.7"),
+    manifestUrl: lookAlike,
+  });
+
+  await verify({ fetchImpl: prefixed.fetchImpl });
+
+  const hops = prefixed.requests.filter((request) => request.url === lookAlike);
+  assert.equal(hops.length, 1, "the look-alike host is actually reached");
+  assert.equal(hops[0].headers.authorization, undefined);
+});
+
+test("a caller that cannot make a request is told so, not told to retry", async () => {
+  // Both of these guards were unreachable as written. The fetch check asked
+  // whether the injected impl OR the global was callable, which on every Node
+  // this repository supports is always yes — so a truthy non-function sailed
+  // past it into requestJson, where the failed call is reported as a request
+  // that "could not be sent … retry before treating the release as
+  // unshippable". That advises a retry for a permanent defect, which is the
+  // exact misreading the retry advice exists to prevent.
+  await assert.rejects(
+    verify({ fetchImpl: "https://example.test" }),
+    (error) =>
+      !(error instanceof RollbackReadinessError) &&
+      error.message === "fetch implementation is required",
+  );
+
+  // resolveRepository carried an owner/repo branch no caller used, and its
+  // surviving half was reached by no test at all.
+  for (const repository of ["", "OpenCoven", "OpenCoven/coven-cave/nested", "/coven-cave"]) {
+    await assert.rejects(
+      verify({
+        repository,
+        fetchImpl: stubFetch({ releases: [], manifest: null }).fetchImpl,
+      }),
+      /^Error: repository must use the owner\/repo form$/,
+      `${JSON.stringify(repository)} is not owner/repo`,
+    );
   }
 });
 
@@ -667,6 +839,30 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
       runCli({ argv: ["--force"], env: {}, fetchImpl: () => {} }),
       /usage: node scripts\/release-rollback-readiness\.mjs/,
     );
+
+    // A misconfigured job names the variable it is missing. Nothing reached
+    // requiredEnv's refusal: the usage check above short-circuits before any
+    // env is read, and every other CLI run passes a complete environment, so
+    // dropping the throw outright left the suite green and left an operator
+    // reading "repository must use the owner/repo form" for an unset secret.
+    for (const missing of ["GITHUB_REPOSITORY", "GITHUB_TOKEN", "RELEASE_TAG", "GITHUB_OUTPUT"]) {
+      const env = {
+        ...cliEnv,
+        GITHUB_OUTPUT: path.join(directory, "missing-output"),
+        GITHUB_STEP_SUMMARY: path.join(directory, "missing-summary"),
+      };
+      delete env[missing];
+      await assert.rejects(
+        runCli({
+          argv: [],
+          env,
+          fetchImpl: stubFetch({ releases: [release("0.3.7")], manifest: manifest("0.3.7") })
+            .fetchImpl,
+        }),
+        new RegExp(`^Error: ${missing} is required$`),
+        `${missing} must be named when it is unset`,
+      );
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -694,6 +890,20 @@ test("rollout is gated on rollback readiness before the updater moves anyone", a
     "the first-release waiver is a hand-run escape hatch, never a CI default",
   );
   assert.deepEqual(Object.keys(gateStep.env ?? {}).sort(), ["GITHUB_TOKEN", "RELEASE_TAG"]);
+  // A gate is a gate only while it can fail its own job. `continue-on-error`
+  // on the job or on the step, or an `if:` on the step, each leave
+  // `needs.rollback-readiness.result == 'success'` true with the check never
+  // having run — one line, and the updater publishes onto an unprovable
+  // rollback target while every test here stays green. Nothing pinned any of
+  // the three; the job's own `if:` is pinned too, in the other direction, so
+  // the gate cannot quietly stop applying to some releases.
+  assert.equal(job["continue-on-error"], undefined, "the gate must be able to fail its job");
+  assert.equal(job.if, undefined, "the gate runs on every authorized release, unconditionally");
+  for (const step of job.steps) {
+    const label = step.name ?? step.uses ?? step.id;
+    assert.equal(step["continue-on-error"], undefined, `${label}: no step here may be advisory`);
+    assert.equal(step.if, undefined, `${label}: no step here may be conditional`);
+  }
   const updater = release_.jobs["updater-manifest"];
   assert.ok(
     updater.needs.includes("rollback-readiness"),
