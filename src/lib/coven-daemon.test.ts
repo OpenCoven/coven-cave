@@ -345,6 +345,41 @@ const {
   clearDaemonDiagnosticEventsForTests();
 }
 
+// The dedupe set is bounded. Its keys come from the same attacker the events
+// describe — daemon.json is re-read on every request — so an unbounded set
+// would grow for the life of the process under a file rewritten with a fresh
+// hostname each time. Eviction is FIFO, so a value pushed out is reported
+// again rather than suppressed forever.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const refuse = (host) =>
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: String.raw`\\` + host + String.raw`\pipe\coven` },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => {
+        throw new Error("unused");
+      },
+    });
+
+  refuse("evict-probe-first");
+  const afterFirst = listDaemonDiagnosticEvents().length;
+  assert.equal(afterFirst, 1, "the first distinct refusal reports");
+  refuse("evict-probe-first");
+  assert.equal(listDaemonDiagnosticEvents().length, 1, "and is then deduped");
+
+  // 32 further distinct values push it out of a 32-entry window.
+  for (let i = 0; i < 32; i += 1) refuse(`evict-probe-filler-${i}`);
+  refuse("evict-probe-first");
+  const events = listDaemonDiagnosticEvents();
+  assert.equal(
+    events.filter((event) => event.operation === "daemon-socket-resolution").length,
+    34,
+    "an evicted value reports again instead of being suppressed for the process lifetime",
+  );
+  clearDaemonDiagnosticEventsForTests();
+}
+
 // A whitespace-only COVEN_SOCKET names nothing; it is not a redirection and
 // must not be reported as one.
 {
