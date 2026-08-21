@@ -33,9 +33,11 @@ unpublish it by hand as well.
 ## What it checks
 
 It resolves the **rollback baseline** — the newest published release strictly
-below the one being shipped, skipping drafts, prereleases, and anything without
-a publish timestamp — and refuses unless that release is a complete rollback
-target:
+below the one being shipped, skipping drafts, prereleases, anything without a
+publish timestamp, and anything whose tag is not a plain `vMAJOR.MINOR.PATCH`
+(so a release cut from an `-rc` tag is never a rollback target even if it was
+published as a normal release) — and refuses unless that release is a complete
+rollback target:
 
 | Requirement | Why a rollout depends on it |
 | --- | --- |
@@ -43,11 +45,13 @@ target:
 | `SHA256SUMS` | a rollback artifact can be checked before it is run |
 | `latest.json` whose `version` matches the baseline | the updater serves the version it claims to |
 | every `platforms{}` entry carrying a `url` **and** a `signature` | the updater accepts what it is handed; an unsigned entry is rejected on the client |
-| every `platforms{}` url still resolving to an asset on the baseline release, matched by whole download path | a manifest pointing at deleted assets — or at the previous cut's identically-named ones — reads healthy and rolls nobody back |
+| every `platforms{}` url still resolving to an asset on the baseline release, matched by origin **and** whole download path | a manifest pointing at deleted assets — or at the previous cut's identically-named ones, or at a look-alike host — reads healthy and rolls nobody back |
+| every `platforms{}` key being a plain target name such as `darwin-aarch64` | these keys are read out of an uploaded artifact and written into `GITHUB_OUTPUT`, where a newline would append step outputs of its own choosing |
 
-The job publishes the resulting record as step outputs (`baseline-tag`,
-`baseline-version`, `baseline-url`, `rollback-platforms`) and as a run summary,
-so the rollout decision has an artifact rather than an assumption.
+The job publishes the resulting record as step outputs (`ready`,
+`baseline-tag`, `baseline-version`, `baseline-url`, `baseline-waived`,
+`rollback-platforms`) and as a run summary, so the rollout decision has an
+artifact rather than an assumption.
 
 ## Reading a failure
 

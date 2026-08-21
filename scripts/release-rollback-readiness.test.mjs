@@ -191,11 +191,20 @@ test("rollback metadata must describe artifacts that still exist", () => {
           "linux-x86_64": {
             url: "https://download.github.test/v0.3.7/CovenCave_0.3.7_amd64.AppImage",
           },
+          // An empty signature is a missing signature: the updater verifies it
+          // against a pinned pubkey and rejects it either way.
+          "darwin-aarch64": {
+            url: "https://download.github.test/v0.3.7/CovenCave-v0.3.7-aarch64.app.tar.gz",
+            signature: "",
+          },
         },
       }),
       baseline,
     ),
-    ["linux-x86_64: manifest entry has no signature, so the updater would reject it"],
+    [
+      "linux-x86_64: manifest entry has no signature, so the updater would reject it",
+      "darwin-aarch64: manifest entry has no signature, so the updater would reject it",
+    ],
   );
   assert.deepEqual(
     collectManifestProblems(
@@ -213,9 +222,47 @@ test("rollback metadata must describe artifacts that still exist", () => {
       "linux-x86_64: manifest points at 'https://download.github.test/v0.3.7/deleted.AppImage', which is not an asset on v0.3.7",
     ],
   );
+  // An entry that carries no usable url is named as such rather than reaching
+  // the identity check, which would report the far less actionable "manifest
+  // points at 'undefined'". Nothing pinned this half: the signature rule had a
+  // case of its own, so deleting the url rule outright left the suite green.
+  assert.deepEqual(
+    collectManifestProblems(
+      manifest("0.3.7", {
+        platforms: {
+          "linux-x86_64": { signature: "dW50cnVzdGVk" },
+          "darwin-x86_64": { url: "", signature: "dW50cnVzdGVk" },
+          "windows-x86_64": "https://download.github.test/v0.3.7/CovenCave_0.3.7_x64_en-US.msi",
+        },
+      }),
+      baseline,
+    ),
+    [
+      "linux-x86_64: manifest entry has no url",
+      "darwin-x86_64: manifest entry has no url",
+      "windows-x86_64: manifest entry is not an object",
+    ],
+  );
   assert.deepEqual(collectManifestProblems("not json", baseline), [
     "latest.json is not a JSON object",
   ]);
+  // A JSON array is `typeof "object"` too, and a manifest that is a list has
+  // no platforms to roll anyone back to however long it is.
+  assert.deepEqual(collectManifestProblems([], baseline), ["latest.json is not a JSON object"]);
+  assert.deepEqual(
+    collectManifestProblems(
+      manifest("0.3.7", {
+        platforms: [
+          {
+            url: "https://download.github.test/v0.3.7/CovenCave_0.3.7_amd64.AppImage",
+            signature: "dW50cnVzdGVk",
+          },
+        ],
+      }),
+      baseline,
+    ),
+    ["latest.json lists no platforms, so no install can be rolled back"],
+  );
 });
 
 test("an asset name that exists on another release is not a rollback target", () => {
@@ -240,6 +287,29 @@ test("an asset name that exists on another release is not a rollback target", ()
     ),
     [
       "darwin-aarch64: manifest points at 'https://download.github.test/v0.3.6/CovenCave-v0.3.7-aarch64.app.tar.gz', which is not an asset on v0.3.7",
+    ],
+  );
+
+  // Origin is the other half of that identity, and every url in this file's
+  // fixtures shares one host — so dropping `parsed.origin` from assetIdentity
+  // left the whole suite green. A look-alike host serving the baseline's exact
+  // download path is an artifact GitHub never published, and certifying it as
+  // the rollback target is the same failure by a different route.
+  assert.deepEqual(
+    collectManifestProblems(
+      {
+        version: "0.3.7",
+        platforms: {
+          "darwin-aarch64": {
+            url: "https://download.github.test.look-alike.test/v0.3.7/CovenCave-v0.3.7-aarch64.app.tar.gz",
+            signature: "dW50cnVzdGVk",
+          },
+        },
+      },
+      baseline,
+    ),
+    [
+      "darwin-aarch64: manifest points at 'https://download.github.test.look-alike.test/v0.3.7/CovenCave-v0.3.7-aarch64.app.tar.gz', which is not an asset on v0.3.7",
     ],
   );
 
@@ -305,6 +375,24 @@ test("an incomplete baseline fails the rollout closed", async () => {
     }),
     /latest\.json request failed with HTTP 404/,
   );
+
+  // A listing row can name an asset without giving a url to fetch it from.
+  // Refuse by name rather than letting `fetch(undefined)` decide: the message
+  // that reaches the operator otherwise is about a request, not about the
+  // release, which is the same misreading the non-JSON wrapper above exists
+  // to prevent.
+  const urlless = release("0.3.7");
+  urlless.assets = urlless.assets.map((asset) =>
+    asset.name === "latest.json" ? { name: "latest.json" } : asset,
+  );
+  await assert.rejects(
+    verify({
+      fetchImpl: stubFetch({ releases: [urlless], manifest: manifest("0.3.7") }).fetchImpl,
+    }),
+    (error) =>
+      error instanceof RollbackReadinessError &&
+      error.message === "v0.3.7 publishes latest.json without a download url",
+  );
 });
 
 test("a platform key that could forge a job output is refused", () => {
@@ -361,15 +449,25 @@ test("the listing is paged through, and a listing it cannot exhaust is fatal", a
 
   // Never a truncated answer: GitHub orders releases by creation, not version,
   // so a baseline past the cap could be newer than anything seen so far.
+  const listed = [];
   await assert.rejects(
     verify({
-      fetchImpl: async (url) =>
-        url.startsWith(`${API}/repos/`)
-          ? { ok: true, status: 200, json: async () => filler }
-          : { ok: true, status: 200, json: async () => manifest("0.3.7") },
+      fetchImpl: async (url) => {
+        if (!url.startsWith(`${API}/repos/`)) {
+          return { ok: true, status: 200, json: async () => manifest("0.3.7") };
+        }
+        listed.push(url);
+        return { ok: true, status: 200, json: async () => filler };
+      },
     }),
     /release listing did not end within 20 pages of 100/,
   );
+  // The refusal quotes the cap, so the cap has to be what was actually tried.
+  // A loop bound one page short reports having exhausted 20 pages after 19,
+  // and would send an operator raising MAX_API_PAGES after a page it never
+  // asked for.
+  assert.equal(listed.length, 20, "the cap in the message is the cap that was reached");
+  assert.match(listed.at(-1), /[?&]page=20$/);
 });
 
 test("the API token never travels to the asset host", async () => {
@@ -391,16 +489,26 @@ test("the API token never travels to the asset host", async () => {
 });
 
 test("a GitHub that cannot answer reads as retryable, a 404 does not", async () => {
-  await assert.rejects(
-    verify({
-      fetchImpl: stubFetch({
-        releases: [release("0.3.7")],
-        manifest: null,
-        manifestStatus: 503,
-      }).fetchImpl,
-    }),
-    /HTTP 503; GitHub could not answer[\s\S]*retry before treating the release as unshippable/,
-  );
+  // 5xx is the obvious one and was the only one pinned. GitHub answers a
+  // secondary rate limit with 403 and a primary one with 429 — the two statuses
+  // a release cut is most likely to meet, since it makes these calls right
+  // after a burst of other API traffic. Both are "GitHub declined to answer",
+  // not "the rollback target is broken", and the docs promise the retry advice
+  // for both. 500 is here so the boundary is `>= 500`, not `> 500`.
+  for (const status of [403, 429, 500, 503]) {
+    await assert.rejects(
+      verify({
+        fetchImpl: stubFetch({
+          releases: [release("0.3.7")],
+          manifest: null,
+          manifestStatus: status,
+        }).fetchImpl,
+      }),
+      new RegExp(
+        `HTTP ${status}; GitHub could not answer[\\s\\S]*retry before treating the release as unshippable`,
+      ),
+    );
+  }
 
   await assert.rejects(
     verify({
@@ -487,26 +595,29 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
   const directory = mkdtempSync(path.join(tmpdir(), "rollback-readiness-"));
   const outputPath = path.join(directory, "output");
   const summaryPath = path.join(directory, "summary");
+  const cliEnv = {
+    GITHUB_REPOSITORY: REPOSITORY,
+    GITHUB_TOKEN: "token",
+    RELEASE_TAG: "v0.3.8",
+    GITHUB_API_URL: API,
+  };
   try {
     await runCli({
       argv: [],
-      env: {
-        GITHUB_REPOSITORY: REPOSITORY,
-        GITHUB_TOKEN: "token",
-        RELEASE_TAG: "v0.3.8",
-        GITHUB_API_URL: API,
-        GITHUB_OUTPUT: outputPath,
-        GITHUB_STEP_SUMMARY: summaryPath,
-      },
+      env: { ...cliEnv, GITHUB_OUTPUT: outputPath, GITHUB_STEP_SUMMARY: summaryPath },
       fetchImpl: stubFetch({ releases: [release("0.3.7")], manifest: manifest("0.3.7") }).fetchImpl,
     });
 
+    const outputText = readFileSync(outputPath, "utf8");
     const outputs = Object.fromEntries(
-      readFileSync(outputPath, "utf8")
+      outputText
         .split("\n")
         .filter(Boolean)
         .map((line) => line.split(/=(.*)/s).slice(0, 2)),
     );
+    // GITHUB_OUTPUT is line-oriented and appended to; an unterminated last line
+    // runs into whatever is written after it.
+    assert.ok(outputText.endsWith("\n"), "every output line is terminated");
     assert.equal(outputs.ready, "true");
     assert.equal(outputs["baseline-tag"], "v0.3.7");
     assert.equal(outputs["baseline-version"], "0.3.7");
@@ -523,14 +634,7 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     const waivedSummary = path.join(directory, "waived-summary");
     await runCli({
       argv: ["--allow-missing-baseline"],
-      env: {
-        GITHUB_REPOSITORY: REPOSITORY,
-        GITHUB_TOKEN: "token",
-        RELEASE_TAG: "v0.3.8",
-        GITHUB_API_URL: API,
-        GITHUB_OUTPUT: waivedOutput,
-        GITHUB_STEP_SUMMARY: waivedSummary,
-      },
+      env: { ...cliEnv, GITHUB_OUTPUT: waivedOutput, GITHUB_STEP_SUMMARY: waivedSummary },
       fetchImpl: stubFetch({ releases: [], manifest: manifest("0.3.7") }).fetchImpl,
     });
     const waived = readFileSync(waivedOutput, "utf8");
@@ -538,6 +642,26 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     assert.match(waived, /^baseline-tag=$/m);
     assert.match(waived, /^rollback-platforms=$/m);
     assert.match(readFileSync(waivedSummary, "utf8"), /none — waived as a first release/);
+
+    // And the other half of the same rule, which nothing pinned: that the CLI
+    // honours the flag's ABSENCE. Every refusal above calls
+    // verifyRollbackReadiness directly, and the CLI's own happy path has a
+    // baseline, so `allowMissingBaseline` never had to be false for the suite
+    // to pass — hard-coding it `true` in runCli left every test green while
+    // turning the job CI actually runs into a no-op. The workflow test pins
+    // that CI never PASSES the flag; this pins that not passing it works.
+    await assert.rejects(
+      runCli({
+        argv: [],
+        env: {
+          ...cliEnv,
+          GITHUB_OUTPUT: path.join(directory, "unwaived-output"),
+          GITHUB_STEP_SUMMARY: path.join(directory, "unwaived-summary"),
+        },
+        fetchImpl: stubFetch({ releases: [], manifest: manifest("0.3.7") }).fetchImpl,
+      }),
+      /no published stable release below v0\.3\.8 to roll back to/,
+    );
 
     await assert.rejects(
       runCli({ argv: ["--force"], env: {}, fetchImpl: () => {} }),
