@@ -169,6 +169,36 @@ test("an over-budget payload is refused without touching the native side", async
   assert.deepEqual(calls, []);
 });
 
+test("the budgets are measured in UTF-8 bytes, as the native side measures them", async () => {
+  const { calls, dependencies } = recorder(null);
+
+  // Half the UTF-16 budget of three-byte characters is already 1.5x the byte
+  // ceiling the native side enforces.
+  const text = "日".repeat(OFFLINE_CACHE_MAX_ENTRY_BYTES / 2);
+  assert.equal(
+    await writeOfflineCache("conversation", "session", { text }, "rev", dependencies),
+    false,
+  );
+
+  // 128 characters is an admissible key only while every character is one
+  // byte; these are three each, and the native side refuses at 128 bytes.
+  assert.equal(await writeOfflineCache("conversation", "日".repeat(128), {}, "r", dependencies), false);
+  assert.equal(await readOfflineCache("conversation", "日".repeat(128), dependencies), null);
+  assert.equal(
+    await writeOfflineCache("conversation", "abc", {}, "é".repeat(200), dependencies),
+    false,
+  );
+
+  assert.deepEqual(calls, [], "nothing over budget may reach the native side");
+
+  // The same names and revisions are still admissible one byte per character.
+  assert.equal(await writeOfflineCache("conversation", "a".repeat(128), {}, "r", dependencies), true);
+  assert.equal(
+    await writeOfflineCache("conversation", "abc", {}, "r".repeat(256), dependencies),
+    true,
+  );
+});
+
 test("an unusable entry name is refused without touching the native side", async () => {
   const { calls, dependencies } = recorder(hit("{}"));
   assert.equal(await readOfflineCache("conversation", "", dependencies), null);

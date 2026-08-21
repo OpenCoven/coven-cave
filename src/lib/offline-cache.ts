@@ -133,6 +133,21 @@ const ATTACHMENT_KEY_PATTERN =
 /** Anything at or beyond this length is a payload, not a caption. */
 const MAX_INLINE_STRING_LENGTH = 8 * 1024;
 
+const utf8 = new TextEncoder();
+
+/**
+ * Every bound the native side enforces is a UTF-8 byte count (`str::len` in
+ * Rust); `String.length` is UTF-16 code units, which is smaller for anything
+ * outside Latin-1 and three times smaller for CJK. Measuring in the wrong
+ * unit does not make the cache accept oversized data — the native side
+ * refuses it — but it makes this module's own checks wrong in the permissive
+ * direction, so an over-budget write is discovered by a failed IPC round trip
+ * instead of here.
+ */
+function utf8Length(value: string): number {
+  return utf8.encode(value).length;
+}
+
 function normalizeKey(key: string): string {
   return key.replace(/[-_.\s]/g, "").toLowerCase();
 }
@@ -204,7 +219,7 @@ export function sanitizeForOfflineCache(value: unknown): OfflineCacheSanitizeRes
 function isValidName(value: string): boolean {
   return (
     value.length > 0 &&
-    value.length <= MAX_NAME_LENGTH &&
+    utf8Length(value) <= MAX_NAME_LENGTH &&
     // eslint-disable-next-line no-control-regex -- the native side refuses these; match it here rather than round-trip a rejection.
     !/[\u0000-\u001f\u007f]/.test(value)
   );
@@ -279,7 +294,7 @@ export async function writeOfflineCache(
   dependencies: OfflineCacheDependencies = {},
 ): Promise<boolean> {
   if (!isOfflineCacheSupported(dependencies) || !isValidName(key)) return false;
-  if (revision.length > MAX_REVISION_LENGTH) return false;
+  if (utf8Length(revision) > MAX_REVISION_LENGTH) return false;
   const { value: sanitized } = sanitizeForOfflineCache(value);
   if (sanitized === undefined) return false;
   let payload: string;
@@ -288,7 +303,9 @@ export async function writeOfflineCache(
   } catch {
     return false;
   }
-  if (typeof payload !== "string" || payload.length > OFFLINE_CACHE_MAX_ENTRY_BYTES) return false;
+  if (typeof payload !== "string" || utf8Length(payload) > OFFLINE_CACHE_MAX_ENTRY_BYTES) {
+    return false;
+  }
   const invoke = await resolveInvoke(dependencies);
   if (!invoke) return false;
   try {
