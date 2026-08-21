@@ -245,3 +245,70 @@ test("deleteTurn does not mutate the array it was given", () => {
   deleteTurn(turns, "a1", "u2");
   assert.equal(JSON.stringify(turns), before);
 });
+
+// The leaf repair below fires only when the deleted turn WAS the active leaf
+// and has no usable parent — i.e. a deleted root. Getting the replacement
+// wrong is silent: the file keeps every turn, and the transcript just renders
+// short.
+
+function sys(id: string, seconds: number): TreeTurn {
+  return {
+    id,
+    parentId: null,
+    role: "system",
+    createdAt: `2026-06-23T00:00:${String(seconds).padStart(2, "0")}.000Z`,
+  };
+}
+
+test("the replacement leaf is never a chain-less system echo", () => {
+  // A /help or coven-exec echo is appended with no parentId and is routinely
+  // the newest turn in the file. cave-conversations strips exactly these
+  // before validating the leaf's ancestor chain, so selecting one resolves to
+  // no chain at all — the sessions list loses the chat's status, and the
+  // transcript renders the echo alone with r1 hidden.
+  const turns = [t("r1", null, 1), t("r2", null, 2), sys("s1", 3)];
+  const result = deleteTurn(turns, "r2", "r2");
+
+  assert.equal(result.activeLeafId, "r1");
+  assert.deepEqual(
+    resolveActivePath(result.turns, result.activeLeafId!).map((x) => x.id),
+    ["r1", "s1"],
+    "the echo is woven back in as an orphan, not treated as the leaf",
+  );
+});
+
+test("a chain-less system echo is not inherited as the leaf either", () => {
+  // Same trap one step earlier: the deleted leaf's own parent is the echo.
+  const turns = [sys("s1", 1), t("u2", "s1", 2)];
+  const result = deleteTurn(turns, "u2", "u2");
+
+  assert.equal(result.activeLeafId, undefined, "no structural turn is left to point at");
+});
+
+test("the replacement leaf descends past a createdAt tie to the real leaf", () => {
+  // chat/send stamps a user turn and its reply with one createdAt, so
+  // byCreatedAt tie-breaks on id and can sort the PARENT last. Taking the
+  // newest turn verbatim would point the path at "zu2" and hide its reply.
+  const turns = [t("r1", null, 1), t("zu2", null, 5), t("aa2", "zu2", 5)];
+  const result = deleteTurn(turns, "r1", "r1");
+
+  assert.equal(result.activeLeafId, "aa2");
+  assert.deepEqual(
+    resolveActivePath(result.turns, result.activeLeafId!).map((x) => x.id),
+    ["zu2", "aa2"],
+  );
+});
+
+test("the replacement leaf is the deepest turn of the newest branch", () => {
+  const turns = [t("r1", null, 1), t("r2", null, 2), t("a2", "r2", 3), t("u3", "a2", 4)];
+  const result = deleteTurn(turns, "r1", "r1");
+
+  assert.equal(result.activeLeafId, "u3");
+});
+
+test("only chain-less system echoes remaining leaves no active leaf", () => {
+  const result = deleteTurn([t("u1", null, 1), sys("s1", 2)], "u1", "u1");
+
+  assert.deepEqual(result.turns.map((x) => x.id), ["s1"]);
+  assert.equal(result.activeLeafId, undefined);
+});

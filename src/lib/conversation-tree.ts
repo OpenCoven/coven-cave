@@ -156,6 +156,18 @@ export function linearizeLegacy<T extends TreeTurn>(
   return { turns: linked, activeLeafId: linked[linked.length - 1].id };
 }
 
+/**
+ * A chain-less system echo (role "system", no parentId) is never a legal
+ * active leaf. `cave-conversations.activeConversationTurns` strips exactly
+ * these turns before validating the leaf's ancestor chain, so a leaf pointing
+ * at one resolves to no chain at all: the sessions list loses the chat's
+ * status and attention evidence, and `resolveActivePath` renders the echo
+ * alone with every real turn hidden.
+ */
+function isChainlessSystem<T extends TreeTurn>(turn: T): boolean {
+  return turn.role === "system" && (turn.parentId ?? null) === null;
+}
+
 /** Result of splicing one turn out of the tree. */
 export type TurnDeletion<T extends TreeTurn> = {
   turns: T[];
@@ -204,13 +216,26 @@ export function deleteTurn<T extends TreeTurn>(
   if (activeLeafId !== turnId) return { turns: remaining, activeLeafId, deleted: true };
 
   // The active leaf was the turn just removed. Prefer its parent — that is
-  // where the conversation visibly continues from — and fall back to the
-  // newest remaining turn so a deleted root does not leave the path empty.
-  if (inheritedParent !== null && remaining.some((turn) => turn.id === inheritedParent)) {
-    return { turns: remaining, activeLeafId: inheritedParent, deleted: true };
+  // where the conversation visibly continues from — unless the parent is a
+  // chain-less system echo, which is not a resolvable leaf at all.
+  const parent = inheritedParent === null
+    ? undefined
+    : remaining.find((turn) => turn.id === inheritedParent);
+  if (parent && !isChainlessSystem(parent)) {
+    return { turns: remaining, activeLeafId: parent.id, deleted: true };
   }
-  const newestRemaining = remaining.length > 0
-    ? byCreatedAt(remaining)[remaining.length - 1]!.id
-    : undefined;
-  return { turns: remaining, activeLeafId: newestRemaining, deleted: true };
+
+  // No usable parent (a deleted root), so fall back to the newest remaining
+  // turn rather than leaving the path empty. Two constraints on the pick:
+  //
+  //  - Skip chain-less system echoes. They are frequently the newest turn in
+  //    the file (a /help or coven-exec echo appended after the last reply),
+  //    and selecting one hides every real turn — see isChainlessSystem.
+  //  - Descend to that turn's own leaf. A user turn and its reply share one
+  //    createdAt stamp, so byCreatedAt tie-breaks on id and can sort the
+  //    PARENT last; pointing the path at it would truncate the reply away.
+  const candidates = remaining.filter((turn) => !isChainlessSystem(turn));
+  if (candidates.length === 0) return { turns: remaining, activeLeafId: undefined, deleted: true };
+  const newest = byCreatedAt(candidates)[candidates.length - 1]!.id;
+  return { turns: remaining, activeLeafId: childLeaf(remaining, newest), deleted: true };
 }

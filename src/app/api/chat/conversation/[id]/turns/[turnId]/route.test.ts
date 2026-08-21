@@ -163,3 +163,84 @@ test("deleting every turn leaves the conversation itself in place", async () => 
   assert.equal(stored.sessionId, "sess-empty");
   assert.deepEqual(stored.turns, []);
 });
+
+test("a turn id holding a percent sign is matched literally, not decoded again", async () => {
+  // Next already percent-decodes route params, so `%25` on the wire reaches
+  // the handler as a bare `%`. Decoding a second time threw URIError here and
+  // surfaced as an unhandled 500 with no JSON envelope.
+  writeConversation("sess-percent", [turn("u1", null, 1), turn("a100%", "u1", 2)], {
+    activeLeafId: "a100%",
+  });
+
+  const res = await DELETE(new Request("http://127.0.0.1/x"), {
+    params: Promise.resolve({ id: "sess-percent", turnId: "a100%" }),
+  });
+  const body = await res.json();
+
+  assert.equal(res.status, 200);
+  assert.equal(body.deleted, true);
+  assert.deepEqual(readConversation("sess-percent").turns.map((t) => t.id), ["u1"]);
+});
+
+test("an escape-shaped turn id is not double-decoded into a different id", async () => {
+  // "%41" would decode to "A". The stored id is the literal text, so a second
+  // decode would silently miss the turn and report it already gone.
+  writeConversation("sess-escape", [turn("u1", null, 1), turn("a-%41", "u1", 2)], {
+    activeLeafId: "a-%41",
+  });
+
+  const res = await DELETE(new Request("http://127.0.0.1/x"), {
+    params: Promise.resolve({ id: "sess-escape", turnId: "a-%41" }),
+  });
+
+  assert.equal((await res.json()).deleted, true);
+  assert.deepEqual(readConversation("sess-escape").turns.map((t) => t.id), ["u1"]);
+});
+
+test("an over-long turn id is refused", async () => {
+  const res = await DELETE(new Request("http://127.0.0.1/x"), {
+    params: Promise.resolve({ id: "sess-badturn", turnId: "a".repeat(201) }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, "invalid turn id");
+});
+
+test("the response reports the repaired leaf, never the transcript", async () => {
+  // GET runs every conversation through sanitizeConversationMetadata; echoing
+  // the raw file from here would hand clients a shape GET never produces, and
+  // ship the whole transcript back over the tailnet on every delete.
+  writeConversation("sess-shape", [turn("u1", null, 1), turn("a1", "u1", 2)], {
+    activeLeafId: "a1",
+  });
+
+  const body = await (await call("sess-shape", "a1")).json();
+  assert.deepEqual(body, { ok: true, deleted: true, activeLeafId: "u1" });
+
+  const retry = await (await call("sess-shape", "a1")).json();
+  assert.deepEqual(retry, { ok: true, deleted: false, activeLeafId: "u1" });
+});
+
+test("deleting the last turn reports a null leaf rather than omitting it", async () => {
+  writeConversation("sess-nullleaf", [turn("u1", null, 1)], { activeLeafId: "u1" });
+
+  const body = await (await call("sess-nullleaf", "u1")).json();
+  assert.deepEqual(body, { ok: true, deleted: true, activeLeafId: null });
+});
+
+test("a legacy linear conversation is migrated and spliced, not corrupted", async () => {
+  // Pre-branching files carry no parentId and no activeLeafId; loadConversation
+  // linearizes them on read, so the delete must land on the migrated shape.
+  writeConversation("sess-legacy", [
+    { id: "u1", role: "user", text: "u1", createdAt: "2026-06-01T00:00:01.000Z" },
+    { id: "a1", role: "assistant", text: "a1", createdAt: "2026-06-01T00:00:02.000Z" },
+    { id: "u2", role: "user", text: "u2", createdAt: "2026-06-01T00:00:03.000Z" },
+  ]);
+
+  const body = await (await call("sess-legacy", "a1")).json();
+  assert.equal(body.deleted, true);
+
+  const stored = readConversation("sess-legacy");
+  assert.deepEqual(stored.turns.map((t) => t.id), ["u1", "u2"]);
+  assert.equal(stored.turns.find((t) => t.id === "u2").parentId, "u1");
+  assert.equal(stored.activeLeafId, "u2");
+});

@@ -41,12 +41,18 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; turnId: string }> },
 ) {
-  const { id, turnId: rawTurnId } = await params;
+  // No decodeURIComponent: Next already percent-decodes dynamic route params,
+  // which is what the sibling `[id]` route relies on for the session id.
+  // Decoding a second time is wrong twice over — a turn id holding a literal
+  // `%41` would be mangled into `A` and match nothing, and an id holding a
+  // bare `%` (sent correctly as `%25`) arrives decoded as `%`, where
+  // decodeURIComponent throws URIError: an unhandled 500 with no JSON
+  // envelope, from a perfectly well-formed request.
+  const { id, turnId } = await params;
   if (!isSafeConversationSessionId(id)) {
     return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
-  const turnId = decodeURIComponent(rawTurnId ?? "");
-  if (!isPlausibleTurnId(turnId)) {
+  if (typeof turnId !== "string" || !isPlausibleTurnId(turnId)) {
     return NextResponse.json({ ok: false, error: "invalid turn id" }, { status: 400 });
   }
 
@@ -64,7 +70,11 @@ export async function DELETE(
       // Idempotent: a retried delete whose first response never arrived must
       // not report failure. See deleteTurn for why this is worth the
       // ambiguity with a genuinely unknown id.
-      return NextResponse.json({ ok: true, deleted: false, conversation });
+      return NextResponse.json({
+        ok: true,
+        deleted: false,
+        activeLeafId: conversation.activeLeafId ?? null,
+      });
     }
 
     conversation.turns = result.turns;
@@ -77,6 +87,17 @@ export async function DELETE(
     conversation.updatedAt = new Date().toISOString();
 
     await saveConversation(conversation);
-    return NextResponse.json({ ok: true, deleted: true, conversation });
+    // Only the repaired leaf, not the transcript. Every handler on
+    // `/chat/conversation/[id]` that returns a conversation runs it through
+    // that route's private sanitizeConversationMetadata first (it normalizes
+    // modelIntent and drops responseMetadata off user turns); echoing the raw
+    // file here would hand clients a shape GET never produces, and ship the
+    // whole transcript back over the tailnet on every single-message delete.
+    // A client that wants the new state re-reads it with GET.
+    return NextResponse.json({
+      ok: true,
+      deleted: true,
+      activeLeafId: conversation.activeLeafId ?? null,
+    });
   });
 }
