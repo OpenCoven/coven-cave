@@ -36,7 +36,7 @@
 // latest tag would compare against the PREVIOUS release and report drift on
 // every run.
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import fs, { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,17 +71,56 @@ export const readOption = (argv, name) => {
 //
 // So: bound every request, and retry the ones that can succeed on a second
 // look. A 4xx is an answer — the asset really is missing — and is returned as
-// is for the caller to report. Only a transport error or a 5xx is retried.
+// is for the caller to report.
+//
+// `head` is the budget for every SMALL request: the HEAD probes plus the two
+// metadata GETs (latest.json, the releases API). `get` is the artifact budget,
+// and it is a TOTAL transfer bound rather than an idle one — Node aborts the
+// response stream when the request's signal fires, so it covers the body read
+// as well as the handshake. 20 minutes is ~1 MB/s on the largest installer this
+// repo ships, i.e. generous for a runner pulling from GitHub's own CDN.
 export const FETCH_TIMEOUT_MS = { head: 30_000, get: 20 * 60_000 };
 const FETCH_ATTEMPTS = 3;
+const RETRY_AFTER_CAP_MS = 60_000;
 
+// The 4xx that mean "ask again" rather than "no". 429 matters most: these are
+// UNAUTHENTICATED downloads of four release assets back to back, and GitHub
+// rate-limits those. Returning a 429 as a final answer fails the release on a
+// condition that clears in seconds — and worse, the 429 body would then be fed
+// to verifySignature and misreported as an invalid signature.
+const RETRYABLE_STATUS = new Set([408, 425, 429]);
+export const isRetryableStatus = (status) => status >= 500 || RETRYABLE_STATUS.has(status);
+
+// Honour Retry-After when the server sends one, but cap it: an absurd value
+// must not park the release job for hours.
+export const retryAfterMs = (res) => {
+  const raw = res?.headers?.get?.("retry-after");
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return Math.min(seconds * 1000, RETRY_AFTER_CAP_MS);
+};
+
+// `read` runs INSIDE the retry loop, and that placement is the point. Reading
+// the body is part of the attempt: a stream that dies or times out mid-transfer
+// throws from arrayBuffer()/text(), and when the caller did that read after
+// fetchWithRetry returned, the throw landed OUTSIDE this loop and was never
+// retried. For a ~150MB installer the handshake is milliseconds and the body is
+// the entire risk, so the retry was covering the wrong half of the request. A
+// retried GET does re-transfer from byte zero — there is no resume here — which
+// is the price of bounding it to `attempts` tries.
+//
+// Returns the Response when no `read` is given, and `{ res, body }` when one
+// is, so a non-ok response is still the caller's to report rather than being
+// silently parsed.
 export const fetchWithRetry = async (
   url,
-  { method = "GET", attempts = FETCH_ATTEMPTS, timeoutMs, fetchImpl = fetch, sleep } = {},
+  { method = "GET", attempts = FETCH_ATTEMPTS, timeoutMs, fetchImpl = fetch, sleep, read } = {},
 ) => {
   const budget = timeoutMs ?? (method === "HEAD" ? FETCH_TIMEOUT_MS.head : FETCH_TIMEOUT_MS.get);
   const pause = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   let lastError = null;
+  let lastRetryAfter = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const res = await fetchImpl(url, {
@@ -89,12 +128,17 @@ export const fetchWithRetry = async (
         redirect: "follow",
         signal: AbortSignal.timeout(budget),
       });
-      if (res.status < 500) return res;
+      if (!isRetryableStatus(res.status)) {
+        if (!read) return res;
+        return { res, body: res.ok ? await read(res) : null };
+      }
       lastError = new Error(`HTTP ${res.status}`);
+      lastRetryAfter = retryAfterMs(res);
     } catch (e) {
       lastError = e;
+      lastRetryAfter = null;
     }
-    if (attempt < attempts) await pause(1000 * 2 ** (attempt - 1));
+    if (attempt < attempts) await pause(lastRetryAfter ?? 1000 * 2 ** (attempt - 1));
   }
   throw new Error(`${method} ${url} failed after ${attempts} attempts: ${lastError?.message ?? "unknown"}`);
 };
@@ -163,13 +207,18 @@ async function main() {
   } else {
     console.log("\n=== 1. fetch latest.json from endpoint ===");
     try {
-      const res = await fetchWithRetry(endpoint);
+      // latest.json is a few hundred bytes; give it the small-request budget
+      // rather than the 20-minute artifact one, or a black-holed endpoint parks
+      // this step for an hour across three attempts before reporting anything.
+      const { res, body } = await fetchWithRetry(endpoint, {
+        timeoutMs: FETCH_TIMEOUT_MS.head,
+        read: (r) => r.text(),
+      });
       if (!res.ok) {
         fail(`endpoint returned HTTP ${res.status} — updater manifest is NOT published; in-app check() finds no update`);
       } else {
-        const text = await res.text();
-        try { manifest = JSON.parse(text); ok("latest.json fetched + valid JSON"); }
-        catch { fail("endpoint did not return valid JSON: " + text.slice(0, 80)); }
+        try { manifest = JSON.parse(body); ok("latest.json fetched + valid JSON"); }
+        catch { fail("endpoint did not return valid JSON: " + body.slice(0, 80)); }
       }
     } catch (e) { fail(e.message); }
   }
@@ -198,10 +247,12 @@ async function main() {
     } else {
       console.log("\n=== 3. version matches latest GitHub release ===");
       try {
-        const ghTag = (await (await fetchWithRetry(
+        const { res, body } = await fetchWithRetry(
           `https://api.github.com/repos/${repo}/releases/latest`,
-          { timeoutMs: FETCH_TIMEOUT_MS.head },
-        )).json()).tag_name;
+          { timeoutMs: FETCH_TIMEOUT_MS.head, read: (r) => r.json() },
+        );
+        if (!res.ok) throw new Error(`releases API returned HTTP ${res.status}`);
+        const ghTag = body?.tag_name;
         const want = (ghTag || "").replace(/^v/, "");
         manifest.version === want ? ok(`latest.json ${manifest.version} == release ${ghTag}`)
           : fail(`version drift: latest.json=${manifest.version} vs release=${ghTag}`);
@@ -215,7 +266,14 @@ async function main() {
       try {
         const head = await fetchWithRetry(p.url, { method: "HEAD" });
         if (!head.ok) { fail(`${t}: asset url HTTP ${head.status}`); continue; }
-        const buf = Buffer.from(await (await fetchWithRetry(p.url)).arrayBuffer());
+        // Read the body inside the retry (see fetchWithRetry): a reset partway
+        // through a 150MB download is the failure this step actually meets.
+        const got = await fetchWithRetry(p.url, { read: async (r) => Buffer.from(await r.arrayBuffer()) });
+        // An error page is not a corrupt artifact. Reporting a non-ok download
+        // as "signature INVALID" would send whoever cut the release hunting a
+        // key rotation that never happened.
+        if (!got.res.ok) { fail(`${t}: asset download HTTP ${got.res.status}`); continue; }
+        const buf = got.body;
         const v = verifySignature(buf, pubkey, p.signature);
         v.ok ? ok(`${t}: signature VALID (${v.why}, ${(buf.length / 1e6).toFixed(1)}MB)`)
              : fail(`${t}: signature INVALID — updater would REJECT this (${v.why})`);
@@ -228,15 +286,34 @@ async function main() {
   process.exit(failures ? 1 : 0);
 }
 
-// Compare resolved filesystem paths, NOT `import.meta.url` against
+// Compare CANONICAL filesystem paths, NOT `import.meta.url` against
 // `new URL(process.argv[1], "file:")`. That URL form is the idiom used
 // elsewhere in scripts/, and it silently fails on Windows: argv[1] arrives as
 // `C:\...\verify-release-updater.mjs`, which does not parse into the
 // `file:///C:/...` href this module reports, so the comparison is false and
 // main() never runs. The script then exits 0 having verified nothing — a
 // signature gate that passes without looking, which is worse than no gate.
-export const isDirectRun = (argv1, moduleUrl) =>
-  Boolean(argv1) && path.resolve(argv1) === path.resolve(fileURLToPath(moduleUrl));
+//
+// realpathSync is what makes this identical to the guards in
+// generate-latest-json.mjs and dev-app-origin-health.mjs, and it is not
+// decoration: Node realpaths the main module's URL but leaves argv[1] as the
+// link path, so a symlinked entry point disagrees with itself on EVERY
+// platform and lands in exactly the exit-0-verified-nothing state above. The
+// lowercase fold covers Windows drive-letter and 8.3 casing. A path that is
+// not on disk falls back to the resolved form so the predicate stays usable in
+// unit tests; a malformed module URL is a non-match rather than a throw.
+const canonicalPath = (target) => {
+  const resolved = path.resolve(target);
+  let real = resolved;
+  try { real = fs.realpathSync.native(resolved); } catch { /* not on disk */ }
+  return process.platform === "win32" ? real.toLowerCase() : real;
+};
+
+export const isDirectRun = (argv1, moduleUrl) => {
+  if (!argv1) return false;
+  try { return canonicalPath(argv1) === canonicalPath(fileURLToPath(moduleUrl)); }
+  catch { return false; }
+};
 
 if (isDirectRun(process.argv[1], import.meta.url)) {
   await main();

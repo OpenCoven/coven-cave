@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -186,6 +186,81 @@ test("fetchWithRetry does NOT retry a 4xx — a missing asset is an answer", asy
   assert.equal(calls, 1, "a 404 must be reported, not retried");
 });
 
+test("fetchWithRetry DOES retry 429 — GitHub rate-limits these unauthenticated downloads", async () => {
+  // Four release assets are pulled back to back with no credential. A 429 is
+  // "ask again in a moment", not "the asset is missing"; treating it as final
+  // fails the release and leaves latest.json unpublished — the very outage
+  // this step exists to prevent.
+  for (const status of [408, 425, 429]) {
+    let calls = 0;
+    const res = await fetchWithRetry("https://example.test/rl", {
+      fetchImpl: async () => { calls += 1; return stubResponse(calls < 3 ? status : 200); },
+      sleep: async () => {},
+    });
+    assert.equal(res.status, 200, `${status} must be retried`);
+    assert.equal(calls, 3, `${status} must be retried`);
+  }
+});
+
+test("fetchWithRetry honours a Retry-After header, capped so it cannot park the job", async () => {
+  const withRetryAfter = (status, value) => ({
+    ...stubResponse(status),
+    headers: { get: (name) => (name === "retry-after" ? value : null) },
+  });
+  const backoffFor = async (value) => {
+    const seen = [];
+    let calls = 0;
+    await fetchWithRetry("https://example.test/ra", {
+      fetchImpl: async () => { calls += 1; return calls < 2 ? withRetryAfter(429, value) : stubResponse(200); },
+      sleep: async (ms) => { seen.push(ms); },
+    });
+    return seen;
+  };
+  assert.deepEqual(await backoffFor("5"), [5000], "a sane Retry-After is obeyed");
+  assert.deepEqual(await backoffFor("86400"), [60_000], "an absurd Retry-After is capped, not honoured");
+  assert.deepEqual(await backoffFor("soon"), [1000], "an unparseable Retry-After falls back to the backoff");
+});
+
+test("fetchWithRetry reads the body INSIDE the retry, so a mid-transfer failure retries", async () => {
+  // The artifact body is the whole risk on a 150MB installer: the handshake is
+  // milliseconds. When the caller awaited arrayBuffer() after fetchWithRetry
+  // returned, a stream that died mid-download threw outside the loop and got
+  // zero retries — the retry covered the wrong half of the request.
+  let calls = 0;
+  const got = await fetchWithRetry("https://example.test/artifact", {
+    fetchImpl: async () => {
+      calls += 1;
+      const failing = calls < 3;
+      return {
+        ...stubResponse(200),
+        arrayBuffer: async () => {
+          if (failing) throw new TypeError("terminated");
+          return Uint8Array.from([1, 2, 3]).buffer;
+        },
+      };
+    },
+    sleep: async () => {},
+    read: async (r) => Buffer.from(await r.arrayBuffer()),
+  });
+  assert.equal(calls, 3, "a body that dies mid-transfer must re-issue the whole GET");
+  assert.deepEqual([...got.body], [1, 2, 3]);
+  assert.equal(got.res.ok, true);
+});
+
+test("fetchWithRetry does not parse the body of a non-ok response", async () => {
+  // A 404 page fed to verifySignature reports "signature INVALID", sending
+  // whoever cut the release hunting a key rotation that never happened.
+  let read = 0;
+  const got = await fetchWithRetry("https://example.test/gone", {
+    fetchImpl: async () => stubResponse(404),
+    sleep: async () => {},
+    read: async () => { read += 1; return "<html>Not Found</html>"; },
+  });
+  assert.equal(got.res.status, 404);
+  assert.equal(got.body, null, "the caller must see the status, not an error page as a payload");
+  assert.equal(read, 0);
+});
+
 test("every request carries an abort signal so none can hang the release job", async () => {
   let init = null;
   await fetchWithRetry("https://example.test/d", {
@@ -208,6 +283,39 @@ test("isDirectRun recognises the script being executed, on POSIX and Windows pat
   assert.equal(isDirectRun(SCRIPT, new URL("./generate-latest-json.mjs", import.meta.url).href), false);
   assert.equal(isDirectRun("", import.meta.url), false);
   assert.equal(isDirectRun(undefined, import.meta.url), false);
+  assert.equal(isDirectRun(SCRIPT, "not-a-url"), false, "a malformed module url is a non-match, not a throw");
+});
+
+test("the relative invocation the release workflow uses executes the gate", () => {
+  // .github/workflows/release.yml runs `node scripts/verify-release-updater.mjs`
+  // from the checkout root, not by absolute path. Every other assertion here
+  // spawns the absolute path, so without this the exact form CI uses is the one
+  // form nothing covers.
+  const repoRoot = path.dirname(path.dirname(SCRIPT));
+  const result = spawnSync(
+    process.execPath,
+    [path.join("scripts", "verify-release-updater.mjs"), "--manifest"],
+    { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+  );
+  assert.equal(result.status, 1, "the relative invocation must run and report usage, not exit 0 silently");
+  assert.match(result.stdout, /given without a value/);
+});
+
+test("a symlinked entry point still runs the gate", () => {
+  // Node realpaths the main module's URL but leaves argv[1] as the link path,
+  // so a guard comparing them without realpath disagrees with itself on every
+  // platform — and this script's failure mode for that is exit 0 having
+  // verified no signature at all.
+  const dir = mkdtempSync(path.join(tmpdir(), "verify-updater-link-"));
+  const link = path.join(dir, "linked-verify-release-updater.mjs");
+  try {
+    symlinkSync(SCRIPT, link, "file");
+  } catch {
+    return; // unprivileged Windows cannot create symlinks
+  }
+  const result = spawnSync(process.execPath, [link, "--manifest"], { encoding: "utf8", timeout: 60_000 });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /given without a value/);
 });
 
 test("the CLI executes and fails an empty manifest even under --allow-partial", () => {
