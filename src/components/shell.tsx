@@ -17,7 +17,6 @@ import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
-import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
@@ -621,8 +620,6 @@ function ShellInner({
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
-  const trafficLightsVisible = navOpen || isMobile;
-  useMacTrafficLightsForNavState(trafficLightsVisible);
   const [navChromeWidth, setNavChromeWidth] = useState(
     chatContextual ? NAV_OPEN_PX : NAV_RAIL_PX,
   );
