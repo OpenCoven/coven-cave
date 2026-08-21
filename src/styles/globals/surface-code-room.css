@@ -60,6 +60,7 @@
   cursor: not-allowed;
 }
 .code-terminal-workspace__body {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -88,12 +89,10 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  /* Transparent by default so an unfocused pane keeps the same geometry as a
-     focused one — the border appears, nothing reflows. */
-  border: 1px solid transparent;
+  border: 0;
 }
 .code-terminal-pane[data-focused="true"] {
-  border-color: color-mix(in oklab, var(--accent-presence) 45%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 32%, transparent);
 }
 .code-terminal-pane__bar {
   display: flex;
@@ -146,6 +145,97 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+.code-terminal-workspace[data-focus-mode="true"] .code-terminal-pane:not([data-focus-visible="true"]) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.code-terminal-workspace[data-focus-mode="true"] .code-terminal-pane[data-focus-visible="true"] {
+  position: absolute;
+  inset: 0 calc(var(--space-10) + var(--space-3)) 0 0;
+  z-index: 2;
+  visibility: visible;
+  background: var(--code-surface);
+  box-shadow: none;
+}
+
+.code-terminal-carousel {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-elevated) 86%, transparent);
+  backdrop-filter: blur(var(--space-2));
+  transform: translateY(-50%);
+}
+
+.code-terminal-carousel__item {
+  position: relative;
+  display: grid;
+  width: var(--space-8);
+  height: var(--space-8);
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.code-terminal-carousel__item:hover,
+.code-terminal-carousel__item:focus-visible,
+.code-terminal-carousel__item[data-previewing="true"] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.code-terminal-carousel__item[aria-selected="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
+
+.code-terminal-carousel__status {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: var(--space-1);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+
+.code-terminal-carousel__item[data-health="healthy"] .code-terminal-carousel__status {
+  background: var(--color-success);
+}
+
+.code-terminal-carousel__item[data-health="recovering"] .code-terminal-carousel__status,
+.code-terminal-carousel__item[data-health="starting"] .code-terminal-carousel__status {
+  background: var(--color-warning);
+}
+
+.code-terminal-carousel__item[data-health="failed"] .code-terminal-carousel__status {
+  background: var(--color-danger);
+}
+
+.code-terminal-carousel__index {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  min-width: var(--space-3);
+  padding: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--space-3);
+  text-align: center;
 }
 
 /* ── Narrow widths: the Room does NOT stack in CSS.

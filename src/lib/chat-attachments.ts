@@ -449,6 +449,15 @@ export function isTextLike(file: File): boolean {
   return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
 }
 
+function attachmentMimeType(file: File): string | undefined {
+  const mimeType = file.type.toLowerCase();
+  // Browsers commonly label TypeScript as MPEG-2 transport stream media.
+  // Canonicalize only the .ts filename case so source files stay on the
+  // bounded generic-file path instead of being discarded as unsupported video.
+  if (mimeType === "video/mp2t" && /\.ts$/i.test(file.name)) return "text/typescript";
+  return mimeType || undefined;
+}
+
 /** Phosphor glyph for an attachment chip, by mime/type. */
 export function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "type">): IconName {
   const mimeType = attachment.mimeType ?? attachment.type ?? "";
@@ -464,19 +473,27 @@ export function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "ty
 /** Convert a picked File into a ComposerAttachment: inline a bounded text
  * preview and retain bounded file bytes for local harness materialization. */
 export async function fileToAttachment(file: File): Promise<ComposerAttachment> {
+  const canonicalMimeType = attachmentMimeType(file);
   const attachment: ComposerAttachment = {
     id: crypto.randomUUID(),
     name: file.name,
-    type: file.type || undefined,
-    mimeType: file.type || undefined,
+    type: canonicalMimeType,
+    mimeType: canonicalMimeType,
     size: file.size,
   };
-  const mediaMime = MEDIA_EXT_BY_MIME[file.type.toLowerCase()] ? file.type.toLowerCase() : null;
+  const mediaMime = canonicalMimeType && MEDIA_EXT_BY_MIME[canonicalMimeType]
+    ? canonicalMimeType
+    : null;
   const readDataUrl = async () => {
     await new Promise<void>((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
-        if (typeof reader.result === "string") attachment.dataUrl = reader.result;
+        if (typeof reader.result === "string") {
+          const comma = reader.result.indexOf(",");
+          attachment.dataUrl = canonicalMimeType && comma >= 0
+            ? `data:${canonicalMimeType};base64,${reader.result.slice(comma + 1)}`
+            : reader.result;
+        }
         resolve();
       };
       reader.onerror = () => resolve();

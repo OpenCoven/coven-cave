@@ -50,10 +50,17 @@ test("merged beats draft (a merged PR is done, not draft)", () => {
   );
 });
 
-test("GitHub-task lifecycle words still read as an open PR", () => {
+test("GitHub-task lifecycle words are an unverified state — link only, no claim", () => {
   for (const state of ["running", "review", "done", "failed"]) {
-    assert.equal(sessionPrStatus({ repo: "o/r", number: 3, state }).key, "open");
+    const s = sessionPrStatus({ repo: "o/r", number: 3, state });
+    assert.equal(s.key, "unknown", `${state} never claims a GitHub PR state`);
+    assert.equal(s.icon, "ph:git-pull-request");
+    assert.equal(s.label, "PR #3", "the label claims the link, not a state");
   }
+});
+
+test("a verified open state still reads open", () => {
+  assert.equal(sessionPrStatus({ repo: "o/r", number: 2, state: "OPEN" }).key, "open");
 });
 
 test("url falls back to the canonical github.com PR link", () => {

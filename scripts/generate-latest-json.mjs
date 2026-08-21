@@ -10,9 +10,10 @@
 // Platforms are included only when a signed artifact exists; missing platforms
 // are logged and skipped (the app falls back to manual download for those).
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdtempSync, existsSync } from "node:fs";
+import { readFileSync, mkdtempSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8" });
 
@@ -87,6 +88,32 @@ export async function main(argv = process.argv.slice(2)) {
   process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], "file:").href) {
+// Compare CANONICAL filesystem paths, not `import.meta.url` against
+// `new URL(process.argv[1], "file:")` (cave-gcb0i). Three things break that
+// URL form, and every one of them makes the script exit 0 having done nothing:
+//   - Windows: argv[1] is `C:\...\generate-latest-json.mjs`, which the URL
+//     parser reads as an opaque `c:` scheme, never the `file:///C:/...` href
+//     this module reports. `node scripts/generate-latest-json.mjs` with no
+//     arguments therefore printed no usage error and exited 0.
+//   - a symlinked entry point: Node realpaths the main module's URL but leaves
+//     argv[1] as the link path, so the two disagree on any platform.
+//   - drive-letter / 8.3 casing differences on Windows.
+// realpathSync collapses the first two; the lowercase fold collapses the third.
+// A path that is not on disk falls back to the resolved form so the predicate
+// stays usable in unit tests.
+const canonicalPath = (target) => {
+  const resolved = resolve(target);
+  let real = resolved;
+  try { real = realpathSync.native(resolved); } catch { /* not on disk */ }
+  return process.platform === "win32" ? real.toLowerCase() : real;
+};
+
+export const isDirectRun = (argv1, moduleUrl) => {
+  if (!argv1) return false;
+  try { return canonicalPath(argv1) === canonicalPath(fileURLToPath(moduleUrl)); }
+  catch { return false; }
+};
+
+if (isDirectRun(process.argv[1], import.meta.url)) {
   await main();
 }

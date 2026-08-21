@@ -580,6 +580,12 @@ async function main() {
         fonts: { serif: "eb-garamond", sans: "source-sans-3", mono: "source-code-pro" },
         screenScale: 125,
         reading: {
+          // Every canonical reading key must appear here: the restore assertion
+          // below is a deep-equal against the whole normalized object, so a key
+          // the patch omits comes back as its default and fails the comparison.
+          // A non-default value also proves the field actually survives the
+          // port change rather than matching by coincidence.
+          size: 3,
           leading: "relaxed",
           tracking: "wide",
           align: "justify",

@@ -485,7 +485,7 @@ assert.match(
 // then settles non-edit activity and edit cards into their durable sections.
 assert.match(
   chatViewSource,
-  /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+  /segmentTurn\(\s*presentedProjection\.visible,\s*turn\.tools,\s*\)[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
   "assistant turns preserve live tool chronology through text-offset segments",
 );
 assert.match(
