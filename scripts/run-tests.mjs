@@ -337,6 +337,7 @@ export const SUITES = {
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-session-grouping.test.ts",
     "src/lib/chat-session-status.test.ts",
+    "src/lib/chat-session-kind.test.ts",
     "src/lib/chat-session-activity.test.ts",
     "src/lib/chat-session-sort.test.ts",
     "src/lib/chat-turn-gap.test.ts",
