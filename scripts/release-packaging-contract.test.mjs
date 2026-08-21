@@ -152,8 +152,21 @@ test("every platform the manifest generator emits is a platform the verifier che
 // ── Checksums cover every installable artifact family ──────────────────
 test("SHA256SUMS is published for the macOS, Linux and Windows installers", () => {
   const job = jobBody(releaseWorkflow, "checksums");
-  assert.match(job, /shasum -a 256/, "checksums are computed with shasum");
-  assert.match(job, /SHA256SUMS/);
+  // Anchor to a line that IS the command. Two of this job's three
+  // "shasum -a 256" mentions are comments explaining how to verify the file by
+  // hand, so a bare /shasum -a 256/ is satisfied by prose: measured by deleting
+  // `shasum -a 256 CovenCave* | sort > SHA256SUMS` outright, after which this
+  // file stayed green while the release computed no checksums at all.
+  assert.match(
+    job,
+    /^ *shasum -a 256 [^\n#]*> *SHA256SUMS/m,
+    "SHA256SUMS must be computed by a real shasum command, not merely mentioned in a comment",
+  );
+  assert.match(
+    job,
+    /^ *gh release upload "\$RELEASE_TAG" _release\/SHA256SUMS/m,
+    "the computed SHA256SUMS must actually be attached to the release",
+  );
   for (const pattern of [/\.dmg/, /\.AppImage/, /\.msi/]) {
     assert.match(job, pattern, `checksums must cover ${pattern.source} artifacts`);
   }
