@@ -864,7 +864,9 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
           <label
             className={[
               "chat-list-search-control flex h-8 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]",
-              compact ? "max-w-[520px] flex-1" : "w-full max-w-[250px] min-[900px]:w-[250px]",
+              compact
+                ? "max-w-[520px] flex-1"
+                : "w-full max-w-[190px] min-[1440px]:w-[250px] min-[1440px]:max-w-[250px]",
             ].join(" ")}
           >
             <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
@@ -931,32 +933,6 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                       <span aria-hidden className="chat-status-chip__dot" />
                       {presentation.label}
                       <span className="chat-status-chip__count">{statusCounts[key]}</span>
-                    </button>
-                  );
-                })}
-              </span>
-              {/* Work-kind chips: exclusive toggles — "Tasks only" narrows to
-                  Board-task chats, "GitHub only" to chats wearing the PR
-                  badge. Pressing the active chip clears it back to all. */}
-              <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--border-hairline)]" />
-              <span role="group" aria-label="Filter sessions by work kind" className="flex flex-wrap items-center gap-0.5">
-                {CHAT_SESSION_KIND_ORDER.map((key) => {
-                  const presentation = CHAT_SESSION_KIND[key];
-                  const active = kindFilter === key;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      aria-pressed={active}
-                      disabled={chatStatusChipDisabled(kindCounts[key], active)}
-                      onClick={() => setKindFilter(active ? "all" : key)}
-                      title={presentation.description}
-                      className="chat-status-chip focus-ring"
-                      data-kind={key}
-                    >
-                      <Icon name={presentation.icon} width={11} aria-hidden />
-                      {presentation.label}
-                      <span className="chat-status-chip__count">{kindCounts[key]}</span>
                     </button>
                   );
                 })}
@@ -1034,6 +1010,31 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                 {CHAT_SESSION_SORT_LABEL[sessionSort]}
                 <Icon name="ph:caret-up-down" width={10} className="text-[var(--text-muted)]" aria-hidden />
               </button>
+              {/* Work-kind chips follow the core search/status/sort controls so
+                  they wrap together as a secondary filter row on laptop widths. */}
+              <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--border-hairline)]" />
+              <span role="group" aria-label="Filter sessions by work kind" className="flex flex-wrap items-center gap-0.5">
+                {CHAT_SESSION_KIND_ORDER.map((key) => {
+                  const presentation = CHAT_SESSION_KIND[key];
+                  const active = kindFilter === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={active}
+                      disabled={chatStatusChipDisabled(kindCounts[key], active)}
+                      onClick={() => setKindFilter(active ? "all" : key)}
+                      title={presentation.description}
+                      className="chat-status-chip focus-ring"
+                      data-kind={key}
+                    >
+                      <Icon name={presentation.icon} width={11} aria-hidden />
+                      {presentation.label}
+                      <span className="chat-status-chip__count">{kindCounts[key]}</span>
+                    </button>
+                  );
+                })}
+              </span>
               <Popover
                 open={sortOpen}
                 onOpenChange={setSortOpen}
