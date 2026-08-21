@@ -16,7 +16,13 @@ import {
 } from "./cave-performance-report.mjs";
 import { enforcedFixtureProfiles } from "../src/lib/performance-budgets.ts";
 
-function conversation({ warmP95 = 8, cacheHitRate = 1, coldP95 = 900 } = {}) {
+function conversation({
+  warmP50 = 4,
+  warmP95 = 8,
+  cacheHitRate = 1,
+  coldP50 = 850,
+  coldP95 = 900,
+} = {}) {
   return {
     fixture: { profile: "phase-6-list-10k", fileCount: 10, transcriptBytes: 1024, iterations: 5 },
     before: {
@@ -27,13 +33,13 @@ function conversation({ warmP95 = 8, cacheHitRate = 1, coldP95 = 900 } = {}) {
     },
     cold: {
       label: "cold metadata scan",
-      p50Ms: 850,
+      p50Ms: coldP50,
       p95Ms: coldP95,
       bytesReadPerScan: 10_000,
     },
     after: {
       label: "warm metadata cache",
-      p50Ms: 4,
+      p50Ms: warmP50,
       p95Ms: warmP95,
       bytesReadPerScan: 100,
     },
@@ -182,7 +188,7 @@ test("a run inside every budget reports a passing budget verdict", () => {
 
 test("a breached budget fails the report even with no baseline to regress against", () => {
   const report = buildPerformanceReport({
-    conversation: conversation({ coldP95: 30_000 }),
+    conversation: conversation({ coldP50: 30_000, coldP95: 30_500 }),
     reliability: reliability(),
     metadata: metadata(),
   });
@@ -192,10 +198,37 @@ test("a breached budget fails the report even with no baseline to regress agains
   assert.equal(report.summary.budgetBreachCount, 1);
   assert.equal(
     report.budgets.results.find(
-      (result) => result.budget.id === "conversation-list.cold-scan.p95-ms",
+      (result) => result.budget.id === "conversation-list.cold-scan.p50-ms",
     ).verdict,
     "breach",
   );
+});
+
+test("a single stalled iteration does not by itself fail the run", () => {
+  // The reason the enforced timing budgets grade the median. At the fixture's 5
+  // iterations `percentile(v, 0.95)` is the maximum, so a p95 ceiling is decided
+  // by the slowest single scan — and a measured busy-runner run produced a cold
+  // p95 of 16,058 ms against a p50 of 1,840 ms in that same run, which the old
+  // 3,000 ms p95 ceiling would have called a 5x collapse of a healthy workload.
+  // A shared ubuntu-24.04 runner is a busy box; a nightly that goes red on
+  // scheduling noise gets ignored, which is the failure budgets exist to avoid.
+  const stalled = buildPerformanceReport({
+    conversation: conversation({ coldP50: 1_840, coldP95: 16_058 }),
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+
+  assert.equal(stalled.summary.budgetPass, true);
+  assert.equal(stalled.summary.status, "pass");
+
+  // The workload really slowing down still fails: the median moves with it.
+  const slow = buildPerformanceReport({
+    conversation: conversation({ coldP50: 16_058, coldP95: 16_058 }),
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+  assert.equal(slow.summary.budgetPass, false);
+  assert.equal(slow.summary.budgetBreachCount, 1);
 });
 
 test("a benchmark that produced no cold scan fails closed rather than passing", () => {

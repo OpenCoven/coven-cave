@@ -110,31 +110,70 @@ export function budgetSourceDerivation(
 const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10k";
 
 /**
- * Seeded on 2026-08-21 from a measured `phase-6-list-10k` run on the reference
- * machine (cold scan 1,039 ms p95 over 43.6 MB; warm scan 82 ms p95 over
- * 0 bytes; 100% cache hit rate), then given roughly 3x headroom so a slower
- * shared CI runner does not turn a healthy run red.
- *
  * These are ceilings that catch a collapse, not targets to optimise toward —
  * the report's own 20% regression comparison is what catches slow erosion. Only
  * Cave's own code is budgeted: the benchmark's raw readdir+parse control loop
  * is deliberately absent, since policing it would measure the harness.
+ *
+ * ## The timing budgets grade the median, not the p95
+ *
+ * `phase-6-list-10k` runs 5 iterations, and the 95th percentile of 5 samples is
+ * the largest of them — verified, not assumed: the benchmark's `percentile()`
+ * returns the maximum for every n ≤ 20. So "cold scan p95 ≤ 3,000 ms" was
+ * really "slowest of five ≤ 3,000 ms", and one descheduled iteration is enough
+ * to decide it. A run on a busy box produced a cold p95 of 16,058 ms against a
+ * p50 of 1,840 ms *in the same run* — a 5x breach of that ceiling from
+ * scheduling noise alone, with the workload unchanged. A shared `ubuntu-24.04`
+ * runner is a busy box, and a nightly gate that goes red on noise is an outage
+ * rather than a budget (the `WORKTREE_WARNING_BUDGET` lesson, `cave-qpwx0`).
+ *
+ * Raising the sample count is not the escape: a true p95 needs n ≥ 21 merely to
+ * stop being the maximum and ~100 to have any resolution, and one iteration of
+ * this fixture costs 8-10 s, so 100 would be ~17 minutes inside a 30-minute job
+ * that also seeds 10,000 files and runs the reliability benchmark. The median
+ * of 5 is the statistic this sample count actually supports, and it absorbs two
+ * stalled iterations. The p95 is still measured and still reported — it just
+ * does not decide whether the nightly is red.
+ *
+ * ## What the ceilings are seeded from
+ *
+ * Reference machine, `phase-6-list-10k`, 43.6 MB scanned every time:
+ *
+ * | run                        | cold p50 | cold p95 | warm p50 | warm p95 |
+ * | -------------------------- | -------- | -------- | -------- | -------- |
+ * | first seeding, 2026-08-21  |        — |  1039 ms |        — |    82 ms |
+ * | idle                       |  1364 ms |  1398 ms |   156 ms |   157 ms |
+ * | 3 benchmarks concurrently  |  2603 ms |  2686 ms |   156 ms |   159 ms |
+ *
+ * The p95/p50 ratio is 1.02-1.04 whenever nothing stalls, which is why the
+ * original 3,000 ms ceiling read as generous — against an idle single run it
+ * was. Against three concurrent runs the *median* already reaches 2,603 ms, so
+ * 3,000 ms left 15% headroom on a machine merely doing three things at once.
+ *
+ * The cold ceiling is therefore 5,000 ms: 1.9x the slowest median measured, and
+ * still below the 6,411-6,900 ms the benchmark's own full-transcript-parse
+ * control loop costs on the same runs. That upper anchor is the point — a cold
+ * scan that regressed all the way back to parsing every transcript must still
+ * trip this, or the budget would permit undoing the optimisation it exists to
+ * protect. The warm ceiling stays 750 ms: the warm median moved 156 → 156 ms
+ * under the same contention, and a warm scan that stopped hitting cache would
+ * cost the cold number and breach immediately.
  */
 export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
   {
-    id: "conversation-list.cold-scan.p95-ms",
+    id: "conversation-list.cold-scan.p50-ms",
     surface: "list",
-    label: "10k conversation list, cold metadata scan p95",
+    label: "10k conversation list, cold metadata scan median",
     unit: "ms",
     direction: "lower-is-better",
-    limit: 3_000,
+    limit: 5_000,
     gate: "performance-report",
     source: LIST_FIXTURE,
   },
   {
-    id: "conversation-list.warm-cache.p95-ms",
+    id: "conversation-list.warm-cache.p50-ms",
     surface: "route",
-    label: "Cave conversation read route, warm cache p95",
+    label: "Cave conversation read route, warm cache median",
     unit: "ms",
     direction: "lower-is-better",
     limit: 750,

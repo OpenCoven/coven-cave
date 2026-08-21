@@ -251,8 +251,8 @@ test("pending and postbuild budgets are reported without failing the run", () =>
  * A budget's `source` ties it to a profile by NAME, and the name survives any
  * edit to what that profile contains. Shrinking `phase-6-list-10k` to 200
  * conversations and running the report reproduced the exact line this catalogue
- * exists to prevent — `10k conversation list, cold metadata scan p95 | 30.07 ms
- * | ≤ 3000.00 ms | pass`, with `budgetPass: true`, `status: "pass"` and exit 0
+ * exists to prevent — `10k conversation list, cold metadata scan median | 30.07
+ * ms | ≤ 5000.00 ms | pass`, with `budgetPass: true`, `status: "pass"` and exit 0
  * — because the benchmark still reported `profile: "phase-6-list-10k"`.
  *
  * Neither existing guard can see that. The profile check compares names, and
@@ -260,8 +260,15 @@ test("pending and postbuild budgets are reported without failing the run", () =>
  * fixture edit trips neither. The scale is therefore as much a part of the
  * approved budget as the limit is, and is pinned here so shrinking the fixture
  * costs a deliberate edit instead of a silently green nightly.
+ *
+ * `iterations` is pinned for a second reason: the enforced timing budgets grade
+ * the MEDIAN, and a median is only robust because there are five samples under
+ * it. Editing the profile to `iterations: 1` leaves the median equal to the one
+ * sample taken — the noise-sensitive "slowest of the run" number the budgets
+ * were moved off — and every other guard here is blind to it, because the
+ * profile name is unchanged and no `CAVE_BENCH_*` override exists to stamp.
  */
-const SEEDED_WORKLOAD = { fileCount: 10_000, transcriptBytes: 4_096 };
+const SEEDED_WORKLOAD = { fileCount: 10_000, transcriptBytes: 4_096, iterations: 5 };
 
 test("the seeded fixture still describes the workload the limits were approved for", async () => {
   const fixtures = JSON.parse(
@@ -282,23 +289,61 @@ test("the seeded fixture still describes the workload the limits were approved f
   }
 });
 
-const SEEDED_MEASUREMENTS = [
-  { id: "conversation-list.cold-scan.p95-ms", value: 1_039.39 },
+/**
+ * The SLOWEST `phase-6-list-10k` run measured, not the fastest.
+ *
+ * Seeding from the quiet single run (cold median 1,364 ms) is what made the
+ * original 3,000 ms ceiling look like 3x headroom; running three copies of the
+ * benchmark at once on the same machine put the cold median at 2,603 ms, which
+ * left 15% — a nightly one busy runner away from red. A ceiling is only honest
+ * against the worst legitimate run we have actually observed, so that is what
+ * the shipped limits are asserted to clear.
+ */
+const SLOWEST_MEASURED_RUN = [
+  { id: "conversation-list.cold-scan.p50-ms", value: 2_603.31 },
   { id: "conversation-list.cold-scan.bytes", value: 43_608_890 },
-  { id: "conversation-list.warm-cache.p95-ms", value: 82.16 },
+  { id: "conversation-list.warm-cache.p50-ms", value: 156.28 },
   { id: "conversation-list.warm-cache.bytes", value: 0 },
   { id: "conversation-list.cache-hit-rate", value: 100 },
 ];
 
-test("the shipped catalogue passes against its own seeded measurements", () => {
-  // The seed values recorded in the module's comment, so a future edit that
-  // tightens a limit past the measurement it was seeded from fails here.
-  const evaluation = evaluatePerformanceBudgets(SEEDED_MEASUREMENTS, PERFORMANCE_BUDGETS, {
+test("the shipped catalogue passes against the slowest run it was seeded from", () => {
+  // Recorded in the module's own table, so a future edit that tightens a limit
+  // past a measurement it was seeded from fails here rather than in a nightly.
+  const evaluation = evaluatePerformanceBudgets(SLOWEST_MEASURED_RUN, PERFORMANCE_BUDGETS, {
     fixtureProfile: "phase-6-list-10k",
   });
   assert.equal(evaluation.pass, true, "seeded measurements must satisfy the shipped budgets");
   assert.equal(evaluation.breachCount, 0);
   assert.equal(evaluation.unmeasuredCount, 0);
+});
+
+test("no enforced timing budget grades a statistic this sample count cannot support", () => {
+  // `percentile(values, 0.95)` returns the maximum for every n ≤ 20, so at the
+  // fixture's 5 iterations a "p95" ceiling is "slowest of five" — decidable by
+  // one descheduled iteration. Measured: 16,058 ms p95 against 1,840 ms p50 in
+  // the same run, a 5x breach of the old 3,000 ms ceiling from scheduling noise
+  // with the workload unchanged. Enforce medians until the sample count is big
+  // enough for a real percentile; the p95 is still measured and still reported.
+  const percentile = (values: number[], percent: number) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * percent))];
+  };
+  const sample = Array.from({ length: SEEDED_WORKLOAD.iterations }, (_, index) => index + 1);
+  assert.equal(
+    percentile(sample, 0.95),
+    Math.max(...sample),
+    "if p95 has stopped being the maximum, a p95 budget is defensible again",
+  );
+  for (const entry of PERFORMANCE_BUDGETS) {
+    if (entry.gate !== "performance-report" || entry.unit !== "ms") continue;
+    assert.ok(
+      entry.id.endsWith(".p50-ms"),
+      `${entry.id} enforces a percentile the ${SEEDED_WORKLOAD.iterations}-iteration ` +
+        `fixture cannot resolve; budget the median or raise the sample count past 100`,
+    );
+    assert.match(entry.label, /median/, `${entry.label} must name the statistic it enforces`);
+  }
 });
 
 test("every enforced budget is seeded against exactly one shared fixture profile", () => {
@@ -317,14 +362,14 @@ test("every enforced budget is seeded against exactly one shared fixture profile
 
 test("measurements from the wrong fixture scale count as unmeasured, not as a pass", () => {
   // The exact numbers a `default`-profile smoke run produced, which previously
-  // reported "10k conversation list, cold metadata scan p95 | 38.07 ms |
-  // ≤ 3000.00 ms | pass" — a green verdict on a budget nothing in that run
+  // reported "10k conversation list, cold metadata scan median | 38.07 ms |
+  // ≤ 5000.00 ms | pass" — a green verdict on a budget nothing in that run
   // approached. A limit is a claim about a workload, not about a machine.
   const smoke = evaluatePerformanceBudgets(
     [
-      { id: "conversation-list.cold-scan.p95-ms", value: 38.07 },
+      { id: "conversation-list.cold-scan.p50-ms", value: 38.07 },
       { id: "conversation-list.cold-scan.bytes", value: 26_246_890 },
-      { id: "conversation-list.warm-cache.p95-ms", value: 1.51 },
+      { id: "conversation-list.warm-cache.p50-ms", value: 1.51 },
       { id: "conversation-list.warm-cache.bytes", value: 0 },
       { id: "conversation-list.cache-hit-rate", value: 100 },
     ],
@@ -335,7 +380,7 @@ test("measurements from the wrong fixture scale count as unmeasured, not as a pa
   assert.equal(smoke.breachCount, 0);
   assert.equal(smoke.unmeasuredCount, smoke.enforcedCount);
   assert.match(
-    smoke.results.find((result) => result.budget.id === "conversation-list.cold-scan.p95-ms")!.note!,
+    smoke.results.find((result) => result.budget.id === "conversation-list.cold-scan.p50-ms")!.note!,
     /seeded against the phase-6-list-10k fixture, but this run measured default/,
   );
 });
@@ -343,7 +388,7 @@ test("measurements from the wrong fixture scale count as unmeasured, not as a pa
 test("a run that does not identify its fixture fails closed", () => {
   // Absent data is not "no objection". The report reads the profile off the
   // benchmark's own output, so a missing one means the workload is unknown.
-  const evaluation = evaluatePerformanceBudgets(SEEDED_MEASUREMENTS);
+  const evaluation = evaluatePerformanceBudgets(SLOWEST_MEASURED_RUN);
   assert.equal(evaluation.pass, false);
   assert.equal(evaluation.unmeasuredCount, evaluation.enforcedCount);
   assert.match(evaluation.results[0].note!, /an unidentified fixture/);

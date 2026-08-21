@@ -118,6 +118,18 @@ function percentile(values, percent) {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * percent))];
 }
 
+/**
+ * ⚠️ `p95Ms` is the slowest iteration for every profile here, and that is
+ * arithmetic rather than a defect: nearest-rank p95 of n samples is the maximum
+ * for all n ≤ 20, and both committed profiles run 5 or 20 iterations. It is
+ * reported because a stall is worth seeing, but it must not be *budgeted* — one
+ * descheduled iteration on a shared runner moved it from 1,840 ms to 16,058 ms
+ * in a single run while the median did not move at all. `src/lib/
+ * performance-budgets.ts` therefore enforces `p50Ms` and explains the sums.
+ *
+ * If iterations ever rises past ~100, p95 becomes a real percentile and is fair
+ * game to budget; until then, treat it as "worst of the run".
+ */
 function summarize(label, durations, bytesRead) {
   return {
     label,

@@ -77,7 +77,7 @@ mismatch as `unmeasured`. Without that check, `pnpm performance:report` with no
 profile ran the 100-conversation `default` fixture and printed
 
 ```text
-| list | 10k conversation list, cold metadata scan p95 | 38.07 ms | ≤ 3000.00 ms | 98.7% | pass |
+| list | 10k conversation list, cold metadata scan median | 38.07 ms | ≤ 5000.00 ms | 99.2% | pass |
 ```
 
 — a green verdict, `budgetPass: true`, and exit code 0 on a budget nothing in
@@ -90,13 +90,60 @@ Budgets here are ceilings that catch a collapse, not targets to optimise
 toward. Slow erosion is the job of the report's existing 20% baseline
 comparison, which is a separate signal from a breach.
 
-The shipped list numbers were seeded on 2026-08-21 from a measured
-`phase-6-list-10k` run on the reference machine — cold scan 1,039 ms p95 over
-43.6 MB, warm scan 82 ms p95 over 0 bytes, 100% cache hit rate — then given
-roughly 3x headroom so a slower shared CI runner does not turn a healthy run
-red. `src/lib/performance-budgets.test.ts` asserts those seed measurements still
-satisfy the shipped limits, so tightening a limit past the measurement it was
-seeded from fails the unit suite rather than the nightly.
+### The timing budgets grade the median, and the sample count is why
+
+`phase-6-list-10k` runs 5 iterations, and the 95th percentile of 5 samples is
+the largest of them — the benchmark's `percentile()` returns the maximum for
+every n ≤ 20. So the original "cold scan p95 ≤ 3,000 ms" was really "slowest of
+five ≤ 3,000 ms", a ceiling one descheduled iteration could decide. A run on a
+busy box produced a cold p95 of **16,058 ms against a p50 of 1,840 ms in the
+same run** — a 5x breach from scheduling noise, workload unchanged. A shared
+`ubuntu-24.04` runner is a busy box, and a nightly that goes red on noise is an
+outage rather than a budget; that is the `WORKTREE_WARNING_BUDGET` lesson
+(`cave-qpwx0`) applied one gate earlier.
+
+Raising the sample count is not the escape. A true p95 needs n ≥ 21 merely to
+stop being the maximum and roughly 100 to have any resolution, and one iteration
+of this fixture costs 8–10 s — 100 would be ~17 minutes inside a 30-minute job
+that also seeds 10,000 files and runs the reliability benchmark. The median of 5
+is the statistic this sample count supports, and it absorbs two stalled
+iterations. The p95 is still measured, still reported, and still compared
+against the baseline; it just does not decide whether the nightly is red.
+
+The unit suite enforces the rule rather than the instance: every enforced `ms`
+budget must be a `.p50-ms` metric whose label says "median", and the fixture's
+`iterations` is pinned alongside `fileCount` and `transcriptBytes` — a median is
+only robust because five samples sit under it, and editing the profile to
+`iterations: 1` would quietly restore the noise-sensitive number with every
+other guard blind to it (verified: 20 tests pass on that edit without the pin).
+
+### What the ceilings are seeded from
+
+Reference machine, `phase-6-list-10k`, 43.6 MB scanned every time:
+
+| run | cold p50 | cold p95 | warm p50 | warm p95 |
+| --- | ---: | ---: | ---: | ---: |
+| first seeding, 2026-08-21 | — | 1,039 ms | — | 82 ms |
+| idle | 1,364 ms | 1,398 ms | 156 ms | 157 ms |
+| three benchmarks concurrently | 2,603 ms | 2,686 ms | 156 ms | 159 ms |
+
+The p95/p50 ratio is 1.02–1.04 whenever nothing stalls, which is why 3,000 ms
+read as generous: against an idle single run it was. Against three concurrent
+runs the *median* already reaches 2,603 ms, leaving 15% — seeded from the quiet
+run, the ceiling was one busy runner away from red.
+
+The cold ceiling is therefore **5,000 ms**: 1.9x the slowest median measured,
+and still below the 6,411–6,900 ms the benchmark's own full-transcript-parse
+control loop costs on the same runs. That upper anchor is the point — a cold
+scan that regressed all the way back to parsing every transcript must still trip
+this, or the budget would permit undoing the optimisation it protects. The warm
+ceiling stays **750 ms**: the warm median moved 156 → 156 ms under the same
+contention, and a warm scan that stopped hitting cache would cost the cold
+number and breach immediately.
+
+`src/lib/performance-budgets.test.ts` asserts the shipped limits clear the
+*slowest* run in that table, not the fastest, so tightening a limit past a
+measurement it was seeded from fails the unit suite rather than the nightly.
 
 Only Cave's own code is budgeted. The benchmark's raw `readdir` + `JSON.parse`
 control loop is measured and reported but deliberately carries no budget —
@@ -129,7 +176,7 @@ conversations still reports `profile: "phase-6-list-10k"`, so the name check
 matches, no `CAVE_BENCH_*` override exists to stamp, and the report prints
 
 ```text
-| list | 10k conversation list, cold metadata scan p95 | 30.07 ms | ≤ 3000.00 ms | 99.0% | pass |
+| list | 10k conversation list, cold metadata scan median | 30.07 ms | ≤ 5000.00 ms | 99.4% | pass |
 ```
 
 with `budgetPass: true` and exit 0 — the same certified-smoke-run defect,
