@@ -14,6 +14,42 @@ const styles = [
   .map((sheet) => readFileSync(new URL(sheet, import.meta.url), "utf8"))
   .join("\n");
 
+// `styles` above is six sheets concatenated, so a `@media (…) { [\s\S]* .rule {
+// [\s\S]* prop` pattern can straddle files: the media query matches in one
+// sheet, the rule in another, and the property in a third, leaving the pin
+// green with the rule it meant to check gutted. Where a claim is about ONE
+// rule inside ONE block, slice that block instead of spanning to it.
+const transcriptCss = readFileSync(
+  new URL("../styles/cave-chat/transcript.css", import.meta.url),
+  "utf8",
+);
+
+/** Body of the first `@media <query>` block in `css`, by brace balance. */
+function mediaBlock(css, query) {
+  const at = css.indexOf(`@media ${query}`);
+  assert.notEqual(at, -1, `expected a \`@media ${query}\` block`);
+  const open = css.indexOf("{", at);
+  let depth = 0;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return css.slice(open + 1, i);
+    }
+  }
+  throw new Error(`unbalanced \`@media ${query}\` block`);
+}
+
+/** Body of the first `<selector> { … }` rule in `css`. Rules here nest nothing. */
+function ruleBody(css, selector) {
+  const at = css.indexOf(`${selector} {`);
+  assert.notEqual(at, -1, `expected a \`${selector}\` rule`);
+  const open = at + `${selector} {`.length;
+  const close = css.indexOf("}", open);
+  assert.notEqual(close, -1, `expected \`${selector}\` to close`);
+  return css.slice(open, close);
+}
+
 assert.match(
   source,
   /function MobileChatContextMenu[\s\S]*<details className="cave-mobile-context"/,
@@ -118,16 +154,33 @@ assert.match(
   "Mobile composer footer stays a single utility|submit row (controls collapsed into the Options menu)",
 );
 
+// The jump-to-latest affordance was `.cave-scroll-bottom-button`, a square
+// caret FAB carrying a numeric unread badge. The calm-streaming work replaced
+// it with the released-reader control specified in
+// docs/superpowers/specs/2026-08-08-calm-streaming-chat-design.md: same
+// position (last child of the transcript scroller, shown only while the reader
+// has detached from the bottom), same job, but text instead of a badge —
+// `chat-view-polish-header-composer.test.ts` now pins that the count stays
+// boolean and that "Scroll to bottom" does NOT come back.
+//
+// So this is a pin whose target was renamed, not one whose guarantee expired.
+// Re-point it at the control's new home and keep the guarantee: the affordance
+// exists, and on mobile it is genuinely tappable.
 assert.match(
   source,
-  /className="cave-scroll-bottom-button sticky bottom-4/,
-  "Scroll-to-bottom FAB should expose a mobile touch-target hook",
+  /className="cave-new-response-content focus-ring"/,
+  "Released-reader jump-to-latest control should expose its style/touch-target hook",
+);
+
+const releasedReaderMobileRule = ruleBody(
+  mediaBlock(transcriptCss, "(max-width: 767px)"),
+  ".cave-new-response-content",
 );
 
 assert.match(
-  styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*width\s*:\s*var\(--touch-target\)[\s\S]*height\s*:\s*var\(--touch-target\)/,
-  "Mobile scroll-to-bottom FAB should meet the 44px touch target",
+  releasedReaderMobileRule,
+  /min-height\s*:\s*var\(--touch-target\)/,
+  "Mobile jump-to-latest control should meet the 44px touch target",
 );
 
 assert.match(
@@ -149,19 +202,43 @@ assert.match(
 );
 
 assert.match(
-  styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*action strip[\s\S]*84px textarea[\s\S]*one compact action footer[\s\S]*214px[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
-  "Mobile scroll-to-bottom FAB should clear the retained composer stack (action strip + textarea + footer + dock padding)",
+  releasedReaderMobileRule,
+  /bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
+  "Mobile jump-to-latest control should clear the retained composer stack (action strip + textarea + footer + dock padding)",
 );
 
-// The FAB must NOT use `float` — float removes it from flow and breaks
+// The control must NOT use `float` — float removes it from flow and breaks
 // `position: sticky` (it then renders at the wrong spot / not at all in the
-// iOS WKWebView). Right-align via `ml-auto` instead so sticky keeps working.
-const fabClass = source.match(/className="cave-scroll-bottom-button[^"]*"/)?.[0] ?? "";
-assert.ok(fabClass, "scroll-to-bottom FAB className should be present");
-assert.ok(!/\bfloat-right\b/.test(fabClass), "scroll-to-bottom FAB must not use float-right (breaks position: sticky)");
-assert.match(fabClass, /\bml-auto\b/, "scroll-to-bottom FAB should right-align with ml-auto so sticky still applies");
-assert.match(fabClass, /\bsticky\b/, "scroll-to-bottom FAB stays position: sticky");
+// iOS WKWebView). Right-align via an auto inline-start margin instead so
+// sticky keeps working.
+//
+// These moved from the className to the stylesheet with the rename. The
+// className is now pinned verbatim by chat-view-polish-header-composer.test.ts
+// and chat-view-scroll-pin.test.ts, so layout utilities cannot live there; that
+// makes the stylesheet the only place this contract can be stated, and the only
+// place it can be broken.
+// The base rule must sit OUTSIDE any media block — the control is sticky and
+// right-aligned at every width, not only on a phone.
+assert.ok(
+  transcriptCss.indexOf(".cave-new-response-content {") < transcriptCss.indexOf("@media"),
+  "released-reader control's base rule must precede every media block, so its layout is unconditional",
+);
+const releasedReaderControl = ruleBody(transcriptCss, ".cave-new-response-content");
+assert.doesNotMatch(
+  releasedReaderControl,
+  /float\s*:\s*(?!none)/,
+  "released-reader control must not float (removes it from flow and breaks position: sticky)",
+);
+assert.match(
+  releasedReaderControl,
+  /position\s*:\s*sticky/,
+  "released-reader control stays position: sticky inside the transcript scroller",
+);
+assert.match(
+  releasedReaderControl,
+  /margin-left\s*:\s*auto/,
+  "released-reader control should right-align with an auto margin so sticky still applies",
+);
 
 // The chat's linked task is surfaced directly in the mobile header (not just
 // buried in the kebab drawer), so its affiliation is visible at a glance.
