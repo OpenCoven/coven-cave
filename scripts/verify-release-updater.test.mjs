@@ -330,6 +330,23 @@ test("the CLI executes and fails an empty manifest even under --allow-partial", 
   assert.equal(result.status, 1, "an empty manifest must fail even with --allow-partial");
 });
 
+test("a manifest that is valid JSON but not an object can never read as PASS", () => {
+  // `null`, `0`, `false` and `""` are valid JSON and all FALSY, so they slipped
+  // past the `if (manifest)` gate in main(): every remaining step was skipped,
+  // nothing incremented the failure count, and the CLI printed
+  // "PASS — updater chain verified end to end" and exited 0 having verified no
+  // signature at all. Measured before the fix — all four printed PASS with
+  // status 0. Same class as the isDirectRun bug, reached through the parser.
+  const dir = mkdtempSync(path.join(tmpdir(), "verify-updater-shape-"));
+  const manifest = path.join(dir, "latest.json");
+  for (const body of ["null", "0", "false", '""', "[]", '"latest.json"']) {
+    writeFileSync(manifest, body);
+    const result = runCli(["--manifest", manifest, "--tag", "v9.9.9", "--allow-partial"]);
+    assert.doesNotMatch(result.stdout, /RESULT: PASS/, `${body} must never read as a verified updater chain`);
+    assert.equal(result.status, 1, `${body} is not an updater manifest`);
+  }
+});
+
 test("the CLI refuses a --manifest or --tag given without a value", () => {
   for (const args of [["--manifest"], ["--manifest="], ["--tag", "--allow-partial"]]) {
     const result = runCli(args);

@@ -197,11 +197,27 @@ async function main() {
   pubkey ? ok(`pubkey present (key id ${parsePub(pubkey).keyId.toString("hex")})`) : fail("no pubkey configured");
   if (!endpoint || !pubkey) { console.log("\n=== RESULT: FAIL (config) ==="); process.exit(1); }
 
+  // A manifest must be a JSON OBJECT, and this is checked at the parse rather
+  // than left to the `if (manifest)` below. `null`, `0`, `false` and `""` are
+  // all valid JSON and all FALSY, so they skipped every remaining step without
+  // incrementing `failures` — the script printed "PASS — updater chain verified
+  // end to end" having verified no signature at all. That is the same
+  // exit-0-without-looking state the isDirectRun guard at the foot of this file
+  // exists to prevent, reached through the parser instead of the run guard. An
+  // array is refused with them: platforms{} cannot live on one, and saying so
+  // once beats reporting it as four unrelated missing fields.
+  const asManifest = (parsed) => {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`expected a JSON object, got ${Array.isArray(parsed) ? "an array" : JSON.stringify(parsed)}`);
+    }
+    return parsed;
+  };
+
   let manifest = null;
   if (manifestPath) {
     console.log(`\n=== 1. read manifest from disk (${manifestPath}) ===`);
     try {
-      manifest = JSON.parse(readFileSync(path.resolve(manifestPath), "utf8"));
+      manifest = asManifest(JSON.parse(readFileSync(path.resolve(manifestPath), "utf8")));
       ok("manifest read + valid JSON");
     } catch (e) { fail(`could not read manifest: ${e.message}`); }
   } else {
@@ -217,8 +233,8 @@ async function main() {
       if (!res.ok) {
         fail(`endpoint returned HTTP ${res.status} — updater manifest is NOT published; in-app check() finds no update`);
       } else {
-        try { manifest = JSON.parse(body); ok("latest.json fetched + valid JSON"); }
-        catch { fail("endpoint did not return valid JSON: " + body.slice(0, 80)); }
+        try { manifest = asManifest(JSON.parse(body)); ok("latest.json fetched + valid JSON"); }
+        catch (e) { fail(`endpoint did not return a usable manifest (${e.message}): ${body.slice(0, 80)}`); }
       }
     } catch (e) { fail(e.message); }
   }
