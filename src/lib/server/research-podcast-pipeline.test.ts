@@ -25,6 +25,7 @@ const {
   concatPcmWav,
   createPodcastMediaJobDefinition,
   readBoundedElevenLabsAudio,
+  readElevenLabsErrorDetail,
   trimPcmWavSilence,
 } = await import("./research-podcast-pipeline.ts");
 const {
@@ -403,6 +404,20 @@ test("ElevenLabs response streaming stops at the audio byte cap", async () => {
     () => readBoundedElevenLabsAudio(streamedTooLarge, 4),
     /size limit/,
   );
+});
+
+test("ElevenLabs error detail reads only a bounded streamed prefix", async () => {
+  const encoder = new TextEncoder();
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(" ".repeat(1_200)));
+        controller.enqueue(encoder.encode("provider detail that must not be read"));
+        controller.close();
+      },
+    }),
+  );
+  assert.equal(await readElevenLabsErrorDetail(response), "");
 });
 
 test("stored bytes equal the single assembled WAV", async () => {

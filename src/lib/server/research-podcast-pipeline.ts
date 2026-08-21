@@ -287,6 +287,44 @@ export async function readBoundedElevenLabsAudio(
   return bytes;
 }
 
+async function readBoundedResponsePrefix(
+  response: Response,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = maxBytes - size;
+      if (value.byteLength > remaining) {
+        chunks.push(value.subarray(0, remaining));
+        size = maxBytes;
+        await reader.cancel("response prefix limit reached").catch(() => {});
+        break;
+      }
+      chunks.push(value);
+      size += value.byteLength;
+      if (size === maxBytes) {
+        await reader.cancel("response prefix limit reached").catch(() => {});
+        break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 export type ElevenLabsSynthesisOptions = {
   /** Model id; callers default to `DEFAULT_ELEVENLABS_MODEL_ID`. */
   model?: string;
@@ -357,9 +395,11 @@ export function buildElevenLabsTtsBody(
  * provider's actual complaint. A bare status turned an `invalid_parameters`
  * rejection into an unattributable "http 400" during triage.
  */
-async function readElevenLabsErrorDetail(response: Response): Promise<string> {
+export async function readElevenLabsErrorDetail(response: Response): Promise<string> {
   try {
-    const raw = await response.text();
+    const raw = new TextDecoder().decode(
+      await readBoundedResponsePrefix(response, ELEVENLABS_ERROR_DETAIL_MAX_BYTES),
+    );
     const detail = raw.replace(/\s+/g, " ").trim();
     if (!detail) return "";
     return detail.length > ELEVENLABS_ERROR_DETAIL_MAX_CHARS
@@ -371,6 +411,7 @@ async function readElevenLabsErrorDetail(response: Response): Promise<string> {
 }
 
 const ELEVENLABS_ERROR_DETAIL_MAX_CHARS = 300;
+const ELEVENLABS_ERROR_DETAIL_MAX_BYTES = ELEVENLABS_ERROR_DETAIL_MAX_CHARS * 4;
 
 async function synthesizeElevenLabs(
   text: string,
