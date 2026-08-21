@@ -735,12 +735,31 @@ jobs:
         working-directory: apps/ios/CovenCave
         shell: bash
         env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           ARCHIVE_PATH="$RUNNER_TEMP/CovenCave.xcarchive"
           EXPORT_PATH="$RUNNER_TEMP/CovenCave-TestFlight"
           EXPORT_OPTIONS_PATH="$RUNNER_TEMP/CovenCave-ExportOptions.plist"
+          # `apps/ios/CovenCave/project.yml` sets CODE_SIGN_STYLE: Automatic, but
+          # xcodebuild treats automatic signing as DISABLED unless it is given
+          # `-allowProvisioningUpdates`. Without these flags the archive fails
+          # with "No profiles for 'ai.opencoven.cave' were found ... Automatic
+          # signing is disabled", even though the previous step installed and
+          # validated App Store profiles for both targets. Authenticate with the
+          # App Store Connect key staged above so the resolution is headless.
+          [ -n "${APPLE_API_KEY_PATH:-}" ] || {
+            echo "::error::APPLE_API_KEY_PATH is required; the key staging step must run first"
+            exit 1
+          }
+          PROVISIONING_ARGS=(
+            -allowProvisioningUpdates
+            -authenticationKeyPath "$APPLE_API_KEY_PATH"
+            -authenticationKeyID "$APPLE_API_KEY"
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER"
+          )
           cat > "$EXPORT_OPTIONS_PATH" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -763,11 +782,13 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$ARCHIVE_PATH" \
+            "${PROVISIONING_ARGS[@]}" \
             archive
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportOptionsPlist "$EXPORT_OPTIONS_PATH" \
-            -exportPath "$EXPORT_PATH"
+            -exportPath "$EXPORT_PATH" \
+            "${PROVISIONING_ARGS[@]}"
           IPA_COUNT="$(find "$EXPORT_PATH" -maxdepth 1 -type f -name '*.ipa' | wc -l | tr -d ' ')"
           [ "$IPA_COUNT" -eq 1 ] || {
             echo "::error::Expected exactly one exported IPA, found $IPA_COUNT"
