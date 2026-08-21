@@ -121,7 +121,13 @@ assert.match(
 assert.match(
   source,
   /className="cave-new-response-content focus-ring"[\s\S]*updateFollowing\(true\);[\s\S]*schedulePin\(\);/,
-  "The released-reader response control should resume following and pin to the latest content",
+  "The released-reader control should restore following and pin to the latest response",
+);
+
+assert.match(
+  styles,
+  /\.cave-new-response-content\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "The released-reader control should meet the 44px touch target",
 );
 
 assert.match(
@@ -140,6 +146,18 @@ assert.match(
   styles,
   /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-input\s*\{[\s\S]*min-height\s*:\s*84px[\s\S]*max-height\s*:\s*min\(28dvh, 148px\)/,
   "Mobile composer input should stay compact and scroll after roughly 4-5 rows",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-new-response-content\s*\{[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
+  "The released-reader control should clear the retained mobile composer stack",
+);
+
+assert.match(
+  styles,
+  /\.cave-new-response-content\s*\{[\s\S]*position\s*:\s*sticky[\s\S]*margin-left\s*:\s*auto/,
+  "The released-reader control should remain sticky and right-aligned without float",
 );
 
 // The chat's linked task is surfaced directly in the mobile header (not just

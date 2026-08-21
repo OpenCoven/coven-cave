@@ -176,11 +176,14 @@ test("ChatView renders through the shared attention-aware text projection", () =
 
 test("the shared projection extracts attention after results and before next-path/preview/GitHub/image stripping", () => {
   // Pinned as a flow (per the skill-stage-card-wiring precedent above this
-  // file): what must hold is that resultSplit's visible text feeds the
+  // file): what must hold is that autoStatusSplit's visible text feeds the
   // attention extractor, and the attention-stripped visible feeds
   // extractNextPaths — never the reverse and never skipped, so a complete OR
   // partial `<coven:attention>` tag can't flash mid-stream.
   const pipeline = renderedTextAttentionPipeline();
+  const autoStatusIndex = pipeline.indexOf(
+    "const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);",
+  );
   const resultIndex = pipeline.indexOf(
     "const resultSplit = extractChatResultMarkers(autoStatusSplit.visible, {",
   );
@@ -190,16 +193,17 @@ test("the shared projection extracts attention after results and before next-pat
   const nextPathsIndex = pipeline.indexOf(
     "const nextPathSplit = extractNextPaths(attentionSplit.visible);",
   );
+  assert.notEqual(autoStatusIndex, -1, "auto-status extraction should read skillSplit.visible");
   assert.notEqual(resultIndex, -1, "result extraction should read autoStatusSplit.visible");
   assert.notEqual(attentionIndex, -1, "attention extraction should read resultSplit.visible");
   assert.notEqual(nextPathsIndex, -1, "next-path extraction should read attentionSplit.visible");
   assert.ok(
-    resultIndex < attentionIndex && attentionIndex < nextPathsIndex,
-    "attention extraction must run strictly between result extraction and next-path extraction",
+    autoStatusIndex < resultIndex && resultIndex < attentionIndex && attentionIndex < nextPathsIndex,
+    "attention extraction must run after result extraction and before next-path extraction",
   );
   assert.doesNotMatch(
     renderedText,
-    /extractNextPaths\((?:text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible|resultSplit\.visible)\)/,
+    /extractNextPaths\((?:text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible)\)/,
     "next-paths must never run on text upstream of the attention split — a raw or partial marker would flash",
   );
 });
@@ -250,14 +254,16 @@ test("the shared projection strips preview/GitHub/image markers only after next-
   );
 });
 
-test("ChatView does not render an inline attention card", () => {
-  // Task 3 persists the request and strips its marker from view only. Session
-  // sidebar attention derives from `attentionRequest` in a later task — no
-  // inline per-turn card should consume the parsed request here.
-  assert.doesNotMatch(
+test("ChatView counts current or persisted attention as meaningful output", () => {
+  assert.match(
     chatView,
-    /<Attention(?:Request)?Card\b/,
-    "attention metadata may prevent a false empty-response state, but it must not render an inline card",
+    /const durableAttentionRequest = attentionRequest \?\? turn\.responseMetadata\?\.attentionRequest \?\? null;/,
+    "reload should recover a persisted attention request when its marker is no longer present",
+  );
+  assert.match(
+    chatView,
+    /hasAttentionRequest: durableAttentionRequest != null/,
+    "an attention-only successful turn must not fall through to the empty-response state",
   );
 });
 

@@ -238,8 +238,8 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /const proseContent =[\s\S]*?!pending && renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node/,
-  "settled artifact-aware segments render as one ordered prose sequence",
+  /const proseContent =[\s\S]*?!pending[\s\S]*?\? renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node[\s\S]*?: <ProgressiveMarkdownBlock text=\{visible\} \/>/,
+  "settled responses preserve an ordered rich sequence or one decorated prose block",
 );
 
 assert.match(
@@ -280,7 +280,7 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /\{!pending && turn\.tools\?\.length && editCards\.length[\s\S]{0,500}?editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  /\{!pending && turn\.tools\?\.length && editCards\.length[\s\S]*?const editedFiles = Array\.from[\s\S]*?\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
   "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
 );
 assert.match(
@@ -295,8 +295,8 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /const activityDetails =[\s\S]*?<ToolGroup tools=\{otherTools\}[\s\S]*?const supplementaryContent =[\s\S]*?cave-edit-cards[\s\S]*?<MessageBubble[\s\S]*?<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
-  "TurnRowImpl keeps collapsed tool activity and visible edit cards in separate response slots",
+  /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+  "TurnRowImpl sends grouped activity before supplementary edit cards through the shared response",
 );
 
 assert.match(

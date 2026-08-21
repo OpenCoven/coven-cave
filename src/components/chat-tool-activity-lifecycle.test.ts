@@ -129,17 +129,27 @@ test("stable activity slots preserve a focused repeated tool and open edit revie
   }
 });
 
-test("TurnRow streams chronological tool blocks and settles tools into activity and edit-card slots", () => {
+test("TurnRow keeps live tools chronological and settles them into activity and edit-card slots", () => {
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /renderSegments = bubbleSegments;[\s\S]*const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-    "pending tools stay chronological while settled tools split into activity and edit-card slots",
+    /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+    "streaming tools retain their chronological positions in the response",
   );
   assert.match(
     turnRender,
-    /<MessageBubble[\s\S]*?<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
-    "the shared response receives separate activity and supplementary edit-card slots",
+    /const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
+    "settled tools partition into grouped activity and visible edit cards",
+  );
+  assert.match(
+    turnRender,
+    /\{pending\s*\? bubbleSegments\?\.map\([\s\S]*?: null\}[\s\S]*?\{!pending && otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\} \/>/,
+    "live tool blocks give way to one settled non-edit ToolGroup",
+  );
+  assert.match(
+    turnRender,
+    /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+    "the shared response owns activity and settled edit-card presentation",
   );
   assert.doesNotMatch(
     source,

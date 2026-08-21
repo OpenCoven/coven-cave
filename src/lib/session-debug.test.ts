@@ -481,17 +481,22 @@ assert.match(
   "CHAT-D4-01: turn-segments comments should document mid-paragraph streaming behavior",
 );
 
-// TurnRow keeps pending tools in chronological prose slots, then moves settled
-// activity and edit cards into their stable response slots.
+// TurnRow uses the persisted offset model to keep live tools chronological,
+// then settles non-edit activity and edit cards into their durable sections.
 assert.match(
   chatViewSource,
-  /<MessageBubble[\s\S]*?<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
-  "assistant turns pass changing content, settled activity, and edit cards through explicit response slots",
+  /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+  "assistant turns preserve live tool chronology through text-offset segments",
 );
 assert.match(
   chatViewSource,
-  /renderSegments = bubbleSegments;[\s\S]*const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];[\s\S]*const editCards = settledTools\.filter\(isEditCard\);[\s\S]*const otherTools = settledTools\.filter/,
-  "pending tools remain chronological while settled tools share one edit/non-edit partition",
+  /const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];[\s\S]*const editCards = settledTools\.filter\(isEditCard\);[\s\S]*const otherTools = settledTools\.filter/,
+  "settled turns partition edit cards from grouped non-edit activity",
+);
+assert.doesNotMatch(
+  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "",
+  /<ChatToolActivityLayout/,
+  "TurnRow no longer routes the shared response through the obsolete fixed-slot layout",
 );
 
 // MessageBubble: only the LAST text span streams (progressive markdown);

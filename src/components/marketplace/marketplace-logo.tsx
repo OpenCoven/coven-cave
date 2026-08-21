@@ -22,8 +22,8 @@ export function MarketplaceLogo({
 }: MarketplaceLogoProps) {
   const [failedAssetPath, setFailedAssetPath] = useState<string | null>(null);
   const bundled = resolveMarketplaceLogo(id, displayName);
-  const resolved = logo?.kind === "brand" && !logo.assetPath && bundled.kind === "brand"
-    ? { ...logo, assetPath: bundled.assetPath }
+  const resolved = logo?.kind === "brand" && bundled.kind === "brand"
+    ? { ...bundled, ...logo, assetPath: logo.assetPath ?? bundled.assetPath }
     : logo ?? bundled;
   const brandAssetPath = resolved.kind === "brand" ? resolved.assetPath : undefined;
   const showsBrand = Boolean(brandAssetPath && failedAssetPath !== brandAssetPath);

@@ -27,7 +27,7 @@ assert.match(
 assert.match(
   chatView,
   /let renderSegments: MessageBubbleSegment\[\] \| undefined;[\s\S]*?if \(turn\.pending\) \{[\s\S]*?renderSegments = bubbleSegments;[\s\S]*?\} else \{[\s\S]*?renderSegments = split\.some/,
-  "pending turns keep chronological streaming segments while settled turns render rich cards",
+  "pending turns use chronological tool segments while settled turns add spec cards",
 );
 
 console.log("chat-spec-card wiring: all assertions passed");

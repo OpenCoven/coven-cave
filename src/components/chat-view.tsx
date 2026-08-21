@@ -8990,26 +8990,14 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
-  // CHAT-D4-01: when every tool event carries a textOffset (live turns from
-  // this session), render the turn as ordered segments — prose spans with
-  // each tool call inline at its chronological position — instead of the
-  // legacy "all text, then a trailing Tool activity rollup" stack that
-  // inverted causality. Offsets were captured against the raw streamed text;
-  // segmentTurn snaps them forward to fence-safe paragraph boundaries (and
-  // clamps past-end offsets, e.g. when splitReasoning stripped thinking
-  // markup), so a drifted offset degrades toward trailing — never a split
-  // inside a code fence. Stored transcripts without offsets return null and
-  // keep today's trailing ToolGroup.
   const segments = segmentTurn(visible, turn.tools);
-  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((seg, i) =>
-    seg.kind === "text"
-      ? { kind: "text" as const, text: seg.text }
+  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((segment, index) =>
+    segment.kind === "text"
+      ? { kind: "text", text: segment.text }
       : {
-          kind: "block" as const,
-          key: `tools-${seg.tools[0]?.id ?? i}`,
-          // Each chronology-preserving segment only rolls consecutive calls
-          // with the same name; prose and a new offset stay hard boundaries.
-          node: <ToolRuns tools={seg.tools} />,
+          kind: "block",
+          key: `tools-${segment.tools[0]?.id ?? index}`,
+          node: <ToolRuns tools={segment.tools} />,
         },
   );
 
@@ -9102,17 +9090,19 @@ function TurnRowImpl({
       : undefined;
 
   const proseContent =
-    !pending && renderSegments
-      ? renderSegments.map((segment, index) =>
-          segment.kind === "text" ? (
-            <ProgressiveMarkdownBlock
-              key={`rich-prose-${index}`}
-              text={segment.text}
-            />
-          ) : (
-            <div key={segment.key} className="my-2">{segment.node}</div>
-          ),
-        )
+    !pending
+      ? renderSegments
+        ? renderSegments.map((segment, index) =>
+            segment.kind === "text" ? (
+              <ProgressiveMarkdownBlock
+                key={`rich-prose-${index}`}
+                text={segment.text}
+              />
+            ) : (
+              <div key={segment.key} className="my-2">{segment.node}</div>
+            ),
+          )
+        : <ProgressiveMarkdownBlock text={visible} />
       : undefined;
   const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
     emptySuccessful: streamingModel.emptySuccessful,
@@ -9304,11 +9294,11 @@ function TurnRowImpl({
                 timestamp={turn.createdAt}
                 showTimestamp={false}
                 pending={turn.pending}
-                isError={showEmptySuccessfulFallback}
+                isError={Boolean(turn.error) || showEmptySuccessfulFallback}
                 label={familiar.display_name}
                 messageId={turn.id}
                 feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                onRegenerate={onRegenerate}
+                onRegenerate={turn.error ? undefined : onRegenerate}
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 assistantBody={
