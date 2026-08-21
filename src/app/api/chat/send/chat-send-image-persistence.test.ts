@@ -212,7 +212,7 @@ test("reloaded media stays metadata-only instead of staging from its stored id",
       source,
     );
     const reloaded = normalizeChatAttachments(persisted);
-    if (!reloaded[0]?.storedId) return;
+    assert.ok(reloaded[0]?.storedId, "reloaded media should retain a durable source id");
     assert.equal(reloaded[0].dataUrl, undefined, "the transcript excludes media bytes");
     const files = await writeAttachmentsToRuntime(reloaded, grantedRoot);
     assert.equal(files.size, 0, "a stored media source is not staged for the Read tool");

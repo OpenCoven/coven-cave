@@ -12,6 +12,7 @@ import {
   saveChatMediaAttachment,
   readChatImageAttachment,
   sweepChatImageAttachments,
+  chatAttachmentMimeType,
 } from "@/lib/server/chat-attachment-store";
 
 const ATTACHMENT_STAGING_DIR = ".coven-cave-attachments";
@@ -115,6 +116,8 @@ export async function writeAttachmentsToRuntime(
       const base64 = payload.dataUrl.slice(payload.dataUrl.indexOf(",") + 1);
       bytes = Buffer.from(base64, "base64");
     } else if (attachment.storedId) {
+      const storedMimeType = chatAttachmentMimeType(attachment.storedId);
+      if (storedMimeType?.startsWith("audio/") || storedMimeType?.startsWith("video/")) continue;
       try {
         const stored = await readChatImageAttachment(attachment.storedId);
         bytes = stored.data;

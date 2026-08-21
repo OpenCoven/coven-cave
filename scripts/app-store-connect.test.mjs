@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildAltoolArgs,
   extractDeliveryId,
+  hasAltoolSemanticError,
   isBuildNotFound,
   parseCommand,
 } from "./app-store-connect.mjs";
@@ -183,6 +184,21 @@ test("recognizes only explicit build-not-found responses", () => {
   assert.equal(isBuildNotFound("Build processing status is INVALID"), false);
 });
 
+test("treats semantic altool errors as failures even when the process exits zero", () => {
+  assert.equal(
+    hasAltoolSemanticError(
+      "2026-08-16 11:52:12.969 ERROR: [altool.600003C544C0] Expected delivery ID argument is missing. (21)",
+    ),
+    true,
+  );
+  assert.equal(
+    hasAltoolSemanticError('{"errors":[{"code":"ENTITY_NOT_FOUND","detail":"No matching build"}]}'),
+    true,
+  );
+  assert.equal(hasAltoolSemanticError('{"errors":[]}'), false);
+  assert.equal(hasAltoolSemanticError('{"status":"COMPLETE"}'), false);
+});
+
 test("allow-missing reserves exit 3 for Apple's explicit not-found response", () => {
   const directory = mkdtempSync(join(tmpdir(), "app-store-connect-test-"));
   const fakeXcrun = join(directory, "xcrun");
@@ -237,6 +253,148 @@ process.exit(1);
     });
     assert.equal(authFailure.status, 1);
     assert.doesNotMatch(authFailure.stderr, /Apple reports no matching build/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("the CLI rejects a zero-exit semantic error instead of reporting processing success", () => {
+  const directory = mkdtempSync(join(tmpdir(), "app-store-connect-zero-exit-test-"));
+  const fakeXcrun = join(directory, "xcrun");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+
+  try {
+    writeFileSync(
+      fakeXcrun,
+      `#!/usr/bin/env node
+process.stderr.write("2026-08-16 ERROR: Expected delivery ID argument is missing. (21)\\n");
+process.exit(0);
+`,
+    );
+    chmodSync(fakeXcrun, 0o755);
+    const result = spawnSync(
+      process.execPath,
+      [
+        "scripts/app-store-connect.mjs",
+        "status",
+        "--delivery-id",
+        "delivery-uuid",
+        "--wait",
+      ],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          APPLE_API_KEY: "KEY123",
+          APPLE_API_ISSUER: "issuer-id",
+          PATH: `${directory}${delimiter}${process.env.PATH}`,
+        },
+      },
+    );
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /reported an error despite exiting successfully/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("upload --wait polls the exact delivery ID returned by altool", () => {
+  const directory = mkdtempSync(join(tmpdir(), "app-store-connect-upload-test-"));
+  const fakeXcrun = join(directory, "xcrun");
+  const ipaPath = join(directory, "CovenCave.ipa");
+  const logPath = join(directory, "xcrun.jsonl");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+
+  try {
+    writeFileSync(ipaPath, "test ipa");
+    writeFileSync(
+      fakeXcrun,
+      `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.FAKE_XCRUN_LOG, JSON.stringify(args) + "\\n");
+if (args.includes("--upload-app")) {
+  process.stdout.write('{"uploaded-package":{"delivery-uuid":"returned-delivery-uuid"}}\\n');
+} else if (args.includes("--build-status")) {
+  process.stdout.write('{"status":"COMPLETE"}\\n');
+} else {
+  process.exit(2);
+}
+`,
+    );
+    chmodSync(fakeXcrun, 0o755);
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/app-store-connect.mjs", "upload", ipaPath, "--wait"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          APPLE_API_KEY: "KEY123",
+          APPLE_API_ISSUER: "issuer-id",
+          FAKE_XCRUN_LOG: logPath,
+          PATH: `${directory}${delimiter}${process.env.PATH}`,
+        },
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const invocations = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(invocations.length, 2);
+    assert.ok(invocations[0].includes("--upload-app"));
+    const statusIndex = invocations[1].indexOf("--build-status");
+    assert.deepEqual(
+      invocations[1].slice(statusIndex, statusIndex + 4),
+      [
+        "--build-status",
+        "--delivery-id",
+        "returned-delivery-uuid",
+        "--wait",
+      ],
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("upload --wait fails closed when altool omits the delivery ID", () => {
+  const directory = mkdtempSync(join(tmpdir(), "app-store-connect-upload-no-id-test-"));
+  const fakeXcrun = join(directory, "xcrun");
+  const ipaPath = join(directory, "CovenCave.ipa");
+  const root = fileURLToPath(new URL("..", import.meta.url));
+
+  try {
+    writeFileSync(ipaPath, "test ipa");
+    writeFileSync(
+      fakeXcrun,
+      `#!/usr/bin/env node
+process.stdout.write('{"status":"uploaded"}\\n');
+`,
+    );
+    chmodSync(fakeXcrun, 0o755);
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/app-store-connect.mjs", "upload", ipaPath, "--wait"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          APPLE_API_KEY: "KEY123",
+          APPLE_API_ISSUER: "issuer-id",
+          PATH: `${directory}${delimiter}${process.env.PATH}`,
+        },
+      },
+    );
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /upload succeeded but altool did not return a delivery identifier/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

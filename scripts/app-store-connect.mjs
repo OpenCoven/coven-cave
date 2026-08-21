@@ -10,7 +10,11 @@ const DELIVERY_ID_KEYS = new Set(["deliveryid", "deliveryuuid", "requestuuid"]);
 
 class AltoolCommandError extends Error {
   constructor(command, status, output) {
-    super(`altool ${command} failed with exit code ${status}`);
+    super(
+      status === 0
+        ? `altool ${command} reported an error despite exiting successfully`
+        : `altool ${command} failed with exit code ${status}`,
+    );
     this.output = output;
   }
 }
@@ -192,6 +196,17 @@ export function isBuildNotFound(output) {
   );
 }
 
+export function hasAltoolSemanticError(output) {
+  if (/^\s*(?:\d{4}-\d{2}-\d{2}[^\n]*)?ERROR:/im.test(output)) {
+    return true;
+  }
+  const errors = output.match(/"errors"\s*:\s*\[([\s\S]*?)\]/i);
+  if (errors?.[1]?.trim()) {
+    return true;
+  }
+  return /"(?:errorCode|errorMessage)"\s*:\s*"[^"]+"/i.test(output);
+}
+
 function stageApiKey(env, keyId) {
   const sourcePath = env.APPLE_API_KEY_PATH;
   if (!sourcePath) {
@@ -221,14 +236,15 @@ function execute(request, auth, env) {
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
     if (result.error) throw result.error;
-    if (result.status !== 0) {
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    if (result.status !== 0 || hasAltoolSemanticError(output)) {
       throw new AltoolCommandError(
         request.command,
         result.status,
-        `${result.stdout ?? ""}${result.stderr ?? ""}`,
+        output,
       );
     }
-    return `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    return output;
   } finally {
     staged.cleanup();
   }
