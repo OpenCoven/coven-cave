@@ -129,22 +129,17 @@ test("stable activity slots preserve a focused repeated tool and open edit revie
   }
 });
 
-test("TurnRow gives tools stable activity and edit-card slots instead of streaming render branches", () => {
+test("TurnRow streams chronological tool blocks and settles tools into activity and edit-card slots", () => {
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /const turnTools = turn\.tools \?\? \[\];\s*const editCards = turnTools\.filter\(isEditCard\);\s*const otherTools = turnTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-    "edit and non-edit tools are partitioned independently of pending state",
+    /renderSegments = bubbleSegments;[\s\S]*const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
+    "pending tools stay chronological while settled tools split into activity and edit-card slots",
   );
   assert.match(
     turnRender,
-    /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}[\s\S]*content=\{[\s\S]*indicatorVisible[\s\S]*<ThinkingIndicator[\s\S]*<MessageBubble[\s\S]*editCards=\{\s*editCards\.length/,
-    "the no-text indicator/answer swap happens between stable activity and edit-card slots",
-  );
-  assert.doesNotMatch(
-    turnRender,
-    /segmentTurn\(|bubbleSegments|<ToolRuns/,
-    "TurnRow has no pending-only tool segmentation or duplicate ToolRuns branch",
+    /<MessageBubble[\s\S]*?<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+    "the shared response receives separate activity and supplementary edit-card slots",
   );
   assert.doesNotMatch(
     source,
