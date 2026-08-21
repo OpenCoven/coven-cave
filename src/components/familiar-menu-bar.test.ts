@@ -246,11 +246,11 @@ assert.doesNotMatch(
   "Workspace should not render a floating Salem perch",
 );
 
-// The open (not-done) board cards are polled from /api/board, kept with their
-// familiar so the Tasks badge can scope the count.
+// The open (not-done) board cards come from the shared "board:cards" surface
+// resource, kept with their familiar so the Tasks badge can scope the count.
 assert.match(
   workspace,
-  /fetch\("\/api\/board"[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
+  /readSurfaceResource<[\s\S]*?>\("board:cards"\)[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
   "open (not-done) board cards are collected with their familiarId",
 );
 
