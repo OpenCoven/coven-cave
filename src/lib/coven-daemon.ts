@@ -57,8 +57,273 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
   return `${WINDOWS_PIPE_PREFIX}${trimmed}`;
 }
 
-function covenHomePath(env: Record<string, string | undefined>, homeDir: string): string {
-  return env.COVEN_HOME ?? path.join(homeDir, ".coven");
+/**
+ * The two rooted Windows shapes that provably stay on this machine: the local
+ * named-pipe device, and a drive letter behind the long-path prefix.
+ */
+const WINDOWS_LOCAL_DEVICE_ROOT = /^\\\\[?.]\\(?:pipe\\|[a-z]:\\)/i;
+
+/**
+ * A `..` component, which walks back out of whichever root was allowed.
+ *
+ * `\\.\` paths are canonicalized by Win32 before they reach the object
+ * manager, so a `..` pops the very component the allowlist above matched on
+ * and lands back at the device root — from which `UNC\` and
+ * `GLOBALROOT\Device\Mup\` re-enter the SMB redirector. Measured on Windows 11
+ * against a local `net.createServer` pipe, all of these connected to it
+ * through the redirector while spelled as an allowed local root:
+ *
+ *     \\.\pipe\..\UNC\host\pipe\p          \\.\pipe\..\..\UNC\host\pipe\p
+ *     \\.\C:\..\..\UNC\host\pipe\p         //./pipe/../UNC/host/pipe/p
+ *     \\.\pipe\..\GLOBALROOT\Device\Mup\host\pipe\p
+ *
+ * Only an exact `..` component escapes: `.. `, `...` and `. .` were all
+ * measured ENOENT, because a `\\.\` path is canonicalized but its components
+ * are not space/dot-trimmed. `\\?\` skips canonicalization entirely, so a `..`
+ * there is a literal pipe name and also ENOENT — it is refused anyway rather
+ * than relying on that, since the difference between the two prefixes is not
+ * something a reader should have to hold.
+ *
+ * No local socket target has a `..` component: the daemon publishes a flat
+ * pipe name, and the fallback is built by `path.join`. This only ever refuses
+ * a value that was written to traverse.
+ */
+const WINDOWS_PARENT_SEGMENT = /(?:^|\\)\.\.(?:\\|$)/;
+
+/**
+ * Whether a Windows path fails to prove it stays on this machine.
+ *
+ * This is an allowlist, and it has to be: enumerating off-machine spellings
+ * does not converge. Measured on Windows 11 with `net.connect({ path })`
+ * against a local `net.createServer` pipe, every one of these delivered to it
+ * through the SMB redirector, and the last shows the nesting is open-ended
+ * rather than a fixed set to denylist:
+ *
+ *     \\host\pipe\p
+ *     \\?\UNC\host\pipe\p                    \\.\UNC\host\pipe\p
+ *     \\?\GLOBALROOT\Device\Mup\host\pipe\p
+ *     \\?\GLOBALROOT\Device\LanmanRedirector\host\pipe\p
+ *     \\?\GLOBALROOT\??\UNC\host\pipe\p
+ *
+ * A path not rooted at `\\` — a drive letter, a bare pipe name, a relative
+ * name — cannot leave the machine by spelling alone and is accepted without
+ * enumeration. Note this is only true of the value as written: a relative name
+ * is one `normalizeWindowsDaemonSocket` call away from being rooted at the
+ * pipe device, which is why the caller re-checks the normalized value too.
+ * A path rooted at `\\` must match one of the two local device
+ * roots above and must not walk back out of it via {@link
+ * WINDOWS_PARENT_SEGMENT}; everything else is refused, including spellings
+ * nobody has written down yet. The local daemon is owner-local by definition,
+ * so a target outside those roots is never it — it is a redirection, and every
+ * request Cave would send (commands, conversation content, whatever the daemon
+ * is asked to do) would reach the remote listener instead.
+ *
+ * What this cannot see: a drive letter mapped to a share
+ * (`net use Z: \\host\share`) resolves off-machine while spelled `Z:\…`. No
+ * syntactic check reaches that; it needs the connected pipe's owner.
+ *
+ * {@link isWindowsRemoteExecutablePath} in `coven-bin.ts` still draws the old,
+ * narrower boundary for the CLI binary and admits the four spellings above.
+ */
+export function isRemoteWindowsPath(candidate: string): boolean {
+  const normalized = candidate.trim().replaceAll("/", "\\");
+  if (!normalized.startsWith("\\\\")) return false;
+  if (WINDOWS_PARENT_SEGMENT.test(normalized)) return true;
+  return !WINDOWS_LOCAL_DEVICE_ROOT.test(normalized);
+}
+
+type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-status-file";
+
+/**
+ * Values already reported, so one refusal is one event.
+ *
+ * The resolver runs on every daemon request (`socketPath()` via
+ * `localDaemonTarget()`), so recording unconditionally would flush the
+ * 256-event ring within seconds of a persistently forged value and bury the
+ * diagnostics this event is meant to sit beside.
+ *
+ * Bounded and FIFO-evicting rather than unbounded, because the keys come from
+ * the same attacker the events describe: `daemon.json` is re-read on every
+ * request, so someone rewriting it with a fresh hostname each time would
+ * otherwise grow this set for the life of the process. Eviction only costs a
+ * re-report of a value that has not been seen for the last
+ * REPORTED_REFUSAL_LIMIT distinct refusals, which is the same trade the event
+ * ring itself already makes.
+ *
+ * The entries are bounded in length as well as in count, because a count bound
+ * alone does not bound memory here: nothing limits how long the refused value
+ * is. `daemon.json` is attacker-writable and `daemonStatusSocket` returns
+ * whatever string its `socket` field holds, so 32 entries of a megabyte each
+ * is a retention the count bound would happily allow. No real Windows target
+ * approaches the cap (the OS path limit is 32767 characters and a pipe name is
+ * far shorter), so truncation only ever affects a value that was never a
+ * socket. Two absurd values sharing a prefix then dedupe to one event, which
+ * is the same cost eviction already carries. Enforcing that bound takes a
+ * copy, not just a truncation — see {@link detachedRefusalKey}.
+ *
+ * What neither bound stops, and what this deliberately does not try to: that
+ * same attacker can still put one event in the ring per distinct value, and so
+ * can still flush it. Refusing to record past a total cap would be worse —
+ * whoever floods first would hide every later refusal, including a real one —
+ * so the ring's own eviction stays the only backstop.
+ */
+const REPORTED_REFUSAL_LIMIT = 32;
+/**
+ * Bounds the refused *value* carried into a key, not the finished key.
+ *
+ * The source name and its separator are prepended after the truncation — that
+ * order is what keeps every intermediate bounded, see {@link
+ * detachedRefusalKey} — so a key runs to this limit plus `source.length + 1`,
+ * i.e. 1043 characters at the longest source. The extra 19 characters are not
+ * worth complicating the truncation for, but the name says `KEY` and the
+ * arithmetic does not, so it is written down rather than left to be
+ * rediscovered.
+ */
+const REPORTED_REFUSAL_KEY_LIMIT = 1024;
+const reportedRefusals = new Set<string>();
+
+/**
+ * A dedupe key bounded in storage, not merely in length.
+ *
+ * Two things about `String.prototype.slice` make the obvious spelling of this
+ * — `` `${source} ${value}`.slice(0, REPORTED_REFUSAL_KEY_LIMIT) `` — enforce
+ * none of what the limit promises, and the refused value is as long as
+ * whoever wrote `daemon.json` chose.
+ *
+ * It does not copy. V8 backs a sliced string with a pointer to its parent, so
+ * a 1024-character key taken out of a megabyte-scale value keeps that whole
+ * megabyte reachable for as long as the key sits in the set — precisely the
+ * retention the limit exists to bound, reintroduced by the expression written
+ * to enforce it. Measured on Node 24, 32 keys over equal-sized values: 1 MiB
+ * values retained 32 MiB, 4 MiB retained 128 MiB, 8 MiB retained 256 MiB,
+ * scaling with the value and not with the limit, against 0 MiB once copied.
+ * Concatenating and re-slicing forces the flatten that copies. `.repeat(1)`
+ * and `.slice(0)` look equivalent and are not: both fast-path back to the
+ * receiver with the parent pointer intact, measured still retaining 28 of 32
+ * MiB offered. `.normalize()` does happen to copy on Node 24 — measured 0 MiB
+ * — but it is not the thing to reach for either, because that copy is
+ * incidental. ECMA-262 specifies it in terms of the *content* of the result
+ * and says nothing about its storage; string identity is not observable, so
+ * an engine is free to hand back the receiver whenever the input is already
+ * in the requested form, and a later quick-check fast path doing exactly that
+ * would silently restore the retention this helper exists to prevent. Depend
+ * on the flatten, which is the operation actually being asked for.
+ *
+ * And it happens too late. Truncating *after* the concatenation still builds
+ * the joined string first, which flattens a full copy of the value on every
+ * refused request — and raises `RangeError: Invalid string length` outright
+ * once the join crosses V8's maximum string length (measured: a value of
+ * MAX_STRING_LENGTH characters). That RangeError would escape
+ * `resolveDaemonSocketPath` past the containment below, breaking every daemon
+ * request and the module-load `COVEN_SOCKET_PATH` with it. Truncating the
+ * value first keeps every intermediate bounded, so this cannot throw at all.
+ */
+function detachedRefusalKey(source: RefusedSocketSource, value: string): string {
+  const truncated = `${source} ${value.slice(0, REPORTED_REFUSAL_KEY_LIMIT)}`;
+  return ` ${truncated}`.slice(1);
+}
+
+/**
+ * Record that a configured target was refused for naming another machine.
+ *
+ * Without this the refusal is indistinguishable from "no daemon configured",
+ * which cuts both ways. An operator whose `COVEN_HOME` really is a share gets
+ * a permanent "daemon offline" and no cause to act on — that misconfiguration
+ * is one this guard newly creates, so it owes them the reason. And an attacker
+ * probing which spellings the guard accepts leaves no trace at all.
+ *
+ * The refused value is deliberately not carried into the event. It embeds a
+ * hostname, and this pipeline's contract is that diagnostics retain no paths
+ * or addresses. Naming the source is enough: the operator knows what they set,
+ * and the source is what they have to change.
+ *
+ * Nothing this function does may throw. It is reached from
+ * `resolveDaemonSocketPath`, which `socketPath()` calls on every daemon
+ * request, so an exception escaping here would not degrade diagnostics — it
+ * would take out every request Cave makes, on the one code path that only runs
+ * when something is already wrong. Losing an event is the strictly smaller
+ * failure, so the recording is contained.
+ */
+function reportRefusedRemoteTarget(source: RefusedSocketSource, value: string): void {
+  const key = detachedRefusalKey(source, value);
+  if (reportedRefusals.has(key)) return;
+  reportedRefusals.add(key);
+  // A Set iterates in insertion order, so the first entry is the oldest.
+  while (reportedRefusals.size > REPORTED_REFUSAL_LIMIT) {
+    const oldest = reportedRefusals.values().next();
+    if (oldest.done) break;
+    reportedRefusals.delete(oldest.value);
+  }
+  try {
+    recordRefusedRemoteTarget(source);
+  } catch {
+    // Deliberately swallowed; see above. The key stays recorded, so a
+    // recorder that is failing does not get retried on every request.
+  }
+}
+
+function recordRefusedRemoteTarget(source: RefusedSocketSource): void {
+  recordDaemonDiagnosticEvent(createDaemonDiagnosticContext(), {
+    component: "daemon",
+    operation: "daemon-socket-resolution",
+    phase: "target-resolution",
+    outcome: "failed",
+    process: { pid: process.pid },
+    endpoint: { kind: "none", classification: source },
+    error: diagnosticError(
+      "configured daemon target names a path this machine does not own; it was not dialed",
+      "off-machine-target",
+    ),
+  });
+}
+
+/**
+ * Resolve the Coven home, refusing a `COVEN_HOME` that points off-machine.
+ *
+ * This guard is what stops the socket checks below from being decorative: a
+ * remote `COVEN_HOME` puts both `daemon.json` and the fallback socket on
+ * another machine, so refusing a forged socket only to build the "safe"
+ * default underneath the attacker's host would reintroduce the same
+ * redirection. Reading `daemon.json` from such a home is itself an SMB request
+ * to the host that planted it, so the refusal has to happen here rather than
+ * on the value that comes back.
+ *
+ * `homeDir` is deliberately NOT guarded, and not because it is trustworthy:
+ * `os.homedir()` honours `USERPROFILE` on Windows, so it is the same class of
+ * launch-environment input as `COVEN_HOME` (verified — setting `USERPROFILE`
+ * to a UNC path changes what `homedir()` returns). It is left alone because
+ * refusing it has no safe answer. A UNC profile is a legitimate roaming setup,
+ * reading your own `daemon.json` over SMB is normal there, and there is no
+ * further fallback to refuse *to* — so a guard would break real users rather
+ * than close the hole. `COVEN_HOME` is different on exactly that point: it is
+ * an explicit override with a safe local fallback available.
+ *
+ * Be precise about what that leaves standing, because the asymmetry above is
+ * easy to read as broader than it is. Against an attacker who can already set
+ * Cave's launch environment, this guard buys nothing: `COVEN_HOME` and
+ * `USERPROFILE` are the same capability, so refusing the first only moves them
+ * to the second. What it buys is against the strictly weaker attacker who can
+ * plant a file but not set an environment — the likelier one, since
+ * `daemon.json` is a plain file any process running as this user can rewrite —
+ * and against an operator who points `COVEN_HOME` at a share by accident.
+ *
+ * Closing the environment-control class needs a different check entirely: the
+ * owner of the pipe actually connected to, which is the other half of #4780's
+ * acceptance criterion and is not reachable from a synchronous path resolver.
+ * So this is a deliberate stopping point, not an oversight. Read the paragraph
+ * above before "fixing" it.
+ */
+function covenHomePath(
+  env: Record<string, string | undefined>,
+  homeDir: string,
+  platform: NodeJS.Platform,
+): string {
+  const configured = env.COVEN_HOME;
+  if (configured) {
+    if (!(platform === "win32" && isRemoteWindowsPath(configured))) return configured;
+    reportRefusedRemoteTarget("coven-home-env", configured);
+  }
+  return path.join(homeDir, ".coven");
 }
 
 function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string | null {
@@ -71,6 +336,47 @@ function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string |
   }
 }
 
+/**
+ * Accept a Windows socket candidate only if it stays on this machine.
+ *
+ * Both inputs are attacker-reachable in the threat model the local transport
+ * assumes: `COVEN_SOCKET` comes from the launch environment, and `daemon.json`
+ * is a plain file in `COVEN_HOME` that any process running as this user — or
+ * anything syncing that directory — can rewrite. Neither is a signed
+ * statement about where the daemon lives, so a remote target is refused rather
+ * than dialed, and resolution falls through to the canonical local path.
+ *
+ * Refusals are reported here rather than by the caller, because this is the
+ * only place that still knows whether the candidate was off-machine or named
+ * nothing at all. The caller needs that distinction too — the two outcomes
+ * resolve differently — so it is returned rather than collapsed into a null.
+ */
+type WindowsSocketDecision =
+  | { kind: "accepted"; socket: string }
+  | { kind: "refused" }
+  | { kind: "unnamed" };
+
+function localWindowsDaemonSocket(
+  candidate: string,
+  source: RefusedSocketSource,
+): WindowsSocketDecision {
+  if (isRemoteWindowsPath(candidate)) {
+    reportRefusedRemoteTarget(source, candidate);
+    return { kind: "refused" };
+  }
+  const normalized = normalizeWindowsDaemonSocket(candidate);
+  // A whitespace-only value normalizes to the empty string, which is not a
+  // socket and is not a redirection either.
+  if (!normalized) return { kind: "unnamed" };
+  // `normalizeWindowsDaemonSocket` rewrites separators and can prepend the
+  // pipe prefix, so re-check the value that would actually be dialed.
+  if (isRemoteWindowsPath(normalized)) {
+    reportRefusedRemoteTarget(source, normalized);
+    return { kind: "refused" };
+  }
+  return { kind: "accepted", socket: normalized };
+}
+
 export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
@@ -78,16 +384,43 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
   const readFile: ReadTextFile =
     options.readFileSync ?? ((filePath, encoding) => readFileSync(filePath, encoding));
 
+  const covenHome = covenHomePath(env, homeDir, platform);
+
   if (env.COVEN_SOCKET) {
-    return platform === "win32"
-      ? normalizeWindowsDaemonSocket(env.COVEN_SOCKET)
-      : env.COVEN_SOCKET;
+    if (platform !== "win32") return env.COVEN_SOCKET;
+    const configured = localWindowsDaemonSocket(env.COVEN_SOCKET, "coven-socket-env");
+    // An accepted COVEN_SOCKET is still the whole answer: it outranks
+    // `daemon.json`, and that precedence is what the override is for.
+    if (configured.kind === "accepted") return configured.socket;
+    // A value that names nothing is not a redirection and not a request to go
+    // look elsewhere either; it stays on the old "COVEN_SOCKET was set, so
+    // daemon.json is not consulted" path.
+    if (configured.kind === "unnamed") return path.join(covenHome, "coven.sock");
+    // A *refused* one falls through to `daemon.json`, exactly as if
+    // COVEN_SOCKET had been unset.
+    //
+    // Skipping straight to the default below would be a total daemon outage
+    // rather than a fail-closed refusal: on Windows the running daemon
+    // publishes a named pipe in `daemon.json`, and `COVEN_HOME\coven.sock` is
+    // a path nothing listens on. So a forged — or merely mistyped —
+    // COVEN_SOCKET would take out a healthy, discoverable local daemon for as
+    // long as the value stayed set, which hands an attacker who can only
+    // write one environment variable a permanent denial of service.
+    //
+    // It costs nothing to close: `daemon.json` is guarded on its own, on both
+    // halves. `covenHomePath` above has already refused an off-machine
+    // `COVEN_HOME`, so the file is read from this machine, and the value it
+    // yields goes through the same `localWindowsDaemonSocket` check below. A
+    // refused COVEN_SOCKET therefore cannot reach a remote listener by way of
+    // this fallthrough; it can only reach the local daemon it was hiding.
   }
 
-  const covenHome = covenHomePath(env, homeDir);
   if (platform === "win32") {
     const statusSocket = daemonStatusSocket(covenHome, readFile);
-    if (statusSocket) return normalizeWindowsDaemonSocket(statusSocket);
+    const published = statusSocket
+      ? localWindowsDaemonSocket(statusSocket, "daemon-status-file")
+      : null;
+    if (published?.kind === "accepted") return published.socket;
   }
 
   return path.join(covenHome, "coven.sock");
