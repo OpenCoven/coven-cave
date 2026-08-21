@@ -33,6 +33,7 @@ const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url)
 const microphonePermissions = readFileSync(new URL("./microphone.toml", import.meta.url), "utf8");
 const reachabilityPermissions = readFileSync(new URL("./desktop-reachability.toml", import.meta.url), "utf8");
 const reliabilityPermissions = readFileSync(new URL("./reliability.toml", import.meta.url), "utf8");
+const offlineCachePermissions = readFileSync(new URL("./offline-cache.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
@@ -73,6 +74,10 @@ const requiredPermissionIds = [
   "allow-desktop-reachability-status",
   "allow-desktop-reachability-configure",
   "allow-record-daemon-reliability-measurement",
+  "allow-offline-cache-read",
+  "allow-offline-cache-write",
+  "allow-offline-cache-clear",
+  "allow-offline-cache-status",
 ];
 
 const requiredCommands = [
@@ -98,6 +103,10 @@ const requiredCommands = [
   "desktop_reachability_status",
   "desktop_reachability_configure",
   "record_daemon_reliability_measurement",
+  "offline_cache_read",
+  "offline_cache_write",
+  "offline_cache_clear",
+  "offline_cache_status",
 ];
 
 // Match capability remote URL patterns component-wise, the way Tauri's
@@ -163,7 +172,9 @@ test("packaged desktop app can use native browser and terminal commands", () => 
       ? reachabilityPermissions
       : command === "record_daemon_reliability_measurement"
         ? reliabilityPermissions
-        : commandPermissions;
+        : command.startsWith("offline_cache_")
+          ? offlineCachePermissions
+          : commandPermissions;
     assert.match(
       permissionSource,
       new RegExp(String.raw`commands\.allow\s*=\s*\[[^\]]*"${escapedCommand}"[^\]]*\]`),
@@ -256,6 +267,13 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-desktop-reachability-status",
     "allow-desktop-reachability-configure",
     "allow-record-daemon-reliability-measurement",
+    // The packaged UI is served from the sidecar loopback origin, so the
+    // offline cache is unreachable in a real install unless it is granted
+    // here as well as in the local default capability.
+    "allow-offline-cache-read",
+    "allow-offline-cache-write",
+    "allow-offline-cache-clear",
+    "allow-offline-cache-status",
   ]) {
     assert.ok(
       loopbackBrowserCapability.permissions.includes(permission),
@@ -752,5 +770,57 @@ test("desktop calls can request and recover macOS microphone permission", () => 
     microphoneRust,
     /x-apple\.systempreferences:com\.apple\.preference\.security\?Privacy_Microphone/,
     "denied access must open the macOS microphone privacy pane directly",
+  );
+});
+
+test("the offline read cache is registered, instance-scoped, and served read-only", () => {
+  const offlineCacheRust = readFileSync(new URL("../src/offline_cache.rs", import.meta.url), "utf8");
+  const offlineCacheTs = readFileSync(new URL("../../src/lib/offline-cache.ts", import.meta.url), "utf8");
+
+  for (const command of [
+    "offline_cache_read",
+    "offline_cache_write",
+    "offline_cache_clear",
+    "offline_cache_status",
+  ]) {
+    assert.match(
+      tauriSetupRust,
+      new RegExp(String.raw`offline_cache::${command},`),
+      `${command} must be registered in the desktop invoke handler`,
+    );
+  }
+
+  // Local data, not roaming app data: a roaming profile would carry one
+  // machine's cache onto another, which the instance check would then reject
+  // on every read.
+  assert.match(
+    tauriSetupRust,
+    /app\.state::<Arc<offline_cache::OfflineCacheState>>\(\)\s*\.configure\(app_local_data_dir\.clone\(\)\)/,
+    "the cache must be configured from the local data dir",
+  );
+
+  assert.match(
+    offlineCacheRust,
+    /read_only: true,/,
+    "every served entry must be marked read-only by the native layer",
+  );
+  assert.match(
+    offlineCacheRust,
+    /if header\.instance_id != context\.instance_id/,
+    "a cached entry from another Cave instance must be refused",
+  );
+
+  // The client is the only writer, so the sanitizer is the only thing standing
+  // between a live payload and durable storage.
+  assert.match(
+    offlineCacheTs,
+    /const \{ value: sanitized \} = sanitizeForOfflineCache\(value\);/,
+    "the client must sanitize before it invokes the native write",
+  );
+  const invoked = [...offlineCacheTs.matchAll(/invoke\("([a-z_]+)"/g)].map(([, name]) => name);
+  assert.deepEqual(
+    [...new Set(invoked)].sort(),
+    ["offline_cache_clear", "offline_cache_read", "offline_cache_status", "offline_cache_write"],
+    "the offline cache client must invoke only its own permitted commands",
   );
 });

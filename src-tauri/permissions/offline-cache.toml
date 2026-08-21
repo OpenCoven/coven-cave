@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-offline-cache-read"
+description = "Allows the trusted desktop UI to read its own encrypted offline read cache."
+commands.allow = ["offline_cache_read"]
+
+[[permission]]
+identifier = "allow-offline-cache-write"
+description = "Allows the trusted desktop UI to persist a sanitized payload into the encrypted offline read cache."
+commands.allow = ["offline_cache_write"]
+
+[[permission]]
+identifier = "allow-offline-cache-clear"
+description = "Allows the trusted desktop UI to purge one scope, or every scope, of the offline read cache."
+commands.allow = ["offline_cache_clear"]
+
+[[permission]]
+identifier = "allow-offline-cache-status"
+description = "Allows the trusted desktop UI to read offline cache occupancy and its classified corruption diagnostics."
+commands.allow = ["offline_cache_status"]
