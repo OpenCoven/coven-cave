@@ -228,7 +228,7 @@
   bottom: 0;
   right: 0;
   min-width: var(--space-3);
-  padding: 0 1px;
+  padding: 0;
   border-radius: var(--radius-pill);
   background: var(--bg-panel);
   color: var(--text-secondary);
