@@ -391,7 +391,11 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
       );
     }
     if (block.kind === "code") {
-      const fence = "```";
+      const longestBacktickRun = Math.max(
+        0,
+        ...(block.code.match(/`+/g)?.map((run) => run.length) ?? []),
+      );
+      const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
       return (
         <div className="rr-codeblock document-reader__wide-block" key={key}>
           <MarkdownBlock

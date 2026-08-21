@@ -774,7 +774,6 @@ export function ResearchMissionComposer({
           <div
             className="research-improve-status"
             data-phase={promptEnhance.state.phase}
-            role={promptEnhance.state.phase === "error" ? "alert" : "status"}
           >
             <span className="research-improve-status__mark" aria-hidden>
               {promptEnhance.state.phase === "error"
@@ -783,7 +782,10 @@ export function ResearchMissionComposer({
                   ? "✓"
                   : "✦"}
             </span>
-            <span className="research-improve-status__message">
+            <span
+              className="research-improve-status__message"
+              role={promptEnhance.state.phase === "error" ? "alert" : "status"}
+            >
               {promptEnhance.state.phase === "loading"
                 ? promptEnhance.state.preview || "The familiar is tightening scope, evidence, and output shape…"
                 : promptEnhance.state.phase === "suggested"

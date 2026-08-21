@@ -134,10 +134,18 @@ test("Improve uses the shared agentic lifecycle in research mode", () => {
   assert.match(composer, /relatedSources: attachedLinks\.map/);
   assert.doesNotMatch(composer, /fetch\("\/api\/prompt\/enhance"/);
   // The active button becomes a stop control, while progress and result
-  // actions stay in an accessible status strip.
+  // actions stay beside a live message without announcing the full preview.
   assert.match(composer, /improving \? "✦ Stop improving" : "✦ Improve"/);
   assert.match(composer, /className="research-improve-status"/);
-  assert.match(composer, /role=\{promptEnhance\.state\.phase === "error" \? "alert" : "status"\}/);
+  assert.match(
+    composer,
+    /className="research-improve-status__message"[\s\S]*?role=\{promptEnhance\.state\.phase === "error" \? "alert" : "status"\}/,
+  );
+  assert.doesNotMatch(
+    composer,
+    /className="research-improve-status"[\s\S]{0,200}?role=/,
+    "the preview must remain outside the live region",
+  );
   assert.match(composer, /promptEnhance\.apply\(\)/);
   assert.match(composer, /promptEnhance\.revert\(\)/);
   assert.match(composer, /promptEnhance\.cancel\(\)/);

@@ -28,6 +28,11 @@ assert.match(
 );
 assert.match(
   source,
+  /block\.code\.match\(\/`\+\/g\)[\s\S]*?Math\.max\(3, longestBacktickRun \+ 1\)/,
+  "fenced blocks use a delimiter longer than any backtick run in their content",
+);
+assert.match(
+  source,
   /navigation=\{expanded && tocOn \? "rail" : "compact"\}/,
   "Research uses the shared compact outline until the wide rail is available",
 );
