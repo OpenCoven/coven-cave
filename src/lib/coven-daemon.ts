@@ -202,11 +202,12 @@ const reportedRefusals = new Set<string>();
  * receiver with the parent pointer intact, measured still retaining 28 of 32
  * MiB offered. `.normalize()` does happen to copy on Node 24 — measured 0 MiB
  * — but it is not the thing to reach for either, because that copy is
- * incidental. It is a Unicode normalization whose contract is about the
- * *content* of the result and not its storage, and ECMA-402 permits returning
- * the receiver for a string already in the requested form, which is exactly
- * what these keys are. Depend on the flatten, which is the operation actually
- * being asked for.
+ * incidental. ECMA-262 specifies it in terms of the *content* of the result
+ * and says nothing about its storage; string identity is not observable, so
+ * an engine is free to hand back the receiver whenever the input is already
+ * in the requested form, and a later quick-check fast path doing exactly that
+ * would silently restore the retention this helper exists to prevent. Depend
+ * on the flatten, which is the operation actually being asked for.
  *
  * And it happens too late. Truncating *after* the concatenation still builds
  * the joined string first, which flattens a full copy of the value on every
