@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Guards the representative preference set in `scripts/sidecar-runtime-smoke.mjs`
 // against schema drift.
 //
@@ -28,7 +27,7 @@ const source = readFileSync(SMOKE_PATH, "utf8");
 const block = /\n {8}reading: \{([\s\S]*?)\n {8}\},/.exec(source);
 assert.ok(block, "could not locate the reading fixture in sidecar-runtime-smoke.mjs");
 
-const fixture = {};
+const fixture: Record<string, string | number> = {};
 for (const [, key, value] of block[1].matchAll(/^\s*(\w+): "([^"]+)",/gm)) fixture[key] = value;
 for (const [, key, value] of block[1].matchAll(/^\s*(\w+): (\d+),/gm)) fixture[key] = Number(value);
 
