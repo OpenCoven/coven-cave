@@ -138,6 +138,22 @@ test("still answers, with one id per process, when it cannot be persisted", () =
   });
 });
 
+test("stores the degraded id once the store becomes writable again", () => {
+  withCaveHome(() => {
+    const file = clientV1InstanceIdFile();
+    mkdirSync(file, { recursive: true });
+    const degraded = clientV1InstanceId();
+    // The obstruction clears — an unmounted home appears, a scanner releases
+    // the file, the disk is emptied. Remembering the id used to end the story
+    // here: nothing retried the write, so this installation kept a memory-only
+    // identity and minted a different one at next boot, re-pairing every client
+    // over a condition that had already gone away.
+    rmSync(file, { recursive: true, force: true });
+    assert.equal(clientV1InstanceId(), degraded);
+    assert.equal(JSON.parse(readFileSync(file, "utf8")).instanceId, degraded);
+  });
+});
+
 test("still answers when the Cave home itself is read-only", (t) => {
   if (process.platform === "win32") {
     // chmod is not honoured on Windows, so the unwritable directory this test
