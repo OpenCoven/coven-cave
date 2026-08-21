@@ -90,11 +90,17 @@ const INSTANCE_ID_BYTES: usize = 16;
 /// anything at this size is carrying something it should have stripped.
 pub(super) const MAX_ENTRY_BYTES: usize = 1024 * 1024;
 /// The largest a well-formed envelope can be: the payload ceiling, plus room
-/// for the plaintext header and the GCM tag. Read-side only — it is what lets
-/// an entry be refused from its metadata rather than after it is in memory.
+/// for the plaintext header and the GCM tag. It is what lets an entry be
+/// refused from its metadata rather than after it is in memory, and what tells
+/// eviction that a larger file is unservable rather than merely expensive.
 const MAX_ENVELOPE_BYTES: u64 = MAX_ENTRY_BYTES as u64 + 4096;
 pub(super) const MAX_ENTRIES: usize = 256;
 pub(super) const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
+/// A single entry must always fit the total budget. If it did not, one write
+/// could evict the entire cache to make room for itself and then be evicted in
+/// turn. Asserted rather than left for a reader to multiply out, because the
+/// two constants are edited independently.
+const _: () = assert!(MAX_ENVELOPE_BYTES <= MAX_TOTAL_BYTES);
 /// Scope and key are replaced by keyed derivations before they touch the
 /// filesystem, so this bound is about keeping derivation inputs sane rather
 /// than about path safety.
@@ -626,21 +632,48 @@ fn collect_entries(context: &OfflineCacheContext) -> Result<Vec<EntryFile>, Stri
 
 /// Which entries have to go for the cache to fit its caps, oldest first.
 /// Separated from the removal so the policy is testable without a filesystem.
-fn entries_over_budget(files: &[EntryFile]) -> Vec<&Path> {
+/// Keep `protected`, keep every servable entry that still fits, evict the rest.
+///
+/// `protected` is the entry the caller has just written. Without it the write
+/// could be undone by its own cap enforcement: filesystem mtime is coarse, so
+/// entries written in the same tick tie, and the tiebreak is path order — a
+/// keyed derivation, which is to say arbitrary. At the cap that is a coin flip
+/// on whether the new entry survives the call that created it. It still counts
+/// against the budget; it just cannot be the thing that goes.
+///
+/// A file past [`MAX_ENVELOPE_BYTES`] is evicted ahead of the budget rather
+/// than counted into it. `read_entry` already refuses one from its metadata, so
+/// it can never be served — letting it consume the budget would push out
+/// entries that can.
+fn entries_over_budget<'a>(files: &'a [EntryFile], protected: Option<&Path>) -> Vec<&'a Path> {
     let mut running = 0u64;
+    let mut retained = 0usize;
     let mut evict = Vec::new();
-    for (index, file) in files.iter().enumerate() {
-        running = running.saturating_add(file.bytes);
-        if index >= MAX_ENTRIES || running > MAX_TOTAL_BYTES {
+    // The protected entry takes its slot before anything competes for one, so
+    // it neither loses its place nor lets the cache run one entry over.
+    if let Some(file) = protected.and_then(|path| files.iter().find(|file| file.path == path)) {
+        running = file.bytes;
+        retained = 1;
+    }
+    for file in files {
+        if protected == Some(file.path.as_path()) {
+            continue;
+        }
+        let servable = file.bytes <= MAX_ENVELOPE_BYTES;
+        let fits = retained < MAX_ENTRIES && running.saturating_add(file.bytes) <= MAX_TOTAL_BYTES;
+        if servable && fits {
+            running = running.saturating_add(file.bytes);
+            retained += 1;
+        } else {
             evict.push(file.path.as_path());
         }
     }
     evict
 }
 
-fn enforce_caps(context: &OfflineCacheContext) -> Result<(), String> {
+fn enforce_caps(context: &OfflineCacheContext, protected: Option<&Path>) -> Result<(), String> {
     let files = collect_entries(context)?;
-    for path in entries_over_budget(&files) {
+    for path in entries_over_budget(&files, protected) {
         match std::fs::remove_file(path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -826,8 +859,9 @@ fn write_entry(
     updated_at_unix_ms: u64,
 ) -> Result<(), String> {
     let envelope = encode_envelope(context, scope, key, payload, revision, updated_at_unix_ms)?;
-    write_entry_file(&context.entry_path(scope, key), &envelope)?;
-    enforce_caps(context)
+    let path = context.entry_path(scope, key);
+    write_entry_file(&path, &envelope)?;
+    enforce_caps(context, Some(&path))
 }
 
 fn clear_entries(context: &OfflineCacheContext, scope: Option<&str>) -> Result<(), String> {
@@ -873,18 +907,22 @@ fn load_or_create_instance_id(root: &Path) -> Result<String, String> {
 fn keychain_secret() -> Result<(Zeroizing<[u8; KEY_BYTES]>, bool), String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
         .map_err(|_| "the offline cache keychain entry is unavailable".to_string())?;
+    // Both hex forms of the root secret are held in `Zeroizing`: the one the
+    // keychain hands back and the one written to it. They are the plaintext
+    // key, and a `String` dropped normally leaves it in freed heap.
     let stored = match entry.get_password() {
-        Ok(stored) => Some(stored),
+        Ok(stored) => Some(Zeroizing::new(stored)),
         Err(keyring::Error::NoEntry) => None,
         // A keychain that is present but unreadable — locked, or denied — is
         // not a rotation. Failing here costs a cache miss; minting a new key
         // would cost the whole cache.
         Err(_) => return Err("the offline cache key could not be read from the keychain".to_string()),
     };
-    let (secret, rotated) = secret_from_stored(stored.as_deref());
+    let (secret, rotated) = secret_from_stored(stored.as_ref().map(|stored| stored.as_str()));
     if rotated {
+        let encoded = Zeroizing::new(hex_encode(secret.as_slice()));
         entry
-            .set_password(&hex_encode(secret.as_slice()))
+            .set_password(&encoded)
             .map_err(|_| "the offline cache key could not be stored".to_string())?;
     }
     Ok((secret, rotated))
@@ -1081,6 +1119,14 @@ mod tests {
 
     fn context(name: &str) -> OfflineCacheContext {
         context_at(test_root(name), "0123456789abcdef0123456789abcdef", 7)
+    }
+
+    fn entry_file(name: &str, bytes: u64, modified_unix_ms: u64) -> EntryFile {
+        EntryFile {
+            path: PathBuf::from(name),
+            bytes,
+            modified_unix_ms,
+        }
     }
 
     fn cleanup(context: &OfflineCacheContext) {
@@ -1485,25 +1531,58 @@ mod tests {
 
     #[test]
     fn cap_eviction_drops_the_oldest_entries_first() {
-        let file = |name: &str, bytes: u64, modified_unix_ms: u64| EntryFile {
-            path: PathBuf::from(name),
-            bytes,
-            modified_unix_ms,
-        };
         let by_count: Vec<EntryFile> = (0..MAX_ENTRIES + 2)
-            .map(|index| file(&format!("entry-{index}"), 1, (MAX_ENTRIES + 2 - index) as u64))
+            .map(|index| entry_file(&format!("entry-{index}"), 1, (MAX_ENTRIES + 2 - index) as u64))
             .collect();
-        let evicted = entries_over_budget(&by_count);
+        let evicted = entries_over_budget(&by_count, None);
         assert_eq!(evicted.len(), 2);
         assert_eq!(evicted[0], Path::new(&format!("entry-{MAX_ENTRIES}")));
 
-        let by_bytes = vec![
-            file("newest", MAX_TOTAL_BYTES, 3),
-            file("older", 1, 2),
-            file("oldest", 1, 1),
+        // Entries sized so the total budget takes all but the last of them.
+        let one_mib = 1024 * 1024;
+        let fitting = (MAX_TOTAL_BYTES / one_mib) as usize;
+        let by_bytes: Vec<EntryFile> = (0..fitting + 1)
+            .map(|index| {
+                entry_file(&format!("entry-{index}"), one_mib, (fitting + 1 - index) as u64)
+            })
+            .collect();
+        assert_eq!(
+            entries_over_budget(&by_bytes, None),
+            vec![Path::new(&format!("entry-{fitting}"))],
+        );
+    }
+
+    #[test]
+    fn eviction_never_removes_the_entry_the_write_just_created() {
+        // Every entry claims the same mtime, so the sort falls through to path
+        // order and a new write has nothing of its own to survive on.
+        let tied: Vec<EntryFile> = (0..MAX_ENTRIES + 1)
+            .map(|index| entry_file(&format!("entry-{index}"), 1, 7))
+            .collect();
+        let just_written = PathBuf::from(format!("entry-{MAX_ENTRIES}"));
+
+        assert!(
+            entries_over_budget(&tied, None).contains(&just_written.as_path()),
+            "unprotected, the tiebreak is free to evict the newest write",
+        );
+
+        let evicted = entries_over_budget(&tied, Some(&just_written));
+        assert!(!evicted.contains(&just_written.as_path()));
+        assert_eq!(evicted.len(), 1, "protection must not put the cache over its cap");
+    }
+
+    #[test]
+    fn an_unservable_file_is_reclaimed_before_it_can_crowd_out_a_servable_one() {
+        // read_entry refuses anything this large from its metadata, so keeping
+        // it would spend the budget on bytes that can never be served.
+        let files = vec![
+            entry_file("oversized", MAX_ENVELOPE_BYTES + 1, 3),
+            entry_file("servable", 1, 2),
         ];
-        let evicted = entries_over_budget(&by_bytes);
-        assert_eq!(evicted, vec![Path::new("older"), Path::new("oldest")]);
+        assert_eq!(
+            entries_over_budget(&files, None),
+            vec![Path::new("oversized")],
+        );
     }
 
     #[test]
