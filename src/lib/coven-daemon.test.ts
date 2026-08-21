@@ -12,7 +12,7 @@ const {
   socketPath,
   extractDaemonError,
   normalizeWindowsDaemonSocket,
-  isRemoteWindowsDaemonSocket,
+  isRemoteWindowsPath,
   resolveDaemonSocketPath,
   daemonTargetForConfig,
   callDaemonTarget,
@@ -142,7 +142,7 @@ const {
   ];
   for (const remote of remotes) {
     assert.equal(
-      isRemoteWindowsDaemonSocket(remote),
+      isRemoteWindowsPath(remote),
       true,
       `${remote} should be classified remote`,
     );
@@ -174,6 +174,52 @@ const {
   assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
 }
 
+// A remote COVEN_HOME is refused too. Without this the socket checks are
+// decorative: the "safe" fallback would be built under the attacker's host,
+// and daemon.json would be read from it over SMB in the first place.
+{
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_HOME: String.raw`\\evil-host\share\.coven` },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("daemon.json must not be read from a remote COVEN_HOME");
+    },
+  });
+  assert.equal(
+    isRemoteWindowsPath(socket),
+    false,
+    "a remote COVEN_HOME must not produce a remote socket path",
+  );
+  assert.match(socket.replaceAll("\\", "/"), /Users\/Sonic\/\.coven\/coven\.sock$/);
+}
+
+// A local COVEN_HOME is still honored verbatim, on both platforms.
+{
+  assert.match(
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_HOME: "D:/coven-home" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => {
+        throw new Error("no daemon.json");
+      },
+    }).replaceAll("\\", "/"),
+    /^D:\/coven-home\/coven\.sock$/,
+  );
+  assert.match(
+    resolveDaemonSocketPath({
+      platform: "linux",
+      env: { COVEN_HOME: "/opt/coven-home" },
+      homeDir: "/home/cave",
+      readFileSync: () => {
+        throw new Error("no daemon.json");
+      },
+    }).replaceAll("\\", "/"),
+    /^\/opt\/coven-home\/coven\.sock$/,
+  );
+}
+
 // The local device namespaces stay accepted — the check must not swallow the
 // ordinary Windows pipe path, which is what a healthy daemon publishes.
 {
@@ -184,7 +230,7 @@ const {
     "C:/Users/Sonic/.coven/coven.sock",
   ]) {
     assert.equal(
-      isRemoteWindowsDaemonSocket(local),
+      isRemoteWindowsPath(local),
       false,
       `${local} should be classified local`,
     );

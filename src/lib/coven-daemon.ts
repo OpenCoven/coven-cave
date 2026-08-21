@@ -58,23 +58,46 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
 }
 
 /**
- * Whether a Windows socket value names another machine's namespace.
+ * Whether a Windows path names another machine's namespace.
  *
  * `\\.\pipe\…` and `\\?\…` are the local device namespaces; `\\host\…` and
  * `\\?\UNC\host\…` are not. The local daemon is owner-local by definition, so
- * a socket that leaves this machine is never the local daemon — it is a
+ * anything under this predicate is never the local daemon — it is a
  * redirection, and every request Cave would send it (commands, conversation
  * content, whatever the daemon is asked to do) would go to the remote
  * listener instead. Mirrors {@link isWindowsRemoteExecutablePath} in
  * `coven-bin.ts`, which draws the same boundary for the CLI binary.
  */
-export function isRemoteWindowsDaemonSocket(socket: string): boolean {
-  const normalized = socket.trim().replaceAll("/", "\\");
+export function isRemoteWindowsPath(candidate: string): boolean {
+  const normalized = candidate.trim().replaceAll("/", "\\");
   return /^\\\\[^?.\\]/.test(normalized) || /^\\\\\?\\UNC\\/i.test(normalized);
 }
 
-function covenHomePath(env: Record<string, string | undefined>, homeDir: string): string {
-  return env.COVEN_HOME ?? path.join(homeDir, ".coven");
+/**
+ * Resolve the Coven home, refusing a `COVEN_HOME` that points off-machine.
+ *
+ * This guard is what stops the socket checks below from being decorative: a
+ * remote `COVEN_HOME` puts both `daemon.json` and the fallback socket on
+ * another machine, so refusing a forged socket only to build the "safe"
+ * default underneath the attacker's host would reintroduce the same
+ * redirection. Reading `daemon.json` from such a home is itself an SMB request
+ * to the host that planted it, so the refusal has to happen here rather than
+ * on the value that comes back.
+ *
+ * `homeDir` is machine configuration rather than launch-environment input, so
+ * it is not second-guessed — a roaming profile on a UNC home is a legitimate
+ * Windows setup, and no local socket could live there anyway.
+ */
+function covenHomePath(
+  env: Record<string, string | undefined>,
+  homeDir: string,
+  platform: NodeJS.Platform,
+): string {
+  const configured = env.COVEN_HOME;
+  if (configured && !(platform === "win32" && isRemoteWindowsPath(configured))) {
+    return configured;
+  }
+  return path.join(homeDir, ".coven");
 }
 
 function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string | null {
@@ -98,11 +121,11 @@ function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string |
  * than dialed, and resolution falls through to the canonical local path.
  */
 function localWindowsDaemonSocket(candidate: string): string | null {
-  if (isRemoteWindowsDaemonSocket(candidate)) return null;
+  if (isRemoteWindowsPath(candidate)) return null;
   const normalized = normalizeWindowsDaemonSocket(candidate);
   // `normalizeWindowsDaemonSocket` rewrites separators and can prepend the
   // pipe prefix, so re-check the value that would actually be dialed.
-  return isRemoteWindowsDaemonSocket(normalized) ? null : normalized;
+  return isRemoteWindowsPath(normalized) ? null : normalized;
 }
 
 export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
@@ -112,7 +135,7 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
   const readFile: ReadTextFile =
     options.readFileSync ?? ((filePath, encoding) => readFileSync(filePath, encoding));
 
-  const covenHome = covenHomePath(env, homeDir);
+  const covenHome = covenHomePath(env, homeDir, platform);
 
   if (env.COVEN_SOCKET) {
     if (platform !== "win32") return env.COVEN_SOCKET;
