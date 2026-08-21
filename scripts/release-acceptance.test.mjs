@@ -272,6 +272,63 @@ test("a word wrapped in an array is not the word", () => {
   );
 });
 
+test("the environment a run was performed in has to be recorded, not merely present", () => {
+  // The array-wrapping sweep reached every field matched against a pattern or a
+  // vocabulary, and stopped at the four that are only checked for emptiness.
+  // Those were still read through `String(x ?? "")`, so `{}` became
+  // "[object Object]", `true` became "true", and `0` became "0" — each non-empty,
+  // each satisfying "is required", and the record validated `complete` claiming
+  // an acceptance run on an OS version nobody wrote down.
+  for (const field of ["osVersion", "caveVersion", "chatVersion", "cliVersion"]) {
+    for (const value of [{}, true, false, 0, 1, NaN, ["15.5"], { a: 1 }, null, undefined, "   "]) {
+      const record = passingRecord();
+      record.runs[0][field] = value;
+      const result = validateAcceptanceRecord(record);
+      assert.notEqual(
+        result.status,
+        "complete",
+        `runs[0].${field} = ${JSON.stringify(value) ?? String(value)} names no version, and a record that cannot say what it ran against is not acceptance`,
+      );
+      assert.ok(
+        result.errors.some((error) => error.includes(field)),
+        `the operator is told which field of which run their generator left unfilled, not merely that the record failed`,
+      );
+    }
+  }
+
+  const good = passingRecord();
+  good.runs[0].osVersion = "15.5";
+  assert.equal(
+    validateAcceptanceRecord(good).status,
+    "complete",
+    "a plain non-empty string is what these fields have always accepted, and still is",
+  );
+});
+
+test("a diagnostic id that looks up nothing is not a diagnosis", () => {
+  // Same coercion, on the field that decides whether an observed failure is
+  // actionable. `String({})` is truthy, so a generated record could record a
+  // `fail` and satisfy the demand for a diagnostic with an empty object.
+  for (const value of [{}, true, 0, ["diag-1"], { id: "diag-1" }, NaN]) {
+    const record = passingRecord();
+    record.runs[1].steps["attachment"] = { result: "fail", diagnosticId: value };
+    assert.ok(
+      validateAcceptanceRecord(record).errors.some(
+        (error) => error.includes("attachment") && error.includes("diagnosticId"),
+      ),
+      `a diagnosticId of ${JSON.stringify(value) ?? String(value)} is not an id anyone can look the failure up by`,
+    );
+  }
+
+  const diagnosed = passingRecord();
+  diagnosed.runs[1].steps["attachment"] = { result: "fail", diagnosticId: "diag-1" };
+  assert.deepEqual(
+    validateAcceptanceRecord(diagnosed).errors,
+    [],
+    "a real diagnostic id still satisfies the demand; the failure itself is reported through status, not errors",
+  );
+});
+
 test("a run whose steps are not an object is a gap, not a pass", () => {
   for (const steps of [[], "install-cave: pass", null, 7]) {
     const record = passingRecord();

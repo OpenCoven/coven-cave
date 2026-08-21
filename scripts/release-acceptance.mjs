@@ -223,8 +223,15 @@ function validateRuns(runs, add) {
     }
     seen.add(os);
 
+    // Same rule as every other field in this file, and the last two places it
+    // was not applied: `String({})` is `"[object Object]"` and `String(true)` is
+    // `"true"`, both of which are non-empty, so a run recording `"osVersion": {}`
+    // satisfied "is required" and the whole record validated `complete`. An
+    // environment nothing describes is not an environment somebody recorded.
     for (const field of ["osVersion", "caveVersion", "chatVersion", "cliVersion"]) {
-      if (!String(run[field] ?? "").trim()) add(`runs[${index}].${field} is required`);
+      if (!readString(run[field]).trim()) {
+        add(`runs[${index}].${field} '${show(run[field])}' is not a recorded version; give it a non-empty string`);
+      }
     }
 
     summaries.push(validateSteps(run, index, os, add));
@@ -265,8 +272,9 @@ function validateSteps(run, index, os, add) {
       continue;
     }
     // An observed failure is only actionable if it points at a diagnostic.
-    // A step nobody has attempted yet owes nothing.
-    if (DIAGNOSED_RESULTS.includes(result) && !String(step.diagnosticId ?? "").trim()) {
+    // A step nobody has attempted yet owes nothing. `readString` for the same
+    // reason as above: a diagnosticId of `{}` or `true` looks up nothing.
+    if (DIAGNOSED_RESULTS.includes(result) && !readString(step.diagnosticId).trim()) {
       add(`runs[${index}].steps.${id} is '${result}' and needs a diagnosticId`);
     }
     if (result === "fail") failedSteps.push(id);
