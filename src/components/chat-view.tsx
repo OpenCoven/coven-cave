@@ -9090,17 +9090,19 @@ function TurnRowImpl({
       : undefined;
 
   const proseContent =
-    !pending && renderSegments
-      ? renderSegments.map((segment, index) =>
-          segment.kind === "text" ? (
-            <ProgressiveMarkdownBlock
-              key={`rich-prose-${index}`}
-              text={segment.text}
-            />
-          ) : (
-            <div key={segment.key} className="my-2">{segment.node}</div>
-          ),
-        )
+    !pending
+      ? renderSegments
+        ? renderSegments.map((segment, index) =>
+            segment.kind === "text" ? (
+              <ProgressiveMarkdownBlock
+                key={`rich-prose-${index}`}
+                text={segment.text}
+              />
+            ) : (
+              <div key={segment.key} className="my-2">{segment.node}</div>
+            ),
+          )
+        : <ProgressiveMarkdownBlock text={visible} />
       : undefined;
   const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
     emptySuccessful: streamingModel.emptySuccessful,
@@ -9292,11 +9294,11 @@ function TurnRowImpl({
                 timestamp={turn.createdAt}
                 showTimestamp={false}
                 pending={turn.pending}
-                isError={showEmptySuccessfulFallback}
+                isError={Boolean(turn.error) || showEmptySuccessfulFallback}
                 label={familiar.display_name}
                 messageId={turn.id}
                 feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                onRegenerate={onRegenerate}
+                onRegenerate={turn.error ? undefined : onRegenerate}
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 assistantBody={

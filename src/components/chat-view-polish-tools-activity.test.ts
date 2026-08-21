@@ -238,8 +238,8 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /const proseContent =[\s\S]*?!pending && renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node/,
-  "settled artifact-aware segments render as one ordered prose sequence",
+  /const proseContent =[\s\S]*?!pending[\s\S]*?\? renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node[\s\S]*?: <ProgressiveMarkdownBlock text=\{visible\} \/>/,
+  "settled responses preserve an ordered rich sequence or one decorated prose block",
 );
 
 assert.match(

@@ -79,8 +79,8 @@ assert.match(
 );
 assert.match(
   main,
-  /const proseContent =[\s\S]*?!pending && renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?text=\{segment\.text\}[\s\S]*?<div key=\{segment\.key\} className="my-2">\{segment\.node\}<\/div>/,
-  "settled rich turns render every prose and card segment in sequence through the real Markdown path",
+  /const proseContent =[\s\S]*?!pending[\s\S]*?\? renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?text=\{segment\.text\}[\s\S]*?<div key=\{segment\.key\} className="my-2">\{segment\.node\}<\/div>[\s\S]*?: <ProgressiveMarkdownBlock text=\{visible\} \/>/,
+  "settled rich turns preserve ordered cards while plain responses keep one decorated Markdown block",
 );
 const supplementary = main.match(
   /const supplementaryContent = \([\s\S]*?\n  \);\n\n  return \(/,
@@ -102,8 +102,13 @@ assert.match(
 );
 assert.match(
   main,
-  /isError=\{showEmptySuccessfulFallback\}[\s\S]*?assistantBody=\{\s*showEmptySuccessfulFallback\s*\?\s*\([\s\S]*?\{supplementaryContent\}[\s\S]*?\{activityDetails\}[\s\S]*?:\s*\(\s*<StreamingTurnResponse/,
-  "only a truly empty successful response uses MessageBubble's explicit empty-response treatment",
+  /isError=\{Boolean\(turn\.error\) \|\| showEmptySuccessfulFallback\}[\s\S]*?assistantBody=\{\s*showEmptySuccessfulFallback\s*\?\s*\([\s\S]*?\{supplementaryContent\}[\s\S]*?\{activityDetails\}[\s\S]*?:\s*\(\s*<StreamingTurnResponse/,
+  "failed turns and truly empty successful responses use MessageBubble's error treatment",
+);
+assert.match(
+  main,
+  /onRegenerate=\{turn\.error \? undefined : onRegenerate\}/,
+  "failed turns expose only the shared response Retry instead of duplicate controls",
 );
 assert.match(main, /activityDetails=\{activityDetails\}/, "Main Chat supplies the activity slot");
 assert.match(
