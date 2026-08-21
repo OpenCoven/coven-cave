@@ -86,6 +86,73 @@ test("a blank record is well formed but never counts as acceptance", () => {
   );
 });
 
+test("an otherwise clean record with a step still outstanding is not complete", () => {
+  // The central property of this validator, and the one every other test here
+  // was reaching only by accident. The blank-template test asserts
+  // `status !== "complete"` on a record that ALSO has an empty commit and an
+  // empty artifact digest, so it passes on the structural errors alone; the
+  // `pending` case below asserts `errors` is empty and never looks at status.
+  // Delete `pendingSteps` from the status ternary in validateSteps() and every
+  // other assertion in both suites stays green — while a journey with steps
+  // nobody attempted reads as `complete` and unblocks a rollout.
+  for (const [result, extra] of [
+    ["pending", {}],
+    ["blocked", { diagnosticId: "diag-7" }],
+  ]) {
+    const record = passingRecord();
+    record.runs[1].steps["attachment"] = { result, diagnosticId: "", notes: "", ...extra };
+    const validated = validateAcceptanceRecord(record);
+    assert.deepEqual(
+      validated.errors,
+      [],
+      `a '${result}' step is a well-formed recording, so nothing structural should be reported alongside it`,
+    );
+    assert.equal(
+      validated.status,
+      "incomplete",
+      `one '${result}' step with no structural fault anywhere else must still keep the record out of complete`,
+    );
+    assert.equal(validated.ok, false, "ok is what the CLI exits on, so it has to move with status");
+
+    const run = validated.runs.find((entry) => entry.os === record.runs[1].os);
+    assert.deepEqual(run.pendingSteps, ["attachment"], "the outstanding step is named so the operator knows what is left");
+    assert.deepEqual(run.failedSteps, [], `'${result}' is an unfinished step, not a failed one; conflating them misreports the journey`);
+    assert.equal(run.status, "incomplete", "a run holding an unattempted step has not passed");
+  }
+});
+
+test("completion requires every operating system to have passed, not merely to have not failed", () => {
+  // `complete` reads `run.status === "pass"`. Loosening that to `!== "fail"`
+  // survives every other assertion here, because the records that are not
+  // complete in those tests are kept out by a structural error rather than by
+  // this clause.
+  const record = passingRecord();
+  record.runs[2].steps["cli-tail"] = { result: "pending", diagnosticId: "", notes: "" };
+  const validated = validateAcceptanceRecord(record);
+  assert.deepEqual(validated.errors, [], "the record is structurally sound; only the journey is unfinished");
+  assert.notEqual(
+    validated.status,
+    "complete",
+    "two OSes green and a third unfinished is two thirds of an acceptance journey, and rollout is gated on all three",
+  );
+  assert.equal(
+    summarizeAcceptance(record).status,
+    "incomplete",
+    "the gate reads this summary and advances on 'complete', so the loosening would land there",
+  );
+});
+
+test("the supported operating systems are the three the runbook names", () => {
+  // Every other assertion in this file derives its expectation from
+  // ACCEPTANCE_OSES, so dropping an OS from the constant leaves the suite green
+  // while acceptance silently stops requiring that machine.
+  assert.deepEqual(
+    ACCEPTANCE_OSES,
+    ["macos", "windows", "linux"],
+    "docs/workflows/release-acceptance.md sends an operator to these three machines; the constant is the other half of that promise",
+  );
+});
+
 test("a fully recorded run validates as complete", () => {
   const result = validateAcceptanceRecord(passingRecord());
   assert.deepEqual(result.errors, [], "a well-formed record should produce no errors");
@@ -105,7 +172,7 @@ test("a missing operating system blocks completion by name", () => {
   assert.deepEqual(
     summarizeAcceptance(record).missingOses,
     ["windows"],
-    "the rollout gate reads missingOses, so it must list the gap rather than merely fail",
+    "the gate decides on `status` alone, so this is what tells whoever reads the summary WHICH machine is missing",
   );
 });
 
@@ -155,6 +222,45 @@ test("structural mistakes in the record are all reported together", () => {
   assert.match(joined, /unknown step 'unknown-step'/, "a step id nobody defined is a typo, not extra evidence");
   assert.match(joined, /repeats os 'macos'/, "two runs for one OS means one of them is unreviewed");
   assert.ok(result.errors.length >= 4, "every problem is collected so the file is repaired in one pass");
+});
+
+test("a digest or a commit of the wrong length is not the one that was accepted", () => {
+  // The only malformed digest anywhere in this file is the literal
+  // "not-a-digest", which fails on its non-hex characters. So every length in
+  // these two patterns is unpinned: relaxing them to `{8,}` and `{7,}` leaves
+  // the suite green, and a truncated digest is exactly what a copy out of a
+  // terminal that wrapped produces. The record is a claim about which bytes
+  // were accepted, and a short digest names a great many other byte strings
+  // as well.
+  const truncated = passingRecord();
+  truncated.artifacts = [{ name: "installer.msi", sha256: DIGEST.slice(0, 40) }];
+  assert.ok(
+    validateAcceptanceRecord(truncated).errors.some((error) => error.includes("sha256")),
+    "40 hex characters is a valid-looking prefix of a SHA-256 and is not one",
+  );
+
+  const overlong = passingRecord();
+  overlong.artifacts = [{ name: "installer.msi", sha256: `${DIGEST}00` }];
+  assert.ok(
+    validateAcceptanceRecord(overlong).errors.some((error) => error.includes("sha256")),
+    "a digest with trailing characters is a paste that caught something else too",
+  );
+
+  for (const commit of [COMMIT.slice(0, 7), COMMIT.slice(0, 39), `${COMMIT}a`]) {
+    const record = passingRecord();
+    record.candidate.commit = commit;
+    assert.ok(
+      validateAcceptanceRecord(record).errors.some((error) => error.includes("commit")),
+      `a ${commit.length}-character commit is an abbreviation, and an abbreviation can stop being unique`,
+    );
+  }
+
+  const good = passingRecord();
+  assert.deepEqual(
+    validateAcceptanceRecord(good).errors,
+    [],
+    "exactly 64 and exactly 40 hex characters are what the record has always accepted, and still are",
+  );
 });
 
 test("credential-shaped text in the evidence is refused", () => {
