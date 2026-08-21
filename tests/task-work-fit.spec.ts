@@ -73,8 +73,27 @@ const WORK_SESSION = {
   updated_at: ISO,
 };
 
-/** Every POST the page made to /api/chat/send, so a re-send is countable. */
-type SendLog = { count: number };
+/** Every POST the page made to /api/chat/send, so a re-send is countable.
+ *
+ * `entries` exists because the count alone is undiagnosable: a bare
+ * "Expected 1, Received 2" says a duplicate send happened but not whether the
+ * two were the same turn re-fired (identical runId) or two distinct sends
+ * (different runId / sessionId / prompt), which are different bugs with
+ * different fixes. Recording the discriminating fields makes the failure
+ * self-explaining on a CI runner nobody can attach a debugger to. */
+type SendEntry = { at: number; runId?: string; sessionId?: string | null; prompt?: string };
+type SendLog = { count: number; entries: SendEntry[] };
+
+const newSendLog = (): SendLog => ({ count: 0, entries: [] });
+
+/** Compact, quotable rendering of the send log for an assertion message. */
+function describeSends(sends: SendLog): string {
+  if (!sends.entries.length) return "no sends recorded";
+  const first = sends.entries[0]!.at;
+  return sends.entries
+    .map((e, i) => `#${i + 1} +${e.at - first}ms runId=${e.runId ?? "?"} sessionId=${e.sessionId ?? "null"} prompt=${JSON.stringify((e.prompt ?? "").slice(0, 60))}`)
+    .join("; ");
+}
 
 async function openBoard(page: Page, cards: unknown[], sessions: unknown[], sends?: SendLog) {
   await page.addInitScript(() => {
@@ -129,7 +148,21 @@ async function openBoard(page: Page, cards: unknown[], sessions: unknown[], send
     }),
   );
   await page.route("**/api/chat/send**", (route) => {
-    if (sends && route.request().method() === "POST") sends.count += 1;
+    if (sends && route.request().method() === "POST") {
+      sends.count += 1;
+      let body: Record<string, unknown> = {};
+      try {
+        body = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
+      } catch {
+        // A malformed body is itself worth seeing; keep the entry, drop the fields.
+      }
+      sends.entries.push({
+        at: Date.now(),
+        runId: typeof body.runId === "string" ? body.runId : undefined,
+        sessionId: typeof body.sessionId === "string" ? body.sessionId : null,
+        prompt: typeof body.prompt === "string" ? body.prompt : undefined,
+      });
+    }
     return route.fulfill({ json: { ok: true } });
   });
 
@@ -275,11 +308,19 @@ test.describe("Task Work cockpit fit", () => {
   // Its auto-send guard is an instance ref, so before the remount-proof handoff
   // latch that remount re-sent the task's first prompt.
   test("opening the code rail does not re-send the task's first prompt", async ({ page }) => {
-    const sends: SendLog = { count: 0 };
+    const sends: SendLog = newSendLog();
     await openBoard(page, [FRESH_CARD], [], sends);
     await openCockpit(page, "Start work");
 
-    await expect.poll(() => sends.count, { timeout: 15_000 }).toBe(1);
+    // Settle on the first send, then assert nothing followed it. Polling
+    // `.toBe(1)` alone is unsound as a premise check: it passes the instant it
+    // samples 1 and cannot see a second send arriving a tick later, and when it
+    // does fail it reports only a number. Wait for at-least-one, then pin the
+    // exact count with the log attached.
+    await expect
+      .poll(() => sends.count, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(1);
+    expect(sends.count, `the bridge handoff sends the first prompt exactly once — ${describeSends(sends)}`).toBe(1);
 
     await page.locator(".task-work-cockpit .workspace-rail-reopen").click();
     await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
@@ -290,6 +331,9 @@ test.describe("Task Work cockpit fit", () => {
     await expect(page.locator(".task-work-cockpit .workspace-rail")).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(800);
 
-    expect(sends.count, "the first prompt is sent exactly once across rail remounts").toBe(1);
+    expect(
+      sends.count,
+      `the first prompt is sent exactly once across rail remounts — ${describeSends(sends)}`,
+    ).toBe(1);
   });
 });
