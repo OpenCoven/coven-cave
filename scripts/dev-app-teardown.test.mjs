@@ -84,7 +84,7 @@ node -e '
   const http = require("http");
   const fs = require("fs");
   const server = http.createServer((request, response) => {
-    response.writeHead(204);
+    response.writeHead(204, {"x-coven-cave-readiness": "1"});
     response.end();
   });
   server.listen(${port}, "127.0.0.1", () => {
