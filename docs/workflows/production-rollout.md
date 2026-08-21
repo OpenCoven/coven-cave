@@ -100,6 +100,15 @@ Absent data never advances a rollout and never triggers a rollback: it holds.
 An unmeasured crash rate is not evidence of health, and not evidence of harm
 either.
 
+A metric counts as measured only when it is a JSON number of the right kind: a
+rate inside `0..1`, a count that is a whole number of events and not negative.
+`null`, `"0.99"`, `""`, `true` and an out-of-range figure are all unmeasured
+and hold. This is deliberately strict rather than coercive, because a coerced
+`null` is `0` — which reads as a total outage on a rate and as a clean bill of
+health on a counter, breaking the rule above in both directions at once. A
+`regressions` value that is not an array holds for the same reason: a list this
+gate cannot read is not an absence of regressions.
+
 `rollback` outranks `hold` when both apply, and the report prints every reason
 rather than only the deciding one, so the record shows what was true at that
 stage.

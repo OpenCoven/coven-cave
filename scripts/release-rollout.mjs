@@ -202,6 +202,12 @@ export function evaluateRolloutGate(state) {
   // baseline is patching forward — there is nothing to restore.
 
   // 2. Hard-stop regressions reported by an operator or a monitor.
+  // A malformed list is not an empty one. Coercing it to [] was the only
+  // fail-OPEN path in this gate: `"regressions": {…}` from a hand-edited file
+  // dropped every regression in it and advanced.
+  if (state.regressions !== undefined && !Array.isArray(state.regressions)) {
+    hold("regressions must be an array of {class, id}; a list this gate cannot read is not an absence of regressions");
+  }
   for (const regression of asArray(state.regressions)) {
     const regressionClass = String(regression?.class ?? "");
     const id = String(regression?.id ?? "unidentified");
@@ -267,22 +273,47 @@ export function evaluateRolloutGate(state) {
   };
 }
 
-function checkMinimum(value, minimum, label, regressionClass, { hold, rollback }) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
+/**
+ * A metric is a number somebody measured, and nothing else counts as one.
+ *
+ * `Number()` coercion was the trap. `Number(null)` is 0, so a crash-free rate
+ * a monitor could not supply read as a total outage and escalated to
+ * `rollback`, while a null duplicate-send count read as zero duplicates and
+ * ADVANCED the rollout — the same coercion breaking the rule in both
+ * directions. `""`, `[]` and `false` coerce to 0 identically, and `"0.99"`
+ * coerced to a rate the operator never recorded as one. So the fix is the type
+ * check, not a wider NaN guard.
+ */
+function readMetric(value, label, hold) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     hold(`${label} is not measured`);
+    return null;
+  }
+  return value;
+}
+
+function checkMinimum(value, minimum, label, regressionClass, { hold, rollback }) {
+  const rate = readMetric(value, label, hold);
+  if (rate === null) return;
+  // A rate outside 0..1 is a broken measurement rather than a healthy one, and
+  // passing it through would let 42 clear every minimum this gate has.
+  if (rate < 0 || rate > 1) {
+    hold(`${label} ${rate} is not a rate between 0 and 1, so nothing was measured`);
     return;
   }
-  if (numeric < minimum) rollback(`${label} ${numeric} is below the ${minimum} threshold`, regressionClass);
+  if (rate < minimum) rollback(`${label} ${rate} is below the ${minimum} threshold`, regressionClass);
 }
 
 function checkMaximum(value, maximum, label, regressionClass, { hold, rollback }) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    hold(`${label} is not measured`);
+  const count = readMetric(value, label, hold);
+  if (count === null) return;
+  // Same argument on the other side: a negative or fractional event count is a
+  // broken counter, and -5 duplicate sends would otherwise read as none.
+  if (!Number.isInteger(count) || count < 0) {
+    hold(`${label} ${count} is not a whole count of events, so nothing was measured`);
     return;
   }
-  if (numeric > maximum) rollback(`${label} ${numeric} exceeds the ${maximum} threshold`, regressionClass);
+  if (count > maximum) rollback(`${label} ${count} exceeds the ${maximum} threshold`, regressionClass);
 }
 
 function asArray(value) {

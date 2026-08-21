@@ -167,6 +167,65 @@ test("an unmeasured metric holds rather than advancing or rolling back", () => {
   assert.equal(result.nextStage, "stable-5", "a hold stays where it is");
 });
 
+test("a metric that is not a number is unmeasured, in both directions", () => {
+  // `Number(null)` is 0, which is a catastrophic crash-free rate and a
+  // perfectly healthy duplicate-send count. Coercion therefore broke the
+  // absent-data rule twice over: null rolled a healthy release back, and null
+  // advanced a rollout past a counter nobody read.
+  for (const unmeasured of [null, "0.99", "", NaN, Infinity, true, [], {}]) {
+    const rate = greenState();
+    rate.metrics.crashFreeLaunchRate = unmeasured;
+    const rateResult = evaluateRolloutGate(rate);
+    assert.equal(
+      rateResult.decision,
+      "hold",
+      `crashFreeLaunchRate ${JSON.stringify(unmeasured)} is not a measurement, and must not be read as a total outage`,
+    );
+    assert.match(detailsOf(rateResult), /crash-free launch rate is not measured/, "the gap is named as a gap");
+
+    const count = greenState();
+    count.metrics.duplicateSendCount = unmeasured;
+    assert.equal(
+      evaluateRolloutGate(count).decision,
+      "hold",
+      `duplicateSendCount ${JSON.stringify(unmeasured)} is not a measurement, and must not be read as zero duplicates`,
+    );
+  }
+});
+
+test("a measurement outside its own range is broken rather than healthy", () => {
+  for (const rate of [42, -1, 1.5]) {
+    const state = greenState();
+    state.metrics.pairingSuccessRate = rate;
+    const result = evaluateRolloutGate(state);
+    assert.equal(result.decision, "hold", `a pairing success rate of ${rate} is not a rate; it clears every minimum`);
+    assert.match(detailsOf(result), /is not a rate between 0 and 1/, "the operator is told the counter is broken");
+  }
+  for (const count of [-5, 0.5]) {
+    const state = greenState();
+    state.metrics.dataIntegrityFailures = count;
+    const result = evaluateRolloutGate(state);
+    assert.equal(result.decision, "hold", `${count} data-integrity failures is a broken counter, not a clean one`);
+    assert.match(detailsOf(result), /is not a whole count of events/, "the operator is told the counter is broken");
+  }
+});
+
+test("a regressions list this gate cannot read is not an absence of regressions", () => {
+  for (const malformed of [{ crash: "diag-1" }, "crash", 3]) {
+    const result = evaluateRolloutGate(greenState({ regressions: malformed }));
+    assert.equal(
+      result.decision,
+      "hold",
+      `coercing ${JSON.stringify(malformed)} to an empty list would drop every regression inside it and advance`,
+    );
+  }
+  assert.equal(
+    evaluateRolloutGate(greenState({ regressions: undefined })).decision,
+    "advance",
+    "an omitted list is a genuine absence, unlike a malformed one",
+  );
+});
+
 test("a failing canary or a short window holds the current stage", () => {
   const canaryState = greenState();
   canaryState.metrics.canaries.resume = "fail";
