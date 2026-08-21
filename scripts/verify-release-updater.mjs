@@ -243,8 +243,27 @@ async function main() {
     console.log("\n=== 2. schema ===");
     manifest.version ? ok(`version: ${manifest.version}`) : fail("no version field");
     manifest.pub_date ? ok(`pub_date: ${manifest.pub_date}`) : fail("no pub_date");
-    const plats = manifest.platforms || {};
-    if (!Object.keys(plats).length) fail("platforms{} is EMPTY — no signed artifacts (updater non-functional)");
+    // Count the RECOGNISED targets, not the raw key count. `Object.keys` was
+    // the emptiness backstop, and it is satisfiable by keys this script never
+    // looks at: `platforms: {"darwin-arm64": …}` (a plausible typo — node's
+    // process.arch says `arm64` where Tauri says `aarch64`), `platforms: "abc"`
+    // (keys "0","1","2") and `platforms: ["a"]` all report a non-zero length.
+    // Under --allow-partial each of the four real targets then downgraded to a
+    // warning, the per-platform loop below iterated ZERO times, and the script
+    // printed "PASS — updater chain verified end to end" having verified no
+    // signature at all. Measured on all three shapes: exit 0, PASS.
+    //
+    // That is the same class as the isDirectRun guard and the falsy-JSON parse
+    // above — a check that appears to run but verifies nothing — reached here
+    // through the one field --allow-partial is allowed to be lenient about. The
+    // shape test travels with the count because a string and an array both pass
+    // a bare length check; with both in place, PASS implies at least one target
+    // carried a url + signature, which implies step 4 ran at least once.
+    const raw = manifest.platforms;
+    const plats = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    if (!TARGETS.some((t) => plats[t])) {
+      fail("platforms{} is EMPTY of the four Tauri updater targets — no signed artifacts (updater non-functional)");
+    }
     for (const t of TARGETS) {
       const p = plats[t];
       if (!p) {
@@ -277,7 +296,9 @@ async function main() {
 
     console.log("\n=== 4. per-platform asset + SIGNATURE verification ===");
     for (const t of TARGETS) {
-      const p = (manifest.platforms || {})[t];
+      // Same normalised `plats` the schema step read, so the two loops cannot
+      // disagree about what the manifest offers.
+      const p = plats[t];
       if (!p?.url || !p?.signature) continue;
       try {
         const head = await fetchWithRetry(p.url, { method: "HEAD" });

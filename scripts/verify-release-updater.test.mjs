@@ -330,6 +330,33 @@ test("the CLI executes and fails an empty manifest even under --allow-partial", 
   assert.equal(result.status, 1, "an empty manifest must fail even with --allow-partial");
 });
 
+test("a platforms{} naming no known target can never read as PASS under --allow-partial", () => {
+  // The per-platform loop iterating ZERO times while the verdict still reads
+  // "updater chain verified end to end". The emptiness backstop counted
+  // Object.keys(platforms), which is satisfiable by keys the verifier never
+  // looks at — so under --allow-partial all four real targets downgraded to
+  // warnings, no signature was fetched let alone checked, and the CLI exited 0.
+  // Measured before the fix: every shape below printed PASS with status 0.
+  const dir = mkdtempSync(path.join(tmpdir(), "verify-updater-plats-"));
+  const manifest = path.join(dir, "latest.json");
+  const shapes = [
+    // process.arch says "arm64" where Tauri says "aarch64"; a manifest built
+    // from the wrong vocabulary is well-formed JSON that updates nothing.
+    { "darwin-arm64": { url: "https://example.invalid/a", signature: "AAAA" } },
+    "abc", // Object.keys("abc") is ["0","1","2"] — a non-zero "platform count"
+    ["a"], // as is an array's index key
+    { junk: 1 },
+  ];
+  for (const platforms of shapes) {
+    writeFileSync(manifest, JSON.stringify({ version: "9.9.9", pub_date: "2026-01-01T00:00:00Z", platforms }));
+    const result = runCli(["--manifest", manifest, "--tag", "v9.9.9", "--allow-partial"]);
+    const label = JSON.stringify(platforms);
+    assert.doesNotMatch(result.stdout, /RESULT: PASS/, `${label}: nothing was verified, so nothing may pass`);
+    assert.match(result.stdout, /platforms\{\} is EMPTY/, label);
+    assert.equal(result.status, 1, label);
+  }
+});
+
 test("a manifest that is valid JSON but not an object can never read as PASS", () => {
   // `null`, `0`, `false` and `""` are valid JSON and all FALSY, so they slipped
   // past the `if (manifest)` gate in main(): every remaining step was skipped,
@@ -477,6 +504,17 @@ test("--allow-partial downgrades a missing platform; without it, a missing platf
       "only the unreachable asset counts against a deliberately partial release",
     );
     assert.equal(tolerated.status, 1);
+  });
+});
+
+test("a partial manifest naming ONE real target still reaches the signature check", async () => {
+  // The no-known-target guard must not simply refuse everything partial:
+  // --allow-partial exists so a release that shipped 1 of 4 platforms is judged
+  // on what it DID ship. Pinned by the one verdict only a real fetch produces.
+  await servingAsset(notFound, async (port) => {
+    const result = await runCliAsync(["--manifest", manifestNaming(port), "--tag", "v9.9.9", "--allow-partial"]);
+    assert.doesNotMatch(result.stdout, /platforms\{\} is EMPTY/, "one named target is not an empty manifest");
+    assert.match(result.stdout, /darwin-aarch64: asset url HTTP 404/, "the named platform is actually fetched");
   });
 });
 
