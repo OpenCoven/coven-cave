@@ -1732,6 +1732,24 @@ jobs:
             echo "::warning::latest.json has only $count/4 platforms — some platforms lack a signed artifact (auto-update unavailable for those)."
           fi
 
+      # cave-gcb0i: the platform count above proves the manifest is non-empty,
+      # not that a shipped client would ACCEPT it. If the signing key ever
+      # drifts from the pubkey pinned in src-tauri/tauri.conf.json, every
+      # signature here is well-formed, the count is 4/4, and every installed
+      # app rejects the update — a wholly green release that ships a dead
+      # updater. This downloads each artifact and verifies its minisign
+      # signature against that pinned pubkey, which is the exact gate the
+      # updater enforces. Runs before the upload so a manifest that fails
+      # verification is never published.
+      - name: Verify updater signatures against the pinned pubkey
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-release-updater.mjs \
+            --manifest latest.json \
+            --tag "$RELEASE_TAG" \
+            --allow-partial
+
       - name: Upload latest.json to GitHub Release
         shell: bash
         env:

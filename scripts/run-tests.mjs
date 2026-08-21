@@ -1609,6 +1609,8 @@ export const SUITES = {
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
+    "scripts/verify-release-updater.test.mjs",
+    "scripts/release-packaging-contract.test.mjs",
     "scripts/release-promotion.test.mjs",
     "scripts/release-promotion-workflow.test.mjs",
     "scripts/stamp-release.test.mjs",
