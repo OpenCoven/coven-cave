@@ -164,18 +164,57 @@ function resolveRepository(options) {
   return parts;
 }
 
+function originOf(url) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * True when this request is one the API token is for. The token authenticates
+ * us to `api.github.com`; a release asset is public and its download url
+ * redirects off GitHub entirely, so attaching the token there would hand a
+ * credential to a host that never needed it.
+ */
+function isApiRequest(context, url) {
+  return Boolean(context.apiOrigin) && originOf(url) === context.apiOrigin;
+}
+
+/**
+ * A status that means GitHub could not answer, rather than that it answered
+ * "the rollback target is broken". Worth a retry; a 404 is not.
+ */
+function isTransportStatus(status) {
+  return status === 403 || status === 429 || status >= 500;
+}
+
+const RETRY_ADVICE =
+  "GitHub could not answer, which is not evidence the rollback target is broken — retry before treating the release as unshippable";
+
 async function requestJson(context, url, description) {
-  const response = await context.fetchImpl(url, {
-    headers: {
-      accept: "application/vnd.github+json",
-      "user-agent": "release-rollback-readiness",
-      ...(context.token ? { authorization: `Bearer ${context.token}` } : {}),
-    },
-    redirect: "follow",
-  });
-  if (!response?.ok) {
+  const headers = {
+    accept: "application/vnd.github+json",
+    "user-agent": "release-rollback-readiness",
+  };
+  if (context.token && isApiRequest(context, url)) {
+    headers.authorization = `Bearer ${context.token}`;
+  }
+  let response;
+  try {
+    response = await context.fetchImpl(url, { headers, redirect: "follow" });
+  } catch (cause) {
     throw new RollbackReadinessError(
-      `${description} request failed with HTTP ${response?.status ?? "unknown"}`,
+      `${description} request could not be sent (${cause?.message ?? String(cause)}); ${RETRY_ADVICE}`,
+      { cause },
+    );
+  }
+  if (!response?.ok) {
+    const status = typeof response?.status === "number" ? response.status : 0;
+    throw new RollbackReadinessError(
+      `${description} request failed with HTTP ${response?.status ?? "unknown"}` +
+        (isTransportStatus(status) ? `; ${RETRY_ADVICE}` : ""),
     );
   }
   return response.json();
@@ -201,8 +240,10 @@ export async function verifyRollbackReadiness(options = {}) {
   }
   const target = parseFinalTag(options.tag);
   const [owner, repo] = resolveRepository(options);
+  const apiUrl = (options.apiUrl || "https://api.github.com").replace(/\/+$/, "");
   const context = {
-    apiUrl: (options.apiUrl || "https://api.github.com").replace(/\/+$/, ""),
+    apiUrl,
+    apiOrigin: originOf(apiUrl),
     repositoryPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
     token: options.token || "",
     fetchImpl: options.fetchImpl || globalThis.fetch,

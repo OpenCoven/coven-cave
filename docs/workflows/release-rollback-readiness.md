@@ -44,6 +44,21 @@ choose a different rollout plan. The one shortfall the gate cannot repair for
 you is a manifest whose signatures were produced by a key the shipped clients
 do not pin; that is verified separately by `scripts/verify-release-updater.mjs`.
 
+The exception is a failure that never reached a verdict — a request GitHub
+could not answer (5xx, a secondary rate limit, a dead socket). Those say so and
+name the retry explicitly, because at 2am the two are otherwise indistinguishable
+and the wrong reading either reruns a real refusal or writes off a live release:
+
+```text
+release-rollback-readiness: release listing request failed with HTTP 502; GitHub could not
+answer, which is not evidence the rollback target is broken — retry before treating the
+release as unshippable
+```
+
+Only the API listing is authenticated. The baseline's `latest.json` is fetched
+from its public download url with no `Authorization` header, because that url
+redirects to a third-party object host.
+
 ## The first release
 
 A repository's genuine first release has nothing below it, and the gate is

@@ -68,10 +68,13 @@ function manifest(version, overrides = {}) {
 /** A fetch double serving one page of releases plus the baseline manifest. */
 function stubFetch({ releases, manifest: body, manifestStatus = 200 }) {
   const calls = [];
+  const requests = [];
   return {
     calls,
-    fetchImpl: async (url) => {
+    requests,
+    fetchImpl: async (url, init) => {
       calls.push(url);
+      requests.push({ url, headers: init?.headers ?? {} });
       if (url.startsWith(`${API}/repos/`)) {
         const page = Number(new URL(url).searchParams.get("page"));
         return { ok: true, status: 200, json: async () => (page === 1 ? releases : []) };
@@ -232,6 +235,57 @@ test("an incomplete baseline fails the rollout closed", async () => {
       }).fetchImpl,
     }),
     /latest\.json request failed with HTTP 404/,
+  );
+});
+
+test("the API token never travels to the asset host", async () => {
+  const stub = stubFetch({ releases: [release("0.3.7")], manifest: manifest("0.3.7") });
+
+  await verify({ fetchImpl: stub.fetchImpl });
+
+  const api = stub.requests.filter((request) => request.url.startsWith(`${API}/`));
+  const asset = stub.requests.filter((request) => request.url === MANIFEST_URL);
+  assert.ok(api.length > 0 && asset.length > 0, "both hosts are actually reached");
+  for (const request of api) {
+    assert.equal(request.headers.authorization, "Bearer token");
+  }
+  for (const request of asset) {
+    // The download url is public and redirects off GitHub entirely; the token
+    // authenticates us to the API and has no business on that hop.
+    assert.equal(request.headers.authorization, undefined);
+  }
+});
+
+test("a GitHub that cannot answer reads as retryable, a 404 does not", async () => {
+  await assert.rejects(
+    verify({
+      fetchImpl: stubFetch({
+        releases: [release("0.3.7")],
+        manifest: null,
+        manifestStatus: 503,
+      }).fetchImpl,
+    }),
+    /HTTP 503; GitHub could not answer[\s\S]*retry before treating the release as unshippable/,
+  );
+
+  await assert.rejects(
+    verify({
+      fetchImpl: stubFetch({
+        releases: [release("0.3.7")],
+        manifest: null,
+        manifestStatus: 404,
+      }).fetchImpl,
+    }),
+    (error) => error instanceof RollbackReadinessError && !/retry before/.test(error.message),
+  );
+
+  await assert.rejects(
+    verify({
+      fetchImpl: async () => {
+        throw new TypeError("fetch failed");
+      },
+    }),
+    /release listing request could not be sent \(fetch failed\)[\s\S]*retry before/,
   );
 });
 
