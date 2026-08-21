@@ -211,6 +211,7 @@ export const SUITES = {
     "src/lib/daemon-connection-supervisor.test.ts",
     "src/lib/daemon-fault-harness.test.ts",
     "src/lib/daemon-reliability.test.ts",
+    "src/lib/performance-budgets.test.ts",
     "src/lib/daemon-status-classification.test.ts",
     "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/daemon-recovery-presentation.test.ts",
@@ -388,6 +389,8 @@ export const SUITES = {
     "src/components/chat-split-host.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",
     "src/components/chat-sidebar-wiring.behavior.test.ts",
+    "src/components/streaming-chat-wiring.test.ts",
+    "src/components/streaming-turn-response.test.tsx",
     "src/components/workspace-sidebar-wiring.test.ts",
     "src/components/workspace-session-delete.test.ts",
     "src/components/workspace-sidebar-attention.test.ts",
@@ -458,6 +461,12 @@ export const SUITES = {
     "src/lib/use-quick-chat.test.tsx",
     "src/lib/streaming-presentation-buffer.test.ts",
     "src/lib/use-streaming-presentation-source.test.tsx",
+    "src/lib/streaming-markdown-blocks.test.ts",
+    "src/lib/streaming-turn-view-model.test.ts",
+    "src/lib/use-stick-to-bottom.test.ts",
+    "src/lib/chat-assistant-output.test.ts",
+    "src/lib/chat-result-markers.test.ts",
+    "src/lib/chat-tool-verification.test.ts",
     "src/lib/quick-chat.test.ts",
     "src/lib/command-controls.test.ts",
     "src/lib/travel-client-state.test.ts",
@@ -1630,6 +1639,8 @@ export const SUITES = {
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
+    "scripts/verify-release-updater.test.mjs",
+    "scripts/release-packaging-contract.test.mjs",
     "scripts/release-promotion.test.mjs",
     "scripts/release-promotion-workflow.test.mjs",
     "scripts/release-acceptance.test.mjs",
@@ -1823,6 +1834,8 @@ export const SUITES = {
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
+  // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
+  "scripts/cave-performance-report.test.mjs",
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
@@ -2141,6 +2154,8 @@ const VITEST_TESTS = new Set([
   "src/components/use-openai-voice-preview.test.tsx",
   "src/components/workspace-sidebar-attention.test.ts",
   "src/components/chat-sidebar-wiring.behavior.test.ts",
+  // renders streaming turns through the Vite transform (JSX)
+  "src/components/streaming-turn-response.test.tsx",
   "src/components/chat-title-sparkle-behavior.test.tsx",
   "src/components/right-chat-panel-behavior.test.tsx",
   "src/components/chat-router-removal-race.test.tsx",
