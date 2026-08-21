@@ -51,16 +51,16 @@ test("moves, renames, reassignments, answers, adds and removals are real writes"
   assert.match(surface, /publishBoardChanged\(\)/);
 });
 
-test("the dependency chart is the room's own overlay, never a board field", () => {
-  // The board has no dependency column; writing one client-side would show
-  // every other surface a link it cannot honour.
+test("dependency edits write canonical card dependencies while the legacy overlay stays local", () => {
   assert.match(surface, /overlay: ChartOverlay/);
   assert.match(surface, /normalizeOverlay\(state\.overlay, liveIds\)/);
-  assert.match(surface, /setDependency\(overlay, stepId, needs\)/);
+  assert.match(surface, /dependencies included: they are canonical on the card/);
+  assert.match(surface, /\{ dependencies: \[\.\.\.existing, addition\] \}/);
+  assert.match(surface, /const body: Record<string, unknown> = \{ dependencies: kept \}/);
   assert.doesNotMatch(surface, /body: JSON\.stringify\(\{[^}]*\bdependsOn\b/);
   assert.match(
     surface,
-    /Discard this session's links — the board's own cards are untouched/,
+    /canonical dependencies on the cards are untouched/,
     "the reset control says what it does and does not touch",
   );
 });
@@ -126,7 +126,7 @@ test("the drawer's own panels degrade separately from the canvas", () => {
 test("mutations announce, and visible failures announce assertively", () => {
   assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
   assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
-  assert.match(surface, /announce\(failure, "assertive"\)/);
+  assert.match(surface, /announce\(`\$\{failure\}\$\{detail\}`, "assertive"\)/);
   assert.match(surface, /announce\(message, "assertive"\)/);
   assert.match(surface, /const \[writeError, setWriteError\] = useState<string \| null>\(null\)/);
   assert.doesNotMatch(surface, /<p role="alert"/, "the announcer is the live region, not a second one");
