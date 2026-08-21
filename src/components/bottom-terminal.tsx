@@ -661,7 +661,12 @@ export function BottomTerminal({
       term.focus();
 
       healthTimer = setInterval(() => {
-        if (disposed || stopped || !visibleRef.current) return;
+        // visibleRef tracks the terminal PANE; document.hidden tracks the whole
+        // window. Both must gate the probe — a backgrounded window with the pane
+        // open would otherwise keep issuing pty_list every 5s for nothing. A
+        // deferred probe costs at most one interval: the timer keeps running and
+        // the next tick after the window returns re-checks.
+        if (disposed || stopped || !visibleRef.current || document.hidden) return;
         void bridge.invoke<string[]>("pty_list").then((sessions) => {
           if (disposed || stopped || sessions.includes(threadId)) return;
           sendToPtyRef.current = null;
