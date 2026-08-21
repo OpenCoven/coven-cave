@@ -175,6 +175,93 @@ const {
   }
 }
 
+// A `..` walks back out of an allowed local root and re-enters the redirector,
+// so matching the root prefix alone is not enough. Every spelling below was
+// measured on Windows 11 connecting to a local `net.createServer` pipe through
+// the SMB redirector via `net.connect({ path })` with the host spelled
+// `localhost`, while its prefix reads as one of the two local device roots.
+{
+  for (const traversal of [
+    String.raw`\\.\pipe\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\.\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\aaaa\..\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\PIPE\..\unc\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\.\C:\..\..\UNC\evil-host\pipe\coven`,
+    "//./pipe/../UNC/evil-host/pipe/coven",
+  ]) {
+    assert.equal(
+      isRemoteWindowsPath(traversal),
+      true,
+      `${traversal} escapes its local root and must be classified remote`,
+    );
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: traversal, COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => "{}",
+    });
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /\.coven\/coven\.sock$/,
+      `${traversal} should fall back to the local default`,
+    );
+  }
+}
+
+// The sharpest form of the above: a value that is not rooted at `\\` at all,
+// and so passes the pre-normalization check unexamined, is *promoted* into the
+// pipe device by `normalizeWindowsDaemonSocket` — which is what makes its `..`
+// segments load-bearing. The post-normalization re-check is the only thing
+// standing between a relative-looking COVEN_SOCKET and the redirector.
+{
+  const relative = String.raw`..\..\UNC\evil-host\pipe\coven`;
+  assert.equal(
+    isRemoteWindowsPath(relative),
+    false,
+    "as written it is relative, so nothing is refused yet",
+  );
+  assert.equal(
+    normalizeWindowsDaemonSocket(relative),
+    String.raw`\\.\pipe\..\..\UNC\evil-host\pipe\coven`,
+    "the normalizer roots it at the pipe device",
+  );
+  assert.equal(
+    isRemoteWindowsPath(normalizeWindowsDaemonSocket(relative)),
+    true,
+    "and the rooted form is what has to be refused",
+  );
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_SOCKET: relative, COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => "{}",
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+}
+
+// Only an exact `..` component traverses. These were measured ENOENT against
+// the same local pipe, so refusing them would be refusing a value that cannot
+// leave the machine — and a pipe name that merely contains dots is ordinary.
+{
+  for (const local of [
+    String.raw`\\.\pipe\.. \UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\...\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\. .\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\coven..daemon.sock`,
+    String.raw`\\.\pipe\..coven`,
+    String.raw`\\?\C:\Users\Sonic\.coven\coven.sock`,
+  ]) {
+    assert.equal(
+      isRemoteWindowsPath(local),
+      false,
+      `${local} does not traverse and must stay local`,
+    );
+  }
+}
+
 // A planted daemon.json pointing off-machine is refused the same way. This is
 // the likelier vector of the two: it is a plain file in COVEN_HOME.
 {

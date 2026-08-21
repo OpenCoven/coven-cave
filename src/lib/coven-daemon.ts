@@ -64,6 +64,33 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
 const WINDOWS_LOCAL_DEVICE_ROOT = /^\\\\[?.]\\(?:pipe\\|[a-z]:\\)/i;
 
 /**
+ * A `..` component, which walks back out of whichever root was allowed.
+ *
+ * `\\.\` paths are canonicalized by Win32 before they reach the object
+ * manager, so a `..` pops the very component the allowlist above matched on
+ * and lands back at the device root — from which `UNC\` and
+ * `GLOBALROOT\Device\Mup\` re-enter the SMB redirector. Measured on Windows 11
+ * against a local `net.createServer` pipe, all of these connected to it
+ * through the redirector while spelled as an allowed local root:
+ *
+ *     \\.\pipe\..\UNC\host\pipe\p          \\.\pipe\..\..\UNC\host\pipe\p
+ *     \\.\C:\..\..\UNC\host\pipe\p         //./pipe/../UNC/host/pipe/p
+ *     \\.\pipe\..\GLOBALROOT\Device\Mup\host\pipe\p
+ *
+ * Only an exact `..` component escapes: `.. `, `...` and `. .` were all
+ * measured ENOENT, because a `\\.\` path is canonicalized but its components
+ * are not space/dot-trimmed. `\\?\` skips canonicalization entirely, so a `..`
+ * there is a literal pipe name and also ENOENT — it is refused anyway rather
+ * than relying on that, since the difference between the two prefixes is not
+ * something a reader should have to hold.
+ *
+ * No local socket target has a `..` component: the daemon publishes a flat
+ * pipe name, and the fallback is built by `path.join`. This only ever refuses
+ * a value that was written to traverse.
+ */
+const WINDOWS_PARENT_SEGMENT = /(?:^|\\)\.\.(?:\\|$)/;
+
+/**
  * Whether a Windows path fails to prove it stays on this machine.
  *
  * This is an allowlist, and it has to be: enumerating off-machine spellings
@@ -80,9 +107,14 @@ const WINDOWS_LOCAL_DEVICE_ROOT = /^\\\\[?.]\\(?:pipe\\|[a-z]:\\)/i;
  *
  * A path not rooted at `\\` — a drive letter, a bare pipe name, a relative
  * name — cannot leave the machine by spelling alone and is accepted without
- * enumeration. A path rooted at `\\` must match one of the two local device
- * roots above; everything else is refused, including spellings nobody has
- * written down yet. The local daemon is owner-local by definition, so a target
+ * enumeration. Note this is only true of the value as written: a relative name
+ * is one `normalizeWindowsDaemonSocket` call away from being rooted at the
+ * pipe device, which is why the caller re-checks the normalized value too.
+ * A path rooted at `\\` must match one of the two local device
+ * roots above and must not walk back out of it via {@link
+ * WINDOWS_PARENT_SEGMENT}; everything else is refused, including spellings
+ * nobody has written down yet. The local daemon is owner-local by definition,
+ * so a target
  * outside those roots is never it — it is a redirection, and every request
  * Cave would send (commands, conversation content, whatever the daemon is
  * asked to do) would reach the remote listener instead.
@@ -97,6 +129,7 @@ const WINDOWS_LOCAL_DEVICE_ROOT = /^\\\\[?.]\\(?:pipe\\|[a-z]:\\)/i;
 export function isRemoteWindowsPath(candidate: string): boolean {
   const normalized = candidate.trim().replaceAll("/", "\\");
   if (!normalized.startsWith("\\\\")) return false;
+  if (WINDOWS_PARENT_SEGMENT.test(normalized)) return true;
   return !WINDOWS_LOCAL_DEVICE_ROOT.test(normalized);
 }
 
