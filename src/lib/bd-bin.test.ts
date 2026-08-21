@@ -20,6 +20,7 @@ import {
   withBdLaunch,
 } from "./bd-bin.ts";
 
+const WIN_SEP = path.win32.delimiter;
 const NPM_DIR = "C:\\Users\\dev\\AppData\\Roaming\\npm";
 const SHIM = path.win32.join(NPM_DIR, "bd.cmd");
 const BD_JS = path.win32.join(NPM_DIR, "node_modules", "@beads", "bd", "bin", "bd.js");
@@ -57,7 +58,7 @@ const silent = () => {};
   const exe = path.win32.join("C:\\tools", "bd.exe");
   const launch = resolveBdLaunchCommand({
     platform: "win32",
-    env: { PATH: `C:\\tools${path.delimiter}${NPM_DIR}` },
+    env: { PATH: `C:\\tools${WIN_SEP}${NPM_DIR}` },
     isFile: onlyFiles([exe, SHIM]),
     resolveShim,
     warn: silent,
@@ -74,7 +75,7 @@ const silent = () => {};
   const stale = path.win32.join("C:\\stale", "bd.exe");
   const launch = resolveBdLaunchCommand({
     platform: "win32",
-    env: { PATH: `${NPM_DIR}${path.delimiter}C:\\stale` },
+    env: { PATH: `${NPM_DIR}${WIN_SEP}C:\\stale` },
     isFile: onlyFiles([SHIM, stale]),
     resolveShim,
     warn: silent,

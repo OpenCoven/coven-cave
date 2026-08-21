@@ -69,6 +69,15 @@ export const BD_WINDOWS_LAUNCHER_NAMES = ["bd.exe", "bd.com", "bd.cmd", "bd.bat"
 
 const BD_BIN_ENV_KEY = "BD_BIN";
 
+/** Join and split with the *target* platform's rules, not the host's. In
+ *  production these are the same; in tests the platform is injected, and a
+ *  host `path.join` would build `C:\...\npm/bd.cmd` on Linux and a host
+ *  `path.delimiter` would split a Windows PATH on `:` — right after the drive
+ *  letter. coven-bin's verifiedAbsoluteBinary picks its API the same way. */
+function pathApiFor(platform: NodeJS.Platform): path.PlatformPath {
+  return platform === "win32" ? path.win32 : path.posix;
+}
+
 function defaultIsFile(candidate: string): boolean {
   try {
     const stat = statSync(candidate);
@@ -90,11 +99,12 @@ export function bdSearchDirs(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ): string[] {
-  const fromPath = (env.PATH ?? env.Path ?? "").split(path.delimiter);
+  const pathApi = pathApiFor(platform);
+  const fromPath = (env.PATH ?? env.Path ?? "").split(pathApi.delimiter);
   const npmDirs =
     platform === "win32"
       ? [
-          env.APPDATA ? path.join(env.APPDATA, "npm") : null,
+          env.APPDATA ? pathApi.join(env.APPDATA, "npm") : null,
           env.npm_config_prefix ?? null,
         ]
       : [];
@@ -150,9 +160,10 @@ export function resolveBdLaunchCommand(
   // installs, so there is nothing to fix and nothing to risk changing.
   if (platform !== "win32") return { command: "bd", fixedArgs: [] };
 
+  const pathApi = pathApiFor(platform);
   for (const dir of bdSearchDirs(env, platform)) {
     for (const name of BD_WINDOWS_LAUNCHER_NAMES) {
-      const candidate = path.join(dir, name);
+      const candidate = pathApi.join(dir, name);
       if (!isFile(candidate)) continue;
       return launchForBinary(candidate, platform, resolveShim);
     }
