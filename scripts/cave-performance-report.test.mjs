@@ -266,21 +266,29 @@ test("a swept dimension does not inherit its profile's authority", () => {
   assert.equal(report.summary.budgetUnmeasuredCount, report.budgets.enforcedCount);
 });
 
-test("the benchmark reports a swept dimension, and only a genuinely swept one", () => {
+test("the benchmark reports a swept dimension, and only a genuinely swept one", async () => {
   // Pinned by running the benchmark rather than by restating its output, since
   // the stamp is the whole tie between a workload and the budget that judges
-  // it. Two conversations of 64 bytes keeps this a sub-second fixture; the
-  // iterations override is set to the profile's OWN value (5), which changes
-  // nothing about the workload and so must not read as a sweep.
+  // it. Two conversations of 64 bytes keeps this a sub-second fixture. The
+  // iterations override is read from the fixture rather than written as a
+  // literal, because the property under test is "equal to the profile's own
+  // value is not a sweep" — a literal would stop testing that the moment the
+  // fixture changed, and would fail for a reason the message did not explain.
+  const [budgetedProfile] = enforcedFixtureProfiles();
+  const fixtures = JSON.parse(
+    await readFile(new URL("../fixtures/phase-6/performance-fixtures.json", import.meta.url), "utf8"),
+  );
+  const unsweptIterations = fixtures.profiles[budgetedProfile].iterations;
+
   const script = fileURLToPath(new URL("./conversation-list-benchmark.mjs", import.meta.url));
   const result = spawnSync(process.execPath, ["--experimental-strip-types", script], {
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     env: {
       ...process.env,
-      CAVE_BENCH_PROFILE: "phase-6-list-10k",
+      CAVE_BENCH_PROFILE: budgetedProfile,
       CAVE_BENCH_CONVERSATIONS: "2",
       CAVE_BENCH_TRANSCRIPT_BYTES: "64",
-      CAVE_BENCH_ITERATIONS: "5",
+      CAVE_BENCH_ITERATIONS: String(unsweptIterations),
     },
     encoding: "utf8",
   });
@@ -289,9 +297,9 @@ test("the benchmark reports a swept dimension, and only a genuinely swept one", 
 
   assert.equal(
     fixture.profile,
-    "phase-6-list-10k (overridden: CAVE_BENCH_CONVERSATIONS, CAVE_BENCH_TRANSCRIPT_BYTES)",
+    `${budgetedProfile} (overridden: CAVE_BENCH_CONVERSATIONS, CAVE_BENCH_TRANSCRIPT_BYTES)`,
   );
-  assert.equal(fixture.iterations, 5);
+  assert.equal(fixture.iterations, unsweptIterations);
   assert.ok(
     !enforcedFixtureProfiles().includes(fixture.profile),
     "a swept run must not name a profile any budget is seeded against",
