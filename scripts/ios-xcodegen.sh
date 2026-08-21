@@ -19,7 +19,7 @@
 # cutting v0.2.3 from a clean clone). The README documented the right order;
 # nothing enforced it.
 #
-# So: build the bundles, PROVE they exist, then scan. A missing bundle exits
+# So: build the bundle, PROVE it exists, then scan. A missing bundle exits
 # non-zero here rather than warning, because this is the last point where the
 # failure is still visible.
 set -euo pipefail
@@ -60,7 +60,7 @@ for resource in markdown.html markdown.css; do
   [ -s "$RESOURCES/$resource" ] || missing+=("$resource")
 done
 if [ ${#missing[@]} -gt 0 ]; then
-  echo "[ios] web bundles missing or empty after generation: ${missing[*]}" >&2
+  echo "[ios] markdown bundle missing or empty after generation: ${missing[*]}" >&2
   echo "[ios] refusing to run xcodegen — a scan now would produce a project" >&2
   echo "[ios] without these resources, and the build would silently succeed." >&2
   exit 1
