@@ -134,11 +134,24 @@ const {
 // A forged COVEN_SOCKET naming another machine is refused, not dialed. Every
 // UNC spelling resolves to the canonical local path instead.
 {
+  // Every entry below was measured reaching a local `net.createServer` pipe
+  // through the SMB redirector via `net.connect({ path })` on Windows 11 with
+  // the host spelled `localhost`, so each is a live redirection and not a
+  // theoretical spelling. The device-namespace and GLOBALROOT forms are why
+  // this check is an allowlist: `\\?\GLOBALROOT\??\UNC\…` nests arbitrarily,
+  // so no enumeration of remote prefixes closes the set.
   const remotes = [
     String.raw`\\evil-host\pipe\coven`,
     String.raw`//evil-host/pipe/coven`,
     String.raw`\\?\UNC\evil-host\pipe\coven`,
     String.raw`\\evil-host\share\coven.sock`,
+    String.raw`\\.\UNC\evil-host\pipe\coven`,
+    String.raw`//./UNC/evil-host/pipe/coven`,
+    String.raw`\\?\unc\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\Device\LanmanRedirector\evil-host\pipe\coven`,
+    String.raw`\\.\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\??\UNC\evil-host\pipe\coven`,
   ];
   for (const remote of remotes) {
     assert.equal(
@@ -178,20 +191,49 @@ const {
 // decorative: the "safe" fallback would be built under the attacker's host,
 // and daemon.json would be read from it over SMB in the first place.
 {
-  const socket = resolveDaemonSocketPath({
-    platform: "win32",
-    env: { COVEN_HOME: String.raw`\\evil-host\share\.coven` },
-    homeDir: "C:/Users/Sonic",
-    readFileSync: () => {
-      throw new Error("daemon.json must not be read from a remote COVEN_HOME");
-    },
-  });
-  assert.equal(
-    isRemoteWindowsPath(socket),
-    false,
-    "a remote COVEN_HOME must not produce a remote socket path",
-  );
-  assert.match(socket.replaceAll("\\", "/"), /Users\/Sonic\/\.coven\/coven\.sock$/);
+  for (const home of [
+    String.raw`\\evil-host\share\.coven`,
+    String.raw`\\.\UNC\evil-host\share\.coven`,
+    String.raw`\\?\GLOBALROOT\Device\Mup\evil-host\share\.coven`,
+  ]) {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_HOME: home },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => {
+        throw new Error("daemon.json must not be read from a remote COVEN_HOME");
+      },
+    });
+    assert.equal(
+      isRemoteWindowsPath(socket),
+      false,
+      `a remote COVEN_HOME (${home}) must not produce a remote socket path`,
+    );
+    assert.match(socket.replaceAll("\\", "/"), /Users\/Sonic\/\.coven\/coven\.sock$/);
+  }
+}
+
+// A planted daemon.json can also name the remote host in a device-namespace
+// spelling; the same allowlist has to catch those or the file check above only
+// covers the one form an attacker would not bother using twice.
+{
+  for (const forged of [
+    String.raw`\\.\UNC\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\??\UNC\evil-host\pipe\coven`,
+  ]) {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => JSON.stringify({ socket: forged }),
+    });
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /\.coven\/coven\.sock$/,
+      `${forged} from daemon.json should fall back to the local default`,
+    );
+  }
 }
 
 // A local COVEN_HOME is still honored verbatim, on both platforms.
@@ -226,7 +268,10 @@ const {
   for (const local of [
     String.raw`\\.\pipe\coven-daemon-abc123.sock`,
     String.raw`\\?\pipe\coven-daemon-abc123.sock`,
+    String.raw`\\?\C:\Users\Sonic\.coven\coven.sock`,
+    String.raw`\\.\C:\Users\Sonic\.coven\coven.sock`,
     "coven-daemon-abc123.sock",
+    ".coven/coven.sock",
     "C:/Users/Sonic/.coven/coven.sock",
   ]) {
     assert.equal(

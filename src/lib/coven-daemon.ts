@@ -58,19 +58,46 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
 }
 
 /**
- * Whether a Windows path names another machine's namespace.
+ * The two rooted Windows shapes that provably stay on this machine: the local
+ * named-pipe device, and a drive letter behind the long-path prefix.
+ */
+const WINDOWS_LOCAL_DEVICE_ROOT = /^\\\\[?.]\\(?:pipe\\|[a-z]:\\)/i;
+
+/**
+ * Whether a Windows path fails to prove it stays on this machine.
  *
- * `\\.\pipe\…` and `\\?\…` are the local device namespaces; `\\host\…` and
- * `\\?\UNC\host\…` are not. The local daemon is owner-local by definition, so
- * anything under this predicate is never the local daemon — it is a
- * redirection, and every request Cave would send it (commands, conversation
- * content, whatever the daemon is asked to do) would go to the remote
- * listener instead. Mirrors {@link isWindowsRemoteExecutablePath} in
- * `coven-bin.ts`, which draws the same boundary for the CLI binary.
+ * This is an allowlist, and it has to be: enumerating off-machine spellings
+ * does not converge. Measured on Windows 11 with `net.connect({ path })`
+ * against a local `net.createServer` pipe, every one of these delivered to it
+ * through the SMB redirector, and the last shows the nesting is open-ended
+ * rather than a fixed set to denylist:
+ *
+ *     \\host\pipe\p
+ *     \\?\UNC\host\pipe\p                    \\.\UNC\host\pipe\p
+ *     \\?\GLOBALROOT\Device\Mup\host\pipe\p
+ *     \\?\GLOBALROOT\Device\LanmanRedirector\host\pipe\p
+ *     \\?\GLOBALROOT\??\UNC\host\pipe\p
+ *
+ * A path not rooted at `\\` — a drive letter, a bare pipe name, a relative
+ * name — cannot leave the machine by spelling alone and is accepted without
+ * enumeration. A path rooted at `\\` must match one of the two local device
+ * roots above; everything else is refused, including spellings nobody has
+ * written down yet. The local daemon is owner-local by definition, so a target
+ * outside those roots is never it — it is a redirection, and every request
+ * Cave would send (commands, conversation content, whatever the daemon is
+ * asked to do) would reach the remote listener instead.
+ *
+ * What this cannot see: a drive letter mapped to a share
+ * (`net use Z: \\host\share`) resolves off-machine while spelled `Z:\…`. No
+ * syntactic check reaches that; it needs the connected pipe's owner.
+ *
+ * {@link isWindowsRemoteExecutablePath} in `coven-bin.ts` still draws the old,
+ * narrower boundary for the CLI binary and admits the four spellings above.
  */
 export function isRemoteWindowsPath(candidate: string): boolean {
   const normalized = candidate.trim().replaceAll("/", "\\");
-  return /^\\\\[^?.\\]/.test(normalized) || /^\\\\\?\\UNC\\/i.test(normalized);
+  if (!normalized.startsWith("\\\\")) return false;
+  return !WINDOWS_LOCAL_DEVICE_ROOT.test(normalized);
 }
 
 /**
