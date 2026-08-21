@@ -166,6 +166,31 @@ test("the restore plan mutates exactly one thing, and never release history", ()
   assert.deepEqual(assertBoundedRestore(plan), plan, "the sanctioned plan passes its own guard");
 });
 
+test("the drill warns that its own verification step exits non-zero on a rollback that worked", () => {
+  // scripts/verify-release-updater.mjs asserts `latest.json`.version equals the
+  // tag of /releases/latest. Step 2 of this drill deliberately breaks that
+  // equality — it republishes the baseline manifest while the candidate release
+  // stays published and stays `latest`, because tag-move and version-unpublish
+  // are both forbidden above. So the drill's final command reports drift and
+  // exits 1 on a *successful* rollback. An operator reading only
+  // "the served manifest must now be the baseline version", then seeing
+  // FAILURE(S), concludes the restore did not take and rolls forward again —
+  // during the incident the rollback was supposed to end.
+  const verify = planRollbackRestore({ tag: "v0.9.4" }).find((step) => step.id === "verify-updater-chain");
+  assert.ok(verify, "the drill ends by verifying the chain the updater actually walks");
+  assert.equal(verify.mutates, false, "verification reads; the republish above is the only write in the drill");
+  assert.match(
+    verify.detail,
+    /drift/i,
+    "the expected drift has to be named where the operator reads the step, not only in the runbook",
+  );
+  assert.match(
+    verify.detail,
+    /releases\/latest still names the candidate/,
+    "naming the cause is what separates 'this is the rollback' from 'the rollback failed'",
+  );
+});
+
 test("every forbidden restore operation is refused", () => {
   for (const type of FORBIDDEN_RESTORE_OPERATIONS) {
     assert.throws(

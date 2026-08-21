@@ -160,7 +160,11 @@ export function planRollbackRestore(baseline) {
       id: "verify-updater-chain",
       type: "verify",
       mutates: false,
-      detail: "pnpm release:verify-updater — the served manifest must now be the baseline version",
+      detail:
+        "pnpm release:verify-updater — the served manifest must now be the baseline version with every signature valid. " +
+        "Expect its 'version matches latest GitHub release' step to report drift and the run to exit non-zero: " +
+        "rollback never unpublishes the candidate or moves a tag, so releases/latest still names the candidate while " +
+        "latest.json serves the baseline. That drift IS the rollback; treat any OTHER failure as the rollback not taking",
     },
   ];
 }

@@ -192,7 +192,25 @@ anything**:
    `latest.json` on the release the updater endpoint resolves to. Metadata
    only.
 3. `verify-updater-chain` — `pnpm release:verify-updater`. The served manifest
-   must now be the baseline version.
+   must now be the baseline version, and every platform signature must still
+   verify against the configured pubkey.
+
+   ⚠️ **This command exits non-zero on a rollback that worked, and the drill is
+   not finished until you have read why.** `verify-release-updater.mjs` also
+   checks that `latest.json`'s version equals the tag of
+   `/releases/latest`, and step 2 above deliberately breaks that equality: the
+   candidate release stays published and stays the latest release — rollback
+   may not unpublish it or move a tag — while the manifest it serves is now the
+   baseline's. So a correct rollback reports exactly one failure:
+
+   ```text
+   ✗ version drift: latest.json=0.9.4 vs release=v1.0.0
+   ```
+
+   That line is the rollback, not a failure of it. Any *other* ✗ — a missing
+   platform, an invalid signature, an asset that does not resolve — means the
+   restore did not take, and the served manifest is one the updater will
+   reject. Read the whole output rather than the exit code.
 
 ### What rollback never does
 
