@@ -39,6 +39,17 @@ export function packageVersion(root = repositoryRoot) {
   return manifest.version;
 }
 
+export function contractFixturePath(root = repositoryRoot) {
+  return path.join(root, "src", "lib", "server", "client-v1", "contract-fixture.json");
+}
+
+function requiredFixtureVersion(value, field, fixturePath) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`contract fixture ${fixturePath} declares no usable ${field}`);
+  }
+  return value;
+}
+
 /**
  * The versions a release build must answer with, read from the reviewed
  * fixture rather than repeated as literals here.
@@ -49,14 +60,30 @@ export function packageVersion(root = repositoryRoot) {
  * invisible to a "non-empty string" check. The fixture is the deterministic
  * serialisation of contract.ts and is sha256-gated, so reading it keeps this
  * script honest without importing TypeScript into a plain .mjs probe.
+ *
+ * Every value is checked before it is returned, and the failure names the
+ * fixture. The fixture lives in the checkout this script ships in, not in the
+ * build being probed, so a read that fails says nothing about the release — and
+ * a bare ENOENT on exit 1 reads exactly like one that does.
  */
 export function contractExpectations(root = repositoryRoot) {
-  const fixture = JSON.parse(
-    readFileSync(path.join(root, "src", "lib", "server", "client-v1", "contract-fixture.json"), "utf8"),
-  );
+  const fixturePath = contractFixturePath(root);
+  let fixture;
+  try {
+    fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `cannot read the contract fixture at ${fixturePath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const contract = typeof fixture === "object" && fixture !== null ? fixture.contract : undefined;
   return {
-    apiVersion: fixture.contract.apiVersion,
-    minimumClientVersion: fixture.contract.minimumClientVersion,
+    apiVersion: requiredFixtureVersion(contract?.apiVersion, "apiVersion", fixturePath),
+    minimumClientVersion: requiredFixtureVersion(
+      contract?.minimumClientVersion,
+      "minimumClientVersion",
+      fixturePath,
+    ),
   };
 }
 
@@ -79,11 +106,26 @@ export function parseOrigin(argv) {
  * single run reports every broken field instead of forcing one rebuild per
  * fix. Kept pure and exported so it is unit-testable without a live server.
  */
+const EXPECTED_VERSION_FIELDS = ["apiVersion", "minimumClientVersion", "releaseVersion"];
+
 export function checkHealthEnvelope(envelope, expected) {
   const failures = [];
   const record = (ok, message) => {
     if (!ok) failures.push(message);
   };
+
+  // An expectation that is not a usable string makes its own comparison
+  // vacuous — `undefined === undefined` records a pass — so a release that
+  // omitted the field entirely would be reported ok. These equality checks
+  // replaced the independent shape checks that used to catch that
+  // unconditionally, which leaves this as the only thing between a truncated
+  // fixture or an unstamped manifest and a smoke that asserts nothing.
+  const unusable = EXPECTED_VERSION_FIELDS.filter(
+    (field) => typeof expected?.[field] !== "string" || expected[field].trim().length === 0,
+  );
+  if (unusable.length > 0) {
+    return [`expected ${unusable.join(", ")} unusable; the smoke cannot judge a release against an incomplete expectation`];
+  }
 
   if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) {
     return ["health response is not a JSON object"];

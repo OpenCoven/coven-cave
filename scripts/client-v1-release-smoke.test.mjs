@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -8,6 +10,7 @@ import {
   checkHealthEnvelope,
   checkInstanceStability,
   contractExpectations,
+  contractFixturePath,
   packageVersion,
   parseOrigin,
 } from "./client-v1-release-smoke.mjs";
@@ -65,6 +68,39 @@ test("reads the expected versions from the reviewed contract fixture", () => {
     minimumClientVersion: fixture.contract.minimumClientVersion,
   });
   assert.deepEqual(checkHealthEnvelope(healthEnvelope(), { ...contractExpectations(), releaseVersion: "0.3.6" }), []);
+});
+
+test("refuses to judge a release against an incomplete expectation", () => {
+  // Comparing against the fixture replaced the independent shape checks, so an
+  // expectation that came back undefined made the comparison `undefined ===
+  // undefined` and the smoke printed ok for a release serving neither version.
+  const stripped = healthEnvelope({ apiVersion: undefined, minimumClientVersion: undefined });
+  assert.deepEqual(
+    checkHealthEnvelope(stripped, { ...expected, apiVersion: undefined, minimumClientVersion: undefined }),
+    ["expected apiVersion, minimumClientVersion unusable; the smoke cannot judge a release against an incomplete expectation"],
+  );
+  // An unstamped manifest reaches releaseVersion the same way.
+  assert.equal(checkHealthEnvelope(healthEnvelope(), { ...expected, releaseVersion: "" }).length, 1);
+  assert.equal(checkHealthEnvelope(healthEnvelope(), undefined).length, 1);
+});
+
+test("names the fixture when it cannot supply the expected versions", () => {
+  // The fixture lives in this checkout, not in the build being probed, so a
+  // failure to read it must not be reported as a broken release.
+  const root = mkdtempSync(path.join(tmpdir(), "client-v1-smoke-root-"));
+  try {
+    assert.throws(() => contractExpectations(root), /cannot read the contract fixture at .*contract-fixture\.json/);
+    const fixture = contractFixturePath(root);
+    mkdirSync(path.dirname(fixture), { recursive: true });
+    writeFileSync(fixture, "{ truncated", "utf8");
+    assert.throws(() => contractExpectations(root), /cannot read the contract fixture at/);
+    writeFileSync(fixture, JSON.stringify({ contract: { apiVersion: "1.0" } }), "utf8");
+    assert.throws(() => contractExpectations(root), /declares no usable minimumClientVersion/);
+    writeFileSync(fixture, JSON.stringify({ contract: { apiVersion: "", minimumClientVersion: "0.1.0" } }), "utf8");
+    assert.throws(() => contractExpectations(root), /declares no usable apiVersion/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("catches an unstamped release version", () => {
