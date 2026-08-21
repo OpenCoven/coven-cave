@@ -132,6 +132,85 @@ test("the acceptance summary this gate reads is the one that script emits", () =
 
 // ── stage table ───────────────────────────────────────────────────────────────
 
+test("the stage table and the three vocabularies are the ones the runbook publishes", () => {
+  // Every other assertion in this file derives its expectation from these four
+  // constants, so the suite moves with them: changing stable-25 to 100%,
+  // maintainer's window to 0h, or dropping `revoke` from the canaries or
+  // `signature-regeneration` from the forbidden operations all leave it green.
+  // docs/workflows/production-rollout.md publishes each of these to an
+  // operator; this is the other half of that promise.
+  assert.deepEqual(
+    ROLLOUT_STAGES,
+    [
+      { id: "maintainer", percentage: 0, distribution: "manual", minObservationHours: 24 },
+      { id: "private-beta", percentage: 0, distribution: "manual", minObservationHours: 48 },
+      { id: "stable-5", percentage: 5, distribution: "automatic", minObservationHours: 24 },
+      { id: "stable-25", percentage: 25, distribution: "automatic", minObservationHours: 48 },
+      { id: "stable-100", percentage: 100, distribution: "automatic", minObservationHours: 0 },
+    ],
+    "the audience a stage exposes and the hours it must be watched for are the rollout policy, not an implementation detail",
+  );
+  assert.deepEqual(
+    CANARIES,
+    ["read", "send", "resume", "restart", "revoke"],
+    "a canary dropped from this list stops being checked, and the gate goes on advancing without it",
+  );
+  assert.deepEqual(
+    HARD_STOP_CLASSES,
+    ["crash", "auth", "duplicate-send", "data-integrity"],
+    "a class dropped from here downgrades that regression from 'the release goes back' to 'classify it first'",
+  );
+  assert.deepEqual(
+    FORBIDDEN_RESTORE_OPERATIONS,
+    ["tag-move", "artifact-overwrite", "version-unpublish", "signature-regeneration"],
+    "an operation dropped from here becomes one a rollback plan may quietly contain",
+  );
+});
+
+test("a threshold is a boundary, and it is the healthy side that includes it", () => {
+  // `rate < minimum` reads as `<=` to anyone skimming, and nothing here
+  // objected to the swap: every metric in these fixtures sits comfortably away
+  // from its threshold, so the one value that distinguishes the two operators
+  // was never measured. A rate landing exactly on the documented minimum is
+  // the ordinary case at the end of an observation window, and it advances.
+  for (const [metric, threshold] of [
+    ["crashFreeLaunchRate", DEFAULT_THRESHOLDS.minCrashFreeLaunchRate],
+    ["pairingSuccessRate", DEFAULT_THRESHOLDS.minPairingSuccessRate],
+  ]) {
+    const at = greenState();
+    at.metrics[metric] = threshold;
+    assert.equal(
+      evaluateRolloutGate(at).decision,
+      "advance",
+      `${threshold} is not 'below ${threshold}'; rolling back on the documented minimum makes the published number a lie`,
+    );
+
+    const under = greenState();
+    under.metrics[metric] = threshold - 0.001;
+    assert.equal(
+      evaluateRolloutGate(under).decision,
+      "rollback",
+      `a hair under the minimum is a breach, or the threshold is decoration`,
+    );
+  }
+
+  // The same swap on the observation window, where it costs an operator a day:
+  // the runbook promises 24h at stable-5, and `<=` would demand more than 24.
+  const exact = evaluateRolloutGate(greenState({ observedHours: 24 }));
+  assert.equal(exact.decision, "advance", "stable-5 requires 24h, so 24h elapsed is the window having elapsed");
+  assert.equal(
+    evaluateRolloutGate(greenState({ observedHours: 23.9 })).decision,
+    "hold",
+    "just short of the window is short of the window; otherwise the required hours are advisory",
+  );
+
+  // A count threshold of 0 is the other boundary, and it is exclusive on the
+  // healthy side for the opposite reason: one duplicate send is one too many.
+  const zero = greenState();
+  zero.metrics.duplicateSendCount = 0;
+  assert.equal(evaluateRolloutGate(zero).decision, "advance", "zero duplicates does not exceed a maximum of zero");
+});
+
 test("stages widen monotonically and the manual ones distribute nothing", () => {
   const percentages = ROLLOUT_STAGES.map((stage) => stage.percentage);
   assert.deepEqual(
@@ -248,6 +327,16 @@ test("a green stage past its observation window advances", () => {
   assert.deepEqual(result.reasons, [], "nothing should be holding this rollout");
   assert.equal(result.decision, "advance", "green canaries, met thresholds, and an elapsed window mean widen");
   assert.equal(result.nextStage, "stable-25", "advancing names where it goes");
+  assert.equal(
+    result.rollbackTarget,
+    null,
+    "a rollback target is the answer to a question this decision did not ask; a workflow branching on it must not read one here",
+  );
+  assert.equal(
+    evaluateRolloutGate(greenState({ observedHours: 0 })).rollbackTarget,
+    null,
+    "and a hold is not a rollback either — what shipped stays shipped",
+  );
 });
 
 test("each hard-stop class rolls the release back", () => {
