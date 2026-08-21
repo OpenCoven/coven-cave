@@ -101,9 +101,13 @@ test("charts derive from real model fields with honest empty state", () => {
     /activityHeatmapWindowDays\([\s\S]{0,160}?session\.created_at/,
     "heatmap range matures from the familiar's first real session",
   );
+  // The heatmap anchors on the refresh timestamp, but updatedAt is optional and
+  // may not parse — pin the finite check and the Date.now() fallback too, so the
+  // anchor can never silently regress to NaN and bucket every session into
+  // nothing.
   assert.match(
     src,
-    /heatmapFromSessions\(recentSessions, Date\.parse\(updatedAt \?\? ""\)\)/,
+    /const parsed = Date\.parse\(updatedAt \?\? ""\);\s*\n\s*const now = Number\.isFinite\(parsed\) \? parsed : Date\.now\(\);\s*\n\s*return heatmapFromSessions\(recentSessions, now\);/,
     "heatmap buckets real created_at timestamps against the current refresh",
   );
   assert.match(
