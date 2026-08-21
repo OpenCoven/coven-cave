@@ -57,6 +57,22 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
   return `${WINDOWS_PIPE_PREFIX}${trimmed}`;
 }
 
+/**
+ * Whether a Windows socket value names another machine's namespace.
+ *
+ * `\\.\pipe\…` and `\\?\…` are the local device namespaces; `\\host\…` and
+ * `\\?\UNC\host\…` are not. The local daemon is owner-local by definition, so
+ * a socket that leaves this machine is never the local daemon — it is a
+ * redirection, and every request Cave would send it (commands, conversation
+ * content, whatever the daemon is asked to do) would go to the remote
+ * listener instead. Mirrors {@link isWindowsRemoteExecutablePath} in
+ * `coven-bin.ts`, which draws the same boundary for the CLI binary.
+ */
+export function isRemoteWindowsDaemonSocket(socket: string): boolean {
+  const normalized = socket.trim().replaceAll("/", "\\");
+  return /^\\\\[^?.\\]/.test(normalized) || /^\\\\\?\\UNC\\/i.test(normalized);
+}
+
 function covenHomePath(env: Record<string, string | undefined>, homeDir: string): string {
   return env.COVEN_HOME ?? path.join(homeDir, ".coven");
 }
@@ -71,6 +87,24 @@ function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string |
   }
 }
 
+/**
+ * Accept a Windows socket candidate only if it stays on this machine.
+ *
+ * Both inputs are attacker-reachable in the threat model the local transport
+ * assumes: `COVEN_SOCKET` comes from the launch environment, and `daemon.json`
+ * is a plain file in `COVEN_HOME` that any process running as this user — or
+ * anything syncing that directory — can rewrite. Neither is a signed
+ * statement about where the daemon lives, so a remote target is refused rather
+ * than dialed, and resolution falls through to the canonical local path.
+ */
+function localWindowsDaemonSocket(candidate: string): string | null {
+  if (isRemoteWindowsDaemonSocket(candidate)) return null;
+  const normalized = normalizeWindowsDaemonSocket(candidate);
+  // `normalizeWindowsDaemonSocket` rewrites separators and can prepend the
+  // pipe prefix, so re-check the value that would actually be dialed.
+  return isRemoteWindowsDaemonSocket(normalized) ? null : normalized;
+}
+
 export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
@@ -78,16 +112,16 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
   const readFile: ReadTextFile =
     options.readFileSync ?? ((filePath, encoding) => readFileSync(filePath, encoding));
 
-  if (env.COVEN_SOCKET) {
-    return platform === "win32"
-      ? normalizeWindowsDaemonSocket(env.COVEN_SOCKET)
-      : env.COVEN_SOCKET;
-  }
-
   const covenHome = covenHomePath(env, homeDir);
-  if (platform === "win32") {
+
+  if (env.COVEN_SOCKET) {
+    if (platform !== "win32") return env.COVEN_SOCKET;
+    const local = localWindowsDaemonSocket(env.COVEN_SOCKET);
+    if (local) return local;
+  } else if (platform === "win32") {
     const statusSocket = daemonStatusSocket(covenHome, readFile);
-    if (statusSocket) return normalizeWindowsDaemonSocket(statusSocket);
+    const local = statusSocket ? localWindowsDaemonSocket(statusSocket) : null;
+    if (local) return local;
   }
 
   return path.join(covenHome, "coven.sock");

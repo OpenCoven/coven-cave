@@ -12,6 +12,7 @@ const {
   socketPath,
   extractDaemonError,
   normalizeWindowsDaemonSocket,
+  isRemoteWindowsDaemonSocket,
   resolveDaemonSocketPath,
   daemonTargetForConfig,
   callDaemonTarget,
@@ -128,6 +129,75 @@ const {
     },
   });
   assert.equal(socket, "\\\\.\\pipe\\coven-daemon-from-env.sock");
+}
+
+// A forged COVEN_SOCKET naming another machine is refused, not dialed. Every
+// UNC spelling resolves to the canonical local path instead.
+{
+  const remotes = [
+    String.raw`\\evil-host\pipe\coven`,
+    String.raw`//evil-host/pipe/coven`,
+    String.raw`\\?\UNC\evil-host\pipe\coven`,
+    String.raw`\\evil-host\share\coven.sock`,
+  ];
+  for (const remote of remotes) {
+    assert.equal(
+      isRemoteWindowsDaemonSocket(remote),
+      true,
+      `${remote} should be classified remote`,
+    );
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: remote, COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => {
+        throw new Error("daemon.json must not be consulted for a rejected COVEN_SOCKET");
+      },
+    });
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /\.coven\/coven\.sock$/,
+      `${remote} should fall back to the local default`,
+    );
+  }
+}
+
+// A planted daemon.json pointing off-machine is refused the same way. This is
+// the likelier vector of the two: it is a plain file in COVEN_HOME.
+{
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => JSON.stringify({ socket: String.raw`\\evil-host\pipe\coven` }),
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+}
+
+// The local device namespaces stay accepted — the check must not swallow the
+// ordinary Windows pipe path, which is what a healthy daemon publishes.
+{
+  for (const local of [
+    String.raw`\\.\pipe\coven-daemon-abc123.sock`,
+    String.raw`\\?\pipe\coven-daemon-abc123.sock`,
+    "coven-daemon-abc123.sock",
+    "C:/Users/Sonic/.coven/coven.sock",
+  ]) {
+    assert.equal(
+      isRemoteWindowsDaemonSocket(local),
+      false,
+      `${local} should be classified local`,
+    );
+  }
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_SOCKET: String.raw`\\.\pipe\coven-daemon-abc123.sock` },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("unused");
+    },
+  });
+  assert.equal(socket, String.raw`\\.\pipe\coven-daemon-abc123.sock`);
 }
 
 // extractDaemonError handles the canonical { error: { message } } shape
