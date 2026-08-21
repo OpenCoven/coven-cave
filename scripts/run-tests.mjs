@@ -1828,6 +1828,11 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // instance-id.ts reads the Cave home through "@/lib/coven-paths", and the
+  // health route reaches it plus "@/lib/app-version" and the client v1
+  // response builders.
+  "src/lib/server/client-v1/instance-id.test.ts",
+  "src/app/api/client/v1/health/route.test.ts",
   // hf-paper-metadata.ts imports "@/lib/hf-papers" as a runtime value.
   "src/lib/server/hf-paper-metadata.test.ts",
   // ingest-urls.ts imports "@/lib/link-extractor" and "@/lib/hf-papers".
