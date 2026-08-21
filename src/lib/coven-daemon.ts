@@ -262,28 +262,34 @@ function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string |
  * than dialed, and resolution falls through to the canonical local path.
  *
  * Refusals are reported here rather than by the caller, because this is the
- * only place that still knows whether a null meant "off-machine" or "names
- * nothing at all".
+ * only place that still knows whether the candidate was off-machine or named
+ * nothing at all. The caller needs that distinction too — the two outcomes
+ * resolve differently — so it is returned rather than collapsed into a null.
  */
+type WindowsSocketDecision =
+  | { kind: "accepted"; socket: string }
+  | { kind: "refused" }
+  | { kind: "unnamed" };
+
 function localWindowsDaemonSocket(
   candidate: string,
   source: RefusedSocketSource,
-): string | null {
+): WindowsSocketDecision {
   if (isRemoteWindowsPath(candidate)) {
     reportRefusedRemoteTarget(source, candidate);
-    return null;
+    return { kind: "refused" };
   }
   const normalized = normalizeWindowsDaemonSocket(candidate);
   // A whitespace-only value normalizes to the empty string, which is not a
   // socket and is not a redirection either.
-  if (!normalized) return null;
+  if (!normalized) return { kind: "unnamed" };
   // `normalizeWindowsDaemonSocket` rewrites separators and can prepend the
   // pipe prefix, so re-check the value that would actually be dialed.
   if (isRemoteWindowsPath(normalized)) {
     reportRefusedRemoteTarget(source, normalized);
-    return null;
+    return { kind: "refused" };
   }
-  return normalized;
+  return { kind: "accepted", socket: normalized };
 }
 
 export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
@@ -297,14 +303,39 @@ export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {})
 
   if (env.COVEN_SOCKET) {
     if (platform !== "win32") return env.COVEN_SOCKET;
-    const local = localWindowsDaemonSocket(env.COVEN_SOCKET, "coven-socket-env");
-    if (local) return local;
-  } else if (platform === "win32") {
+    const configured = localWindowsDaemonSocket(env.COVEN_SOCKET, "coven-socket-env");
+    // An accepted COVEN_SOCKET is still the whole answer: it outranks
+    // `daemon.json`, and that precedence is what the override is for.
+    if (configured.kind === "accepted") return configured.socket;
+    // A value that names nothing is not a redirection and not a request to go
+    // look elsewhere either; it stays on the old "COVEN_SOCKET was set, so
+    // daemon.json is not consulted" path.
+    if (configured.kind === "unnamed") return path.join(covenHome, "coven.sock");
+    // A *refused* one falls through to `daemon.json`, exactly as if
+    // COVEN_SOCKET had been unset.
+    //
+    // Skipping straight to the default below would be a total daemon outage
+    // rather than a fail-closed refusal: on Windows the running daemon
+    // publishes a named pipe in `daemon.json`, and `COVEN_HOME\coven.sock` is
+    // a path nothing listens on. So a forged — or merely mistyped —
+    // COVEN_SOCKET would take out a healthy, discoverable local daemon for as
+    // long as the value stayed set, which hands an attacker who can only
+    // write one environment variable a permanent denial of service.
+    //
+    // It costs nothing to close: `daemon.json` is guarded on its own, on both
+    // halves. `covenHomePath` above has already refused an off-machine
+    // `COVEN_HOME`, so the file is read from this machine, and the value it
+    // yields goes through the same `localWindowsDaemonSocket` check below. A
+    // refused COVEN_SOCKET therefore cannot reach a remote listener by way of
+    // this fallthrough; it can only reach the local daemon it was hiding.
+  }
+
+  if (platform === "win32") {
     const statusSocket = daemonStatusSocket(covenHome, readFile);
-    const local = statusSocket
+    const published = statusSocket
       ? localWindowsDaemonSocket(statusSocket, "daemon-status-file")
       : null;
-    if (local) return local;
+    if (published?.kind === "accepted") return published.socket;
   }
 
   return path.join(covenHome, "coven.sock");

@@ -159,20 +159,80 @@ const {
       true,
       `${remote} should be classified remote`,
     );
+    // This used to assert the opposite — that daemon.json "must not be
+    // consulted for a rejected COVEN_SOCKET". That encoded the first cut of
+    // the guard, where a refusal jumped straight to the default below. It is
+    // deliberately flipped: see the "refused COVEN_SOCKET resolves to the
+    // published pipe" block for why, and the block after it for the half of
+    // the precedence contract that did NOT change.
+    const readPaths = [];
     const socket = resolveDaemonSocketPath({
       platform: "win32",
       env: { COVEN_SOCKET: remote, COVEN_HOME: "C:/Users/Sonic/.coven" },
       homeDir: "C:/Users/Sonic",
-      readFileSync: () => {
-        throw new Error("daemon.json must not be consulted for a rejected COVEN_SOCKET");
+      readFileSync: (filePath) => {
+        readPaths.push(filePath.replaceAll("\\", "/"));
+        return "{}";
       },
     });
+    assert.deepEqual(
+      readPaths,
+      ["C:/Users/Sonic/.coven/daemon.json"],
+      `${remote} should fall through to daemon.json, and read it from the local home`,
+    );
     assert.match(
       socket.replaceAll("\\", "/"),
       /\.coven\/coven\.sock$/,
-      `${remote} should fall back to the local default`,
+      `${remote} should fall back to the local default when daemon.json names nothing`,
     );
   }
+}
+
+// A refused COVEN_SOCKET resolves to the pipe daemon.json publishes.
+//
+// This is the whole point of the fallthrough. On Windows the running daemon
+// advertises a named pipe in daemon.json; COVEN_HOME\coven.sock is a path
+// nothing listens on. Jumping straight to that default on a refusal turned a
+// forged — or mistyped — COVEN_SOCKET into a permanent daemon outage, so an
+// attacker who could set one environment variable and nothing else got a
+// denial of service out of a guard meant to fail closed.
+{
+  const published = String.raw`\\.\pipe\coven-daemon-9f2c1e.sock`;
+  for (const forged of [
+    String.raw`\\evil-host\pipe\coven`,
+    String.raw`\\?\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\UNC\evil-host\pipe\coven`,
+  ]) {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: forged, COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => JSON.stringify({ socket: published }),
+    });
+    assert.equal(
+      socket,
+      published,
+      `${forged} should be refused without taking the local daemon down with it`,
+    );
+  }
+}
+
+// The half of the precedence contract that did NOT change: an *accepted*
+// COVEN_SOCKET is still the whole answer, and daemon.json is not read at all.
+// Only refusal falls through.
+{
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: {
+      COVEN_SOCKET: String.raw`\\.\pipe\coven-daemon-from-env.sock`,
+      COVEN_HOME: "C:/Users/Sonic/.coven",
+    },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("daemon.json must not be consulted for an accepted COVEN_SOCKET");
+    },
+  });
+  assert.equal(socket, String.raw`\\.\pipe\coven-daemon-from-env.sock`);
 }
 
 // A `..` walks back out of an allowed local root and re-enters the redirector,
@@ -398,9 +458,14 @@ const {
   const refusals = listDaemonDiagnosticEvents().filter(
     (event) => event.operation === "daemon-socket-resolution",
   );
+  // Note the second entry: the first resolve() refuses COVEN_SOCKET and then
+  // falls through to daemon.json, which is forged here too, so one call
+  // reports twice under two different sources. That is the fallthrough visible
+  // in the diagnostics — before it, the first call reported once and the third
+  // produced the daemon-status-file event instead.
   assert.deepEqual(
     refusals.map((event) => event.endpoint.classification),
-    ["coven-socket-env", "coven-home-env", "daemon-status-file"],
+    ["coven-socket-env", "daemon-status-file", "coven-home-env"],
     "each refused source reports under its own classification",
   );
   for (const event of refusals) {
@@ -468,7 +533,10 @@ const {
 }
 
 // A whitespace-only COVEN_SOCKET names nothing; it is not a redirection and
-// must not be reported as one.
+// must not be reported as one. It does not fall through to daemon.json either
+// — the fallthrough is the remedy for a *refusal*, which is the case where a
+// discoverable local daemon would otherwise be hidden. A value that names
+// nothing hides nothing, so it keeps the plain "COVEN_SOCKET was set" path.
 {
   clearDaemonDiagnosticEventsForTests();
   const socket = resolveDaemonSocketPath({
@@ -476,7 +544,7 @@ const {
     env: { COVEN_SOCKET: "   ", COVEN_HOME: "C:/Users/Sonic/.coven" },
     homeDir: "C:/Users/Sonic",
     readFileSync: () => {
-      throw new Error("daemon.json should not be read when COVEN_SOCKET is set");
+      throw new Error("daemon.json should not be read for a COVEN_SOCKET that names nothing");
     },
   });
   assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
