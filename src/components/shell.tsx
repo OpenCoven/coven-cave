@@ -18,6 +18,7 @@ import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-updat
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import {
@@ -627,6 +628,14 @@ function ShellInner({
   // change, not on every sidebar toggle).
   const navOpenRef = useRef(navOpen);
   navOpenRef.current = navOpen;
+  // The connected titlebar follows nav state: an expanded sidebar reaches the
+  // window's left edge and gives the traffic lights a surface to sit on, so the
+  // lights stay visible. Collapsed to the rail there is no such surface, so they
+  // are hidden and --titlebar-lights-inset drops to 0 (desktop-chrome.css).
+  // Mobile always shows them — the drawer never occupies the edge. Matches
+  // analytics-page-shell.tsx, the other native-strip host.
+  const trafficLightsVisible = navOpen || isMobile;
+  useMacTrafficLightsForNavState(trafficLightsVisible);
   const defaultNavSize =
     chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
 
@@ -1388,7 +1397,8 @@ function ShellInner({
         onClick={toggleRightChat}
       >
         <Icon
-          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
+          name={rightChatOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+          className="shell-top-toggle__icon--mirrored"
           width={CAVE_ICON_SIZE.shellToggle}
           height={CAVE_ICON_SIZE.shellToggle}
         />

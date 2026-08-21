@@ -73,10 +73,20 @@ assert.equal(
   1,
   "the hydration-stable top-bar wrapper should remain draggable when its empty chrome is clicked",
 );
+// The chrome refresh (#4791) split the two rows by role: the titlebar became a
+// pure identity strip (centered title, drag region only), and the interactive
+// boundary controls moved down into the .shell-top toolbar row. Pin both sides
+// so a control cannot drift back into the strip and land under the traffic
+// lights or the absolutely-centered title.
 assert.match(
   shell,
-  /<div className="shell-window-titlebar__controls">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<\/div>/,
-  "the native title strip groups its interactive boundary controls",
+  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">\s*<span className="shell-window-titlebar__title">Coven<\/span>\s*<\/div>/,
+  "the native title strip stays a pure identity strip",
+);
+assert.match(
+  shell,
+  /<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}/,
+  "the toolbar row groups the interactive boundary controls",
 );
 assert.match(
   shell,
