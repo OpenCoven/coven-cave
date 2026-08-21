@@ -120,14 +120,8 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-scroll-bottom-button sticky bottom-4/,
-  "Scroll-to-bottom FAB should expose a mobile touch-target hook",
-);
-
-assert.match(
-  styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*width\s*:\s*var\(--touch-target\)[\s\S]*height\s*:\s*var\(--touch-target\)/,
-  "Mobile scroll-to-bottom FAB should meet the 44px touch target",
+  /className="cave-new-response-content focus-ring"[\s\S]*updateFollowing\(true\);[\s\S]*schedulePin\(\);/,
+  "The released-reader response control should resume following and pin to the latest content",
 );
 
 assert.match(
@@ -147,21 +141,6 @@ assert.match(
   /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-input\s*\{[\s\S]*min-height\s*:\s*84px[\s\S]*max-height\s*:\s*min\(28dvh, 148px\)/,
   "Mobile composer input should stay compact and scroll after roughly 4-5 rows",
 );
-
-assert.match(
-  styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*action strip[\s\S]*84px textarea[\s\S]*one compact action footer[\s\S]*214px[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
-  "Mobile scroll-to-bottom FAB should clear the retained composer stack (action strip + textarea + footer + dock padding)",
-);
-
-// The FAB must NOT use `float` — float removes it from flow and breaks
-// `position: sticky` (it then renders at the wrong spot / not at all in the
-// iOS WKWebView). Right-align via `ml-auto` instead so sticky keeps working.
-const fabClass = source.match(/className="cave-scroll-bottom-button[^"]*"/)?.[0] ?? "";
-assert.ok(fabClass, "scroll-to-bottom FAB className should be present");
-assert.ok(!/\bfloat-right\b/.test(fabClass), "scroll-to-bottom FAB must not use float-right (breaks position: sticky)");
-assert.match(fabClass, /\bml-auto\b/, "scroll-to-bottom FAB should right-align with ml-auto so sticky still applies");
-assert.match(fabClass, /\bsticky\b/, "scroll-to-bottom FAB stays position: sticky");
 
 // The chat's linked task is surfaced directly in the mobile header (not just
 // buried in the kebab drawer), so its affiliation is visible at a glance.
