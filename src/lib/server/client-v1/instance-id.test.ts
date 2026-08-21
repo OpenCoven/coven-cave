@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { CLIENT_V1_LIMITS, parseClientV1Health } from "./contract.ts";
 import { clientV1InstanceId, clientV1InstanceIdFile } from "./instance-id.ts";
 
 function withCaveHome(run: (home: string) => void) {
@@ -46,10 +47,29 @@ test("gives different installations different ids", () => {
   assert.notEqual(first, second);
 });
 
-test("honours an explicit instance id override", () => {
+test("honours an explicit instance id override up to the contract bound", () => {
   withCaveHome(() => {
     process.env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID = "fixed-instance-id";
     assert.equal(clientV1InstanceId(), "fixed-instance-id");
+  });
+  withCaveHome(() => {
+    const longest = "i".repeat(CLIENT_V1_LIMITS.instanceIdCharacters);
+    process.env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID = longest;
+    assert.equal(clientV1InstanceId(), longest);
+  });
+});
+
+test("ignores an override that exceeds the contract bound", () => {
+  withCaveHome(() => {
+    process.env.COVEN_CAVE_CLIENT_V1_INSTANCE_ID = "i".repeat(CLIENT_V1_LIMITS.instanceIdCharacters + 1);
+    // Serving it would answer 200 with a body parseClientV1Health rejects, so
+    // the client reads no compatibility answer at all. Fall back to the
+    // persisted id rather than publishing an unreadable one.
+    const instanceId = clientV1InstanceId();
+    assert.match(instanceId, /^[0-9a-f-]{36}$/i);
+    assert.doesNotThrow(() =>
+      parseClientV1Health({ instanceId, pairingRequired: true, releaseVersion: "0.0.0" }),
+    );
   });
 });
 

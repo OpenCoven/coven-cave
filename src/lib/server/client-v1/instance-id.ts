@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { caveHome } from "@/lib/coven-paths";
 
+import { CLIENT_V1_LIMITS } from "./contract.ts";
+
 /**
  * A stable identifier for this Cave installation, served on the Client v1
  * health contract.
@@ -73,7 +75,11 @@ function readPersistedInstanceId(file: string): string | null {
  */
 export function clientV1InstanceId(): string {
   const override = process.env[INSTANCE_ID_ENV]?.trim();
-  if (override) return override;
+  // Bounded by the contract's own declared limit, not by trust in the operator:
+  // a longer override is served on a 200 that parseClientV1Health then refuses,
+  // so the client cannot read the compatibility answer at all and has nothing to
+  // fall back on. Ignoring it keeps health answering with a contract-valid id.
+  if (override && override.length <= CLIENT_V1_LIMITS.instanceIdCharacters) return override;
 
   const file = clientV1InstanceIdFile();
   if (resolved?.file === file) return resolved.instanceId;
