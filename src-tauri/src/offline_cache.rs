@@ -1086,6 +1086,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(&context.root);
     }
 
+    /// Where the ciphertext starts: past the magic, the length, and the header.
+    fn envelope_body_start(envelope: &[u8]) -> usize {
+        let preamble = ENVELOPE_MAGIC.len() + HEADER_LEN_BYTES;
+        let header_len = u32::from_le_bytes(
+            envelope[ENVELOPE_MAGIC.len()..preamble]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        preamble + header_len
+    }
+
+    fn header_of(envelope: &[u8]) -> OfflineCacheHeader {
+        let preamble = ENVELOPE_MAGIC.len() + HEADER_LEN_BYTES;
+        serde_json::from_slice(&envelope[preamble..envelope_body_start(envelope)]).unwrap()
+    }
+
+    fn header_for(context: &OfflineCacheContext, scope: &str, key: &str) -> OfflineCacheHeader {
+        let mut nonce = [0u8; NONCE_BYTES];
+        OsRng.fill_bytes(&mut nonce);
+        OfflineCacheHeader {
+            schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
+            instance_id: context.instance_id.clone(),
+            entry_id: context.entry_id(scope, key),
+            revision: "r".to_string(),
+            updated_at_unix_ms: 1,
+            payload_bytes: 0,
+            nonce: hex_encode(&nonce),
+        }
+    }
+
+    /// Encrypt under the real entry key with a caller-chosen header, so a test
+    /// can produce an envelope that authenticates and still lies. Tampering
+    /// cannot do this: the header is the AAD.
+    fn seal(
+        context: &OfflineCacheContext,
+        scope: &str,
+        key: &str,
+        header: &OfflineCacheHeader,
+        plaintext: &[u8],
+    ) -> Vec<u8> {
+        let header_json = serde_json::to_vec(header).unwrap();
+        let aad = envelope_aad(header_json.len() as u32, &header_json);
+        let derived = context.entry_key(scope, key);
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(derived.as_slice()));
+        let nonce = hex_decode(&header.nonce).unwrap();
+        let ciphertext = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: &aad,
+                },
+            )
+            .unwrap();
+        let mut envelope = aad;
+        envelope.extend_from_slice(&ciphertext);
+        envelope
+    }
+
     /// Regular files only — opening a directory for write is not portable, and
     /// the point of the tests that use this is precisely that entry files move
     /// while their parent directories do not.
@@ -1245,21 +1304,80 @@ mod tests {
 
         // Rewriting the header's timestamp keeps the JSON valid, so only the
         // AAD binding catches it.
-        let header_start = ENVELOPE_MAGIC.len() + HEADER_LEN_BYTES;
-        let header_len =
-            u32::from_le_bytes(original[ENVELOPE_MAGIC.len()..header_start].try_into().unwrap())
-                as usize;
-        let mut header: OfflineCacheHeader =
-            serde_json::from_slice(&original[header_start..header_start + header_len]).unwrap();
+        let mut header = header_of(&original);
         header.updated_at_unix_ms = 999;
         let rewritten = serde_json::to_vec(&header).unwrap();
         let mut forged = envelope_aad(rewritten.len() as u32, &rewritten);
-        forged.extend_from_slice(&original[header_start + header_len..]);
+        forged.extend_from_slice(&original[envelope_body_start(&original)..]);
         assert_eq!(
             decode_envelope(&context, "conversation", "abc", &forged)
                 .unwrap_err()
                 .kind,
             OfflineCacheFaultKind::Undecryptable,
+        );
+        cleanup(&context);
+    }
+
+    #[test]
+    fn a_header_that_lies_about_its_payload_length_is_refused_after_decryption() {
+        // Tampering cannot reach `LengthMismatch` — `payload_bytes` is inside
+        // the AAD, so editing it breaks authentication first. Only a writer
+        // holding the entry key can produce an envelope that authenticates and
+        // still disagrees with itself, which is what a future bug in
+        // `encode_envelope` would look like. Hold the check to that.
+        let context = context("length-lie");
+        let mut header = header_for(&context, "conversation", "abc");
+        header.payload_bytes = 999;
+        let envelope = seal(&context, "conversation", "abc", &header, b"{\"a\":1}");
+        assert_eq!(
+            decode_envelope(&context, "conversation", "abc", &envelope)
+                .unwrap_err()
+                .kind,
+            OfflineCacheFaultKind::LengthMismatch,
+        );
+        cleanup(&context);
+    }
+
+    #[test]
+    fn a_payload_that_is_not_utf8_is_classified_rather_than_lossily_decoded() {
+        let context = context("payload-malformed");
+        let plaintext = [0xffu8, 0xfe, 0xfd];
+        let mut header = header_for(&context, "conversation", "abc");
+        header.payload_bytes = plaintext.len() as u32;
+        let envelope = seal(&context, "conversation", "abc", &header, &plaintext);
+        assert_eq!(
+            decode_envelope(&context, "conversation", "abc", &envelope)
+                .unwrap_err()
+                .kind,
+            OfflineCacheFaultKind::PayloadMalformed,
+        );
+        cleanup(&context);
+    }
+
+    #[test]
+    fn rewriting_one_entry_never_repeats_a_nonce_or_a_ciphertext() {
+        // The entry key is deterministic in the scope and the name, so every
+        // rewrite of one entry reuses it. Nonce reuse under a reused AES-GCM
+        // key is the failure that loses the plaintext outright, and no other
+        // test here would notice a fixed nonce: a round trip still succeeds
+        // and the payload is still absent from the file.
+        let context = context("nonce");
+        let path = context.entry_path("conversation", "abc");
+        let mut nonces = Vec::new();
+        let mut ciphertexts = Vec::new();
+        for _ in 0..8 {
+            write_entry(&context, "conversation", "abc", "{\"same\":true}", "r", 1).unwrap();
+            let envelope = std::fs::read(&path).unwrap();
+            nonces.push(header_of(&envelope).nonce);
+            ciphertexts.push(envelope[envelope_body_start(&envelope)..].to_vec());
+        }
+        let unique_nonces: std::collections::BTreeSet<_> = nonces.iter().collect();
+        assert_eq!(unique_nonces.len(), nonces.len(), "a nonce was reused");
+        let unique_ciphertexts: std::collections::BTreeSet<_> = ciphertexts.iter().collect();
+        assert_eq!(
+            unique_ciphertexts.len(),
+            ciphertexts.len(),
+            "identical plaintext produced identical bytes, so it is not encrypted with a fresh nonce",
         );
         cleanup(&context);
     }
