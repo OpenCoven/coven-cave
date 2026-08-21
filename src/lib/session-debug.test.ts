@@ -483,9 +483,11 @@ assert.match(
 
 // TurnRow uses the persisted offset model to keep live tools chronological,
 // then settles non-edit activity and edit cards into their durable sections.
+// Segmenting the PRESENTED projection rather than raw `visible` is what keeps
+// streamed tools aligned with the text actually on screen (548eae3b95).
 assert.match(
   chatViewSource,
-  /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+  /segmentTurn\(\s*presentedProjection\.visible,\s*turn\.tools,\s*\)\?\.map\([\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
   "assistant turns preserve live tool chronology through text-offset segments",
 );
 assert.match(
