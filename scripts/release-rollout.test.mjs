@@ -433,6 +433,20 @@ test("a waived baseline rolls out, but never silently", () => {
     /no prior manifest to restore/,
     "printing a placeholder drill for a release with no baseline rehearses a procedure that cannot be run",
   );
+
+  // The waiver has to be stated once, not twice. A rollback already prints a
+  // `rollback target:` line explaining the waiver, so pushing the standing
+  // note as well gave an incident report two differently worded lines with the
+  // same prefix, which reads as two findings.
+  const waivedRollback = formatGateReport(
+    evaluateRolloutGate({ ...waived, regressions: [{ class: "crash", id: "diag-1" }] }),
+  );
+  assert.equal(
+    waivedRollback.split("\n").filter((line) => line.startsWith("rollback target:")).length,
+    1,
+    "the operator reading this during an incident needs one answer to 'what do I roll back to', not two",
+  );
+  assert.match(waivedRollback, /patch forward/, "the one line that remains is still the one that says there is no target");
 });
 
 test("a drill that cannot name what it would restore is refused, waiver or not", () => {

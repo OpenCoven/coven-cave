@@ -398,8 +398,10 @@ export function formatGateReport(result) {
   ];
   // A waived baseline is stated on every decision, not only on a rollback: an
   // operator advancing a rollout is entitled to know the way back is a patch
-  // forward rather than a restore.
-  if (result.rollbackBaselineWaived) {
+  // forward rather than a restore. Once, though — a rollback's own target line
+  // above already says it, and two differently worded `rollback target:` lines
+  // in an incident report read as two findings rather than one fact.
+  if (result.rollbackBaselineWaived && result.decision !== "rollback") {
     lines.push("rollback target: none — baseline waived upstream; the only remedy is patching forward");
   }
   for (const reason of result.reasons) {
