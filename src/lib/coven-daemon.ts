@@ -84,9 +84,19 @@ export function isRemoteWindowsPath(candidate: string): boolean {
  * to the host that planted it, so the refusal has to happen here rather than
  * on the value that comes back.
  *
- * `homeDir` is machine configuration rather than launch-environment input, so
- * it is not second-guessed — a roaming profile on a UNC home is a legitimate
- * Windows setup, and no local socket could live there anyway.
+ * `homeDir` is deliberately NOT guarded, and not because it is trustworthy:
+ * `os.homedir()` honours `USERPROFILE` on Windows, so it is the same class of
+ * launch-environment input as `COVEN_HOME` (verified — setting `USERPROFILE`
+ * to a UNC path changes what `homedir()` returns). It is left alone because
+ * refusing it has no safe answer. A UNC profile is a legitimate roaming setup,
+ * reading your own `daemon.json` over SMB is normal there, and there is no
+ * further fallback to refuse *to* — so a guard would break real users rather
+ * than close the hole. `COVEN_HOME` is different on exactly that point: it is
+ * an explicit override with a safe local fallback available.
+ *
+ * The residual exposure is therefore an attacker who can set `USERPROFILE` on
+ * Cave's process, which is a strictly larger capability than planting a file.
+ * See the PR discussion on #4780 before "fixing" this.
  */
 function covenHomePath(
   env: Record<string, string | undefined>,
