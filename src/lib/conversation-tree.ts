@@ -155,3 +155,62 @@ export function linearizeLegacy<T extends TreeTurn>(
   }));
   return { turns: linked, activeLeafId: linked[linked.length - 1].id };
 }
+
+/** Result of splicing one turn out of the tree. */
+export type TurnDeletion<T extends TreeTurn> = {
+  turns: T[];
+  /** Repaired leaf: unchanged unless it named the removed turn. */
+  activeLeafId: string | undefined;
+  /** False when the id named no turn — a retry of an already-applied delete. */
+  deleted: boolean;
+};
+
+/**
+ * Remove one turn, splicing it out of the tree rather than pruning its
+ * subtree: every child is reparented to the removed turn's parent.
+ *
+ * Deleting a message the user no longer wants must not silently take the
+ * replies that followed it, and it must not leave children pointing at an id
+ * that is gone — `resolveActivePath` would then stop its ancestor walk early
+ * and render a truncated conversation. Splicing keeps every surviving turn on
+ * exactly one path.
+ *
+ * Returning `deleted: false` for an unknown id, rather than throwing, is what
+ * makes the operation idempotent: a client retrying a delete whose response it
+ * never saw must not be told the second attempt failed. The cost is that a
+ * genuinely wrong id reads the same as an already-applied one — after the
+ * fact, the two are indistinguishable, and the retry is the case worth
+ * getting right.
+ */
+export function deleteTurn<T extends TreeTurn>(
+  turns: T[],
+  turnId: string,
+  activeLeafId?: string,
+): TurnDeletion<T> {
+  const target = turns.find((turn) => turn.id === turnId);
+  if (!target) return { turns, activeLeafId, deleted: false };
+
+  const inheritedParent = target.parentId ?? null;
+  const remaining = turns
+    .filter((turn) => turn.id !== turnId)
+    .map((turn) => {
+      if ((turn.parentId ?? null) !== turnId) return turn;
+      // A child inheriting itself as parent would be a self-cycle; the walk
+      // guards against cycles, but a root is the honest answer here.
+      const parentId = inheritedParent === turn.id ? null : inheritedParent;
+      return { ...turn, parentId };
+    });
+
+  if (activeLeafId !== turnId) return { turns: remaining, activeLeafId, deleted: true };
+
+  // The active leaf was the turn just removed. Prefer its parent — that is
+  // where the conversation visibly continues from — and fall back to the
+  // newest remaining turn so a deleted root does not leave the path empty.
+  if (inheritedParent !== null && remaining.some((turn) => turn.id === inheritedParent)) {
+    return { turns: remaining, activeLeafId: inheritedParent, deleted: true };
+  }
+  const newestRemaining = remaining.length > 0
+    ? byCreatedAt(remaining)[remaining.length - 1]!.id
+    : undefined;
+  return { turns: remaining, activeLeafId: newestRemaining, deleted: true };
+}

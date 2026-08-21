@@ -6,6 +6,7 @@ import {
   buildSiblingIndex,
   childLeaf,
   linearizeLegacy,
+  deleteTurn,
   type TreeTurn,
 } from "./conversation-tree.ts";
 
@@ -160,4 +161,87 @@ test("buildSiblingIndex agrees with siblingsOf for every turn (one pass)", () =>
     assert.deepEqual(viaIndex.siblings.map((s) => s.id), viaScan.siblings.map((s) => s.id), turn.id);
     assert.equal(viaIndex.index, viaScan.index, turn.id);
   }
+});
+
+// ── deleteTurn ──────────────────────────────────────────────────────────────
+// Deleting a message splices the node out and reparents its children, rather
+// than pruning the subtree. Taking the replies along with the message is the
+// obvious wrong behaviour; leaving children pointing at a removed id is the
+// subtle one, because resolveActivePath then stops its ancestor walk early
+// and silently renders a truncated conversation.
+
+test("deleteTurn reparents children instead of pruning the subtree", () => {
+  const turns = [t("u1", null, 1), t("a1", "u1", 2), t("u2", "a1", 3), t("a2", "u2", 4)];
+  const result = deleteTurn(turns, "a1", "a2");
+
+  assert.equal(result.deleted, true);
+  assert.deepEqual(result.turns.map((x) => x.id), ["u1", "u2", "a2"]);
+  assert.equal(result.turns.find((x) => x.id === "u2")?.parentId, "u1", "the reply is adopted");
+  // The whole point: the surviving turns still form one walkable chain.
+  assert.deepEqual(
+    resolveActivePath(result.turns, result.activeLeafId!).map((x) => x.id),
+    ["u1", "u2", "a2"],
+  );
+});
+
+test("deleteTurn on an unknown id is a no-op, not a failure", () => {
+  const turns = [t("u1", null, 1), t("a1", "u1", 2)];
+  const result = deleteTurn(turns, "never-existed", "a1");
+
+  assert.equal(result.deleted, false);
+  assert.equal(result.turns, turns, "the array is handed back untouched");
+  assert.equal(result.activeLeafId, "a1");
+});
+
+test("deleting the active leaf moves it to the parent", () => {
+  const turns = [t("u1", null, 1), t("a1", "u1", 2), t("u2", "a1", 3)];
+  const result = deleteTurn(turns, "u2", "u2");
+
+  assert.equal(result.activeLeafId, "a1");
+  assert.deepEqual(result.turns.map((x) => x.id), ["u1", "a1"]);
+});
+
+test("deleting a root leaf falls back to the newest remaining turn", () => {
+  // Two root branches; the active one is deleted and has no parent to fall
+  // back to, so the path must not be left pointing at nothing.
+  const turns = [t("r1", null, 1), t("r2", null, 2), t("a2", "r2", 3)];
+  const result = deleteTurn(turns, "r1", "r1");
+
+  assert.equal(result.activeLeafId, "a2");
+  assert.deepEqual(result.turns.map((x) => x.id), ["r2", "a2"]);
+});
+
+test("deleting the only turn leaves no active leaf rather than a dangling one", () => {
+  const result = deleteTurn([t("u1", null, 1)], "u1", "u1");
+
+  assert.deepEqual(result.turns, []);
+  assert.equal(result.activeLeafId, undefined);
+  assert.equal(result.deleted, true);
+});
+
+test("deleting a root promotes its children to roots", () => {
+  const turns = [t("u1", null, 1), t("a1", "u1", 2), t("a1b", "u1", 3)];
+  const result = deleteTurn(turns, "u1", "a1");
+
+  assert.equal(result.turns.find((x) => x.id === "a1")?.parentId, null);
+  assert.equal(result.turns.find((x) => x.id === "a1b")?.parentId, null);
+  assert.equal(result.activeLeafId, "a1", "an unrelated active leaf is left alone");
+});
+
+test("deleteTurn keeps sibling branches independent", () => {
+  // a1 and a1b are alternative replies to u1. Deleting one must not disturb
+  // the other or the branch hanging off it.
+  const turns = [t("u1", null, 1), t("a1", "u1", 2), t("a1b", "u1", 3), t("u2", "a1b", 4)];
+  const result = deleteTurn(turns, "a1", "u2");
+
+  assert.deepEqual(result.turns.map((x) => x.id), ["u1", "a1b", "u2"]);
+  assert.equal(result.activeLeafId, "u2");
+  assert.deepEqual(resolveActivePath(result.turns, "u2").map((x) => x.id), ["u1", "a1b", "u2"]);
+});
+
+test("deleteTurn does not mutate the array it was given", () => {
+  const turns = [t("u1", null, 1), t("a1", "u1", 2), t("u2", "a1", 3)];
+  const before = JSON.stringify(turns);
+  deleteTurn(turns, "a1", "u2");
+  assert.equal(JSON.stringify(turns), before);
 });
