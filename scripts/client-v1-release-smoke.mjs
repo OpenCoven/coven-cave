@@ -34,18 +34,39 @@ const repositoryRoot = path.resolve(scriptDirectory, "..");
 export const DEFAULT_ORIGIN = "http://127.0.0.1:3000";
 export const CLIENT_V1_HEALTH_PATH = "/api/client/v1/health";
 
+/**
+ * The release version this build should be answering with.
+ *
+ * Validated for the same reason the fixture is: it is read from the checkout
+ * this script ships in, not from the build being probed, so an unusable value
+ * says nothing about the release. Unvalidated it returned `undefined` for a
+ * manifest carrying no `version`, which reached checkHealthEnvelope and was
+ * announced on the FAIL channel — a broken harness reported as a broken
+ * release, the exact confusion contractExpectations is wrapped to prevent.
+ */
 export function packageVersion(root = repositoryRoot) {
-  const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-  return manifest.version;
+  const manifestPath = path.join(root, "package.json");
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    throw new Error(`cannot read the release manifest at ${manifestPath}: ${describe(error)}`, { cause: error });
+  }
+  const version = typeof manifest === "object" && manifest !== null ? manifest.version : undefined;
+  return requiredVersion(version, "version", `release manifest ${manifestPath}`);
 }
 
 export function contractFixturePath(root = repositoryRoot) {
   return path.join(root, "src", "lib", "server", "client-v1", "contract-fixture.json");
 }
 
-function requiredFixtureVersion(value, field, fixturePath) {
+function describe(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function requiredVersion(value, field, source) {
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`contract fixture ${fixturePath} declares no usable ${field}`);
+    throw new Error(`${source} declares no usable ${field}`);
   }
   return value;
 }
@@ -72,18 +93,13 @@ export function contractExpectations(root = repositoryRoot) {
   try {
     fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
   } catch (error) {
-    throw new Error(
-      `cannot read the contract fixture at ${fixturePath}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new Error(`cannot read the contract fixture at ${fixturePath}: ${describe(error)}`, { cause: error });
   }
   const contract = typeof fixture === "object" && fixture !== null ? fixture.contract : undefined;
+  const source = `contract fixture ${fixturePath}`;
   return {
-    apiVersion: requiredFixtureVersion(contract?.apiVersion, "apiVersion", fixturePath),
-    minimumClientVersion: requiredFixtureVersion(
-      contract?.minimumClientVersion,
-      "minimumClientVersion",
-      fixturePath,
-    ),
+    apiVersion: requiredVersion(contract?.apiVersion, "apiVersion", source),
+    minimumClientVersion: requiredVersion(contract?.minimumClientVersion, "minimumClientVersion", source),
   };
 }
 

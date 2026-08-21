@@ -105,6 +105,28 @@ test("names the fixture when it cannot supply the expected versions", () => {
   }
 });
 
+test("names the manifest when it cannot supply the expected release version", () => {
+  // packageVersion fed releaseVersion unvalidated, so a manifest with no
+  // version produced `undefined`, and checkHealthEnvelope announced that on the
+  // FAIL channel — a broken harness reported to the operator as a broken
+  // release. It reads from this checkout, not from the build being probed.
+  const root = mkdtempSync(path.join(tmpdir(), "client-v1-smoke-manifest-"));
+  try {
+    assert.throws(() => packageVersion(root), /cannot read the release manifest at .*package\.json/);
+    const manifest = path.join(root, "package.json");
+    writeFileSync(manifest, JSON.stringify({ name: "coven-cave" }), "utf8");
+    assert.throws(() => packageVersion(root), /release manifest .* declares no usable version/);
+    writeFileSync(manifest, JSON.stringify({ name: "coven-cave", version: "   " }), "utf8");
+    assert.throws(() => packageVersion(root), /declares no usable version/);
+    writeFileSync(manifest, JSON.stringify({ name: "coven-cave", version: 3 }), "utf8");
+    assert.throws(() => packageVersion(root), /declares no usable version/);
+    writeFileSync(manifest, JSON.stringify({ name: "coven-cave", version: "0.3.8" }), "utf8");
+    assert.equal(packageVersion(root), "0.3.8");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("catches an unstamped release version", () => {
   // The failure this smoke exists for: a build that shipped without the
   // release stamp still answers 200 and looks healthy.
