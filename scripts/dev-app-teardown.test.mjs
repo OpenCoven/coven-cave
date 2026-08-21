@@ -83,19 +83,19 @@ echo "server_token $COVEN_CAVE_AUTH_TOKEN" >>"${pidFile}"
 node -e '
   const http = require("http");
   const fs = require("fs");
-  // Mirror src/proxy.ts: only an authenticated readiness probe earns the proof
-  // header. Stamping it unconditionally would keep this fixture passing even if
-  // the launcher stopped minting and exporting COVEN_CAVE_DEV_PROBE_TOKEN for
-  // the dev server it owns, which is the contract this test relies on.
-  const expected = (process.env.COVEN_CAVE_DEV_PROBE_TOKEN || "").trim();
   const server = http.createServer((request, response) => {
+    // Mirror the readiness contract in src/proxy.ts: only an authenticated
+    // dev-shell probe earns the proof header. Answering it unconditionally
+    // would let this test pass against a launcher that never sends a token.
     const url = new URL(request.url, "http://127.0.0.1");
-    const ready = expected.length > 0
-      && request.method === "GET"
+    const expected = process.env.COVEN_CAVE_DEV_PROBE_TOKEN || "";
+    const supplied = request.headers["x-coven-cave-readiness-token"] || "";
+    const ready = request.method === "GET"
       && url.pathname === "/"
       && url.searchParams.get("__devShellProbe") === "1"
-      && request.headers["x-coven-cave-readiness-token"] === expected;
-    response.writeHead(204, ready ? { "x-coven-cave-readiness": "1" } : {});
+      && expected.length > 0
+      && supplied === expected;
+    response.writeHead(204, { "x-coven-cave-readiness": ready ? "1" : "0" });
     response.end();
   });
   server.listen(${port}, "127.0.0.1", () => {
