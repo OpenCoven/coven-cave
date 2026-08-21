@@ -103,7 +103,7 @@ test("charts derive from real model fields with honest empty state", () => {
   );
   assert.match(
     src,
-    /heatmapFromSessions\(recentSessions, Date\.parse\(updatedAt \?\? ""\)\)/,
+    /const parsed = Date\.parse\(updatedAt \?\? ""\);[\s\S]{0,120}?const now = Number\.isFinite\(parsed\) \? parsed : Date\.now\(\);[\s\S]{0,100}?heatmapFromSessions\(recentSessions, now\)/,
     "heatmap buckets real created_at timestamps against the current refresh",
   );
   assert.match(

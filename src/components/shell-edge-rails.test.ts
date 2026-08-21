@@ -75,8 +75,8 @@ assert.equal(
 );
 assert.match(
   shell,
-  /<div className="shell-window-titlebar__controls">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<\/div>/,
-  "the native title strip groups its interactive boundary controls",
+  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" \/>\s*\{navToggle\}[\s\S]*?\{historyNav\}/,
+  "the workspace toolbar keeps a dedicated drag lane before its boundary controls",
 );
 assert.match(
   shell,

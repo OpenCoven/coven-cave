@@ -17,6 +17,7 @@ import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
+import { useMacTrafficLightsForNavState } from "@/lib/use-mac-traffic-lights";
 import { useIsMobile } from "@/lib/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
@@ -619,6 +620,8 @@ function ShellInner({
   // match the Cave's minimized default. The mounted layout effects restore a
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
+  const trafficLightsVisible = isMobile || navOpen;
+  useMacTrafficLightsForNavState(trafficLightsVisible);
   const [navChromeWidth, setNavChromeWidth] = useState(
     chatContextual ? NAV_OPEN_PX : NAV_RAIL_PX,
   );
@@ -1388,9 +1391,10 @@ function ShellInner({
         onClick={toggleRightChat}
       >
         <Icon
-          name={rightChatOpen ? "ph:chat-circle-dots-fill" : "ph:chat-circle-dots"}
+          name={rightChatOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
           width={CAVE_ICON_SIZE.shellToggle}
           height={CAVE_ICON_SIZE.shellToggle}
+          className="shell-top-toggle__icon--mirrored"
         />
       </button>
     ) : null

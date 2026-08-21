@@ -22,8 +22,13 @@ assert.match(
 );
 assert.match(
   terminal,
-  /setInterval\([\s\S]*?bridge\.invoke<string\[]>\("pty_list"\)[\s\S]*?DESKTOP_HEALTH_INTERVAL_MS/,
-  "a visible desktop terminal continuously verifies that its PTY remains registered",
+  /usePausablePoll\([\s\S]*?desktopHealthProbeRef\.current\?\.\(\)[\s\S]*?DESKTOP_HEALTH_INTERVAL_MS[\s\S]*?enabled: platform === "desktop" && ready && visible/,
+  "a visible desktop terminal verifies its PTY through the shared visibility-aware poll",
+);
+assert.doesNotMatch(
+  terminal,
+  /setInterval\(/,
+  "terminal health must not poll while the app is hidden",
 );
 assert.match(
   terminal,

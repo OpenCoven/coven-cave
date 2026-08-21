@@ -7,6 +7,7 @@ import type React from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
 import { PtyWsBridge } from "@/lib/pty-ws-bridge";
 import { Icon } from "@/lib/icon";
@@ -406,6 +407,12 @@ export function BottomTerminal({
   // a visible-but-unfocused split pane must keep announcing output.
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const desktopHealthProbeRef = useRef<(() => Promise<void>) | null>(null);
+  usePausablePoll(
+    () => desktopHealthProbeRef.current?.(),
+    DESKTOP_HEALTH_INTERVAL_MS,
+    { enabled: platform === "desktop" && ready && visible },
+  );
 
   const flushMirror = useCallback(() => {
     flushTimerRef.current = null;
@@ -519,7 +526,6 @@ export function BottomTerminal({
 
     let disposed = false;
     let cleanup: (() => void) | null = null;
-    let healthTimer: ReturnType<typeof setInterval> | null = null;
 
     void (async () => {
      try {
@@ -654,15 +660,9 @@ export function BottomTerminal({
       } else {
         log("pty_start: skipped, already in pty_list");
       }
-      if (!disposed) {
-        setReady(true);
-        setHealth("healthy");
-      }
-      term.focus();
-
-      healthTimer = setInterval(() => {
+      const healthProbe = async () => {
         if (disposed || stopped || !visibleRef.current) return;
-        void bridge.invoke<string[]>("pty_list").then((sessions) => {
+        await bridge.invoke<string[]>("pty_list").then((sessions) => {
           if (disposed || stopped || sessions.includes(threadId)) return;
           sendToPtyRef.current = null;
           setReady(false);
@@ -670,7 +670,13 @@ export function BottomTerminal({
           setStartError("The shell process stopped responding. Retry to start a fresh attachment.");
           srAnnounce("Terminal shell stopped responding", "assertive");
         }).catch((error) => log("pty health check FAILED", error));
-      }, DESKTOP_HEALTH_INTERVAL_MS);
+      };
+      desktopHealthProbeRef.current = healthProbe;
+      if (!disposed) {
+        setReady(true);
+        setHealth("healthy");
+      }
+      term.focus();
 
       const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
         void bridge.invoke("pty_resize", {
@@ -705,9 +711,8 @@ export function BottomTerminal({
         pendingMirrorRef.current = "";
         termRef.current = null;
         term.dispose();
-        if (healthTimer) {
-          clearInterval(healthTimer);
-          healthTimer = null;
+        if (desktopHealthProbeRef.current === healthProbe) {
+          desktopHealthProbeRef.current = null;
         }
         // Deliberately NO pty_stop here. Unmount is usually a tab switch
         // (keepalive reparenting), and the fire-and-forget stop raced the

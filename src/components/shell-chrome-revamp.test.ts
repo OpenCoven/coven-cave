@@ -125,8 +125,8 @@ assert.match(
 );
 assert.match(
   desktopChrome,
-  /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,500}?border-bottom: 1px solid color-mix/,
-  "native macOS separates the centered identity strip from the functional toolbar with a quiet hairline",
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[\s\S]{0,700}?border-right: 1px solid var\(--border-hairline\)/,
+  "native macOS separates the connected identity rail from the functional toolbar with a quiet hairline",
 );
 
 // ── 3. Bottom status bar ─────────────────────────────────────────────────────
