@@ -63,6 +63,37 @@ function readPersistedInstanceId(file: string): string | null {
 }
 
 /**
+ * Store a freshly minted id without overwriting one another process published.
+ *
+ * The exclusive flag is what turns the caller's re-read into an adoption
+ * rather than a coin toss. Two Caves booting together both find no store and
+ * both mint; a plain write let the second clobber an id the first had already
+ * served, and now that each process remembers what it read, that divergence no
+ * longer heals on the next request — the two answer with different instance
+ * ids until restart, and every client paired against the overwritten one
+ * re-pairs.
+ *
+ * EEXIST over a store holding nothing usable is the other case: a truncated or
+ * hand-edited record has no winner to lose to, so it is repaired in place.
+ */
+function persistInstanceId(file: string, instanceId: string): void {
+  const record = `${JSON.stringify({ instanceId }, null, 2)}\n`;
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, record, { encoding: "utf8", flag: "wx" });
+    return;
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code !== "EEXIST") return;
+  }
+  if (readPersistedInstanceId(file)) return;
+  try {
+    writeFileSync(file, record, { encoding: "utf8" });
+  } catch {
+    // Read-only or full disk; the caller degrades to the minted id.
+  }
+}
+
+/**
  * Read the persisted instance id, minting and storing one on first call.
  *
  * A write failure returns the freshly minted id rather than throwing: health
@@ -88,12 +119,7 @@ export function clientV1InstanceId(): string {
   if (persisted) return remember(file, persisted);
 
   const instanceId = randomUUID();
-  try {
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, `${JSON.stringify({ instanceId }, null, 2)}\n`, { encoding: "utf8" });
-  } catch {
-    return remember(file, instanceId);
-  }
+  persistInstanceId(file, instanceId);
   // Re-read rather than trusting the write: two processes starting together
   // both mint an id, and the loser of that race must adopt the winner's file
   // instead of serving an id that is about to disappear on next boot.
