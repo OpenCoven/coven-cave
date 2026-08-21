@@ -814,7 +814,7 @@ test("the offline read cache is registered, instance-scoped, and served read-onl
   // between a live payload and durable storage.
   assert.match(
     offlineCacheTs,
-    /const \{ value: sanitized \} = sanitizeForOfflineCache\(value\);/,
+    /const \{ value: sanitized[^}]*\} = sanitizeForOfflineCache\(value\);/,
     "the client must sanitize before it invokes the native write",
   );
   const invoked = [...offlineCacheTs.matchAll(/invoke\("([a-z_]+)"/g)].map(([, name]) => name);

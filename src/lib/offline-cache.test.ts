@@ -152,6 +152,38 @@ test("a write sanitizes before it invokes and forwards the entry identity", asyn
   assert.ok(!calls[0].args.payload.includes("sk-live-abc"), "the secret must not be serialized");
 });
 
+test("a write says what the sanitizer removed instead of dropping it silently", async () => {
+  const warnings = [];
+  const { calls, dependencies } = recorder(null);
+  dependencies.warn = (message) => warnings.push(message);
+
+  const stored = await writeOfflineCache(
+    "conversation",
+    "session-4775",
+    { title: "Standup", token: "sk-live-abc", attachment: { bytes: "iVBORw0KGgo=" } },
+    "rev-9",
+    dependencies,
+  );
+
+  // The write still succeeds — a dropped field is not a failure — but it is
+  // no longer invisible.
+  assert.equal(stored, true);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /dropped 2 field\(s\)/);
+  assert.match(warnings[0], /token/);
+  assert.match(warnings[0], /attachment\.bytes/);
+  assert.ok(!warnings[0].includes("sk-live-abc"), "a diagnostic must name keys, never values");
+  assert.equal(calls[0].args.payload, '{"title":"Standup","attachment":{}}');
+});
+
+test("a write that drops nothing says nothing", async () => {
+  const warnings = [];
+  const { dependencies } = recorder(null);
+  dependencies.warn = (message) => warnings.push(message);
+  await writeOfflineCache("conversation", "abc", { title: "Standup" }, "r", dependencies);
+  assert.deepEqual(warnings, []);
+});
+
 test("an over-budget payload is refused without touching the native side", async () => {
   const { calls, dependencies } = recorder(null);
   // Prose rather than a filler run of one character: the sanitizer would drop

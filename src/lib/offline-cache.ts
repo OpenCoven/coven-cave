@@ -112,6 +112,11 @@ type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unkno
 export type OfflineCacheDependencies = {
   invoke?: Invoke;
   supported?: () => boolean;
+  /**
+   * Where a write reports what it could not do: a native call that failed,
+   * and the fields the sanitizer removed. Both are otherwise silent — the
+   * write still resolves — so a caller that wants to know has to ask.
+   */
   warn?: (message: string) => void;
 };
 
@@ -295,8 +300,19 @@ export async function writeOfflineCache(
 ): Promise<boolean> {
   if (!isOfflineCacheSupported(dependencies) || !isValidName(key)) return false;
   if (utf8Length(revision) > MAX_REVISION_LENGTH) return false;
-  const { value: sanitized } = sanitizeForOfflineCache(value);
+  const { value: sanitized, dropped } = sanitizeForOfflineCache(value);
   if (sanitized === undefined) return false;
+  if (dropped.length > 0) {
+    // The sanitizer's rules are conservative on purpose, and two of them are
+    // heuristics: `looksLikeEmbeddedBytes` will drop any string of 8 KiB or
+    // more that happens to be entirely base64 alphabet. Without this the
+    // removal is invisible — the write still returns `true`, and the cached
+    // copy is quietly not what the caller passed. Paths are key names from
+    // the caller's own object graph and carry no values.
+    dependencies.warn?.(
+      `[cave] offline cache dropped ${dropped.length} field(s) before storing: ${dropped.join(", ")}`,
+    );
+  }
   let payload: string;
   try {
     payload = JSON.stringify(sanitized);
