@@ -141,8 +141,8 @@ test("3a — the rail anchors to the DOM the markdown pipeline actually rendered
 test("3a — provenance is the turn's own tool events, and absent when there are none", () => {
   assert.match(
     chatView,
-    /readerTools=\{turnTools\}/,
-    "the reader reads the same tool events the turn carries",
+    /readerTools=\{settledTools\}/,
+    "the reader reads the turn's settled tool events",
   );
   assert.match(
     reader,
