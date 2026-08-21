@@ -276,6 +276,56 @@ function waitForPoliteAnnouncement(page: Page, expected: string) {
   }), { message: expected, timeoutMs: 15_000 });
 }
 
+/** One POST body captured from `/api/chat/send`. */
+type SendEntry = Record<string, unknown>;
+
+/**
+ * The sends that are actually the composer's Enhance run.
+ *
+ * `/api/chat/send` is a SHARED endpoint, not Enhance's private one: the shell
+ * generates the home surface's daily narrative through it too
+ * (`workspace.tsx` -> `generateDailyNarrative`, which tags itself
+ * `origin: "journal"`). That call is unrelated background traffic on its own
+ * schedule, so counting every POST made the count depend on whether the
+ * narrative happened to land inside the test window — the same structural
+ * weakness that made `tests/task-work-fit.spec.ts` fail with overall CI suite
+ * load rather than with any change to the chat code (df1a25f78).
+ *
+ * Selecting the enhance-origin sends is strictly more precise than the bare
+ * count, not weaker: a genuine duplicate Enhance run necessarily carries
+ * `origin: "enhance"`, so every true positive survives and only the false ones
+ * drop. The "never sends a chat message" half of this test's claim is kept by
+ * `conversationSends` below rather than by the bare count.
+ */
+const enhanceSends = (sends: SendEntry[]): SendEntry[] =>
+  sends.filter((entry) => entry.origin === "enhance");
+
+/**
+ * Sends that would become a saved conversation.
+ *
+ * Enhance must never post a real chat message, and dropping every non-enhance
+ * send would have hidden exactly that regression. So exclude only the one
+ * background caller this surface is known to have — the journal narrative —
+ * and keep asserting that nothing else reached the endpoint.
+ */
+const conversationSends = (sends: SendEntry[]): SendEntry[] =>
+  sends.filter((entry) => entry.origin !== "enhance" && entry.origin !== "journal");
+
+/** Compact, quotable rendering of the send log for an assertion message: a
+ *  bare "Received: 2" is undiagnosable, and the unrelated sends are precisely
+ *  what the reader needs to see to tell a real duplicate from background
+ *  traffic. */
+function describeSends(sends: SendEntry[]): string {
+  if (!sends.length) return "no sends recorded";
+  return sends
+    .map((entry, index) => {
+      const prompt = String(entry.prompt ?? "");
+      const head = prompt.length > 60 ? `${prompt.slice(0, 60)}…` : prompt;
+      return `#${index + 1} origin=${String(entry.origin ?? "?")} sessionId=${String(entry.sessionId ?? "none")} prompt=${JSON.stringify(head)}`;
+    })
+    .join("; ");
+}
+
 test.describe("prompt enhance", () => {
   test("legacy Enhance remains available and never sends a chat message when recommendations are disabled", async ({ page }) => {
     await seed(page);
@@ -295,14 +345,24 @@ test.describe("prompt enhance", () => {
     await expect(homeEnhanceStatus(page, "Prompt improved.")).toBeVisible();
 
     // The run is an ephemeral, hidden, cheap request — never a saved chat.
-    expect(sends).toHaveLength(1);
-    expect(sends).toEqual([
-      expect.objectContaining({ origin: "enhance" }),
-    ]);
-    expect(sends[0].reasoningEffort).toBe("low");
-    expect(sends[0].sessionId).toBeUndefined();
-    expect(String(sends[0].prompt)).toContain("fix login bug");
-    expect(String(sends[0].prompt)).toContain("Rewrite the user's draft prompt");
+    // One click is one enhance run: count the enhance-origin sends, not every
+    // POST to the shared endpoint (see enhanceSends above).
+    expect(
+      enhanceSends(sends),
+      `one Enhance click streams exactly one enhance run — all sends: ${describeSends(sends)}`,
+    ).toHaveLength(1);
+    // …and the click never opened a real conversation. The journal narrative is
+    // the shell's own background traffic; anything else here would be Enhance
+    // posting a chat message, which is the regression this test is named for.
+    expect(
+      conversationSends(sends),
+      `Enhance must never post a chat message — all sends: ${describeSends(sends)}`,
+    ).toEqual([]);
+    const [enhanceSend] = enhanceSends(sends);
+    expect(enhanceSend.reasoningEffort).toBe("low");
+    expect(enhanceSend.sessionId).toBeUndefined();
+    expect(String(enhanceSend.prompt)).toContain("fix login bug");
+    expect(String(enhanceSend.prompt)).toContain("Rewrite the user's draft prompt");
 
     await page.getByRole("button", { name: "Revert enhanced prompt" }).click();
     await expect(draft).toHaveValue("fix login bug");

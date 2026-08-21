@@ -62,15 +62,6 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         CODE_SIGN_ENTITLEMENTS: CovenCave/CovenCave.entitlements
-        # Release CI signs manually against the App Store profile it installs
-        # and validates, because the App Store Connect key available to the
-        # workflow is user-scoped (vars.APPLE_API_KEY_SUBJECT=user) and Apple
-        # answers xcodebuild's automatic-signing handshake with HTTP 401 on
-        # listTeams. The workflow supplies the profile UUID per target through
-        # this user-defined setting; a build that does not set it resolves to
-        # empty, which CODE_SIGN_STYLE: Automatic above ignores — so local and
-        # Debug builds are unaffected.
-        PROVISIONING_PROFILE_SPECIFIER: $(CAVE_IOS_APP_PROFILE)
     dependencies:
       - package: WebRTC
         product: WebRTC
@@ -132,9 +123,6 @@ targets:
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         SKIP_INSTALL: YES
         CODE_SIGN_ENTITLEMENTS: CovenCaveWidgets/CovenCaveWidgets.entitlements
-        # See the note on the app target: the release workflow passes this
-        # target's own App Store profile UUID, and it is empty everywhere else.
-        PROVISIONING_PROFILE_SPECIFIER: $(CAVE_IOS_WIDGET_PROFILE)
 
 schemes:
   CovenCave:

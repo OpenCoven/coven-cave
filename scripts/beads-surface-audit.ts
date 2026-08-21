@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyPlatform, type PlatformClassification } from "../src/lib/beads-delivery.ts";
+import { withBdLaunch } from "../src/lib/bd-bin.ts";
 
 type InvalidClassification = Extract<PlatformClassification, "missing" | "conflicting">;
 type BaselineFile = {
@@ -67,7 +68,8 @@ function parseArgs(argv: string[]): AuditOptions {
 }
 
 function runBdList() {
-  const result = spawnSync("bd", ["list", "--all", "--json"], {
+  const launch = withBdLaunch("bd", ["list", "--all", "--json"]);
+  const result = spawnSync(launch.command, launch.args, {
     encoding: "utf8",
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],

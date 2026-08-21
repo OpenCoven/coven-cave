@@ -159,6 +159,15 @@ assert.match(
   /\.cave-new-response-content\s*\{[\s\S]*position\s*:\s*sticky[\s\S]*margin-left\s*:\s*auto/,
   "The released-reader control should remain sticky and right-aligned without float",
 );
+// The assertion above ends "without float" but only ever proved the sticky and
+// margin-left halves; a `float` added beside them would have satisfied it while
+// taking the control out of flow. Check the clause the message already claims,
+// scoped to the rule body so an unrelated rule cannot answer for it.
+assert.doesNotMatch(
+  styles.match(/\.cave-new-response-content\s*\{[^}]*\}/)?.[0] ?? "",
+  /float\s*:\s*(?!none)/,
+  "The released-reader control must stay in flow — a float would pull it out and strand the sticky offset",
+);
 
 // The chat's linked task is surfaced directly in the mobile header (not just
 // buried in the kebab drawer), so its affiliation is visible at a glance.

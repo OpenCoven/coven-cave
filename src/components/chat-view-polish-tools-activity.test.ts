@@ -293,6 +293,16 @@ assert.match(
   /const activityDetails =[\s\S]*?otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the activityDetails ToolGroup",
 );
+// Exclusivity, not just existence. The assertion above proves the rollup is fed
+// `otherTools`; it does not stop a second ToolGroup being handed the unfiltered
+// set. That is the specific regression the edit/non-edit partition exists to
+// prevent — edit cards swept back into the collapsed rollup, where the whole
+// point is that they stay visible.
+assert.doesNotMatch(
+  turnRow,
+  /<ToolGroup tools=\{(?:editCards|settledTools|turn\.tools)/,
+  "edit cards and unpartitioned tools must never be swept into the collapsed activity rollup",
+);
 assert.match(
   turnRow,
   /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,

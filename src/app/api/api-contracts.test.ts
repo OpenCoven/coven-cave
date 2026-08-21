@@ -75,6 +75,10 @@ const contracts: RouteContract[] = [
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
   { route: "/chat/stream/status", methods: ["GET"], kind: "json" },
   { route: "/chat/usage", methods: ["GET"], kind: "json" },
+  // Deliberately no localOriginGuard: an external client must be able to read
+  // its compatibility answer before it holds a credential, which is the whole
+  // reason this route exists. It returns no user data and no paths.
+  { route: "/client/v1/health", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
@@ -388,6 +392,13 @@ function effectiveRouteSource(file: string, source: string): string {
   if (source.includes('from "@/lib/server/onboarding-bootstrap-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "onboarding-bootstrap-route.ts"), "utf8"));
   }
+  // Client v1 routes never build a Response by hand: the envelope builders own
+  // that so every route answers in the same shape. Inline them like the OAuth
+  // route above, or the checks below read a route with no `Response.json` in
+  // it and conclude it returns nothing.
+  if (source.includes('from "@/lib/server/client-v1/responses"')) {
+    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "client-v1", "responses.ts"), "utf8"));
+  }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
   }
@@ -398,10 +409,16 @@ const routeFiles = walkRoutes(apiRoot);
 const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
-assert.equal(
-  actualRoutes.some((route) => route.startsWith("/client/v1")),
-  false,
-  "Phase 0 must not expose /api/client/v1 routes before the public contract foundation is wired",
+// Phase 0 forbade every /api/client/v1 route while the public contract was
+// still an unserved module. Health ends that for exactly one route: a client
+// cannot discover it is too old without an endpoint to ask. The gate is
+// narrowed rather than dropped, because what it was really protecting against
+// is client-v1 surface appearing faster than it is reviewed — so each new
+// route has to be added here deliberately, not just by existing on disk.
+assert.deepEqual(
+  actualRoutes.filter((route) => route.startsWith("/client/v1")),
+  ["/client/v1/health"],
+  "client v1 exposes only the reviewed health route until the pairing surface lands",
 );
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
 

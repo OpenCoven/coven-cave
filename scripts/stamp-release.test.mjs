@@ -1160,9 +1160,14 @@ assert.match(
   "checksum publication uses the immutable commit verified by the source gate",
 );
 const updaterManifestJob = workflowJob(yml, "updater-manifest");
+// Further `needs:` entries are allowed after source-version — release gates get
+// added over time (cave-ilh1h added rollback-readiness) and each pins itself in
+// its own test. What this assertion owns is unchanged: build and source-version
+// are both required, and the job checks out the source gate's immutable commit
+// with no write credential.
 assert.match(
   updaterManifestJob,
-  /needs:\s*\n\s+- build\s*\n\s+- source-version\s*\n\s+permissions:\s*\n\s+contents: write[\s\S]*ref: \$\{\{ needs\.source-version\.outputs\.release-commit \}\}\s*\n\s+persist-credentials: false/,
+  /needs:\s*\n\s+- build\s*\n\s+- source-version\s*\n(?:\s+- [\w-]+\s*\n)*\s+permissions:\s*\n\s+contents: write[\s\S]*ref: \$\{\{ needs\.source-version\.outputs\.release-commit \}\}\s*\n\s+persist-credentials: false/,
   "updater publication uses the immutable commit verified by the source gate",
 );
 assert.doesNotMatch(buildJob, /matrix\.os/, "release summaries use the declared matrix platform key");
