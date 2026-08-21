@@ -150,14 +150,31 @@ const LIST_FIXTURE = "fixtures/phase-6/performance-fixtures.json#phase-6-list-10
  * was. Against three concurrent runs the *median* already reaches 2,603 ms, so
  * 3,000 ms left 15% headroom on a machine merely doing three things at once.
  *
- * The cold ceiling is therefore 5,000 ms: 1.9x the slowest median measured, and
- * still below the 6,411-6,900 ms the benchmark's own full-transcript-parse
- * control loop costs on the same runs. That upper anchor is the point — a cold
- * scan that regressed all the way back to parsing every transcript must still
- * trip this, or the budget would permit undoing the optimisation it exists to
- * protect. The warm ceiling stays 750 ms: the warm median moved 156 → 156 ms
- * under the same contention, and a warm scan that stopped hitting cache would
- * cost the cold number and breach immediately.
+ * The cold ceiling is therefore 5,000 ms: 1.9x the slowest median measured. The
+ * warm ceiling stays 750 ms — the warm median moved 156 → 156 ms under the same
+ * contention, and a warm scan that stopped hitting cache would cost the cold
+ * number and breach immediately.
+ *
+ * ⚠️ **5,000 ms does not by itself catch a total regression to full-transcript
+ * parsing, and an earlier draft of this comment claimed it did.** The claim was
+ * that 5,000 ms sits under the 6,411-6,900 ms the benchmark's own control loop
+ * cost on the seeding runs, so undoing the optimisation would still trip it.
+ * That anchor is not machine-independent: the control loop costs whatever the
+ * machine costs. A quieter run of the same reference machine measured a
+ * full-parse median of 3,891.97 ms against a cold median of 922.92 ms, so a
+ * cold scan back at full-parse speed would read ~3,892 ms and PASS.
+ *
+ * Nothing else here closes that gap. `cold-scan.bytes` reads the identical
+ * 43,608,890 bytes in both loops (the optimisation removed parsing, not
+ * reading); `cache-hit-rate` is taken from the warm loop, so a cold regression
+ * does not move it; and the 20% baseline comparison does flag it, but the
+ * nightly runs without `--fail-on-regression`, so the run still exits 0.
+ *
+ * Tightening the ceiling is not the repair — a limit under 3,892 ms leaves
+ * ~25-34% headroom over the 2,603 ms contended median and reinstates the
+ * noise-driven red nightly that moving off p95 was for. The durable fix is a
+ * budget relative to the control loop measured in the same run; that needs a
+ * second budget kind and is tracked as `cave-4e1`.
  */
 export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
   {

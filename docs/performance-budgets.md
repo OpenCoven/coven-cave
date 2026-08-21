@@ -132,14 +132,40 @@ read as generous: against an idle single run it was. Against three concurrent
 runs the *median* already reaches 2,603 ms, leaving 15% — seeded from the quiet
 run, the ceiling was one busy runner away from red.
 
-The cold ceiling is therefore **5,000 ms**: 1.9x the slowest median measured,
-and still below the 6,411–6,900 ms the benchmark's own full-transcript-parse
-control loop costs on the same runs. That upper anchor is the point — a cold
-scan that regressed all the way back to parsing every transcript must still trip
-this, or the budget would permit undoing the optimisation it protects. The warm
-ceiling stays **750 ms**: the warm median moved 156 → 156 ms under the same
-contention, and a warm scan that stopped hitting cache would cost the cold
+The cold ceiling is therefore **5,000 ms**: 1.9x the slowest median measured.
+The warm ceiling stays **750 ms** — the warm median moved 156 → 156 ms under the
+same contention, and a warm scan that stopped hitting cache would cost the cold
 number and breach immediately.
+
+### What 5,000 ms does *not* catch
+
+An earlier draft justified the ceiling by an upper anchor: 5,000 ms sits under
+the 6,411–6,900 ms the benchmark's own full-transcript-parse control loop cost
+on the seeding runs, so a cold scan that regressed all the way back to parsing
+every transcript would still trip it. **That anchor is not
+machine-independent**, and the claim is false on a fast runner. Measured with
+`pnpm performance:report` on the same reference machine, quieter:
+
+| metric | median |
+| --- | ---: |
+| cold metadata scan | 922.92 ms |
+| full-transcript-parse control loop | 3,891.97 ms |
+
+3,891.97 ms is *below* the ceiling, so a cold scan back at full-parse speed
+passes. Nothing else here closes the gap either: the cold scan reads the
+identical 43,608,890 bytes the control loop does — the optimisation removed
+parsing, not reading — so `cold-scan.bytes` cannot separate them;
+`cache-hit-rate` is taken from the warm loop, so a cold regression does not move
+it; and the 20% baseline comparison does classify it as a `regression`, but the
+nightly runs without `--fail-on-regression`, so the run still exits 0.
+
+Tightening the absolute ceiling is not the repair. The slowest legitimate median
+measured is 2,603 ms, so any limit below the 3,891.97 ms control cost leaves
+25–34% headroom and reinstates exactly the noise-driven red nightly that moving
+off p95 was meant to end. The durable fix is a budget expressed *relative* to
+the control loop measured in the same run, on the same machine, under the same
+load — which needs the catalogue to grow a second budget kind, and is tracked as
+`cave-4e1` rather than bolted onto this change.
 
 `src/lib/performance-budgets.test.ts` asserts the shipped limits clear the
 *slowest* run in that table, not the fastest, so tightening a limit past a
