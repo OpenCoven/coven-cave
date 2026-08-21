@@ -37,6 +37,87 @@ test("every surface named by the hardening plan carries at least one budget", ()
   }
 });
 
+/**
+ * The build gates whose numbers this catalogue delegates to.
+ *
+ * Written down so the check below cannot be satisfied by the catalogue
+ * agreeing with itself. The list is cross-checked against the files the
+ * `postbuild` entries actually name, so neither side can drift alone.
+ *
+ * ⚠️ Known limit, stated rather than papered over: a brand-new gate script that
+ * nothing in the catalogue references yet is invisible to this test. Detecting
+ * that would mean guessing which `scripts/*.mjs` constants are budgets, which
+ * is a heuristic, not a gate. Adding a build-time budget means adding it here.
+ */
+const DELEGATED_BUILD_GATES = [
+  "scripts/bundle-budget.mjs",
+  "scripts/sidecar-runtime-closure.mjs",
+  "scripts/standalone-budget.mjs",
+];
+
+/**
+ * Budget constants a gate script defines, derived from the script itself.
+ *
+ * `bundle-budget.mjs` runs its whole check at import time and calls
+ * process.exit, so its knobs are read out of the source by the exact
+ * `Number(process.env.X)` shape all five budgets use — narrower than every
+ * `process.env` read, so an unrelated env var is not mistaken for a ceiling.
+ * The other two export frozen objects and are simply imported.
+ */
+async function gateBudgetSymbols(file: string): Promise<string[]> {
+  const url = new URL(`../../${file}`, import.meta.url);
+  if (file === "scripts/bundle-budget.mjs") {
+    const contents = await readFile(url, "utf8");
+    return [
+      ...new Set(
+        [...contents.matchAll(/Number\(process\.env\.([A-Z][A-Z0-9_]*)\)/g)].map(
+          (match) => match[1],
+        ),
+      ),
+    ];
+  }
+  const namespace = (await import(url.href)) as Record<string, unknown>;
+  return Object.entries(namespace).flatMap(([name, value]) =>
+    name.endsWith("_BUDGETS") && value && typeof value === "object"
+      ? Object.keys(value as Record<string, unknown>).map((key) => `${name}.${key}`)
+      : [],
+  );
+}
+
+test("every budget constant the delegated build gates define has a catalogue entry", async () => {
+  // "Every surface has at least one budget" was the whole completeness check,
+  // and a surface passes that with one of its five ceilings recorded — which is
+  // what shipped: 2 of the 9 build-gate numbers, with the bundle surface
+  // reading as covered while four of its five budgets were absent. A directory
+  // that is silently partial is the exact failure this module was written to
+  // end, so assert the gates' own constants rather than a per-surface floor.
+  const delegated = PERFORMANCE_BUDGETS.filter((entry) => entry.gate === "postbuild").map(
+    (entry) => {
+      const derivation = budgetSourceDerivation(entry.source);
+      assert.ok(derivation, `${entry.id}: source must read "<gate script> (<constant>)"`);
+      return derivation;
+    },
+  );
+  assert.deepEqual(
+    [...new Set(delegated.map((derivation) => derivation.file))].sort(),
+    [...DELEGATED_BUILD_GATES].sort(),
+    "the gates this test enumerates and the gates the catalogue delegates to must be the same set",
+  );
+
+  for (const file of DELEGATED_BUILD_GATES) {
+    const recorded = new Set(
+      delegated.filter((derivation) => derivation.file === file).map((d) => d.symbol),
+    );
+    for (const symbol of await gateBudgetSymbols(file)) {
+      assert.ok(
+        recorded.has(symbol),
+        `${file} enforces ${symbol}, but no catalogue entry records it — the ` +
+          `directory would report that surface as covered while it is not`,
+      );
+    }
+  }
+});
+
 test("catalogue entries are well formed and uniquely identified", () => {
   const seen = new Set<string>();
   for (const entry of PERFORMANCE_BUDGETS) {

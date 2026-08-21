@@ -11,6 +11,13 @@
  * This module is that enumeration. Each entry names the gate that enforces it,
  * so the catalogue stays a directory rather than becoming a second, competing
  * gate over budgets that `postbuild` already owns.
+ *
+ * A partial directory answers the question wrongly rather than not at all, so
+ * completeness is derived from the gates instead of asserted here:
+ * `performance-budgets.test.ts` reads every budget constant `bundle-budget.mjs`,
+ * `standalone-budget.mjs` and `sidecar-runtime-closure.mjs` define and requires
+ * an entry for each. The first draft recorded 2 of those 9 while the only
+ * completeness check — "every surface has at least one budget" — passed.
  */
 
 export const PERFORMANCE_BUDGET_SCHEMA_VERSION = 1 as const;
@@ -46,7 +53,15 @@ export const PERFORMANCE_BUDGET_GATES = [
 ] as const;
 export type PerformanceBudgetGate = typeof PERFORMANCE_BUDGET_GATES[number];
 
-export type PerformanceBudgetUnit = "ms" | "bytes" | "percent";
+/**
+ * `count` is here because two shipped gates budget a number of files rather
+ * than a size, and the earlier three-unit union is what kept them out of this
+ * catalogue: `STANDALONE_BUDGETS.fileCount` and the sidecar closure's file
+ * count were both approved, both enforced, and both unrepresentable. Dropping
+ * them silently would have left the directory claiming completeness while
+ * recording 2 of 9 build-gate numbers.
+ */
+export type PerformanceBudgetUnit = "ms" | "bytes" | "percent" | "count";
 export type PerformanceBudgetDirection = "lower-is-better" | "higher-is-better";
 
 /**
@@ -316,6 +331,46 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     source: "scripts/bundle-budget.mjs (BUNDLE_MAX_HOME_KB)",
   },
   {
+    id: "bundle.shell.bytes",
+    surface: "bundle",
+    label: "Always-loaded shell JS (rootMainFiles)",
+    unit: "bytes",
+    direction: "lower-is-better",
+    limit: null,
+    gate: "postbuild",
+    source: "scripts/bundle-budget.mjs (BUNDLE_MAX_SHELL_KB)",
+  },
+  {
+    id: "bundle.largest-chunk.bytes",
+    surface: "bundle",
+    label: "Largest single client chunk",
+    unit: "bytes",
+    direction: "lower-is-better",
+    limit: null,
+    gate: "postbuild",
+    source: "scripts/bundle-budget.mjs (BUNDLE_MAX_CHUNK_KB)",
+  },
+  {
+    id: "bundle.root-css.bytes",
+    surface: "bundle",
+    label: "Root-layout CSS every route pays",
+    unit: "bytes",
+    direction: "lower-is-better",
+    limit: null,
+    gate: "postbuild",
+    source: "scripts/bundle-budget.mjs (BUNDLE_MAX_ROOT_CSS_KB)",
+  },
+  {
+    id: "bundle.home-css.bytes",
+    surface: "bundle",
+    label: "Home route first-load CSS",
+    unit: "bytes",
+    direction: "lower-is-better",
+    limit: null,
+    gate: "postbuild",
+    source: "scripts/bundle-budget.mjs (BUNDLE_MAX_HOME_CSS_KB)",
+  },
+  {
     id: "package.standalone.bytes",
     surface: "package",
     label: "Next standalone artifact size",
@@ -324,6 +379,42 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     limit: null,
     gate: "postbuild",
     source: "scripts/standalone-budget.mjs (STANDALONE_BUDGETS.unpackedBytes)",
+  },
+  {
+    id: "package.standalone.file-count",
+    surface: "package",
+    label: "Next standalone artifact entry count",
+    unit: "count",
+    direction: "lower-is-better",
+    limit: null,
+    gate: "postbuild",
+    source: "scripts/standalone-budget.mjs (STANDALONE_BUDGETS.fileCount)",
+  },
+  {
+    // The gate's own number lives in scripts/sidecar-runtime-budget.json and is
+    // read from there by SIDECAR_RUNTIME_BUDGETS.fileCount, src-tauri/build.rs
+    // and the runtime smoke check. Naming the reader rather than the JSON keeps
+    // this entry on the same resolvable footing as every other delegation --
+    // and the JSON's own note is explicit that the number is edited there and
+    // nowhere else, which is exactly why the catalogue must not restate it.
+    id: "package.sidecar-runtime.file-count",
+    surface: "package",
+    label: "Tauri sidecar runtime closure entry count",
+    unit: "count",
+    direction: "lower-is-better",
+    limit: null,
+    gate: "postbuild",
+    source: "scripts/sidecar-runtime-closure.mjs (SIDECAR_RUNTIME_BUDGETS.fileCount)",
+  },
+  {
+    id: "package.sidecar-runtime.bytes",
+    surface: "package",
+    label: "Tauri sidecar runtime closure size",
+    unit: "bytes",
+    direction: "lower-is-better",
+    limit: null,
+    gate: "postbuild",
+    source: "scripts/sidecar-runtime-closure.mjs (SIDECAR_RUNTIME_BUDGETS.unpackedBytes)",
   },
   {
     id: "shell.warm-boot.p95-ms",

@@ -42,6 +42,45 @@ read. Grepping for the string is not enough — the catalogue shipped
 `STANDALONE_BUDGETS.bytes` when the real key is `unpackedBytes`, and the phrase
 "bytes" still occurs in that script's own comments and log lines.
 
+### Completeness is derived from the gates, not asserted in prose
+
+The acceptance criterion for issue #4779 is that *all* approved production
+budgets are machine-enforced, and a directory that lists some of them answers
+that question wrongly rather than not at all. The catalogue shipped recording 2
+of the 9 build-gate numbers that already existed — `BUNDLE_MAX_HOME_KB` and
+`STANDALONE_BUDGETS.unpackedBytes` — while the unit suite only asserted that
+every *surface* carried at least one budget. The bundle surface therefore read
+as covered with four of its five ceilings missing.
+
+All nine are now recorded, and the check no longer asks the catalogue about
+itself. `src/lib/performance-budgets.test.ts` reads the constants out of the
+gates: `bundle-budget.mjs` by the exact `Number(process.env.X)` shape its five
+knobs use (it exits at import time, so it cannot be imported), and the two
+frozen `*_BUDGETS` objects by importing them. Every constant found must have an
+entry, and the set of gate files the test enumerates must equal the set the
+catalogue delegates to, so neither list can drift alone.
+
+| gate | constants |
+| --- | --- |
+| `scripts/bundle-budget.mjs` | `BUNDLE_MAX_HOME_KB`, `BUNDLE_MAX_SHELL_KB`, `BUNDLE_MAX_CHUNK_KB`, `BUNDLE_MAX_ROOT_CSS_KB`, `BUNDLE_MAX_HOME_CSS_KB` |
+| `scripts/standalone-budget.mjs` | `STANDALONE_BUDGETS.unpackedBytes`, `STANDALONE_BUDGETS.fileCount` |
+| `scripts/sidecar-runtime-closure.mjs` | `SIDECAR_RUNTIME_BUDGETS.unpackedBytes`, `SIDECAR_RUNTIME_BUDGETS.fileCount` |
+
+Two of those are file *counts*, which the original `ms | bytes | percent` unit
+union could not express — the representation gap is why they were absent, so
+the union grew a `count` rather than the entries being quietly dropped. The
+sidecar entry names `SIDECAR_RUNTIME_BUDGETS.fileCount` and not the
+`scripts/sidecar-runtime-budget.json` the number literally lives in: that file's
+own note says the value is edited there and nowhere else, so the catalogue
+records the gate that reads it, on the same resolvable footing as every other
+delegation.
+
+**Known limit, stated rather than papered over:** a brand-new gate script that
+no catalogue entry references yet is invisible to this check. Detecting it would
+mean guessing which `scripts/*.mjs` constants are budgets, which is a heuristic
+and not a gate. Adding a build-time budget means adding it to the catalogue and
+to the test's gate list.
+
 `pending` entries are the honest half. The warm/offline shell deadlines, the
 10k-event stream ceiling, and the `coven doctor` deadline are approved numbers
 with no harness behind them yet; they appear in every report so the gap stays
