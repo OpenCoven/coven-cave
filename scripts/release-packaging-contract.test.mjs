@@ -109,6 +109,31 @@ test("the updater manifest is signature-verified before it reaches the release",
   );
 });
 
+// ── The gate must stay able to fail ────────────────────────────────────
+// The bug this PR removed was a verification that exited 0 without looking.
+// `continue-on-error` or a step-level `if:` would reintroduce it in one line,
+// and the step would still appear in the job — so assert the step's own body,
+// not merely its presence.
+test("the verify step cannot be neutered by continue-on-error or a step condition", () => {
+  const job = jobBody(releaseWorkflow, "updater-manifest");
+  const lines = job.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^\s*- name: Verify updater signatures/.test(line));
+  assert.notEqual(start, -1, "the verify step must exist and keep a recognisable name");
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^ {6}- (name|uses):/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  const step = lines.slice(start, end).join("\n");
+
+  assert.doesNotMatch(step, /continue-on-error/, "a failed verification must fail the job");
+  assert.doesNotMatch(step, /^\s{8}if:/m, "the verification must not be skippable by condition");
+  assert.match(step, /set -euo pipefail/, "the shell must abort on the verifier's non-zero exit");
+});
+
 // ── Target parity between the generator and the verifier ───────────────
 test("every platform the manifest generator emits is a platform the verifier checks", () => {
   const generator = read("./generate-latest-json.mjs");

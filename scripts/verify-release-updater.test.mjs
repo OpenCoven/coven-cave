@@ -15,7 +15,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  FETCH_TIMEOUT_MS,
   TARGETS,
+  fetchWithRetry,
   isDirectRun,
   parsePub,
   parseSig,
@@ -142,6 +144,57 @@ test("verifySignature reports a key id mismatch before attempting the maths", ()
   );
   assert.equal(result.ok, false);
   assert.match(result.why, /key id mismatch/);
+});
+
+// ── network robustness ─────────────────────────────────────────────────
+// These fetches run after the artifacts are published but before latest.json
+// is uploaded, so an unretried blip leaves a released build whose updater
+// manifest never went up — the same outage the job exists to prevent.
+const stubResponse = (status) => ({ status, ok: status >= 200 && status < 300 });
+
+test("fetchWithRetry retries a 5xx and returns the eventual success", async () => {
+  const seen = [];
+  let calls = 0;
+  const res = await fetchWithRetry("https://example.test/a", {
+    fetchImpl: async () => { calls += 1; return stubResponse(calls < 3 ? 503 : 200); },
+    sleep: async (ms) => { seen.push(ms); },
+  });
+  assert.equal(res.status, 200);
+  assert.equal(calls, 3);
+  assert.deepEqual(seen, [1000, 2000], "backoff doubles between attempts");
+});
+
+test("fetchWithRetry retries a transport error, then throws naming the url", async () => {
+  let calls = 0;
+  await assert.rejects(
+    fetchWithRetry("https://example.test/b", {
+      fetchImpl: async () => { calls += 1; throw new Error("ECONNRESET"); },
+      sleep: async () => {},
+    }),
+    /https:\/\/example\.test\/b failed after 3 attempts: ECONNRESET/,
+  );
+  assert.equal(calls, 3);
+});
+
+test("fetchWithRetry does NOT retry a 4xx — a missing asset is an answer", async () => {
+  let calls = 0;
+  const res = await fetchWithRetry("https://example.test/c", {
+    fetchImpl: async () => { calls += 1; return stubResponse(404); },
+    sleep: async () => {},
+  });
+  assert.equal(res.status, 404);
+  assert.equal(calls, 1, "a 404 must be reported, not retried");
+});
+
+test("every request carries an abort signal so none can hang the release job", async () => {
+  let init = null;
+  await fetchWithRetry("https://example.test/d", {
+    method: "HEAD",
+    fetchImpl: async (_url, got) => { init = got; return stubResponse(200); },
+  });
+  assert.ok(init.signal, "a bare fetch() has no timeout and hangs until the job is killed");
+  assert.equal(init.method, "HEAD");
+  assert.ok(FETCH_TIMEOUT_MS.head > 0 && FETCH_TIMEOUT_MS.get > FETCH_TIMEOUT_MS.head);
 });
 
 // ── the CLI actually runs ──────────────────────────────────────────────

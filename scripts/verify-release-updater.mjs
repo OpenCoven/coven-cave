@@ -61,6 +61,44 @@ export const readOption = (argv, name) => {
   return value === undefined || value.startsWith("--") ? null : value;
 };
 
+// ── network ────────────────────────────────────────────────────────────
+// Every fetch here runs INSIDE the release job, after the artifacts are
+// published but BEFORE latest.json is uploaded. A bare fetch() has no timeout,
+// so one unresponsive connection hangs until GitHub kills the job — and a
+// single transient blip fails the step, leaving a published release whose
+// updater manifest never went up. That is exactly the "installs see no update"
+// outage this job exists to prevent (cave-ef6f), arriving by a different road.
+//
+// So: bound every request, and retry the ones that can succeed on a second
+// look. A 4xx is an answer — the asset really is missing — and is returned as
+// is for the caller to report. Only a transport error or a 5xx is retried.
+export const FETCH_TIMEOUT_MS = { head: 30_000, get: 20 * 60_000 };
+const FETCH_ATTEMPTS = 3;
+
+export const fetchWithRetry = async (
+  url,
+  { method = "GET", attempts = FETCH_ATTEMPTS, timeoutMs, fetchImpl = fetch, sleep } = {},
+) => {
+  const budget = timeoutMs ?? (method === "HEAD" ? FETCH_TIMEOUT_MS.head : FETCH_TIMEOUT_MS.get);
+  const pause = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const res = await fetchImpl(url, {
+        method,
+        redirect: "follow",
+        signal: AbortSignal.timeout(budget),
+      });
+      if (res.status < 500) return res;
+      lastError = new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastError = e;
+    }
+    if (attempt < attempts) await pause(1000 * 2 ** (attempt - 1));
+  }
+  throw new Error(`${method} ${url} failed after ${attempts} attempts: ${lastError?.message ?? "unknown"}`);
+};
+
 // ── minisign verification (pure node) ──────────────────────────────────
 export const parsePub = (b64) => {
   const line2 = Buffer.from(b64, "base64").toString("utf8").trim().split("\n").pop().trim();
@@ -124,14 +162,16 @@ async function main() {
     } catch (e) { fail(`could not read manifest: ${e.message}`); }
   } else {
     console.log("\n=== 1. fetch latest.json from endpoint ===");
-    const res = await fetch(endpoint, { redirect: "follow" });
-    if (!res.ok) {
-      fail(`endpoint returned HTTP ${res.status} — updater manifest is NOT published; in-app check() finds no update`);
-    } else {
-      const text = await res.text();
-      try { manifest = JSON.parse(text); ok("latest.json fetched + valid JSON"); }
-      catch { fail("endpoint did not return valid JSON: " + text.slice(0, 80)); }
-    }
+    try {
+      const res = await fetchWithRetry(endpoint);
+      if (!res.ok) {
+        fail(`endpoint returned HTTP ${res.status} — updater manifest is NOT published; in-app check() finds no update`);
+      } else {
+        const text = await res.text();
+        try { manifest = JSON.parse(text); ok("latest.json fetched + valid JSON"); }
+        catch { fail("endpoint did not return valid JSON: " + text.slice(0, 80)); }
+      }
+    } catch (e) { fail(e.message); }
   }
 
   if (manifest) {
@@ -158,8 +198,10 @@ async function main() {
     } else {
       console.log("\n=== 3. version matches latest GitHub release ===");
       try {
-        const ghTag = (await (await fetch(`https://api.github.com/repos/${repo}/releases/latest`,
-          { headers: { "User-Agent": "verify-release-updater" } })).json()).tag_name;
+        const ghTag = (await (await fetchWithRetry(
+          `https://api.github.com/repos/${repo}/releases/latest`,
+          { timeoutMs: FETCH_TIMEOUT_MS.head },
+        )).json()).tag_name;
         const want = (ghTag || "").replace(/^v/, "");
         manifest.version === want ? ok(`latest.json ${manifest.version} == release ${ghTag}`)
           : fail(`version drift: latest.json=${manifest.version} vs release=${ghTag}`);
@@ -170,10 +212,10 @@ async function main() {
     for (const t of TARGETS) {
       const p = (manifest.platforms || {})[t];
       if (!p?.url || !p?.signature) continue;
-      const head = await fetch(p.url, { method: "HEAD", redirect: "follow" });
-      if (!head.ok) { fail(`${t}: asset url HTTP ${head.status}`); continue; }
-      const buf = Buffer.from(await (await fetch(p.url, { redirect: "follow" })).arrayBuffer());
       try {
+        const head = await fetchWithRetry(p.url, { method: "HEAD" });
+        if (!head.ok) { fail(`${t}: asset url HTTP ${head.status}`); continue; }
+        const buf = Buffer.from(await (await fetchWithRetry(p.url)).arrayBuffer());
         const v = verifySignature(buf, pubkey, p.signature);
         v.ok ? ok(`${t}: signature VALID (${v.why}, ${(buf.length / 1e6).toFixed(1)}MB)`)
              : fail(`${t}: signature INVALID — updater would REJECT this (${v.why})`);
