@@ -661,7 +661,12 @@ export function BottomTerminal({
       term.focus();
 
       healthTimer = setInterval(() => {
-        if (disposed || stopped || !visibleRef.current) return;
+        // visibleRef covers the terminal pane; document.hidden covers the whole
+        // window. A backgrounded window has nobody to tell that the shell died,
+        // and the next tick after it returns re-probes anyway, so probing
+        // through it only spends IPC. This is the polling discipline
+        // src/lib/pausable-poll-discipline.test.ts exists to keep structural.
+        if (disposed || stopped || !visibleRef.current || document.hidden) return;
         void bridge.invoke<string[]>("pty_list").then((sessions) => {
           if (disposed || stopped || sessions.includes(threadId)) return;
           sendToPtyRef.current = null;

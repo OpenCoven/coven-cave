@@ -75,6 +75,20 @@ const BASELINES = {
 };
 
 // Product recovery banks the consolidated rail, analytics, profile, memory, and chat spacing cleanup.
+// +1: the desktop chrome refresh (#4791) — `padding: 0 1px` on
+// .code-terminal-carousel__index in surface-code-room.css. The index is a
+// --text-2xs mono digit in a pill pinned to the bottom-right corner of a
+// terminal carousel tile, --space-3 wide and --space-3 tall; --space-1 (4px)
+// of inline padding would more than double it and turn a corner marker into a
+// lozenge sitting over the tile's content. Same 1/2px micro-mark family the
+// Chart Room, Weaves, Review Deck, GitHub-composer and live-transcript
+// handoffs banked above. It is the ONLY off-scale spacing value that whole
+// commit added — measured file by file against dec4f93f9^, everything else it
+// wrote to desktop-chrome.css, surface-code-room.css and
+// workspace-context-switcher.css is on --space-1..-6 or a named token — and
+// tokenize-css.mjs is a no-op over all three, so tier 1 stays clean.
+// -1: the compact Research mode picker replaces an off-grid spacing literal
+// with the shared control rhythm.
 BASELINES.offScaleSpacingPx = 1607;
 BASELINES.inlineTsxStyles = 280;
 
