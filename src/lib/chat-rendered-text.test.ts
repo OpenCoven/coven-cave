@@ -137,3 +137,39 @@ test("renderer-code fence quirks keep attention examples literal in rendered tex
   assert.equal(quoted.cardText, quotedText);
   assert.equal(quoted.attentionRequest, null);
 });
+
+test("rendered assistant text strips result markers and exposes familiar-authored results", () => {
+  const text = [
+    "Checks complete.",
+    '<coven:result id="tests" state="passed" label="Focused tests passed" />',
+  ].join("\n");
+
+  const result = extractChatRenderedText(text);
+
+  assert.equal(result.visible.trimEnd(), "Checks complete.");
+  assert.equal(result.cardText.trimEnd(), "Checks complete.");
+  assert.deepEqual(result.authoredResults, [
+    { id: "tests", state: "passed", label: "Focused tests passed", source: "familiar" },
+  ]);
+  assert.doesNotMatch(result.visible, /coven:result/);
+  assert.doesNotMatch(result.cardText, /coven:result/);
+});
+
+test("rendered assistant text keeps later authored results visible after backticks inside prior markers", () => {
+  const text = [
+    "Checks complete.",
+    '<coven:result id="tests" state="passed" label="`" />',
+    '<coven:result id="lint" state="running" label="Lint running" />',
+  ].join("\n");
+
+  const result = extractChatRenderedText(text);
+
+  assert.equal(result.visible.trimEnd(), "Checks complete.");
+  assert.equal(result.cardText.trimEnd(), "Checks complete.");
+  assert.deepEqual(result.authoredResults, [
+    { id: "tests", state: "passed", label: "`", source: "familiar" },
+    { id: "lint", state: "running", label: "Lint running", source: "familiar" },
+  ]);
+  assert.doesNotMatch(result.visible, /coven:result/);
+  assert.doesNotMatch(result.cardText, /coven:result/);
+});

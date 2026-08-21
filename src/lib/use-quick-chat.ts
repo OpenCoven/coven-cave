@@ -15,6 +15,7 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { ChatTurnLifecycle } from "@/lib/chat-turn-state";
 import type {
   ModelControlCapability,
   ModelControlFamily,
@@ -57,11 +58,12 @@ export type QuickChatMessage = {
   attachments?: ChatAttachment[];
   /** Assistant turn still streaming in. */
   pending?: boolean;
+  lifecycle?: ChatTurnLifecycle;
   /** Per-turn error (the familiar failed / reported an error). */
   error?: string | null;
   /** Local note (slash-command output like /help) — rendered as an assistant
    *  turn but never sent to the daemon, never a regenerate anchor, and never
-   *  a reply-recommendation trigger. */
+   *  a reply-recommendation trigger or lifecycle announcement owner. */
   local?: boolean;
   /** Honest model/control outcome returned with the completed assistant turn. */
   responseMetadata?: ChatResponseMetadata;
@@ -82,6 +84,80 @@ type QuickChatSendIntent = {
   modelOverride: string | null;
   modelControls: ModelControlValues;
 };
+
+type ActiveQuickChatSend = {
+  assistantId: string;
+  controller: AbortController;
+  runId: string;
+  sessionId: string | null;
+  normalStopOutcomePromise?: Promise<QuickChatStopOutcome>;
+  cleanupStopOutcomePromise?: Promise<QuickChatStopOutcome>;
+  cleanupStopSent: boolean;
+  suppressSettlementUi?: boolean;
+};
+
+type QuickChatStopResponse = {
+  stopped: boolean;
+  queued: boolean;
+};
+
+async function requestQuickChatStop(
+  active: ActiveQuickChatSend,
+  options: { keepalive?: boolean } = {},
+): Promise<QuickChatStopResponse> {
+  const response = await fetch("/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId: active.runId }),
+    keepalive: options.keepalive,
+  });
+  const payload = await response.json().catch(() => null) as {
+    ok?: unknown;
+    stopped?: unknown;
+    queued?: unknown;
+    error?: unknown;
+  } | null;
+  if (response.ok && payload?.ok === true) {
+    return {
+      stopped: payload.stopped === true,
+      queued: payload.queued === true,
+    };
+  }
+
+  const detail = typeof payload?.error === "string"
+    ? payload.error
+    : `Stop request failed (${response.status}).`;
+  throw new Error(`Could not stop the server-side response. ${detail}`);
+}
+
+type QuickChatStopOutcome =
+  | { status: "stopped" }
+  | { status: "queued" }
+  | { status: "settled" }
+  | { status: "failure"; cause: unknown };
+
+function beginQuickChatStop(
+  active: ActiveQuickChatSend,
+  options: { keepalive?: boolean } = {},
+): Promise<QuickChatStopOutcome> {
+  const promiseField = options.keepalive
+    ? "cleanupStopOutcomePromise"
+    : "normalStopOutcomePromise";
+  const existingPromise = active[promiseField];
+  if (existingPromise) return existingPromise;
+  if (options.keepalive) active.cleanupStopSent = true;
+  const stopOutcomePromise = requestQuickChatStop(active, options).then(
+    (outcome): QuickChatStopOutcome =>
+      outcome.stopped
+        ? { status: "stopped" }
+        : outcome.queued
+          ? { status: "queued" }
+          : { status: "settled" },
+    (cause): QuickChatStopOutcome => ({ status: "failure", cause }),
+  );
+  active[promiseField] = stopOutcomePromise;
+  return stopOutcomePromise;
+}
 
 export type UseQuickChat = {
   familiars: Familiar[];
@@ -160,7 +236,10 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const [sendState, setSendState] = useState<QuickChatSendState>("idle");
   const [loading, setLoading] = useState(true);
 
-  const abortRef = useRef<AbortController | null>(null);
+  const activeSendRef = useRef<ActiveQuickChatSend | null>(null);
+  // Retained after the active record is taken so synchronous cleanup settlement
+  // cannot reset a replacement send to idle.
+  const latestSendRunIdRef = useRef<string | null>(null);
   // The daemon session backing the visible thread (for context resume + the
   // Open-in-full-chat hand-off) and the familiar it belongs to.
   const sessionIdRef = useRef<string | null>(null);
@@ -285,7 +364,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     if (!next) return;
     const rest = queuedRef.current.filter((item) => item.id !== id);
     // While a turn is in flight, steering reprioritizes the queue only.
-    if (abortRef.current) {
+    if (activeSendRef.current) {
       queuedRef.current = [next, ...rest];
       setQueued(queuedRef.current);
       return;
@@ -301,10 +380,113 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // Files that rode with the last user turn, so regenerate() re-sends them.
   const lastUserAttachmentsRef = useRef<ChatAttachment[]>([]);
 
+  const settleAcceptedStop = useCallback((activeSend: ActiveQuickChatSend): boolean => {
+    if (activeSendRef.current !== activeSend) return false;
+    activeSendRef.current = null;
+    activeSend.suppressSettlementUi = true;
+    activeSend.controller.abort();
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === activeSend.assistantId && message.pending
+          ? {
+              ...message,
+              pending: false,
+              lifecycle: "cancelled",
+              error: null,
+            }
+          : message,
+      ),
+    );
+    if (latestSendRunIdRef.current === activeSend.runId) {
+      setSendState("idle");
+    }
+    return true;
+  }, []);
+
+  const reconcileStopOutcome = useCallback(
+    (
+      activeSend: ActiveQuickChatSend,
+      promiseField: "normalStopOutcomePromise" | "cleanupStopOutcomePromise",
+      stopOutcomePromise: Promise<QuickChatStopOutcome>,
+      outcome: QuickChatStopOutcome,
+    ) => {
+      if (outcome.status === "stopped" || outcome.status === "queued") {
+        settleAcceptedStop(activeSend);
+        return;
+      }
+      const ownsActiveSend = activeSendRef.current === activeSend;
+      if (
+        activeSend[promiseField] === stopOutcomePromise
+        && (
+          promiseField === "normalStopOutcomePromise"
+          || outcome.status === "failure"
+        )
+      ) {
+        activeSend[promiseField] = undefined;
+        if (promiseField === "cleanupStopOutcomePromise" && ownsActiveSend) {
+          activeSend.cleanupStopSent = false;
+        }
+      }
+      if (outcome.status !== "failure") return;
+
+      console.error("[Quick Chat] Failed to stop server-side response:", outcome.cause);
+      if (
+        activeSend.suppressSettlementUi
+        || !ownsActiveSend
+        || latestSendRunIdRef.current !== activeSend.runId
+      ) {
+        return;
+      }
+      setError(
+        outcome.cause instanceof Error
+          ? outcome.cause.message
+          : "Could not stop the server-side response.",
+      );
+    },
+    [settleAcceptedStop],
+  );
+
+  const terminateActiveSend = useCallback(
+    (
+      options: {
+        keepalive?: boolean;
+        suppressSettlementUi?: boolean;
+      },
+    ): ActiveQuickChatSend | null => {
+      const activeSend = activeSendRef.current;
+      if (!activeSend) return null;
+
+      const cleanupStopOutcomePromise = options.keepalive
+        ? beginQuickChatStop(activeSend, { keepalive: true })
+        : undefined;
+      // Claim this exact record before any async work or abort callbacks run.
+      // Every reset path shares this take, so only its first caller can issue
+      // Stop and a late completion cannot clear a replacement send.
+      activeSendRef.current = null;
+      activeSend.suppressSettlementUi = options.suppressSettlementUi === true;
+      if (cleanupStopOutcomePromise) {
+        void cleanupStopOutcomePromise.then((outcome) => {
+          reconcileStopOutcome(
+            activeSend,
+            "cleanupStopOutcomePromise",
+            cleanupStopOutcomePromise,
+            outcome,
+          );
+        });
+      }
+      activeSend.controller.abort();
+      return activeSend;
+    },
+    [reconcileStopOutcome],
+  );
+
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    terminateActiveSend({
+      keepalive: true,
+      suppressSettlementUi: true,
+    });
+    latestSendRunIdRef.current = null;
     sessionIdRef.current = null;
     threadFamiliarRef.current = null;
     lastUserPromptRef.current = "";
@@ -321,7 +503,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setMessages([]);
     setError(null);
     setSendState("idle");
-  }, []);
+  }, [terminateActiveSend]);
 
   useEffect(() => {
     if (!enabled || rosterStartedRef.current) return;
@@ -390,13 +572,45 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setSelectedFamiliarId(preferredFamiliarId);
   }, [preferredFamiliarId, familiars]);
 
-  // Abort any in-flight stream when the consumer unmounts. (The roster load
-  // aborts through its own effect cleanup above.)
+  // A BFCache page remains live: wait for the authoritative Stop outcome before
+  // changing its stream. A discarded page can abort immediately because its UI
+  // cannot be restored. Cleanup reuses any keepalive already started here.
   useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
+    const stopForPageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        const activeSend = activeSendRef.current;
+        if (!activeSend || activeSend.cleanupStopSent) return;
+        const stopOutcomePromise = beginQuickChatStop(activeSend, {
+          keepalive: true,
+        });
+        void stopOutcomePromise.then((outcome) => {
+          reconcileStopOutcome(
+            activeSend,
+            "cleanupStopOutcomePromise",
+            stopOutcomePromise,
+            outcome,
+          );
+        });
+        return;
+      }
+      terminateActiveSend({
+        keepalive: true,
+        suppressSettlementUi: true,
+      });
     };
-  }, []);
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", stopForPageHide);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pagehide", stopForPageHide);
+      }
+      terminateActiveSend({
+        keepalive: true,
+        suppressSettlementUi: true,
+      });
+    };
+  }, [reconcileStopOutcome, terminateActiveSend]);
 
   const selectedFamiliar = useMemo(
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? familiars[0] ?? null,
@@ -485,10 +699,26 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       }
       const assistantId = nextId("a");
       const controller = new AbortController();
-      abortRef.current = controller;
+      const runId = crypto.randomUUID();
+      const activeSend: ActiveQuickChatSend = {
+        assistantId,
+        controller,
+        runId,
+        sessionId: resume ? sessionIdRef.current : null,
+        cleanupStopSent: false,
+      };
+      activeSendRef.current = activeSend;
+      latestSendRunIdRef.current = runId;
       setMessages((prev) => [
         ...prev,
-        { id: assistantId, role: "assistant", text: "", pending: true, error: null },
+        {
+          id: assistantId,
+          role: "assistant",
+          text: "",
+          pending: true,
+          lifecycle: "streaming",
+          error: null,
+        },
       ]);
       setSendState("sending");
 
@@ -516,57 +746,115 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           ...(Object.keys(intent.modelControls).length
             ? { modelControls: intent.modelControls }
             : {}),
+          runId,
           signal: controller.signal,
           // Capture the backing session the moment the bridge announces it —
           // if the user stops the stream mid-turn, the thread stays resumable
           // and Open-in-full-chat still works. The aborted guard keeps a late
           // frame from resurrecting a session newThread() just cleared.
           onSession: (sid) => {
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted || activeSendRef.current !== activeSend) return;
+            activeSend.sessionId = sid;
             sessionIdRef.current = sid;
             setSessionId(sid);
           },
-          onText: (t) =>
+          onText: (t) => {
+            if (controller.signal.aborted || activeSendRef.current !== activeSend) return;
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, text: t } : m)),
-            ),
-          onResponseMetadata: (metadata) =>
+            );
+          },
+          onResponseMetadata: (metadata) => {
+            if (controller.signal.aborted || activeSendRef.current !== activeSend) return;
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, responseMetadata: metadata } : m)),
-            ),
+            );
+          },
         });
       } catch (err) {
         // A mid-stream abort (Stop / unmount) rejects the reader; keep whatever
         // streamed so far and only surface non-abort failures.
-        if (abortRef.current === controller) abortRef.current = null;
+        const ownsActiveSend = activeSendRef.current === activeSend;
+        if (ownsActiveSend) activeSendRef.current = null;
         const aborted = controller.signal.aborted;
+        if (!ownsActiveSend && !aborted) return "stopped";
+        if (activeSend.suppressSettlementUi) return "stopped";
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? { ...m, pending: false, error: aborted ? null : (err as Error)?.message ?? "Generation failed." }
+              ? {
+                  ...m,
+                  pending: false,
+                  lifecycle: aborted ? "cancelled" : "failed",
+                  error: aborted ? null : (err as Error)?.message ?? "Generation failed.",
+                }
               : m,
           ),
         );
-        setSendState("idle");
+        if (ownsActiveSend) setSendState("idle");
         return "stopped";
       }
 
-      if (abortRef.current === controller) abortRef.current = null;
+      const awaitedStopOutcomePromises = new Set<Promise<QuickChatStopOutcome>>();
+      while (activeSendRef.current === activeSend) {
+        const stopOutcomePromises = [
+          activeSend.normalStopOutcomePromise,
+          activeSend.cleanupStopOutcomePromise,
+        ].filter(
+          (promise): promise is Promise<QuickChatStopOutcome> =>
+            promise !== undefined && !awaitedStopOutcomePromises.has(promise),
+        );
+        if (stopOutcomePromises.length === 0) break;
+        stopOutcomePromises.forEach((promise) => {
+          awaitedStopOutcomePromises.add(promise);
+        });
+        const stopOutcomes = await Promise.all(stopOutcomePromises);
+        if (
+          stopOutcomes.some(
+            (outcome) => outcome.status === "stopped" || outcome.status === "queued",
+          )
+        ) {
+          settleAcceptedStop(activeSend);
+          return "stopped";
+        }
+      }
+
+      const ownsActiveSend = activeSendRef.current === activeSend;
+      if (ownsActiveSend) activeSendRef.current = null;
+      if (!ownsActiveSend || controller.signal.aborted) {
+        if (activeSend.suppressSettlementUi) return "stopped";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, pending: false, lifecycle: "cancelled", error: null }
+              : m,
+          ),
+        );
+        if (ownsActiveSend) setSendState("idle");
+        return "stopped";
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
-            ? { ...m, text: result.text, error: result.error, pending: false }
+            ? {
+                ...m,
+                text: result.text,
+                error: result.error,
+                pending: false,
+                lifecycle: result.error ? "failed" : "complete",
+              }
             : m,
         ),
       );
-      setSendState("done");
-      return "done";
+      if (ownsActiveSend) setSendState(result.error ? "idle" : "done");
+      return result.error ? "stopped" : "done";
     },
     [
       nextId,
       projectLaunchMessage,
       projectLaunchReady,
       selectedProjectRoot,
+      settleAcceptedStop,
     ],
   );
 
@@ -593,7 +881,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       // authorized for the previous one. Change scope and preserve the draft;
       // the user must choose from the new familiar's freshly filtered list
       // before any optimistic turn or server request exists.
-      if (target.familiarId !== selectedFamiliarId && !abortRef.current) {
+      if (target.familiarId !== selectedFamiliarId && !activeSendRef.current) {
         userPickedRef.current = true;
         newThread();
         selectedIdRef.current = target.familiarId;
@@ -619,7 +907,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       // naturally. Stop parks the queue, so a cancel never fires a surprise
       // follow-up; the next manual send resumes draining. A queued @mention
       // switches scope only when it reaches this pipeline again while idle.
-      if (abortRef.current) {
+      if (activeSendRef.current) {
         if (!raw.trim() && attachments.length === 0) return;
         const item: QueuedQuickChatMessage = {
           id: nextId("q"),
@@ -709,7 +997,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   const regenerate = useCallback(() => {
     const prompt = lastUserPromptRef.current;
-    if (!prompt || sendState === "sending" || abortRef.current) return;
+    if (!prompt || sendState === "sending" || activeSendRef.current) return;
     if (!projectLaunchReady) {
       setError(projectLaunchMessage);
       return;
@@ -742,12 +1030,20 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   ]);
 
   const cancel = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    // Keep whatever streamed so far, but stop the spinner on the open turn.
-    setMessages((prev) => prev.map((m) => (m.pending ? { ...m, pending: false } : m)));
-    setSendState("idle");
-  }, []);
+    const activeSend = activeSendRef.current;
+    if (!activeSend) return;
+    setError(null);
+
+    const stopOutcomePromise = beginQuickChatStop(activeSend);
+    void stopOutcomePromise.then((outcome) => {
+      reconcileStopOutcome(
+        activeSend,
+        "normalStopOutcomePromise",
+        stopOutcomePromise,
+        outcome,
+      );
+    });
+  }, [reconcileStopOutcome]);
 
   // Manual picks flow through here: they override the workspace-active default
   // from then on, and switching to a different familiar starts a fresh thread.
