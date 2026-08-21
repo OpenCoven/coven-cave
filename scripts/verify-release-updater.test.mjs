@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -392,9 +392,21 @@ test("the CLI refuses a --manifest or --tag given without a value", () => {
 //
 // These drive the real CLI against a loopback origin standing in for the
 // release assets (the manifest's url is whatever the manifest says it is, so
-// no network is needed). The secret matching the pinned pubkey is not in this
-// repo, so a VALID signature cannot be produced here — every pin below is a
-// REJECTION, which is the half that has to keep working anyway.
+// no network is needed).
+//
+// The REJECTIONS run against this repository's own root, so they are checked
+// against the pubkey actually pinned in src-tauri/tauri.conf.json. The secret
+// matching that pubkey is not in this repo, so those runs cannot produce a
+// valid signature — which is fine, because rejecting is what they assert.
+//
+// The PASS runs cannot live there for exactly that reason, and a suite made
+// only of rejections is half a gate: six review rounds hardened this script by
+// adding refusals, and a seventh could tighten it into something that can never
+// succeed. A gate that always fails is as useless as one that always passes,
+// and nothing here would have noticed. So the happy path runs against a SANDBOX
+// ROOT (see `sandboxedScript`): a temp dir holding a byte-identical copy of the
+// script plus a tauri.conf.json pinning a keypair generated in this file, which
+// is the only way to sign an artifact the verifier will accept.
 const PINNED_PUBKEY = (() => {
   const conf = JSON.parse(
     readFileSync(fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url)), "utf8"),
@@ -402,22 +414,21 @@ const PINNED_PUBKEY = (() => {
   return (conf.plugins?.updater ?? conf.updater)?.pubkey;
 })();
 
-const manifestNaming = (port, { version = "9.9.9", signature = "unused" } = {}) => {
+const manifestFile = (platforms, { version = "9.9.9" } = {}) => {
   const file = path.join(mkdtempSync(path.join(tmpdir(), "verify-updater-e2e-")), "latest.json");
-  writeFileSync(file, JSON.stringify({
-    version,
-    pub_date: "2026-01-01T00:00:00Z",
-    platforms: { "darwin-aarch64": { url: `http://127.0.0.1:${port}/app.tar.gz`, signature } },
-  }));
+  writeFileSync(file, JSON.stringify({ version, pub_date: "2026-01-01T00:00:00Z", platforms }));
   return file;
 };
+
+const manifestNaming = (port, { version = "9.9.9", signature = "unused" } = {}) =>
+  manifestFile({ "darwin-aarch64": { url: `http://127.0.0.1:${port}/app.tar.gz`, signature } }, { version });
 
 // spawnSync would deadlock here: it blocks this process's event loop, so the
 // loopback server below never accepts the connection the child is waiting on
 // and both sides sit there until the timeout. Every test that serves an asset
 // must drive the CLI asynchronously.
-const runCliAsync = (args) => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, [SCRIPT, ...args]);
+const runCliAsync = (args, script = SCRIPT) => new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [script, ...args]);
   let stdout = "";
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -555,6 +566,140 @@ test("an artifact that does not verify against the pinned pubkey fails the relea
       },
     );
   }
+});
+
+// ── the CLI's PASS verdict ─────────────────────────────────────────────
+// Every assertion above this line pins a REJECTION or a pure function, so a
+// change that made the gate refuse everything would leave the whole file green
+// while quietly making the release step unpassable. The verdict that says the
+// updater chain is publishable had no coverage at all; these supply it.
+//
+// The verifier resolves its config as `import.meta.dirname/../src-tauri/
+// tauri.conf.json`, so a byte-identical copy of the script under <tmp>/scripts/
+// reads <tmp>/src-tauri/tauri.conf.json instead of this repo's. That is the
+// whole trick: it lets the test pin a pubkey it holds the secret for, without
+// touching the repository's real one or weakening a single check — the copied
+// script is the same bytes, running the same ed25519 maths, against the same
+// four targets.
+const sandboxedScript = (pubkey) => {
+  const root = mkdtempSync(path.join(tmpdir(), "verify-updater-sandbox-"));
+  mkdirSync(path.join(root, "scripts"));
+  mkdirSync(path.join(root, "src-tauri"));
+  const copy = path.join(root, "scripts", "verify-release-updater.mjs");
+  copyFileSync(SCRIPT, copy);
+  writeFileSync(
+    path.join(root, "src-tauri", "tauri.conf.json"),
+    JSON.stringify({
+      plugins: {
+        updater: {
+          endpoints: ["https://github.com/OpenCoven/coven-cave/releases/latest/download/latest.json"],
+          pubkey,
+        },
+      },
+    }),
+  );
+  return copy;
+};
+
+// One artifact per target, served by path, so a run over all four cannot pass
+// by fetching the same bytes four times.
+const signedAssets = (targets, { privateKey, algo }) =>
+  new Map(targets.map((target) => {
+    const artifact = crypto.randomBytes(256);
+    return [`/${target}.tar.gz`, { artifact, signature: encodeSignature({ privateKey, artifact, algo }) }];
+  }));
+
+const servingSigned = (assets) => (request, response) => {
+  const asset = assets.get(new URL(request.url, "http://127.0.0.1").pathname);
+  if (!asset) { response.writeHead(404); response.end(); return; }
+  response.writeHead(200, {
+    "content-type": "application/octet-stream",
+    "content-length": String(asset.artifact.length),
+  });
+  response.end(request.method === "HEAD" ? undefined : asset.artifact);
+};
+
+const platformsFor = (assets, port) =>
+  Object.fromEntries([...assets].map(([route, asset]) => [
+    route.slice(1).replace(/\.tar\.gz$/, ""),
+    { url: `http://127.0.0.1:${port}${route}`, signature: asset.signature },
+  ]));
+
+// Windows + Node 24 can abort in libuv teardown (exit 3221226505, an
+// UV_HANDLE_CLOSING assertion) AFTER a run's verdict is fully printed, on any
+// run doing several fetch cycles. It is an environment bug, not this script's,
+// and CI is Linux — so tolerate that ONE status on win32 and nowhere else. Any
+// other non-zero status is still a failure, and the PASS text is asserted
+// separately, so a genuine exit 1 cannot slip through here.
+const WIN32_LIBUV_TEARDOWN_ABORT = 3221226505;
+const assertPassed = (result, label) => {
+  assert.match(result.stdout, /RESULT: PASS — updater chain verified end to end/, label);
+  if (process.platform === "win32" && result.status === WIN32_LIBUV_TEARDOWN_ABORT) return;
+  assert.equal(result.status, 0, `${label}: a verified chain must exit 0`);
+};
+
+test("a complete, correctly signed manifest reports PASS and exits 0", async () => {
+  // The strict run: all four targets present, each with its own artifact and a
+  // signature made by the pinned key. No --allow-partial, so nothing is
+  // tolerated and the verdict must carry no suffix.
+  const { privateKey, rawPublic } = makeKeypair();
+  const script = sandboxedScript(encodePublicKey(rawPublic));
+  const assets = signedAssets(TARGETS, { privateKey, algo: "ED" });
+
+  await servingAsset(servingSigned(assets), async (port) => {
+    const result = await runCliAsync(
+      ["--manifest", manifestFile(platformsFor(assets, port)), "--tag", "v9.9.9"],
+      script,
+    );
+    assertPassed(result, "four signed targets");
+    for (const target of TARGETS) {
+      assert.match(result.stdout, new RegExp(`${target}: signature VALID \\(prehashed`), target);
+    }
+    assert.doesNotMatch(result.stdout, /tolerated by --allow-partial/, "a complete release tolerates nothing");
+    assert.doesNotMatch(result.stdout, /✗/, "a passing run reports no failures");
+  });
+});
+
+test("a one-target --allow-partial release PASSES with the tolerated-platform suffix", async () => {
+  // The half of --allow-partial that no other test reaches: the flag exists so
+  // a release that shipped 1 of 4 platforms is judged on what it DID ship, and
+  // "judged" has to include being able to come out clean. Everything else
+  // pinning this flag asserts a FAILURE count.
+  const { privateKey, rawPublic } = makeKeypair();
+  const script = sandboxedScript(encodePublicKey(rawPublic));
+  const assets = signedAssets(["darwin-aarch64"], { privateKey, algo: "ED" });
+
+  await servingAsset(servingSigned(assets), async (port) => {
+    const result = await runCliAsync(
+      ["--manifest", manifestFile(platformsFor(assets, port)), "--tag", "v9.9.9", "--allow-partial"],
+      script,
+    );
+    assertPassed(result, "one signed target under --allow-partial");
+    assert.match(result.stdout, /darwin-aarch64: signature VALID/);
+    assert.match(
+      result.stdout,
+      /PASS — updater chain verified end to end \(3 platform\(s\) tolerated by --allow-partial\)/,
+      "the verdict must say what was NOT verified",
+    );
+  });
+});
+
+test("a legacy Ed signature over the raw artifact also reaches PASS through the CLI", async () => {
+  // verifySignature's two branches are unit-tested, but only the ED branch has
+  // ever been driven end to end. Tauri emits both, and a release signed with the
+  // legacy format must not be refused by the gate that publishes it.
+  const { privateKey, rawPublic } = makeKeypair();
+  const script = sandboxedScript(encodePublicKey(rawPublic));
+  const assets = signedAssets(["linux-x86_64"], { privateKey, algo: "Ed" });
+
+  await servingAsset(servingSigned(assets), async (port) => {
+    const result = await runCliAsync(
+      ["--manifest", manifestFile(platformsFor(assets, port)), "--tag", "v9.9.9", "--allow-partial"],
+      script,
+    );
+    assertPassed(result, "legacy Ed signature");
+    assert.match(result.stdout, /linux-x86_64: signature VALID \(legacy/);
+  });
 });
 
 test("TARGETS covers exactly the four Tauri updater platforms", () => {
