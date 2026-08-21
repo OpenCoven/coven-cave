@@ -35,6 +35,13 @@ budget while `bundle-budget.mjs` defaulted to 2800 KB, so the directory
 misreported the very thing it exists to make legible. Entries name their gate
 and its constant (`BUNDLE_MAX_HOME_KB`) instead.
 
+That name is the entry's whole tie to the gate, so the unit suite resolves it
+rather than trusting it: an exported object is imported and the dotted path
+walked, and an env knob is matched on the gate's actual `process.env.<NAME>`
+read. Grepping for the string is not enough — the catalogue shipped
+`STANDALONE_BUDGETS.bytes` when the real key is `unpackedBytes`, and the phrase
+"bytes" still occurs in that script's own comments and log lines.
+
 `pending` entries are the honest half. The warm/offline shell deadlines, the
 10k-event stream ceiling, and the `coven doctor` deadline are approved numbers
 with no harness behind them yet; they appear in every report so the gap stays

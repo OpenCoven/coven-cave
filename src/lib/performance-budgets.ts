@@ -68,7 +68,16 @@ export type PerformanceBudget = {
    */
   limit: number | null;
   gate: PerformanceBudgetGate;
-  /** The fixture, gate, or issue that owns this number. */
+  /**
+   * The fixture, gate, or issue that owns this number.
+   *
+   * Two of the three forms are machine-checked, because a `source` nobody
+   * verifies is a dangling pointer that reads exactly like a live delegation:
+   * - `performance-report` — `<fixture file>#<profile>`, and the profile must
+   *   exist in that file.
+   * - `postbuild` — `<gate script> (<constant>)`, and the constant must really
+   *   be defined by that script.
+   */
   source: string;
 };
 
@@ -159,7 +168,7 @@ export const PERFORMANCE_BUDGETS: readonly PerformanceBudget[] = [
     direction: "lower-is-better",
     limit: null,
     gate: "postbuild",
-    source: "scripts/standalone-budget.mjs (STANDALONE_BUDGETS.bytes)",
+    source: "scripts/standalone-budget.mjs (STANDALONE_BUDGETS.unpackedBytes)",
   },
   {
     id: "shell.warm-boot.p95-ms",

@@ -74,6 +74,45 @@ test("every budget enforced here names the fixture that produces it", async () =
   }
 });
 
+test("every delegated budget names a constant its gate really owns", async () => {
+  // A `postbuild` entry carries no limit, so its `source` is the ONLY thing
+  // tying it to the gate that owns the number — and a source naming a symbol
+  // that does not exist turns the entry into a dangling pointer that no test
+  // and no report can tell apart from a live delegation. Matching the string
+  // textually is not enough: `STANDALONE_BUDGETS.bytes` (the shipped value
+  // until this test existed; the real key is `unpackedBytes`) still appears
+  // word-for-word in that file's own comments and log strings.
+  for (const entry of PERFORMANCE_BUDGETS) {
+    if (entry.gate !== "postbuild") continue;
+    const match = /^(?<file>[\w./-]+\.mjs) \((?<symbol>[A-Za-z_][\w.]*)\)$/.exec(entry.source);
+    assert.ok(match?.groups, `${entry.id}: source must read "<gate script> (<constant>)"`);
+    const { file, symbol } = match.groups;
+    const url = new URL(`../../${file}`, import.meta.url);
+    const contents = await readFile(url, "utf8");
+
+    if (symbol.includes(".")) {
+      // An exported object: resolve the whole path, so a renamed key cannot
+      // keep passing just because the object it used to live on still exists.
+      const [root, ...keys] = symbol.split(".");
+      const namespace = (await import(url.href)) as Record<string, unknown>;
+      let value = namespace[root];
+      assert.notEqual(value, undefined, `${entry.id}: ${file} does not export ${root}`);
+      for (const key of keys) {
+        value = (value as Record<string, unknown> | undefined)?.[key];
+      }
+      assert.notEqual(value, undefined, `${entry.id}: ${file} defines no ${symbol}`);
+    } else {
+      // An env knob the gate reads for its ceiling. `bundle-budget.mjs` runs its
+      // whole check at import time and calls process.exit, so this one is
+      // matched on the exact read rather than imported.
+      assert.ok(
+        contents.includes(`process.env.${symbol}`),
+        `${entry.id}: ${file} never reads process.env.${symbol}`,
+      );
+    }
+  }
+});
+
 test("a measurement inside the limit passes with positive headroom", () => {
   const evaluation = evaluatePerformanceBudgets([{ id: "test.metric", value: 40 }], [budget()]);
   assert.equal(evaluation.schemaVersion, PERFORMANCE_BUDGET_SCHEMA_VERSION);
