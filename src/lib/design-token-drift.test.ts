@@ -75,7 +75,18 @@ const BASELINES = {
 };
 
 // Product recovery banks the consolidated rail, analytics, profile, memory, and chat spacing cleanup.
-BASELINES.offScaleSpacingPx = 1607;
+// +1: the desktop chrome refresh (#4791) adds the Code Room terminal carousel's
+// position pill, `.code-terminal-carousel__index { padding: 0 1px }`. The pill is
+// --space-3 tall and carries a --text-2xs ordinal, so --space-1 (4px) of inline
+// padding would be a third of its own height and turn a counter into a lozenge —
+// the same 1/2px micro-mark family the analytics, Chart Room, Weaves, Review Deck
+// and GitHub-composer handoffs already banked above. Verified as the ONLY delta:
+// a per-file scan of the CSS tree against the 581365c305 baseline attributes the
+// whole +1 to src/styles/globals/surface-code-room.css, and every other spacing
+// value the refresh added across desktop-chrome.css, shell-navigation.css and
+// workspace-context-switcher.css is on --space-1..-6. The font-size and radius
+// ratchets are unchanged.
+BASELINES.offScaleSpacingPx = 1608;
 BASELINES.inlineTsxStyles = 280;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
