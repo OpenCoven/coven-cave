@@ -66,7 +66,34 @@ test("ignores a corrupt or empty persisted record and re-mints", () => {
   }
 });
 
-test("still answers when the id cannot be persisted", (t) => {
+test("serves a remembered id instead of re-reading the store on every call", () => {
+  withCaveHome(() => {
+    const first = clientV1InstanceId();
+    // Removing the store proves the second call never reached disk. The health
+    // route is unauthenticated and force-dynamic, so an unremembered id put one
+    // synchronous readFileSync on the event loop for every request an anonymous
+    // caller cared to send.
+    rmSync(clientV1InstanceIdFile(), { force: true });
+    assert.equal(clientV1InstanceId(), first);
+  });
+});
+
+test("still answers, with one id per process, when it cannot be persisted", () => {
+  withCaveHome(() => {
+    // A directory standing where the store belongs fails both the read and the
+    // write on every platform, unlike a chmod Windows ignores.
+    mkdirSync(clientV1InstanceIdFile(), { recursive: true });
+    // Health is a diagnostic surface: a full or read-only disk must degrade to
+    // a per-process id, never to a failed endpoint and never to an id that
+    // churns per request — a churning id makes every client re-pair on every
+    // call, which is the one thing instanceId exists to prevent.
+    const first = clientV1InstanceId();
+    assert.match(first, /^[0-9a-f-]{36}$/i);
+    assert.equal(clientV1InstanceId(), first);
+  });
+});
+
+test("still answers when the Cave home itself is read-only", (t) => {
   if (process.platform === "win32") {
     // chmod is not honoured on Windows, so the unwritable directory this test
     // depends on cannot be constructed there.
@@ -74,15 +101,17 @@ test("still answers when the id cannot be persisted", (t) => {
     return;
   }
   withCaveHome((home) => {
-    const readOnly = path.join(home, "cave");
-    mkdirSync(readOnly, { recursive: true });
-    chmodSync(readOnly, 0o500);
+    // The store lives directly in the Cave home, so the home is the directory
+    // whose permissions decide whether the write succeeds. Chmodding a "cave"
+    // subdirectory instead left the write path fully writable and the assertion
+    // below passing for the wrong reason.
+    const storeDirectory = path.dirname(clientV1InstanceIdFile());
+    assert.equal(storeDirectory, home);
+    chmodSync(storeDirectory, 0o500);
     try {
-      // Health is a diagnostic surface: a full or read-only disk must degrade
-      // to a per-process id, never to a failed endpoint.
       assert.match(clientV1InstanceId(), /^[0-9a-f-]{36}$/i);
     } finally {
-      chmodSync(readOnly, 0o700);
+      chmodSync(storeDirectory, 0o700);
     }
   });
 });

@@ -21,6 +21,30 @@ import { caveHome } from "@/lib/coven-paths";
  */
 const INSTANCE_ID_ENV = "COVEN_CAVE_CLIENT_V1_INSTANCE_ID";
 
+/**
+ * The id this process resolved, and the file it came from.
+ *
+ * The id never changes once minted, but every request to the unauthenticated,
+ * `force-dynamic` health route was re-reading it: 340 us per call measured
+ * against a Cave home under the Windows user profile, 92% of the whole
+ * handler's cost, all of it synchronous and therefore blocking every other
+ * route in the process for the duration. An unauthenticated caller could
+ * schedule that read as fast as it could send GETs.
+ *
+ * Keyed on the file rather than held in a bare slot because COVEN_CAVE_HOME is
+ * process configuration a test repoints between cases, and a bare slot would
+ * serve one installation's id for another's home. The consequence in
+ * production is deliberate: deleting the store under a running Cave does not
+ * mint a new identity until restart, which is what a client caching a pairing
+ * against this id needs.
+ */
+let resolved: { file: string; instanceId: string } | null = null;
+
+function remember(file: string, instanceId: string): string {
+  resolved = { file, instanceId };
+  return instanceId;
+}
+
 export function clientV1InstanceIdFile(): string {
   return path.join(/* turbopackIgnore: true */ caveHome(), "client-v1-instance.json");
 }
@@ -43,25 +67,29 @@ function readPersistedInstanceId(file: string): string | null {
  * is a diagnostic surface and must answer on a read-only or full disk. The id
  * is then per-process rather than per-installation, which is the correct
  * degraded behaviour — a client sees an instance change and re-pairs, instead
- * of the endpoint failing outright.
+ * of the endpoint failing outright. Remembering it is what makes that true:
+ * unremembered, the degraded path minted a fresh uuid on every request, so a
+ * client re-paired on every call rather than once.
  */
 export function clientV1InstanceId(): string {
   const override = process.env[INSTANCE_ID_ENV]?.trim();
   if (override) return override;
 
   const file = clientV1InstanceIdFile();
+  if (resolved?.file === file) return resolved.instanceId;
+
   const persisted = readPersistedInstanceId(file);
-  if (persisted) return persisted;
+  if (persisted) return remember(file, persisted);
 
   const instanceId = randomUUID();
   try {
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, `${JSON.stringify({ instanceId }, null, 2)}\n`, { encoding: "utf8" });
   } catch {
-    return instanceId;
+    return remember(file, instanceId);
   }
   // Re-read rather than trusting the write: two processes starting together
   // both mint an id, and the loser of that race must adopt the winner's file
   // instead of serving an id that is about to disappear on next boot.
-  return readPersistedInstanceId(file) ?? instanceId;
+  return remember(file, readPersistedInstanceId(file) ?? instanceId);
 }
