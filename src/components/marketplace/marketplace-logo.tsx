@@ -22,10 +22,10 @@ export function MarketplaceLogo({
 }: MarketplaceLogoProps) {
   const [failedAssetPath, setFailedAssetPath] = useState<string | null>(null);
   const bundled = resolveMarketplaceLogo(id, displayName);
-  const resolved = logo?.kind === "brand" && !logo.svgPath && bundled.kind === "brand"
-    ? { ...logo, svgPath: bundled.svgPath }
+  const resolved = logo?.kind === "brand" && bundled.kind === "brand"
+    ? { ...bundled, ...logo, assetPath: logo.assetPath ?? bundled.assetPath }
     : logo ?? bundled;
-  const brandAssetPath = resolved.kind === "brand" ? resolved.svgPath : undefined;
+  const brandAssetPath = resolved.kind === "brand" ? resolved.assetPath : undefined;
   const showsBrand = Boolean(brandAssetPath && failedAssetPath !== brandAssetPath);
   const renderedKind = showsBrand ? "brand" : "monogram";
 
