@@ -42,7 +42,14 @@ function run({ id = 1, headSha, conclusion = "success" }) {
  * A fake GitHub that records every mutation. Reads are matched by URL shape so
  * a test only has to describe the state it cares about.
  */
-function github({ commits = [], runs = [], issues = [], pulls = {}, pullsStatus = 200 } = {}) {
+function github({
+  commits = [],
+  runs = [],
+  issues = [],
+  pulls = {},
+  pullsStatus = 200,
+  labelExists = false,
+} = {}) {
   const mutations = [];
   let nextIssueNumber = 500;
 
@@ -70,6 +77,11 @@ function github({ commits = [], runs = [], issues = [], pulls = {}, pullsStatus 
     if (/\/commits$/.test(path)) return jsonResponse(commits);
     if (/\/runs$/.test(path)) return jsonResponse({ workflow_runs: runs });
     if (/\/issues$/.test(path)) return jsonResponse(issues);
+    if (/\/labels\/[^/]+$/.test(path)) {
+      return labelExists
+        ? jsonResponse({ name: TRACKING_LABEL })
+        : jsonResponse({ message: "Not Found" }, 404);
+    }
 
     throw new Error(`unexpected GET ${url}`);
   };
@@ -211,6 +223,7 @@ test("apply files one labelled tracking issue naming the culprit", async () => {
   const { fetchImpl, mutations } = github({
     commits: [commit({ id: 2, subject: "Merge branch 'fix/cave-atox4-logos'", parents: 2 })],
     runs: [run({ id: 2, headSha: sha(2), conclusion: "failure" })],
+    labelExists: true,
   });
 
   const result = await runMainHealth({ apply: true, env: ENV, fetchImpl, log: () => {} });
@@ -225,6 +238,42 @@ test("apply files one labelled tracking issue naming the culprit", async () => {
   assert.match(created.body.body, /pushed directly to the branch/);
   assert.match(created.body.body, /fix\/cave-atox4-logos/);
   assert.equal(result.actions[0].action, "open-issue");
+});
+
+test("the tracking label is created before the first issue that carries it", async () => {
+  // GitHub is widely believed to create an unknown label implicitly on issue
+  // creation. If that belief is wrong the POST fails, the apply throws, and the
+  // one path that reports a red main silently never runs — so the label is
+  // created explicitly rather than assumed.
+  const { fetchImpl, mutations } = github({
+    commits: [commit({ id: 2, subject: "Merge branch 'fix/local'", parents: 2 })],
+    runs: [run({ id: 2, headSha: sha(2), conclusion: "failure" })],
+    labelExists: false,
+  });
+
+  await runMainHealth({ apply: true, env: ENV, fetchImpl, log: () => {} });
+
+  assert.deepEqual(
+    mutations.map((mutation) => `${mutation.method} ${mutation.path}`),
+    [`POST /repos/${REPOSITORY}/labels`, `POST /repos/${REPOSITORY}/issues`],
+    "the label is created first, then the issue",
+  );
+  assert.equal(mutations[0].body.name, TRACKING_LABEL);
+});
+
+test("an existing tracking label is not recreated", async () => {
+  const { fetchImpl, mutations } = github({
+    commits: [commit({ id: 2, subject: "Merge branch 'fix/local'", parents: 2 })],
+    runs: [run({ id: 2, headSha: sha(2), conclusion: "failure" })],
+    labelExists: true,
+  });
+
+  await runMainHealth({ apply: true, env: ENV, fetchImpl, log: () => {} });
+
+  assert.deepEqual(
+    mutations.map((mutation) => mutation.path),
+    [`/repos/${REPOSITORY}/issues`],
+  );
 });
 
 test("a second red push while the issue is open does not file a duplicate", async () => {
@@ -336,6 +385,7 @@ test("a missing label filter is no tracking issue rather than a crash", async ()
     if (/\/commits\/[^/]+\/pulls$/.test(path)) return jsonResponse([]);
     if (/\/commits$/.test(path)) return jsonResponse(commits);
     if (/\/runs$/.test(path)) return jsonResponse({ workflow_runs: runs });
+    if (/\/labels\/[^/]+$/.test(path)) return jsonResponse({ name: TRACKING_LABEL });
     if (/\/issues$/.test(path)) return jsonResponse({ message: "Not Found" }, 404);
     throw new Error(`unexpected GET ${url}`);
   };

@@ -15,6 +15,8 @@ import { pathToFileURL } from "node:url";
 
 export const DEFAULT_BRANCH = "main";
 export const TRACKING_LABEL = "main-red";
+const TRACKING_LABEL_COLOR = "b60205";
+const TRACKING_LABEL_DESCRIPTION = "main is failing CI; filed by scripts/main-health.mjs";
 const WORKFLOW_FILE = "ci.yml";
 // Deep enough to walk back through a burst of direct pushes (the 2026-08-21
 // burst was seven merges inside 53 minutes) and still find the last green head.
@@ -268,6 +270,7 @@ async function reconcile(context, assessment, tracking) {
   const [intent] = plan(assessment, tracking);
   switch (intent.action) {
     case "open-issue": {
+      await ensureTrackingLabel(context);
       const issue = await createIssue(context, {
         title: issueTitle(assessment),
         body: issueBody(context, assessment),
@@ -372,6 +375,38 @@ function landingSentence(landing) {
     default:
       return `undetermined (${landing?.reason ?? "no lookup"}) — GitHub did not answer the commit's pull-request association, so this says nothing either way`;
   }
+}
+
+// Create the label before the issue that carries it. GitHub is widely believed
+// to create an unknown label implicitly on issue creation, and that belief is
+// exactly the wrong thing to rest this on: if it does not, the POST fails, the
+// whole apply throws, and the one path that reports a red `main` silently never
+// runs. Creating it explicitly costs one request on the first filing and none
+// afterwards.
+async function ensureTrackingLabel(context) {
+  const url =
+    `${context.apiUrl}/repos/${context.repositoryPath}/labels/` +
+    encodeURIComponent(TRACKING_LABEL);
+  const existing = await context.fetchImpl(url, { headers: context.headers });
+  if (existing.ok) return "exists";
+  if (existing.status !== 404) {
+    throw new Error(`label lookup failed: ${existing.status}`);
+  }
+  const created = await context.fetchImpl(
+    `${context.apiUrl}/repos/${context.repositoryPath}/labels`,
+    {
+      method: "POST",
+      headers: { ...context.headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        name: TRACKING_LABEL,
+        color: TRACKING_LABEL_COLOR,
+        description: TRACKING_LABEL_DESCRIPTION,
+      }),
+    },
+  );
+  // 422 here is the create-create race between two runs, not a failure.
+  if (created.ok || created.status === 422) return "created";
+  throw new Error(`label creation failed: ${created.status}`);
 }
 
 async function createIssue(context, { title, body, labels }) {
