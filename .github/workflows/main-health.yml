@@ -1,0 +1,60 @@
+# Branch protection gates pull requests, not pushes, and `enforce_admins` is off
+# by the owner's standing instruction. A push that breaks `main` therefore still
+# runs CI — it just fails with nobody reading the verdict. This workflow reads
+# it, and files one deduplicated tracking issue naming the commit that did it.
+#
+# It is observation only: no revert, no push, no branch-protection change.
+
+name: Main health
+
+on:
+  # Precise trigger: the moment CI finishes on a push to main.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  # GitHub drops workflow_run deliveries often enough that ci-recovery.yml
+  # exists for the same reason. An hourly sweep re-reads the same state, and the
+  # tracking issue is deduplicated by culprit SHA, so a duplicate delivery and a
+  # missed one both settle on the same single issue.
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: main-health
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  assess:
+    name: Assess main
+    # A CI run on a PR head says nothing about main. Kept on ONE line: a folded
+    # scalar does not fold a more-indented continuation, so wrapping this would
+    # smuggle a literal newline into the expression.
+    if: "github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted assessment code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      # scripts/main-health.mjs has no dependencies, so this job deliberately
+      # skips `pnpm install` — an install failure must never be the reason a red
+      # main goes unreported.
+      - name: Assess main and reconcile the tracking issue
+        env:
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/main-health.mjs --apply

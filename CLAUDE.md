@@ -196,6 +196,39 @@ A related tell: `main`'s CI runs keep showing `cancelled` rather than
 completing, because each new push supersedes the previous run. If you cannot
 find a completed run for a commit on `main`, suspect push churn, not a CI bug.
 
+**Reading the damage fast — `pnpm main:health`.** The reflog above proves a push
+happened; it does not say whether that push broke anything, and on 2026-08-21
+nothing said so for seven hours. `scripts/main-health.mjs` answers it from the
+GitHub API and needs no checkout state:
+
+```bash
+GITHUB_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=OpenCoven/coven-cave pnpm main:health
+```
+
+It walks `main` back from HEAD to the last commit CI judged green and names the
+**oldest** failing commit in the streak — not the head, which after a burst of
+direct pushes is usually just downstream of the break — then says how that commit
+landed: squash-merged from a PR, a local merge of a named branch, or a bare
+commit. Two deliberate refusals to guess: a commit whose pull-request
+association GitHub declines to answer is reported `undetermined` rather than
+accused, and a `cancelled` run is neither blame nor clearance (see the push-churn
+tell just above), so those commits are listed rather than silently dropped.
+
+`.github/workflows/main-health.yml` runs the same script with `--apply` after
+every CI run on `main`, plus an hourly sweep because `workflow_run` deliveries
+drop here — the same gap `ci-recovery.yml` exists for. Apply mode keeps exactly
+ONE open issue labelled `main-red`, deduplicated by culprit SHA: it retargets
+that issue if an earlier culprit turns up and closes it when `main` is green
+again. The workflow holds `issues: write` and nothing else — it observes `main`,
+it never repairs, reverts, or pushes, and it is **not** an argument for changing
+`enforce_admins`.
+
+Verified against the live repository on 2026-08-21, which is also what prompted
+it: `main` RED at `b5f40e54d`, culprit `1257258ce` — a local merge of
+`fix/cave-atox4-marketplace-logo-colors` that never had a PR — with `b4c737dc1`
+the last green head. Seven branches landed that way inside 53 minutes and six of
+them never had a PR at all.
+
 ⚠️ **Remaining gap — the ruleset layer is disabled.** Classic protection is
 the only active gate today. Ruleset `19123333` has `enforcement: disabled` and
 still carries `bypass_actors: [{actor_type: OrganizationAdmin, bypass_mode:

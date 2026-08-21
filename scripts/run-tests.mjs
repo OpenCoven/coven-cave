@@ -1335,6 +1335,8 @@ export const SUITES = {
     "scripts/client-v1-release-smoke.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
+    "scripts/main-health.test.mjs",
+    "scripts/main-health-workflow.test.mjs",
     "scripts/worktree-lifecycle-create.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/lib/server/cave-home-migration-backup-recovery.test.ts",
