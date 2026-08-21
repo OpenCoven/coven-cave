@@ -341,8 +341,16 @@ export function formatReport(result) {
   return lines.join("\n");
 }
 
+const ACCEPTANCE_USAGE = "usage: release-acceptance.mjs <template|steps|validate> [argument]";
+
 export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSync, log = console.log } = {}) {
-  const [command, argument] = argv;
+  // No options exist, and no subcommand takes more than one argument. Saying so
+  // beats accepting a misspelling and validating a file the operator did not
+  // name.
+  const flags = argv.filter((entry) => entry.startsWith("--"));
+  if (flags.length > 0) throw new Error(`unknown option '${flags[0]}'; ${ACCEPTANCE_USAGE}`);
+  const [command, argument, ...rest] = argv;
+  if (rest.length > 0) throw new Error(`unexpected argument '${rest[0]}'; ${ACCEPTANCE_USAGE}`);
 
   if (command === "template") {
     log(JSON.stringify(blankAcceptanceRecord(argument || "0.0.0"), null, 2));
@@ -367,7 +375,7 @@ export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSy
     return result.ok ? 0 : 1;
   }
 
-  throw new Error("usage: release-acceptance.mjs <template|steps|validate> [argument]");
+  throw new Error(ACCEPTANCE_USAGE);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

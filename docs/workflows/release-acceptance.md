@@ -75,8 +75,10 @@ checkout:
 
 ## The evidence record
 
-Records live in `docs/release-acceptance-results/<tag>.json`. Every step takes
-one of four results:
+Records live in `docs/release-acceptance-results/<tag>.json`. One run per
+operating system, keyed by the exact lowercase values the validator accepts —
+`macos`, `windows`, `linux` — and each OS exactly once. Every step takes one of
+four results:
 
 - `pending` — not attempted yet. This is what a fresh template is full of.
 - `pass` — done.

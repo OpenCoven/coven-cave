@@ -177,6 +177,13 @@ export function evaluateRolloutGate(state) {
   // 1. Preconditions. These gate the rollout as a whole, not just this stage.
   const acceptanceStatus = String(state.acceptance?.status ?? "missing");
   if (acceptanceStatus === "failed") {
+    // `acceptance` is deliberately not in HARD_STOP_CLASSES, and that is not an
+    // omission. HARD_STOP_CLASSES is the vocabulary for classifying an
+    // *operator-reported regression* in `state.regressions`; a reason's `class`
+    // is a label on the reason, not a membership test. A failed acceptance is
+    // still a rollback because before any stage has distributed the build,
+    // "rollback" reads as "do not ship" — which needs no rollback target, and
+    // may legitimately report none.
     rollback("release acceptance recorded a failed step", "acceptance");
   } else if (acceptanceStatus !== "complete") {
     hold(`release acceptance is '${acceptanceStatus}': three-OS acceptance must be complete before rollout`);
@@ -387,8 +394,16 @@ function describeRollbackTarget(result) {
   return "not established — rollback readiness was never proven";
 }
 
+const ROLLOUT_USAGE = "usage: release-rollout.mjs <stages|gate|restore-plan> [state.json]";
+
 export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSync, log = console.log } = {}) {
-  const [command, argument] = argv.filter((entry) => !entry.startsWith("--"));
+  // This CLI has no options. Silently filtering `--`-prefixed arguments out
+  // meant `gate --dry-run state.json` ran the real gate and said nothing about
+  // the flag, which on a rollout decision is the wrong way to be wrong.
+  const flags = argv.filter((entry) => entry.startsWith("--"));
+  if (flags.length > 0) throw new Error(`unknown option '${flags[0]}'; ${ROLLOUT_USAGE}`);
+  const [command, argument, ...rest] = argv;
+  if (rest.length > 0) throw new Error(`unexpected argument '${rest[0]}'; ${ROLLOUT_USAGE}`);
 
   if (command === "stages") {
     for (const stage of ROLLOUT_STAGES) {
@@ -424,7 +439,7 @@ export function runCli({ argv = process.argv.slice(2), readFileImpl = readFileSy
     return result.decision === "advance" ? 0 : 1;
   }
 
-  throw new Error("usage: release-rollout.mjs <stages|gate|restore-plan> [state.json]");
+  throw new Error(ROLLOUT_USAGE);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

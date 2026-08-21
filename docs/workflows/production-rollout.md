@@ -114,7 +114,18 @@ rather than only the deciding one, so the record shows what was true at that
 stage.
 
 Thresholds are overridable per state file so a drill can exercise the paths,
-but the defaults are the documented values above. An override must be a
+but the defaults are the documented values above:
+
+```json
+"thresholds": {
+  "minCrashFreeLaunchRate": 0.995,
+  "minPairingSuccessRate": 0.98,
+  "maxDuplicateSends": 0,
+  "maxDataIntegrityFailures": 0
+}
+```
+
+An override must be a
 non-negative number and must name a threshold that exists; anything else — a
 `null`, a string, a misspelled key — leaves the documented default in force and
 holds the rollout. A threshold nothing can compare against is not a relaxed

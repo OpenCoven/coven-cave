@@ -275,6 +275,17 @@ test("the CLI validates, templates, and reports exit codes", () => {
     "a missing path is a usage error rather than a confusing read failure",
   );
   assert.throws(() => runCli({ argv: ["nonsense"], log }), /usage/, "an unknown command prints usage");
+  assert.throws(() => runCli({ argv: [], log }), /usage/, "no arguments at all prints usage rather than doing nothing");
+  assert.throws(
+    () => runCli({ argv: ["validate", "--strict", "record.json"], readFileImpl: () => "{}", log }),
+    /unknown option '--strict'/,
+    "an option this CLI does not have must not be dropped; the operator asked for behavior it will not get",
+  );
+  assert.throws(
+    () => runCli({ argv: ["validate", "a.json", "b.json"], readFileImpl: () => "{}", log }),
+    /unexpected argument 'b.json'/,
+    "two record paths is ambiguous, and quietly validating the first one hides which was checked",
+  );
 });
 
 test("the report names the state of every operating system", () => {

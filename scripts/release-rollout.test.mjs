@@ -114,6 +114,45 @@ test("every forbidden restore operation is refused", () => {
     );
   }
   assert.throws(() => assertBoundedRestore("not-a-plan"), /must be an array/, "a malformed plan is not silently allowed");
+
+  // The realistic shape of the mistake: a plan that is mostly the sanctioned
+  // drill, with one extra step somebody added under incident pressure.
+  const smuggled = [...planRollbackRestore({ tag: "v0.9.4" }), { id: "repoint", type: "tag-move" }];
+  assert.throws(
+    () => assertBoundedRestore(smuggled),
+    /tag-move/,
+    "the guard checks every operation, not just the first; a forbidden step hides best among valid ones",
+  );
+  assert.deepEqual(
+    assertBoundedRestore([{ id: "x", type: "verify" }, "not-an-operation", null]),
+    [{ id: "x", type: "verify" }, "not-an-operation", null],
+    "an entry that is not an object names no forbidden operation, so it is not one to refuse",
+  );
+});
+
+test("a failed acceptance rolls back without pretending to be a regression class", () => {
+  const result = evaluateRolloutGate(greenState({ acceptance: { status: "failed" } }));
+  assert.equal(result.decision, "rollback", "a candidate that failed acceptance must not become the served update");
+
+  const acceptanceReason = result.reasons.find((reason) => reason.class === "acceptance");
+  assert.ok(acceptanceReason, "the reason names why, so the operator is not left comparing it to a metric breach");
+  assert.ok(
+    !HARD_STOP_CLASSES.includes("acceptance"),
+    "HARD_STOP_CLASSES classifies operator-reported regressions; a reason's class is a label, not a membership test",
+  );
+});
+
+test("a rollback before distribution may legitimately have no target", () => {
+  const result = evaluateRolloutGate(
+    greenState({ stage: "maintainer", observedHours: 30, acceptance: { status: "failed" }, rollbackReadiness: {} }),
+  );
+  assert.equal(result.decision, "rollback", "'do not ship' is the pre-distribution reading of rollback");
+  assert.equal(result.rollbackTarget, null, "nothing has been distributed, so there is nothing to restore");
+  assert.match(
+    formatGateReport(result),
+    /not established — rollback readiness was never proven/,
+    "printing 'unknown' would send the operator hunting for a version that was never established",
+  );
 });
 
 // ── the gate ──────────────────────────────────────────────────────────────────
@@ -474,6 +513,29 @@ test("the CLI reports stages, the gate decision, and the restore plan", () => {
     "an unreadable state file names the file rather than surfacing a bare parse error",
   );
   assert.throws(() => runCli({ argv: ["nonsense"], log }), /usage/, "an unknown command prints usage");
+  assert.throws(() => runCli({ argv: [], log }), /usage/, "no arguments at all prints usage rather than deciding");
+});
+
+test("an option this CLI does not have is refused rather than dropped", () => {
+  const log = () => {};
+  // These were previously filtered out and ignored, so `gate --dry-run` ran the
+  // real gate and reported a real decision.
+  for (const argv of [
+    ["gate", "--dry-run", "state.json"],
+    ["--json", "stages"],
+    ["stages", "--verbose"],
+  ]) {
+    assert.throws(
+      () => runCli({ argv, readFileImpl: () => JSON.stringify(greenState()), log }),
+      /unknown option/,
+      `${argv.join(" ")} asks for behavior this CLI does not have; running anyway answers a different question`,
+    );
+  }
+  assert.throws(
+    () => runCli({ argv: ["gate", "a.json", "b.json"], readFileImpl: () => "{}", log }),
+    /unexpected argument 'b.json'/,
+    "two state files is an ambiguous request, and silently gating on the first one hides it",
+  );
 });
 
 test("the gate report leads with the decision", () => {
