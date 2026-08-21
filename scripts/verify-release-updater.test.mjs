@@ -436,6 +436,33 @@ test("a missing asset is reported as its HTTP status, never as an invalid signat
   }
 });
 
+test("--allow-partial downgrades a missing platform; without it, a missing platform FAILS", async () => {
+  // The flag is the whole difference between "this release ships 1 of 4
+  // platforms" and a clean verdict, and every other CLI assertion in this file
+  // passes it — so the fail-vs-warn branch itself had no coverage. Measured:
+  // replacing `allowPartial ? warn : fail` with an unconditional `warn` left
+  // the entire suite green, which makes the strict run this script documents
+  // accept a release three platforms short of complete.
+  await servingAsset(notFound, async (port) => {
+    const manifest = manifestNaming(port); // names darwin-aarch64 and nothing else
+
+    const strict = await runCliAsync(["--manifest", manifest, "--tag", "v9.9.9"]);
+    assert.match(strict.stdout, /missing platform "darwin-x86_64"/, "an absent platform must be reported");
+    assert.doesNotMatch(strict.stdout, /tolerated: --allow-partial/, "nothing is tolerated without the flag");
+    assert.match(strict.stdout, /RESULT: 4 FAILURE\(S\)/, "three absent platforms plus the unreachable asset");
+    assert.equal(strict.status, 1);
+
+    const tolerated = await runCliAsync(["--manifest", manifest, "--tag", "v9.9.9", "--allow-partial"]);
+    assert.match(tolerated.stdout, /missing platform "darwin-x86_64" \(tolerated: --allow-partial\)/);
+    assert.match(
+      tolerated.stdout,
+      /RESULT: 1 FAILURE\(S\)/,
+      "only the unreachable asset counts against a deliberately partial release",
+    );
+    assert.equal(tolerated.status, 1);
+  });
+});
+
 test("an artifact that does not verify against the pinned pubkey fails the release", async () => {
   // The release-shaped failure this whole job exists for: the signing key
   // drifts from the pubkey pinned in src-tauri/tauri.conf.json, every
