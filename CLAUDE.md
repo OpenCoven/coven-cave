@@ -605,7 +605,20 @@ soon as the server answers so no stale chunk ids survive the restart.
 ## Local remote hygiene — keep the Desktop branch list honest
 
 GitHub Desktop lists every remote-tracking ref in this checkout, so anything
-stale or foreign shows up as branch-list noise. Three rules keep it accurate.
+stale or foreign shows up as branch-list noise. All of it is local-only state,
+so repairing it costs nothing on the server and nothing in any other checkout.
+
+Audit and repair in one place (`scripts/remote-hygiene.mjs`, cave-u426u):
+
+```bash
+pnpm remotes:audit        # read-only; exits 1 when something is off
+pnpm remotes:audit:json   # machine-readable
+pnpm remotes:fix          # apply the local, lossless repairs
+```
+
+It never touches the remote — no push, no branch deletion, no fetch — so the
+`origin` branches other sessions own are reported for information only. The four
+rules it enforces are below, with the reasoning it cannot print.
 
 **One remote: `origin`.** A fork remote mirrors branches nobody here maintains.
 `snowopsdev` sat in this checkout contributing three refs, none of which any
@@ -618,6 +631,14 @@ as its PR is resolved:
 git remote -v                    # expect exactly origin (fetch + push)
 git remote remove <fork>
 ```
+
+**No remote-tracking refs outside `refs/remotes/origin/`.** A PR head fetched
+explicitly (`gh pr checkout` and friends) writes `refs/remotes/pull/<n>/head`,
+which sits outside every remote's fetch refspec — so nothing ever prunes it and
+it keeps advertising a branch that is usually long merged. `refs/remotes/pull/4753/head`
+was doing exactly that. `pnpm remotes:fix` deletes such a ref only when its tip
+is held by another ref; a stray ref holding commits on no other ref is reported
+with the archive-tag command instead and left in place.
 
 **`fetch.prune = true`.** Without it, deleted remote branches linger as
 tracking refs forever, and this repository deletes branches constantly
@@ -632,19 +653,29 @@ git config fetch.pruneTags false   # tags are the retention store; never prune t
 worktree guard reads as proof a head is retained, and pruning them locally
 would make retained work look at-risk.
 
-**No feature branch tracks a remote branch.** Only `main` and the Beads dolt
-sync branch should have an upstream. Audit with:
+**No BOGUS upstream — but do not strip an accurate one.** The distinction is
+load-bearing, and conflating the two is worse than the noise:
 
-```bash
-git for-each-ref --format='%(refname:short) -> %(upstream:short)' refs/heads \
-  | grep -v ' -> $'
-```
+- **Bogus, clear it.** `branch.<X>.merge` naming a *different* branch, which is
+  what `git worktree add -b X <path> origin/main` wrote until `cave-t57kr`.
+  Such a branch renders "behind N" in Desktop against a ref it is not a view of,
+  and its bare `git push` is answered with `git push origin HEAD:main`. Same for
+  an upstream naming a remote that is no longer configured. Clear with
+  `git branch --unset-upstream <branch>`.
+- **Accurate, leave it.** `branch.<X>.merge == refs/heads/X`, written by
+  `git push -u origin X`. This renders correct ahead/behind and is *not* noise —
+  and `branch.<X>.remote` is one of three anti-resurrection signals
+  `worktree-retention-push.mjs` reads (`cave-xjuup`). It is the only one that
+  survives a `fetch --prune`, so stripping it from a branch that really was
+  pushed makes a merged, server-deleted head read as "never pushed" and the hook
+  re-creates it. That failure was measured at 9 of 36 remote branches.
 
-Anything else listed is a branch that will render as "behind N" against a ref
-it is not a view of, and whose bare `git push` git answers by suggesting
-`git push origin HEAD:main`. Clear it with `git branch --unset-upstream
-<branch>`. Managed creation stopped producing these in `cave-t57kr`, but
-branches made before that fix still carry one.
+An earlier version of this section said flatly that only `main` and the Beads
+dolt sync branch should have an upstream, and offered a bare
+`git for-each-ref … | grep -v ' -> $'` as the audit. That listing flags every
+accurate self-tracking branch as a violation — on 2026-08-20 it flagged 8, all
+of them correct — so following it would have traded branch-list tidiness for
+resurrected merged heads. Use `pnpm remotes:audit`, which separates the cases.
 
 ## Diagnosing concurrent sessions
 

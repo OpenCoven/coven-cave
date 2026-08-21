@@ -627,25 +627,29 @@
   bottom: var(--space-4);
   z-index: 60;
   display: flex;
-  width: fit-content;
   min-height: var(--touch-target);
+  width: fit-content;
   align-items: center;
   justify-content: center;
   margin-left: auto;
-  padding-inline: var(--space-3);
+  padding: 0 var(--space-4);
   border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
   border-radius: var(--radius-pill);
   background: var(--bg-raised);
-  box-shadow: var(--shadow-popover);
+  box-shadow: 0 2px 12px color-mix(in oklch, var(--accent-presence) 20%, transparent);
   color: var(--accent-presence);
   font-size: var(--text-xs);
-  font-weight: 600;
-  -webkit-tap-highlight-color: transparent;
+  font-weight: 650;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 .cave-new-response-content:hover {
   border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  box-shadow: 0 2px 18px color-mix(in oklch, var(--accent-presence) 35%, transparent);
 }
 
 @media (max-width: 720px) {
@@ -917,6 +921,7 @@
        padding — ~214px total — so hug just above it rather than floating high
        in the transcript. */
     bottom: calc(214px + var(--sai-bottom));
+    -webkit-tap-highlight-color: transparent;
   }
 
   .cave-chat-linear .cave-composer-dock {

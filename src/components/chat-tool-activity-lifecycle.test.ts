@@ -129,27 +129,27 @@ test("stable activity slots preserve a focused repeated tool and open edit revie
   }
 });
 
-test("TurnRow interleaves live tools and separates settled activity from edit cards", () => {
+test("TurnRow keeps live tools chronological and settles them into activity and edit-card slots", () => {
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*const bubbleSegments: MessageBubbleSegment\[\] \| undefined = segments\?\.map/,
-    "live tool events are segmented against the visible response text",
+    /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+    "streaming tools retain their chronological positions in the response",
   );
   assert.match(
     turnRender,
     /const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-    "settled tool events split into compact activity and visible edit cards",
+    "settled tools partition into grouped activity and visible edit cards",
   );
   assert.match(
     turnRender,
-    /pending\s*\? bubbleSegments\?\.map[\s\S]*!pending && otherTools\.length[\s\S]*<ToolGroup tools=\{otherTools\}/,
-    "pending tools stay chronological while settled non-edit tools collapse into the activity region",
+    /\{pending\s*\? bubbleSegments\?\.map\([\s\S]*?: null\}[\s\S]*?\{!pending && otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\} \/>/,
+    "live tool blocks give way to one settled non-edit ToolGroup",
   );
   assert.match(
     turnRender,
-    /<StreamingTurnResponse[\s\S]*activityDetails=\{activityDetails\}[\s\S]*supplementaryContent=\{supplementaryContent\}/,
-    "the streaming response keeps activity and settled edit-card content in separate regions",
+    /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+    "the shared response owns activity and settled edit-card presentation",
   );
   assert.doesNotMatch(
     source,
