@@ -1,5 +1,4 @@
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { isDirectRun as isDirectRunOf } from "./direct-run.mjs";
 
 /**
  * Who owns the dedicated dev port?
@@ -73,14 +72,10 @@ export async function classifyPortOwner({
   }
 }
 
+// See scripts/direct-run.mjs for the three ways a naive URL/argv comparison
+// breaks.
 function isDirectRun() {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  try {
-    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return false;
-  }
+  return isDirectRunOf(import.meta.url);
 }
 
 if (isDirectRun()) {
