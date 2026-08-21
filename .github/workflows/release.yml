@@ -144,9 +144,14 @@ jobs:
         run: node scripts/release-promotion.mjs release
 
   # Pausing a bad rollout is only a remedy if the previous version is still
-  # installable, so prove the rollback target before this one reaches anyone.
-  # Runs early to fail the cut before it spends build time; `updater-manifest`
-  # depends on it so no install is moved forward on an unprovable rollback.
+  # installable, so prove the rollback target before the updater moves anyone
+  # forward. Runs early to fail the cut before it spends build time;
+  # `updater-manifest` depends on it so no install is auto-updated onto a
+  # release that cannot be undone. Note the blast radius stops there by design:
+  # `build`, `checksums` and `homebrew` do NOT depend on this job, because the
+  # shortfall it reports is in the PREVIOUS release and blocking the new
+  # artifacts would leave a broken baseline able to block its own fix. See
+  # docs/workflows/release-rollback-readiness.md.
   rollback-readiness:
     name: Verify rollback readiness
     needs: authorize-release-promotion

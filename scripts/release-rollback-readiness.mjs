@@ -252,7 +252,21 @@ async function requestJson(context, url, description) {
         (isTransportStatus(status) ? `; ${RETRY_ADVICE}` : ""),
     );
   }
-  return response.json();
+  // A 2xx whose body is not JSON is an intermediary answering, not GitHub — an
+  // edge error page, a truncated CDN response, a captive proxy. Left unwrapped
+  // this surfaced as a bare `SyntaxError: Unexpected token '<'`, naming neither
+  // the request nor the release and carrying none of the retry advice the
+  // status-code path takes care to attach. That is the one message a release
+  // engineer must not have to guess at: it reads like a defect in the gate
+  // rather than a GitHub that never answered.
+  try {
+    return await response.json();
+  } catch (cause) {
+    throw new RollbackReadinessError(
+      `${description} did not return JSON (${cause?.message ?? String(cause)}); ${RETRY_ADVICE}`,
+      { cause },
+    );
+  }
 }
 
 async function listReleases(context) {
@@ -261,7 +275,12 @@ async function listReleases(context) {
     const url = `${context.apiUrl}${context.repositoryPath}/releases?per_page=${PAGE_SIZE}&page=${page}`;
     const body = await requestJson(context, url, "release listing");
     if (!Array.isArray(body)) {
-      throw new RollbackReadinessError("release listing did not return an array");
+      // JSON, but not the listing — GitHub answers a rate-limited or degraded
+      // read with an object. Same reading as a 5xx: nothing was learned about
+      // the rollback target, so this is a retry rather than a refusal.
+      throw new RollbackReadinessError(
+        `release listing did not return an array; ${RETRY_ADVICE}`,
+      );
     }
     releases.push(...body);
     if (body.length < PAGE_SIZE) return releases;

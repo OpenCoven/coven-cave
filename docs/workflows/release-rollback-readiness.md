@@ -5,10 +5,30 @@ a remedy only when the previous version is still installable and the updater
 can still serve it — otherwise "pause the rollout" leaves every user who
 already updated stranded on the bad build.
 
-`scripts/release-rollback-readiness.mjs` proves that before a release reaches
-anyone. It runs as the `rollback-readiness` job in `.github/workflows/release.yml`,
-immediately after promotion authorization, and `updater-manifest` depends on it
-so no install is moved forward on an unprovable rollback.
+`scripts/release-rollback-readiness.mjs` proves that before the updater moves
+anyone forward. It runs as the `rollback-readiness` job in
+`.github/workflows/release.yml`, immediately after promotion authorization, and
+`updater-manifest` depends on it so no install is auto-updated onto a release
+that cannot be undone.
+
+## What a red gate does and does not stop
+
+Read this before deciding what to do about a failure, because "the gate is red"
+is not "nothing shipped". Only `updater-manifest` depends on this job, so what
+it withholds is `latest.json` — the auto-update path, and the largest
+population, but not the only one:
+
+| Still happens when the gate fails | Blocked when the gate fails |
+| --- | --- |
+| `build` creates the GitHub Release and uploads every installer | `updater-manifest` publishes `latest.json` |
+| `checksums` publishes `SHA256SUMS` | in-app auto-update to the new version |
+| `homebrew` bumps the tap, so `brew install --cask` serves the new version | |
+
+That is deliberate: the shortfall a red gate reports is in the **previous**
+release, and holding the new artifacts hostage to it would leave a broken
+baseline able to block its own fix. But it means a red gate is not containment
+on its own — if the new release must not reach anyone, delete its assets or
+unpublish it by hand as well.
 
 ## What it checks
 
@@ -45,7 +65,8 @@ you is a manifest whose signatures were produced by a key the shipped clients
 do not pin; that is verified separately by `scripts/verify-release-updater.mjs`.
 
 The exception is a failure that never reached a verdict — a request GitHub
-could not answer (5xx, a secondary rate limit, a dead socket). Those say so and
+could not answer (5xx, a secondary rate limit, a dead socket, or a 2xx carrying
+an edge error page instead of JSON). Those say so and
 name the retry explicitly, because at 2am the two are otherwise indistinguishable
 and the wrong reading either reruns a real refusal or writes off a live release:
 

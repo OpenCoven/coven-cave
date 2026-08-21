@@ -102,24 +102,48 @@ function verify(options) {
 }
 
 test("the rollback target is the newest published stable release below the rollout", () => {
+  // Every row that must be excluded is v0.3.7 — NEWER than the answer — so
+  // dropping any one exclusion changes the result. Sharing a version with the
+  // real baseline made all three filters unassertable: the newest *stable*
+  // release below the rollout was v0.3.7 either way, so the draft, the
+  // prerelease and the unpublished row could each have been admitted with this
+  // assertion still green.
   const baseline = selectRollbackBaseline(
     [
       release("0.3.5"),
-      release("0.3.7"),
+      release("0.3.6"),
       release("0.3.9"),
-      release("0.3.6", { draft: true }),
-      release("0.3.6", { prerelease: true }),
-      release("0.3.6", { published_at: null }),
+      release("0.3.7", { draft: true }),
+      release("0.3.7", { prerelease: true }),
+      release("0.3.7", { published_at: null }),
       release("0.3.8"),
-      { tag_name: "v0.3.6-rc.1", draft: false, prerelease: false, published_at: "x" },
+      { tag_name: "v0.3.7-rc.1", draft: false, prerelease: false, published_at: "x" },
       { tag_name: "nightly", draft: false, prerelease: false, published_at: "x" },
       null,
     ],
     "v0.3.8",
   );
 
-  assert.equal(baseline.tag, "v0.3.7");
-  assert.equal(baseline.version, "0.3.7");
+  assert.equal(baseline.tag, "v0.3.6");
+  assert.equal(baseline.version, "0.3.6");
+});
+
+test("a draft, a prerelease and an unpublished row are never a rollback target", () => {
+  // Stated on its own so a regression names the rule it broke. A draft's assets
+  // are not publicly downloadable at all, so certifying one as the rollback
+  // target promises a rollback that 404s for every user.
+  for (const overrides of [{ draft: true }, { prerelease: true }, { published_at: null }]) {
+    assert.equal(
+      selectRollbackBaseline([release("0.3.5"), release("0.3.7", overrides)], "v0.3.8").tag,
+      "v0.3.5",
+      `${JSON.stringify(overrides)} must lose to an older release that is real`,
+    );
+    assert.equal(
+      selectRollbackBaseline([release("0.3.7", overrides)], "v0.3.8"),
+      null,
+      `${JSON.stringify(overrides)} must not be the rollback target`,
+    );
+  }
 });
 
 test("ordering is numeric, not lexicographic", () => {
@@ -397,6 +421,47 @@ test("a GitHub that cannot answer reads as retryable, a 404 does not", async () 
     }),
     /release listing request could not be sent \(fetch failed\)[\s\S]*retry before/,
   );
+
+  // A 2xx carrying an edge error page, a truncated body, or a captive-portal
+  // interstitial. Unwrapped this reached the operator as a bare `SyntaxError:
+  // Unexpected token '<'`, which names neither the request nor the retry and
+  // reads as a bug in the gate rather than a GitHub that never answered.
+  const html = async () => {
+    throw new SyntaxError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`);
+  };
+  await assert.rejects(
+    verify({ fetchImpl: async () => ({ ok: true, status: 200, json: html }) }),
+    (error) =>
+      error instanceof RollbackReadinessError &&
+      /^release listing did not return JSON \(Unexpected token/.test(error.message) &&
+      /retry before treating the release as unshippable/.test(error.message),
+  );
+  await assert.rejects(
+    verify({
+      fetchImpl: async (url) =>
+        url.startsWith(`${API}/repos/`)
+          ? { ok: true, status: 200, json: async () => [release("0.3.7")] }
+          : { ok: true, status: 200, json: html },
+    }),
+    (error) =>
+      error instanceof RollbackReadinessError &&
+      /^v0\.3\.7 latest\.json did not return JSON \(/.test(error.message) &&
+      /retry before treating the release as unshippable/.test(error.message),
+  );
+
+  // JSON, but not the listing: a degraded or rate-limited read answers with an
+  // object. Nothing was learned about the rollback target, so this is a retry
+  // and never a refusal.
+  await assert.rejects(
+    verify({
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ message: "API rate limit exceeded" }),
+      }),
+    }),
+    /release listing did not return an array; GitHub could not answer[\s\S]*retry before/,
+  );
 });
 
 test("a missing baseline is fatal unless it is explicitly waived", async () => {
@@ -448,6 +513,31 @@ test("the CLI publishes the readiness record as job outputs and a summary", asyn
     assert.equal(outputs["baseline-waived"], "false");
     assert.equal(outputs["rollback-platforms"], "darwin-aarch64,windows-x86_64");
     assert.match(readFileSync(summaryPath, "utf8"), /Rollback readiness verified[\s\S]*v0\.3\.7/);
+
+    // The waived branch writes a different record and a different summary line,
+    // and neither was reached by any test: `baseline-waived` could have been
+    // hard-coded `false` and the "none — waived as a first release" line could
+    // have thrown, both silently. The one run that uses this branch is a
+    // repository's first release, so nobody is watching when it executes.
+    const waivedOutput = path.join(directory, "waived-output");
+    const waivedSummary = path.join(directory, "waived-summary");
+    await runCli({
+      argv: ["--allow-missing-baseline"],
+      env: {
+        GITHUB_REPOSITORY: REPOSITORY,
+        GITHUB_TOKEN: "token",
+        RELEASE_TAG: "v0.3.8",
+        GITHUB_API_URL: API,
+        GITHUB_OUTPUT: waivedOutput,
+        GITHUB_STEP_SUMMARY: waivedSummary,
+      },
+      fetchImpl: stubFetch({ releases: [], manifest: manifest("0.3.7") }).fetchImpl,
+    });
+    const waived = readFileSync(waivedOutput, "utf8");
+    assert.match(waived, /^baseline-waived=true$/m);
+    assert.match(waived, /^baseline-tag=$/m);
+    assert.match(waived, /^rollback-platforms=$/m);
+    assert.match(readFileSync(waivedSummary, "utf8"), /none — waived as a first release/);
 
     await assert.rejects(
       runCli({ argv: ["--force"], env: {}, fetchImpl: () => {} }),
