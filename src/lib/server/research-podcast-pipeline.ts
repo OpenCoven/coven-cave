@@ -395,6 +395,9 @@ export function buildElevenLabsTtsBody(
  * provider's actual complaint. A bare status turned an `invalid_parameters`
  * rejection into an unattributable "http 400" during triage.
  */
+const ELEVENLABS_ERROR_DETAIL_MAX_CHARS = 300;
+const ELEVENLABS_ERROR_DETAIL_MAX_BYTES = ELEVENLABS_ERROR_DETAIL_MAX_CHARS * 4;
+
 export async function readElevenLabsErrorDetail(response: Response): Promise<string> {
   try {
     const raw = new TextDecoder().decode(
@@ -409,9 +412,6 @@ export async function readElevenLabsErrorDetail(response: Response): Promise<str
     return "";
   }
 }
-
-const ELEVENLABS_ERROR_DETAIL_MAX_CHARS = 300;
-const ELEVENLABS_ERROR_DETAIL_MAX_BYTES = ELEVENLABS_ERROR_DETAIL_MAX_CHARS * 4;
 
 async function synthesizeElevenLabs(
   text: string,
