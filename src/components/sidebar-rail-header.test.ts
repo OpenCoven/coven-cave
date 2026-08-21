@@ -371,11 +371,11 @@ assert.match(
   "crew control is forced loading when context is not ready",
 );
 
-// ── Crew trigger border: exact plan recipe ────────────────────────────────────
+// ── Crew trigger border: quiet rail chrome ───────────────────────────────────
 assert.match(
   workspaceContextSwitcherCss,
-  /border: 1px solid color-mix\(in oklch, var\(--accent-presence\) 38%, var\(--border-hairline\)\)/,
-  "crew trigger border is exactly 1px with the accent-presence 38% color-mix recipe",
+  /border: 1px solid var\(--border-hairline\)/,
+  "crew trigger border uses the quiet rail hairline",
 );
 assert.doesNotMatch(
   workspaceContextSwitcherCss,
