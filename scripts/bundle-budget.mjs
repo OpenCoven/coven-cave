@@ -176,7 +176,40 @@ const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024
 // documented convention above, 615 is the smallest ceiling that clears the 2%
 // THIN threshold here (13.2 KiB / 2.1% headroom) for this one-time addition;
 // this is a ceiling for this feature's CSS, not a licence for the next one.
-const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 615) * 1024;
+// RAISED root 615→640 (2026-08-21, repairing red `main`), after first
+// reclaiming what was NOT genuine root cost. The gate failed at 630,421 B
+// (615.65 KiB) — 661 bytes over — on the desktop chrome refresh (#4791).
+// Attribution, measured as facade source bytes per commit:
+//   dd93af6b1 (the 600→615 raise) 449,195 → 8aaaf2f21 465,310 = +16.1 KiB source
+//   of which #4758 (recovered product work) +11.7 KiB and #4791 +3.2 KiB;
+//   built root CSS moved 601.8 → 615.65 KiB over the same span.
+// All of it is always-loaded shell chrome, so none of it is a #3264
+// mis-scoping: #4791 added the Dia-style connected-rail titlebar to
+// desktop-chrome.css (`:root[data-tauri-titlebar]`, globally mounted), #4758
+// added .split-host__* focus-mode and carousel rules to
+// surface-chat-overlays.css and moved the rail's scope controls into
+// workspace-context-switcher.css. Every declaration is tokenized;
+// codemod:design:check is a no-op over them.
+// The one thing that WAS accidental is now gone: dev-shell-recovery.css
+// (1,864 B) reached the root layout through a static import in a component
+// that compiles away in production, so every production page load paid for a
+// dev-only overlay's styles. Loading the overlay through next/dynamic drops it
+// out of the root set — measured 630,421 → 628,557 B (613.83 KiB).
+// That reclaim alone would clear the gate by 1,203 bytes (0.19%), which is the
+// cave-iktbc stopgap exactly: green today, and the next CSS PR of any size
+// fails. So the ceiling moves as well, derived from the rate rather than from
+// the 2% THIN line (cave-yizcb):
+//   2026-08-05 589 KiB → 2026-08-21 615.65 KiB = 1.67 KiB/day over 16 days
+//   2026-08-16 601.8 KiB → 2026-08-21 615.65 KiB = 2.8 KiB/day over the last 5
+// The rate has roughly doubled. 640 leaves 26.2 KiB (4.1%) — about 15 days at
+// the 16-day average, about 9 at the recent one. Reclaiming rather than raising
+// (#3264) is still the better answer for root: the remaining candidates in the
+// facade are settings-familiars.css, calendar-agenda.css,
+// surface-compact-calendar.css and surface-role-workspaces.css, and none was
+// attempted here because this branch exists to un-red `main`, not to re-order
+// the cascade under several concurrent sessions. This is a ceiling for the
+// shell chrome that already landed, not a licence for the next surface.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 640) * 1024;
 const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 940) * 1024;
 
 if (!existsSync(chunksDir)) {

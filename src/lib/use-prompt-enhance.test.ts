@@ -29,6 +29,11 @@ assert.match(
 );
 assert.match(
   source,
+  /const baseDraft = draftOverride \?\? draftRef\.current/,
+  "callers that transform a draft before Enhance can pass the exact text without waiting for a render",
+);
+assert.match(
+  source,
   /settleEnhance\(activeRequest\.baseDraft, draftRef\.current\)/,
   "completion settles against the CURRENT draft, not the one captured at request time",
 );

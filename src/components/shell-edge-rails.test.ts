@@ -73,9 +73,23 @@ assert.equal(
   1,
   "the hydration-stable top-bar wrapper should remain draggable when its empty chrome is clicked",
 );
+// #4791 replaced the drag-lane pin below with one asserting a
+// `.shell-window-titlebar__controls` group holding `{navToggle}` and
+// `{historyNav}` — shell.tsx's own vocabulary — but shell.tsx was not touched
+// by that commit, or by anything since, so the assertion described markup that
+// has never existed in this file. The grouping is real; it lives on the
+// standalone destination shells, where the connected rail puts its boundary
+// controls inside the native strip. Both guarantees are kept below, each
+// against the file that actually makes the promise, so neither the drag lane
+// nor the grouping loses its cover.
 assert.match(
   shell,
-  /<div className="shell-window-titlebar__controls">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<\/div>/,
+  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" \/>\s*\{navToggle\}/,
+  "the desktop top bar exposes a dedicated non-interactive drag lane before its controls",
+);
+assert.match(
+  analyticsShell,
+  /<div className="shell-window-titlebar__controls">[\s\S]*?onClick=\{handleToggleNav\}[\s\S]*?<DesktopHistoryNav \/>[\s\S]*?<\/div>/,
   "the native title strip groups its interactive boundary controls",
 );
 assert.match(
