@@ -86,9 +86,11 @@ test("every delegated budget names a constant its gate really owns", async () =>
   // word-for-word in that file's own comments and log strings.
   for (const entry of PERFORMANCE_BUDGETS) {
     if (entry.gate !== "postbuild") continue;
-    const match = /^(?<file>[\w./-]+\.mjs) \((?<symbol>[A-Za-z_][\w.]*)\)$/.exec(entry.source);
-    assert.ok(match?.groups, `${entry.id}: source must read "<gate script> (<constant>)"`);
-    const { file, symbol } = match.groups;
+    // Positional groups, not named ones: this project's tsc target predates
+    // ES2018, and `(?<name>…)` is a typecheck error under it.
+    const match = /^([\w./-]+\.mjs) \(([A-Za-z_][\w.]*)\)$/.exec(entry.source);
+    assert.ok(match, `${entry.id}: source must read "<gate script> (<constant>)"`);
+    const [, file, symbol] = match;
     const url = new URL(`../../${file}`, import.meta.url);
     const contents = await readFile(url, "utf8");
 
