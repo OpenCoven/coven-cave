@@ -283,6 +283,18 @@ test("a failing canary or a short window holds the current stage", () => {
     "hold",
     "an unrecorded window is not an elapsed one",
   );
+
+  // `Number(null)` is 0, and stable-100 requires 0 hours — so the last stage
+  // was the one place an unrecorded window advanced instead of holding.
+  for (const unrecorded of [null, "25", "", true, NaN]) {
+    const result = evaluateRolloutGate(greenState({ stage: "stable-100", observedHours: unrecorded }));
+    assert.equal(
+      result.decision,
+      "hold",
+      `observedHours ${JSON.stringify(unrecorded)} is not a window somebody watched, even where the required one is zero`,
+    );
+    assert.match(detailsOf(result), /observedHours is not recorded/, "the gap is reported as a gap, not as zero hours");
+  }
 });
 
 test("rollout may not start before acceptance and rollback readiness are proven", () => {

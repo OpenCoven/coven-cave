@@ -254,9 +254,13 @@ export function evaluateRolloutGate(state) {
     if (result !== "pass") hold(`${canary} canary is '${result}'`);
   }
 
-  // 5. The observation window.
-  const observedHours = Number(state.observedHours);
-  if (!Number.isFinite(observedHours) || observedHours < 0) {
+  // 5. The observation window. Same rule as the metrics: `Number(null)` is 0,
+  // which is a recorded window of zero hours rather than an unrecorded one. At
+  // every stage but the last that difference only changes the wording; at
+  // `stable-100`, whose required window is 0, it was the difference between
+  // holding and advancing on a window nobody watched.
+  const observedHours = state.observedHours;
+  if (typeof observedHours !== "number" || !Number.isFinite(observedHours) || observedHours < 0) {
     hold("observedHours is not recorded");
   } else if (observedHours < stage.minObservationHours) {
     hold(`stage '${stage.id}' has been observed ${observedHours}h of the required ${stage.minObservationHours}h`);
