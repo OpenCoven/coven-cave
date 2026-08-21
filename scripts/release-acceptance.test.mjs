@@ -1,0 +1,502 @@
+// @ts-nocheck
+// cave-udcn7 — acceptance evidence validation.
+//
+// The point of these tests is that "acceptance passed" stops being a sentence
+// somebody wrote and becomes a claim with a shape: three operating systems,
+// every journey step, real digests, and no credentials riding along.
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  ACCEPTANCE_OSES,
+  ALL_STEPS,
+  CLI_STEPS,
+  JOURNEY_STEPS,
+  REQUIRED_STEP_IDS,
+  blankAcceptanceRecord,
+  findSecrets,
+  formatReport,
+  runCli,
+  summarizeAcceptance,
+  validateAcceptanceRecord,
+} from "./release-acceptance.mjs";
+
+const COMMIT = "a".repeat(40);
+const DIGEST = "b".repeat(64);
+
+function passingSteps(overrides = {}) {
+  const steps = {};
+  for (const id of REQUIRED_STEP_IDS) steps[id] = { result: "pass", diagnosticId: "", notes: "" };
+  return { ...steps, ...overrides };
+}
+
+function passingRecord(overrides = {}) {
+  return {
+    candidate: { version: "1.0.0", tag: "v1.0.0", commit: COMMIT },
+    artifacts: [{ name: "CovenCave-v1.0.0-aarch64.dmg", sha256: DIGEST }],
+    runs: ACCEPTANCE_OSES.map((os) => ({
+      os,
+      osVersion: "test",
+      caveVersion: "0.3.6",
+      chatVersion: "1.0.0",
+      cliVersion: "1.0.0",
+      steps: passingSteps(),
+    })),
+    ...overrides,
+  };
+}
+
+test("the journey covers the desktop steps and the global CLI steps exactly once", () => {
+  assert.equal(
+    ALL_STEPS.length,
+    JOURNEY_STEPS.length + CLI_STEPS.length,
+    "ALL_STEPS is the concatenation, so a step added to either list must appear here",
+  );
+  assert.equal(
+    new Set(REQUIRED_STEP_IDS).size,
+    REQUIRED_STEP_IDS.length,
+    "a duplicated step id would let one recorded result satisfy two obligations",
+  );
+  for (const id of ["pair-approve", "revoke-pairing", "update-migration", "cli-doctor", "cli-scaffold"]) {
+    assert.ok(REQUIRED_STEP_IDS.includes(id), `${id} is named in the acceptance criteria and must be recorded`);
+  }
+});
+
+test("a blank record is well formed but never counts as acceptance", () => {
+  const record = blankAcceptanceRecord("1.2.3");
+  assert.deepEqual(
+    record.runs.map((run) => run.os),
+    ACCEPTANCE_OSES,
+    "the template pre-seeds one run per supported OS so an operator cannot forget one",
+  );
+  for (const run of record.runs) {
+    assert.deepEqual(
+      Object.keys(run.steps).sort(),
+      [...REQUIRED_STEP_IDS].sort(),
+      "every required step is present in the template, waiting to be filled in",
+    );
+  }
+  const result = validateAcceptanceRecord(record);
+  assert.equal(result.ok, false, "an unfilled template must not validate — that is the whole failure mode");
+  assert.notEqual(result.status, "complete", "pending steps are not passes");
+  assert.equal(
+    result.errors.filter((error) => error.includes("diagnosticId")).length,
+    0,
+    "a step nobody has attempted owes no diagnostic; demanding one buries the real gaps in noise",
+  );
+});
+
+test("an otherwise clean record with a step still outstanding is not complete", () => {
+  // The central property of this validator, and the one every other test here
+  // was reaching only by accident. The blank-template test asserts
+  // `status !== "complete"` on a record that ALSO has an empty commit and an
+  // empty artifact digest, so it passes on the structural errors alone; the
+  // `pending` case below asserts `errors` is empty and never looks at status.
+  // Delete `pendingSteps` from the status ternary in validateSteps() and every
+  // other assertion in both suites stays green — while a journey with steps
+  // nobody attempted reads as `complete` and unblocks a rollout.
+  for (const [result, extra] of [
+    ["pending", {}],
+    ["blocked", { diagnosticId: "diag-7" }],
+  ]) {
+    const record = passingRecord();
+    record.runs[1].steps["attachment"] = { result, diagnosticId: "", notes: "", ...extra };
+    const validated = validateAcceptanceRecord(record);
+    assert.deepEqual(
+      validated.errors,
+      [],
+      `a '${result}' step is a well-formed recording, so nothing structural should be reported alongside it`,
+    );
+    assert.equal(
+      validated.status,
+      "incomplete",
+      `one '${result}' step with no structural fault anywhere else must still keep the record out of complete`,
+    );
+    assert.equal(validated.ok, false, "ok is what the CLI exits on, so it has to move with status");
+
+    const run = validated.runs.find((entry) => entry.os === record.runs[1].os);
+    assert.deepEqual(run.pendingSteps, ["attachment"], "the outstanding step is named so the operator knows what is left");
+    assert.deepEqual(run.failedSteps, [], `'${result}' is an unfinished step, not a failed one; conflating them misreports the journey`);
+    assert.equal(run.status, "incomplete", "a run holding an unattempted step has not passed");
+  }
+});
+
+test("completion requires every operating system to have passed, not merely to have not failed", () => {
+  // `complete` reads `run.status === "pass"`. Loosening that to `!== "fail"`
+  // survives every other assertion here, because the records that are not
+  // complete in those tests are kept out by a structural error rather than by
+  // this clause.
+  const record = passingRecord();
+  record.runs[2].steps["cli-tail"] = { result: "pending", diagnosticId: "", notes: "" };
+  const validated = validateAcceptanceRecord(record);
+  assert.deepEqual(validated.errors, [], "the record is structurally sound; only the journey is unfinished");
+  assert.notEqual(
+    validated.status,
+    "complete",
+    "two OSes green and a third unfinished is two thirds of an acceptance journey, and rollout is gated on all three",
+  );
+  assert.equal(
+    summarizeAcceptance(record).status,
+    "incomplete",
+    "the gate reads this summary and advances on 'complete', so the loosening would land there",
+  );
+});
+
+test("the supported operating systems are the three the runbook names", () => {
+  // Every other assertion in this file derives its expectation from
+  // ACCEPTANCE_OSES, so dropping an OS from the constant leaves the suite green
+  // while acceptance silently stops requiring that machine.
+  assert.deepEqual(
+    ACCEPTANCE_OSES,
+    ["macos", "windows", "linux"],
+    "docs/workflows/release-acceptance.md sends an operator to these three machines; the constant is the other half of that promise",
+  );
+});
+
+test("a fully recorded run validates as complete", () => {
+  const result = validateAcceptanceRecord(passingRecord());
+  assert.deepEqual(result.errors, [], "a well-formed record should produce no errors");
+  assert.equal(result.status, "complete", "three OSes with every step passing is what complete means");
+  assert.equal(result.ok, true, "ok tracks status === complete with no errors");
+});
+
+test("a missing operating system blocks completion by name", () => {
+  const record = passingRecord();
+  record.runs = record.runs.filter((run) => run.os !== "windows");
+  const result = validateAcceptanceRecord(record);
+  assert.equal(result.status, "incomplete", "two of three OSes is not acceptance");
+  assert.ok(
+    result.errors.some((error) => error.includes("windows")),
+    "the error names the missing OS so the operator knows which machine to go find",
+  );
+  assert.deepEqual(
+    summarizeAcceptance(record).missingOses,
+    ["windows"],
+    "the gate decides on `status` alone, so this is what tells whoever reads the summary WHICH machine is missing",
+  );
+});
+
+test("a recorded failure is louder than a recorded gap", () => {
+  const record = passingRecord();
+  record.runs[0].steps["restart-history"] = { result: "fail", diagnosticId: "diag-1" };
+  const result = validateAcceptanceRecord(record);
+  assert.equal(result.status, "failed", "a failed step is a different state from an unfinished one");
+  assert.deepEqual(
+    result.runs.find((run) => run.os === record.runs[0].os).failedSteps,
+    ["restart-history"],
+    "the failing step is named so the rollout gate can quote it",
+  );
+});
+
+test("an observed failure without a diagnostic id is not evidence", () => {
+  for (const result of ["blocked", "fail"]) {
+    const record = passingRecord();
+    record.runs[1].steps["attachment"] = { result, diagnosticId: "  " };
+    const validated = validateAcceptanceRecord(record);
+    assert.ok(
+      validated.errors.some((error) => error.includes("attachment") && error.includes("diagnosticId")),
+      `a '${result}' nobody can look up later is a note, not a diagnosis`,
+    );
+  }
+
+  const pending = passingRecord();
+  pending.runs[1].steps["attachment"] = { result: "pending", diagnosticId: "" };
+  assert.deepEqual(
+    validateAcceptanceRecord(pending).errors,
+    [],
+    "an unattempted step is a gap in coverage, not a defect needing a diagnosis",
+  );
+});
+
+test("structural mistakes in the record are all reported together", () => {
+  const record = passingRecord();
+  record.candidate.tag = "v9.9.9";
+  record.artifacts = [{ name: "installer.msi", sha256: "not-a-digest" }];
+  record.runs[0].steps["unknown-step"] = { result: "pass" };
+  record.runs.push({ ...record.runs[0], os: "macos" });
+
+  const result = validateAcceptanceRecord(record);
+  const joined = result.errors.join("\n");
+  assert.match(joined, /does not match candidate.version/, "a tag that disagrees with the version fails");
+  assert.match(joined, /sha256/, "an artifact digest that is not 64 hex characters fails");
+  assert.match(joined, /unknown step 'unknown-step'/, "a step id nobody defined is a typo, not extra evidence");
+  assert.match(joined, /repeats os 'macos'/, "two runs for one OS means one of them is unreviewed");
+  assert.ok(result.errors.length >= 4, "every problem is collected so the file is repaired in one pass");
+});
+
+test("a digest or a commit of the wrong length is not the one that was accepted", () => {
+  // The only malformed digest anywhere in this file is the literal
+  // "not-a-digest", which fails on its non-hex characters. So every length in
+  // these two patterns is unpinned: relaxing them to `{8,}` and `{7,}` leaves
+  // the suite green, and a truncated digest is exactly what a copy out of a
+  // terminal that wrapped produces. The record is a claim about which bytes
+  // were accepted, and a short digest names a great many other byte strings
+  // as well.
+  const truncated = passingRecord();
+  truncated.artifacts = [{ name: "installer.msi", sha256: DIGEST.slice(0, 40) }];
+  assert.ok(
+    validateAcceptanceRecord(truncated).errors.some((error) => error.includes("sha256")),
+    "40 hex characters is a valid-looking prefix of a SHA-256 and is not one",
+  );
+
+  const overlong = passingRecord();
+  overlong.artifacts = [{ name: "installer.msi", sha256: `${DIGEST}00` }];
+  assert.ok(
+    validateAcceptanceRecord(overlong).errors.some((error) => error.includes("sha256")),
+    "a digest with trailing characters is a paste that caught something else too",
+  );
+
+  for (const commit of [COMMIT.slice(0, 7), COMMIT.slice(0, 39), `${COMMIT}a`]) {
+    const record = passingRecord();
+    record.candidate.commit = commit;
+    assert.ok(
+      validateAcceptanceRecord(record).errors.some((error) => error.includes("commit")),
+      `a ${commit.length}-character commit is an abbreviation, and an abbreviation can stop being unique`,
+    );
+  }
+
+  const good = passingRecord();
+  assert.deepEqual(
+    validateAcceptanceRecord(good).errors,
+    [],
+    "exactly 64 and exactly 40 hex characters are what the record has always accepted, and still are",
+  );
+});
+
+test("credential-shaped text in the evidence is refused", () => {
+  const record = passingRecord();
+  record.runs[0].steps["cli-pair"] = {
+    result: "pass",
+    notes: "paired with ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+  };
+  const result = validateAcceptanceRecord(record);
+  assert.ok(
+    result.errors.some((error) => error.includes("github-pat")),
+    "acceptance evidence is committed, so a token in it is a leak the validator has to catch",
+  );
+
+  const found = findSecrets({ notes: "-----BEGIN OPENSSH PRIVATE KEY-----" });
+  assert.equal(found.length, 1, "a private key block is detected wherever it sits in the record");
+  assert.equal(found[0].path, "record.notes", "the finding points at the field so it can be redacted");
+});
+
+test("the credential shapes this journey invites are caught", () => {
+  // Assembled rather than written out: GitHub push protection scans this file
+  // too, and it rejects a literal token-shaped string even when the token is
+  // invented. A fixture that cannot be pushed is not a fixture.
+  const slackLookalike = ["xoxb", "2381910230", "2384823281", "notarealslacktoken"].join("-");
+  const bearerLookalike = `Bearer ${["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiJub3QtYS1qd3QifQ"].join(".")}`;
+  const cases = [
+    ["slack-token", `posted to ${slackLookalike}`],
+    ["bearer-credential", `curl -H 'Authorization: ${bearerLookalike}'`],
+    ["credential-in-url", "callback hit http://127.0.0.1:7331/pair?token=s3cr3t-pairing-code-9f21"],
+  ];
+  for (const [id, note] of cases) {
+    const record = passingRecord();
+    record.runs[0].steps["cli-pair"] = { result: "pass", notes: note };
+    assert.ok(
+      validateAcceptanceRecord(record).errors.some((error) => error.includes(id)),
+      `pairing is step four of the journey, so a ${id} is what an operator's own diagnostic paste looks like`,
+    );
+  }
+});
+
+test("a checksum is not mistaken for a secret", () => {
+  // Asserted against findSecrets directly rather than through a passing record:
+  // "the record validates clean" would also pass against a scanner that never
+  // ran, which is the assertion this test exists to not make.
+  assert.deepEqual(
+    findSecrets({
+      sha256: DIGEST,
+      commit: COMMIT,
+      artifact: `CovenCave-v1.0.0-aarch64.dmg  ${DIGEST}`,
+      url: "https://github.com/OpenCoven/coven-cave/releases/download/v1.0.0/latest.json",
+      prose: "the bearer token was rejected until the client re-paired",
+    }),
+    [],
+    "digests and commit SHAs are long hex strings; an entropy heuristic would flag every one of them",
+  );
+});
+
+test("a deeply nested record is reported on rather than overflowing the stack", () => {
+  // JSON.parse accepts far deeper nesting than a recursive scan survives, so
+  // the recursive form turned a malformed file into RangeError instead of the
+  // error list validateAcceptanceRecord promises to always return.
+  const deep = JSON.parse(`${"[".repeat(20000)}"ghp_abcdefghijklmnopqrstuvwxyz0123456789"${"]".repeat(20000)}`);
+  const record = passingRecord({ artifacts: [{ name: "deep", sha256: DIGEST, notes: deep }] });
+  const errors = validateAcceptanceRecord(record).errors;
+  assert.ok(
+    errors.some((error) => error.includes("github-pat")),
+    "the scan still reaches a credential buried at the bottom of the nesting",
+  );
+
+  const cyclic = { notes: {} };
+  cyclic.notes.parent = cyclic;
+  assert.deepEqual(findSecrets(cyclic), [], "a cycle terminates the walk instead of running until the stack dies");
+
+  // The same argument reaches the error messages: they print the offending
+  // value, and JSON.stringify throws on a cycle. validateAcceptanceRecord
+  // documents itself as returning its problems rather than throwing one.
+  const cyclicRecord = passingRecord();
+  cyclicRecord.candidate.version = cyclic;
+  cyclicRecord.runs[0].os = cyclic;
+  const cyclicResult = validateAcceptanceRecord(cyclicRecord);
+  assert.notEqual(cyclicResult.status, "complete", "a candidate version that is not a string is not a version");
+  assert.ok(cyclicResult.errors.length > 0, "the problems come back as a list, not as a thrown TypeError");
+});
+
+test("a word wrapped in an array is not the word", () => {
+  // `String(["pass"])` is `"pass"`. Every allow-list and every pattern in this
+  // validator ran on a coerced value, so a record whose fields were each
+  // wrapped in a one-element array — what a `jq '[.x]'` or a YAML-to-JSON
+  // conversion produces — validated as `complete` with nothing recorded.
+  const wrapped = passingRecord();
+  wrapped.candidate = { version: ["1.0.0"], tag: ["v1.0.0"], commit: [COMMIT] };
+  wrapped.artifacts = [{ name: ["installer.msi"], sha256: [DIGEST] }];
+  for (const run of wrapped.runs) run.os = [run.os];
+  const wrappedResult = validateAcceptanceRecord(wrapped);
+  assert.notEqual(wrappedResult.status, "complete", "an array holding the right word is not the operator recording it");
+  for (const field of ["version", "tag", "commit", "sha256", "os"]) {
+    assert.ok(
+      wrappedResult.errors.some((error) => error.includes(field)),
+      `${field} was compared against a coerced string, so a wrapped value passed the check it should have failed`,
+    );
+  }
+
+  // The step result is the one that decides whether acceptance happened.
+  const step = passingRecord();
+  step.runs[0].steps["create-send"] = { result: ["pass"], diagnosticId: "", notes: "" };
+  const stepResult = validateAcceptanceRecord(step);
+  assert.notEqual(stepResult.status, "complete", "a step nobody recorded as a string was not recorded as a pass");
+  assert.ok(
+    stepResult.errors.some((error) => error.includes("create-send") && error.includes("must be one of")),
+    "the operator is told which step's result their generator mangled",
+  );
+  assert.ok(
+    stepResult.errors.some((error) => error.includes('["pass"]')),
+    "the value is printed as it sits in the file; printing the coerced form would show a result that looks correct",
+  );
+});
+
+test("the environment a run was performed in has to be recorded, not merely present", () => {
+  // The array-wrapping sweep reached every field matched against a pattern or a
+  // vocabulary, and stopped at the four that are only checked for emptiness.
+  // Those were still read through `String(x ?? "")`, so `{}` became
+  // "[object Object]", `true` became "true", and `0` became "0" — each non-empty,
+  // each satisfying "is required", and the record validated `complete` claiming
+  // an acceptance run on an OS version nobody wrote down.
+  for (const field of ["osVersion", "caveVersion", "chatVersion", "cliVersion"]) {
+    for (const value of [{}, true, false, 0, 1, NaN, ["15.5"], { a: 1 }, null, undefined, "   "]) {
+      const record = passingRecord();
+      record.runs[0][field] = value;
+      const result = validateAcceptanceRecord(record);
+      assert.notEqual(
+        result.status,
+        "complete",
+        `runs[0].${field} = ${JSON.stringify(value) ?? String(value)} names no version, and a record that cannot say what it ran against is not acceptance`,
+      );
+      assert.ok(
+        result.errors.some((error) => error.includes(field)),
+        `the operator is told which field of which run their generator left unfilled, not merely that the record failed`,
+      );
+    }
+  }
+
+  const good = passingRecord();
+  good.runs[0].osVersion = "15.5";
+  assert.equal(
+    validateAcceptanceRecord(good).status,
+    "complete",
+    "a plain non-empty string is what these fields have always accepted, and still is",
+  );
+});
+
+test("a diagnostic id that looks up nothing is not a diagnosis", () => {
+  // Same coercion, on the field that decides whether an observed failure is
+  // actionable. `String({})` is truthy, so a generated record could record a
+  // `fail` and satisfy the demand for a diagnostic with an empty object.
+  for (const value of [{}, true, 0, ["diag-1"], { id: "diag-1" }, NaN]) {
+    const record = passingRecord();
+    record.runs[1].steps["attachment"] = { result: "fail", diagnosticId: value };
+    assert.ok(
+      validateAcceptanceRecord(record).errors.some(
+        (error) => error.includes("attachment") && error.includes("diagnosticId"),
+      ),
+      `a diagnosticId of ${JSON.stringify(value) ?? String(value)} is not an id anyone can look the failure up by`,
+    );
+  }
+
+  const diagnosed = passingRecord();
+  diagnosed.runs[1].steps["attachment"] = { result: "fail", diagnosticId: "diag-1" };
+  assert.deepEqual(
+    validateAcceptanceRecord(diagnosed).errors,
+    [],
+    "a real diagnostic id still satisfies the demand; the failure itself is reported through status, not errors",
+  );
+});
+
+test("a run whose steps are not an object is a gap, not a pass", () => {
+  for (const steps of [[], "install-cave: pass", null, 7]) {
+    const record = passingRecord();
+    record.runs[0].steps = steps;
+    const result = validateAcceptanceRecord(record);
+    assert.equal(
+      result.status,
+      "incomplete",
+      `steps recorded as ${JSON.stringify(steps)} record nothing, and nothing is not twelve passes`,
+    );
+    assert.ok(
+      result.errors.some((error) => error.includes("steps must be an object")),
+      "the operator is told the shape their evidence has to take",
+    );
+    assert.deepEqual(
+      result.runs.find((run) => run.os === "macos").pendingSteps,
+      REQUIRED_STEP_IDS,
+      "every required step is outstanding, so the report cannot read as partial coverage",
+    );
+  }
+});
+
+test("the CLI validates, templates, and reports exit codes", () => {
+  const lines = [];
+  const log = (line) => lines.push(line);
+
+  assert.equal(
+    runCli({ argv: ["validate", "record.json"], readFileImpl: () => JSON.stringify(passingRecord()), log }),
+    0,
+    "a complete record exits 0 so CI can gate on it",
+  );
+
+  const blank = blankAcceptanceRecord("1.0.0");
+  assert.equal(
+    runCli({ argv: ["validate", "record.json"], readFileImpl: () => JSON.stringify(blank), log }),
+    1,
+    "an incomplete record exits non-zero",
+  );
+
+  assert.equal(runCli({ argv: ["template", "1.0.0"], log }), 0, "template emits a starting point");
+  assert.throws(
+    () => runCli({ argv: ["validate"], log }),
+    /usage/,
+    "a missing path is a usage error rather than a confusing read failure",
+  );
+  assert.throws(() => runCli({ argv: ["nonsense"], log }), /usage/, "an unknown command prints usage");
+  assert.throws(() => runCli({ argv: [], log }), /usage/, "no arguments at all prints usage rather than doing nothing");
+  assert.throws(
+    () => runCli({ argv: ["validate", "--strict", "record.json"], readFileImpl: () => "{}", log }),
+    /unknown option '--strict'/,
+    "an option this CLI does not have must not be dropped; the operator asked for behavior it will not get",
+  );
+  assert.throws(
+    () => runCli({ argv: ["validate", "a.json", "b.json"], readFileImpl: () => "{}", log }),
+    /unexpected argument 'b.json'/,
+    "two record paths is ambiguous, and quietly validating the first one hides which was checked",
+  );
+});
+
+test("the report names the state of every operating system", () => {
+  const report = formatReport(validateAcceptanceRecord(passingRecord()));
+  for (const os of ACCEPTANCE_OSES) {
+    assert.ok(report.includes(os), `${os} appears in the report even when it passed, so coverage is visible`);
+  }
+});
