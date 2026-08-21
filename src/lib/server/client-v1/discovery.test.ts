@@ -215,6 +215,11 @@ test("server lifecycle publishes only from listener readiness and performs nonce
     /server\.listen\(port,\s*hostname,\s*\(\)\s*=>\s*\{[\s\S]*publishStandaloneClientV1DiscoveryRecord/,
   );
   assert.match(
+    source.slice(listen, publish + 240),
+    /publishStandaloneClientV1DiscoveryRecord\(loopbackHttpEndpoint\(hostname,\s*port\)\)/,
+    "listener readiness must publish a valid URL for IPv4, localhost, and IPv6 loopback binds",
+  );
+  assert.match(
     source,
     /removeStandaloneClientV1DiscoveryRecord\(\s*CLIENT_V1_DISCOVERY_NONCE\s*\)/,
   );

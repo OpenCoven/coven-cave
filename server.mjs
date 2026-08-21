@@ -850,6 +850,10 @@ function loopbackHostname(raw = process.env.HOSTNAME) {
   }
   return "127.0.0.1";
 }
+function loopbackHttpEndpoint(hostname2, port2) {
+  const urlHostname = hostname2 === "::1" ? `[${hostname2}]` : hostname2;
+  return `http://${urlHostname}:${port2}`;
+}
 const dev = process.env.NODE_ENV !== "production";
 const hostname = loopbackHostname();
 const port = cavePort();
@@ -938,13 +942,13 @@ server.keepAliveTimeout = 75e3;
 server.headersTimeout = 8e4;
 server.listen(port, hostname, () => {
   try {
-    publishStandaloneClientV1DiscoveryRecord(`http://${hostname}:${port}`);
+    publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
   } catch (error) {
     console.error("[cave] failed to publish client-v1 discovery", error);
     server.close(() => process.exit(1));
     return;
   }
-  console.log(`> Ready on http://${hostname}:${port}`);
+  console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
 });
 let httpShutdownStarted = false;
 function shutdownHttpServer() {
