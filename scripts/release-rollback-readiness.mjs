@@ -181,6 +181,11 @@ export function collectManifestProblems(manifest, baseline) {
       problems.push(`${platform}: manifest entry has no signature, so the updater would reject it`);
     }
     const identity = assetIdentity(entry.url);
+    // `!identity` is redundant while `assetIdentities` filters its own blanks,
+    // and deliberately kept: it is what makes an unparseable url on BOTH sides
+    // fail closed. Drop either half alone and nothing changes; drop both and a
+    // manifest entry whose url is not a url matches a baseline asset whose url
+    // is not a url, and the gate certifies a rollback target it never resolved.
     if (!identity || !identities.has(identity)) {
       problems.push(
         `${platform}: manifest points at '${entry.url}', which is not an asset on ${baseline.tag}`,
@@ -190,9 +195,8 @@ export function collectManifestProblems(manifest, baseline) {
   return problems;
 }
 
-function resolveRepository(options) {
-  if (options.owner && options.repo) return [options.owner, options.repo];
-  const parts = options.repository?.split("/") ?? [];
+function resolveRepository(repository) {
+  const parts = typeof repository === "string" ? repository.split("/") : [];
   if (parts.length !== 2 || parts.some((part) => !part)) {
     throw new Error("repository must use the owner/repo form");
   }
@@ -297,18 +301,26 @@ async function listReleases(context) {
 }
 
 export async function verifyRollbackReadiness(options = {}) {
-  if (typeof options.fetchImpl !== "function" && typeof globalThis.fetch !== "function") {
+  // Checked after resolution, not before: the earlier form asked whether
+  // `options.fetchImpl` OR `globalThis.fetch` was callable, which on every Node
+  // this repository supports is always yes — so it could not fire, and the one
+  // input it looked like it caught (a truthy non-function) sailed past it into
+  // `requestJson`, where the call throws and is reported as a request that
+  // "could not be sent … retry". That tells an operator to retry a permanent
+  // defect, which is the exact misreading the retry advice exists to avoid.
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  if (typeof fetchImpl !== "function") {
     throw new Error("fetch implementation is required");
   }
   const target = parseFinalTag(options.tag);
-  const [owner, repo] = resolveRepository(options);
+  const [owner, repo] = resolveRepository(options.repository);
   const apiUrl = (options.apiUrl || "https://api.github.com").replace(/\/+$/, "");
   const context = {
     apiUrl,
     apiOrigin: originOf(apiUrl),
     repositoryPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
     token: options.token || "",
-    fetchImpl: options.fetchImpl || globalThis.fetch,
+    fetchImpl,
   };
 
   const baseline = selectRollbackBaseline(await listReleases(context), target.tag);
@@ -393,6 +405,10 @@ function writeCliResult(result, env) {
   appendFileSync(
     requiredEnv(env, "GITHUB_OUTPUT"),
     Object.entries({
+      // `ready` is structurally always true — every shortfall throws before
+      // this line — and that is the point: a step output is absent when the
+      // step did not reach its end, so `ready=true` distinguishes "verified"
+      // from "" for any reader that does not also have the job's conclusion.
       ready: result.ready,
       "baseline-tag": result.baseline?.tag ?? "",
       "baseline-version": result.baseline?.version ?? "",

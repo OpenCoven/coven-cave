@@ -158,9 +158,10 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    outputs:
-      baseline-tag: ${{ steps.readiness.outputs.baseline-tag }}
-      rollback-platforms: ${{ steps.readiness.outputs.rollback-platforms }}
+    # No job-level `outputs:` on purpose. Job outputs exist to feed a dependent
+    # job in the same run, and no job consumes this record; they are not
+    # readable from the run afterwards either. The durable record is the step
+    # summary, and the step outputs stay available inside this job.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
