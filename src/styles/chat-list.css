@@ -166,6 +166,37 @@
   color: var(--text-secondary);
 }
 
+/* ── Filter families ───────────────────────────────────────────────────────
+   The toolbar's contract is one line: search, counted status filters, the
+   named sort. d272ed0b1 added a second filter family (the work-kind chips) to
+   that line and the sort wrapped to a second row, because flex line-breaking
+   reads each item's HYPOTHETICAL size — flex-shrink and min-width cannot
+   influence it, so nothing short of the chips actually being narrower would
+   have held the row together.
+   Giving the families their own flex-basis-0 track fixes that structurally
+   rather than by budget: a zero hypothetical size can never force a break, and
+   the track then takes whatever width is left after the fixed controls are
+   placed. Past that the chips scroll instead of wrapping. The scrollbar is
+   hidden deliberately — a classic scrollbar would change this row's height,
+   which is the very thing the surrounding controls are aligned against. */
+.chat-sessions-filters {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  /* Vertical room for the chips' focus ring, pulled back out of the layout so
+     the row's height is unchanged. */
+  padding-block: var(--space-1);
+  margin-block: calc(var(--space-1) * -1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.chat-sessions-filters::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Sort control ──────────────────────────────────────────────────────── */
 
 .chat-sessions-sort {

@@ -905,7 +905,8 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
           {!compact && (
             <>
-              <span role="group" aria-label="Filter sessions by status" className="flex flex-wrap items-center gap-0.5">
+              <div className="chat-sessions-filters">
+              <span role="group" aria-label="Filter sessions by status" className="flex shrink-0 items-center gap-0.5">
                 <button
                   type="button"
                   aria-pressed={statusFilter === "all"}
@@ -939,7 +940,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                   Board-task chats, "GitHub only" to chats wearing the PR
                   badge. Pressing the active chip clears it back to all. */}
               <span aria-hidden className="h-3.5 w-px shrink-0 bg-[var(--border-hairline)]" />
-              <span role="group" aria-label="Filter sessions by work kind" className="flex flex-wrap items-center gap-0.5">
+              <span role="group" aria-label="Filter sessions by work kind" className="flex shrink-0 items-center gap-0.5">
                 {CHAT_SESSION_KIND_ORDER.map((key) => {
                   const presentation = CHAT_SESSION_KIND[key];
                   const active = kindFilter === key;
@@ -961,6 +962,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                   );
                 })}
               </span>
+              </div>
               {hasAppliedFilters && !(visibleRows === 0 && !showContentSection) && (
                 <Button
                   variant="ghost"
@@ -976,7 +978,6 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                   {sessionCountLine(visibleRows, mine.length)}
                 </span>
               ) : null}
-              <span className="flex-1" />
               <OverflowMenu
                 ariaLabel="Session view options"
                 icon="ph:sliders-horizontal"
