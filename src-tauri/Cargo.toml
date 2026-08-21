@@ -65,7 +65,10 @@ discord-rich-presence = "1.1.0"
 # hold a root secret this cache would trust. sha2 lives here rather than in the
 # Windows block it started in, because both the sidecar archive digests and the
 # cache's derivation need it.
-aes-gcm = "0.10"
+# `zeroize` is not on by default, and without it the expanded AES round-key
+# schedule outlives the cipher in freed heap — which would undo the Zeroizing
+# this module wraps every other piece of key material in.
+aes-gcm = { version = "0.10", features = ["zeroize"] }
 hkdf = "0.12"
 sha2 = "0.10"
 zeroize = "1"
