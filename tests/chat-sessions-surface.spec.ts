@@ -137,7 +137,11 @@ test.describe("sessions list", () => {
     expect(searchBox!.width).toBeLessThanOrEqual(260);
     expect(Math.abs(searchBox!.y - allBox!.y)).toBeLessThanOrEqual(4);
     expect(Math.abs(searchBox!.y - sortBox!.y)).toBeLessThanOrEqual(4);
-    await expect(page.getByRole("button", { name: "Session view options" })).toBeVisible();
+    const viewOptions = page.getByRole("button", { name: "Session view options" });
+    await expect(viewOptions).toBeVisible();
+    await viewOptions.click();
+    await expect(page.getByRole("menuitemradio", { name: /^Tasks \(\d+\)$/ })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: /^GitHub \(\d+\)$/ })).toBeVisible();
   });
 
   test("clear filters appears for any applied filter and restores familiar scope", async ({ page }) => {
