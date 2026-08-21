@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import process from "node:process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { parse } from "yaml";
 
@@ -230,6 +233,68 @@ test("a smoke-scale run fails instead of certifying the 10k budgets", () => {
   assert.match(
     renderPerformanceReportMarkdown(report),
     /seeded against the phase-6-list-10k fixture, but this run measured default/,
+  );
+});
+
+test("a swept dimension does not inherit its profile's authority", () => {
+  // The exact payload of
+  //   CAVE_BENCH_PROFILE=phase-6-list-10k CAVE_BENCH_CONVERSATIONS=25 \
+  //   CAVE_BENCH_ITERATIONS=1 pnpm bench:conversation-list
+  // before the benchmark stopped claiming the profile it departed from. The
+  // profile check compares a NAME, and the name was stamped from
+  // CAVE_BENCH_PROFILE alone — so twenty-five conversations reported
+  // `profile: "phase-6-list-10k"` and the report answered status "pass",
+  // budgetPass true, cold-scan p95 "pass" against the 10k ceiling. That is the
+  // same smoke-certifies-10k defect the profile check exists to stop, reached
+  // through the override door rather than the profile door.
+  const swept = conversation();
+  swept.fixture = {
+    profile: "phase-6-list-10k (overridden: CAVE_BENCH_CONVERSATIONS, CAVE_BENCH_ITERATIONS)",
+    fileCount: 25,
+    transcriptBytes: 4096,
+    iterations: 1,
+  };
+  const report = buildPerformanceReport({
+    conversation: swept,
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+
+  assert.equal(report.summary.status, "fail");
+  assert.equal(report.summary.budgetPass, false);
+  assert.equal(report.summary.budgetBreachCount, 0, "the numbers are fine — the workload is not");
+  assert.equal(report.summary.budgetUnmeasuredCount, report.budgets.enforcedCount);
+});
+
+test("the benchmark reports a swept dimension, and only a genuinely swept one", () => {
+  // Pinned by running the benchmark rather than by restating its output, since
+  // the stamp is the whole tie between a workload and the budget that judges
+  // it. Two conversations of 64 bytes keeps this a sub-second fixture; the
+  // iterations override is set to the profile's OWN value (5), which changes
+  // nothing about the workload and so must not read as a sweep.
+  const script = fileURLToPath(new URL("./conversation-list-benchmark.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", script], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    env: {
+      ...process.env,
+      CAVE_BENCH_PROFILE: "phase-6-list-10k",
+      CAVE_BENCH_CONVERSATIONS: "2",
+      CAVE_BENCH_TRANSCRIPT_BYTES: "64",
+      CAVE_BENCH_ITERATIONS: "5",
+    },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const { fixture } = JSON.parse(result.stdout);
+
+  assert.equal(
+    fixture.profile,
+    "phase-6-list-10k (overridden: CAVE_BENCH_CONVERSATIONS, CAVE_BENCH_TRANSCRIPT_BYTES)",
+  );
+  assert.equal(fixture.iterations, 5);
+  assert.ok(
+    !enforcedFixtureProfiles().includes(fixture.profile),
+    "a swept run must not name a profile any budget is seeded against",
   );
 });
 

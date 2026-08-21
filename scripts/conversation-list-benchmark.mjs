@@ -11,7 +11,9 @@ const FIXTURES_PATH = path.join(projectRoot, "fixtures", "phase-6", "performance
  * Fixture scale lives in `fixtures/phase-6/performance-fixtures.json` so the
  * budget a run is judged against and the workload that produced it move
  * together. An explicit env var still wins, because a bisect needs to sweep one
- * dimension without editing a committed fixture.
+ * dimension without editing a committed fixture — but a swept run says so in
+ * the profile it reports, so it cannot be graded as the profile it departed
+ * from. See `reportedProfile` below.
  *
  * Blank reads as "not set", the same way `dimension()` below treats a blank
  * numeric override — a workflow writing `CAVE_BENCH_PROFILE: ${{ inputs.profile }}`
@@ -35,7 +37,12 @@ if (!profile) {
  * the variable to an empty string on a scheduled run, and `??` only catches
  * undefined — so `Number("")` would silently select 0 iterations, which
  * percentile() then reads off the end of an empty array.
+ *
+ * A value that differs from the profile's own is recorded, because the run is
+ * then no longer that profile's workload and must not be reported as if it
+ * were. A value equal to it changes nothing and is not an override.
  */
+const overriddenDimensions = [];
 function dimension(name, fallback) {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
@@ -43,12 +50,31 @@ function dimension(name, fallback) {
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${name} must be a positive number, received "${raw}"`);
   }
+  if (value !== fallback) overriddenDimensions.push(name);
   return value;
 }
 
 const fileCount = dimension("CAVE_BENCH_CONVERSATIONS", profile.fileCount);
 const transcriptBytes = dimension("CAVE_BENCH_TRANSCRIPT_BYTES", profile.transcriptBytes);
 const iterations = dimension("CAVE_BENCH_ITERATIONS", profile.iterations);
+
+/**
+ * What this run is entitled to claim it measured.
+ *
+ * The report grades enforced budgets by comparing this string against the
+ * profile the budget's `source` names, so stamping the profile name alone let a
+ * swept dimension inherit the profile's authority: with
+ * `CAVE_BENCH_PROFILE=phase-6-list-10k CAVE_BENCH_CONVERSATIONS=25`, a
+ * twenty-five-conversation run reported `profile: "phase-6-list-10k"` and
+ * certified "10k conversation list, cold metadata scan p95 ≤ 3000 ms" as a pass
+ * — the exact smoke-run-certifies-10k defect the profile check was added to
+ * close, reached through the override door instead of the profile door. The
+ * suffix cannot equal any key in the fixture file, so the report's existing
+ * mismatch path records every enforced budget `unmeasured` and fails the run.
+ */
+const reportedProfile = overriddenDimensions.length === 0
+  ? profileName
+  : `${profileName} (overridden: ${overriddenDimensions.join(", ")})`;
 const benchHome = await mkdtemp(path.join(tmpdir(), "cave-conversation-list-bench-"));
 
 /**
@@ -152,7 +178,7 @@ try {
   console.log(
     JSON.stringify(
       {
-        fixture: { profile: profileName, fileCount, transcriptBytes, iterations },
+        fixture: { profile: reportedProfile, fileCount, transcriptBytes, iterations },
         before: summarize("full transcript parse", legacyDurations, legacyBytes),
         cold: summarize("cold metadata scan", coldDurations, coldMetrics.bytesRead),
         after: summarize("warm metadata cache", cachedDurations, cachedMetrics.bytesRead),

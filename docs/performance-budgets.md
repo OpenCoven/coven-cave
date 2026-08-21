@@ -98,6 +98,18 @@ so the workload and the budget it is judged against move together. Select one
 with `CAVE_BENCH_PROFILE`; an explicit `CAVE_BENCH_*` dimension still wins, so a
 bisect can sweep one axis without editing a committed fixture.
 
+**A swept run says so, and is therefore not graded as the profile it departed
+from.** The scale check above compares the profile *name* the benchmark
+reports, and that name used to come from `CAVE_BENCH_PROFILE` alone — so
+`CAVE_BENCH_PROFILE=phase-6-list-10k CAVE_BENCH_CONVERSATIONS=25` reported
+`profile: "phase-6-list-10k"` and certified the 10k ceilings against
+twenty-five conversations, reaching the smoke-certifies-10k defect through the
+override door instead of the profile door. A dimension that differs from its
+profile's own value now appends `(overridden: <VAR>)` to the reported profile,
+which matches no catalogue entry, so the enforced budgets read `unmeasured` and
+the run fails. A value equal to the profile's changes nothing and is not a
+sweep.
+
 ```bash
 CAVE_BENCH_PROFILE=phase-6-list-10k pnpm bench:conversation-list
 pnpm performance:report            # evaluates the catalogue, exits 1 on a breach

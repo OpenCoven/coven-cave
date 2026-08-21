@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: Conversation-list benchmark iterations (blank uses the fixture profile)
+        description: Conversation-list benchmark iterations (blank uses the fixture profile; a different value reports the run as swept, so the enforced budgets read unmeasured)
         required: false
         default: ""
         type: string
