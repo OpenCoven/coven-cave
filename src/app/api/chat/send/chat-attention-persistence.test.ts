@@ -201,11 +201,23 @@ test("the shared projection extracts attention after results and before next-pat
     autoStatusIndex < resultIndex && resultIndex < attentionIndex && attentionIndex < nextPathsIndex,
     "attention extraction must run after result extraction and before next-path extraction",
   );
-  assert.doesNotMatch(
-    renderedText,
-    /extractNextPaths\((?:text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible)\)/,
-    "next-paths must never run on text upstream of the attention split — a raw or partial marker would flash",
-  );
+  // Universally quantified, NOT a denylist of known-bad upstream stages. A
+  // denylist only rejects the stages someone thought to name, so every new
+  // upstream split silently becomes an accepted argument. That is not
+  // hypothetical: while this assertion listed
+  // `text|reasoningSplit|skillSplit|autoStatusSplit`, the pipeline gained
+  // `resultSplit` — and `extractNextPaths(resultSplit.visible)`, which would
+  // flash a raw attention marker, matched nothing and passed. Pin the one
+  // argument that is correct instead, so a new stage has to be considered.
+  const nextPathCalls = renderedText.match(/extractNextPaths\([^)]*\)/g) ?? [];
+  assert.ok(nextPathCalls.length > 0, "the projection must still extract next paths");
+  for (const call of nextPathCalls) {
+    assert.equal(
+      call,
+      "extractNextPaths(attentionSplit.visible)",
+      "next-paths must run on the attention-stripped text and nothing else — any upstream argument flashes a raw or partial marker",
+    );
+  }
 });
 
 test("the shared projection never strips preview/GitHub/image markers before attention extraction", () => {

@@ -151,6 +151,14 @@ test("TurnRow keeps live tools chronological and settles them into activity and 
     /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
     "the shared response owns activity and settled edit-card presentation",
   );
+  // Exclusivity, not just existence: the chronology assertion above pins that a
+  // <ToolRuns> renders inside the segment map, but a SECOND one anywhere else in
+  // the turn would satisfy it and render every tool twice.
+  assert.equal(
+    turnRender.match(/<ToolRuns\b/g)?.length ?? 0,
+    1,
+    "TurnRow renders <ToolRuns> exactly once — a second call site double-renders every tool",
+  );
   assert.doesNotMatch(
     source,
     /InlineToolRuns|useFocusSafeToolRelocation|data-inline-tool-runs/,

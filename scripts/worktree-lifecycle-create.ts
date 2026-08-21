@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { withBdLaunch } from "../src/lib/bd-bin.ts";
 import {
   assessManagedWorktreeCreation,
   calculateLifecycleBudgets,
@@ -159,7 +160,13 @@ function command(
   cwd: string,
   timeout = COMMAND_TIMEOUT_MS,
 ): CommandResult {
-  const result = spawnSync(executable, args, {
+  // `bd` is an npm .cmd shim on Windows with no .exe beside it, so a bare
+  // spawn without a shell dies with `spawnSync bd ENOENT`. Resolve it to a
+  // shell-free launch here rather than setting `shell: true`, which would let
+  // cmd.exe re-parse bead ids, titles, purposes, and note bodies
+  // (src/lib/bd-bin.ts).
+  const launch = withBdLaunch(executable, args);
+  const result = spawnSync(launch.command, launch.args, {
     cwd,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,

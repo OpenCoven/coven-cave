@@ -20,6 +20,7 @@ import {
   type WorktreeRemoteRef,
 } from "../src/lib/worktree-lifecycle.ts";
 import { beadIdsInText } from "../src/lib/beads-pr-management.ts";
+import { withBdLaunch } from "../src/lib/bd-bin.ts";
 
 export interface WorktreeLifecycleInventoryOptions {
   repo: string;
@@ -370,7 +371,13 @@ function runCommand(
   env: NodeJS.ProcessEnv,
 ): CommandResult {
   try {
-    const result = spawnSync(executable, args, {
+    // `bd` is an npm .cmd shim on Windows with no .exe beside it, so a bare
+    // spawn without a shell dies with `spawnSync bd ENOENT`. Resolve it to a
+    // shell-free launch here rather than setting `shell: true`, which would let
+    // cmd.exe re-parse bead ids, titles, purposes, and note bodies
+    // (src/lib/bd-bin.ts).
+    const launch = withBdLaunch(executable, args);
+    const result = spawnSync(launch.command, launch.args, {
       cwd,
       env,
       encoding: "utf8",

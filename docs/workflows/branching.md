@@ -81,7 +81,10 @@ Release work should start only after branch consolidation:
    and later always require signed release-candidate promotion.
 9. Record the build/version, candidate and final tags, exact promoted SHA,
    validation run, upload artifacts, and App Store Connect status in the
-   release handoff.
+   release handoff. The `rollback-readiness` job records the verified rollback
+   target alongside it, and blocks updater publication when the previous
+   release is not one — see
+   [`release-rollback-readiness.md`](release-rollback-readiness.md).
 
 ```bash
 git fetch origin
