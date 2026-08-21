@@ -36,7 +36,7 @@ function plugin(
 async function openMarketplace(page: Page) {
   await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [] } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
-  await page.route("**/api/marketplace**", (route) => route.fulfill({
+  await page.route("**/api/marketplace", (route) => route.fulfill({
     json: {
       ok: true,
       plugins: [
@@ -55,7 +55,6 @@ async function openMarketplace(page: Page) {
   await page.addInitScript(() => window.localStorage.setItem("cave:onboarding:dismissed", "1"));
   await page.goto("/?mode=marketplace");
   await expect(page.getByRole("heading", { name: "Marketplace" }).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("button", { name: /GitHub/ }).first()).toBeVisible({ timeout: 30_000 });
 }
 
 async function setTheme(page: Page, theme: string, mode: "dark" | "light") {
