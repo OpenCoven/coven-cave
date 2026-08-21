@@ -147,3 +147,4 @@ __verify-chat-detail.mjs
 .psyche*
 /.xcode-source-packages
 /.demo
+/apps/ios/CovenCave/build-cody-cma81
