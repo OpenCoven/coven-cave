@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -225,6 +226,44 @@ test("bounds a health read so a wedged release cannot hang the probe", async () 
   await assert.rejects(
     () => readHealth(DEFAULT_ORIGIN, () => Promise.resolve({ ok: false, status: 503 })),
     /returned HTTP 503/,
+  );
+});
+
+test("says what it was probing when the read does not complete", async () => {
+  // The bound produced output where there had been none, but not diagnosable
+  // output: fetch rejects a timeout with a bare "The operation was aborted due
+  // to timeout" and a refused connection with a bare "fetch failed", and that
+  // line is the whole of exit 1. Driven against a real socket that accepts and
+  // never answers, which is the wedge the bound exists for.
+  const server = createServer(() => {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const wedged = await readHealth(origin, (url) =>
+      fetch(url, { signal: AbortSignal.timeout(150) }),
+    ).then(
+      () => null,
+      (error) => error,
+    );
+    assert.match(wedged.message, new RegExp(`^GET ${origin}${CLIENT_V1_HEALTH_PATH} did not answer within \\d+ ms$`));
+    assert.equal(wedged.cause?.name, "TimeoutError");
+  } finally {
+    server.close();
+  }
+
+  const refused = await readHealth(DEFAULT_ORIGIN, () => Promise.reject(new TypeError("fetch failed"))).then(
+    () => null,
+    (error) => error,
+  );
+  assert.match(refused.message, /^GET http:\/\/127\.0\.0\.1:3000\/api\/client\/v1\/health is unreachable: fetch failed$/);
+
+  // A 200 carrying an error page is a release failure, not a parser bug.
+  await assert.rejects(
+    () =>
+      readHealth(DEFAULT_ORIGIN, () =>
+        Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new SyntaxError("Unexpected token <")) }),
+      ),
+    /returned HTTP 200 with a body that is not JSON: Unexpected token </,
   );
 });
 

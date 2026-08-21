@@ -214,13 +214,35 @@ export function checkInstanceStability(first, second) {
 export const HEALTH_READ_TIMEOUT_MS = 10_000;
 
 export async function readHealth(origin, fetchImpl = fetch) {
-  const response = await fetchImpl(new URL(CLIENT_V1_HEALTH_PATH, origin), {
-    signal: AbortSignal.timeout(HEALTH_READ_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new Error(`GET ${CLIENT_V1_HEALTH_PATH} returned HTTP ${response.status}`);
+  const url = new URL(CLIENT_V1_HEALTH_PATH, origin);
+  let response;
+  try {
+    response = await fetchImpl(url, { signal: AbortSignal.timeout(HEALTH_READ_TIMEOUT_MS) });
+  } catch (error) {
+    // Neither rejection names what was probed: a timeout raises "The operation
+    // was aborted due to timeout" and a refused connection "fetch failed". That
+    // one line is the whole of what an operator gets on exit 1, so it has to
+    // carry the origin, and for a timeout the bound that produced it — a bare
+    // abort message reads like a bug in this script rather than a wedged build.
+    const reason =
+      error?.name === "TimeoutError"
+        ? `did not answer within ${HEALTH_READ_TIMEOUT_MS} ms`
+        : `is unreachable: ${describe(error)}`;
+    throw new Error(`GET ${url} ${reason}`, { cause: error });
   }
-  return response.json();
+  if (!response.ok) {
+    throw new Error(`GET ${url} returned HTTP ${response.status}`);
+  }
+  try {
+    return await response.json();
+  } catch (error) {
+    // A 200 carrying something that is not JSON is a release failure this smoke
+    // exists to catch, and the raw parser message names neither the route nor
+    // the fact that the status was fine.
+    throw new Error(`GET ${url} returned HTTP ${response.status} with a body that is not JSON: ${describe(error)}`, {
+      cause: error,
+    });
+  }
 }
 
 async function main(argv) {
