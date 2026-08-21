@@ -278,9 +278,20 @@ assert.match(
   /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(tool\) => toolTargetFile\(tool\.name, tool\.input\)\)/,
   "the aggregate counts DISTINCT edited files (the same file edited twice is one change)",
 );
+// Two halves of one contract. They were a single pattern until the edit-card
+// block started deriving `editedFiles` inside an IIFE, which put the guard and
+// the count test on opposite sides of that derivation — so no contiguous match
+// can span them, and the 400-character window between the two anchors was the
+// kind of distance constraint docs/source-text-pins.md warns about. Asserting
+// each half directly is both stricter and refactor-proof.
 assert.match(
   turnRow,
-  /\{!turn\.pending && turn\.tools\?\.length && editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  /\{!pending && turn\.tools\?\.length && editCards\.length/,
+  "edit cards render only for settled turns that actually produced tool output",
+);
+assert.match(
+  turnRow,
+  /\{editedFiles\.length > 1 \? \([\s\S]{0,600}?\{editedFiles\.length\} files changed/,
   "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
 );
 assert.match(
