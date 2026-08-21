@@ -31,6 +31,25 @@ if (!profile) {
 }
 
 /**
+ * A committed profile gets the same scrutiny as an env override.
+ *
+ * `dimension()` below rejects a malformed override but used to trust its
+ * fallback absolutely, and the two malformed shapes are not equally loud: a
+ * profile missing `iterations` crashes in percentile() and one missing
+ * `fileCount` breaches the cache-hit floor, but a profile missing
+ * `transcriptBytes` writes `"x".repeat(undefined)` — empty transcripts — and
+ * exits 0 with every budget green. A budget is a claim about a workload, so a
+ * profile that does not describe one must not be runnable at all.
+ */
+for (const key of ["fileCount", "transcriptBytes", "iterations"]) {
+  if (!Number.isFinite(profile[key]) || profile[key] <= 0) {
+    throw new Error(
+      `benchmark profile "${profileName}" must define a positive ${key}, received ${JSON.stringify(profile[key])}`,
+    );
+  }
+}
+
+/**
  * A blank env var means "not overridden", not zero.
  *
  * A workflow that writes `CAVE_BENCH_ITERATIONS: ${{ inputs.iterations }}` sets

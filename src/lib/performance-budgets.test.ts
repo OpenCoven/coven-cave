@@ -76,6 +76,29 @@ test("every budget enforced here names the fixture that produces it", async () =
   }
 });
 
+test("every fixture profile describes a workload rather than merely existing", async () => {
+  // "The profile exists" was the whole check, and existing is not the same as
+  // describing a workload: a profile missing `transcriptBytes` writes
+  // `"x".repeat(undefined)` — 10,000 empty transcripts — and the benchmark
+  // exited 0 with every budget green, because the numbers a workload that small
+  // produces are inside ceilings seeded for a real one. The benchmark now
+  // refuses such a profile at load; this catches it a whole nightly earlier.
+  const fixtures = JSON.parse(
+    await readFile(new URL("../../fixtures/phase-6/performance-fixtures.json", import.meta.url), "utf8"),
+  ) as { profiles: Record<string, Record<string, unknown>> };
+  const profiles = Object.entries(fixtures.profiles ?? {});
+  assert.ok(profiles.length > 0, "the fixture file defines no profiles");
+  for (const [name, profile] of profiles) {
+    for (const key of ["fileCount", "transcriptBytes", "iterations"]) {
+      const value = profile[key];
+      assert.ok(
+        typeof value === "number" && Number.isFinite(value) && value > 0,
+        `profile ${name} needs a positive ${key}, has ${JSON.stringify(value)}`,
+      );
+    }
+  }
+});
+
 test("every delegated budget names a constant its gate really owns", async () => {
   // A `postbuild` entry carries no limit, so its `source` is the ONLY thing
   // tying it to the gate that owns the number — and a source naming a symbol
