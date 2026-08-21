@@ -29,7 +29,7 @@
 import { isTauri } from "./tauri-platform.ts";
 
 /** Mirrors `OFFLINE_CACHE_SCHEMA_VERSION` in `offline_cache.rs`. */
-export const OFFLINE_CACHE_SCHEMA_VERSION = 1;
+export const OFFLINE_CACHE_SCHEMA_VERSION = 2;
 
 /** Mirrors `MAX_ENTRY_BYTES` in `offline_cache.rs`. */
 export const OFFLINE_CACHE_MAX_ENTRY_BYTES = 1024 * 1024;

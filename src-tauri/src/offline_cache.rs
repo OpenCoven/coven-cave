@@ -13,8 +13,13 @@
 //!  - **Encrypted.** AES-256-GCM. The key is derived (HKDF-SHA256) from a
 //!    32-byte root secret that lives in the OS keychain and never on disk, so
 //!    the cache is unreadable to anything that only has the filesystem. Scope
-//!    and entry names are hashed into the file path and bound into the key's
-//!    HKDF info, so a file reveals neither what it holds nor what it is for.
+//!    and entry names never reach the filesystem: the path components are
+//!    *keyed* derivations of them under that same root secret, so a file
+//!    reveals neither what it holds nor what it is for. A plain digest would
+//!    not have done — the scope vocabulary is a short closed list and entry
+//!    keys are frequently ids an observer already holds, so an unkeyed
+//!    `sha256(scope || key)` is a value anyone can recompute and match
+//!    against the directory listing.
 //!  - **Instance-scoped.** Entries live under the instance id and carry it in
 //!    the authenticated header, and the id is the HKDF salt. Another Cave
 //!    instance's cache therefore fails the header check *and* cannot be
@@ -46,7 +51,7 @@
 //!
 //! The header is plaintext because staleness and ownership have to be decided
 //! before a key is derived; it carries no payload text and no entry names,
-//! only the hashed entry id, the caller's opaque revision string, a timestamp,
+//! only the keyed entry id, the caller's opaque revision string, a timestamp,
 //! the plaintext length, and the nonce.
 //!
 //! **Platform note.** On Linux the keychain backend is the kernel session
@@ -59,7 +64,7 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,7 +75,7 @@ use zeroize::Zeroizing;
 /// another generation are purged rather than migrated in place: the payload is
 /// a cache of daemon state, so refetching is cheaper and safer than teaching
 /// every future reader every past layout.
-pub(super) const OFFLINE_CACHE_SCHEMA_VERSION: u16 = 1;
+pub(super) const OFFLINE_CACHE_SCHEMA_VERSION: u16 = 2;
 
 const OFFLINE_CACHE_DIR: &str = "offline-cache";
 const INSTANCE_FILE: &str = "instance-id";
@@ -86,8 +91,9 @@ const INSTANCE_ID_BYTES: usize = 16;
 pub(super) const MAX_ENTRY_BYTES: usize = 1024 * 1024;
 pub(super) const MAX_ENTRIES: usize = 256;
 pub(super) const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
-/// Scope and key are hashed before they touch the filesystem, so this bound is
-/// about keeping derivation inputs sane rather than about path safety.
+/// Scope and key are replaced by keyed derivations before they touch the
+/// filesystem, so this bound is about keeping derivation inputs sane rather
+/// than about path safety.
 const MAX_NAME_LEN: usize = 128;
 const MAX_REVISION_LEN: usize = 256;
 /// Foreign instance directories are another install's business, so they are
@@ -234,14 +240,6 @@ fn hex_decode(value: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn sha256_hex(parts: &[&[u8]]) -> String {
-    let mut hasher = Sha256::new();
-    for part in parts {
-        hasher.update(part);
-    }
-    hex_encode(&hasher.finalize())
-}
-
 /// Scope and key are opaque caller strings, so they are bounded and screened
 /// for control characters before they reach derivation. They never reach the
 /// filesystem in any form: both are hashed.
@@ -271,12 +269,52 @@ impl OfflineCacheContext {
     }
 
     fn scope_dir(&self, scope: &str) -> PathBuf {
-        self.instance_dir().join(scope_id(scope))
+        self.instance_dir().join(self.scope_id(scope))
     }
 
     fn entry_path(&self, scope: &str, key: &str) -> PathBuf {
         self.scope_dir(scope)
-            .join(format!("{}.{ENTRY_EXTENSION}", entry_id(scope, key)))
+            .join(format!("{}.{ENTRY_EXTENSION}", self.entry_id(scope, key)))
+    }
+
+    /// Domain-separated, unambiguous HKDF info. The generation and the domain
+    /// lead, and `0x1f` separates every caller-supplied part, so no pair of
+    /// distinct inputs can produce the same info string.
+    fn derivation_info(&self, domain: &str, parts: &[&[u8]]) -> Vec<u8> {
+        let mut info = format!("coven-cave/offline-cache/v{OFFLINE_CACHE_SCHEMA_VERSION}/{domain}")
+            .into_bytes();
+        for part in parts {
+            info.push(0x1f);
+            info.extend_from_slice(part);
+        }
+        info
+    }
+
+    /// HKDF-Expand is HMAC-SHA256, so this is a keyed PRF over the caller's
+    /// names rather than a digest of them. That is the whole point: the scope
+    /// vocabulary is short and entry keys are ids an observer may already
+    /// hold, so an unkeyed digest would let anyone with the directory listing
+    /// confirm exactly which conversations this install has cached.
+    fn derive_id(&self, domain: &str, parts: &[&[u8]]) -> String {
+        let hkdf = Hkdf::<Sha256>::new(Some(self.instance_id.as_bytes()), self.secret.as_slice());
+        let mut derived = Zeroizing::new([0u8; KEY_BYTES]);
+        hkdf.expand(
+            &self.derivation_info(domain, parts),
+            derived.as_mut_slice(),
+        )
+        .expect("32 bytes is a valid HKDF-SHA256 output length");
+        hex_encode(derived.as_slice())
+    }
+
+    /// The directory an entry is filed under. Truncated because it only has to
+    /// separate scopes within one instance, not resist collision search.
+    fn scope_id(&self, scope: &str) -> String {
+        self.derive_id("scope", &[scope.as_bytes()])[..32].to_string()
+    }
+
+    /// The entry's file stem and the id recorded in its plaintext header.
+    fn entry_id(&self, scope: &str, key: &str) -> String {
+        self.derive_id("entry", &[scope.as_bytes(), key.as_bytes()])
     }
 
     /// One key per entry, salted by the instance and bound to the exact scope
@@ -286,23 +324,13 @@ impl OfflineCacheContext {
     fn entry_key(&self, scope: &str, key: &str) -> Zeroizing<[u8; KEY_BYTES]> {
         let hkdf = Hkdf::<Sha256>::new(Some(self.instance_id.as_bytes()), self.secret.as_slice());
         let mut derived = Zeroizing::new([0u8; KEY_BYTES]);
-        let info = format!(
-            "coven-cave/offline-cache/v{OFFLINE_CACHE_SCHEMA_VERSION}/{}/{}",
-            scope_id(scope),
-            entry_id(scope, key)
-        );
-        hkdf.expand(info.as_bytes(), derived.as_mut_slice())
-            .expect("32 bytes is a valid HKDF-SHA256 output length");
+        hkdf.expand(
+            &self.derivation_info("entry-key", &[scope.as_bytes(), key.as_bytes()]),
+            derived.as_mut_slice(),
+        )
+        .expect("32 bytes is a valid HKDF-SHA256 output length");
         derived
     }
-}
-
-fn scope_id(scope: &str) -> String {
-    sha256_hex(&[b"scope", &[0x1f], scope.as_bytes()])[..32].to_string()
-}
-
-fn entry_id(scope: &str, key: &str) -> String {
-    sha256_hex(&[scope.as_bytes(), &[0x1f], key.as_bytes()])
 }
 
 fn envelope_aad(header_len: u32, header: &[u8]) -> Vec<u8> {
@@ -329,7 +357,7 @@ fn encode_envelope(
     let header = OfflineCacheHeader {
         schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
         instance_id: context.instance_id.clone(),
-        entry_id: entry_id(scope, key),
+        entry_id: context.entry_id(scope, key),
         revision: revision.to_string(),
         updated_at_unix_ms,
         payload_bytes: u32::try_from(payload.len())
@@ -410,7 +438,7 @@ fn decode_envelope(
             "entry belongs to a different Cave instance",
         ));
     }
-    if header.entry_id != entry_id(scope, key) {
+    if header.entry_id != context.entry_id(scope, key) {
         return Err(OfflineCacheFault::new(
             OfflineCacheFaultKind::EntryMismatch,
             "entry header names a different cache entry",
@@ -955,6 +983,7 @@ pub(super) fn offline_cache_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(1);
 
@@ -1079,17 +1108,31 @@ mod tests {
     }
 
     #[test]
-    fn a_rotated_key_makes_entries_undecryptable_rather_than_wrong() {
+    fn a_rotated_key_leaves_no_entry_this_build_can_serve() {
         let root = test_root("rotate");
         let before = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 7);
         write_entry(&before, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
 
+        // The path is keyed too, so a rotated secret does not even name the
+        // old file: the read is a plain miss. `with_context` clears the tree
+        // when the keychain rotates for precisely this reason — nothing else
+        // would ever revisit those bytes.
         let after = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 9);
+        assert_eq!(
+            read_entry(&after, "conversation", "abc"),
+            OfflineCacheReadResult::default(),
+        );
+
+        // And putting the old bytes exactly where the rotated secret looks
+        // does not resurrect them: the header's entry id was derived under the
+        // retired key, so the entry is refused and removed.
+        let stale = std::fs::read(before.entry_path("conversation", "abc")).unwrap();
+        write_entry_file(&after.entry_path("conversation", "abc"), &stale).unwrap();
         let result = read_entry(&after, "conversation", "abc");
         assert_eq!(result.entry, None);
         assert_eq!(
             result.fault.map(|fault| fault.kind),
-            Some(OfflineCacheFaultKind::Undecryptable)
+            Some(OfflineCacheFaultKind::EntryMismatch)
         );
         assert!(result.purged);
         let _ = std::fs::remove_dir_all(&root);
@@ -1181,7 +1224,7 @@ mod tests {
         let header = OfflineCacheHeader {
             schema_version: OFFLINE_CACHE_SCHEMA_VERSION + 1,
             instance_id: context.instance_id.clone(),
-            entry_id: entry_id("conversation", "abc"),
+            entry_id: context.entry_id("conversation", "abc"),
             revision: "r".to_string(),
             updated_at_unix_ms: 1,
             payload_bytes: 2,
@@ -1299,7 +1342,7 @@ mod tests {
         write_entry(&context, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
         let debris = context
             .scope_dir("conversation")
-            .join(format!("{}.bin.tmp-1-1", entry_id("conversation", "abc")));
+            .join(format!("{}.bin.tmp-1-1", context.entry_id("conversation", "abc")));
         std::fs::write(&debris, b"half written").unwrap();
 
         assert_eq!(collect_entries(&context).unwrap().len(), 1);
@@ -1337,6 +1380,40 @@ mod tests {
         let second = load_or_create_instance_id(&root).unwrap();
         assert_ne!(second, first);
         assert_eq!(second.len(), INSTANCE_ID_BYTES * 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_path_cannot_be_recomputed_from_the_scope_and_key_alone() {
+        let root = test_root("keyed-names");
+        let mine = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 7);
+        // Same install, different keychain secret; and same secret, different
+        // install. Neither may reproduce the other's path for a scope and key
+        // an observer already knows.
+        let other_secret = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 9);
+        let other_instance = context_at(root.clone(), "fedcba9876543210fedcba9876543210", 7);
+        for other in [&other_secret, &other_instance] {
+            assert_ne!(mine.scope_id("conversation"), other.scope_id("conversation"));
+            assert_ne!(
+                mine.entry_id("conversation", "abc"),
+                other.entry_id("conversation", "abc"),
+            );
+        }
+
+        // The unkeyed digest an observer *can* compute from the source appears
+        // nowhere: not as the directory, not as the file stem, not in the
+        // plaintext header.
+        write_entry(&mine, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(b"conversation");
+        hasher.update([0x1f]);
+        hasher.update(b"abc");
+        let unkeyed = hex_encode(&hasher.finalize());
+        let path = mine.entry_path("conversation", "abc");
+        assert!(!path.to_string_lossy().contains(&unkeyed));
+        assert!(!path.to_string_lossy().contains(&unkeyed[..32]));
+        let raw = std::fs::read(&path).unwrap();
+        assert!(!String::from_utf8_lossy(&raw).contains(&unkeyed));
         let _ = std::fs::remove_dir_all(&root);
     }
 
