@@ -233,7 +233,7 @@ function proxyRequest(
   pathname: string,
   options: {
     method?: string;
-    headers?: Record<string, string>;
+    headers?: HeadersInit;
   } = {},
 ): NextRequest {
   const headers = new Headers(options.headers);
@@ -246,6 +246,16 @@ function proxyRequest(
 
 function passedThrough(response: Response): boolean {
   return response.headers.get("x-middleware-next") === "1";
+}
+
+async function assertProxyError(
+  response: Response,
+  status: number,
+  error: string,
+): Promise<void> {
+  assert.equal(response.status, status);
+  assert.equal(response.headers.has("location"), false);
+  assert.deepEqual(await response.json(), { ok: false, error });
 }
 
 test("reviewed client-v1 routes use loopback ingress without exposing private routes", async () => {
@@ -335,24 +345,147 @@ test("client-v1 admin stays on the private authenticated boundary", async () => 
   }
 });
 
-test("client-v1 rejects oversized pairing creation before route handling", async () => {
+test("public pairing creation accepts only reviewed JSON media types", async () => {
   try {
     setProxyEnv({
       COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
     });
+    const baseHeaders = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
 
-    const response = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+    for (const contentType of [
+      "multipart/form-data; boundary=pairing",
+      "image/png",
+      "application/x-www-form-urlencoded",
+    ]) {
+      const response = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+        method: "POST",
+        headers: {
+          ...baseHeaders,
+          "content-length": String(64 * 1024 + 1),
+          "content-type": contentType,
+        },
+      }));
+      await assertProxyError(response, 415, "unsupported content-type");
+    }
+
+    const missingContentType = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
       method: "POST",
       headers: {
-        [LOCAL_PEER_HEADER]: "loopback-secret",
-        "content-length": String(64 * 1024 + 1),
-        "content-type": "application/json",
-        origin: ORIGIN,
-        referer: `${ORIGIN}/`,
+        ...baseHeaders,
+        "content-length": "1",
       },
     }));
+    await assertProxyError(missingContentType, 415, "unsupported content-type");
+  } finally {
+    restoreProxyEnv();
+  }
+});
 
-    assert.equal(response.status, 413);
+test("client-v1 body-bearing ingress requires a known Content-Length", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const baseHeaders = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      "content-type": "application/json",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
+
+    const missing = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+      method: "POST",
+      headers: baseHeaders,
+    }));
+    await assertProxyError(missing, 411, "content-length required");
+
+    const chunked = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+      method: "POST",
+      headers: {
+        ...baseHeaders,
+        "content-length": "1",
+        "transfer-encoding": "chunked",
+      },
+    }));
+    await assertProxyError(chunked, 400, "invalid content-length");
+
+    const authenticatedMissing = await proxy(proxyRequest("/api/client/v1/conversations", {
+      method: "POST",
+      headers: baseHeaders,
+    }));
+    await assertProxyError(authenticatedMissing, 411, "content-length required");
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 rejects malformed and duplicate Content-Length values", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const baseHeaders = [
+      [LOCAL_PEER_HEADER, "loopback-secret"],
+      ["content-type", "application/json"],
+      ["origin", ORIGIN],
+      ["referer", `${ORIGIN}/`],
+    ] satisfies [string, string][];
+
+    for (const contentLength of ["-1", "not-a-number"]) {
+      const response = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+        method: "POST",
+        headers: [...baseHeaders, ["content-length", contentLength]],
+      }));
+      await assertProxyError(response, 400, "invalid content-length");
+    }
+
+    const duplicate = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+      method: "POST",
+      headers: [
+        ...baseHeaders,
+        ["content-length", "1"],
+        ["content-length", "2"],
+      ],
+    }));
+    await assertProxyError(duplicate, 400, "invalid content-length");
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 enforces the exact control-body size boundary", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const baseHeaders = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      "content-type": "application/json; charset=utf-8",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
+
+    const exactBoundary = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+      method: "POST",
+      headers: {
+        ...baseHeaders,
+        "content-length": String(64 * 1024),
+      },
+    }));
+    assert.equal(passedThrough(exactBoundary), true);
+
+    const oversized = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
+      method: "POST",
+      headers: {
+        ...baseHeaders,
+        "content-length": String(64 * 1024 + 1),
+      },
+    }));
+    await assertProxyError(oversized, 413, "request body too large");
   } finally {
     restoreProxyEnv();
   }

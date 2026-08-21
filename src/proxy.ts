@@ -208,27 +208,44 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
-// Control requests are small metadata envelopes. Binary uploads keep their
-// separate route-level streaming limits instead of inheriting this cap.
-const CLIENT_V1_CONTROL_BODY_LIMIT_BYTES = 64 * 1024;
+function hasReviewedPairingContentType(req: NextRequest) {
+  if (
+    req.method !== "POST"
+    || req.nextUrl.pathname !== "/api/client/v1/pairing/requests"
+  ) {
+    return true;
+  }
+  const contentType = req.headers.get("content-type")?.trim();
+  return Boolean(
+    contentType
+    && /^application\/json(?:\s*;\s*charset\s*=\s*(?:"utf-8"|utf-8))?$/i.test(contentType)
+  );
+}
 
-function hasSafeClientV1RequestSize(
+const CLIENT_V1_CONTROL_BODY_LIMIT_BYTES = 64 * 1024;
+const CLIENT_V1_BODY_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function clientV1RequestBodyError(
   req: NextRequest,
   clientV1Ingress: ReturnType<typeof clientV1IngressKind>,
 ) {
-  if (!clientV1Ingress || !["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
-    return true;
+  if (!clientV1Ingress || !CLIENT_V1_BODY_METHODS.has(req.method)) {
+    return null;
   }
-  const mediaType = req.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
-  if (mediaType === "multipart/form-data" || mediaType?.startsWith("image/")) {
-    return true;
+  if (req.headers.has("transfer-encoding")) {
+    return { status: 400, error: "invalid content-length" };
   }
   const contentLength = req.headers.get("content-length");
-  if (!contentLength) return true;
-  return (
-    /^\d+$/.test(contentLength)
-    && Number(contentLength) <= CLIENT_V1_CONTROL_BODY_LIMIT_BYTES
-  );
+  if (contentLength === null) {
+    return { status: 411, error: "content-length required" };
+  }
+  if (!/^\d+$/.test(contentLength)) {
+    return { status: 400, error: "invalid content-length" };
+  }
+  if (BigInt(contentLength) > BigInt(CLIENT_V1_CONTROL_BODY_LIMIT_BYTES)) {
+    return { status: 413, error: "request body too large" };
+  }
+  return null;
 }
 
 function isLocalOnlyAutomationRun(pathname: string, method: string) {
@@ -438,11 +455,12 @@ export async function proxy(req: NextRequest) {
       return jsonError(403, "missing request source");
     }
   }
-  if (!hasSafeContentType(req)) {
+  if (!hasSafeContentType(req) || !hasReviewedPairingContentType(req)) {
     return jsonError(415, "unsupported content-type");
   }
-  if (!hasSafeClientV1RequestSize(req, clientV1Ingress)) {
-    return jsonError(413, "request body too large");
+  const clientV1BodyError = clientV1RequestBodyError(req, clientV1Ingress);
+  if (clientV1BodyError) {
+    return jsonError(clientV1BodyError.status, clientV1BodyError.error);
   }
 
   if (clientV1Ingress) {
