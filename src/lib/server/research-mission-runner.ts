@@ -46,6 +46,7 @@ import {
   loadResearchMissionSessionOwner,
   readValidatedMissionFile,
   recordResearchMissionSessionOwner,
+  removeResearchMissionWorkspace,
   researchMissionWorkspacePath,
   saveResearchMission,
   type ResearchMissionSessionOwner,
@@ -135,6 +136,7 @@ type ResearchAutomationCreateInput = {
 
 export type ResearchMissionRunnerDeps = {
   createWorkspace(mission: ResearchMission): Promise<ResearchMission>;
+  removeWorkspace(id: string): Promise<void>;
   loadMission(id: string): Promise<ResearchMission | null>;
   saveMission(mission: ResearchMission): Promise<void>;
   loadSessionOwner(missionId: string): Promise<ResearchMissionSessionOwner | null>;
@@ -1818,10 +1820,15 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
             rollbackErrors.push(rollbackError);
           }
         }
+        try {
+          await deps.removeWorkspace(mission.id);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
         if (rollbackErrors.length > 0) {
           throw new AggregateError(
             [error, ...rollbackErrors],
-            "Initial research resources could not be prepared or rolled back",
+            "Initial research mission could not be prepared or rolled back",
           );
         }
         throw error;
@@ -2098,6 +2105,7 @@ export async function researchDaemonSessionState(
 export function makeProductionResearchMissionRunner() {
   const deps: ResearchMissionRunnerDeps = {
     createWorkspace: createResearchMissionWorkspace,
+    removeWorkspace: removeResearchMissionWorkspace,
     loadMission: loadResearchMission,
     saveMission: saveResearchMission,
     loadSessionOwner: loadResearchMissionSessionOwner,

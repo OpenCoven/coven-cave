@@ -166,6 +166,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
   let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
+    removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
@@ -333,9 +334,12 @@ test("create/start materializes selected saved links before the first launch", a
 });
 
 test("create/start rolls back initial resource files when pre-launch persistence fails", async () => {
-  let rollbackCalls = 0;
+  const rollbackCalls: string[] = [];
   let startCalls = 0;
   const runner = makeResearchMissionRunner(deps({
+    removeWorkspace: async (id) => {
+      rollbackCalls.push(`workspace:${id}`);
+    },
     materializeSavedLink: async () => ({
       source: {
         id: "saved-link-a",
@@ -345,7 +349,7 @@ test("create/start rolls back initial resource files when pre-launch persistence
         status: "candidate",
       },
       rollback: async () => {
-        rollbackCalls += 1;
+          rollbackCalls.push("resource");
       },
     }),
     saveMission: async () => {
@@ -361,8 +365,27 @@ test("create/start rolls back initial resource files when pre-launch persistence
     runner.createAndStart({ ...INPUT, savedLinkIds: ["link-a"] }),
     /disk full/,
   );
-  assert.equal(rollbackCalls, 1);
+  assert.deepEqual(rollbackCalls, ["resource", "workspace:mission-1"]);
   assert.equal(startCalls, 0);
+});
+
+test("create/start removes the new workspace when initial resource materialization fails", async () => {
+  const calls: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    removeWorkspace: async (id) => {
+      calls.push(`remove:${id}`);
+    },
+    materializeSavedLink: async () => {
+      calls.push("materialize");
+      throw new Error("saved link unavailable");
+    },
+  }));
+
+  await assert.rejects(
+    runner.createAndStart({ ...INPUT, savedLinkIds: ["link-a"] }),
+    /saved link unavailable/,
+  );
+  assert.deepEqual(calls, ["materialize", "remove:mission-1"]);
 });
 
 test("create/start records exact daemon authority outside public mission state", async () => {
