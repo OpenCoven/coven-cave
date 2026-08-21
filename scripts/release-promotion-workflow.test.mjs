@@ -247,4 +247,519 @@ test("Phase 1 documentation preserves the live required context during migration
   assert.match(mergeSkill, /`PR checks` now reports in parallel/);
 });
 
+// ---------------------------------------------------------------------------
+// Pinning release gates by CONSULTING them, not by naming them.
+//
+// A gate can be pinned two ways and only one of them works. A regex asserting
+// the gate's text appears somewhere in release.yml survives every edit that
+// keeps the substring while defeating the gate — `continue-on-error: true` on
+// the step, or `if: ${{ false }}`, both of which leave the step name, its env
+// block and its script path exactly where the naming test looks for them. That
+// is the `cave-yp21x` state: v0.2.0 shipped with BOTH compatibility guards
+// skipped and nobody noticed for four days, because the only evidence was a
+// grey `skipped` line in the job log.
+//
+// So the assertions below do not read the workflow as text. They EVALUATE the
+// conditions the way Actions would, under the scenarios that matter — a tag
+// push, a plain recovery dispatch, a dispatch that pulls a documented escape
+// hatch, a run whose build leg failed — and assert what each condition does.
+// An `if:` that cannot fail the release fails the test regardless of how it is
+// spelled.
+//
+// What follows is a small evaluator for the subset of the Actions expression
+// language this workflow uses: `||` `&&` `!` `==` `!=`, parentheses, single
+// quoted strings, booleans, context paths, and the four status functions.
+// `||` and `&&` return the operand rather than a boolean, as Actions does, so
+// `github.event.inputs.tag || github.ref_name` yields a tag string.
+// ---------------------------------------------------------------------------
+
+const EXPRESSION_TOKEN =
+  /\s*(\|\||&&|==|!=|!|\(|\)|,|'(?:[^']|'')*'|[A-Za-z_][A-Za-z0-9_.-]*|[0-9]+(?:\.[0-9]+)?)/y;
+
+function tokenize(source) {
+  const tokens = [];
+  EXPRESSION_TOKEN.lastIndex = 0;
+  while (EXPRESSION_TOKEN.lastIndex < source.length) {
+    const start = EXPRESSION_TOKEN.lastIndex;
+    const match = EXPRESSION_TOKEN.exec(source);
+    if (!match) {
+      if (source.slice(start).trim() === "") break;
+      throw new Error(`unparsable expression at ${JSON.stringify(source.slice(start))}`);
+    }
+    tokens.push(match[1]);
+  }
+  return tokens;
+}
+
+function truthy(value) {
+  return value !== false && value !== null && value !== undefined && value !== 0 && value !== "";
+}
+
+// Actions coerces across types; every comparison in this workflow is a string
+// against a string or against an unset context value, so normalising absent to
+// null and comparing identity matches its behaviour for the cases in play.
+function looseEquals(left, right) {
+  const l = left === undefined ? null : left;
+  const r = right === undefined ? null : right;
+  if (l === null && r === null) return true;
+  if (l === null || r === null) return false;
+  return l === r;
+}
+
+function evaluateExpression(source, context) {
+  const tokens = tokenize(source);
+  let position = 0;
+  const peek = () => tokens[position];
+  const take = () => tokens[position++];
+  const expect = (token) => {
+    if (take() !== token) throw new Error(`expected ${token} in ${JSON.stringify(source)}`);
+  };
+
+  function resolvePath(path) {
+    const [rootName, ...rest] = path.split(".");
+    if (!(rootName in context)) {
+      throw new Error(`unknown context ${JSON.stringify(rootName)} in ${JSON.stringify(source)}`);
+    }
+    let value = context[rootName];
+    for (const segment of rest) {
+      if (value === null || value === undefined) return undefined;
+      value = value[segment];
+    }
+    return value;
+  }
+
+  function parsePrimary() {
+    const token = take();
+    if (token === undefined) throw new Error(`unexpected end of ${JSON.stringify(source)}`);
+    if (token === "(") {
+      const value = parseOr();
+      expect(")");
+      return value;
+    }
+    if (token === "!") return !truthy(parsePrimary());
+    if (token.startsWith("'")) return token.slice(1, -1).replaceAll("''", "'");
+    if (token === "true") return true;
+    if (token === "false") return false;
+    if (token === "null") return null;
+    if (/^[0-9]/.test(token)) return Number(token);
+    if (peek() === "(") {
+      expect("(");
+      expect(")");
+      switch (token) {
+        case "always":
+          return true;
+        case "success":
+          return context.__status.success;
+        case "failure":
+          return context.__status.failure;
+        case "cancelled":
+          return context.__status.cancelled;
+        default:
+          throw new Error(`unsupported function ${token}() in ${JSON.stringify(source)}`);
+      }
+    }
+    return resolvePath(token);
+  }
+
+  function parseComparison() {
+    let left = parsePrimary();
+    while (peek() === "==" || peek() === "!=") {
+      const operator = take();
+      const right = parsePrimary();
+      left = operator === "==" ? looseEquals(left, right) : !looseEquals(left, right);
+    }
+    return left;
+  }
+
+  function parseAnd() {
+    let left = parseComparison();
+    while (peek() === "&&") {
+      take();
+      const right = parseComparison();
+      left = truthy(left) ? right : left;
+    }
+    return left;
+  }
+
+  function parseOr() {
+    let left = parseAnd();
+    while (peek() === "||") {
+      take();
+      const right = parseAnd();
+      left = truthy(left) ? left : right;
+    }
+    return left;
+  }
+
+  const value = parseOr();
+  if (position !== tokens.length) {
+    throw new Error(`trailing tokens in ${JSON.stringify(source)}`);
+  }
+  return value;
+}
+
+// An `if:` may be written bare or wrapped in `${{ }}`; both mean the same
+// thing, and a `>-` folded block arrives here as one line either way.
+function evaluateCondition(raw, context) {
+  if (raw === undefined || raw === null) return true;
+  const text = String(raw).trim();
+  const wrapped = /^\$\{\{([\s\S]*)\}\}$/.exec(text);
+  return truthy(evaluateExpression(wrapped ? wrapped[1] : text, context));
+}
+
+function interpolate(template, context) {
+  return String(template).replaceAll(/\$\{\{([\s\S]*?)\}\}/g, (_, expression) => {
+    const value = evaluateExpression(expression, context);
+    return value === undefined || value === null ? "" : String(value);
+  });
+}
+
+const RELEASE_TAG = "v9.9.9";
+
+function releaseRun({
+  event = "push",
+  inputs = {},
+  steps = {},
+  needs = {},
+  matrix = {},
+  success = true,
+  failure = false,
+  cancelled = false,
+} = {}) {
+  const dispatch = event === "workflow_dispatch";
+  return {
+    github: {
+      event_name: event,
+      // The whole point of item 4: these two disagree, and the release does not.
+      ref: dispatch ? "refs/heads/main" : `refs/tags/${RELEASE_TAG}`,
+      ref_name: dispatch ? "main" : RELEASE_TAG,
+      sha: "0".repeat(40),
+      event: dispatch
+        ? { inputs: { tag: RELEASE_TAG, ...inputs }, repository: { default_branch: "main" } }
+        : { repository: { default_branch: "main" } },
+    },
+    inputs: dispatch ? { tag: RELEASE_TAG, platform: "all", ...inputs } : {},
+    needs,
+    steps,
+    matrix,
+    env: {},
+    vars: {},
+    secrets: {},
+    __status: { success, failure, cancelled },
+  };
+}
+
+// Every step whose name begins with "Require" is a release gate by convention
+// in this file — promotion authorization, the daemon package, the signed tag,
+// tag/source agreement, the X app, the two signed schema registries. Deriving
+// the set instead of listing it is what makes a gate added later covered from
+// birth rather than needing its own bespoke pin.
+function releaseGateSteps(release) {
+  const gates = [];
+  for (const [jobName, job] of Object.entries(release.jobs)) {
+    for (const step of job.steps ?? []) {
+      if (typeof step.name === "string" && /^Require\b/.test(step.name)) {
+        gates.push({ job: jobName, jobDefinition: job, step, label: `${jobName}: ${step.name}` });
+      }
+    }
+  }
+  return gates;
+}
+
+test("no release gate can be switched off by a step-level or job-level if:", async () => {
+  const release = await workflow("release.yml");
+  const gates = releaseGateSteps(release);
+
+  // The minimum inventory. This is a subset check on purpose: a gate added
+  // later is covered by the behavioural assertions below without touching this
+  // list, but renaming or deleting one of these is loud.
+  for (const required of [
+    "authorize-release-promotion: Require signed candidate promotion",
+    "daemon-package: Require published @opencoven/cli release",
+    "source-version: Require a verified signed tag on main",
+    "source-version: Require tag/source version agreement",
+    "build: Require OpenCoven X app configuration",
+    "build: Require signed OpenCode compatibility registry",
+    "build: Require signed Grok compatibility registry",
+  ]) {
+    assert.ok(
+      gates.some((gate) => gate.label === required),
+      `${required} is no longer a "Require …" gate step — was it renamed, or removed?`,
+    );
+  }
+
+  const tagPush = releaseRun();
+  for (const gate of gates) {
+    // A gate that cannot fail is not a gate. `continue-on-error` is pinned as
+    // an inventory elsewhere in this file; these two keep the gate's own step
+    // and its host job honest even if that inventory is relaxed.
+    assert.equal(
+      gate.step["continue-on-error"],
+      undefined,
+      `${gate.label} is advisory — it cannot fail the release`,
+    );
+    assert.equal(
+      gate.jobDefinition["continue-on-error"],
+      undefined,
+      `${gate.label} sits in an advisory job — it cannot fail the release`,
+    );
+    // The one that a naming regex cannot see: `if: ${{ false }}` keeps every
+    // pinned substring in place and stops the check from ever running.
+    assert.equal(
+      evaluateCondition(gate.jobDefinition.if, tagPush),
+      true,
+      `${gate.label}'s job does not run on a tag push`,
+    );
+    assert.equal(
+      evaluateCondition(gate.step.if, tagPush),
+      true,
+      `${gate.label} does not run on a tag push — a tag-push release must be fail-closed`,
+    );
+  }
+
+  // A plain recovery dispatch — no escape-hatch flag pulled — must keep every
+  // gate live too. Dispatching is not itself a waiver.
+  const plainDispatch = releaseRun({ event: "workflow_dispatch" });
+  for (const gate of gates) {
+    assert.equal(
+      evaluateCondition(gate.jobDefinition.if, plainDispatch) &&
+        evaluateCondition(gate.step.if, plainDispatch),
+      true,
+      `${gate.label} is skipped by an ordinary recovery dispatch`,
+    );
+  }
+
+  // Exactly two gates are waivable, only by the documented registry hatch, and
+  // only on a dispatch. Anything else that goes quiet when every hatch input is
+  // pulled is a gate that acquired an escape route nobody wrote down.
+  const hatchedDispatch = releaseRun({
+    event: "workflow_dispatch",
+    inputs: {
+      allow_unconfigured_registries: true,
+      allow_unconfigured_x_app: true,
+      use_current_release_tooling: true,
+      windows_diagnostics_only: false,
+    },
+  });
+  const waived = gates
+    .filter(
+      (gate) =>
+        !(
+          evaluateCondition(gate.jobDefinition.if, hatchedDispatch) &&
+          evaluateCondition(gate.step.if, hatchedDispatch)
+        ),
+    )
+    .map((gate) => gate.label)
+    .sort();
+  assert.deepEqual(
+    waived,
+    [
+      "build: Require signed Grok compatibility registry",
+      "build: Require signed OpenCode compatibility registry",
+    ],
+    "a release gate gained an escape hatch — document it here deliberately, with the reason",
+  );
+
+  // And the hatch that waives them is the registry flag alone: the X app flag
+  // must not silently take the schema registries down with it.
+  const xHatchOnly = releaseRun({
+    event: "workflow_dispatch",
+    inputs: { allow_unconfigured_x_app: true },
+  });
+  for (const gate of gates) {
+    assert.equal(
+      evaluateCondition(gate.step.if, xHatchOnly),
+      true,
+      `${gate.label} is waived by allow_unconfigured_x_app, which is not its hatch`,
+    );
+  }
+
+  // The X app gate's own off switch is not an `if:` at all — it is an env var
+  // the gate script reads, so a condition-shape pin cannot see it. Same
+  // failure mode, different spelling: setting it unconditionally ships every
+  // release with X disabled while the step stays green and every naming regex
+  // in check-x-app-release.test.mjs still matches.
+  const xGate = gates.find((gate) => gate.label === "build: Require OpenCoven X app configuration");
+  const disabled = xGate.step.env.COVEN_CAVE_X_RELEASE_DISABLED;
+  assert.equal(interpolate(disabled, tagPush), "", "a tag push must never ship X disabled");
+  assert.equal(
+    interpolate(disabled, plainDispatch),
+    "",
+    "an ordinary recovery dispatch must never ship X disabled",
+  );
+  assert.equal(
+    interpolate(disabled, xHatchOnly),
+    "1",
+    "allow_unconfigured_x_app is the only thing that may disable the X gate",
+  );
+});
+
+test("checksums publishes SHA256SUMS only for a wholly successful build", async () => {
+  const release = await workflow("release.yml");
+  const condition = release.jobs.checksums.if;
+
+  assert.equal(
+    typeof condition,
+    "string",
+    "checksums must keep an explicit condition; the default needs-succeeded rule is not what it asserts",
+  );
+
+  assert.equal(
+    evaluateCondition(condition, releaseRun()),
+    true,
+    "a clean tag push must publish checksums",
+  );
+  assert.equal(
+    evaluateCondition(condition, releaseRun({ event: "workflow_dispatch" })),
+    true,
+    "an ordinary recovery dispatch must publish checksums",
+  );
+
+  // The mutation this pin exists for: swapping `success()` for `!cancelled()`
+  // keeps the job condition present, keeps every other clause intact, and
+  // publishes SHA256SUMS for a build whose macOS leg failed — checksums over a
+  // partial asset set, attested and signed as if the cut were whole.
+  assert.equal(
+    evaluateCondition(condition, releaseRun({ success: false, failure: true })),
+    false,
+    "checksums must not publish for a partially failed build",
+  );
+  assert.equal(
+    evaluateCondition(condition, releaseRun({ success: false, cancelled: true })),
+    false,
+    "checksums must not publish for a cancelled build",
+  );
+
+  // Windows diagnostics mode measures an MSI and deliberately edits no release
+  // metadata, so it must not attach checksums either.
+  assert.equal(
+    evaluateCondition(
+      condition,
+      releaseRun({
+        event: "workflow_dispatch",
+        inputs: { platform: "windows", windows_diagnostics_only: true },
+      }),
+    ),
+    false,
+    "windows_diagnostics_only must not publish checksums",
+  );
+});
+
+test("release-ios-build carries its platform selection once, at job level", async () => {
+  const release = await workflow("release.yml");
+  const ios = release.jobs["release-ios-build"];
+
+  const selects = (inputs) =>
+    evaluateCondition(ios.if, releaseRun({ event: "workflow_dispatch", inputs }));
+  assert.equal(evaluateCondition(ios.if, releaseRun()), true, "a tag push builds iOS");
+  assert.equal(selects({ platform: "all" }), true);
+  assert.equal(selects({ platform: "ios" }), true);
+  for (const platform of ["macos", "linux", "windows"]) {
+    assert.equal(selects({ platform }), false, `platform: ${platform} must not run the iOS job`);
+  }
+
+  // Nothing `needs:` this job, so a job-level condition is a pure improvement
+  // over 13 copies of it: no downstream job turns from "skipped steps" into
+  // "skipped dependency". Assert that, so a future `needs: release-ios-build`
+  // has to reconsider it.
+  for (const [name, job] of Object.entries(release.jobs)) {
+    assert.equal(
+      needs(job).includes("release-ios-build"),
+      false,
+      `${name} now depends on release-ios-build, whose job-level if: skips it for non-iOS platforms`,
+    );
+  }
+
+  // The selection lives in exactly one place. A step re-stating it is the
+  // duplication this replaced; a step *omitting* it used to be the hazard,
+  // because it would stage Apple signing material on a windows dispatch.
+  for (const step of ios.steps) {
+    assert.doesNotMatch(
+      step.if ?? "",
+      /inputs\.platform/,
+      `${step.name ?? step.uses ?? step.run} re-states the job's platform selection`,
+    );
+  }
+
+  // What the steps DO keep is theirs alone, and still has to work.
+  const guarded = ios.steps.filter((step) => step.if !== undefined);
+  assert.deepEqual(
+    guarded.map((step) => step.name),
+    [
+      "Install iOS signing assets",
+      "Archive and export the iOS app",
+      "Validate, upload, and confirm TestFlight processing",
+      "Clean up iOS signing material",
+    ],
+    "only the recovery-sensitive steps and the cleanup step carry a condition",
+  );
+  const resuming = releaseRun({
+    event: "workflow_dispatch",
+    inputs: { platform: "ios", ios_delivery_id: "1234" },
+    steps: { "ios-metadata": { outputs: { "resume-confirmed": "true" } } },
+    success: false,
+    failure: true,
+  });
+  const fresh = releaseRun({
+    steps: { "ios-metadata": { outputs: { "resume-confirmed": "false" } } },
+  });
+  for (const step of guarded.slice(0, 3)) {
+    assert.equal(
+      evaluateCondition(step.if, fresh),
+      true,
+      `${step.name} must run for a fresh archive`,
+    );
+    assert.equal(
+      evaluateCondition(step.if, resuming),
+      false,
+      `${step.name} must be skipped when a delivery ID resumes an existing upload`,
+    );
+  }
+  assert.equal(
+    evaluateCondition(guarded[3].if, resuming),
+    true,
+    "signing material must be cleaned up even after a failed archive",
+  );
+});
+
+test("the release concurrency group keys the release, not the trigger", async () => {
+  const [release, candidate] = await Promise.all([
+    workflow("release.yml"),
+    workflow("release-candidate.yml"),
+  ]);
+  const group = release.concurrency.group;
+
+  // `github.ref` is `refs/tags/vX.Y.Z` on a tag push but `refs/heads/main` on
+  // the workflow_dispatch recovery of that same tag. Keyed on the ref, those
+  // two runs sat in different groups and could execute at the same time
+  // against one release, racing on `gh release upload --clobber`.
+  const fromTagPush = interpolate(group, releaseRun());
+  const fromRecovery = interpolate(group, releaseRun({ event: "workflow_dispatch" }));
+  assert.equal(
+    fromTagPush,
+    fromRecovery,
+    "a tag push and the recovery dispatch of that same tag must serialise in one group",
+  );
+  assert.match(fromTagPush, new RegExp(`${RELEASE_TAG}$`), "the group must name the release tag");
+  assert.doesNotMatch(group, /github\.ref\b/, "github.ref names the trigger, not the release");
+
+  // Different releases must still run in parallel.
+  const otherRelease = interpolate(group, {
+    ...releaseRun({ event: "workflow_dispatch" }),
+    github: {
+      ...releaseRun({ event: "workflow_dispatch" }).github,
+      event: { inputs: { tag: "v8.8.8" }, repository: { default_branch: "main" } },
+    },
+  });
+  assert.notEqual(otherRelease, fromTagPush);
+
+  // Concurrency groups are repository-wide, not per-workflow: candidate
+  // validation of a tag must not queue behind the final publish of another.
+  assert.notEqual(interpolate(candidate.concurrency.group, releaseRun()), fromTagPush);
+
+  // A run interrupted mid-upload leaves the release holding a partial asset
+  // set, so the loser queues rather than being cancelled.
+  assert.equal(release.concurrency["cancel-in-progress"], false);
+});
+
 console.log("release-promotion-workflow.test.mjs: ok");
