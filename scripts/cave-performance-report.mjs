@@ -8,11 +8,23 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { THIN_HEADROOM_PCT } from "./budget-headroom.mjs";
 import {
+  enforcedFixtureProfiles,
   evaluatePerformanceBudgets,
   PERFORMANCE_BUDGETS,
 } from "../src/lib/performance-budgets.ts";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/**
+ * The fixture the enforced budgets were seeded against, when they agree on one.
+ *
+ * An ad-hoc `pnpm performance:report` otherwise runs the benchmark's `default`
+ * smoke profile and is then graded against 10k-list ceilings it never went
+ * near. Defaulting the benchmark here means the report measures the workload it
+ * is about to judge; the evaluation still fails closed if they disagree.
+ */
+const BUDGETED_FIXTURE_PROFILE = enforcedFixtureProfiles().length === 1
+  ? enforcedFixtureProfiles()[0]
+  : null;
 const DEFAULT_REGRESSION_THRESHOLD_PCT = 20;
 const HISTORY_LIMIT = 365;
 const LANE = "standard";
@@ -233,7 +245,9 @@ export function buildPerformanceReport({
     (entry) => entry.comparison?.verdict === "improvement",
   ).length;
   const reliabilityPass = reliability.pass === true;
-  const budgets = evaluatePerformanceBudgets(metrics, budgetCatalogue);
+  const budgets = evaluatePerformanceBudgets(metrics, budgetCatalogue, {
+    fixtureProfile: conversation.fixture?.profile ?? null,
+  });
   // A breached absolute budget is a harder signal than a percentage drift from
   // the previous run, so it fails the report outright rather than waiting for
   // --fail-on-regression. Baseline comparison catches erosion; this catches a
@@ -322,7 +336,7 @@ function budgetRow(result) {
   const headroom = result.headroomPct === null
     ? result.budget.gate === "postbuild"
       ? `enforced by \`${result.budget.source}\``
-      : result.budget.source
+      : result.note ?? result.budget.source
     : `${result.headroomPct.toFixed(1)}%` +
       (result.headroomPct < THIN_HEADROOM_PCT ? " ⚠ THIN" : "");
   return `| ${result.budget.surface} | ${result.budget.label} | ${value} | ${formatBudgetLimit(result)} | ${headroom} | ${result.verdict} |`;
@@ -465,12 +479,17 @@ function parseArgs(argv) {
 }
 
 function runJsonBenchmark(script, { allowNonzero = false } = {}) {
+  const env = { ...process.env };
+  // An explicit choice always wins; this only supplies the budgeted default.
+  if (!env.CAVE_BENCH_PROFILE && BUDGETED_FIXTURE_PROFILE) {
+    env.CAVE_BENCH_PROFILE = BUDGETED_FIXTURE_PROFILE;
+  }
   const result = spawnSync(
     process.execPath,
     ["--experimental-strip-types", path.join(projectRoot, "scripts", script)],
     {
       cwd: projectRoot,
-      env: process.env,
+      env,
       encoding: "utf8",
       maxBuffer: 20 * 1024 * 1024,
     },
@@ -544,7 +563,8 @@ async function main() {
     }
     if (result.verdict === "unmeasured") {
       console.error(
-        `cave-performance-report: ${result.budget.id} is enforced but no run produced it (${result.budget.source})`,
+        `cave-performance-report: ${result.budget.id} is enforced but unmeasured — ` +
+          `${result.note ?? "no run produced it"} (${result.budget.source})`,
       );
     }
   }

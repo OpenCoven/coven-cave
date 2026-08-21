@@ -221,6 +221,11 @@ export type PerformanceBudgetResult = {
   headroom: number | null;
   headroomPct: number | null;
   verdict: PerformanceBudgetVerdict;
+  /**
+   * Why an `unmeasured` verdict happened, so a run can say which of the several
+   * ways to not have a measurement it hit. `null` for every other verdict.
+   */
+  note: string | null;
 };
 
 export type PerformanceBudgetEvaluation = {
@@ -235,6 +240,40 @@ export type PerformanceBudgetEvaluation = {
 };
 
 export type PerformanceBudgetMetric = { id: string; value: number };
+
+export type PerformanceBudgetEvaluationOptions = {
+  /**
+   * The fixture profile the run actually measured, from the benchmark's own
+   * `fixture.profile`. `null` means the run did not identify its workload.
+   */
+  fixtureProfile?: string | null;
+};
+
+/**
+ * The fixture profile a `performance-report` budget was seeded against.
+ *
+ * The profile half of `<fixture file>#<profile>` is what makes the number mean
+ * anything: "10k conversation list, cold scan p95 ≤ 3,000 ms" says nothing
+ * whatsoever about a hundred-conversation run.
+ */
+export function budgetFixtureProfile(budget: PerformanceBudget): string | null {
+  if (budget.gate !== "performance-report") return null;
+  const profile = budget.source.split("#")[1];
+  return profile && profile.trim() !== "" ? profile : null;
+}
+
+/** The distinct fixture profiles the enforced budgets were seeded against. */
+export function enforcedFixtureProfiles(
+  budgets: readonly PerformanceBudget[] = PERFORMANCE_BUDGETS,
+): string[] {
+  return [
+    ...new Set(
+      budgets
+        .map((budget) => budgetFixtureProfile(budget))
+        .filter((profile): profile is string => profile !== null),
+    ),
+  ];
+}
 
 function headroomOf(budget: PerformanceBudget, value: number, limit: number): {
   headroom: number;
@@ -258,24 +297,66 @@ function headroomOf(budget: PerformanceBudget, value: number, limit: number): {
  * maintenance gate takes when a plane's entry is missing rather than false.
  * `pending` and `postbuild` entries never fail this evaluation — the first has
  * nothing to measure, and the second is enforced by the gate it names.
+ *
+ * A measurement taken at the wrong fixture scale is treated as no measurement,
+ * for the same reason. Every enforced limit here is a number about a specific
+ * workload, and grading a hundred-conversation smoke run against the 10k
+ * ceilings produced a report reading "10k conversation list, cold metadata scan
+ * p95 | 38.07 ms | ≤ 3000.00 ms | pass" — a green verdict on a budget nothing
+ * in that run went near. `fixtureProfile` is therefore required to match, and
+ * an unidentified fixture fails closed rather than defaulting to trusted.
  */
 export function evaluatePerformanceBudgets(
   metrics: readonly PerformanceBudgetMetric[],
   budgets: readonly PerformanceBudget[] = PERFORMANCE_BUDGETS,
+  { fixtureProfile = null }: PerformanceBudgetEvaluationOptions = {},
 ): PerformanceBudgetEvaluation {
   const measured = new Map(metrics.map((metric) => [metric.id, metric.value]));
+  const unmeasured = (budget: PerformanceBudget, note: string): PerformanceBudgetResult => ({
+    budget,
+    value: null,
+    headroom: null,
+    headroomPct: null,
+    verdict: "unmeasured",
+    note,
+  });
   const results = budgets.map((budget): PerformanceBudgetResult => {
     if (budget.gate === "pending") {
-      return { budget, value: null, headroom: null, headroomPct: null, verdict: "pending" };
+      return {
+        budget,
+        value: null,
+        headroom: null,
+        headroomPct: null,
+        verdict: "pending",
+        note: null,
+      };
     }
     if (budget.gate === "postbuild") {
-      return { budget, value: null, headroom: null, headroomPct: null, verdict: "delegated" };
+      return {
+        budget,
+        value: null,
+        headroom: null,
+        headroomPct: null,
+        verdict: "delegated",
+        note: null,
+      };
     }
-    const value = measured.get(budget.id);
-    if (value === undefined || !Number.isFinite(value) || budget.limit === null) {
+    if (budget.limit === null) {
       // A `performance-report` entry with no limit is a malformed catalogue
       // entry, not a pass — fail it the same way an absent measurement does.
-      return { budget, value: null, headroom: null, headroomPct: null, verdict: "unmeasured" };
+      return unmeasured(budget, "the catalogue entry carries no limit to judge against");
+    }
+    const seededAgainst = budgetFixtureProfile(budget);
+    if (seededAgainst !== null && fixtureProfile !== seededAgainst) {
+      return unmeasured(
+        budget,
+        `seeded against the ${seededAgainst} fixture, but this run measured ` +
+          `${fixtureProfile === null ? "an unidentified fixture" : `${fixtureProfile}`}`,
+      );
+    }
+    const value = measured.get(budget.id);
+    if (value === undefined || !Number.isFinite(value)) {
+      return unmeasured(budget, "no run produced this metric");
     }
     const { headroom, headroomPct, within } = headroomOf(budget, value, budget.limit);
     return {
@@ -284,6 +365,7 @@ export function evaluatePerformanceBudgets(
       headroom,
       headroomPct,
       verdict: within ? "pass" : "breach",
+      note: null,
     };
   });
 

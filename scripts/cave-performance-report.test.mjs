@@ -11,6 +11,7 @@ import {
   renderPerformanceReportMarkdown,
   writePerformanceReport,
 } from "./cave-performance-report.mjs";
+import { enforcedFixtureProfiles } from "../src/lib/performance-budgets.ts";
 
 function conversation({ warmP95 = 8, cacheHitRate = 1, coldP95 = 900 } = {}) {
   return {
@@ -207,6 +208,31 @@ test("a benchmark that produced no cold scan fails closed rather than passing", 
   assert.equal(report.summary.budgetUnmeasuredCount, 2);
 });
 
+test("a smoke-scale run fails instead of certifying the 10k budgets", () => {
+  // Reproduced before this assertion existed: `pnpm performance:report` with no
+  // profile ran the 100-conversation `default` fixture and printed
+  // "10k conversation list, cold metadata scan p95 | 38.07 ms | ≤ 3000.00 ms |
+  // pass", with summary.budgetPass true and exit code 0. Every enforced limit
+  // is a claim about a specific workload; measuring a different one measures
+  // nothing, so it fails closed exactly like an absent metric.
+  const smoke = conversation();
+  smoke.fixture = { profile: "default", fileCount: 100, transcriptBytes: 262_144, iterations: 20 };
+  const report = buildPerformanceReport({
+    conversation: smoke,
+    reliability: reliability(),
+    metadata: metadata(),
+  });
+
+  assert.equal(report.summary.status, "fail");
+  assert.equal(report.summary.budgetPass, false);
+  assert.equal(report.summary.budgetBreachCount, 0, "the numbers themselves are fine — the scale is not");
+  assert.equal(report.summary.budgetUnmeasuredCount, report.budgets.enforcedCount);
+  assert.match(
+    renderPerformanceReportMarkdown(report),
+    /seeded against the phase-6-list-10k fixture, but this run measured default/,
+  );
+});
+
 test("markdown renders the budget table with limits and pending surfaces", () => {
   const markdown = renderPerformanceReportMarkdown(
     buildPerformanceReport({
@@ -242,4 +268,26 @@ test("scheduled workflow restores history and always uploads report evidence", a
     "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
   );
   assert.equal(upload.with["if-no-files-found"], "error");
+});
+
+test("the workflow benchmarks the fixture the enforced budgets were seeded against", async () => {
+  // The catalogue and the workload have to move together or the nightly grades
+  // one thing against another's ceilings. The report now fails closed on that
+  // mismatch, so a drift here turns the whole scheduled run red — catch it in
+  // the unit suite instead.
+  const workflow = parse(
+    await readFile(new URL("../.github/workflows/cave-performance.yml", import.meta.url), "utf8"),
+  );
+  const profiles = enforcedFixtureProfiles();
+  assert.equal(profiles.length, 1, "the report can only default to a single seeded profile");
+
+  assert.equal(workflow.on.workflow_dispatch.inputs.profile.default, profiles[0]);
+  assert.ok(
+    workflow.jobs.report.env.CAVE_BENCH_PROFILE.includes(profiles[0]),
+    `job env must fall back to ${profiles[0]}`,
+  );
+  // Blank on a scheduled run: `inputs` is empty for a non-dispatch event, and
+  // the benchmark reads blank as "not overridden" rather than as zero.
+  assert.equal(workflow.jobs.report.env.CAVE_BENCH_ITERATIONS, "${{ inputs.iterations }}");
+  assert.equal(workflow.on.workflow_dispatch.inputs.iterations.default, "");
 });

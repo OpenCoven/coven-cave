@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  budgetFixtureProfile,
+  enforcedFixtureProfiles,
   evaluatePerformanceBudgets,
   PERFORMANCE_BUDGET_GATES,
   PERFORMANCE_BUDGET_SCHEMA_VERSION,
@@ -173,17 +175,69 @@ test("pending and postbuild budgets are reported without failing the run", () =>
   assert.equal(evaluation.enforcedCount, 0);
 });
 
+const SEEDED_MEASUREMENTS = [
+  { id: "conversation-list.cold-scan.p95-ms", value: 1_039.39 },
+  { id: "conversation-list.cold-scan.bytes", value: 43_608_890 },
+  { id: "conversation-list.warm-cache.p95-ms", value: 82.16 },
+  { id: "conversation-list.warm-cache.bytes", value: 0 },
+  { id: "conversation-list.cache-hit-rate", value: 100 },
+];
+
 test("the shipped catalogue passes against its own seeded measurements", () => {
   // The seed values recorded in the module's comment, so a future edit that
   // tightens a limit past the measurement it was seeded from fails here.
-  const evaluation = evaluatePerformanceBudgets([
-    { id: "conversation-list.cold-scan.p95-ms", value: 1_039.39 },
-    { id: "conversation-list.cold-scan.bytes", value: 43_608_890 },
-    { id: "conversation-list.warm-cache.p95-ms", value: 82.16 },
-    { id: "conversation-list.warm-cache.bytes", value: 0 },
-    { id: "conversation-list.cache-hit-rate", value: 100 },
-  ]);
+  const evaluation = evaluatePerformanceBudgets(SEEDED_MEASUREMENTS, PERFORMANCE_BUDGETS, {
+    fixtureProfile: "phase-6-list-10k",
+  });
   assert.equal(evaluation.pass, true, "seeded measurements must satisfy the shipped budgets");
   assert.equal(evaluation.breachCount, 0);
   assert.equal(evaluation.unmeasuredCount, 0);
+});
+
+test("every enforced budget is seeded against exactly one shared fixture profile", () => {
+  // The report defaults its benchmark to this profile, which it can only do
+  // while the enforced budgets agree on one. A second profile is not wrong,
+  // but it needs the report taught to run both before it lands.
+  assert.deepEqual(enforcedFixtureProfiles(), ["phase-6-list-10k"]);
+  for (const entry of PERFORMANCE_BUDGETS) {
+    if (entry.gate === "performance-report") {
+      assert.equal(budgetFixtureProfile(entry), "phase-6-list-10k", `${entry.id}`);
+    } else {
+      assert.equal(budgetFixtureProfile(entry), null, `${entry.id}`);
+    }
+  }
+});
+
+test("measurements from the wrong fixture scale count as unmeasured, not as a pass", () => {
+  // The exact numbers a `default`-profile smoke run produced, which previously
+  // reported "10k conversation list, cold metadata scan p95 | 38.07 ms |
+  // ≤ 3000.00 ms | pass" — a green verdict on a budget nothing in that run
+  // approached. A limit is a claim about a workload, not about a machine.
+  const smoke = evaluatePerformanceBudgets(
+    [
+      { id: "conversation-list.cold-scan.p95-ms", value: 38.07 },
+      { id: "conversation-list.cold-scan.bytes", value: 26_246_890 },
+      { id: "conversation-list.warm-cache.p95-ms", value: 1.51 },
+      { id: "conversation-list.warm-cache.bytes", value: 0 },
+      { id: "conversation-list.cache-hit-rate", value: 100 },
+    ],
+    PERFORMANCE_BUDGETS,
+    { fixtureProfile: "default" },
+  );
+  assert.equal(smoke.pass, false);
+  assert.equal(smoke.breachCount, 0);
+  assert.equal(smoke.unmeasuredCount, smoke.enforcedCount);
+  assert.match(
+    smoke.results.find((result) => result.budget.id === "conversation-list.cold-scan.p95-ms")!.note!,
+    /seeded against the phase-6-list-10k fixture, but this run measured default/,
+  );
+});
+
+test("a run that does not identify its fixture fails closed", () => {
+  // Absent data is not "no objection". The report reads the profile off the
+  // benchmark's own output, so a missing one means the workload is unknown.
+  const evaluation = evaluatePerformanceBudgets(SEEDED_MEASUREMENTS);
+  assert.equal(evaluation.pass, false);
+  assert.equal(evaluation.unmeasuredCount, evaluation.enforcedCount);
+  assert.match(evaluation.results[0].note!, /an unidentified fixture/);
 });

@@ -58,6 +58,20 @@ green run — the failure mode is silent and looks exactly like success. The
 maintenance gate makes the same choice when a plane's entry is missing rather
 than `false`; see the `enforced !== true` note in `CLAUDE.md`.
 
+**A measurement at the wrong fixture scale is no measurement.** Every enforced
+limit is a claim about a specific workload, so the report compares the profile
+the benchmark reports against the profile the budget names and records a
+mismatch as `unmeasured`. Without that check, `pnpm performance:report` with no
+profile ran the 100-conversation `default` fixture and printed
+
+```text
+| list | 10k conversation list, cold metadata scan p95 | 38.07 ms | ≤ 3000.00 ms | 98.7% | pass |
+```
+
+— a green verdict, `budgetPass: true`, and exit code 0 on a budget nothing in
+that run went near. A run that does not identify its fixture at all fails the
+same way, for the same reason absent data fails everywhere else here.
+
 ## Seeding and re-seeding a number
 
 Budgets here are ceilings that catch a collapse, not targets to optimise
@@ -88,6 +102,12 @@ bisect can sweep one axis without editing a committed fixture.
 CAVE_BENCH_PROFILE=phase-6-list-10k pnpm bench:conversation-list
 pnpm performance:report            # evaluates the catalogue, exits 1 on a breach
 ```
+
+`performance:report` defaults its benchmark to the profile the enforced budgets
+were seeded against, so an ad-hoc run measures the workload it is about to be
+graded on rather than a smoke fixture that would fail the scale check above.
+`CAVE_BENCH_PROFILE` still overrides it — but then the enforced budgets report
+`unmeasured`, which is the honest answer.
 
 The fixture redirects Cave's home with `COVEN_CAVE_HOME`, never `HOME`.
 `caveHome()` falls back to `os.homedir()`, which reads `$HOME` only on POSIX —
