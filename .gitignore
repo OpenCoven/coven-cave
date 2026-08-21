@@ -150,3 +150,4 @@ __verify-chat-detail.mjs
 
 # build product of a pinned dependency (scripts/copy-pdf-worker.mjs); not source
 public/pdf.worker.min.mjs
+/apps/ios/CovenCave/build-cody-cma81
