@@ -52,10 +52,6 @@ name: Release
 #   IOS_WIDGET_PROVISIONING_PROFILE_BASE64
 #                                base64 App Store profile for
 #                                ai.opencoven.cave.widgets.
-# Required repository variable:
-#   IOS_APP_STORE_ID             numeric App Store Connect app ID used to
-#                                resume processing instead of re-uploading the
-#                                same immutable build on a workflow retry.
 # Optional repository variable:
 #   APPLE_API_KEY_SUBJECT        set to "user" for an individual App Store
 #                                Connect key; omit for a team API key.
@@ -84,6 +80,10 @@ on:
           - linux
           - windows
           - ios
+      ios_delivery_id:
+        description: "RECOVERY ONLY: resume and verify an existing iOS upload by its altool delivery ID instead of uploading the build again."
+        required: false
+        type: string
       allow_unconfigured_registries:
         description: "EMERGENCY ONLY: skip the signed OpenCode/Grok schema-registry gates and ship with the built-in baseline parsers. Tag pushes always stay fail-closed."
         required: false
@@ -618,12 +618,11 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_SUBJECT: ${{ vars.APPLE_API_KEY_SUBJECT }}
-          IOS_APP_STORE_ID: ${{ vars.IOS_APP_STORE_ID }}
+          IOS_DELIVERY_ID: ${{ inputs.ios_delivery_id }}
         run: |
           set -euo pipefail
           [ -n "$APPLE_API_KEY" ] || { echo "::error::APPLE_API_KEY is required"; exit 1; }
           [ -n "$APPLE_API_ISSUER" ] || { echo "::error::APPLE_API_ISSUER is required"; exit 1; }
-          [ -n "$IOS_APP_STORE_ID" ] || { echo "::error::IOS_APP_STORE_ID repository variable is required"; exit 1; }
           BUILD_SETTINGS="$(xcodebuild -project CovenCave.xcodeproj -scheme CovenCave -showBuildSettings)"
           BUILD_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F ' = ' '/^[[:space:]]*CURRENT_PROJECT_VERSION = / { print $2; exit }')"
           SHORT_VERSION="$(printf '%s\n' "$BUILD_SETTINGS" | awk -F ' = ' '/^[[:space:]]*MARKETING_VERSION = / { print $2; exit }')"
@@ -634,34 +633,21 @@ jobs:
             echo "short-version=$SHORT_VERSION"
           } >> "$GITHUB_OUTPUT"
 
-          set +e
-          pnpm --dir "$GITHUB_WORKSPACE" appstore:status \
-            --apple-id "$IOS_APP_STORE_ID" \
-            --bundle-version "$BUILD_VERSION" \
-            --short-version "$SHORT_VERSION" \
-            --wait \
-            --allow-missing
-          STATUS_EXIT=$?
-          set -e
-          case "$STATUS_EXIT" in
-            0)
-              echo "already-uploaded=true" >> "$GITHUB_OUTPUT"
-              echo "App Store Connect already has iOS $SHORT_VERSION ($BUILD_VERSION); processing is confirmed."
-              ;;
-            3)
-              echo "already-uploaded=false" >> "$GITHUB_OUTPUT"
-              echo "Apple explicitly reports no matching build; a new archive will be uploaded."
-              ;;
-            *)
-              echo "::error::App Store Connect preflight failed; refusing to treat an operational error as a missing build."
-              exit "$STATUS_EXIT"
-              ;;
-          esac
+          if [ -n "${IOS_DELIVERY_ID:-}" ]; then
+            pnpm --dir "$GITHUB_WORKSPACE" appstore:status \
+              --delivery-id "$IOS_DELIVERY_ID" \
+              --wait
+            echo "resume-confirmed=true" >> "$GITHUB_OUTPUT"
+            echo "App Store Connect confirmed delivery $IOS_DELIVERY_ID; recovery does not infer its version from the current source."
+          else
+            echo "resume-confirmed=false" >> "$GITHUB_OUTPUT"
+            echo "A fresh iOS $SHORT_VERSION ($BUILD_VERSION) archive will be uploaded and awaited by delivery ID."
+          fi
 
       - name: Install iOS signing assets
         if: >-
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
-          steps.ios-metadata.outputs.already-uploaded != 'true'
+          steps.ios-metadata.outputs.resume-confirmed != 'true'
         shell: bash
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -745,7 +731,7 @@ jobs:
       - name: Archive and export the iOS app
         if: >-
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
-          steps.ios-metadata.outputs.already-uploaded != 'true'
+          steps.ios-metadata.outputs.resume-confirmed != 'true'
         working-directory: apps/ios/CovenCave
         shell: bash
         env:
@@ -793,7 +779,7 @@ jobs:
       - name: Validate, upload, and confirm TestFlight processing
         if: >-
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'ios') &&
-          steps.ios-metadata.outputs.already-uploaded != 'true'
+          steps.ios-metadata.outputs.resume-confirmed != 'true'
         shell: bash
         env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
