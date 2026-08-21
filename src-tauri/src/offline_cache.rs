@@ -867,28 +867,40 @@ fn load_or_create_instance_id(root: &Path) -> Result<String, String> {
 fn keychain_secret() -> Result<(Zeroizing<[u8; KEY_BYTES]>, bool), String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
         .map_err(|_| "the offline cache keychain entry is unavailable".to_string())?;
-    match entry.get_password() {
-        Ok(stored) => {
-            if let Some(bytes) = hex_decode(&stored).filter(|bytes| bytes.len() == KEY_BYTES) {
-                let mut secret = Zeroizing::new([0u8; KEY_BYTES]);
-                secret.copy_from_slice(&bytes);
-                return Ok((secret, false));
-            }
-            let secret = new_secret();
-            entry
-                .set_password(&hex_encode(secret.as_slice()))
-                .map_err(|_| "the offline cache key could not be rotated".to_string())?;
-            Ok((secret, true))
-        }
-        Err(keyring::Error::NoEntry) => {
-            let secret = new_secret();
-            entry
-                .set_password(&hex_encode(secret.as_slice()))
-                .map_err(|_| "the offline cache key could not be stored".to_string())?;
-            Ok((secret, true))
-        }
-        Err(_) => Err("the offline cache key could not be read from the keychain".to_string()),
+    let stored = match entry.get_password() {
+        Ok(stored) => Some(stored),
+        Err(keyring::Error::NoEntry) => None,
+        // A keychain that is present but unreadable — locked, or denied — is
+        // not a rotation. Failing here costs a cache miss; minting a new key
+        // would cost the whole cache.
+        Err(_) => return Err("the offline cache key could not be read from the keychain".to_string()),
+    };
+    let (secret, rotated) = secret_from_stored(stored.as_deref());
+    if rotated {
+        entry
+            .set_password(&hex_encode(secret.as_slice()))
+            .map_err(|_| "the offline cache key could not be stored".to_string())?;
     }
+    Ok((secret, rotated))
+}
+
+/// Decide which root secret to use from whatever the keychain held.
+///
+/// Split out from the keychain call because it is the only branch that can
+/// wipe the cache: `true` means the stored value was unusable, every existing
+/// entry is now encrypted under a key nothing holds, and the caller clears the
+/// tree. A test can therefore pin the one property that matters — that a
+/// readable 32-byte value never takes that branch — without a real keychain.
+fn secret_from_stored(stored: Option<&str>) -> (Zeroizing<[u8; KEY_BYTES]>, bool) {
+    if let Some(bytes) = stored
+        .and_then(hex_decode)
+        .filter(|bytes| bytes.len() == KEY_BYTES)
+    {
+        let mut secret = Zeroizing::new([0u8; KEY_BYTES]);
+        secret.copy_from_slice(&bytes);
+        return (secret, false);
+    }
+    (new_secret(), true)
 }
 
 fn new_secret() -> Zeroizing<[u8; KEY_BYTES]> {
@@ -1550,6 +1562,39 @@ mod tests {
         assert!(path.starts_with(context.instance_dir()));
         assert!(!path.to_string_lossy().contains(".."));
         cleanup(&context);
+    }
+
+    #[test]
+    fn only_an_unusable_keychain_value_rotates_the_key_and_clears_the_cache() {
+        // The branch under test is the one that silently empties the cache on
+        // launch, so the case that must never take it is pinned first.
+        let stored = hex_encode(&[3u8; KEY_BYTES]);
+        let (secret, rotated) = secret_from_stored(Some(&stored));
+        assert_eq!(secret.as_slice(), [3u8; KEY_BYTES]);
+        assert!(
+            !rotated,
+            "a readable 32-byte key must be adopted as-is, never rotated",
+        );
+        // Case, too: the value we wrote is lowercase, but nothing should hinge
+        // on a keychain round-tripping it byte for byte.
+        assert!(!secret_from_stored(Some(&stored.to_uppercase())).1);
+
+        for unusable in [
+            None,
+            Some(String::new()),
+            Some("not hexadecimal at all".to_string()),
+            Some(hex_encode(&[3u8; KEY_BYTES - 1])),
+            Some(hex_encode(&[3u8; KEY_BYTES + 1])),
+            Some(format!("{stored} ")),
+        ] {
+            let (fresh, rotated) = secret_from_stored(unusable.as_deref());
+            assert!(rotated, "an unusable keychain value must mint a new key");
+            assert_ne!(
+                fresh.as_slice(),
+                [0u8; KEY_BYTES],
+                "a minted key must be random, not a zeroed buffer",
+            );
+        }
     }
 
     #[test]
