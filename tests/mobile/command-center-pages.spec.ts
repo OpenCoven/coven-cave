@@ -33,10 +33,23 @@ test.describe("mobile command center pages", () => {
       // On a fresh profile (CI) the onboarding overlay covers the app and
       // intercepts pointer events — dismiss it so the shell is interactive.
       window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      // startWorkspaceChat gates on a SELECTED project, not merely an available
+      // one: with cave:workspace:project-scope:v1 unset it announces "Choose a
+      // project before starting a chat" and returns, so the New session tap
+      // below never reaches a chat detail. Restoring a scope keeps the gate shut.
+      window.localStorage.setItem("cave:workspace:project-scope:v1", JSON.stringify("p1"));
     });
     // CI has no daemon — drive the surfaces from mocked API responses.
     await page.route("**/api/familiars**", (route) => route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }));
     await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+    // Starting a chat now runs through the project gate in startWorkspaceChat:
+    // with no accessible project it announces "Choose a project before starting
+    // a chat" and returns, so the tap below would never reach a chat detail.
+    // Serving one writable project keeps the gate shut — same fix already
+    // carried by chat-boot-landing.spec.ts. This spec is about phone geometry,
+    // not project selection.
+    await page.route("**/api/projects**", (route) =>
+      route.fulfill({ json: { ok: true, projects: [{ id: "p1", name: "Queue", root: "/repo/queue", access: "write" }] } }));
     await page.goto("/");
     await page.waitForSelector(".mobile-bottom-tabs");
   });

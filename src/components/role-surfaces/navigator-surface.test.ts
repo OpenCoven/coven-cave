@@ -51,16 +51,22 @@ test("moves, renames, reassignments, answers, adds and removals are real writes"
   assert.match(surface, /publishBoardChanged\(\)/);
 });
 
-test("dependency edits write canonical card dependencies while the legacy overlay stays local", () => {
+test("dependency edits write canonical card fields while the legacy overlay is import-and-prune only", () => {
+  // Dependencies are canonical on the card (`Card.dependencies`), so the board
+  // write carries that field and nothing else. The overlay survives only as a
+  // legacy read-side store the room may import from or cut, never as a
+  // client-invented `dependsOn` the rest of the Cave could not honour.
   assert.match(surface, /overlay: ChartOverlay/);
   assert.match(surface, /normalizeOverlay\(state\.overlay, liveIds\)/);
-  assert.match(surface, /dependencies included: they are canonical on the card/);
+  assert.match(surface, /overlayImportPlan\(cards, overlay\)/);
   assert.match(surface, /\{ dependencies: \[\.\.\.existing, addition\] \}/);
   assert.match(surface, /const body: Record<string, unknown> = \{ dependencies: kept \}/);
+  assert.match(surface, /setDependency\(overlay, stepId, null\)/);
+  assert.doesNotMatch(surface, /setDependency\(overlay, stepId, parentId\)/);
   assert.doesNotMatch(surface, /body: JSON\.stringify\(\{[^}]*\bdependsOn\b/);
   assert.match(
     surface,
-    /canonical dependencies on the cards are untouched/,
+    /Discard the legacy overlay's surviving links — canonical dependencies on the cards are untouched/,
     "the reset control says what it does and does not touch",
   );
 });
@@ -126,6 +132,7 @@ test("the drawer's own panels degrade separately from the canvas", () => {
 test("mutations announce, and visible failures announce assertively", () => {
   assert.match(surface, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/);
   assert.match(surface, /const \{ announce \} = useAnnouncer\(\)/);
+  assert.match(surface, /setWriteError\(`\$\{failure\}\$\{detail\}`\)/);
   assert.match(surface, /announce\(`\$\{failure\}\$\{detail\}`, "assertive"\)/);
   assert.match(surface, /announce\(message, "assertive"\)/);
   assert.match(surface, /const \[writeError, setWriteError\] = useState<string \| null>\(null\)/);
