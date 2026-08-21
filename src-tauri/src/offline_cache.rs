@@ -89,6 +89,10 @@ const INSTANCE_ID_BYTES: usize = 16;
 /// Per-entry plaintext ceiling. A conversation payload is tens of kilobytes;
 /// anything at this size is carrying something it should have stripped.
 pub(super) const MAX_ENTRY_BYTES: usize = 1024 * 1024;
+/// The largest a well-formed envelope can be: the payload ceiling, plus room
+/// for the plaintext header and the GCM tag. Read-side only — it is what lets
+/// an entry be refused from its metadata rather than after it is in memory.
+const MAX_ENVELOPE_BYTES: u64 = MAX_ENTRY_BYTES as u64 + 4096;
 pub(super) const MAX_ENTRIES: usize = 256;
 pub(super) const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
 /// Scope and key are replaced by keyed derivations before they touch the
@@ -734,8 +738,53 @@ fn purge_incompatible_generations(context: &OfflineCacheContext, now_unix_ms: u6
     }
 }
 
+/// An entry we cannot serve is never left behind to be re-read on every
+/// launch: the purge is the migration path for a schema bump, a rotated key,
+/// and a corrupted file alike.
+fn purge_unusable(path: &Path, fault: OfflineCacheFault) -> OfflineCacheReadResult {
+    let purged = match std::fs::remove_file(path) {
+        Ok(()) => true,
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    };
+    OfflineCacheReadResult {
+        entry: None,
+        fault: Some(fault),
+        purged,
+    }
+}
+
 fn read_entry(context: &OfflineCacheContext, scope: &str, key: &str) -> OfflineCacheReadResult {
     let path = context.entry_path(scope, key);
+    // Size is checked from the directory entry, before a single byte is read.
+    // The per-entry cap otherwise only binds what this build *writes*: a file
+    // that grew by any other means — a corrupt filesystem, a build with a
+    // larger ceiling, anything with write access to the cache — would be
+    // loaded into memory in full and only then measured.
+    match std::fs::metadata(&path) {
+        Ok(metadata) if metadata.len() > MAX_ENVELOPE_BYTES => {
+            return purge_unusable(
+                &path,
+                OfflineCacheFault::new(
+                    OfflineCacheFaultKind::Oversized,
+                    "entry is larger than any envelope this cache writes",
+                ),
+            );
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return OfflineCacheReadResult::default();
+        }
+        Err(_) => {
+            return OfflineCacheReadResult {
+                entry: None,
+                fault: Some(OfflineCacheFault::new(
+                    OfflineCacheFaultKind::Io,
+                    "entry could not be read from disk",
+                )),
+                purged: false,
+            };
+        }
+    }
     let envelope = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -758,20 +807,7 @@ fn read_entry(context: &OfflineCacheContext, scope: &str, key: &str) -> OfflineC
             fault: None,
             purged: false,
         },
-        Err(fault) => {
-            // An entry we cannot serve is never left behind to be re-read on
-            // every launch: the purge is the migration path for a schema bump,
-            // a rotated key, and a corrupted file alike.
-            let purged = match std::fs::remove_file(&path) {
-                Ok(()) => true,
-                Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-            };
-            OfflineCacheReadResult {
-                entry: None,
-                fault: Some(fault),
-                purged,
-            }
-        }
+        Err(fault) => purge_unusable(&path, fault),
     }
 }
 
@@ -1291,6 +1327,28 @@ mod tests {
         let payload = "x".repeat(MAX_ENTRY_BYTES + 1);
         assert!(write_entry(&context, "conversation", "abc", &payload, "r", 1).is_err());
         assert!(!context.entry_path("conversation", "abc").exists());
+        cleanup(&context);
+    }
+
+    #[test]
+    fn an_oversized_file_is_refused_from_its_metadata_rather_than_read() {
+        let context = context("oversized-read");
+        write_entry(&context, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
+        let path = context.entry_path("conversation", "abc");
+        // A well-formed envelope's own preamble is intact; only its length is
+        // impossible, so nothing but the size check can reject it early.
+        let mut bloated = std::fs::read(&path).unwrap();
+        bloated.resize(MAX_ENVELOPE_BYTES as usize + 1, 0);
+        std::fs::write(&path, &bloated).unwrap();
+
+        let result = read_entry(&context, "conversation", "abc");
+        assert_eq!(result.entry, None);
+        assert_eq!(
+            result.fault.map(|fault| fault.kind),
+            Some(OfflineCacheFaultKind::Oversized)
+        );
+        assert!(result.purged);
+        assert!(!path.exists());
         cleanup(&context);
     }
 
