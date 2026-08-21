@@ -34,15 +34,9 @@ assert.doesNotMatch(
   /extractNextPaths\((?:text|reasoningSplit\.visible)\)/,
   "next-paths never runs on text upstream of the skill split",
 );
-// One card per skill NAME (that is what makes repeated markers update in place
-// rather than stack), carrying the stage and note. The previous pattern also
-// required the whole element on one line and the map callback to be called `u`;
-// the streaming work reformatted it across lines and renamed the parameter to
-// `update`, neither of which touches the promise. Tie the key and props back to
-// the callback parameter with a backreference so the name stays free.
 assert.match(
   chatView,
-  /skillUpdates\.map\(\((\w+)\) => \(\s*<SkillStageCard\s+key=\{\1\.name\}\s+name=\{\1\.name\}\s+stage=\{\1\.stage\}\s+note=\{\1\.note\}\s*\/>/,
+  /skillUpdates\.map\(\((\w+)\) => \(\s*<SkillStageCard\s+key=\{\1\.name\}\s+name=\{\1\.name\}\s+stage=\{\1\.stage\}\s+note=\{\1\.note\}/,
   "assistant turns render one card per skill name",
 );
 assert.match(

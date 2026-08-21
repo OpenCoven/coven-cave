@@ -481,44 +481,34 @@ assert.match(
   "CHAT-D4-01: turn-segments comments should document mid-paragraph streaming behavior",
 );
 
-// TurnRow keeps stateful tool UI in fixed slots across streaming settlement.
-// The offset model remains available for persisted transcript compatibility,
-// but rendering tools through prose segments would relocate focused controls.
-// `ChatToolActivityLayout` was replaced by StreamingTurnResponse, which takes
-// the same content as three named slots rather than two. The guarantee is
-// unchanged and is what is pinned here: activity, turn content, and edit cards
-// are handed over as separate stable slots, so a focused control inside one of
-// them is not relocated when the turn settles.
+// TurnRow uses the persisted offset model to keep live tools chronological,
+// then settles non-edit activity and edit cards into their durable sections.
 assert.match(
   chatViewSource,
-  /<StreamingTurnResponse[\s\S]*?proseContent=\{proseContent\}\s*activityDetails=\{activityDetails\}\s*supplementaryContent=\{supplementaryContent\}/,
-  "assistant turns keep non-edit activity, changing turn content, and edit cards in stable render slots",
+  /const segments = segmentTurn\(visible, turn\.tools\);[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+  "assistant turns preserve live tool chronology through text-offset segments",
 );
-// One partition, feeding both slots, so they cannot disagree about which tools
-// exist. It is settled-only by design — a streaming turn renders its tools
-// inline through renderSegments, and lifting them here while pending would
-// render each tool twice.
 assert.match(
   chatViewSource,
-  /const settledTools = [^;]*!turn\.pending[^;]*;\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter/,
-  "edit and non-edit cards share one settled-only partition",
+  /const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];[\s\S]*const editCards = settledTools\.filter\(isEditCard\);[\s\S]*const otherTools = settledTools\.filter/,
+  "settled turns partition edit cards from grouped non-edit activity",
 );
-// Calm streaming reinstated the inline weave, so ToolRuns is expected in
-// TurnRow again. What must not come back is a SECOND call site: one for the
-// streaming path and another for a settled/tool-first path would render the
-// same tool twice. Count the call sites instead of forbidding the name.
-const turnRowImplSource =
-  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
-assert.ok(turnRowImplSource, "TurnRowImpl should be extractable for the duplicate-render check");
+assert.doesNotMatch(
+  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "",
+  /<ChatToolActivityLayout/,
+  "TurnRow no longer routes the shared response through the obsolete fixed-slot layout",
+);
+// Exclusivity, not just existence. The segment assertion above pins that ONE
+// <ToolRuns> renders inside the chronology map; it says nothing about a second
+// one elsewhere in the same turn, which is exactly what renders every tool
+// twice. The predecessor guard was a flat `doesNotMatch(/<ToolRuns/)` — correct
+// while the component was banned outright, and unusable once it became the
+// legitimate path. Counting keeps the protection without the ban.
 assert.equal(
-  (turnRowImplSource.match(/<ToolRuns\b/g) ?? []).length,
+  (chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "")
+    .match(/<ToolRuns\b/g)?.length ?? 0,
   1,
-  "TurnRow renders ToolRuns from exactly one place, so tools cannot appear in both prose and a tool-first branch",
-);
-assert.match(
-  turnRowImplSource,
-  /if \(turn\.pending\) \{[\s\S]*?renderSegments = bubbleSegments;\s*\} else \{/,
-  "that single call site is the pending-only inline weave",
+  "TurnRow renders <ToolRuns> exactly once — a second call site double-renders every tool",
 );
 
 // MessageBubble: only the LAST text span streams (progressive markdown);

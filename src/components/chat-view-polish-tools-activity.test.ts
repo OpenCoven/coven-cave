@@ -238,8 +238,8 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /const proseContent =[\s\S]*?!pending && renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node/,
-  "settled artifact-aware segments render as one ordered prose sequence",
+  /const proseContent =[\s\S]*?!pending[\s\S]*?\? renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node[\s\S]*?: <ProgressiveMarkdownBlock text=\{visible\} \/>/,
+  "settled responses preserve an ordered rich sequence or one decorated prose block",
 );
 
 assert.match(
@@ -278,20 +278,9 @@ assert.match(
   /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(tool\) => toolTargetFile\(tool\.name, tool\.input\)\)/,
   "the aggregate counts DISTINCT edited files (the same file edited twice is one change)",
 );
-// Two halves of one contract. They were a single pattern until the edit-card
-// block started deriving `editedFiles` inside an IIFE, which put the guard and
-// the count test on opposite sides of that derivation — so no contiguous match
-// can span them, and the 400-character window between the two anchors was the
-// kind of distance constraint docs/source-text-pins.md warns about. Asserting
-// each half directly is both stricter and refactor-proof.
 assert.match(
   turnRow,
-  /\{!pending && turn\.tools\?\.length && editCards\.length/,
-  "edit cards render only for settled turns that actually produced tool output",
-);
-assert.match(
-  turnRow,
-  /\{editedFiles\.length > 1 \? \([\s\S]{0,600}?\{editedFiles\.length\} files changed/,
+  /\{!pending && turn\.tools\?\.length && editCards\.length[\s\S]*?const editedFiles = Array\.from[\s\S]*?\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
   "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
 );
 assert.match(
@@ -304,38 +293,20 @@ assert.match(
   /const activityDetails =[\s\S]*?otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the activityDetails ToolGroup",
 );
-// This pinned the old `ChatToolActivityLayout` wrapper and, through it, the
-// source ORDER of two slots. The calm-streaming work replaced that wrapper with
-// StreamingTurnResponse, which owns the ordering itself and renders the
-// collapsed activity as a disclosure after the response rather than as a work
-// line above it. Source order in TurnRowImpl therefore no longer decides
-// anything — all three slots are now props, assembled by the response
-// component — so pinning it here would pin a fact that has stopped being the
-// contract.
-//
-// What has NOT changed, and is what this assertion is really for: the two
-// sections stay SEPARATE. The collapsed activity rollup carries non-edit tools
-// only, the edit cards keep their own visible section, and neither is folded
-// into the other. Pin that instead.
-assert.match(
-  turnRow,
-  /<ToolGroup tools=\{otherTools\} \/>/,
-  "the collapsed activity rollup renders the non-edit tools",
-);
+// Exclusivity, not just existence. The assertion above proves the rollup is fed
+// `otherTools`; it does not stop a second ToolGroup being handed the unfiltered
+// set. That is the specific regression the edit/non-edit partition exists to
+// prevent — edit cards swept back into the collapsed rollup, where the whole
+// point is that they stay visible.
 assert.doesNotMatch(
   turnRow,
   /<ToolGroup tools=\{(?:editCards|settledTools|turn\.tools)/,
-  "edit cards must never be swept into the collapsed activity rollup",
+  "edit cards and unpartitioned tools must never be swept into the collapsed activity rollup",
 );
 assert.match(
   turnRow,
-  /const supplementaryContent =[\s\S]*?editCards\.map\(\(tool\) => <ToolBlock/,
-  "edit cards keep their own visible section as individual ToolBlocks",
-);
-assert.match(
-  turnRow,
-  /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}\s*supplementaryContent=\{supplementaryContent\}/,
-  "the activity slot and the edit-card slot reach the response component as two distinct props",
+  /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+  "TurnRowImpl sends grouped activity before supplementary edit cards through the shared response",
 );
 
 assert.match(

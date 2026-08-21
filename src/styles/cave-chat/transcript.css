@@ -532,46 +532,6 @@
   gap: var(--space-1);
 }
 
-/* Released-reader response control (CHAT-D10-03). Renders as the last child of
-   the transcript scroller whenever the reader has detached from the bottom, so
-   it must stay in flow for `position: sticky` to resolve against that scroller
-   — a float or an absolute position would take it out of flow and strand it.
-   Right-alignment therefore comes from `margin-left: auto` on a block-level
-   flex box, never from `float`.
-
-   This replaced the square caret FAB (`.cave-scroll-bottom-button`) in the
-   calm-streaming work: the control now carries text rather than a numeric
-   badge, per the design spec, so it is sized by its content instead of a fixed
-   square. The mobile block below still owes it a real 44px touch target. */
-.cave-new-response-content {
-  position: sticky;
-  bottom: var(--space-4);
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: fit-content;
-  margin-left: auto;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
-  border-radius: var(--radius-pill);
-  background: var(--bg-raised);
-  color: var(--accent-presence);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease-decelerate),
-    background var(--duration-fast) var(--ease-decelerate);
-}
-
-.cave-new-response-content:hover {
-  border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
-}
-
 @media (max-width: 40rem) {
   /* Historical in-turn cards stack; the composer strip keeps its compact row. */
   .cave-followup-cards__grid {
@@ -660,6 +620,36 @@
   font-size: var(--text-sm);
   font-weight: 650;
   white-space: nowrap;
+}
+
+.cave-new-response-content {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 60;
+  display: flex;
+  min-height: var(--touch-target);
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0 var(--space-4);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  box-shadow: 0 2px 12px color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  color: var(--accent-presence);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.cave-new-response-content:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  box-shadow: 0 2px 18px color-mix(in oklch, var(--accent-presence) 35%, transparent);
 }
 
 @media (max-width: 720px) {
@@ -931,12 +921,6 @@
        padding — ~214px total — so hug just above it rather than floating high
        in the transcript. */
     bottom: calc(214px + var(--sai-bottom));
-    /* 44px touch target. This control is sized by its text, so the guarantee
-       is a minimum height plus enough horizontal padding to clear 44px of
-       tappable width — not the fixed square the old caret FAB used. */
-    min-height: var(--touch-target);
-    padding-inline: var(--space-4);
-    border-radius: var(--radius-pill);
     -webkit-tap-highlight-color: transparent;
   }
 
