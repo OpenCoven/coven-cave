@@ -43,11 +43,14 @@
       "errorDetailValueCharacters": 256,
       "errorMessageCharacters": 256,
       "idempotencyKeyCharacters": 36,
+      "instanceIdCharacters": 64,
       "maxPageSize": 100,
+      "releaseVersionCharacters": 64,
       "requestIdCharacters": 64,
       "revisionTokenCharacters": 128
     },
     "minimumClientVersion": "0.1.0",
+    "pairingRequired": true,
     "pairingScopes": [
       "chat:read",
       "chat:write",
@@ -86,6 +89,11 @@
       },
       "minimumClientVersion": "0.1.0",
       "requestId": "request-example-error"
+    },
+    "health": {
+      "instanceId": "00000000-0000-4000-8000-000000000000",
+      "pairingRequired": true,
+      "releaseVersion": "0.0.0"
     },
     "identity": {
       "displayName": "Example conversation",
