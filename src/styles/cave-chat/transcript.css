@@ -622,6 +622,36 @@
   white-space: nowrap;
 }
 
+.cave-new-response-content {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 60;
+  display: flex;
+  min-height: var(--touch-target);
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0 var(--space-4);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--bg-raised);
+  box-shadow: 0 2px 12px color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  color: var(--accent-presence);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.cave-new-response-content:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 70%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  box-shadow: 0 2px 18px color-mix(in oklch, var(--accent-presence) 35%, transparent);
+}
+
 @media (max-width: 720px) {
   .cave-chat-workbench-header,
   .cave-chat-linear-header {
@@ -885,15 +915,12 @@
     overflow-x: auto;
   }
 
-  .cave-scroll-bottom-button {
+  .cave-new-response-content {
     /* Sit just above the composer dock. The mobile composer still keeps the
        action strip, the ~84px textarea, one compact action footer, and dock
        padding — ~214px total — so hug just above it rather than floating high
        in the transcript. */
     bottom: calc(214px + var(--sai-bottom));
-    width: var(--touch-target);
-    height: var(--touch-target);
-    border-radius: var(--radius-pill);
     -webkit-tap-highlight-color: transparent;
   }
 
