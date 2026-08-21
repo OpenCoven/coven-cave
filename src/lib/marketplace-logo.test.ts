@@ -99,7 +99,7 @@ assert.match(componentSource, /data-marketplace-logo-kind=\{renderedKind\}/);
 assert.match(componentSource, /src=\{brandAssetPath\}/);
 assert.match(componentSource, /onError=\{\(\) => setFailedAssetPath\(brandAssetPath\)\}/);
 assert.match(componentSource, /marketplace-logo__monogram/);
-assert.match(componentSource, /\{ \.\.\.logo, svgPath: bundled\.svgPath \}/);
+assert.match(componentSource, /\{ \.\.\.logo, assetPath: bundled\.assetPath \}/);
 
 for (const file of [
   "src/components/marketplace/marketplace-card.tsx",
