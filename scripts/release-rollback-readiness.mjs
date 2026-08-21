@@ -17,9 +17,10 @@
 //   2. SHA256SUMS, so a rollback artifact can be checked before it is run
 //   3. latest.json whose version matches the baseline, whose platforms{} is
 //      non-empty, and whose every entry carries a url + signature
-//   4. every latest.json url still resolving to an asset on that release —
-//      a manifest pointing at deleted assets reads healthy and rolls nobody
-//      back
+//   4. every latest.json url still resolving to an asset on *that* release,
+//      matched by whole download path rather than filename — a manifest
+//      pointing at deleted assets, or at the previous cut's identically-named
+//      ones, reads healthy and rolls nobody back
 //
 // Fails closed. `--allow-missing-baseline` waives only case where no prior
 // stable release exists at all (the genuine first release of a repository);
@@ -104,12 +105,32 @@ export function collectBaselineArtifactProblems(release) {
   return problems;
 }
 
-function manifestAssetName(url) {
+/**
+ * Origin plus decoded path — the identity of one release asset.
+ *
+ * Comparing filenames alone would accept a manifest pointing at an
+ * identically-named asset on a *different* release, which is the exact shape a
+ * stale manifest takes: `generate-latest-json.mjs` writes
+ * `…/releases/download/<tag>/<name>`, so a manifest left over from the previous
+ * cut differs from a current one only in that `<tag>` segment. Comparing the
+ * whole path pins the release too. Decoding both sides means two spellings of
+ * the same url still compare equal.
+ */
+function assetIdentity(url) {
   try {
-    return decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
+    const parsed = new URL(url);
+    return `${parsed.origin}${decodeURIComponent(parsed.pathname)}`;
   } catch {
     return "";
   }
+}
+
+function assetIdentities(release) {
+  return new Set(
+    (Array.isArray(release?.assets) ? release.assets : [])
+      .map((asset) => assetIdentity(asset?.browser_download_url ?? ""))
+      .filter(Boolean),
+  );
 }
 
 /** Every way the baseline's updater manifest fails to describe a rollback. */
@@ -132,7 +153,7 @@ export function collectManifestProblems(manifest, baseline) {
     problems.push(`${UPDATER_MANIFEST_ASSET} lists no platforms, so no install can be rolled back`);
     return problems;
   }
-  const names = new Set(assetNames(baseline.release));
+  const identities = assetIdentities(baseline.release);
   for (const [platform, entry] of entries) {
     if (!entry || typeof entry !== "object") {
       problems.push(`${platform}: manifest entry is not an object`);
@@ -145,10 +166,10 @@ export function collectManifestProblems(manifest, baseline) {
     if (typeof entry.signature !== "string" || !entry.signature) {
       problems.push(`${platform}: manifest entry has no signature, so the updater would reject it`);
     }
-    const name = manifestAssetName(entry.url);
-    if (!name || !names.has(name)) {
+    const identity = assetIdentity(entry.url);
+    if (!identity || !identities.has(identity)) {
       problems.push(
-        `${platform}: manifest points at '${name || entry.url}', which is not an asset on ${baseline.tag}`,
+        `${platform}: manifest points at '${entry.url}', which is not an asset on ${baseline.tag}`,
       );
     }
   }

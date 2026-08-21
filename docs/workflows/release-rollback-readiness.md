@@ -23,7 +23,7 @@ target:
 | `SHA256SUMS` | a rollback artifact can be checked before it is run |
 | `latest.json` whose `version` matches the baseline | the updater serves the version it claims to |
 | every `platforms{}` entry carrying a `url` **and** a `signature` | the updater accepts what it is handed; an unsigned entry is rejected on the client |
-| every `platforms{}` url still resolving to an asset on the baseline release | a manifest pointing at deleted assets reads healthy and rolls nobody back |
+| every `platforms{}` url still resolving to an asset on the baseline release, matched by whole download path | a manifest pointing at deleted assets — or at the previous cut's identically-named ones — reads healthy and rolls nobody back |
 
 The job publishes the resulting record as step outputs (`baseline-tag`,
 `baseline-version`, `baseline-url`, `rollback-platforms`) and as a run summary,

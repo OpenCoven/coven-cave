@@ -154,8 +154,8 @@ test("rollback metadata must describe artifacts that still exist", () => {
   // mismatch is reported first and every stale url after it.
   assert.deepEqual(collectManifestProblems(manifest("0.3.6"), baseline), [
     "latest.json declares version '0.3.6', not the baseline's 0.3.7",
-    "darwin-aarch64: manifest points at 'CovenCave-v0.3.6-aarch64.app.tar.gz', which is not an asset on v0.3.7",
-    "windows-x86_64: manifest points at 'CovenCave_0.3.6_x64_en-US.msi', which is not an asset on v0.3.7",
+    "darwin-aarch64: manifest points at 'https://download.github.test/v0.3.6/CovenCave-v0.3.6-aarch64.app.tar.gz', which is not an asset on v0.3.7",
+    "windows-x86_64: manifest points at 'https://download.github.test/v0.3.6/CovenCave_0.3.6_x64_en-US.msi', which is not an asset on v0.3.7",
   ]);
   assert.deepEqual(collectManifestProblems(manifest("0.3.7", { platforms: {} }), baseline), [
     "latest.json lists no platforms, so no install can be rolled back",
@@ -185,11 +185,56 @@ test("rollback metadata must describe artifacts that still exist", () => {
       }),
       baseline,
     ),
-    ["linux-x86_64: manifest points at 'deleted.AppImage', which is not an asset on v0.3.7"],
+    [
+      "linux-x86_64: manifest points at 'https://download.github.test/v0.3.7/deleted.AppImage', which is not an asset on v0.3.7",
+    ],
   );
   assert.deepEqual(collectManifestProblems("not json", baseline), [
     "latest.json is not a JSON object",
   ]);
+});
+
+test("an asset name that exists on another release is not a rollback target", () => {
+  const baseline = { tag: "v0.3.7", version: "0.3.7", release: release("0.3.7") };
+  // The baseline really does publish an asset with this filename. What it does
+  // not publish is the one at this url: a manifest left behind by the previous
+  // cut points at the same names under the previous tag's path, so matching on
+  // the filename alone accepts a manifest that rolls users to v0.3.6 artifacts
+  // while claiming to be the v0.3.7 rollback target.
+  assert.deepEqual(
+    collectManifestProblems(
+      {
+        version: "0.3.7",
+        platforms: {
+          "darwin-aarch64": {
+            url: "https://download.github.test/v0.3.6/CovenCave-v0.3.7-aarch64.app.tar.gz",
+            signature: "dW50cnVzdGVk",
+          },
+        },
+      },
+      baseline,
+    ),
+    [
+      "darwin-aarch64: manifest points at 'https://download.github.test/v0.3.6/CovenCave-v0.3.7-aarch64.app.tar.gz', which is not an asset on v0.3.7",
+    ],
+  );
+
+  // A percent-encoded spelling of the same asset is the same asset.
+  assert.deepEqual(
+    collectManifestProblems(
+      {
+        version: "0.3.7",
+        platforms: {
+          "darwin-aarch64": {
+            url: "https://download.github.test/v0.3.7/CovenCave%2Dv0.3.7%2Daarch64.app.tar.gz",
+            signature: "dW50cnVzdGVk",
+          },
+        },
+      },
+      baseline,
+    ),
+    [],
+  );
 });
 
 test("a complete baseline reports the platforms a rollback can reach", async () => {
