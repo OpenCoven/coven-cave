@@ -41,6 +41,32 @@ const RESIZE_PUSH_DEBOUNCE_MS = 150;
 // that never settled, or `platform` never resolving off "unknown"). Surface a
 // Retry rather than spinning forever.
 const START_WATCHDOG_MS = 15_000;
+const DESKTOP_COMMAND_TIMEOUT_MS = 8_000;
+const DESKTOP_HEALTH_INTERVAL_MS = 5_000;
+
+export type TerminalHealth = "starting" | "healthy" | "recovering" | "failed";
+
+type PtyDiagnoseReport = {
+  exit: number | null;
+  bytes: number;
+  output: string;
+};
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function stripAnsi(text: string): string {
   return text
@@ -214,6 +240,7 @@ export function BottomTerminal({
   label,
   onUserInput,
   writerRef,
+  onHealthChange,
 }: {
   threadId: string;
   /** This pane has keyboard focus (drives refit + refocus on activation). */
@@ -232,6 +259,7 @@ export function BottomTerminal({
   onUserInput?: (data: string) => void;
   /** Exposes {@link TerminalWriterHandle} so a split host can mirror input in. */
   writerRef?: React.Ref<TerminalWriterHandle>;
+  onHealthChange?: (health: TerminalHealth) => void;
 }) {
   // Connection transitions are written into the terminal (and its polite
   // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
@@ -353,6 +381,12 @@ export function BottomTerminal({
   // transport effects when the user retries.
   const [startError, setStartError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [health, setHealth] = useState<TerminalHealth>("starting");
+  const onHealthChangeRef = useRef(onHealthChange);
+  onHealthChangeRef.current = onHealthChange;
+  useEffect(() => {
+    onHealthChangeRef.current?.(health);
+  }, [health]);
   // useTauriPlatform() resolves async and starts at "unknown". Desktop uses
   // Tauri IPC; browser dev/prod AND Tauri-mobile use the WebSocket PTY
   // bridge — the mobile webview is served by a remote Cave server, and the
@@ -457,6 +491,7 @@ export function BottomTerminal({
     if (ready || unavailable || startError) return;
     const id = setTimeout(() => {
       setStartError("The terminal didn't finish starting — the shell backend isn't responding.");
+      setHealth("failed");
       log("startup watchdog fired", { platform, retryNonce });
     }, START_WATCHDOG_MS);
     return () => clearTimeout(id);
@@ -469,6 +504,7 @@ export function BottomTerminal({
     setStartError(null);
     setUnavailable(false);
     setReady(false);
+    setHealth("recovering");
     setRetryNonce((n) => n + 1);
   }, []);
 
@@ -479,9 +515,11 @@ export function BottomTerminal({
     // Tauri-mobile use the WebSocket-bridge effect below instead.
     if (platform !== "desktop") return;
     setReady(false);
+    setHealth(retryNonce > 0 ? "recovering" : "starting");
 
     let disposed = false;
     let cleanup: (() => void) | null = null;
+    let healthTimer: ReturnType<typeof setInterval> | null = null;
 
     void (async () => {
      try {
@@ -495,6 +533,20 @@ export function BottomTerminal({
         return;
       }
       log("mount: tauri bridge ready");
+
+      const diagnostic = await withTimeout(
+        bridge.invoke<PtyDiagnoseReport>("pty_diagnose"),
+        DESKTOP_COMMAND_TIMEOUT_MS,
+        "PTY diagnostic",
+      );
+      if (
+        diagnostic.exit !== 0 ||
+        diagnostic.bytes === 0 ||
+        !diagnostic.output.includes("coven-cave-pty-ok")
+      ) {
+        throw new Error("PTY diagnostic did not return the expected shell output");
+      }
+      log("pty_diagnose: ok", { bytes: diagnostic.bytes });
 
       // Lazy-load + build xterm (only on the client + inside Tauri so SSR and
       // the in-browser dev path don't pull it in). Shared with the WS path.
@@ -577,22 +629,24 @@ export function BottomTerminal({
       if (!attachToRunning) {
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
         try {
-          await bridge.invoke("pty_start", {
-            options: {
-              thread_id: threadId,
-              project_root: projectRootRef.current ?? null,
-              cols: term.cols,
-              rows: term.rows,
-            },
-          });
+          await withTimeout(
+            bridge.invoke("pty_start", {
+              options: {
+                thread_id: threadId,
+                project_root: projectRootRef.current ?? null,
+                cols: term.cols,
+                rows: term.rows,
+              },
+            }),
+            DESKTOP_COMMAND_TIMEOUT_MS,
+            "Shell startup",
+          );
           log("pty_start: ok");
         } catch (err) {
           // Rare race: another mount beat us between pty_list and pty_start.
           if (!String(err).includes("already running")) {
             log("pty_start FAILED", err);
-            const failMsg = `\r\n\x1b[31mpty_start failed: ${String(err)}\x1b[0m\r\n`;
-            term.write(failMsg);
-            pushToMirror(new TextEncoder().encode(failMsg));
+            throw err;
           } else {
             log("pty_start: already running for this id (ok)");
           }
@@ -600,8 +654,23 @@ export function BottomTerminal({
       } else {
         log("pty_start: skipped, already in pty_list");
       }
-      if (!disposed) setReady(true);
+      if (!disposed) {
+        setReady(true);
+        setHealth("healthy");
+      }
       term.focus();
+
+      healthTimer = setInterval(() => {
+        if (disposed || stopped || !visibleRef.current) return;
+        void bridge.invoke<string[]>("pty_list").then((sessions) => {
+          if (disposed || stopped || sessions.includes(threadId)) return;
+          sendToPtyRef.current = null;
+          setReady(false);
+          setHealth("failed");
+          setStartError("The shell process stopped responding. Retry to start a fresh attachment.");
+          srAnnounce("Terminal shell stopped responding", "assertive");
+        }).catch((error) => log("pty health check FAILED", error));
+      }, DESKTOP_HEALTH_INTERVAL_MS);
 
       const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
         void bridge.invoke("pty_resize", {
@@ -636,6 +705,10 @@ export function BottomTerminal({
         pendingMirrorRef.current = "";
         termRef.current = null;
         term.dispose();
+        if (healthTimer) {
+          clearInterval(healthTimer);
+          healthTimer = null;
+        }
         // Deliberately NO pty_stop here. Unmount is usually a tab switch
         // (keepalive reparenting), and the fire-and-forget stop raced the
         // next mount's pty_list — losing the race attached the new terminal
@@ -653,6 +726,7 @@ export function BottomTerminal({
        if (!disposed) {
          log("desktop terminal startup FAILED", err);
          setStartError(`Terminal failed to start: ${String(err)}`);
+         setHealth("failed");
        }
      }
     })();
@@ -670,6 +744,7 @@ export function BottomTerminal({
     // bridge served by the Cave server the page was loaded from.
     if (platform !== "browser" && platform !== "ios" && platform !== "android") return;
     setReady(false);
+    setHealth(retryNonce > 0 ? "recovering" : "starting");
 
     let disposed = false;
     let cleanup: (() => void) | null = null;
@@ -742,12 +817,14 @@ export function BottomTerminal({
               }
               await bridge.reconnect();
               bridge.resize(term.cols, term.rows);
+              setHealth("healthy");
               return;
             } catch {
               /* next delay */
             }
           }
           srAnnounce("Terminal reconnect failed; press any key to retry", "assertive");
+          setHealth("failed");
         } finally {
           reconnecting = false;
         }
@@ -764,6 +841,7 @@ export function BottomTerminal({
           return;
         }
         srAnnounce("Terminal disconnected, reconnecting", "assertive");
+        setHealth("recovering");
         void attemptReconnect();
       });
 
@@ -775,6 +853,7 @@ export function BottomTerminal({
         term.write(failMsg);
         pushToMirror(new TextEncoder().encode(failMsg));
         if (!disposed) setReady(true); // clear the overlay so the error is visible
+        if (!disposed) setHealth("failed");
         return;
       }
       if (disposed) {
@@ -783,6 +862,7 @@ export function BottomTerminal({
         return;
       }
       setReady(true);
+      setHealth("healthy");
 
       const writeToPty = (out: string) => {
         if (!bridge.isOpen) {
@@ -869,6 +949,7 @@ export function BottomTerminal({
        if (!disposed) {
          log("ws terminal startup FAILED", err);
          setStartError(`Terminal failed to start: ${String(err)}`);
+         setHealth("failed");
        }
      }
     })();

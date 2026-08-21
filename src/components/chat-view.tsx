@@ -8993,12 +8993,14 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
-  const segments = segmentTurn(visible, turn.tools);
-  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((segment, index) =>
+  const bubbleSegments: MessageBubbleSegment[] | undefined = segmentTurn(
+    presentedProjection.visible,
+    turn.tools,
+  )?.map((segment, index) =>
     segment.kind === "text"
-      ? { kind: "text", text: segment.text }
+      ? { kind: "text" as const, text: segment.text }
       : {
-          kind: "block",
+          kind: "block" as const,
           key: `tools-${segment.tools[0]?.id ?? index}`,
           node: <ToolRuns tools={segment.tools} />,
         },

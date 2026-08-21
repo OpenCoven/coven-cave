@@ -109,7 +109,7 @@ test("charts derive from real model fields with honest empty state", () => {
   assert.match(
     src,
     /Activity heatmap · past \$\{heat\.windowDays\} days/,
-    "the selected 30, 90 or 365-day scope is visible",
+    "the selected 90, 180 or 365-day scope is visible",
   );
   assert.match(src, /barsByProject\(recentSessions\)/, "bars split by real project_root basenames");
   assert.match(src, /color-mix\(in oklch, var\(--accent-presence\) \$\{pct\}%, transparent\)/,

@@ -94,7 +94,7 @@ function heatLevel(count: number): number {
 }
 
 /**
- * GitHub-style heatmap with a 30, 90 or 365-day activity window. Sunday-first
+ * GitHub-style heatmap with a 90, 180 or 365-day activity window. Sunday-first
  * padding keeps columns aligned; padding and future cells are `outside`.
  */
 export function heatmapCells(
