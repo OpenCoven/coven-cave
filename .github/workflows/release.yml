@@ -143,6 +143,35 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: node scripts/release-promotion.mjs release
 
+  # Pausing a bad rollout is only a remedy if the previous version is still
+  # installable, so prove the rollback target before this one reaches anyone.
+  # Runs early to fail the cut before it spends build time; `updater-manifest`
+  # depends on it so no install is moved forward on an unprovable rollback.
+  rollback-readiness:
+    name: Verify rollback readiness
+    needs: authorize-release-promotion
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      baseline-tag: ${{ steps.readiness.outputs.baseline-tag }}
+      rollback-platforms: ${{ steps.readiness.outputs.rollback-platforms }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - id: readiness
+        name: Require a verified rollback target
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: node scripts/release-rollback-readiness.mjs
+
   daemon-package:
     name: Verify available Coven daemon package
     needs: authorize-release-promotion
@@ -1674,6 +1703,7 @@ jobs:
     needs:
       - build
       - source-version
+      - rollback-readiness
     permissions:
       contents: write
     runs-on: ubuntu-24.04
@@ -1686,7 +1716,11 @@ jobs:
     # cave-updater: also guard against build being *skipped* (upstream job
     # failure, e.g. daemon-package gate), which means no release was ever
     # created — gh release view would return "release not found" in that case.
-    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
+    # cave-ilh1h: `!cancelled()` waives the default "every dependency
+    # succeeded" rule for EVERY dependency, so rollback-readiness has to be
+    # named explicitly or a failed rollback gate would still publish the
+    # manifest that moves users forward.
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' && needs.build.result != 'skipped' && needs.rollback-readiness.result == 'success' && (github.event_name != 'workflow_dispatch' || !inputs.windows_diagnostics_only) }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
