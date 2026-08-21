@@ -45,9 +45,8 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { buildDiagramGuidePrompt, DIAGRAM_COMMAND_START } from "@/lib/diagram-command";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
-import { groupConsecutiveTools } from "@/lib/turn-segments";
+import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
 import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
-import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
   CHAT_OPEN_COVEN_EVENT,
@@ -8991,6 +8990,17 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
+  const segments = segmentTurn(visible, turn.tools);
+  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((segment, index) =>
+    segment.kind === "text"
+      ? { kind: "text", text: segment.text }
+      : {
+          kind: "block",
+          key: `tools-${segment.tools[0]?.id ?? index}`,
+          node: <ToolRuns tools={segment.tools} />,
+        },
+  );
+
   // Auto-detect renderable artifacts only after settlement. Streaming keeps the
   // ordinary markdown path until markers and fences are complete.
   const artifactCtx = { familiarId: familiar.id };
@@ -9073,7 +9083,7 @@ function TurnRowImpl({
                 )
               : null}
             {!pending && otherTools.length ? (
-              <ToolGroup tools={otherTools} durationMs={turn.durationMs} />
+              <ToolGroup tools={otherTools} />
             ) : null}
           </div>
         )

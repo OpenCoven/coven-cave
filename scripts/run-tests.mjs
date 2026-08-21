@@ -159,7 +159,15 @@ export const SUITES = {
     "src/components/chat-preview-card.test.tsx",
     "src/components/chat-preview-routing.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
+    "src/components/streaming-chat-wiring.test.ts",
+    "src/components/streaming-turn-response.test.tsx",
     "src/lib/chat-composer-prefs.test.ts",
+    "src/lib/chat-assistant-output.test.ts",
+    "src/lib/chat-result-markers.test.ts",
+    "src/lib/chat-tool-verification.test.ts",
+    "src/lib/streaming-markdown-blocks.test.ts",
+    "src/lib/streaming-turn-view-model.test.ts",
+    "src/lib/use-stick-to-bottom.test.ts",
     "src/lib/model-control-capabilities.test.ts",
     "src/lib/chat-transcript-groups.test.ts",
     "src/components/chat-view-chunk-coalescing.test.ts",
@@ -2123,6 +2131,7 @@ const VITEST_TESTS = new Set([
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
   "src/components/mobile-drawer-nav-list-focus.test.tsx",
+  "src/components/streaming-turn-response.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer
