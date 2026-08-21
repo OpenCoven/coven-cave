@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 
 import { caveHome } from "@/lib/coven-paths";
 
@@ -45,7 +46,11 @@ type ResolvedInstance = {
   instanceId: string;
   /** False while this id exists only in this process's memory. */
   persisted: boolean;
-  /** Epoch ms before which no further store attempt is made. */
+  /**
+   * Monotonic ms (`performance.now`) before which no further store attempt is
+   * made. Not epoch ms: this measures an elapsed interval, and the wall clock
+   * is not one — see UNPERSISTED_RETRY_INTERVAL_MS.
+   */
   retryAfter: number;
 };
 
@@ -72,11 +77,17 @@ function remember(file: string, instanceId: string, persisted: boolean): string 
  * published in the meantime: this one has already been served, and swapping it
  * mid-life is the churn being avoided. The two converge at the next restart,
  * when both read the same file.
+ *
+ * Measured on the monotonic clock, not the wall clock. `Date.now()` moves
+ * backwards on an NTP step, a VM snapshot restore, or a hand-corrected clock,
+ * and a deadline computed from it is then unreachable for the whole size of the
+ * jump — hours or days, during which nothing retries and the very failure this
+ * retry exists to end goes back to being permanent for that boot.
  */
 const UNPERSISTED_RETRY_INTERVAL_MS = 60_000;
 
 function healUnpersisted(entry: ResolvedInstance): void {
-  const now = Date.now();
+  const now = performance.now();
   if (now < entry.retryAfter) return;
   entry.retryAfter = now + UNPERSISTED_RETRY_INTERVAL_MS;
   entry.persisted = persistInstanceId(entry.file, entry.instanceId);

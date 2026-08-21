@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -151,6 +151,28 @@ test("stores the degraded id once the store becomes writable again", () => {
     rmSync(file, { recursive: true, force: true });
     assert.equal(clientV1InstanceId(), degraded);
     assert.equal(JSON.parse(readFileSync(file, "utf8")).instanceId, degraded);
+  });
+});
+
+test("measures the retry interval on a clock the system time cannot move", () => {
+  withCaveHome(() => {
+    const file = clientV1InstanceIdFile();
+    mkdirSync(file, { recursive: true });
+    const degraded = clientV1InstanceId();
+    clientV1InstanceId(); // the one unthrottled attempt; arms the interval
+    rmSync(file, { recursive: true, force: true });
+    const realNow = Date.now;
+    // An epoch-ms deadline is wrong in both directions: a wall clock that steps
+    // forward releases the throttle early, and one that steps back — an NTP
+    // correction, a restored snapshot — makes the deadline unreachable for the
+    // size of the jump, so the store is never retried for that whole window.
+    Date.now = () => realNow() + 60 * 60 * 1000;
+    try {
+      assert.equal(clientV1InstanceId(), degraded);
+    } finally {
+      Date.now = realNow;
+    }
+    assert.equal(existsSync(file), false);
   });
 });
 
