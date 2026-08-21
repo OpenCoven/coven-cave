@@ -165,27 +165,49 @@ assert.doesNotMatch(
   "automatic provisioning is unavailable with a user-scoped key and must not be reintroduced",
 );
 // The app and the widget need DIFFERENT profiles, and a build setting passed on
-// the xcodebuild command line applies to every target. Each target therefore
-// reads its own user-defined setting, declared in project.yml.
-for (const [variable, envVar] of [
-  ["CAVE_IOS_APP_PROFILE", "IOS_PROFILE_UUID_APP"],
-  ["CAVE_IOS_WIDGET_PROFILE", "IOS_PROFILE_UUID_WIDGET"],
+// the xcodebuild command line applies to every target. The specifier is
+// therefore a nested expansion keyed by each target's own bundle id, with one
+// setting supplied per bundle id.
+//
+// It has to live HERE and not in project.yml: the iOS job checks out the
+// release tag's commit, so a project.yml setting only applies to a release that
+// already carried it. Run 32508544547 proved that — the specifier was declared
+// on main, the archive ran from the v0.3.9 tree, it resolved empty, and
+// xcodebuild reported "requires a provisioning profile with the App Groups
+// feature" instead of a missing profile.
+assert.ok(
+  iosJob.includes(
+    "'PROVISIONING_PROFILE_SPECIFIER=$(CAVE_IOS_PROFILE_$(PRODUCT_BUNDLE_IDENTIFIER:identifier))'",
+  ),
+  "the iOS archive must key the provisioning profile off each target's bundle id, not the checked-out project.yml",
+);
+assert.doesNotMatch(
+  project,
+  /PROVISIONING_PROFILE_SPECIFIER/,
+  "project.yml must not carry the profile specifier; a tag-pinned checkout makes it silently empty",
+);
+for (const [setting, envVar] of [
+  ["CAVE_IOS_PROFILE_ai_opencoven_cave", "IOS_PROFILE_UUID_APP"],
+  ["CAVE_IOS_PROFILE_ai_opencoven_cave_widgets", "IOS_PROFILE_UUID_WIDGET"],
 ]) {
   assert.ok(
-    iosJob.includes(`${variable}="$${envVar}"`),
-    `the iOS archive must pass ${variable} from ${envVar} so each target signs with its own profile`,
-  );
-  assert.match(
-    project,
-    new RegExp(`PROVISIONING_PROFILE_SPECIFIER: \\$\\(${variable}\\)`),
-    `project.yml must route a target's provisioning profile through ${variable}`,
+    iosJob.includes(`${setting}="$${envVar}"`),
+    `the iOS archive must pass ${setting} from ${envVar} so each target signs with its own profile`,
   );
   assert.match(
     iosJob,
-    new RegExp(`${envVar}=\\$uuid|${envVar}_?`),
+    new RegExp(`${envVar}_?`),
     `the signing-asset step must export ${envVar}`,
   );
 }
+// Resolution is verified before the archive, so a specifier that goes empty
+// again fails in seconds naming the target instead of ~20 minutes later naming
+// a capability.
+assert.match(
+  iosJob,
+  /resolved provisioning profile/,
+  "the iOS archive must verify each target resolves to its expected profile before archiving",
+);
 assert.match(
   iosJob,
   /<string>manual<\/string>/,

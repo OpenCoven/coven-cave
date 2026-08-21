@@ -759,8 +759,18 @@ jobs:
           #
           # CODE_SIGN_STYLE and the identity are the same for both targets, so
           # they pass as ordinary build settings. The profile is NOT — the app
-          # and the widget need different ones — so each target reads its own
-          # user-defined setting, declared in apps/ios/CovenCave/project.yml.
+          # and the widget need different ones — and a setting given to
+          # xcodebuild applies to every target at once. So the specifier is a
+          # nested expansion keyed by each target's own bundle id, and CI
+          # supplies one setting per bundle id.
+          #
+          # This deliberately keeps the whole signing contract inside this
+          # workflow. The iOS job checks out the release tag's commit, so a
+          # setting written in apps/ios/CovenCave/project.yml only takes effect
+          # here if it already shipped in the tag — which is why a profile
+          # specifier declared there was empty at archive time and xcodebuild
+          # failed with a misleading "requires a provisioning profile with the
+          # App Groups feature".
           for required in IOS_PROFILE_UUID_APP IOS_PROFILE_UUID_WIDGET; do
             [ -n "${!required:-}" ] || {
               echo "::error::$required is required; the signing-asset step must run first"
@@ -771,9 +781,34 @@ jobs:
             CODE_SIGN_STYLE=Manual
             CODE_SIGN_IDENTITY="Apple Distribution"
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
-            CAVE_IOS_APP_PROFILE="$IOS_PROFILE_UUID_APP"
-            CAVE_IOS_WIDGET_PROFILE="$IOS_PROFILE_UUID_WIDGET"
+            'PROVISIONING_PROFILE_SPECIFIER=$(CAVE_IOS_PROFILE_$(PRODUCT_BUNDLE_IDENTIFIER:identifier))'
+            CAVE_IOS_PROFILE_ai_opencoven_cave="$IOS_PROFILE_UUID_APP"
+            CAVE_IOS_PROFILE_ai_opencoven_cave_widgets="$IOS_PROFILE_UUID_WIDGET"
           )
+          # Prove each target resolves to its own profile before archiving. An
+          # unresolved specifier costs ~20 minutes and reports a missing
+          # capability rather than a missing profile; this fails in seconds and
+          # names the target.
+          for pair in "CovenCave:$IOS_PROFILE_UUID_APP" "CovenCaveWidgets:$IOS_PROFILE_UUID_WIDGET"; do
+            target="${pair%%:*}"
+            expected="${pair#*:}"
+            resolved="$(xcodebuild \
+              -project CovenCave.xcodeproj \
+              -target "$target" \
+              -configuration Release \
+              -showBuildSettings \
+              "${SIGNING_ARGS[@]}" \
+              | awk -F' = ' \
+                '/^[[:space:]]+PROVISIONING_PROFILE_SPECIFIER = /{value=$2} END{print value}')" || {
+              echo "::error::Could not read build settings for $target"
+              exit 1
+            }
+            [ "$resolved" = "$expected" ] || {
+              echo "::error::$target resolved provisioning profile '$resolved', expected '$expected'"
+              exit 1
+            }
+            echo "$target signs with provisioning profile $expected"
+          done
           cat > "$EXPORT_OPTIONS_PATH" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
