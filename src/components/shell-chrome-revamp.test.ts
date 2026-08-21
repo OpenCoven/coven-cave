@@ -123,10 +123,20 @@ assert.match(
   /\.shell-top:has\(\.notification-bell__popover\) \{[^}]*z-index: 140;/,
   "an open notification dropdown lifts its title-bar stacking context above shell content",
 );
+// The chrome refresh (#4791) replaced the hairline separator between the
+// identity strip and the toolbar with a seamless translucent band: the two rows
+// now read as one connected surface, so the separation is carried by the glass
+// treatment rather than a border. Pin both halves — the translucent backdrop and
+// the explicit border-bottom: 0 — so neither silently reverts to opaque chrome.
 assert.match(
   desktopChrome,
-  /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,500}?border-bottom: 1px solid color-mix/,
-  "native macOS separates the centered identity strip from the functional toolbar with a quiet hairline",
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,500}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+  "native macOS renders the identity strip as a translucent glass band",
+);
+assert.match(
+  desktopChrome,
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,500}?border-bottom: 0;/,
+  "the identity strip carries no hairline — it reads as one surface with the toolbar",
 );
 
 // ── 3. Bottom status bar ─────────────────────────────────────────────────────
