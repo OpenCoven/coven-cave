@@ -1,4 +1,7 @@
-import { NextResponse } from "next/server";
+// "next/server.js", not "next/server": connection-route-behavior.test.ts imports
+// this handler directly under raw Node, where the extensionless specifier does
+// not resolve. 25 other routes already carry the .js form for the same reason.
+import { NextResponse } from "next/server.js";
 import { XApiError } from "@/lib/x-api";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { getXClientId } from "@/lib/server/x-app-config";

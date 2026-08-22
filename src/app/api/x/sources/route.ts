@@ -1,4 +1,8 @@
-import { NextResponse } from "next/server";
+// "next/server.js", not "next/server": sources-route-behavior.test.ts imports
+// these handlers directly under raw Node, where the extensionless specifier
+// does not resolve. 25 other routes already carry the .js form for the same
+// reason.
+import { NextResponse } from "next/server.js";
 import { MAX_X_JSON_BYTES, XApiError, type XScope } from "@/lib/x-api";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
