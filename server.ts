@@ -454,7 +454,19 @@ function removeStandaloneClientV1DiscoveryRecord(nonce: string): boolean {
 
 function cleanupStandaloneClientV1Discovery(): void {
   if (!clientV1DiscoveryPublished) return;
-  removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+  // This runs first inside the SIGINT/SIGTERM handler, so a throw here escapes
+  // the signal handler and kills the process before `terminatePtySessions()`
+  // and `server.close()` — stranding PTY children and leaving behind the very
+  // record this function exists to remove. The owner guard could not throw on
+  // win32 before it learned to read a DACL; now it can, and it does so by
+  // spawning a subprocess at the exact moment the OS is tearing the session
+  // down. Refusing to unlink a record we cannot verify is still correct — but
+  // it is a reason to skip the unlink, never a reason to abort the shutdown.
+  try {
+    removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+  } catch (error) {
+    console.error("[cave] failed to remove client-v1 discovery record", error);
+  }
 }
 
 // Local-peer stamp (cave-vn2r): only this file sees the raw TCP socket, so

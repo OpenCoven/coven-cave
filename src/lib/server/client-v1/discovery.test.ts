@@ -309,6 +309,27 @@ test("server lifecycle publishes only from listener readiness and performs nonce
   );
   assert.match(source, /process\.once\("SIGINT"/);
   assert.match(source, /process\.once\("SIGTERM"/);
+
+  // The cleanup runs first inside the signal handler, so an ownership refusal
+  // there would escape it and kill the process before PTY children are
+  // terminated and the listener is closed — leaving behind the record this is
+  // supposed to remove. The guard could not throw on win32 until it learned to
+  // read a DACL; the cleanup must absorb it.
+  const cleanup =
+    /function cleanupStandaloneClientV1Discovery\(\): void \{[\s\S]*?\n\}/.exec(source);
+  assert.ok(cleanup, "server.ts must define cleanupStandaloneClientV1Discovery");
+  assert.match(
+    cleanup![0],
+    /try \{\s*removeStandaloneClientV1DiscoveryRecord\(CLIENT_V1_DISCOVERY_NONCE\);\s*\} catch/,
+    "an ownership refusal must skip the unlink, never abort shutdown",
+  );
+  const shutdown = /function shutdownHttpServer\(\): void \{[\s\S]*?\n\}/.exec(source);
+  assert.ok(shutdown, "server.ts must define shutdownHttpServer");
+  assert.ok(
+    shutdown![0].indexOf("cleanupStandaloneClientV1Discovery()")
+      < shutdown![0].indexOf("terminatePtySessions()"),
+    "cleanup runs before PTY teardown, which is why it must not be able to throw",
+  );
 });
 
 test("the standalone server enforces ownership on Windows with this module's script", async () => {

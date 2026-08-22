@@ -316,7 +316,11 @@ function removeStandaloneClientV1DiscoveryRecord(nonce) {
 }
 function cleanupStandaloneClientV1Discovery() {
   if (!clientV1DiscoveryPublished) return;
-  removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+  try {
+    removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+  } catch (error) {
+    console.error("[cave] failed to remove client-v1 discovery record", error);
+  }
 }
 const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
 const LOCAL_PEER_SECRET = randomUUID();
