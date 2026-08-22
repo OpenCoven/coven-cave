@@ -121,14 +121,14 @@ are reachable on the eight routes that exist.
 ## Reaching the API at all
 
 Two gates sit in front of every route here, and neither of them is in the route
-file. Both answer in a **different shape from the envelope above** — the proxy
-predates this surface and returns `{"ok": false, "error": "<reason>"}`. A client
-that assumes every response parses as a Client v1 envelope will fail to read its
-own rejection. Branch on the HTTP status first.
+file. Both answer in a **different shape from the envelope above**: the proxy
+returns `{"ok": false, "error": "<reason>"}`. A client that assumes every
+response parses as a Client v1 envelope will fail to read its own rejection.
+Branch on the HTTP status first.
 
 ### The loopback stamp
 
-`server.ts` (and its compiled `server.mjs`) deletes any client-supplied
+`server.ts` (`server.mjs` in a built app) deletes any client-supplied
 `x-coven-cave-local-peer` header and re-stamps it with a per-boot secret only
 for connections whose TCP peer it verified as direct, unforwarded loopback. The
 secret never leaves the process. A request carrying a matching value therefore
@@ -152,7 +152,8 @@ Two of the four public routes re-check the stamp in the route itself
 `runtime.authenticator.isTrustedLoopback`) and answer `unauthorized` in the
 envelope when it fails. `GET /pairing/requests/:id` does not: it takes its
 locality entirely from the proxy branch, and its own 401s are about the pairing
-secret. `GET /health` checks nothing at all.
+secret. `GET /health` performs no check of its own either — it is local because
+the proxy branch above says so, and for no other reason.
 
 ### Body and content-type rules on the public routes
 
