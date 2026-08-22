@@ -368,15 +368,30 @@ test("client-v1 resource ingress refuses a request that presents no bearer", asy
       referer: `${ORIGIN}/`,
     };
 
-    // Resource ingress skips the sidecar token, so without this the only thing
-    // between a loopback process and the handler is the handler's own
-    // requireScope call.
-    for (const route of [
+    const resourceRoutes = [
       "/api/client/v1/conversations",
       "/api/client/v1/messages/send",
       "/api/client/v1/runs/run-1/stream",
       "/api/client/v1/github/actions",
-    ]) {
+    ];
+
+    // The gate below only exists for RESOURCE ingress, and every assertion in
+    // this test would still pass if these paths stopped classifying that way:
+    // a path that classifies null falls through to the ordinary sidecar-token
+    // gate, whose refusal is byte-identical — same 401, same
+    // {ok:false,error:"unauthorized"} — so the whole test would go green while
+    // never reaching the code it is about. Measured, not hypothetical: emptying
+    // CLIENT_V1_AUTHENTICATED_PATHS turns three tests in this file red and
+    // leaves this one passing. State the precondition so that stops being a
+    // silent pass (cave-d1sjz).
+    for (const route of resourceRoutes) {
+      assert.equal(clientV1IngressKind(route), "authenticated", route);
+    }
+
+    // Resource ingress skips the sidecar token, so without this the only thing
+    // between a loopback process and the handler is the handler's own
+    // requireScope call.
+    for (const route of resourceRoutes) {
       await assertProxyError(
         await proxy(proxyRequest(route, { headers })),
         401,
