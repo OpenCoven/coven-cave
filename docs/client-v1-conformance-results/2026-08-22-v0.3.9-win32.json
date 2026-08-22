@@ -5,9 +5,9 @@
     "OpenCoven/coven-cave#4838"
   ],
   "scope": "cave-only",
-  "ranAt": "2026-08-22T19:10:42.207Z",
+  "ranAt": "2026-08-22T20:28:01.705Z",
   "caveVersion": "0.3.9",
-  "commit": "63f140139ab278265bc39cb3ee7b8f4f77542302",
+  "commit": "12ed1f735d11fb5c9e3416b263c92dec13dc32c9",
   "platform": "win32-x64",
   "nodeVersion": "v24.18.0",
   "includeTtl": true,
@@ -46,8 +46,8 @@
     }
   ],
   "summary": {
-    "total": 91,
-    "passed": 91,
+    "total": 93,
+    "passed": 93,
     "failed": 0,
     "skipped": 0,
     "status": "passed"
@@ -444,6 +444,11 @@
       "detail": "the abandoned branch turn b-x1 must be absent"
     },
     {
+      "id": "reads.messages-values",
+      "result": "pass",
+      "detail": "text, role, parentId, createdAt and both counts, field by field against the fixture"
+    },
+    {
       "id": "reads.messages-paging",
       "result": "pass",
       "detail": ""
@@ -451,7 +456,7 @@
     {
       "id": "reads.messages-counts-not-contents",
       "result": "pass",
-      "detail": ""
+      "detail": "b-a1 carries two tool calls and one attachment; the counts must say so and the contents must not appear"
     },
     {
       "id": "reads.messages-reconcile-required",
@@ -491,7 +496,7 @@
     {
       "id": "revocation.bearer-refused-after",
       "result": "pass",
-      "detail": ""
+      "detail": "all five canonical reads"
     },
     {
       "id": "revocation.is-idempotent",
@@ -507,6 +512,11 @@
       "id": "revocation.tombstone-persists",
       "result": "pass",
       "detail": ""
+    },
+    {
+      "id": "harness.assertion-coverage",
+      "result": "pass",
+      "detail": "every declared assertion recorded exactly once (--include-ttl true)"
     }
   ]
 }

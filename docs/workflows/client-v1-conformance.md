@@ -150,9 +150,17 @@ the claim.
 
 The committed record for `cave-2hjtv` is
 [`2026-08-22-v0.3.9-win32.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32.json):
-**91 passed, 0 failed, 0 skipped** at `63f14013` on `win32-x64`, run with
+**93 passed, 0 failed, 0 skipped** at `12ed1f73` on `win32-x64`, run with
 `--include-ttl`, so `pairing.ttl-poll-expired` and `pairing.ttl-exchange-expired`
 are recorded as passes rather than skips.
+
+⚠️ **Take the record from a clean tree, and commit the code before the record.**
+The first version of this file named `63f14013` — the *base* commit. The run had
+been taken from a dirty checkout, so `git rev-parse HEAD` answered the commit
+before the harness existed: nothing in the record was reproducible from the
+commit it named. The order that works is code first, then run, then commit the
+record on its own, so the commit the record names really is the harness that
+produced it and the only difference is the artifact itself.
 
 Commit the record. A conformance claim whose evidence is a terminal scrollback
 is an assertion, not a record.
