@@ -20,7 +20,11 @@ import {
   CLIENT_V1_PUBLIC_INGRESS,
   LOCAL_PEER_HEADER,
   TAILNET_PEER_HEADER,
+  TOKEN_HEADER,
   clientV1IngressKind,
+  isClientV1AdminPath,
+  isClientV1Path,
+  isRefusedClientV1Path,
 } from "../../../proxy-helpers.ts";
 
 const ACTIVE_CREDENTIAL: ClientV1CredentialRecord = {
@@ -254,6 +258,129 @@ test("proxy public ingress follows the contract's public routes", () => {
   }
 });
 
+/**
+ * Client v1 request-targets carrying a percent-escape or a backslash
+ * (cave-f1xki, #4854).
+ *
+ * The list this file shipped without: every `clientV1IngressKind` case here was
+ * a clean path, which is precisely why the escaped-path hole reached a
+ * production build unnoticed. Both segment positions are represented, because
+ * they behave differently and only one of them was ever exploitable: Next
+ * matches a STATIC segment against raw bytes (so `healt%68` is a 404), while a
+ * DYNAMIC segment is percent-decoded for `[id]` matching before the route sees
+ * it — so a `%` there routed while middleware still read the raw `%` and
+ * classified the request as not-client-v1.
+ */
+const ESCAPED_CLIENT_V1_PATHS = [
+  // The measured exploit shape: `%31` decodes to the id's own trailing `1`.
+  "/api/client/v1/pairing/requests/018f4f1a-77c2-7a31-8a15-55a25aaba00%31",
+  // Double-encoded. Next decodes exactly ONCE (measured: the route received a
+  // literal `%31`), so this is the shape a decode-twice "normalization" fix
+  // would have mishandled — the `%252e` class the refusal avoids entirely.
+  "/api/client/v1/pairing/requests/018f4f1a-77c2-7a31-8a15-55a25aaba0%2531",
+  // Encoded separator, both cases. Measured: Next routes this as ONE `[id]`
+  // segment, so a fix that decoded the whole pathname would split it into two,
+  // fail the single-segment public pattern, and go on returning null — the
+  // same hole with more code.
+  "/api/client/v1/pairing/requests/aaa%2Fbbb",
+  "/api/client/v1/pairing/requests/aaa%2fbbb",
+  // Encoded dot-dot, both cases. Note the WHATWG URL parser resolves these
+  // itself, so proxy() never sees one; the classifier must still refuse the
+  // string, because that resolution is a property of the caller's parser and
+  // not of this function.
+  "/api/client/v1/pairing/requests/%2e%2e/exchange",
+  "/api/client/v1/pairing/requests/%2E%2E/exchange",
+  // Encoded backslash — NOT folded to `/` by the URL parser, unlike a literal
+  // one, so this really can arrive here.
+  "/api/client/v1/pairing/requests/aaa%5Cbbb",
+  "/api/client/v1/pairing/requests/aaa%5cbbb",
+  // Not even well-formed escapes. Nothing may decode these to decide.
+  "/api/client/v1/pairing/requests/aaa%zz",
+  "/api/client/v1/pairing/requests/aaa%",
+  // Static segments: a 404 at the router, but the classifier is not the thing
+  // that says so and must not be relied on to.
+  "/api/client/v1/healt%68",
+  "/api/client/v1/health%20",
+  "/api/client/v1/pairing/request%73",
+  // Literal backslashes. The URL parser folds these to `/` for a special
+  // scheme, so proxy() sees the slash form — which is exactly why the check
+  // cannot assume someone else already folded them.
+  "/api/client/v1/pairing/requests/aaa\\bbb",
+  "/api\\client\\v1\\health",
+  "/api/client/v1\\health",
+  // The admin family is inside the refusal too, because the refusal is scoped
+  // by prefix rather than by the two ingress lists — admin classifies null by
+  // design and would otherwise have kept the hole after the classifier was
+  // fixed.
+  "/api/client/v1/admin/credential%73",
+  "/api/client/v1/admin/credentials/aaa%2Fbbb",
+  "/api/client/v1/admin/pairing-requests/aaa%34bbb/decision",
+  "/api/client/v1/admin\\credentials",
+];
+
+test("client-v1 request-targets carrying an escape are refused, not classified", () => {
+  for (const pathname of ESCAPED_CLIENT_V1_PATHS) {
+    assert.equal(isClientV1Path(pathname), true, pathname);
+    assert.equal(isRefusedClientV1Path(pathname), true, pathname);
+    // Second layer, and it must stay the SAFE direction: an escaped id already
+    // matches the `[^/]+` id pattern by raw bytes, so a classifier that stopped
+    // bailing would promote these into the credential-free public set.
+    assert.equal(clientV1IngressKind(pathname), null, pathname);
+  }
+});
+
+test("the client-v1 escape refusal is scoped to the client-v1 path prefix", () => {
+  // An escape outside this surface is none of the refusal's business — every
+  // other API family accepts encoded path segments, and widening the refusal to
+  // /api/ would break them.
+  for (const pathname of [
+    "/api/chat/conversation/aaa%2Fbbb",
+    "/api/client/v10/health%20",
+    "/decoy/api/client/v1/pairing/requests/aaa%34bbb",
+    "/client/v1/pairing/requests/aaa%34bbb",
+  ]) {
+    assert.equal(isClientV1Path(pathname), false, pathname);
+    assert.equal(isRefusedClientV1Path(pathname), false, pathname);
+  }
+
+  // And a clean client-v1 path is inside the surface without being refused —
+  // otherwise the refusal would take the whole family down with it.
+  for (const pathname of [
+    "/api/client/v1",
+    "/api/client/v1/health",
+    "/api/client/v1/pairing/requests/018f4f1a-77c2-7a31-8a15-55a25aaba001",
+    "/api/client/v1/admin/credentials",
+  ]) {
+    assert.equal(isClientV1Path(pathname), true, pathname);
+    assert.equal(isRefusedClientV1Path(pathname), false, pathname);
+  }
+});
+
+test("the client-v1 admin family is recognized as its own locality-bound set", () => {
+  for (const pathname of [
+    "/api/client/v1/admin",
+    "/api/client/v1/admin/credentials",
+    "/api/client/v1/admin/credentials/018f4f1a-77c2-7a31-8a15-55a25aaba002",
+    "/api/client/v1/admin/pairing-requests",
+    "/api/client/v1/admin/pairing-requests/018f4f1a-77c2-7a31-8a15-55a25aaba001/decision",
+    "/api/client/v1/admin\\credentials",
+  ]) {
+    assert.equal(isClientV1AdminPath(pathname), true, pathname);
+    // Bound, never excused: the admin family must not also become a client-v1
+    // INGRESS, because matching there skips the mobile-access gate and returns
+    // before the sidecar-token block that is admin's actual protection.
+    assert.equal(clientV1IngressKind(pathname), null, pathname);
+  }
+  for (const pathname of [
+    "/api/client/v1/health",
+    "/api/client/v1/administrivia",
+    "/api/client/v1/pairing/requests/admin",
+    "/api/admin/credentials",
+  ]) {
+    assert.equal(isClientV1AdminPath(pathname), false, pathname);
+  }
+});
+
 const ENV_KEYS = [
   "COVEN_CAVE_ACCESS_TOKEN",
   "COVEN_CAVE_AUTH_TOKEN",
@@ -424,6 +551,234 @@ test("client-v1 admin stays on the private authenticated boundary", async () => 
       },
     ));
     assert.equal(passedThrough(authenticated), true);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("a percent-escaped client-v1 target is refused before it can slip the ingress rules", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_AUTH_TOKEN: "configured-sidecar-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const id = "018f4f1a-77c2-7a31-8a15-55a25aaba001";
+    const escapedId = "018f4f1a-77c2-7a31-8a15-55a25aaba00%31";
+    // Remote ingress as Tailscale Serve produces it: no direct-loopback stamp,
+    // and a credential that satisfies the ordinary gate. This is the caller the
+    // 403 exists to refuse, and the exact caller that reached the handler
+    // before this fix (measured against a production build: the plain path
+    // answered 403, the escaped one answered 200 with the pairing record).
+    const remote = { [TOKEN_HEADER]: "configured-sidecar-secret" };
+    const local = { [LOCAL_PEER_HEADER]: "loopback-secret" };
+
+    const plainRemote = await proxy(proxyRequest(
+      `/api/client/v1/pairing/requests/${id}`,
+      { headers: remote },
+    ));
+    await assertProxyError(
+      plainRemote,
+      403,
+      "forbidden peer: client v1 requires direct loopback",
+    );
+
+    const escapedRemote = await proxy(proxyRequest(
+      `/api/client/v1/pairing/requests/${escapedId}`,
+      { headers: remote },
+    ));
+    await assertProxyError(escapedRemote, 400, "invalid client v1 path");
+
+    // Refused for the local caller too. The point is not "remote callers are
+    // refused" — it is that no request on an escaped client-v1 target is ever
+    // handed to a route, so no future route can inherit the hole.
+    const escapedLocal = await proxy(proxyRequest(
+      `/api/client/v1/pairing/requests/${escapedId}`,
+      { headers: { ...local, origin: ORIGIN, referer: `${ORIGIN}/` } },
+    ));
+    await assertProxyError(escapedLocal, 400, "invalid client v1 path");
+
+    // Every escaped target the URL parser leaves intact, across both segment
+    // positions, the admin family, and malformed escapes.
+    for (const pathname of ESCAPED_CLIENT_V1_PATHS) {
+      const request = proxyRequest(pathname, {
+        headers: { ...local, origin: ORIGIN, referer: `${ORIGIN}/` },
+      });
+      // The parser folds a literal `\` to `/` and resolves `%2e%2e`, so those
+      // entries arrive here as clean paths. Only assert about the ones that
+      // still carry an escape by the time proxy() reads them.
+      if (!isRefusedClientV1Path(request.nextUrl.pathname)) continue;
+      const response = await proxy(request);
+      assert.equal(passedThrough(response), false, pathname);
+      await assertProxyError(response, 400, "invalid client v1 path");
+    }
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("the client-v1 body rules cannot be shed by escaping the path", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const baseHeaders = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      "content-type": "application/json",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
+    const id = "018f4f1a-77c2-7a31-8a15-55a25aaba001";
+    const escapedId = "018f4f1a-77c2-7a31-8a15-55a25aaba00%31";
+
+    // The loopback gate was not the only control lost when an escaped path
+    // classified null: clientV1RequestBodyError hangs off the same
+    // classification, so the 411/413 rules and the 64 KiB cap went with it.
+    // Measured against a production build before the fix, with the sidecar
+    // token: chunked was 400 on the plain path and reached the route on the
+    // escaped one; a 70 KB body was 413 on the plain path and reached the route
+    // on the escaped one.
+    const shapes: {
+      label: string;
+      headers: Record<string, string>;
+      status: number;
+      error: string;
+    }[] = [
+      { label: "no content-length", headers: {}, status: 411, error: "content-length required" },
+      {
+        label: "chunked",
+        headers: { "content-length": "1", "transfer-encoding": "chunked" },
+        status: 400,
+        error: "invalid content-length",
+      },
+      {
+        label: "over the 64 KiB cap",
+        headers: { "content-length": String(64 * 1024 + 1) },
+        status: 413,
+        error: "request body too large",
+      },
+    ];
+
+    for (const shape of shapes) {
+      const plain = await proxy(proxyRequest(
+        `/api/client/v1/pairing/requests/${id}/exchange`,
+        { method: "POST", headers: { ...baseHeaders, ...shape.headers } },
+      ));
+      await assertProxyError(plain, shape.status, shape.error);
+
+      const escaped = await proxy(proxyRequest(
+        `/api/client/v1/pairing/requests/${escapedId}/exchange`,
+        { method: "POST", headers: { ...baseHeaders, ...shape.headers } },
+      ));
+      assert.equal(passedThrough(escaped), false, shape.label);
+      // Refused earlier than the body rule rather than by it: the target is
+      // rejected outright, so the body never becomes a question. What must
+      // never happen again is the third answer — passing through.
+      await assertProxyError(escaped, 400, "invalid client v1 path");
+    }
+
+    // A well-formed body on the escaped path is refused too, so the refusal is
+    // about the target and not about the body being wrong.
+    const wellFormed = await proxy(proxyRequest(
+      `/api/client/v1/pairing/requests/${escapedId}/exchange`,
+      { method: "POST", headers: { ...baseHeaders, "content-length": "0" } },
+    ));
+    await assertProxyError(wellFormed, 400, "invalid client v1 path");
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 percent-encoding stays legal in the query string", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+
+    // The refusal reads nextUrl.pathname, and it has to stay there: query
+    // values are percent-encoded by every correct client, and refusing on the
+    // whole URL would break the surface it is meant to protect.
+    const response = await proxy(proxyRequest(
+      "/api/client/v1/health?probe=a%20b%2Fc",
+      {
+        headers: {
+          [LOCAL_PEER_HEADER]: "loopback-secret",
+          origin: ORIGIN,
+          referer: `${ORIGIN}/`,
+        },
+      },
+    ));
+
+    assert.equal(passedThrough(response), true);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 admin requires the listener's direct-loopback peer", async () => {
+  try {
+    // No COVEN_CAVE_ACCESS_TOKEN: with mobile access armed, its gate answers
+    // an unauthenticated admin request first (401) and the peer gate under test
+    // is never reached. The sibling test above covers that arrangement.
+    setProxyEnv({
+      COVEN_CAVE_AUTH_TOKEN: "configured-sidecar-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+
+    // #4843: a forwarded caller holding the sidecar token and sending no
+    // Origin/Referer — a native client rather than a browser — could read the
+    // credential list and the pending-pairing queue from off the machine. The
+    // mutation CSRF check never applied to it, because reads do not take one.
+    for (const pathname of [
+      "/api/client/v1/admin/credentials",
+      "/api/client/v1/admin/pairing-requests",
+      "/api/client/v1/admin/credentials/018f4f1a-77c2-7a31-8a15-55a25aaba002",
+      "/api/client/v1/admin/pairing-requests/018f4f1a-77c2-7a31-8a15-55a25aaba001/decision",
+    ]) {
+      const remote = await proxy(proxyRequest(pathname, {
+        headers: { [TOKEN_HEADER]: "configured-sidecar-secret" },
+      }));
+      assert.equal(passedThrough(remote), false, pathname);
+      await assertProxyError(
+        remote,
+        403,
+        "forbidden peer: client v1 admin requires direct loopback",
+      );
+    }
+
+    // A caller with no stamp and no credential is refused by the same gate, so
+    // the peer requirement does not depend on which credential is presented.
+    const unstamped = await proxy(proxyRequest("/api/client/v1/admin/credentials"));
+    await assertProxyError(
+      unstamped,
+      403,
+      "forbidden peer: client v1 admin requires direct loopback",
+    );
+
+    // Bound, not excused. The stamped caller reaches the ORDINARY gate — it is
+    // still refused without a credential, because admin must never take the
+    // client-v1 ingress branch's pass-through.
+    const stampedTokenless = await proxy(proxyRequest("/api/client/v1/admin/credentials", {
+      headers: {
+        [LOCAL_PEER_HEADER]: "loopback-secret",
+        origin: ORIGIN,
+        referer: `${ORIGIN}/`,
+      },
+    }));
+    assert.equal(passedThrough(stampedTokenless), false);
+    assert.equal(stampedTokenless.status, 401);
+
+    // And the real administrator — on the machine, holding the credential —
+    // still gets through to requireClientV1Admin.
+    const stampedAuthenticated = await proxy(proxyRequest("/api/client/v1/admin/credentials", {
+      headers: {
+        [LOCAL_PEER_HEADER]: "loopback-secret",
+        [TOKEN_HEADER]: "configured-sidecar-secret",
+        origin: ORIGIN,
+        referer: `${ORIGIN}/`,
+      },
+    }));
+    assert.equal(passedThrough(stampedAuthenticated), true);
   } finally {
     restoreProxyEnv();
   }

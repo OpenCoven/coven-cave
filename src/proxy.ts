@@ -28,6 +28,8 @@ import {
   verifiedTailnetNode,
   requiresPasskeyPresence,
   clientV1IngressKind,
+  isClientV1AdminPath,
+  isRefusedClientV1Path,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
@@ -312,6 +314,17 @@ export async function proxy(req: NextRequest) {
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
+  // A Client v1 request-target carrying a percent-escape or a backslash is
+  // refused before anything is classified (cave-f1xki, #4854). It cannot be a
+  // real client — every segment of this surface is a fixed literal or a UUID —
+  // and leaving it to the classifier is exactly how it slipped the gate: the
+  // classifier answered null, so the direct-loopback branch and the
+  // 411/413/64 KiB body rules below, which both hang off a non-null answer,
+  // never ran. See isRefusedClientV1Path for why this refuses rather than
+  // normalizes.
+  if (isRefusedClientV1Path(req.nextUrl.pathname)) {
+    return jsonError(400, "invalid client v1 path");
+  }
   const clientV1Ingress = clientV1IngressKind(req.nextUrl.pathname);
   const mobileRes = clientV1Ingress
     ? null
@@ -461,6 +474,27 @@ export async function proxy(req: NextRequest) {
   const clientV1BodyError = clientV1RequestBodyError(req, clientV1Ingress);
   if (clientV1BodyError) {
     return jsonError(clientV1BodyError.status, clientV1BodyError.error);
+  }
+
+  // The Client v1 administrative family is bound to the same direct-loopback
+  // peer the public family requires (#4843) — but only bound, never excused.
+  // It deliberately does NOT join the clientV1Ingress branch below: matching
+  // there is a demotion (mobileAccessGate skipped, the sidecar-token block
+  // returned before), and admin's whole protection is that sidecar token. So
+  // this refuses, then falls through to the ordinary gate.
+  //
+  // requireClientV1Admin's own comment — that transport locality is not proof
+  // of the administrator, and the per-launch credential is — argues for
+  // requiring the token, not against also requiring locality. The two answer
+  // different questions (who, and from where), and the route family this
+  // protects is the human-consent surface for the entire authority: the
+  // pairing-approval queue and the credential list. A bearer token alone let a
+  // forwarded caller off the machine READ both, which is measurably what
+  // happened before this line existed.
+  if (isClientV1AdminPath(req.nextUrl.pathname)) {
+    if (!trustedLocalPeer || remoteIngress) {
+      return jsonError(403, "forbidden peer: client v1 admin requires direct loopback");
+    }
   }
 
   if (clientV1Ingress) {

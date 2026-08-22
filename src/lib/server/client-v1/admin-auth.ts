@@ -55,7 +55,19 @@ export function requireClientV1Admin(
 ): Response | null {
   // The listener's loopback stamp proves transport locality, not the Cave
   // administrator. Only the configured per-launch sidecar credential grants
-  // this route family.
+  // this route family, so that is what this function checks — and it still
+  // reads no stamp of its own.
+  //
+  // Locality is now required as well, one layer up: proxy() answers
+  // `403 forbidden peer: client v1 admin requires direct loopback` for
+  // /api/client/v1/admin/* that is not a direct loopback peer (#4843). That is
+  // the layer that can see it — the stamp is meaningful only next to
+  // `remoteIngress`, which is assembled from the mobile and sidecar gates and
+  // is not visible from here. The two checks answer different questions: this
+  // one asks WHO, the proxy asks FROM WHERE. Before the proxy gate existed, a
+  // forwarded caller holding the sidecar token and sending no Origin/Referer
+  // could read the credential list and the pending-pairing queue from off the
+  // machine.
   const secret = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
   if (!secret) return adminAuthorizationUnavailable();
 
