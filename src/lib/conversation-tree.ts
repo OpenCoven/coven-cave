@@ -155,3 +155,87 @@ export function linearizeLegacy<T extends TreeTurn>(
   }));
   return { turns: linked, activeLeafId: linked[linked.length - 1].id };
 }
+
+/**
+ * A chain-less system echo (role "system", no parentId) is never a legal
+ * active leaf. `cave-conversations.activeConversationTurns` strips exactly
+ * these turns before validating the leaf's ancestor chain, so a leaf pointing
+ * at one resolves to no chain at all: the sessions list loses the chat's
+ * status and attention evidence, and `resolveActivePath` renders the echo
+ * alone with every real turn hidden.
+ */
+function isChainlessSystem<T extends TreeTurn>(turn: T): boolean {
+  return turn.role === "system" && (turn.parentId ?? null) === null;
+}
+
+/** Result of splicing one turn out of the tree. */
+export type TurnDeletion<T extends TreeTurn> = {
+  turns: T[];
+  /** Repaired leaf: unchanged unless it named the removed turn. */
+  activeLeafId: string | undefined;
+  /** False when the id named no turn — a retry of an already-applied delete. */
+  deleted: boolean;
+};
+
+/**
+ * Remove one turn, splicing it out of the tree rather than pruning its
+ * subtree: every child is reparented to the removed turn's parent.
+ *
+ * Deleting a message the user no longer wants must not silently take the
+ * replies that followed it, and it must not leave children pointing at an id
+ * that is gone — `resolveActivePath` would then stop its ancestor walk early
+ * and render a truncated conversation. Splicing keeps every surviving turn on
+ * exactly one path.
+ *
+ * Returning `deleted: false` for an unknown id, rather than throwing, is what
+ * makes the operation idempotent: a client retrying a delete whose response it
+ * never saw must not be told the second attempt failed. The cost is that a
+ * genuinely wrong id reads the same as an already-applied one — after the
+ * fact, the two are indistinguishable, and the retry is the case worth
+ * getting right.
+ */
+export function deleteTurn<T extends TreeTurn>(
+  turns: T[],
+  turnId: string,
+  activeLeafId?: string,
+): TurnDeletion<T> {
+  const target = turns.find((turn) => turn.id === turnId);
+  if (!target) return { turns, activeLeafId, deleted: false };
+
+  const inheritedParent = target.parentId ?? null;
+  const remaining = turns
+    .filter((turn) => turn.id !== turnId)
+    .map((turn) => {
+      if ((turn.parentId ?? null) !== turnId) return turn;
+      // A child inheriting itself as parent would be a self-cycle; the walk
+      // guards against cycles, but a root is the honest answer here.
+      const parentId = inheritedParent === turn.id ? null : inheritedParent;
+      return { ...turn, parentId };
+    });
+
+  if (activeLeafId !== turnId) return { turns: remaining, activeLeafId, deleted: true };
+
+  // The active leaf was the turn just removed. Prefer its parent — that is
+  // where the conversation visibly continues from — unless the parent is a
+  // chain-less system echo, which is not a resolvable leaf at all.
+  const parent = inheritedParent === null
+    ? undefined
+    : remaining.find((turn) => turn.id === inheritedParent);
+  if (parent && !isChainlessSystem(parent)) {
+    return { turns: remaining, activeLeafId: parent.id, deleted: true };
+  }
+
+  // No usable parent (a deleted root), so fall back to the newest remaining
+  // turn rather than leaving the path empty. Two constraints on the pick:
+  //
+  //  - Skip chain-less system echoes. They are frequently the newest turn in
+  //    the file (a /help or coven-exec echo appended after the last reply),
+  //    and selecting one hides every real turn — see isChainlessSystem.
+  //  - Descend to that turn's own leaf. A user turn and its reply share one
+  //    createdAt stamp, so byCreatedAt tie-breaks on id and can sort the
+  //    PARENT last; pointing the path at it would truncate the reply away.
+  const candidates = remaining.filter((turn) => !isChainlessSystem(turn));
+  if (candidates.length === 0) return { turns: remaining, activeLeafId: undefined, deleted: true };
+  const newest = byCreatedAt(candidates)[candidates.length - 1]!.id;
+  return { turns: remaining, activeLeafId: childLeaf(remaining, newest), deleted: true };
+}

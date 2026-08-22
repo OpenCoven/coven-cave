@@ -1369,6 +1369,7 @@ export const SUITES = {
     "src/lib/server/daemon-travel-reconcile.test.ts",
     "src/app/api/chat/conversation/route.test.ts",
     "src/app/api/chat/conversation/[id]/route.test.ts",
+    "src/app/api/chat/conversation/[id]/turns/[turnId]/route.test.ts",
     "src/app/api/sessions/[id]/route.test.ts",
     "src/app/api/canvas/route.test.ts",
     "src/lib/server/familiar-execution-analytics.test.ts",
@@ -2100,6 +2101,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/salem/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
+  "src/app/api/chat/conversation/[id]/turns/[turnId]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",
   "src/lib/voice/registry.test.ts",
