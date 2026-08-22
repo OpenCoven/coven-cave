@@ -87,6 +87,7 @@ test("mission parser preserves valid title provenance and rejects unknown values
   const explicit = { ...validMission(), titleSource: "explicit" } as const;
   assert.deepEqual(parseResearchMission(explicit), explicit);
   assert.equal(parseResearchMission({ ...validMission(), titleSource: "inferred" }), null);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: new String("explicit") }), null);
 });
 
 test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {

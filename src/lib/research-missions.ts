@@ -635,7 +635,9 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     || typeof value.familiarId !== "string"
     || !FAMILIAR_ID_RE.test(value.familiarId)
     || !validResearchPromptText(value.title, RESEARCH_TITLE_MAX_LENGTH)
-    || (value.titleSource !== undefined && !["explicit", "generated"].includes(String(value.titleSource)))
+    || (value.titleSource !== undefined
+      && (typeof value.titleSource !== "string"
+        || !["explicit", "generated"].includes(value.titleSource)))
     || !validResearchPromptText(value.intent, RESEARCH_INTENT_MAX_LENGTH)
     || !RESEARCH_MISSION_MODES.includes(value.mode as ResearchMissionMode)
     || !["auto", "user"].includes(String(value.modeSource))
