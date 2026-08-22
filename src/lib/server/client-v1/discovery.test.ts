@@ -329,20 +329,42 @@ test("the standalone server enforces ownership on Windows with this module's scr
   );
   assert.match(source, /assertStandaloneWindowsExclusive\(path, label\)/);
 
-  const script = (text: string, what: string): string => {
-    const match = /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/.exec(text);
-    assert.ok(match, `${what} must define WINDOWS_ACL_SCRIPT`);
-    return match![1]!;
+  const moduleSource = await readFile(
+    resolve(process.cwd(), "src/lib/server/client-v1/path-ownership.ts"),
+    "utf8",
+  );
+
+  // Compare every part of the copy that can drift, not just the PowerShell.
+  // The script text alone leaves three holes, each of which silently disarms
+  // the standalone server while this test stays green: the trusted-SID
+  // constants (the script names them by IDENTIFIER, so changing a value in one
+  // file only is invisible to a text compare), the JS-side verification that
+  // turns the report into a refusal, and the ACE filter inside it.
+  const region = (text: string, what: string, pattern: RegExp): string => {
+    const match = pattern.exec(text);
+    assert.ok(match, `${what} must define ${pattern.source.slice(0, 40)}…`);
+    return (match![1] ?? match![0])!;
   };
-  assert.equal(
-    script(source, "server.ts"),
-    script(
-      await readFile(
-        resolve(process.cwd(), "src/lib/server/client-v1/path-ownership.ts"),
-        "utf8",
-      ),
-      "path-ownership.ts",
-    ),
-    "the inlined ACL script must stay identical to the module it copies",
+  const parts: [string, RegExp][] = [
+    ["the inlined ACL script", /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/],
+    ["the trusted SYSTEM SID", /const WINDOWS_SYSTEM_SID = "([^"]+)";/],
+    ["the trusted Administrators SID", /const WINDOWS_ADMINISTRATORS_SID = "([^"]+)";/],
+    ["the trusted-principal set", /const trusted = new Set\(\[[^\]]*\]\);/],
+    [
+      "the exclusivity findings",
+      /if \(report\.owner !== report\.self\) \{[\s\S]*?if \(foreign\.length > 0\) \{[\s\S]*?\n {2}\}/,
+    ],
+  ];
+  for (const [what, pattern] of parts) {
+    assert.equal(
+      region(source, "server.ts", pattern),
+      region(moduleSource, "path-ownership.ts", pattern),
+      `${what} must stay identical to the module server.mjs cannot import`,
+    );
+  }
+  assert.match(
+    source,
+    /if \(findings\.length > 0\) \{\s*throw new Error\(/,
+    "the standalone server must refuse on any finding, not merely collect them",
   );
 });

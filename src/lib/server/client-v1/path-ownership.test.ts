@@ -7,6 +7,7 @@ import test, { type TestContext } from "node:test";
 
 import {
   assertClientV1PathOwnership,
+  parseClientV1WindowsAclReport,
   probeWindowsAcl,
   resetClientV1PathOwnershipCache,
   type ClientV1PathOwnershipOptions,
@@ -288,6 +289,60 @@ test("the real probe restricts and verifies a real path on Windows", async (t: T
   }
 });
 
+test("a malformed probe report is refused rather than read as an empty DACL", () => {
+  const exclusive = {
+    self: SELF_SID,
+    owner: SELF_SID,
+    protected: true,
+    repaired: false,
+    removed: [] as unknown[],
+    aces: [{ sid: SELF_SID, type: "Allow" }] as unknown[],
+  };
+  assert.deepEqual(
+    parseClientV1WindowsAclReport(JSON.stringify(exclusive)),
+    { ...exclusive, removed: [], aces: [{ sid: SELF_SID, type: "Allow" }] },
+  );
+
+  // `aces` carries the whole access decision. Coercing an unreadable one to `[]`
+  // reads as "no principal has access" and therefore ADMITS the path, so every
+  // shape that is not a list has to be an error. The only test that drives the
+  // real subprocess is win32-only, so this is where a POSIX runner sees it.
+  for (
+    const [what, raw] of [
+      ["aces absent", JSON.stringify({ ...exclusive, aces: undefined })],
+      ["aces a bare object", JSON.stringify({ ...exclusive, aces: { sid: USERS_SID, type: "Allow" } })],
+      ["aces a string", JSON.stringify({ ...exclusive, aces: "Allow" })],
+      ["removed absent", JSON.stringify({ ...exclusive, removed: undefined })],
+      ["self absent", JSON.stringify({ ...exclusive, self: undefined })],
+      ["self empty", JSON.stringify({ ...exclusive, self: "" })],
+      ["owner absent", JSON.stringify({ ...exclusive, owner: undefined })],
+      ["protected a string", JSON.stringify({ ...exclusive, protected: "true" })],
+      ["repaired absent", JSON.stringify({ ...exclusive, repaired: undefined })],
+      ["a bare array", "[]"],
+      ["a bare string", "\"nope\""],
+      ["null", "null"],
+    ] as const
+  ) {
+    assert.throws(
+      () => parseClientV1WindowsAclReport(raw),
+      /malformed report/,
+      `${what} must be refused, not defaulted`,
+    );
+  }
+
+  assert.throws(() => parseClientV1WindowsAclReport("not json at all"), SyntaxError);
+
+  // An entry the probe could not name is untrusted, never trusted-by-omission.
+  const nameless = parseClientV1WindowsAclReport(
+    JSON.stringify({ ...exclusive, aces: [{}, null, { sid: USERS_SID }] }),
+  );
+  assert.deepEqual(nameless.aces, [
+    { sid: "", type: "" },
+    { sid: "", type: "" },
+    { sid: USERS_SID, type: "" },
+  ]);
+});
+
 test("the ACL probe is spawned without this process's environment", async () => {
   // Both copies of the probe run inside the Cave server, which holds
   // COVEN_CAVE_ACCESS_TOKEN and COVEN_CAVE_AUTH_TOKEN. A subprocess that only
@@ -296,24 +351,51 @@ test("the ACL probe is spawned without this process's environment", async () => 
   // spread outright in server.ts.
   const { readFile } = await import("node:fs/promises");
   const { resolve } = await import("node:path");
-  for (const file of ["src/lib/server/client-v1/path-ownership.ts", "server.ts"]) {
+
+  // Assert the PROPERTY, not one spelling of the mistake. A ban on the literal
+  // `env: { ...process.env` is satisfied by `...process.env` one line lower, by
+  // `Object.assign({}, process.env, …)`, and by naming a secret outright — so
+  // instead: read the object each copy actually builds, and require that every
+  // `process.env` it reaches for is on this list. Both copies, because the
+  // regression CI caught existed in both and only one was ever checked here.
+  const ALLOWED = new Set(["NODE_ENV", "SystemRoot", "windir", "PATHEXT", "TEMP", "TMP"]);
+  const blocks: [string, RegExp][] = [
+    ["src/lib/server/client-v1/path-ownership.ts", /function windowsProbeEnv\([\s\S]*?\n}/],
+    ["server.ts", /const probeEnv: NodeJS\.ProcessEnv = \{[\s\S]*?\n {2}\};/],
+  ];
+  for (const [file, pattern] of blocks) {
     const source = await readFile(resolve(process.cwd(), file), "utf8");
     assert.doesNotMatch(
       source,
       /env: \{\s*\.\.\.process\.env/,
       `${file} must not hand the server's environment to the ACL probe`,
     );
-  }
 
-  const source = await readFile(
-    resolve(process.cwd(), "src/lib/server/client-v1/path-ownership.ts"),
-    "utf8",
-  );
-  const probeEnv = /function windowsProbeEnv\([\s\S]*?\n}/.exec(source);
-  assert.ok(probeEnv, "the probe environment must be built explicitly");
-  assert.doesNotMatch(
-    probeEnv![0],
-    /COVEN_CAVE_(?!CLIENT_V1_ACL_PATH)/,
-    "only the path under test may cross into the probe from the COVEN_CAVE namespace",
-  );
+    const block = pattern.exec(source);
+    assert.ok(block, `${file} must build the probe environment as an explicit literal`);
+    assert.doesNotMatch(
+      block![0],
+      /\.\.\./,
+      `${file} must not spread anything into the probe environment`,
+    );
+    assert.doesNotMatch(
+      block![0],
+      /Object\.assign|structuredClone/,
+      `${file} must not copy an environment into the probe wholesale`,
+    );
+    const reached = [...block![0].matchAll(/process\.env(?:\.(\w+)|\[\s*["'`](\w+)["'`]\s*\])/g)]
+      .map((match) => match[1] ?? match[2]!);
+    assert.ok(reached.length > 0, `${file} probe environment did not parse`);
+    for (const name of reached) {
+      assert.ok(
+        ALLOWED.has(name),
+        `${file} hands process.env.${name} to the ACL probe; only ${[...ALLOWED].join(", ")} may cross`,
+      );
+    }
+    assert.doesNotMatch(
+      block![0],
+      /COVEN_CAVE_(?!CLIENT_V1_ACL_PATH)/,
+      `${file}: only the path under test may cross into the probe from the COVEN_CAVE namespace`,
+    );
+  }
 });

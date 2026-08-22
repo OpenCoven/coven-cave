@@ -163,10 +163,25 @@ function windowsProbeEnv(path: string): NodeJS.ProcessEnv {
   };
 }
 
-function parseAclReport(raw: string): ClientV1WindowsAclReport {
+/**
+ * Parse one probe's stdout, refusing anything that is not the whole report.
+ *
+ * `aces` carries the entire access decision, so a shape this cannot read has to
+ * be an error rather than a default. Coercing a malformed `aces` to `[]` — which
+ * is what an earlier revision did — reads as "no principal has access" and
+ * therefore *admits* the path: the one field worth being strict about was the
+ * one field being forgiven. Nothing exercises that on a POSIX runner either,
+ * because the only test that drives the real subprocess is win32-only.
+ *
+ * Exported for the parser tests, which are the platform-independent coverage
+ * the subprocess itself cannot have.
+ */
+export function parseClientV1WindowsAclReport(raw: string): ClientV1WindowsAclReport {
   const parsed = JSON.parse(raw) as Record<string, unknown>;
-  const aces = Array.isArray(parsed.aces) ? parsed.aces : [];
-  const removed = Array.isArray(parsed.removed) ? parsed.removed : [];
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("the ACL probe returned a malformed report");
+  }
+  const { aces, removed } = parsed;
   if (
     typeof parsed.self !== "string"
     || !parsed.self
@@ -174,6 +189,8 @@ function parseAclReport(raw: string): ClientV1WindowsAclReport {
     || !parsed.owner
     || typeof parsed.protected !== "boolean"
     || typeof parsed.repaired !== "boolean"
+    || !Array.isArray(aces)
+    || !Array.isArray(removed)
   ) {
     throw new Error("the ACL probe returned a malformed report");
   }
@@ -212,7 +229,7 @@ export const probeWindowsAcl: ClientV1WindowsAclProbe = async (path) => {
       maxBuffer: 1024 * 1024,
     },
   );
-  return parseAclReport(stdout);
+  return parseClientV1WindowsAclReport(stdout);
 };
 
 /**

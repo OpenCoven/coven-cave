@@ -263,6 +263,24 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
         maxBuffer: 1024 * 1024,
       },
     ));
+    // `aces` carries the whole access decision, so a shape this cannot read has
+    // to be an error rather than a default: an absent or non-array `aces` reads
+    // downstream as "no principal has access" and would therefore admit the
+    // path. Same contract as parseClientV1WindowsAclReport in the module.
+    if (
+      !report
+      || typeof report !== "object"
+      || typeof report.self !== "string"
+      || !report.self
+      || typeof report.owner !== "string"
+      || !report.owner
+      || typeof report.protected !== "boolean"
+      || typeof report.repaired !== "boolean"
+      || !Array.isArray(report.aces)
+      || !Array.isArray(report.removed)
+    ) {
+      throw new Error("the ACL probe returned a malformed report");
+    }
   } catch (cause) {
     throw new Error(
       `Client v1 discovery ${label} ownership could not be verified on Windows: `

@@ -184,6 +184,9 @@ function assertStandaloneWindowsExclusive(path, label) {
         maxBuffer: 1024 * 1024
       }
     ));
+    if (!report || typeof report !== "object" || typeof report.self !== "string" || !report.self || typeof report.owner !== "string" || !report.owner || typeof report.protected !== "boolean" || typeof report.repaired !== "boolean" || !Array.isArray(report.aces) || !Array.isArray(report.removed)) {
+      throw new Error("the ACL probe returned a malformed report");
+    }
   } catch (cause) {
     throw new Error(
       `Client v1 discovery ${label} ownership could not be verified on Windows: ${cause.message}. Refusing ${path}; inspect it with: icacls "${path}"`,
