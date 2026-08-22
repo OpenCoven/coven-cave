@@ -612,20 +612,22 @@ before it prints `Ready on …`:
 }
 ```
 
-The file is 0600 inside a 0700 directory it verifies is neither a symlink nor
-another user's, written temp-file → `fsync` → rename, and deleted on shutdown —
-but only if the record still carries *this* process's `nonce` and the same
-inode, so a Cave that has been restarted underneath never deletes its
-successor's record. **A publish failure is fatal**: the listener closes and the
-process exits 1 rather than serving on an endpoint nothing can discover.
+The file is 0600 inside a 0700 directory verified not to be a symlink, written
+temp-file → `fsync` → rename, and deleted on shutdown — but only if the record
+still carries *this* process's `nonce` and the same inode, so a Cave that has
+been restarted underneath never deletes its successor's record. **A publish
+failure is fatal**: the listener closes and the process exits 1 rather than
+serving on an endpoint nothing can discover. Both the directory and the file are
+also checked to be owned by the current user, but only where `process.getuid`
+exists — that check is a no-op on Windows.
 
 `endpoint` is validated before it is written: `http:`, a loopback host, an
 explicit port, no credentials, no path, query, or fragment. Treat `pid` and
 `startedAt` as staleness hints — a `SIGKILL`ed Cave leaves its record behind,
 and nothing clears it until the next Cave boots and overwrites it — so confirm
 the endpoint with `GET /health` and check `instanceId` before trusting it. The
-file is 0600 and owned by the user the Cave runs as, so a client reads it only
-by already being that user on that machine.
+0600 mode means a client reads the record only by already running as the Cave's
+own user on the Cave's own machine.
 
 This is the one part of the surface with two implementations; see *Known gaps*.
 
