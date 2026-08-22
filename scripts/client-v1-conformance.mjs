@@ -240,7 +240,13 @@ export const EXPECTED_ASSERTION_IDS = [
   "reads.conversation-by-id-refuses-limit",
   "reads.conversation-by-id-refuses-cursor",
   "reads.conversation-by-id-not-found",
-  "reads.conversations-mutable-key-moves-a-row",
+  "reads.conversations-touch-unserved-row-is-still-served",
+  "reads.conversations-touch-served-row-is-not-repeated",
+  "reads.conversations-touch-cursor-row-keeps-the-position",
+  "reads.conversations-row-created-mid-walk-is-not-served",
+  "reads.conversations-row-deleted-mid-walk-does-not-strand",
+  "reads.conversations-tied-sort-key-breaks-on-id",
+  "reads.conversations-without-created-at-are-served-last",
   "reads.messages-active-branch",
   "reads.messages-values",
   "reads.messages-paging",
@@ -793,10 +799,30 @@ export function fixtureProjects() {
   });
 }
 
-/** Six conversations, so a limit of three exercises an exact-multiple walk. */
+/**
+ * Six conversations, so a limit of three exercises an exact-multiple walk.
+ *
+ * Two properties of the timestamps are load-bearing and neither is decoration:
+ *
+ *   - **`createdAt` and `updatedAt` order the set in OPPOSITE directions.**
+ *     `createdAt` runs 01 → 06 while `updatedAt` runs 06 → 01, so
+ *     createdAt-descending is `[06…01]` and updatedAt-descending is `[01…06]`.
+ *     They used to run the same way, which meant the run could not tell which
+ *     field keyed the page: the ordering assertion passed either way, and the
+ *     skip that cave-fhjlu fixed was invisible to it. A build that reverts to
+ *     the mutable key now fails `reads.conversations-shape` outright.
+ *   - **`conversation-03` and `conversation-04` share a `createdAt`.** The key
+ *     is only total because of the id tiebreak, and a tiebreak nothing ties
+ *     cannot be wrong. The tie is placed so the expected order is unchanged
+ *     (`04` before `03`, id descending), which keeps every other leg readable.
+ */
 export function fixtureConversations() {
   return Array.from({ length: 6 }, (_, index) => {
     const n = String(index + 1).padStart(2, "0");
+    // 03 and 04 tie; the rest are distinct. Written as an explicit map rather
+    // than as arithmetic so the tie is visible at the point it is created.
+    const createdDay = index + 1 === 3 ? "04" : n;
+    const updatedDay = String(6 - index).padStart(2, "0");
     return {
       sessionId: `conversation-${n}`,
       familiarId: "archivist",
@@ -807,8 +833,8 @@ export function fixtureConversations() {
       harnessSessionId: `harness-${n}`,
       branch: "feat/fixture",
       prUrl: "https://github.com/OpenCoven/coven-cave/pull/1",
-      createdAt: `2026-03-${n}T00:00:00.000Z`,
-      updatedAt: `2026-04-${n}T00:00:00.000Z`,
+      createdAt: `2026-03-${createdDay}T00:00:00.000Z`,
+      updatedAt: `2026-04-${updatedDay}T00:00:00.000Z`,
       turns: [
         {
           id: `${n}-t1`,
@@ -946,6 +972,29 @@ async function writeConversation(caveHomeDir, conversation) {
     `${JSON.stringify(conversation, null, 2)}\n`,
     "utf8",
   );
+}
+
+async function removeConversation(caveHomeDir, sessionId) {
+  await rm(path.join(caveHomeDir, "conversations", `${sessionId}.json`), { force: true });
+}
+
+/**
+ * The order `/conversations` owes a client: `createdAt` descending, `id`
+ * descending on a tie, and every row without a `createdAt` at the tail.
+ *
+ * Spelled out here rather than reusing the fixture's array order so a leg that
+ * seeds an extra row — one created mid-walk, one with no `createdAt` at all —
+ * can derive its own expectation instead of hand-listing ids that then rot.
+ */
+export function expectedConversationOrder(conversations) {
+  return [...conversations]
+    .sort((left, right) => {
+      const l = left.createdAt ?? "";
+      const r = right.createdAt ?? "";
+      if (l !== r) return l < r ? 1 : -1;
+      return left.sessionId < right.sessionId ? 1 : -1;
+    })
+    .map((conversation) => conversation.sessionId);
 }
 
 // ── a small client bound to one origin ───────────────────────────────────────
@@ -1910,11 +1959,71 @@ async function runQueryRefusalLeg(client, recorder, bearer) {
   );
 }
 
+/**
+ * Walk `/conversations` at limit 2, mutate the ledger with the cursor OPEN, and
+ * follow that cursor to exhaustion.
+ *
+ * The mutation happens between the first page and the first resumed page, which
+ * is the only window in which a client is exposed to the store moving. `mutate`
+ * receives the ids already served and the id the open cursor names, so a leg can
+ * aim at a served row, an unserved row, or the cursor's own row without
+ * hard-coding the fixture's ordering.
+ *
+ * Returns the whole walk rather than the page after the touch. That distinction
+ * is the entire reason cave-fhjlu was misdiagnosed as a repeat for two PRs: a
+ * row that comes back three pages later is a repeat, a row that never comes back
+ * is a skip, and a single-page probe cannot tell them apart.
+ */
+async function walkConversationsAcross(client, bearer, mutate) {
+  const first = await client.read("/conversations?limit=2", bearer);
+  const firstIds = (first.json?.data?.conversations ?? []).map((row) => row.id);
+  const token0 = first.json?.cursor?.next ?? null;
+  await mutate({ served: firstIds, cursorNames: firstIds[firstIds.length - 1] });
+
+  const remainder = [];
+  let status = first.status;
+  let token = token0;
+  for (let page = 0; page < 50 && token; page += 1) {
+    const resumed = await client.read(
+      `/conversations?limit=2&cursor=${encodeURIComponent(token)}`,
+      bearer,
+    );
+    status = resumed.status;
+    if (resumed.status !== 200) break;
+    remainder.push(...(resumed.json?.data?.conversations ?? []).map((row) => row.id));
+    token = resumed.json?.cursor?.next ?? null;
+  }
+  return { firstIds, remainder, served: [...firstIds, ...remainder], status, opened: token0 !== null };
+}
+
+/**
+ * The whole walk, as an ORDERED sequence against what the ledger should have
+ * produced — not as a set, and not as a "did it contain the touched row".
+ *
+ * A set comparison would pass a build that served the right rows in an order no
+ * cursor could resume, which is the weakness this file's own review found in an
+ * earlier assertion: it compared key sets and never values.
+ */
+function checkConversationWalk(walk, expected) {
+  const failures = [];
+  if (walk.status !== 200) failures.push(`the walk answered ${walk.status}, expected 200`);
+  if (walk.served.join(",") !== expected.join(",")) {
+    failures.push(`the whole walk served [${walk.served}], expected [${expected}]`);
+  }
+  const repeated = walk.served.filter((id, index) => walk.served.indexOf(id) !== index);
+  if (repeated.length > 0) failures.push(`the walk served [${repeated}] more than once`);
+  return failures;
+}
+
 async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   const conversations = fixtureConversations();
-  const expectedIds = [...conversations]
+  const expectedIds = expectedConversationOrder(conversations);
+  const updatedAtOrder = [...conversations]
     .sort((left, right) => (left.updatedAt < right.updatedAt ? 1 : left.updatedAt > right.updatedAt ? -1 : 0))
     .map((conversation) => conversation.sessionId);
+  const restore = async () => {
+    for (const conversation of conversations) await writeConversation(caveHomeDir, conversation);
+  };
 
   const listed = await client.read("/conversations?limit=100", bearer);
   const failures = [];
@@ -1943,8 +2052,13 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
       );
     }
   }
-  if (rows.map((row) => row.id).join(",") !== expectedIds.join(",")) {
-    failures.push(`served [${rows.map((row) => row.id)}], expected the updatedAt-descending [${expectedIds}]`);
+  const servedOrder = rows.map((row) => row.id).join(",");
+  if (servedOrder !== expectedIds.join(",")) {
+    failures.push(
+      servedOrder === updatedAtOrder.join(",")
+        ? `served the updatedAt-descending [${updatedAtOrder}]; /conversations pages by createdAt, expected [${expectedIds}]`
+        : `served [${rows.map((row) => row.id)}], expected the createdAt-descending [${expectedIds}]`,
+    );
   }
   recorder.expect("reads.conversations-shape", failures);
 
@@ -1980,60 +2094,159 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   absentFailures.push(...checkEnvelope(absent.json, { kind: "error", code: "not_found" }));
   recorder.expect("reads.conversation-by-id-not-found", absentFailures);
 
-  // ── the mutable page key ──
+  // ── the page key under a ledger that moves mid-walk (cave-fhjlu) ──
   //
-  // `/conversations` keys on `updatedAt`, which moves while a client pages. The
-  // doc says a touched conversation "can appear in two pages"; what this
-  // measures is the other side of the same coin, and it is the one that costs a
-  // client data — a conversation that has NOT been served yet is touched, jumps
-  // above the open cursor, and is never served by the rest of the walk. The
-  // assertion is written against the measured behaviour rather than the
-  // sentence, and the discrepancy is reported rather than asserted away.
-  const firstPage = await walk(client, "/conversations", bearer, "conversations", 2);
-  const openToken = firstPage[0]?.next;
-  const untouchedRest = firstPage.slice(1).flatMap((page) => page.ids);
-  const touchedId = untouchedRest[untouchedRest.length - 1];
-  if (openToken && touchedId) {
-    const touched = conversations.find((conversation) => conversation.sessionId === touchedId);
-    await writeConversation(caveHomeDir, { ...touched, updatedAt: "2026-12-31T00:00:00.000Z" });
+  // `/conversations` used to key on `updatedAt`. That field only ever rises and
+  // the ordering is descending, so a conversation touched while a client paged
+  // jumped ABOVE the open cursor and — if it had not been served yet — was never
+  // served by the rest of the walk. Silent data loss in a read this surface
+  // calls canonical. Measured here on 2026-08-22: first page `[06, 05]`, touch
+  // the unserved `01`, remainder `[04, 03, 02]`, and no repeat anywhere.
+  //
+  // The key is now `createdAt`, which nothing rewrites, so the six cases below
+  // all reduce to one claim: **the set a walk serves is decided when the walk
+  // starts, and nothing but a deletion changes it.** Each one is a separate
+  // assertion rather than a loop because each fails for a different reason and a
+  // reader of the record has to be able to tell which.
+  const byId = new Map(conversations.map((conversation) => [conversation.sessionId, conversation]));
+  const touch = (sessionId) =>
+    writeConversation(caveHomeDir, { ...byId.get(sessionId), updatedAt: "2026-12-31T00:00:00.000Z" });
 
-    // The REST of the walk, not just the next page. "Skipped" is a claim about
-    // every page after the touch — a row that reappeared three pages later
-    // would be a repeat, which is what the reference used to say happens, and a
-    // single-page probe cannot tell the two apart.
-    const remainder = [];
-    let token = openToken;
-    let resumedStatus = 0;
-    for (let page = 0; page < 50 && token; page += 1) {
-      const resumed = await client.read(`/conversations?limit=2&cursor=${encodeURIComponent(token)}`, bearer);
-      resumedStatus = resumed.status;
-      if (resumed.status !== 200) break;
-      remainder.push(...(resumed.json?.data?.conversations ?? []).map((row) => row.id));
-      token = resumed.json?.cursor?.next ?? null;
-    }
-    const mutableFailures = [];
-    if (resumedStatus !== 200) mutableFailures.push(`resuming the walk answered ${resumedStatus}, expected 200`);
-    if (remainder.includes(touchedId)) {
-      mutableFailures.push(
-        `after touching the unserved ${touchedId} the rest of the walk still served it: [${remainder}]`,
-      );
-    }
-    const alreadyServed = firstPage[0]?.ids ?? [];
-    for (const id of remainder) {
-      if (alreadyServed.includes(id)) mutableFailures.push(`${id} was served before the touch and again after it`);
-    }
-    if (new Set(remainder).size !== remainder.length) {
-      mutableFailures.push(`the rest of the walk repeated a row: [${remainder}]`);
-    }
-    recorder.expect(
-      "reads.conversations-mutable-key-moves-a-row",
-      mutableFailures,
-      `touched ${touchedId}; the rest of the walk served [${remainder}] — a skip, and no repeat anywhere in it`,
-    );
-    await writeConversation(caveHomeDir, touched);
-  } else {
-    recorder.skip("reads.conversations-mutable-key-moves-a-row", "the ledger did not page at limit 2");
+  // 1. A row the walk has NOT reached. This is the case that lost data.
+  const unserved = await walkConversationsAcross(client, bearer, async ({ served }) => {
+    await touch(expectedIds.filter((id) => !served.includes(id)).at(-1));
+  });
+  recorder.expect(
+    "reads.conversations-touch-unserved-row-is-still-served",
+    unserved.opened
+      ? checkConversationWalk(unserved, expectedIds)
+      : ["the ledger did not page at limit 2, so no cursor was open across the touch"],
+    `touched the last unserved row; the whole walk served [${unserved.served}]`,
+  );
+  await restore();
+
+  // 2. A row the walk has ALREADY served. Under the old key this one was
+  //    harmless — it moved above a cursor it was already above — but a key that
+  //    moved the other way would repeat it, and only a whole-walk check sees it.
+  const served = await walkConversationsAcross(client, bearer, async (state) => {
+    await touch(state.served[0]);
+  });
+  recorder.expect(
+    "reads.conversations-touch-served-row-is-not-repeated",
+    served.opened
+      ? checkConversationWalk(served, expectedIds)
+      : ["the ledger did not page at limit 2, so no cursor was open across the touch"],
+    `touched the first row already served; the whole walk served [${served.served}]`,
+  );
+  await restore();
+
+  // 3. The row the open cursor NAMES. The token carries that row's sort key, so
+  //    if the key can move, the cursor is left pointing at a position the
+  //    ordering no longer has.
+  const atCursor = await walkConversationsAcross(client, bearer, async ({ cursorNames }) => {
+    await touch(cursorNames);
+  });
+  recorder.expect(
+    "reads.conversations-touch-cursor-row-keeps-the-position",
+    atCursor.opened
+      ? checkConversationWalk(atCursor, expectedIds)
+      : ["the ledger did not page at limit 2, so no cursor was open across the touch"],
+    `touched the row the cursor names; the whole walk served [${atCursor.served}]`,
+  );
+  await restore();
+
+  // 4. A conversation CREATED mid-walk. Its createdAt is the newest in the
+  //    ledger, so it sorts above every open cursor and this walk does not serve
+  //    it — which is what the reference tells a client to expect, and is not the
+  //    same failure as losing a row that already existed.
+  const created = await walkConversationsAcross(client, bearer, async () => {
+    await writeConversation(caveHomeDir, {
+      ...byId.get("conversation-01"),
+      sessionId: "conversation-new",
+      createdAt: "2026-12-31T00:00:00.000Z",
+      updatedAt: "2026-12-31T00:00:00.000Z",
+    });
+  });
+  recorder.expect(
+    "reads.conversations-row-created-mid-walk-is-not-served",
+    created.opened
+      ? checkConversationWalk(created, expectedIds)
+      : ["the ledger did not page at limit 2, so no cursor was open across the insert"],
+    "a row created above the cursor is left for the next read from the top",
+  );
+  await removeConversation(caveHomeDir, "conversation-new");
+  await restore();
+
+  // 5. A row DELETED mid-walk, and an unserved one, so the walk has to notice.
+  //    The cursor names a position in the ordering rather than an index, so the
+  //    remainder is simply the rest without it.
+  let deletedId = null;
+  const deleted = await walkConversationsAcross(client, bearer, async ({ served: alreadyServed }) => {
+    deletedId = expectedIds.filter((id) => !alreadyServed.includes(id))[0];
+    await removeConversation(caveHomeDir, deletedId);
+  });
+  recorder.expect(
+    "reads.conversations-row-deleted-mid-walk-does-not-strand",
+    deleted.opened
+      ? checkConversationWalk(deleted, expectedIds.filter((id) => id !== deletedId))
+      : ["the ledger did not page at limit 2, so no cursor was open across the deletion"],
+    `deleted the unserved ${deletedId}; the whole walk served [${deleted.served}]`,
+  );
+  await restore();
+
+  // 6. Two rows sharing a createdAt, walked at limit 1 so a page boundary lands
+  //    between every adjacent pair — including theirs. Without the id tiebreak
+  //    the boundary either repeats both or skips both.
+  const tiedKey = conversations.find((conversation) =>
+    conversations.some((other) =>
+      other.sessionId !== conversation.sessionId && other.createdAt === conversation.createdAt))?.createdAt;
+  const tied = conversations
+    .filter((conversation) => conversation.createdAt === tiedKey)
+    .map((conversation) => conversation.sessionId)
+    .sort()
+    .reverse();
+  const singles = await walk(client, "/conversations", bearer, "conversations", 1);
+  const tieFailures = tied.length === 2
+    ? checkPageWalk(singles, { limit: 1, expectedIds })
+    : ["the fixture no longer ties two conversations on createdAt, so the tiebreak is unexercised"];
+  const walkedTie = singles.flatMap((page) => page.ids).filter((id) => tied.includes(id)).join(",");
+  if (tied.length === 2 && walkedTie !== tied.join(",")) {
+    tieFailures.push(`the tied rows were served as [${walkedTie}], expected id-descending [${tied}]`);
   }
+  recorder.expect(
+    "reads.conversations-tied-sort-key-breaks-on-id",
+    tieFailures,
+    `${tied.join(" and ")} share ${tiedKey}`,
+  );
+
+  // 7. A row carrying NO createdAt at all — a transcript written before the
+  //    field existed, or the fallback row a corrupt file produces. Keying on an
+  //    optional field is only safe because these are served rather than
+  //    stranded: they sort as the empty string, which is below every instant, so
+  //    a descending walk reaches them at the tail and reaches them THROUGH a
+  //    cursor rather than on the first page.
+  const { createdAt: _dropped, ...keyless } = byId.get("conversation-01");
+  await writeConversation(caveHomeDir, { ...keyless, sessionId: "conversation-keyless" });
+  const withKeyless = await walk(client, "/conversations", bearer, "conversations", 2);
+  const keylessExpected = [...expectedIds, "conversation-keyless"];
+  const keylessFailures = checkPageWalk(withKeyless, { limit: 2, expectedIds: keylessExpected });
+  const keylessRow = withKeyless
+    .flatMap((page) => page.items ?? [])
+    .find((row) => row.id === "conversation-keyless");
+  if (!keylessRow) keylessFailures.push("the row with no createdAt was never served");
+  else if ("createdAt" in keylessRow) {
+    keylessFailures.push(`the row with no createdAt was served with createdAt ${JSON.stringify(keylessRow.createdAt)}`);
+  }
+  if (withKeyless[0]?.ids.includes("conversation-keyless")) {
+    keylessFailures.push("the row with no createdAt was served on the first page, so no cursor had to reach it");
+  }
+  recorder.expect(
+    "reads.conversations-without-created-at-are-served-last",
+    keylessFailures,
+    "an optional page key is only safe if the rows that lack it are served, not stranded",
+  );
+  await removeConversation(caveHomeDir, "conversation-keyless");
+  await restore();
 }
 
 async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
@@ -2335,14 +2548,6 @@ export const FINDINGS = [
     measured: 'the proxy\'s sidecar-token gate answers first, so the wire carries 401 {"ok":false,"error":"unauthorized"} and requireClientV1Admin\'s envelope is never produced on a Cave with a token configured',
     severity: "documentation",
     why: "the refusal is correct and same-status; only its body differs from the documented one, which a handler-level test cannot see",
-  },
-  {
-    id: "conversations-mutable-key-skips-rather-than-repeats",
-    where: "docs/api/client-v1.md — Paging, and reads.ts clientV1ConversationPageKey",
-    says: "a conversation that receives a turn mid-pagination moves to the front and can appear in two pages",
-    measured: "the ordering is updatedAt DESCENDING and a touch only raises the key, so a touched row moves ABOVE an open cursor: a row already served stays served, and a row not yet served is SKIPPED by the rest of the walk. No repeat was reproducible.",
-    severity: "documentation",
-    why: "the client-visible consequence is the opposite of the documented one — a repeat is deduplicable, a skip is silent data loss unless the client re-reads from the top",
   },
 ];
 

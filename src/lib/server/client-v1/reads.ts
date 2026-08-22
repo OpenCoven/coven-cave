@@ -327,27 +327,69 @@ export function clientV1ProjectPageKey(project: CaveProject): ClientV1PageKey {
 }
 
 /**
- * A conversation's page key is its last write.
+ * The sort half of a conversation's page key: its creation time, or the empty
+ * string when the store cannot supply one.
  *
- * Unlike a project, `createdAt` is *optional* on a ConversationSummary — a
- * transcript written before the field existed has none, and neither does the
- * fallback row a corrupt file produces — so it cannot key the page. `updatedAt`
- * is required, and it is also the order listConversations already sorts by, so
- * a client sees one ordering out of Cave rather than two.
+ * Read through the same `optionalText` the projection uses, so the key and the
+ * served `createdAt` can never disagree — a key built from the raw field would
+ * sort a whitespace-only or numeric `createdAt` as itself while the record
+ * omitted it, and a client comparing the two would be reading two different
+ * orderings.
  *
- * The cost is the mutable-key cost above, and it is worth naming precisely
- * because this comment used to name it backwards. `updatedAt` only ever
- * increases and the ordering is descending, so a conversation that receives a
- * turn mid-pagination moves *above* an open cursor: one already served stays
- * served, and one NOT yet served is skipped by the rest of the walk. It is a
- * skip, not a repeat — measured over a real socket by
- * scripts/client-v1-conformance.mjs, which could not reproduce a repeat from a
- * touch. That is the worse of the two (a repeat is deduplicable by id; a skip
- * is silent), and it is still better than the alternative — keying on a field
- * half the corpus lacks, which strands the rows that lack it entirely.
+ * The empty string is a real position in the ordering rather than a hole. It is
+ * below every ISO instant, and the ordering is descending, so every row without
+ * a `createdAt` lands in one contiguous block at the TAIL of the walk, ordered
+ * among themselves by id. That block is what makes an optional field safe to
+ * key on: the rows that lack it are served last, not stranded — and `""` is as
+ * immutable as any instant, so they cannot move under an open cursor either.
+ */
+function conversationSortKey(summary: ConversationSummary): string {
+  return optionalText(summary.createdAt) ?? "";
+}
+
+/**
+ * A conversation's page key is its creation time — an IMMUTABLE field.
+ *
+ * It used to be `updatedAt`, on the grounds that `createdAt` is optional on a
+ * ConversationSummary while `updatedAt` is required, and that `updatedAt` is
+ * also the order listConversations sorts by, so a client would see one ordering
+ * out of Cave rather than two. Both halves of that were true. The conclusion
+ * was still wrong, because a keyset cursor names a position in an ordering and
+ * an ordering that moves is not one a cursor can name.
+ *
+ * `updatedAt` only ever increases and the ordering is descending, so a
+ * conversation that received a turn mid-pagination moved *above* an open
+ * cursor: one already served stayed served, and one NOT yet served was skipped
+ * by the rest of the walk. A skip, not the repeat this comment used to claim —
+ * measured over a real socket by scripts/client-v1-conformance.mjs, which could
+ * not reproduce a repeat from a touch at all. That is the worse of the two: a
+ * repeat is deduplicable by id, a skip is silent data loss in a read this
+ * surface calls canonical (cave-fhjlu).
+ *
+ * So the key is `createdAt`, matching {@link clientV1ProjectPageKey} and the
+ * daemon's session pager (OpenCoven/coven#783), which keys `created_at, id` for
+ * exactly this reason. Nothing writes `conv.createdAt` after the file is
+ * created, so the key of a row that exists never changes, and a walk that
+ * started before a touch serves the same set after it.
+ *
+ * Two costs, both deliberate and both published in docs/api/client-v1.md:
+ *
+ *   - **The ordering a client sees changed**, from most-recently-touched first
+ *     to most-recently-created first. `/conversations` no longer matches the
+ *     desktop sessions list row for row. `updatedAt` is still on every record,
+ *     so recency is available as a field — it is just not the page key. A
+ *     recency ordering and a resumable walk are in tension, and only one of them
+ *     can be served correctly by a keyset cursor.
+ *   - **A conversation created mid-walk is not served by that walk.** Its
+ *     `createdAt` is `now`, which sorts above every open cursor. That is
+ *     inherent to a forward keyset over a growing set and costs no pre-existing
+ *     row; the doc tells a client to re-read the head for it.
+ *
+ * The optional-field objection is answered by the sentinel above rather than by
+ * keying on something mutable: see {@link conversationSortKey}.
  */
 export function clientV1ConversationPageKey(summary: ConversationSummary): ClientV1PageKey {
-  return { sort: summary.updatedAt, id: summary.sessionId };
+  return { sort: conversationSortKey(summary), id: summary.sessionId };
 }
 
 /**

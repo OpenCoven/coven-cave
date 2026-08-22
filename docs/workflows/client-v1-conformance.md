@@ -184,7 +184,7 @@ recognisable — but the rule is to not write them, not to scan for them.
 
 The harness is written against what the wire does, not against what the
 reference says, and where the two disagree it asserts the measured behaviour and
-records the gap. Three stand today, all documentation-level — the gates
+records the gap. Two stand today, both documentation-level — the gates
 themselves hold:
 
 1. **The backslash half of the escaped-target refusal is unreachable.**
@@ -202,22 +202,44 @@ themselves hold:
    envelope the reference describes. Same status, different body — and a
    handler-level test cannot tell, because it never runs the proxy.
 
-3. **`/conversations` skips rather than repeats under a mid-walk touch.** The
-   reference and `reads.ts` both say a conversation that receives a turn while
-   you are paging "can appear in two pages". The ordering is `updatedAt`
-   **descending** and a touch only raises the key, so a touched row moves
-   *above* an open cursor: one already served stays served, and one not yet
-   served is skipped by the rest of the walk. No repeat was reproducible. The
-   client-visible consequence is the opposite of the documented one — a repeat
-   is deduplicable by `id`, a skip is silent unless the client re-reads from the
-   top.
+### The finding that became a fix — `/conversations` skipped a touched row
 
-   Measured over the **whole** walk rather than the page after the touch, which
-   is what separates the two claims: a row that came back three pages later
-   would be the documented repeat, and a one-page probe cannot tell. The ledger
-   orders `conversation-06` down to `conversation-01`; the first page serves
-   `[06, 05]`; after touching the unserved `conversation-01` the rest of the walk
-   serves `[04, 03, 02]` and nothing is served twice anywhere in it.
+A third finding stood here until 2026-08-22, and it is recorded rather than
+deleted because the run is what found it and the assertions it left behind are
+what keep it fixed.
+
+`/conversations` keyed on `updatedAt`. That field only ever rises and the
+ordering is descending, so a conversation touched while a client was paging moved
+*above* an open cursor: one already served stayed served, and one **not yet
+served was skipped** by the rest of the walk. The reference and the `reads.ts`
+comment both said such a row "can appear in two pages"; the run could not
+reproduce a repeat at all. A repeat is deduplicable by `id`, a skip is silent —
+so this was data loss from a read the surface calls canonical, not a
+documentation gap, and it was fixed under `cave-fhjlu` by keying on the immutable
+`createdAt`.
+
+Measuring the **whole** walk rather than the page after the touch is what
+separated the two claims, and a one-page probe never could have: the ledger
+ordered `conversation-06` down to `conversation-01`, the first page served
+`[06, 05]`, and after touching the unserved `conversation-01` the rest of the
+walk served `[04, 03, 02]` with nothing served twice anywhere in it.
+
+The single assertion that measured it — `reads.conversations-mutable-key-moves-a-row`,
+which *asserted the skip* — is now a family of seven that assert the walk is
+whole, one per way a ledger can move under an open cursor: a touch of an unserved
+row, a touch of an already-served row, a touch of the row the cursor names, a
+conversation created mid-walk, a conversation deleted mid-walk, two rows tied on
+the sort key, and a row carrying no `createdAt` at all. Each walks to exhaustion
+and compares an **ordered sequence** of ids, never a set.
+
+Two fixture properties make that family able to fail, and both are pinned by
+`scripts/client-v1-conformance.test.mjs` rather than left as convention:
+
+- `createdAt` and `updatedAt` order the fixture in **opposite** directions. They
+  used to agree, so `reads.conversations-shape` passed whichever field keyed the
+  page and the regression was invisible to it.
+- two conversations **share** a `createdAt`, so the id tiebreak that makes the
+  ordering total is exercised rather than merely present.
 
 ## Harness mutation results
 

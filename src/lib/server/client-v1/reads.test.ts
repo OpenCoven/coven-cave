@@ -213,24 +213,88 @@ test("the conversation projection tolerates the fields the store leaves optional
   );
 });
 
-test("conversations page by updatedAt, the one timestamp the summary always has", () => {
-  // createdAt is optional on a ConversationSummary — a transcript written
-  // before the field existed, or a corrupt-file fallback row, has none — so it
-  // cannot be the sort key. updatedAt is required and is also the order
-  // listConversations already serves, so a client sees one ordering from Cave.
+test("conversations page by createdAt, the one timestamp nothing rewrites", () => {
+  // cave-fhjlu. The key used to be updatedAt, because it is the field the
+  // summary always carries and the order listConversations serves. Both true,
+  // and still the wrong key: updatedAt only ever rises and the ordering is
+  // descending, so a conversation touched mid-walk moved ABOVE an open cursor
+  // and — if the walk had not reached it — was never served. A skip, not a
+  // repeat: silent loss from a read this surface calls canonical.
   assert.deepEqual(clientV1ConversationPageKey(SUMMARY), {
-    sort: "2026-08-09T00:00:00.000Z",
+    sort: "2026-08-01T00:00:00.000Z",
     id: "conversation-1",
   });
+  // The key is decided by createdAt alone: two rows with the same createdAt and
+  // wildly different updatedAt mint the same sort half.
+  assert.equal(
+    clientV1ConversationPageKey({ ...SUMMARY, updatedAt: "2036-01-01T00:00:00.000Z" }).sort,
+    clientV1ConversationPageKey(SUMMARY).sort,
+  );
   const older: ConversationSummary = {
     sessionId: "conversation-0",
     familiarId: "mote",
-    updatedAt: "2026-08-02T00:00:00.000Z",
+    createdAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-08-30T00:00:00.000Z",
   };
   const tied: ConversationSummary = { ...SUMMARY, sessionId: "conversation-3" };
   assert.deepEqual(
     sortClientV1Conversations([older, SUMMARY, tied]).map((row) => row.sessionId),
     ["conversation-3", "conversation-1", "conversation-0"],
+    "createdAt descending, id descending on a tie — NOT the updatedAt order, which is the reverse here",
+  );
+});
+
+test("a conversation with no createdAt sorts to the tail rather than being stranded", () => {
+  // The objection to keying on createdAt was that it is optional: a transcript
+  // written before the field existed has none, and neither does the fallback
+  // row a corrupt file produces. Answered by a sentinel rather than by keying
+  // on something mutable — the empty string is below every ISO instant, so a
+  // descending walk serves those rows LAST. They are still served, still
+  // reachable through a cursor, and their key is as immutable as any instant.
+  const keyless: ConversationSummary = {
+    sessionId: "conversation-9",
+    familiarId: "",
+    updatedAt: "2036-01-01T00:00:00.000Z",
+  };
+  assert.deepEqual(clientV1ConversationPageKey(keyless), { sort: "", id: "conversation-9" });
+  assert.deepEqual(
+    sortClientV1Conversations([keyless, SUMMARY]).map((row) => row.sessionId),
+    ["conversation-1", "conversation-9"],
+    "even with the newest updatedAt in the set, the keyless row is last",
+  );
+  // Two keyless rows are ordered against each other by the id tiebreak, so the
+  // tail block is a total order too rather than an unordered heap.
+  assert.deepEqual(
+    sortClientV1Conversations([
+      { ...keyless, sessionId: "conversation-a" },
+      { ...keyless, sessionId: "conversation-b" },
+    ]).map((row) => row.sessionId),
+    ["conversation-b", "conversation-a"],
+  );
+});
+
+test("the page key reads createdAt exactly as the projection serves it", () => {
+  // The key and the record must agree, or a client sorting by the createdAt it
+  // was served reconstructs a different ordering than the one the cursor walks.
+  // Both go through optionalText, so a blank or wrongly typed createdAt is
+  // omitted from the record AND sorts to the tail — rather than the record
+  // omitting it while the key sorted it as " " or as a number.
+  for (const createdAt of ["   ", "", undefined, 17 as unknown as string]) {
+    const row = { ...SUMMARY, createdAt };
+    assert.equal(
+      "createdAt" in projectClientV1Conversation(row),
+      false,
+      `projection must omit createdAt ${JSON.stringify(createdAt)}`,
+    );
+    assert.equal(
+      clientV1ConversationPageKey(row).sort,
+      "",
+      `page key must sort createdAt ${JSON.stringify(createdAt)} to the tail`,
+    );
+  }
+  assert.equal(
+    clientV1ConversationPageKey(SUMMARY).sort,
+    projectClientV1Conversation(SUMMARY).createdAt,
   );
 });
 
