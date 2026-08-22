@@ -3,15 +3,22 @@ import test from "node:test";
 
 import {
   BRANCHED_ACTIVE_SEQUENCE,
+  COVERAGE_ASSERTION_ID,
+  EXPECTED_ASSERTION_IDS,
   FINDINGS,
   FIXTURE_ROSTER,
   NOT_COVERED,
   RECORD_SHAPES,
+  TTL_ASSERTION_IDS,
+  checkAssertionCoverage,
   checkEmptyFirstPage,
   checkEnvelope,
   checkPageWalk,
   checkRecordShape,
+  checkRecordValues,
   createRecorder,
+  expectedAssertionIds,
+  expectedBranchedMessages,
   fixtureBranchedConversation,
   fixtureConversations,
   fixtureProjects,
@@ -194,6 +201,105 @@ test("RECORD_SHAPES withholds every field the reference says is withheld", () =>
   assert.ok(RECORD_SHAPES.message.forbidden.includes("usage"));
   assert.ok(RECORD_SHAPES.message.forbidden.includes("costUsd"));
   assert.ok(RECORD_SHAPES.pairingStatus.forbidden.includes("scopes"));
+});
+
+// ── projected VALUES ─────────────────────────────────────────────────────────
+//
+// The key-set check above is half a projection test. A build serving
+// `root: project.id`, `harness: summary.harnessSessionId` and `text: turn.role`
+// keeps every key, and was measured passing all 89 assertions of an otherwise
+// identical run. These are the cases that catch it.
+
+test("checkRecordValues accepts a record whose pinned fields all match", () => {
+  assert.deepEqual(
+    checkRecordValues({ id: "p1", root: "/r", extra: 1 }, { id: "p1", root: "/r" }, "project"),
+    [],
+  );
+});
+
+test("checkRecordValues catches the wrong field served under the right key", () => {
+  // The measured mutation: `root: requiredText(project.id, …)`.
+  const failures = checkRecordValues({ id: "project-01", root: "project-01" }, { root: "/fixtures/project-01" }, "project");
+  assert.deepEqual(failures, ['project.root is "project-01", expected "/fixtures/project-01"']);
+});
+
+test("checkRecordValues catches a withheld value disclosed under an allowed key", () => {
+  // The measured mutation: `harness: summary.harnessSessionId`.
+  const failures = checkRecordValues({ harness: "harness-03" }, { harness: "claude" }, "conversation");
+  assert.deepEqual(failures, ['conversation.harness is "harness-03", expected "claude"']);
+});
+
+test("checkRecordValues catches a pinned field that is absent entirely", () => {
+  assert.deepEqual(checkRecordValues({ id: "m1" }, { text: "b-a1 body" }, "message"), [
+    'message.text is undefined, expected "b-a1 body"',
+  ]);
+});
+
+test("checkRecordValues catches a count that is right in type and wrong in value", () => {
+  assert.deepEqual(checkRecordValues({ toolCount: 0 }, { toolCount: 2 }, "message b-a1"), [
+    "message b-a1.toolCount is 0, expected 2",
+  ]);
+});
+
+test("checkRecordValues refuses a non-object", () => {
+  assert.deepEqual(checkRecordValues(null, { id: "a" }, "record"), ["record is not a JSON object"]);
+  assert.deepEqual(checkRecordValues("nope", { id: "a" }, "record"), ["record is not a JSON object"]);
+});
+
+// ── assertion coverage ───────────────────────────────────────────────────────
+
+test("checkAssertionCoverage catches a leg that vanished instead of recording a skip", () => {
+  // The regression this exists for: three cursor legs sat behind
+  // `if (firstPage.next)` with no else, so a server publishing no token left
+  // them out of the record entirely — a smaller, still-green run.
+  const entries = [
+    { id: "reads.projects-paging-partial-final-page", result: "fail", detail: "" },
+    { id: "reads.projects-paging-exact-multiple", result: "fail", detail: "" },
+  ];
+  const failures = checkAssertionCoverage(entries, [
+    "reads.projects-paging-partial-final-page",
+    "reads.projects-paging-exact-multiple",
+    "reads.cursor-replay-is-stable",
+  ]);
+  assert.deepEqual(failures, [
+    'assertion "reads.cursor-replay-is-stable" was never recorded, not even as a skip',
+  ]);
+});
+
+test("checkAssertionCoverage accepts a skip in place of a pass", () => {
+  // A skip is an honest partial and must satisfy coverage; only silence must not.
+  const entries = [{ id: "pairing.ttl-expiry", result: "skip", detail: "no clock seam" }];
+  assert.deepEqual(checkAssertionCoverage(entries, ["pairing.ttl-expiry"]), []);
+});
+
+test("checkAssertionCoverage catches a duplicated and an unexpected id", () => {
+  const entries = [
+    { id: "health.envelope", result: "pass", detail: "" },
+    { id: "health.envelope", result: "pass", detail: "" },
+    { id: "health.surprise", result: "pass", detail: "" },
+  ];
+  const failures = checkAssertionCoverage(entries, ["health.envelope"]).sort();
+  assert.deepEqual(failures, [
+    'assertion "health.envelope" was recorded 2 times',
+    'assertion "health.surprise" is not in the expected set',
+  ]);
+});
+
+test("checkAssertionCoverage ignores its own entry", () => {
+  const entries = [
+    { id: "health.envelope", result: "pass", detail: "" },
+    { id: COVERAGE_ASSERTION_ID, result: "pass", detail: "" },
+  ];
+  assert.deepEqual(checkAssertionCoverage(entries, ["health.envelope"]), []);
+});
+
+test("expectedAssertionIds swaps exactly the TTL leg on --include-ttl", () => {
+  const waited = expectedAssertionIds(true);
+  const skipped = expectedAssertionIds(false);
+  assert.deepEqual(waited.filter((id) => !EXPECTED_ASSERTION_IDS.includes(id)), TTL_ASSERTION_IDS.waited);
+  assert.deepEqual(skipped.filter((id) => !EXPECTED_ASSERTION_IDS.includes(id)), TTL_ASSERTION_IDS.skipped);
+  assert.equal(new Set(waited).size, waited.length);
+  assert.equal(EXPECTED_ASSERTION_IDS.includes(COVERAGE_ASSERTION_ID), false);
 });
 
 // ── paged walks ──────────────────────────────────────────────────────────────
@@ -397,6 +503,39 @@ test("the branched fixture's active path is the declared sequence and omits the 
 
 test("the branched fixture pages at limit 2 so the reconcile leg has an open cursor", () => {
   assert.ok(BRANCHED_ACTIVE_SEQUENCE.length > 2);
+});
+
+test("the branched fixture gives the message projection something to withhold and to count", () => {
+  // Without this the projection leg was inert on its own fixture: `forbidden`
+  // cannot name a leak of a field the store never held, and a hardcoded
+  // `toolCount: 0` agrees with an all-zero transcript. A build that leaked
+  // `reasoning` and the tool inputs whenever a turn had them passed the run.
+  const conversation = fixtureBranchedConversation();
+  const rich = conversation.turns.find((turn) => turn.id === "b-a1");
+  assert.ok(BRANCHED_ACTIVE_SEQUENCE.includes(rich.id), "the loaded turn must be on the ACTIVE branch");
+  for (const field of ["reasoning", "usage", "costUsd", "durationMs", "harnessSessionId"]) {
+    assert.ok(rich[field] !== undefined, `b-a1 must carry ${field}`);
+    assert.ok(
+      RECORD_SHAPES.message.forbidden.includes(field),
+      `${field} must be one the projection withholds, or seeding it proves nothing`,
+    );
+  }
+  assert.equal(rich.tools.length, 2, "more than one, so a count of 1 is distinguishable from a truthy check");
+  assert.equal(rich.attachments.length, 1);
+  assert.ok(rich.tools.some((tool) => /id_ed25519/.test(tool.input ?? "")), "a tool input worth withholding");
+});
+
+test("expectedBranchedMessages pins a value for every turn of the active branch", () => {
+  const expected = expectedBranchedMessages();
+  assert.deepEqual(expected.map((message) => message.id), BRANCHED_ACTIVE_SEQUENCE);
+  const rich = expected.find((message) => message.id === "b-a1");
+  assert.equal(rich.toolCount, 2);
+  assert.equal(rich.attachmentCount, 1);
+  assert.equal(expected[0].parentId, null);
+  // Every pinned key must be one the projection is allowed to serve, or the
+  // value check would contradict the shape check.
+  const allowed = new Set([...RECORD_SHAPES.message.required, ...RECORD_SHAPES.message.optional]);
+  for (const key of Object.keys(rich)) assert.ok(allowed.has(key), `${key} is not a published message field`);
 });
 
 test("the fixture roster covers the optional familiar fields and enough rows to page", () => {

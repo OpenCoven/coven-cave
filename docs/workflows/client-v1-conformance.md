@@ -71,7 +71,10 @@ secret; the per-pairing failure budget, including that it is shared between the
 poll and the exchange, that a correct secret is never charged, that spending it
 locks out the rightful holder, and that the lockout is confined to one pairing;
 idempotent re-approval and the contradicting-decision conflict; revocation, the
-tombstone surviving a store reload, and the revoked bearer being refused; and
+tombstone surviving a store reload, and the revoked bearer being refused **by
+all five canonical reads** — `read-guard.ts` keeps the credential decision
+written out in each route module rather than delegated, so there are five copies
+of it and a single-route probe clears one; and
 every admin route answering `503` when `COVEN_CAVE_AUTH_TOKEN` is unset —
 together with the consequence that matters, which is that a pairing opened on a
 tokenless Cave can only ever answer `pairing_pending`.
@@ -79,7 +82,9 @@ tokenless Cave can only ever answer `pairing_pending`.
 **Canonical reads (#4838)** — all five routes; empty first page, exact-multiple
 page, continuation, partial final page, and `hasMore` in both directions;
 projection shape as a whole key set, with each withheld field named as a leak
-rather than as drift; cursor stability — replaying a cursor returns the same
+rather than as drift, **and every projected value checked against what the
+fixture seeded** — a key-set check alone passes `root: project.id` and
+`harness: summary.harnessSessionId`, both measured; cursor stability — replaying a cursor returns the same
 page, `current` echoes the token sent, and deleting the record a cursor *names*
 does not strand the walk; the `limit` ceiling and every refused spelling, the
 unsupported and repeated parameter refusals, and the two cursor refusals; the
@@ -108,13 +113,27 @@ is operator-invoked, and the same trade
 manual by design; what is automated is the evidence.*
 
 What **is** wired into CI is the half that decides whether a run passes.
-`scripts/client-v1-conformance.test.mjs` is in the `api` suite, and every one of
-its cases is a negative one: it feeds each assertion helper the exact broken
-server behaviour the run exists to catch and demands a failure. An assertion
+`scripts/client-v1-conformance.test.mjs` is in the `api` suite, and most of its
+cases are negative ones: they feed each assertion helper the exact broken server
+behaviour the run exists to catch and demand a failure. (The rest pin the
+fixtures, which is the other half of the same job — an assertion over data that
+never carried the field it forbids proves nothing, and that is exactly how the
+message projection leg went inert; see the mutation table below.) An assertion
 helper that cannot fail turns a green record into a lie, and nothing else in the
-suite would notice. `scripts/ci-paths.mjs` also routes the harness, this
-runbook, and the results directory into the client-v1 lane, so a change to any
-of them is validated by the lane that owns the surface.
+suite would notice.
+
+Every helper mutation attempted against that suite is killed by it: 37 of 37,
+covering each branch of `checkEnvelope`, `checkRecordShape`, `checkRecordValues`,
+`checkPageWalk`, `checkEmptyFirstPage`, `checkAssertionCoverage`,
+`summarizeConformance`, `recorder.expect`, `parseConformanceArgs`,
+`parseRawResponse`, every `RECORD_SHAPES.*.forbidden` list, and every fixture
+invariant.
+
+`scripts/ci-paths.mjs` also routes the harness, this runbook, and the results
+directory into the client-v1 lane. Note the harness was already covered before
+that edit — `scripts/` is in `FRONTEND_PATH`, so `frontend-validation (API
+tests)` ran on any change to it — so the routing adds the e2e and docs lanes
+rather than closing a hole.
 
 Run it before closing either gate, and when a change lands in `proxy.ts`,
 `server.ts`, or `src/lib/server/client-v1/**`.
@@ -192,17 +211,52 @@ the source. Measured 2026-08-22 on `win32-x64` against Cave 0.3.9.
 | `FileCredentialStore.findByBearer` ignores `revokedAt` | **caught**, 1 failure | `revocation.bearer-refused-after` |
 | `parseClientV1PageLimit` clamps instead of refusing | **caught**, 5 failures | every `reads.refuses.limit-*` case: zero, over-ceiling, leading zero, exponent, signed |
 
-Two things the exercise showed that are worth keeping:
+### The four that were NOT caught, and what closed them
 
-- **The leak mutation had to be made twice.** Adding `reasoning` to the
-  projection alone does not compile — `ClientV1MessageRecord` is a closed
-  literal type, so `tsc` refuses the field before any build produces it. A real
-  leak therefore has to widen the published type as well, and that is the shape
-  the mutation above uses. The type is the first gate; this run is the second.
-- **The `next`-suppressing mutation *skipped* rather than failed three legs.**
-  `reads.cursor-replay-is-stable`, `reads.cursor-survives-deletion` and
-  `reads.conversations-mutable-key-moves-a-row` all need a first-page token to
-  open a cursor with, so a server that publishes none leaves them unrun. They
-  are reported as skips and, per the rule above, a skip is not a pass — the four
-  walk assertions are what fail. Read a jump in the skip count as a signal, not
-  as noise.
+An independent review built a second set aimed at the assertions rather than at
+the routes, and **all four passed a full run** — 89 passed, 0 failed, exit 0,
+against one build carrying every one of them at once:
+
+| Mutation | Before | After |
+|---|---|---|
+| `projectClientV1Message` serves `reasoning` and the tool calls **when the turn has them** | **passed** | `reads.messages-active-branch` names both leaks |
+| `projectClientV1Project` serves `root: project.id` | **passed** | `reads.projects-shape`, all seven rows |
+| `projectClientV1Conversation` serves `harness: summary.harnessSessionId` | **passed** | `reads.conversations-shape`, all six rows |
+| `projectClientV1Message` serves `text: turn.role` | **passed** | `reads.messages-values`, all six turns |
+
+Two causes, both now fixed:
+
+- **`checkRecordShape` checks KEYS ONLY.** A projection that serves the wrong
+  field, or a withheld *value* under an allowed *key*, keeps every key and was
+  invisible. `checkRecordValues` is the other half, and the projects,
+  conversations and messages legs now use both. The `harness` /
+  `harnessSessionId` pair is the case that matters: adjacent fields, one
+  published and one withheld, and only a value check tells them apart.
+- **The branched transcript carried nothing worth withholding.** Its turns had
+  no `reasoning`, no `tools`, no `usage`, no `costUsd` and no `attachments`, so
+  `RECORD_SHAPES.message.forbidden` had nothing to forbid and both counts were
+  zero everywhere — `reads.messages-counts-not-contents` could not fail for any
+  wrong count. `b-a1` now carries all of them, two tool calls and one
+  attachment, and the counts are asserted as 2 and 1 rather than as "a number".
+  The earlier note that the leak mutation "had to be made twice" because the
+  type is closed still holds, but widening it is three lines; the type is a
+  speed bump, not the first of two gates.
+
+### Legs that used to vanish rather than skip
+
+The `next`-suppressing mutation above leaves the cursor legs unrun, because they
+need a first-page token to open a cursor with. The first write-up said they were
+"reported as skips". Two of them were reported as **nothing at all**:
+`reads.cursor-replay-is-stable`, `reads.cursor-current-echoes-the-token` and
+`reads.cursor-survives-deletion` sat behind `if (firstPage.next)` with no `else`,
+so their ids simply left the record — a smaller, still-green run, with the
+shortfall visible only to a reader who remembered the expected total. The same
+held for `reads.messages-restart-after-reconcile` and
+`admin.unconfigured.exchange-stays-pending`.
+
+Every such guard now records a skip, and `EXPECTED_ASSERTION_IDS` makes that
+checkable instead of conventional: the run ends by comparing what it recorded
+against the declared set and fails `harness.assertion-coverage` on any id that is
+missing, duplicated or unexpected. A skip still does not fail a run — but a
+silence now does. **Add an id to that list in the same change that adds the
+assertion.**

@@ -22,6 +22,22 @@
  * assertion. `--out` also writes the evidence record described in
  * docs/workflows/client-v1-conformance.md.
  *
+ * TWO RULES THIS FILE LEARNED THE HARD WAY, both from builds that were broken
+ * and that an earlier version of this run reported green:
+ *
+ *   - a projection is checked by KEY *and* by VALUE. A key-set check alone
+ *     passes `root: project.id`, `harness: summary.harnessSessionId` and
+ *     `text: turn.role` — a wrong path, a withheld id disclosed under an
+ *     allowed key, and every transcript body replaced. Measured: 89 passed, 0
+ *     failed, exit 0. See checkRecordValues.
+ *   - a fixture has to carry what the projection withholds. A `forbidden` list
+ *     cannot name a leak of a field the store never held, and a count cannot be
+ *     wrong when the true answer is zero everywhere. See
+ *     fixtureBranchedConversation's `b-a1`.
+ *
+ * And one about the record itself: a leg guarded by `if (someToken)` must record
+ * a skip in its `else`, never nothing. See EXPECTED_ASSERTION_IDS.
+ *
  * WHAT IT WILL NOT DO. It never reads or writes the operator's real Cave home.
  * Every run mints its own `COVEN_HOME`/`COVEN_CAVE_HOME` under a temp
  * directory, mints its own admin token, and removes both afterwards. A previous
@@ -136,6 +152,151 @@ export function createRecorder() {
   };
 }
 
+/**
+ * Every assertion id one run is required to produce, TTL leg aside.
+ *
+ * A leg guarded by `if (someToken)` used to vanish from the record when the
+ * precondition failed, taking its id with it: the run then reported a smaller,
+ * still-green total and nothing said which legs had gone. Two of the four the
+ * write-up called "reported as skips" were in fact reported as nothing at all.
+ *
+ * Every such guard now records a skip, and this list is what makes that
+ * checkable rather than a convention: a run that does not produce exactly these
+ * ids fails on `harness.assertion-coverage`, whatever the individual legs said.
+ * Add an id here in the same change that adds the assertion.
+ */
+export const EXPECTED_ASSERTION_IDS = [
+  "admin.unconfigured/admin/pairing-requests.GET",
+  "admin.unconfigured/admin/credentials.GET",
+  "admin.unconfigured/admin/pairing-requests/:id/decision.POST",
+  "admin.unconfigured/admin/credentials/:id.DELETE",
+  "admin.unconfigured.pairing-still-opens",
+  "admin.unconfigured.exchange-stays-pending",
+  "health.envelope",
+  "health.instance-stable",
+  "health.discovery-record",
+  "ingress.escaped-path.percent",
+  "ingress.escaped-path.percent-encoded-separator",
+  "ingress.backslash-path-reaches-no-handler",
+  "ingress.forwarded.public",
+  "ingress.forwarded.authenticated",
+  "ingress.forwarded.admin",
+  "ingress.exchange-requires-content-length",
+  "ingress.refuses-transfer-encoding",
+  "ingress.body-cap",
+  "ingress.pairing-content-type",
+  "admin.wrong-token",
+  "admin.no-token",
+  "admin.mutation-requires-source",
+  "pairing.create",
+  "pairing.poll-pending",
+  "pairing.admin-queue",
+  "pairing.admin-approve",
+  "pairing.poll-approved",
+  "pairing.admin-approve-idempotent",
+  "pairing.admin-decision-conflict",
+  "pairing.exchange",
+  "pairing.bearer-works",
+  "pairing.replay-refused",
+  "pairing.poll-after-exchange",
+  "pairing.poll-denied",
+  "pairing.exchange-denied",
+  "pairing.unknown-id",
+  "pairing.wrong-secret",
+  "pairing.correct-secret-polling-is-free",
+  "pairing.budget-charges-wrong-secret-on-poll",
+  "pairing.budget-locks-out-the-holder",
+  "pairing.budget-is-shared-across-routes",
+  "pairing.budget-is-per-pairing",
+  "reads.empty-first-page/projects",
+  "reads.empty-first-page/conversations",
+  "reads.no-bearer",
+  "reads.unknown-bearer",
+  "reads.bearer-not-accepted-in-query",
+  "reads.scope-denied",
+  "reads.familiars",
+  "reads.familiars-paging",
+  "reads.projects-shape",
+  "reads.projects-paging-partial-final-page",
+  "reads.cursor-replay-is-stable",
+  "reads.cursor-current-echoes-the-token",
+  "reads.cursor-survives-deletion",
+  "reads.projects-paging-exact-multiple",
+  "reads.refuses.limit-zero",
+  "reads.refuses.limit-over-ceiling",
+  "reads.refuses.limit-leading-zero",
+  "reads.refuses.limit-exponent",
+  "reads.refuses.limit-signed",
+  "reads.refuses.limit-repeated",
+  "reads.refuses.unsupported-parameter",
+  "reads.refuses.offset",
+  "reads.refuses.cursor-outside-alphabet",
+  "reads.refuses.cursor-not-canonical",
+  "reads.limit-ceiling-is-served",
+  "reads.default-page-size",
+  "reads.conversations-shape",
+  "reads.conversations-paging",
+  "reads.conversation-by-id",
+  "reads.conversation-by-id-refuses-limit",
+  "reads.conversation-by-id-refuses-cursor",
+  "reads.conversation-by-id-not-found",
+  "reads.conversations-mutable-key-moves-a-row",
+  "reads.messages-active-branch",
+  "reads.messages-values",
+  "reads.messages-paging",
+  "reads.messages-counts-not-contents",
+  "reads.messages-reconcile-required",
+  "reads.messages-restart-after-reconcile",
+  "reads.messages-not-found",
+  "reads.messages-canonical-conversation-id",
+  "revocation.bearer-works-before",
+  "revocation.admin-listing",
+  "revocation.revoke",
+  "revocation.bearer-refused-after",
+  "revocation.is-idempotent",
+  "revocation.unknown-credential",
+  "revocation.tombstone-persists",
+];
+
+/** The TTL leg records one id or the other, never both and never neither. */
+export const TTL_ASSERTION_IDS = {
+  waited: ["pairing.ttl-poll-expired", "pairing.ttl-exchange-expired"],
+  skipped: ["pairing.ttl-expiry"],
+};
+
+/** The id this coverage check records under; never part of the expected set. */
+export const COVERAGE_ASSERTION_ID = "harness.assertion-coverage";
+
+export function expectedAssertionIds(includeTtl) {
+  return [...EXPECTED_ASSERTION_IDS, ...(includeTtl ? TTL_ASSERTION_IDS.waited : TTL_ASSERTION_IDS.skipped)];
+}
+
+/**
+ * Every expected id present exactly once, and nothing unexpected.
+ *
+ * A missing id is the failure this exists for. A duplicate is reported too:
+ * two entries under one id make `passed` and `total` disagree with what a
+ * reader thinks the record covers.
+ */
+export function checkAssertionCoverage(entries, expected) {
+  const failures = [];
+  const seen = new Map();
+  for (const entry of entries) {
+    if (entry.id === COVERAGE_ASSERTION_ID) continue;
+    seen.set(entry.id, (seen.get(entry.id) ?? 0) + 1);
+  }
+  for (const id of expected) {
+    const count = seen.get(id) ?? 0;
+    if (count === 0) failures.push(`assertion ${JSON.stringify(id)} was never recorded, not even as a skip`);
+    else if (count > 1) failures.push(`assertion ${JSON.stringify(id)} was recorded ${count} times`);
+  }
+  const allowed = new Set(expected);
+  for (const id of seen.keys()) {
+    if (!allowed.has(id)) failures.push(`assertion ${JSON.stringify(id)} is not in the expected set`);
+  }
+  return failures;
+}
+
 export function summarizeConformance(entries) {
   const passed = entries.filter((entry) => entry.result === "pass").length;
   const failed = entries.filter((entry) => entry.result === "fail").length;
@@ -218,6 +379,12 @@ export function checkEnvelope(body, expectation) {
  * credential's `bearerHash`, a turn's `reasoning` or `tools`, a project's
  * `access`. A generic "unexpected key" on those reads like a schema drift
  * rather than the disclosure it is.
+ *
+ * ⚠️ This checks KEYS ONLY. It says nothing about what the values are, so it
+ * cannot see a projection that serves a withheld *value* under an allowed key
+ * (`harness: summary.harnessSessionId`) or simply the wrong field
+ * (`root: project.id`). Both were measured passing a whole run. `checkRecordValues`
+ * is the other half and every projection leg is required to use both.
  */
 export function checkRecordShape(record, spec, label) {
   const failures = [];
@@ -233,6 +400,32 @@ export function checkRecordShape(record, spec, label) {
   for (const key of keys) {
     if (!allowed.has(key) && !(spec.forbidden ?? []).includes(key)) {
       failures.push(`${label} carries unexpected field "${key}"`);
+    }
+  }
+  return failures;
+}
+
+/**
+ * The VALUES a projected record must carry, against what the fixture seeded.
+ *
+ * Written because the key-set check above is not a projection test on its own,
+ * and the gap is not theoretical: a build serving `root: project.id`,
+ * `harness: summary.harnessSessionId` and `text: turn.role` — a wrong path, a
+ * withheld id disclosed under an allowed key, and every transcript body
+ * replaced — passed all 89 assertions of an otherwise identical run. Every key
+ * was right, so nothing looked.
+ *
+ * `expected` names only the fields whose value the fixture pins. A field the
+ * fixture cannot predict (a server-minted id, an instant) belongs in the shape
+ * spec, not here.
+ */
+export function checkRecordValues(record, expected, label) {
+  if (!isRecord(record)) return [`${label} is not a JSON object`];
+  const failures = [];
+  for (const [key, want] of Object.entries(expected)) {
+    const got = record[key];
+    if (JSON.stringify(got) !== JSON.stringify(want)) {
+      failures.push(`${label}.${key} is ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`);
     }
   }
   return failures;
@@ -656,6 +849,28 @@ export function fixtureBranchedConversation() {
     role,
     text: `${id} body`,
     createdAt: `2026-05-01T00:0${index}:00.000Z`,
+    // ONE turn on the active branch carries every field the message projection
+    // exists to withhold, and carries more than one of each countable kind.
+    //
+    // Without this the whole projection leg was inert: `forbidden` cannot name
+    // a leak of a field the store never held, and `attachmentCount` /
+    // `toolCount` cannot be wrong when the true answer is zero everywhere. A
+    // build that served `reasoning` and the tool inputs whenever a turn had
+    // them, and hardcoded both counts to zero, passed the entire run.
+    ...(id === "b-a1"
+      ? {
+          reasoning: "private scratchpad — never served",
+          tools: [
+            { id: "tool-1", name: "read", input: "/etc/passwd", status: "ok" },
+            { id: "tool-2", name: "bash", input: "cat ~/.ssh/id_ed25519", status: "ok" },
+          ],
+          attachments: [{ name: "secret-plan.txt", type: "text/plain", text: "withheld" }],
+          usage: { inputTokens: 11, outputTokens: 22 },
+          costUsd: 0.42,
+          durationMs: 1234,
+          harnessSessionId: "harness-branched",
+        }
+      : {}),
   });
   return {
     sessionId: "branched",
@@ -679,6 +894,28 @@ export function fixtureBranchedConversation() {
 }
 
 export const BRANCHED_ACTIVE_SEQUENCE = ["b-r1", "b-a1", "b-a2", "b-a3", "b-a4", "b-a5"];
+
+/** What each active-branch turn must be projected as, value for value. */
+export function expectedBranchedMessages() {
+  const bodyOf = (id, parentId, role, index) => ({
+    id,
+    conversationId: "branched",
+    parentId,
+    role,
+    text: `${id} body`,
+    createdAt: `2026-05-01T00:0${index}:00.000Z`,
+    attachmentCount: id === "b-a1" ? 1 : 0,
+    toolCount: id === "b-a1" ? 2 : 0,
+  });
+  return [
+    bodyOf("b-r1", null, "user", 0),
+    bodyOf("b-a1", "b-r1", "assistant", 1),
+    bodyOf("b-a2", "b-a1", "user", 2),
+    bodyOf("b-a3", "b-a2", "assistant", 3),
+    bodyOf("b-a4", "b-a3", "user", 4),
+    bodyOf("b-a5", "b-a4", "assistant", 5),
+  ];
+}
 
 async function seedFixture({ caveHomeDir, covenHomeDir, daemonUrl }) {
   await mkdir(caveHomeDir, { recursive: true });
@@ -865,6 +1102,8 @@ async function runUnconfiguredAdminLeg(client, recorder) {
       failures,
       "the documented dead end: no approval route, so the exchange can only ever answer pairing_pending",
     );
+  } else {
+    recorder.skip("admin.unconfigured.exchange-stays-pending", "no pairing request was opened to exchange");
   }
 }
 
@@ -1401,11 +1640,29 @@ async function runRevocationLeg(client, recorder, adminToken, credentialId, bear
   }
   recorder.expect("revocation.revoke", revokeFailures);
 
-  const after = await client.read("/projects", bearer);
+  // Every read route, not one. `read-guard.ts` says outright that the credential
+  // check is written out in each route module rather than delegated, so that
+  // `api-contracts.test.ts` can read it in the route's own source — which means
+  // there are five copies of this decision and a single-route probe clears one
+  // of them. That contract test is a source-text assertion, which is exactly the
+  // unit-test proxy operating rule 8 refuses to close a gate on.
   const afterFailures = [];
-  if (after.status !== 401) afterFailures.push(`the revoked credential answered ${after.status}, expected 401`);
-  afterFailures.push(...checkEnvelope(after.json, { kind: "error", code: "unauthorized" }));
-  recorder.expect("revocation.bearer-refused-after", afterFailures);
+  for (const target of [
+    "/familiars",
+    "/projects",
+    "/conversations",
+    "/conversations/branched",
+    "/conversations/branched/messages",
+  ]) {
+    const after = await client.read(target, bearer);
+    if (after.status !== 401) {
+      afterFailures.push(`${target} answered ${after.status} to a revoked credential, expected 401`);
+    }
+    afterFailures.push(...checkEnvelope(after.json, { kind: "error", code: "unauthorized" }).map(
+      (failure) => `${target}: ${failure}`,
+    ));
+  }
+  recorder.expect("revocation.bearer-refused-after", afterFailures, "all five canonical reads");
 
   const again = await client.admin("DELETE", `/admin/credentials/${credentialId}`, adminToken, {
     body: JSON.stringify({ reason: "second revocation" }),
@@ -1420,10 +1677,10 @@ async function runRevocationLeg(client, recorder, adminToken, credentialId, bear
   const missing = await client.admin("DELETE", `/admin/credentials/${randomUUID()}`, adminToken, {
     body: JSON.stringify({ reason: "no such credential" }),
   });
-  recorder.expect(
-    "revocation.unknown-credential",
-    missing.status === 404 ? [] : [`answered ${missing.status}, expected 404`],
-  );
+  const missingFailures = [];
+  if (missing.status !== 404) missingFailures.push(`answered ${missing.status}, expected 404`);
+  missingFailures.push(...checkEnvelope(missing.json, { kind: "error", code: "not_found" }));
+  recorder.expect("revocation.unknown-credential", missingFailures);
 
   // The store is a file, and the audit trail surviving on disk is the point of
   // a tombstone. Read it back through the admin route on a fresh reload rather
@@ -1457,10 +1714,10 @@ async function runAuthFailureLeg(client, recorder, bearer, writeOnlyBearer) {
   recorder.expect("reads.no-bearer", noBearerFailures);
 
   const garbage = await client.read("/conversations", "not-a-real-bearer");
-  recorder.expect(
-    "reads.unknown-bearer",
-    garbage.status === 401 ? [] : [`answered ${garbage.status}, expected 401`],
-  );
+  const garbageFailures = [];
+  if (garbage.status !== 401) garbageFailures.push(`answered ${garbage.status}, expected 401`);
+  garbageFailures.push(...checkEnvelope(garbage.json, { kind: "error", code: "unauthorized" }));
+  recorder.expect("reads.unknown-bearer", garbageFailures);
 
   // A credential in the query string must not work — the doc says header only,
   // and a credential in a URL survives in logs and Referer headers.
@@ -1516,8 +1773,28 @@ async function runProjectsLeg(client, recorder, bearer, caveHomeDir) {
 
   const single = await client.read("/projects?limit=100", bearer);
   const shapeFailures = [];
+  const byId = new Map(projects.map((project) => [project.id, project]));
   for (const project of single.json?.data?.projects ?? []) {
     shapeFailures.push(...checkRecordShape(project, RECORD_SHAPES.project, `project ${project.id}`));
+    // Values as well as keys: a projection serving `root: project.id` keeps
+    // every key and was measured passing a whole run.
+    const seeded = byId.get(project.id);
+    if (!seeded) shapeFailures.push(`project ${project.id} is not one this run seeded`);
+    else {
+      shapeFailures.push(
+        ...checkRecordValues(
+          project,
+          {
+            name: seeded.name,
+            root: seeded.root,
+            createdAt: seeded.createdAt,
+            updatedAt: seeded.updatedAt,
+            ...(seeded.color === undefined ? {} : { color: seeded.color }),
+          },
+          `project ${project.id}`,
+        ),
+      );
+    }
   }
   if ((single.json?.data?.projects ?? []).length !== projects.length) {
     shapeFailures.push(`limit=100 served ${single.json?.data?.projects?.length} of ${projects.length} rows`);
@@ -1552,6 +1829,14 @@ async function runProjectsLeg(client, recorder, bearer, caveHomeDir) {
         ? []
         : [`cursor.current is ${JSON.stringify(first.json?.cursor?.current)}, expected the token that was sent`],
     );
+  } else {
+    // These need a first-page token to open a cursor with. Recorded as skips
+    // rather than left out: a leg that vanishes from the record is worse than
+    // one that says it did not run, and the run has to remain readable as a
+    // fixed set of ids. See the coverage guard in main().
+    for (const id of ["reads.cursor-replay-is-stable", "reads.cursor-current-echoes-the-token"]) {
+      recorder.skip(id, "the projects walk published no first-page cursor to replay");
+    }
   }
 
   // The cursor names a position in the ordering, not an index, so deleting the
@@ -1570,6 +1855,8 @@ async function runProjectsLeg(client, recorder, bearer, caveHomeDir) {
       "the token records a position in the ordering, not an index",
     );
     await writeProjects(caveHomeDir, projects);
+  } else {
+    recorder.skip("reads.cursor-survives-deletion", "the projects walk published no first-page cursor to strand");
   }
 
   // 6 of 7 at limit 3 is an exact multiple: the final full page must report
@@ -1633,8 +1920,28 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   const failures = [];
   if (listed.status !== 200) failures.push(`answered ${listed.status}, expected 200`);
   const rows = listed.json?.data?.conversations ?? [];
+  const seededById = new Map(conversations.map((conversation) => [conversation.sessionId, conversation]));
   for (const row of rows) {
     failures.push(...checkRecordShape(row, RECORD_SHAPES.conversation, `conversation ${row.id}`));
+    // `harness` and `harnessSessionId` are adjacent fields, one published and
+    // one withheld. A projection that read the wrong one keeps every key, so
+    // only a value check sees it — measured passing a whole run.
+    const seeded = seededById.get(row.id);
+    if (!seeded) failures.push(`conversation ${row.id} is not one this run seeded`);
+    else {
+      failures.push(
+        ...checkRecordValues(
+          row,
+          {
+            familiarId: seeded.familiarId,
+            harness: seeded.harness,
+            createdAt: seeded.createdAt,
+            updatedAt: seeded.updatedAt,
+          },
+          `conversation ${row.id}`,
+        ),
+      );
+    }
   }
   if (rows.map((row) => row.id).join(",") !== expectedIds.join(",")) {
     failures.push(`served [${rows.map((row) => row.id)}], expected the updatedAt-descending [${expectedIds}]`);
@@ -1715,6 +2022,7 @@ async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
   if (messages.map((message) => message.id).join(",") !== BRANCHED_ACTIVE_SEQUENCE.join(",")) {
     failures.push(`served [${messages.map((message) => message.id)}], expected the active branch [${BRANCHED_ACTIVE_SEQUENCE}]`);
   }
+  const expectedMessages = expectedBranchedMessages();
   for (const message of messages) {
     failures.push(...checkRecordShape(message, RECORD_SHAPES.message, `message ${message.id}`));
     if (message.conversationId !== "branched") {
@@ -1724,21 +2032,53 @@ async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
   if (messages[0]?.parentId !== null) failures.push("the root turn's parentId is not null");
   recorder.expect("reads.messages-active-branch", failures, "the abandoned branch turn b-x1 must be absent");
 
+  // Values, not just keys. `b-a1` carries reasoning, two tool calls (one of
+  // them pointed at a private key), an attachment, usage and a cost, so the
+  // withheld list above has something real to withhold and the counts below
+  // have a non-zero right answer.
+  const valueFailures = [];
+  for (const expected of expectedMessages) {
+    const served = messages.find((message) => message.id === expected.id);
+    if (!served) {
+      valueFailures.push(`message ${expected.id} was not served`);
+      continue;
+    }
+    valueFailures.push(...checkRecordValues(served, expected, `message ${expected.id}`));
+  }
+  recorder.expect(
+    "reads.messages-values",
+    valueFailures,
+    "text, role, parentId, createdAt and both counts, field by field against the fixture",
+  );
+
   const paged = await walk(client, "/conversations/branched/messages", bearer, "messages", 2);
   recorder.expect(
     "reads.messages-paging",
     checkPageWalk(paged, { limit: 2, expectedIds: BRANCHED_ACTIVE_SEQUENCE }),
   );
 
-  // Counts, not contents: the fixture's assistant turns in the LEDGER carry
-  // tools and attachments; this transcript's do not, so assert the counts are
-  // present and zero rather than assuming a leak would show as a wrong number.
-  const countsOk = messages.every(
-    (message) => typeof message.attachmentCount === "number" && typeof message.toolCount === "number",
-  );
+  // Counts, not contents — and the count has to be RIGHT, which needs a turn
+  // that really carries some. `b-a1` has two tools and one attachment, so a
+  // projection that hardcoded either count to zero fails here rather than
+  // agreeing with an all-zero fixture.
+  const countFailures = [];
+  const counted = messages.find((message) => message.id === "b-a1");
+  if (!counted) countFailures.push("the turn carrying tools and attachments was not served");
+  else {
+    if (counted.toolCount !== 2) countFailures.push(`b-a1 toolCount is ${JSON.stringify(counted.toolCount)}, expected 2`);
+    if (counted.attachmentCount !== 1) {
+      countFailures.push(`b-a1 attachmentCount is ${JSON.stringify(counted.attachmentCount)}, expected 1`);
+    }
+  }
+  for (const message of messages) {
+    if (typeof message.attachmentCount !== "number" || typeof message.toolCount !== "number") {
+      countFailures.push(`message ${message.id} does not carry both counts as numbers`);
+    }
+  }
   recorder.expect(
     "reads.messages-counts-not-contents",
-    countsOk ? [] : ["attachmentCount/toolCount are not both numbers on every turn"],
+    countFailures,
+    "b-a1 carries two tool calls and one attachment; the counts must say so and the contents must not appear",
   );
 
   // ── the branch moving under an open cursor ──
@@ -1776,14 +2116,16 @@ async function runMessagesLeg(client, recorder, bearer, caveHomeDir) {
     );
     await writeConversation(caveHomeDir, conversation);
   } else {
-    recorder.skip("reads.messages-reconcile-required", "the transcript did not page at limit 2");
+    for (const id of ["reads.messages-reconcile-required", "reads.messages-restart-after-reconcile"]) {
+      recorder.skip(id, "the transcript did not page at limit 2");
+    }
   }
 
   const absent = await client.read("/conversations/no-such-conversation/messages", bearer);
-  recorder.expect(
-    "reads.messages-not-found",
-    absent.status === 404 ? [] : [`answered ${absent.status}, expected 404`],
-  );
+  const absentFailures = [];
+  if (absent.status !== 404) absentFailures.push(`answered ${absent.status}, expected 404`);
+  absentFailures.push(...checkEnvelope(absent.json, { kind: "error", code: "not_found" }));
+  recorder.expect("reads.messages-not-found", absentFailures);
 
   // A conversation resolves to a FILE, so on a case-insensitive filesystem a
   // differently-spelled id answers — with the transcript's own id, never the
@@ -1911,6 +2253,15 @@ async function main(argv) {
     if (!options.keepFixture) await rm(fixtureRoot, { recursive: true, force: true });
     else console.log(`client-v1-conformance: fixture kept at ${fixtureRoot}`);
   }
+
+  // Recorded last, and over whatever the legs above managed to produce — a run
+  // that lost legs to a failed precondition has to say so in the record itself,
+  // not only in a total the reader has to remember.
+  recorder.expect(
+    COVERAGE_ASSERTION_ID,
+    checkAssertionCoverage(recorder.entries, expectedAssertionIds(options.includeTtl)),
+    `every declared assertion recorded exactly once (--include-ttl ${options.includeTtl})`,
+  );
 
   for (const entry of recorder.entries) {
     const mark = entry.result === "pass" ? "ok" : entry.result === "skip" ? "skip" : "FAIL";
