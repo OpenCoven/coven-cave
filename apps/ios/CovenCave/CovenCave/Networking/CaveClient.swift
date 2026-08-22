@@ -387,9 +387,12 @@ struct CaveClient {
         return try await familiarAvatarMutation(for: req)
     }
 
-    private static func encodedPathSegment(_ value: String) throws -> String {
+    private static func encodedPathSegment(
+        _ value: String,
+        describing subject: String = "familiar identifier"
+    ) throws -> String {
         guard let encoded = value.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) else {
-            throw CaveError.transport("Could not encode the familiar identifier.")
+            throw CaveError.transport("Could not encode the \(subject).")
         }
         return encoded
     }
@@ -768,6 +771,42 @@ struct CaveClient {
         let decoded = try JSONDecoder().decode(BoardPatchResponse.self, from: data)
         if let card = decoded.card { return card }
         throw CaveError.transport(decoded.error ?? "Task update did not return a card.")
+    }
+
+    /// `DELETE /api/chat/conversation/{sessionId}/turns/{turnId}` — remove one
+    /// message from a chat, durably.
+    ///
+    /// A per-turn route rather than a re-PUT of the transcript: a client that
+    /// deletes by writing back the list it happens to be holding erases any
+    /// reply that streamed in while the user was deciding. Naming the single
+    /// turn is what lets two clients delete without losing each other's turns.
+    ///
+    /// Idempotent, so it retries like the other DELETEs here: a turn that is
+    /// already gone answers 200 with `deleted: false`, and a conversation the
+    /// server does not have answers 404 — neither is a failure to report, both
+    /// mean the message is not there any more. Returns whether this call was
+    /// the one that removed it (a retry of a call that already landed answers
+    /// `deleted: false`, so a false return is not evidence of failure).
+    @discardableResult
+    func deleteConversationTurn(sessionId: String, turnId: String) async throws -> Bool {
+        let session = try Self.encodedPathSegment(sessionId, describing: "chat identifier")
+        let turn = try Self.encodedPathSegment(turnId, describing: "message identifier")
+        let req = try request("api/chat/conversation/\(session)/turns/\(turn)", method: "DELETE")
+        let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try Self.checkDelete(resp)
+        struct TurnDeleteResponse: Decodable { var ok: Bool?; var deleted: Bool? }
+        let decoded = try? JSONDecoder().decode(TurnDeleteResponse.self, from: data)
+        // A 404 from THIS route means the chat is not there, so neither is the
+        // message. A 404 from no route at all — a desktop too old to have
+        // shipped it — means the delete never happened, and swallowing that
+        // one would hand back the silent local-only delete this route exists
+        // to end. The route always answers in an `ok` envelope; an unrouted
+        // 404 answers with a page. Said in words rather than as a status code,
+        // because this one is read back to the user in a chat bubble.
+        if (resp as? HTTPURLResponse)?.statusCode == 404, decoded?.ok == nil {
+            throw CaveError.transport("This Cave is too old to delete a single message.")
+        }
+        return decoded?.deleted ?? false
     }
 
     func conversation(sessionId: String) async throws -> Conversation? {

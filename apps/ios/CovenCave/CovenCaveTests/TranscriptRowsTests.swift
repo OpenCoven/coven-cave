@@ -153,7 +153,9 @@ final class TranscriptRowsTests: XCTestCase {
         let secondId = thread.appendSystem("two")
         XCTAssertEqual(thread.transcriptRows.count, 3, "same-day append adds one row")
 
-        thread.deleteMessage(firstId)
+        // System notes are inline slash output the server never sees, so this
+        // stays a local removal even with a client attached.
+        thread.deleteMessage(firstId, client: nil, onChange: {})
         XCTAssertEqual(thread.transcriptRows.map(\.id), ["day-\(secondId)", secondId])
 
         thread.clearMessages()
