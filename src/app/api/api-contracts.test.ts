@@ -15,6 +15,11 @@ import {
   projectConversationExecutionAttempts,
 } from "../../lib/server/familiar-execution-analytics-projection.ts";
 import { serializeExecutionAttemptLedgerRecord } from "../../lib/server/familiar-execution-analytics-store.ts";
+import {
+  CLIENT_V1_AUTHENTICATED_PATHS,
+  CLIENT_V1_PUBLIC_INGRESS,
+  clientV1IngressKind,
+} from "../../proxy-helpers.ts";
 
 const root = process.cwd();
 const apiRoot = path.join(root, "src", "app", "api");
@@ -436,6 +441,137 @@ function effectiveRouteSource(file: string, source: string): string {
   return parts.join("\n");
 }
 
+// --- source text vs. source code ---------------------------------------------
+//
+// assert.match reads a route file as text, so any check spelled as "the source
+// mentions X" is satisfied by a comment, a string, or a doc block that merely
+// names X. For the credential assertions below that is not a nit: the whole
+// point of those checks is to catch an author who MEANT to call the guard, and
+// "meant to" is exactly what a `// TODO: … requireScope(…)` line looks like.
+// Strip comments and literal text first so only code can satisfy them.
+//
+// A character scanner rather than a regex pair, because the naive
+// `replace(/\/\/.*/g, "")` corrupts as much as it removes: a `//` inside a
+// string literal, or a quote inside a regex character class such as /["']/,
+// flips the state and eats real code up to the next delimiter. Anything the
+// scanner cannot classify is dropped rather than kept, so the failure mode is a
+// noisy assertion, not a silent pass.
+function skipQuoted(source: string, start: number, quote: string): number {
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === quote || ch === "\n") return i + 1;
+    i += 1;
+  }
+  return i;
+}
+
+function skipTemplate(source: string, start: number): number {
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "`") return i + 1;
+    // A ${…} substitution is dropped with the literal around it: real code has
+    // no reason to call a credential guard from inside an interpolation, and
+    // dropping it keeps the scanner from mistaking the closing brace for the
+    // end of the template.
+    if (ch === "$" && source[i + 1] === "{") {
+      i += 2;
+      let depth = 1;
+      while (i < source.length && depth > 0) {
+        const inner = source[i];
+        if (inner === "\\") {
+          i += 2;
+          continue;
+        }
+        if (inner === "`") {
+          i = skipTemplate(source, i);
+          continue;
+        }
+        if (inner === '"' || inner === "'") {
+          i = skipQuoted(source, i, inner);
+          continue;
+        }
+        if (inner === "{") depth += 1;
+        else if (inner === "}") depth -= 1;
+        i += 1;
+      }
+      continue;
+    }
+    i += 1;
+  }
+  return i;
+}
+
+function skipRegexLiteral(source: string, start: number): number {
+  let i = start + 1;
+  let inClass = false;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "\n") return i; // unterminated: it was division after all
+    if (ch === "[") inClass = true;
+    else if (ch === "]") inClass = false;
+    else if (ch === "/" && !inClass) return i + 1;
+    i += 1;
+  }
+  return i;
+}
+
+// A `/` opens a regex literal only where a value may begin. Reading the last
+// meaningful character already emitted is the standard way to tell that from
+// division without a full parser.
+const REGEX_MAY_FOLLOW = /(?:[(,=:[!&|?{};+\-*%~^<>]|\b(?:return|typeof|instanceof|in|of|new|delete|void|do|else|case|yield|await))$/;
+
+function executableSource(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
+      i += 2;
+      out += " ";
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      i = skipQuoted(source, i, ch);
+      out += `${ch}${ch}`;
+      continue;
+    }
+    if (ch === "`") {
+      i = skipTemplate(source, i);
+      out += "``";
+      continue;
+    }
+    if (ch === "/" && REGEX_MAY_FOLLOW.test(out.trimEnd())) {
+      i = skipRegexLiteral(source, i);
+      out += " ";
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 const routeFiles = walkRoutes(apiRoot);
 const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
@@ -464,6 +600,125 @@ assert.deepEqual(
   "Phase 1 must expose exactly the reviewed client-v1 bootstrap and admin routes",
 );
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
+
+// --- client-v1 proxy pre-authorization (cave-4841) -------------------------
+//
+// clientV1IngressKind classifies a request BEFORE proxy() reaches the
+// sidecar-token block, and a match makes proxy() return early: the mobile
+// access gate is skipped and no bearer is checked. Everything after that point
+// is the route's own responsibility. The two assertions below are the halves of
+// that bargain, checked against what is actually on disk rather than against a
+// list someone has to remember to prune.
+//
+// Concrete probe paths per route, because the ingress classifier takes a
+// request pathname and the App Router directory speaks in [param] segments. A
+// single [param] stands in as one literal segment, which is exactly what the
+// single-segment [^/]+ patterns match.
+//
+// A [...catchAll] does NOT reduce to one segment, and treating it as if it did
+// is how a route impersonates a reviewed public path:
+// pairing/requests/[...rest] would probe as /api/client/v1/pairing/requests/
+// probe-segment, match the single-segment public pattern, and be excused from
+// the requireScope assertion below — while actually serving an unbounded tail
+// that no one reviewed. So a catch-all is probed at every width it serves: the
+// one-segment case it shares with [param], a two-segment case standing in for
+// the whole tail, and — for the optional [[...catchAll]] — the parent path with
+// the segment absent. The classification below then only excuses the route if
+// EVERY one of those shapes is in the reviewed public set.
+const PROBE_SEGMENT = "probe-segment";
+
+function isDynamicSegment(segment: string): boolean {
+  return segment.startsWith("[");
+}
+
+function isCatchAllSegment(segment: string): boolean {
+  return segment.startsWith("[...") || segment.startsWith("[[...");
+}
+
+function isOptionalCatchAllSegment(segment: string): boolean {
+  return segment.startsWith("[[...");
+}
+
+function clientV1ProbePaths(route: string): string[] {
+  const segments = route.slice(1).split("/");
+  let paths: string[][] = [[]];
+  for (const segment of segments) {
+    const widths = !isDynamicSegment(segment)
+      ? [[segment]]
+      : isCatchAllSegment(segment)
+        ? [
+            ...(isOptionalCatchAllSegment(segment) ? [[] as string[]] : []),
+            [PROBE_SEGMENT],
+            [PROBE_SEGMENT, PROBE_SEGMENT],
+          ]
+        : [[PROBE_SEGMENT]];
+    paths = paths.flatMap((prefix) => widths.map((width) => [...prefix, ...width]));
+  }
+  return paths.map((parts) => `/api/${parts.join("/")}`);
+}
+
+const clientV1Routes = routeFiles
+  .map((file) => ({ file, route: routeFromFile(file) }))
+  .filter(({ route }) => route.startsWith("/client/v1"));
+const clientV1ProbeSurface = clientV1Routes.flatMap(({ route }) => clientV1ProbePaths(route));
+
+// Half one: the list may not pre-authorize a path that nothing serves. Before
+// cave-4841 it named thirteen Phase 2 paths and none of them had a route.ts, so
+// the first Phase 2 handler to land would have been exempted from the sidecar
+// token on the day it appeared — with its own requireScope call as the sole
+// remaining layer, and no test anywhere insisting that call exist. Adding the
+// entry is now part of adding the handler.
+for (const pattern of CLIENT_V1_AUTHENTICATED_PATHS) {
+  assert.ok(
+    clientV1ProbeSurface.some((probe) => pattern.test(probe)),
+    `${pattern} pre-authorizes client-v1 ingress but no src/app/api/client/v1 route.ts matches it`,
+  );
+}
+
+// Half two: every client-v1 route that is not deliberately credential-free has
+// to enforce a credential in its own source. That holds whether or not the path
+// is pre-authorized above — the pre-authorization removes the sidecar token,
+// and this check is what makes removing it survivable. Classification is read
+// from the repo, not hardcoded: the admin family from the directory it lives
+// in, the credential-free bootstrap surface from clientV1IngressKind itself.
+// Growing the public set to dodge this check is not a quiet edit —
+// CLIENT_V1_PUBLIC_PATHS only matches a path the allow-list assertion above
+// already admits by name.
+for (const { file, route } of clientV1Routes) {
+  // executableSource, not the raw text: both assertions below are satisfied by
+  // a call the route really makes, never by the NAME appearing in a comment or
+  // a string. `// TODO(next): route this through requireScope(...)` on a route
+  // with no credential check at all is exactly the accident this pair exists to
+  // catch, and it read as a pass until cave-4841's review.
+  const source = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+  if (route === "/client/v1/admin" || route.startsWith("/client/v1/admin/")) {
+    // Admin routes never reach the client-v1 ingress branch at all
+    // (clientV1IngressKind returns null for them), so they keep the ordinary
+    // sidecar-token path and layer requireClientV1Admin on top. Different
+    // credential, same obligation to name one.
+    assert.match(
+      source,
+      /requireClientV1Admin\s*\(/,
+      `${route} must call requireClientV1Admin`,
+    );
+    continue;
+  }
+  // EVERY shape the route serves has to be in the reviewed public set, not just
+  // the narrowest one — a catch-all that happens to cover a reviewed
+  // single-segment path still serves the rest of its tail credential-free.
+  if (
+    clientV1ProbePaths(route).every(
+      (probe) => clientV1IngressKind(probe) === CLIENT_V1_PUBLIC_INGRESS,
+    )
+  ) {
+    continue;
+  }
+  assert.match(
+    source,
+    /requireScope\s*\(/,
+    `${route} is neither the admin family nor the reviewed credential-free bootstrap surface, so it must call requireScope`,
+  );
+}
 
 for (const contract of contracts) {
   const file = path.join(apiRoot, ...contract.route.slice(1).split("/"), "route.ts");
