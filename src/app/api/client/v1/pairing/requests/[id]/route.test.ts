@@ -274,6 +274,37 @@ test("polling with the correct secret is never rate limited", async () => {
       runtime.rateLimiter.peekPairingExchangeFailure(unknownId).remaining,
       CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
     );
+
+    // The already-exchanged branch presents a CORRECT secret too, so it has to
+    // be as free as the 200 above. A client that polls once more after its
+    // exchange succeeds — a retry loop that raced its own success, or one
+    // confirming the outcome — still holds the right secret, and charging it
+    // here would spend the shared budget on the legitimate holder and lock the
+    // pairing's own exchange out for the rest of the window. Asserted directly
+    // because every other guard in this file exercises `found` or `not_found`:
+    // without this, charging the 409 path breaks no test.
+    const exchange = createPairingExchangePostHandler(runtime);
+    const spent = runtime.pairingStore.create({
+      ...pairingInput,
+      installationId: "chat-install-spent",
+    });
+    assert.equal(runtime.pairingStore.decide(spent.id, "approved", now), true);
+    const exchanged = await exchange(
+      exchangeRequest(spent.id, spent.secret),
+      context(spent.id),
+    );
+    assert.equal(exchanged.status, 200);
+
+    const replayed = await poll(request(spent.id, spent.secret), context(spent.id));
+    assert.equal(replayed.status, 409);
+    assert.equal(
+      ((await replayed.json()) as { error: { code: string } }).error.code,
+      "conflict",
+    );
+    assert.equal(
+      runtime.rateLimiter.peekPairingExchangeFailure(spent.id).remaining,
+      CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+    );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
     await rm(root, { recursive: true, force: true });
