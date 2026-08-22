@@ -29,6 +29,8 @@ import { projectAccessLabel } from "@/lib/project-access-levels";
 import { isTauri } from "@/lib/tauri-platform";
 import { resolveProjectPickerSelection } from "@/lib/project-picker-selection";
 
+const PROJECT_PREVIEW_SIZE = 8;
+
 export type AddProjectFlow = {
   /** Open the folder chooser — native dialog on desktop, in-app browser on web. */
   beginAddProject: () => void;
@@ -163,6 +165,7 @@ export function ProjectPickerPopover({
   onSelectAllProjects?: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [showAllProjects, setShowAllProjects] = useState(false);
   const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
   const { selected, allProjectsEnabled, allProjectsSelected, noProjectSelected } =
     resolveProjectPickerSelection({
@@ -179,6 +182,17 @@ export function ProjectPickerPopover({
         project.name.toLowerCase().includes(q) || project.root.toLowerCase().includes(q),
     );
   }, [sortedProjects, query]);
+  const displayedProjects = useMemo(() => {
+    if (query.trim() || showAllProjects || visible.length <= PROJECT_PREVIEW_SIZE) {
+      return visible;
+    }
+    const preview = visible.slice(0, PROJECT_PREVIEW_SIZE);
+    if (selected && !preview.some((project) => project.id === selected.id)) {
+      return [...preview, selected];
+    }
+    return preview;
+  }, [query, selected, showAllProjects, visible]);
+  const hiddenProjectCount = visible.length - displayedProjects.length;
 
   // Sampled when the popover OPENS, not on every render: picking a project
   // must not reshuffle the section under the cursor mid-interaction, and a
@@ -227,6 +241,7 @@ export function ProjectPickerPopover({
   const close = () => {
     onOpenChange(false);
     setQuery("");
+    setShowAllProjects(false);
   };
 
   // Parents may close the picker by flipping `open` directly (e.g. the trigger
@@ -234,7 +249,10 @@ export function ProjectPickerPopover({
   // through close(), so the filter must also reset on the prop itself or the
   // next open shows a stale pre-filtered list.
   useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setShowAllProjects(false);
+    }
   }, [open]);
 
   return (
@@ -305,7 +323,15 @@ export function ProjectPickerPopover({
             <PopoverLabel>All projects</PopoverLabel>
           </>
         ) : null}
-        {visible.map((entry) => renderProjectRow(entry, entry.id))}
+        {displayedProjects.map((entry) => renderProjectRow(entry, entry.id))}
+        {!query.trim() && hiddenProjectCount > 0 ? (
+          <PopoverItem
+            icon="ph:caret-down"
+            onSelect={() => setShowAllProjects(true)}
+          >
+            Show {hiddenProjectCount} more project{hiddenProjectCount === 1 ? "" : "s"}
+          </PopoverItem>
+        ) : null}
         {query.trim() && visible.length === 0 ? (
           <div className="cave-project-picker__none">No projects match</div>
         ) : null}

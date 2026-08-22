@@ -19,7 +19,7 @@ assert.match(
 );
 assert.match(
   picker,
-  /\{visible\.map\(\(entry\) => renderProjectRow\(entry, entry\.id\)\)\}/,
+  /\{displayedProjects\.map\(\(entry\) => renderProjectRow\(entry, entry\.id\)\)\}/,
   "and is rendered from the alphabetical list, not from a ranked one",
 );
 assert.doesNotMatch(
@@ -80,6 +80,27 @@ assert.equal(
   (picker.match(/renderProjectRow\(entry,/g) ?? []).length,
   2,
   "and both sections call it — Recent and All",
+);
+
+assert.match(
+  picker,
+  /const PROJECT_PREVIEW_SIZE = 8;/,
+  "the unfiltered alphabetical list has a compact initial budget",
+);
+assert.match(
+  picker,
+  /if \(query\.trim\(\) \|\| showAllProjects \|\| visible\.length <= PROJECT_PREVIEW_SIZE\) \{\s*return visible;/,
+  "filtering searches and renders the complete matching project set",
+);
+assert.match(
+  picker,
+  /if \(selected && !preview\.some\(\(project\) => project\.id === selected\.id\)\) \{\s*return \[\.\.\.preview, selected\];/,
+  "the selected project remains visible even when it falls outside the preview",
+);
+assert.match(
+  picker,
+  /Show \{hiddenProjectCount\} more project/,
+  "the bounded list exposes the remaining project count",
 );
 
 console.log("project-picker-frecency.test.ts: ok");
