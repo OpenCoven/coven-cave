@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { CHAT_SIDEBAR_VIEW_KEY } from "@/lib/chat-session-prefs";
 import { relativeTime } from "@/lib/relative-time";
 
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
@@ -89,18 +88,11 @@ assert.equal(
 );
 assert.match(
   sidebar,
-  /function groupMeta\(group: ChatProjectGroup, now: number\): string \{[\s\S]*?const awaiting = group\.sessions\.filter\(\(session\) => session\.attention\.state !== "none" && !session\.archived_at\)\.length;[\s\S]*?return awaiting > 0 \? `\$\{awaiting\} awaiting · \$\{meta\}` : meta;/,
-  "project group metadata should prefix a nonzero awaiting count",
-);
-const recentViewBlock = sidebar.match(/\{view === "recent" \? \([\s\S]*?\) : visibleGroups\.length === 0 \?/);
-assert.ok(recentViewBlock, "recent view block should exist");
-assert.match(
-  recentViewBlock[0],
   /!hasSearch && attentionSessions\.length > 0[\s\S]*?<section aria-label="Awaiting you">[\s\S]*?<\/section>[\s\S]*?recentBuckets\.map/,
   "Awaiting you should render as a real labeled section before ordinary recent buckets only when search is inactive",
 );
 assert.match(
-  recentViewBlock[0],
+  sidebar,
   /!hasSearch && attentionSessions\.length > 0 \? \(/,
   "search results should keep row cues without creating a separate attention section",
 );
@@ -249,7 +241,6 @@ const mockProjects = vi.hoisted(() => ({
 // jsdom's localStorage.
 const sidebarPrefs = vi.hoisted(() => ({
   pinnedIds: [] as string[],
-  view: null as string | null,
 }));
 
 vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => undefined }));
@@ -366,20 +357,9 @@ function attentionCueLabels(section: ReturnType<typeof sectionByLabel>) {
     .map((node) => textContent(node.children));
 }
 
-function groupNameNodes(renderer: ReactTestRenderer) {
-  return renderer.root.findAll((node) => typeof node.type === "string" && node.props.className === "cnav__group-name");
-}
-
-function groupMetaText(renderer: ReactTestRenderer, index: number) {
-  const nodes = renderer.root.findAll(
-    (node) => typeof node.type === "string" && node.props.className === "cnav__group-meta",
-  );
-  return textContent(nodes[index]?.children);
-}
-
 function searchInput(renderer: ReactTestRenderer) {
   return renderer.root.find(
-    (node) => node.type === "input" && node.props["aria-label"] === "Search projects and threads",
+    (node) => node.type === "input" && node.props["aria-label"] === "Search chats",
   );
 }
 
@@ -407,7 +387,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-08-05T20:00:00.000Z"));
   vi.stubGlobal("window", {
     localStorage: {
-      getItem: (key: string) => (key === CHAT_SIDEBAR_VIEW_KEY ? sidebarPrefs.view : null),
+      getItem: () => null,
       setItem: () => undefined,
       removeItem: () => undefined,
     },
@@ -423,7 +403,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   mockProjects.state.projects = [];
   sidebarPrefs.pinnedIds = [];
-  sidebarPrefs.view = null;
 });
 
 test("legacy sessions without attention render as neutral rows", async () => {
@@ -737,68 +716,6 @@ function rowContainerFor(scope: ReturnType<typeof sectionByLabel> | ReactTestRen
   }
   return node;
 }
-
-test("Projects view preserves latest-activity folder order and surfaces awaiting counts and row cues", async () => {
-  let renderer!: ReactTestRenderer;
-  sidebarPrefs.view = "projects";
-
-  const zetaAwaiting = makeSession({
-    id: "zeta-awaiting",
-    project_root: "/repo/zeta",
-    title: "Zeta needs a decision",
-    updated_at: "2026-08-05T19:59:00.000Z",
-    attention: { state: "awaiting-human", since: "2026-08-05T19:00:00.000Z", reason: "approval" },
-  });
-  const zetaCalm = makeSession({
-    id: "zeta-calm",
-    project_root: "/repo/zeta",
-    title: "Zeta housekeeping",
-    updated_at: "2026-08-05T19:50:00.000Z",
-    attention: { state: "none", since: null, reason: null },
-  });
-  const alphaCalm = makeSession({
-    id: "alpha-calm",
-    project_root: "/repo/alpha",
-    title: "Alpha routine chat",
-    updated_at: "2026-08-05T10:00:00.000Z",
-    attention: { state: "none", since: null, reason: null },
-  });
-
-  await act(async () => {
-    renderer = create(
-      createElement(WorkspaceSidebar, {
-        sessions: [alphaCalm, zetaCalm, zetaAwaiting],
-        familiars: [],
-        responseNeeded: new Set(),
-        onSelectFamiliar: () => undefined,
-        onOpenSession: () => undefined,
-        onNavigate: () => undefined,
-        onNewChat: () => undefined,
-        onDeleteSession: async () => undefined,
-        onOpenSettings: () => undefined,
-      }),
-    );
-    await Promise.resolve();
-  });
-
-  // The project with the most recent activity (zeta) sorts first — folder
-  // order is untouched by attention, only by recency (deriveChatProjectGroups).
-  const names = groupNameNodes(renderer).map((node) => textContent(node.children));
-  expect(names).toEqual(["zeta", "alpha"]);
-
-  expect(groupMetaText(renderer, 0)).toMatch(/^1 awaiting · /);
-  expect(groupMetaText(renderer, 1)).not.toMatch(/awaiting/);
-
-  const awaitingRow = rowContainerFor(renderer.root, "Zeta needs a decision");
-  expect(awaitingRow.props["data-attention"]).toBe("awaiting-human");
-  expect(attentionCueLabels(awaitingRow)).toEqual(["Awaiting you"]);
-
-  const calmRow = rowContainerFor(renderer.root, "Zeta housekeeping");
-  expect(calmRow.props["data-attention"]).toBe("none");
-  expect(attentionCueLabels(calmRow)).toEqual([]);
-
-  await act(async () => renderer.unmount());
-});
 
 test("search drops the Awaiting you section but rows keep their visible label and accessible description", async () => {
   let renderer!: ReactTestRenderer;
