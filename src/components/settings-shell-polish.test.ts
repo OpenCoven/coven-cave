@@ -27,6 +27,10 @@ const aboutSource = readFileSync(
   new URL("./settings-about.tsx", import.meta.url),
   "utf8",
 );
+const clientAccessUrl = new URL("./settings-client-access.tsx", import.meta.url);
+const clientAccessSource = existsSync(clientAccessUrl)
+  ? readFileSync(clientAccessUrl, "utf8")
+  : "";
 const workspacePathField = shellSource.match(/function WorkspacePathField\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
 const aboutCss = readFileSync(
   new URL("../styles/settings-about.css", import.meta.url),
@@ -68,6 +72,46 @@ assert.match(
   source,
   /useSurfaceHistory<Section>\(\{\s*id:\s*"settings:section",\s*initial:\s*"general"\s*\}\)/,
   "SettingsShell should render the same initial section on server and client",
+);
+assert.match(
+  shellSource,
+  /import \{ ClientAccessSection \} from "\.\/settings-client-access"/,
+  "SettingsShell imports the focused Client access surface",
+);
+assert.match(
+  shellSource,
+  /section === "client-access"\s*&&\s*<ClientAccessSection \/>/,
+  "SettingsShell mounts the Client access section",
+);
+assert.match(
+  sections,
+  /id:\s*"daemon"[\s\S]*id:\s*"client-access"[\s\S]*id:\s*"mobile"/,
+  "Client access sits between Daemon and Phone in the Settings nav",
+);
+assert.match(
+  clientAccessSource,
+  /import "@\/styles\/settings-client-access\.css";/,
+  "Client access owns its component stylesheet through the established import pattern",
+);
+assert.match(
+  clientAccessSource,
+  /<SettingsOverview section="client-access" \/>/,
+  "Client access keeps the standard Settings overview header",
+);
+assert.match(
+  clientAccessSource,
+  /label="Pending approvals"[\s\S]*label="Issued credentials"/,
+  "Client access presents pending approvals before issued credentials",
+);
+assert.match(
+  clientAccessSource,
+  /fetch\("\/api\/client\/v1\/admin\/pairing-requests"[\s\S]*fetch\("\/api\/client\/v1\/admin\/credentials"/,
+  "Client access reads through the shipped admin route surface",
+);
+assert.match(
+  clientAccessSource,
+  /useAnnouncer\(\)/,
+  "Client access announces mutations through the shared live region",
 );
 
 assert.doesNotMatch(

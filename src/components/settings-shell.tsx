@@ -42,6 +42,7 @@ import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
 import { SettingsOverview } from "./settings-overview";
 import { AboutSection } from "./settings-about";
+import { ClientAccessSection } from "./settings-client-access";
 import { PhoneSection } from "./settings-phone";
 import {
   SECTIONS,
@@ -353,6 +354,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
               omnigentSettings={<OmnigentSettingsGroup />}
             />
           )}
+          {section === "client-access" && <ClientAccessSection />}
           {section === "mobile"   && <PhoneSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}

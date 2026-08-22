@@ -503,6 +503,7 @@ export const SUITES = {
     "src/lib/app-preferences-paint-bootstrap.test.ts",
     "src/components/settings-appearance.test.ts",
     "src/components/settings-about.test.ts",
+    "src/components/settings-client-access.test.tsx",
     "src/components/settings-phone.test.ts",
     "src/lib/tailscale-failure.test.ts",
     "src/lib/tailscale-recovery.test.ts",

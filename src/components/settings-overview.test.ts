@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
   SECTIONS,
   SECTION_HIGHLIGHTS,
@@ -12,12 +12,12 @@ import {
 // ── settings-sections catalog (pure) ─────────────────────────────────────────
 
 test("every section has full overview metadata + a highlight strip", () => {
-  const ids = ["profile", "general", "voice", "daemon", "mobile", "appearance", "about"];
+  const ids = ["profile", "general", "voice", "daemon", "client-access", "mobile", "appearance", "about"];
   assert.deepEqual(SECTIONS.map((s) => s.id), ids, "the section set matches the shell nav");
   for (const s of SECTIONS) {
     assert.ok(s.label && s.icon.startsWith("ph:") && s.description.length > 0, `${s.id} has label/icon/description`);
-    if (s.id === "voice") {
-      assert.equal(s.accent, "var(--accent-presence)", "Voice follows the theme-aware presence token");
+    if (s.id === "voice" || s.id === "client-access") {
+      assert.equal(s.accent, "var(--accent-presence)", `${s.id} follows the theme-aware presence token`);
     } else {
       assert.match(s.accent, /^#[0-9a-f]{6}$/i, `${s.id} keeps its established accent`);
     }
@@ -34,6 +34,18 @@ test("every section has full overview metadata + a highlight strip", () => {
     "Provider readiness",
     "Voices & models",
     "New familiar defaults",
+  ]);
+  assert.deepEqual(getSectionMeta("client-access"), {
+    id: "client-access",
+    label: "Client access",
+    icon: "ph:key",
+    description: "Approve pairing requests and manage issued client credentials.",
+    accent: "var(--accent-presence)",
+  });
+  assert.deepEqual(SECTION_HIGHLIGHTS["client-access"], [
+    "Pending approvals",
+    "Issued credentials",
+    "Revocation history",
   ]);
 });
 
@@ -77,7 +89,7 @@ test("General can opt into the control-sheet overview without changing other sec
     /section="general"[\s\S]{0,160}variant="control-sheet"/,
     "General opts into the reference treatment",
   );
-  for (const id of ["voice", "daemon", "mobile", "appearance", "about"]) {
+  for (const id of ["voice", "daemon", "client-access", "mobile", "appearance", "about"]) {
     assert.doesNotMatch(
       shell,
       new RegExp(`section="${id}"[^>]*variant="control-sheet"`),
@@ -149,6 +161,8 @@ const daemon = readFileSync(new URL("./settings-daemon.tsx", import.meta.url), "
 const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
 const about = readFileSync(new URL("./settings-about.tsx", import.meta.url), "utf8");
 const phone = readFileSync(new URL("./settings-phone.tsx", import.meta.url), "utf8");
+const clientAccessUrl = new URL("./settings-client-access.tsx", import.meta.url);
+const clientAccess = existsSync(clientAccessUrl) ? readFileSync(clientAccessUrl, "utf8") : "";
 
 test("the shell sources sections from settings-sections and renders the overview", () => {
   assert.match(shell, /import \{ SettingsOverview \} from "\.\/settings-overview"/);
@@ -160,14 +174,15 @@ test("the shell sources sections from settings-sections and renders the overview
   assert.match(shell, /section \? \(\s*<SettingsOverview section=\{section\} \/>/);
   // The shared search index is sourced from settings-sections.
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
-  // Each SettingsPage-based section opts into its overview header. Profile,
-  // Phone, Daemon, and About use their approved richer heroes instead.
+  // Each overview-led section opts into its overview header. Profile, Phone,
+  // Daemon, and About use their approved richer heroes instead.
   assert.match(profile, /<header className="settings-profile__hero">/, "profile renders its control-sheet hero");
   assert.match(profile, />SETTINGS · PROFILE</, "profile hero preserves settings wayfinding");
   assert.doesNotMatch(profile, /<SettingsOverview/, "profile does not duplicate the generic overview");
   for (const id of ["general", "voice", "appearance"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }
+  assert.match(clientAccess, /<SettingsOverview section="client-access" \/>/);
   assert.match(shell, /section === "voice" && <VoiceSection \/>/, "the shell renders the Voice destination");
   assert.match(daemon, /className="settings-daemon-hero"/, "daemon uses its approved control-sheet hero");
   assert.match(
