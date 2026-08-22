@@ -83,6 +83,12 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
   }), null);
 });
 
+test("mission parser preserves valid title provenance and rejects unknown values", () => {
+  const explicit = { ...validMission(), titleSource: "explicit" } as const;
+  assert.deepEqual(parseResearchMission(explicit), explicit);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: "inferred" }), null);
+});
+
 test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
   assert.equal(RESEARCH_INTENT_MAX_LENGTH, 25_000);
   assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 10_000);
