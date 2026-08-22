@@ -14,7 +14,8 @@
 
 - Create `scripts/beads-sync.ts`
   - Own sequential pull/push orchestration, credential-prompt suppression,
-    bounded diagnostics, timeout classification, and exact process-tree cleanup.
+    bounded diagnostics, timeout/cancellation classification, and exact
+    process-tree cleanup.
 - Create `scripts/beads-sync.test.mjs`
   - Exercise healthy ordering, pull short-circuiting, push failure, timeout
     cleanup, and cleanup-proof failure.
@@ -264,7 +265,7 @@ test("push timeout kills a descendant that ignores SIGTERM", {
   try {
     const status = await runBeadsSync({
       env: { ...current.env, BD_FAKE_PUSH_HANG: "1" },
-      timeoutMs: 1_000,
+      timeoutMs: 3_000,
       terminationGraceMs: 200,
       writeStdout: () => {},
       writeStderr: (value) => stderr.write(value),
@@ -273,7 +274,7 @@ test("push timeout kills a descendant that ignores SIGTERM", {
     assert.equal(status, 124, stderr.text());
     const pid = Number(readFileSync(current.descendantPid, "utf8"));
     assert.equal(await waitForMissingProcess(pid), true, `descendant ${pid} survived timeout`);
-    assert.match(stderr.text(), /push timed out after 1000ms/);
+    assert.match(stderr.text(), /push timed out after 3000ms/);
     assert.match(stderr.text(), /owned process tree terminated/);
     assert.match(stderr.text(), /Retry `pnpm beads:sync` once/);
   } finally {
@@ -606,7 +607,7 @@ node --experimental-strip-types src/lib/bd-bin.test.ts
 Expected:
 
 ```text
-... all five beads-sync subtests pass ...
+... all six beads-sync subtests pass ...
 bd-bin.test.ts ok
 ```
 
@@ -626,6 +627,205 @@ Expected: both commands exit `0`.
 ```bash
 git add scripts/beads-sync.ts
 git commit -m "fix: bound Beads Dolt sync processes"
+```
+
+### Task 2A: Preserve exact-tree cleanup on wrapper cancellation
+
+**Files:**
+- Modify: `scripts/beads-sync.ts`
+- Modify: `scripts/beads-sync.test.mjs`
+- Modify: `docs/superpowers/specs/2026-08-22-beads-dolt-sync-watchdog-design.md`
+
+- [ ] **Step 1: Add an abort signal to the phase runner**
+
+Add `signal?: AbortSignal` to `BeadsSyncOptions`, resolve a default un-aborted
+signal in `runBeadsSync`, and pass it into `runPhase`. Add conventional signal
+statuses:
+
+```ts
+const SIGNAL_EXIT_CODES = {
+  SIGINT: 130,
+  SIGTERM: 143,
+} as const;
+
+type SupportedSignal = keyof typeof SIGNAL_EXIT_CODES;
+
+function cancellationStatus(signal: AbortSignal): number {
+  const reason = signal.reason;
+  return typeof reason === "string" && reason in SIGNAL_EXIT_CODES
+    ? SIGNAL_EXIT_CODES[reason as SupportedSignal]
+    : 130;
+}
+```
+
+- [ ] **Step 2: Share exact-tree termination between timeout and cancellation**
+
+In `runPhase`, replace the timeout-only boolean with one `terminating` guard and
+one helper that calls `terminateTree`:
+
+```ts
+const terminate = (
+  successKind: "timed-out" | "cancelled",
+  successStatus: number,
+  failureKind:
+    | "timeout-cleanup-unproven"
+    | "cancellation-cleanup-unproven",
+) => {
+  if (settled || terminating) return;
+  terminating = true;
+  void options
+    .terminateTree(child, {
+      platform: options.platform,
+      graceMs: options.terminationGraceMs,
+    })
+    .then((cleanupProven) => {
+      finish({
+        status: cleanupProven ? successStatus : 1,
+        ...retained(),
+        kind: cleanupProven ? successKind : failureKind,
+      });
+    })
+    .catch(() => {
+      finish({
+        status: 1,
+        ...retained(),
+        kind: failureKind,
+      });
+    });
+};
+
+const timer = setTimeout(() => {
+  terminate("timed-out", 124, "timeout-cleanup-unproven");
+}, options.timeoutMs);
+const onAbort = () => {
+  terminate(
+    "cancelled",
+    cancellationStatus(options.signal),
+    "cancellation-cleanup-unproven",
+  );
+};
+options.signal.addEventListener("abort", onAbort, { once: true });
+if (options.signal.aborted) onAbort();
+```
+
+Remove the abort listener inside `finish`, ignore `close` while `terminating`,
+and report cancellation separately:
+
+```ts
+if (result.kind === "cancelled") {
+  writeStderr(
+    `[beads:sync] ${phase} cancelled; owned process tree terminated.\n`,
+  );
+  return result.status;
+}
+if (result.kind === "cancellation-cleanup-unproven") {
+  writeStderr(
+    `[beads:sync] ${phase} was cancelled and could not prove process-tree cleanup.\n`,
+  );
+  return 1;
+}
+```
+
+- [ ] **Step 3: Install direct CLI signal handlers**
+
+Replace `main` with:
+
+```ts
+async function main(): Promise<void> {
+  const controller = new AbortController();
+  const onSignal = (signal: SupportedSignal) => {
+    if (!controller.signal.aborted) controller.abort(signal);
+  };
+  const onSigint = () => onSignal("SIGINT");
+  const onSigterm = () => onSignal("SIGTERM");
+  process.on("SIGINT", onSigint);
+  process.on("SIGTERM", onSigterm);
+  try {
+    process.exitCode = await runBeadsSync({ signal: controller.signal });
+  } finally {
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+  }
+}
+```
+
+- [ ] **Step 4: Prove the direct CLI cannot orphan its child**
+
+Add a POSIX-only test that starts the real TypeScript entrypoint, waits for the
+fake descendant PID, sends `SIGTERM` only to the wrapper, and verifies status
+`143` plus descendant removal:
+
+```js
+import { spawn } from "node:child_process";
+import { EventEmitter, once } from "node:events";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "beads-sync.ts");
+
+async function waitForFile(path, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return existsSync(path);
+}
+
+test("direct CLI SIGTERM cleans its detached bd process tree", {
+  skip: process.platform === "win32",
+}, async () => {
+  const current = fixture();
+  let stderr = "";
+  const wrapper = spawn(
+    process.execPath,
+    ["--experimental-strip-types", SCRIPT],
+    {
+      env: { ...current.env, BD_FAKE_PUSH_HANG: "1" },
+      stdio: ["ignore", "ignore", "pipe"],
+    },
+  );
+  wrapper.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+
+  try {
+    assert.equal(await waitForFile(current.descendantPid), true);
+    wrapper.kill("SIGTERM");
+    const [code, signal] = await once(wrapper, "close");
+    assert.equal(signal, null);
+    assert.equal(code, 143, stderr);
+    const pid = Number(readFileSync(current.descendantPid, "utf8"));
+    assert.equal(await waitForMissingProcess(pid), true);
+    assert.match(stderr, /push cancelled; owned process tree terminated/);
+  } finally {
+    if (wrapper.exitCode === null && wrapper.signalCode === null) {
+      wrapper.kill("SIGKILL");
+    }
+    rmSync(current.root, { recursive: true, force: true });
+  }
+});
+```
+
+- [ ] **Step 5: Run the focused signal and timeout tests**
+
+Run:
+
+```bash
+node scripts/beads-sync.test.mjs
+pnpm typecheck
+pnpm lint
+```
+
+Expected: six sync subtests pass; typecheck and lint exit `0`.
+
+- [ ] **Step 6: Commit the cancellation correction**
+
+```bash
+git add scripts/beads-sync.ts scripts/beads-sync.test.mjs \
+  docs/superpowers/specs/2026-08-22-beads-dolt-sync-watchdog-design.md \
+  docs/superpowers/plans/2026-08-22-beads-dolt-sync-watchdog.md
+git commit -m "fix: clean Beads sync trees on signals"
 ```
 
 ### Task 3: Route the stable command and operator guidance

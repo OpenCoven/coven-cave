@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
+import { spawn } from "node:child_process";
+import { EventEmitter, once } from "node:events";
 import {
   chmodSync,
   existsSync,
@@ -10,11 +11,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { runBeadsSync } from "./beads-sync.ts";
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "beads-sync.ts");
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "beads-sync-"));
@@ -194,6 +198,15 @@ async function waitForMissingProcess(pid, timeoutMs = 2_000) {
   return false;
 }
 
+async function waitForFile(path, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return existsSync(path);
+}
+
 test("push timeout kills a descendant that ignores SIGTERM", {
   skip: process.platform === "win32",
 }, async () => {
@@ -202,7 +215,7 @@ test("push timeout kills a descendant that ignores SIGTERM", {
   try {
     const status = await runBeadsSync({
       env: { ...current.env, BD_FAKE_PUSH_HANG: "1" },
-      timeoutMs: 1_000,
+      timeoutMs: 3_000,
       terminationGraceMs: 200,
       writeStdout: () => {},
       writeStderr: (value) => stderr.write(value),
@@ -211,7 +224,7 @@ test("push timeout kills a descendant that ignores SIGTERM", {
     assert.equal(status, 124, stderr.text());
     const pid = Number(readFileSync(current.descendantPid, "utf8"));
     assert.equal(await waitForMissingProcess(pid), true, `descendant ${pid} survived timeout`);
-    assert.match(stderr.text(), /push timed out after 1000ms/);
+    assert.match(stderr.text(), /push timed out after 3000ms/);
     assert.match(stderr.text(), /owned process tree terminated/);
     assert.match(stderr.text(), /Retry `pnpm beads:sync` once/);
   } finally {
@@ -239,4 +252,47 @@ test("unproven tree cleanup is a hard error, not an ordinary timeout", async () 
   assert.equal(status, 1);
   assert.match(stderr.text(), /could not prove process-tree cleanup/);
   assert.doesNotMatch(stderr.text(), /owned process tree terminated/);
+});
+
+test("direct CLI SIGTERM cleans its detached bd process tree", {
+  skip: process.platform === "win32",
+}, async () => {
+  const current = fixture();
+  let stderr = "";
+  const wrapper = spawn(
+    process.execPath,
+    ["--experimental-strip-types", SCRIPT],
+    {
+      env: { ...current.env, BD_FAKE_PUSH_HANG: "1" },
+      stdio: ["ignore", "ignore", "pipe"],
+    },
+  );
+  wrapper.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+
+  try {
+    assert.equal(
+      await waitForFile(current.descendantPid),
+      true,
+      "fake bd did not create its descendant",
+    );
+    wrapper.kill("SIGTERM");
+    const [code, signal] = await Promise.race([
+      once(wrapper, "close"),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("wrapper did not exit after SIGTERM")), 3_000),
+      ),
+    ]);
+    assert.equal(signal, null);
+    assert.equal(code, 143, stderr);
+    const pid = Number(readFileSync(current.descendantPid, "utf8"));
+    assert.equal(await waitForMissingProcess(pid), true, `descendant ${pid} survived SIGTERM`);
+    assert.match(stderr, /push cancelled; owned process tree terminated/);
+  } finally {
+    if (wrapper.exitCode === null && wrapper.signalCode === null) {
+      wrapper.kill("SIGKILL");
+    }
+    rmSync(current.root, { recursive: true, force: true });
+  }
 });

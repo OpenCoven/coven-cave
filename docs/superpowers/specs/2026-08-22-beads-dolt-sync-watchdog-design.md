@@ -23,6 +23,9 @@ helpers can be child processes of `bd`.
   shared store lock.
 - Terminate the complete owned process tree on timeout and wait for proof that
   cleanup completed before the wrapper exits.
+- Apply the same exact-tree cleanup when the direct wrapper receives `SIGINT`
+  or `SIGTERM`, so detaching the child for safe timeout cleanup never creates an
+  orphan on user cancellation.
 - Keep `bd` launch shell-free and cross-platform by reusing Cave's existing
   Windows-safe Beads binary resolver.
 - Disable terminal credential prompts while preserving configured credential
@@ -79,6 +82,9 @@ The wrapper runs pull and push sequentially.
    complete, and then exit `124`.
 8. If tree termination cannot be proven, report that cleanup is unproven and
    exit `1`; do not shape that result as an ordinary timeout.
+9. If the direct wrapper receives `SIGINT` or `SIGTERM`, abort the active phase,
+   terminate the same owned process tree, and exit with conventional status
+   `130` or `143`.
 
 The direct command uses one timeout for each phase rather than one aggregate
 deadline. A healthy pull does not consume the push's opportunity to finish, and
@@ -103,6 +109,11 @@ On POSIX, `detached: true` gives the spawned `bd` process a new process group.
 `SIGKILL`, and confirms the group no longer exists. On Windows, the same helper
 uses `taskkill.exe /PID <pid> /T /F`.
 
+The direct CLI installs one-shot `SIGINT` and `SIGTERM` handlers that abort the
+active phase and wait for this cleanup before allowing the wrapper to exit.
+Without those handlers, the detached process group required for correct timeout
+cleanup could survive an interrupted wrapper.
+
 Only the process tree created by this wrapper is eligible for termination. The
 wrapper never calls broad process-name cleanup such as `pkill`, `killall`, or
 `bd dolt killall`.
@@ -120,6 +131,8 @@ Stable outcomes are:
 - `0`: pull and push both completed successfully.
 - Child exit code: a phase completed with a nonzero status.
 - `124`: a phase timed out and its complete owned process tree was terminated.
+- `130` or `143`: `SIGINT` or `SIGTERM` cancelled the wrapper and its complete
+  owned process tree was terminated.
 - `1`: spawn failure, invalid internal configuration, or unproven process-tree
   cleanup.
 
@@ -193,6 +206,11 @@ runs with a short injected timeout. The test asserts exit `124` and verifies
 that neither the fake `bd` process group nor the recorded descendant remains.
 This proves the sync entrypoint actually establishes the process ownership that
 `terminateProcessTree` requires.
+
+Another POSIX integration test runs the direct TypeScript CLI, waits for the
+same resistant descendant, sends `SIGTERM` only to the wrapper, and asserts
+status `143` plus descendant removal. This pins the cancellation path that a
+function-level timeout test cannot cover.
 
 Source-contract assertions additionally prevent regression to:
 
