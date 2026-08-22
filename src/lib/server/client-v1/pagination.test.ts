@@ -52,6 +52,29 @@ test("cursor tokens round-trip and stay inside the contract's cursor budget", ()
   assert.equal(encoded.includes("conversation-1"), false);
 });
 
+const BASE64URL_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/**
+ * A different string that decodes to the same bytes as `token`.
+ *
+ * Unpadded base64url leaves unused low bits in the final character whenever the
+ * payload length is not a multiple of three, so several spellings decode
+ * identically. Only one of them is the spelling this Cave emits.
+ *
+ * Built by search rather than by arithmetic, and it throws when no twin exists,
+ * so a payload length that happened to leave no spare bits fails the test
+ * loudly instead of passing it vacuously.
+ */
+function nonCanonicalTwin(token: string): string {
+  const bytes = Buffer.from(token, "base64url");
+  for (const candidate of BASE64URL_ALPHABET) {
+    const twin = `${token.slice(0, -1)}${candidate}`;
+    if (twin !== token && Buffer.from(twin, "base64url").equals(bytes)) return twin;
+  }
+  throw new Error("this token has no non-canonical twin to test with");
+}
+
 test("cursor decoding refuses everything that is not a cursor this Cave minted", () => {
   const valid = encodeClientV1Cursor({ sort: "s", id: "i" });
   const rejected: [string, unknown][] = [
@@ -59,10 +82,13 @@ test("cursor decoding refuses everything that is not a cursor this Cave minted",
     ["not a string", 7],
     ["null", null],
     ["outside the base64url alphabet", "not+valid/base64="],
-    // Buffer.from(…, "base64url") silently drops trailing junk, so a
-    // non-canonical encoding decodes to a *valid* payload unless the
-    // round-trip is checked. Without that check this string is accepted.
-    ["non-canonical padding", `${valid}=`],
+    ["padded", `${valid}=`],
+    // The case the alphabet check above CANNOT reach: a different spelling,
+    // entirely inside the alphabet, that Buffer.from decodes to exactly the
+    // same bytes because unpadded base64url leaves spare low bits in the last
+    // character. Only the round-trip check rejects this one — without it the
+    // decode succeeds and a cursor nobody minted is accepted as canonical.
+    ["a non-canonical spelling of a real cursor", nonCanonicalTwin(valid)],
     ["not JSON", Buffer.from("not json at all", "utf8").toString("base64url")],
     ["a JSON array", Buffer.from("[1,2,3]", "utf8").toString("base64url")],
     [

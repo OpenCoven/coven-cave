@@ -24,6 +24,8 @@ function project(id: string, createdAt: string): CaveProject {
   };
 }
 
+// createdAt ascending alpha < bravo = delta, and every updatedAt identical, so
+// the two orderings agree until something is touched.
 const REGISTRY: CaveProject[] = [
   project("alpha", "2026-08-01T00:00:00.000Z"),
   project("bravo", "2026-08-03T00:00:00.000Z"),
@@ -106,10 +108,12 @@ test("the registry's response-only migration marker never reaches a client", asy
   });
 });
 
-test("a project created between two pages cannot displace one already served", async () => {
-  // This is why the page key is createdAt and not updatedAt. Touching alpha
-  // moves it to the top of an updatedAt ordering, and a cursor holding a
-  // *later* timestamp would then skip it entirely.
+test("a project touched mid-pagination is still served on the next page", async () => {
+  // This is why the page key is createdAt and not updatedAt. alpha is the one
+  // record still owed to the client after page one. Touching it moves it to
+  // the FRONT of an updatedAt ordering — ahead of the cursor rather than
+  // behind it — so an updatedAt keyset would skip it and the client would
+  // never learn the project exists.
   await withRuntime(["chat:read"], async (runtime, bearer) => {
     const authorization = `Bearer ${bearer}`;
     let registry = [...REGISTRY];
@@ -125,7 +129,7 @@ test("a project created between two pages cannot displace one already served", a
     assert.deepEqual(firstBody.data.projects.map((row) => row.id), ["delta", "bravo"]);
 
     registry = registry.map((row) =>
-      row.id === "delta" ? { ...row, updatedAt: "2026-08-30T00:00:00.000Z" } : row);
+      row.id === "alpha" ? { ...row, updatedAt: "2026-08-30T00:00:00.000Z" } : row);
 
     const second = await handler(
       request(`?limit=2&cursor=${encodeURIComponent(firstBody.cursor.next)}`, { authorization }),
