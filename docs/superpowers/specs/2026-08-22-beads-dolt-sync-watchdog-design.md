@@ -109,7 +109,7 @@ On POSIX, `detached: true` gives the spawned `bd` process a new process group.
 `SIGKILL`, and confirms the group no longer exists. On Windows, the same helper
 uses `taskkill.exe /PID <pid> /T /F`.
 
-The direct CLI installs one-shot `SIGINT` and `SIGTERM` handlers that abort the
+The direct CLI installs idempotent `SIGINT` and `SIGTERM` handlers that abort the
 active phase and wait for this cleanup before allowing the wrapper to exit.
 Without those handlers, the detached process group required for correct timeout
 cleanup could survive an interrupted wrapper.
