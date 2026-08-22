@@ -44,11 +44,20 @@ export function createPairingExchangePostHandler(runtime: ClientV1Runtime) {
     // waiting on an administrator decision asks again every couple of seconds
     // until its 5-minute pairing TTL runs out. So the budget here is spent
     // only by a WRONG secret, and it is keyed by pairing request id rather
-    // than by caller — that bounds brute force against this pairing's secret
-    // without ever charging the legitimate holder for waiting, and without one
-    // client's failures blocking another's exchange. Read the budget before
-    // comparing secrets, or a limit charged after the fact would bound
-    // nothing.
+    // than by caller — that caps guessing against this pairing at 10 wrong
+    // secrets per 60s window on THIS route, without ever charging the
+    // legitimate holder for waiting, and without one client's failures
+    // blocking another's exchange. Read the budget before comparing secrets,
+    // or a limit charged after the fact would bound nothing.
+    //
+    // Known gap, deliberately not closed here: the bound is per-route, not
+    // system-wide. GET /api/client/v1/pairing/requests/[id] calls
+    // pairingStore.lookup(id, secret), which runs the byte-identical
+    // hashesEqual against the same secretHash and distinguishes
+    // `secret_mismatch` (401) from `found`/`consumed` — while referencing no
+    // rate limiter at all. An attacker holding a pairing id can therefore
+    // guess the secret unmetered through GET and spend a single exchange call
+    // once it has one. Metering that oracle is tracked separately.
     const limit = runtime.rateLimiter.peekPairingExchangeFailure(id);
     if (!limit.allowed) return clientV1RateLimitResponse(limit);
 

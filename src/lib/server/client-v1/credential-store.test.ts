@@ -312,6 +312,43 @@ test("a colliding temporary file remains unchanged when exclusive creation fails
   });
 });
 
+test("a failing post-commit chmod neither rejects issue nor yields a second credential", async (t) => {
+  await withCredentialRoot(async (root) => {
+    const attempted: Array<[string, number]> = [];
+    const store = createCredentialStore({
+      root,
+      now: () => 11_000,
+      chmodCommittedFile: async (path, mode) => {
+        attempted.push([path, mode]);
+        throw Object.assign(new Error("chmod refused"), { code: "EPERM" });
+      },
+    });
+
+    // The rename is the commit point, so nothing after it may surface as a
+    // rejection. The exchange route reads a rejected issue() as "issuing
+    // failed", restores the consumed pairing, and the client's retry then
+    // appends a SECOND live bearer for one administrator approval — two live
+    // credentials that one revocation does not clear.
+    const issued = await store.issue(credentialInput);
+    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    assert.deepEqual(attempted, [[path, 0o600]], "the post-commit repair ran and threw");
+
+    const persisted = JSON.parse(await readFile(path, "utf8"));
+    assert.equal(persisted.credentials.length, 1);
+    assert.equal(persisted.credentials[0].id, issued.credential.id);
+
+    // Swallowing that failure must not weaken the mode contract: the temporary
+    // file already carried 0o600 through the rename, which is exactly why the
+    // repair is redundant enough to swallow.
+    assertOwnerOnlyMode(t, (await stat(path)).mode, 0o600, "credential store file");
+
+    const restarted = createCredentialStore({ root, now: () => 11_000 });
+    const records = await restarted.reload();
+    assert.equal(records.size, 1, "one approval issued exactly one credential");
+    assert.equal(await restarted.verify(issued.credential.id, issued.bearer), true);
+  });
+});
+
 test("malformed persisted JSON is rejected and never overwritten by issue", async () => {
   await withCredentialRoot(async (root) => {
     const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);

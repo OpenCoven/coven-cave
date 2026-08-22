@@ -64,6 +64,13 @@ export interface CredentialStore {
 }
 
 export interface CredentialStoreOptions {
+  /**
+   * Post-commit mode repair for the store file. Seam for tests only: the write
+   * is already committed when this runs and its failure is swallowed, so an
+   * injected implementation can only prove that swallowing, never weaken the
+   * mode contract (which the pre-rename handling in `writeStoreAtomic` owns).
+   */
+  chmodCommittedFile?: (path: string, mode: number) => Promise<void>;
   now?: () => number;
   readFile?: (path: string, encoding: "utf8") => Promise<string>;
   root?: string;
@@ -302,6 +309,7 @@ async function writeStoreAtomic(
   path: string,
   records: ReadonlyMap<string, ClientV1CredentialRecord>,
   temporaryRandomBytes: (size: number) => Buffer,
+  chmodCommittedFile: (path: string, mode: number) => Promise<void>,
 ): Promise<void> {
   const temporaryPath = `${path}.${process.pid}.${temporaryRandomBytes(6).toString("hex")}.tmp`;
   const file: CredentialStoreFile = {
@@ -321,7 +329,6 @@ async function writeStoreAtomic(
     temporaryHandle = null;
     await rename(temporaryPath, path);
     ownsTemporaryPath = false;
-    await chmod(path, 0o600);
   } catch (error) {
     if (temporaryHandle) {
       await temporaryHandle.close().catch(() => {});
@@ -331,6 +338,18 @@ async function writeStoreAtomic(
     }
     throw error;
   }
+
+  // The rename above IS the commit, so nothing after it may reject. This mode
+  // repair is therefore best effort and deliberately sits outside the try: the
+  // temporary file was opened `wx` with 0o600 and chmod'd to exactly 0o600
+  // before the rename, and rename keeps the inode, so the committed file
+  // already carries the mode this call would set. Letting it throw — EPERM or
+  // EBUSY from a scanner holding the just-renamed file is plausible on Windows
+  // — would reject the write with the record already durably on disk. The
+  // exchange route reads that rejection as "issuing failed", restores the
+  // consumed pairing, and the client's retry appends a SECOND live bearer for
+  // one administrator approval, which no single revocation then clears.
+  await chmodCommittedFile(path, 0o600).catch(() => {});
 }
 
 export function clientV1CredentialStorePath(root = caveHome()): string {
@@ -342,6 +361,7 @@ export class FileCredentialStore implements CredentialStore {
   readonly #now: () => number;
   readonly #readFile: (path: string, encoding: "utf8") => Promise<string>;
   readonly #temporaryRandomBytes: (size: number) => Buffer;
+  readonly #chmodCommittedFile: (path: string, mode: number) => Promise<void>;
   #locationPromise: Promise<CredentialStoreLocation> | null = null;
   #records = new Map<string, ClientV1CredentialRecord>();
 
@@ -350,6 +370,7 @@ export class FileCredentialStore implements CredentialStore {
     this.#now = options.now ?? Date.now;
     this.#readFile = options.readFile ?? readFile;
     this.#temporaryRandomBytes = options.temporaryRandomBytes ?? randomBytes;
+    this.#chmodCommittedFile = options.chmodCommittedFile ?? chmod;
   }
 
   #location(): Promise<CredentialStoreLocation> {
@@ -396,6 +417,7 @@ export class FileCredentialStore implements CredentialStore {
       location.path,
       this.#records,
       this.#temporaryRandomBytes,
+      this.#chmodCommittedFile,
     );
   }
 

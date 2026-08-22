@@ -84,10 +84,15 @@ const contracts: RouteContract[] = [
   // before it holds a credential, which is the whole reason they exist. They
   // are the paths clientV1IngressKind (src/proxy-helpers.ts) classifies as
   // public, so proxy.ts applies the client-v1 ingress rules to them instead of
-  // the ordinary gate. Health returns no user data and no paths; the pairing
-  // routes then guard themselves — the loopback stamp through
-  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts) and the
-  // per-request pairing secret.
+  // the ordinary gate. Health returns no user data and no paths. The three
+  // pairing routes do not guard themselves uniformly, so read them one at a
+  // time: both POSTs re-check the loopback stamp through
+  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts), while
+  // GET /client/v1/pairing/requests/[id] never calls it and takes its locality
+  // solely from the clientV1Ingress branch in proxy.ts. Both id-bearing routes
+  // do require the per-request pairing secret; the creating POST mints that
+  // secret rather than checking one, and is bounded by the pairing-create rate
+  // limit instead.
   //
   // The admin routes are NOT exempted. clientV1IngressKind returns null for
   // them, so they never leave the ordinary sidecar-token path in proxy.ts, and
