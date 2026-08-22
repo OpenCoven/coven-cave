@@ -141,6 +141,8 @@ export function ensureStandardArtifactRefs(mission: ResearchMission): ResearchMi
   };
 }
 
+export type ResearchSourceAvailability = "available" | "unavailable" | "deleted";
+
 export type ResearchSourceRef = {
   id: string;
   title: string;
@@ -153,6 +155,20 @@ export type ResearchSourceRef = {
   note?: string;
   confidence?: number;
   status: "candidate" | "used" | "conflicting" | "rejected";
+  /**
+   * External-provider identity for a source Cave rehydrates rather than
+   * archives. `provider`/`externalId` are what let a stored ref resolve back
+   * to the familiar-scoped record it came from (an attached X post resolves by
+   * `externalId` = post id), and `availability` records whether that upstream
+   * item can still be retrieved.
+   *
+   * These are identity only, deliberately: the ledger never gains a field that
+   * could hold the external item's body. See
+   * docs/superpowers/specs/2026-07-27-x-api-research-and-publishing-design.md.
+   */
+  provider?: "x";
+  externalId?: string;
+  availability?: ResearchSourceAvailability;
 };
 
 export type ResearchSourceDraft = Partial<ResearchSourceRef> & {
@@ -408,6 +424,12 @@ const RESEARCH_SOURCE_STATUSES: ReadonlySet<ResearchSourceRef["status"]> = new S
   "conflicting",
   "rejected",
 ]);
+const RESEARCH_SOURCE_PROVIDERS: ReadonlySet<string> = new Set(["x"]);
+const RESEARCH_SOURCE_AVAILABILITIES: ReadonlySet<string> = new Set([
+  "available",
+  "unavailable",
+  "deleted",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -573,6 +595,19 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
       || value.confidence > 1)) {
     return null;
   }
+  // External-provider identity. Strict like `status`: a ledger written by an
+  // agent that claims an unknown provider or a bogus availability is refused
+  // outright rather than silently downgraded, so a rehydrated source can never
+  // be resolved against a value Cave does not understand.
+  const externalId = optionalString(value, "externalId");
+  if (externalId === null) return null;
+  if (value.provider !== undefined && !RESEARCH_SOURCE_PROVIDERS.has(String(value.provider))) {
+    return null;
+  }
+  if (value.availability !== undefined
+    && !RESEARCH_SOURCE_AVAILABILITIES.has(String(value.availability))) {
+    return null;
+  }
   return {
     id: value.id,
     title: value.title,
@@ -585,6 +620,11 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
     ...(note !== undefined ? { note } : {}),
     ...(typeof value.confidence === "number" ? { confidence: value.confidence } : {}),
     status: value.status as ResearchSourceRef["status"],
+    ...(value.provider !== undefined ? { provider: value.provider as "x" } : {}),
+    ...(externalId !== undefined ? { externalId } : {}),
+    ...(value.availability !== undefined
+      ? { availability: value.availability as ResearchSourceAvailability }
+      : {}),
   };
 }
 
