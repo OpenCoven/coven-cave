@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -81,10 +81,153 @@ function standaloneCaveHome() {
 function clientV1DiscoveryFile() {
   return join(standaloneCaveHome(), CLIENT_V1_DISCOVERY_FILE);
 }
-function requireStandaloneOwner(metadata, label) {
-  if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) {
-    throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
+const WINDOWS_SYSTEM_SID = "S-1-5-18";
+const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
+const WINDOWS_ACL_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+$item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+$me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
+$admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
+$trusted = @($me.Value, $system.Value, $admins.Value)
+
+function Read-State {
+  param($target)
+  $acl = $target.GetAccessControl('Access,Owner')
+  $aces = @($acl.Access | ForEach-Object {
+    [pscustomobject]@{
+      sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+      type = [string]$_.AccessControlType
+    }
+  })
+  [pscustomobject]@{
+    owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    protected = [bool]$acl.AreAccessRulesProtected
+    aces = $aces
   }
+}
+
+function Test-Exclusive {
+  param($state)
+  if (-not $state.protected) { return $false }
+  if ($state.owner -ne $me.Value) { return $false }
+  foreach ($ace in $state.aces) {
+    if ($ace.type -ne 'Allow') { return $false }
+    if ($trusted -notcontains $ace.sid) { return $false }
+  }
+  return $true
+}
+
+$state = Read-State $item
+$repaired = $false
+$removed = @()
+if (-not (Test-Exclusive $state)) {
+  $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
+    ForEach-Object { $_.sid } | Select-Object -Unique)
+  $acl = $item.GetAccessControl('Access')
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
+  $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }
+  foreach ($sid in @($me, $system, $admins)) {
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+      $sid, 'FullControl', $inheritance, 'None', 'Allow')))
+  }
+  $item.SetAccessControl($acl)
+  $repaired = $true
+  $state = Read-State $item
+}
+
+[pscustomobject]@{
+  self = $me.Value
+  owner = $state.owner
+  protected = $state.protected
+  repaired = $repaired
+  removed = @($removed)
+  aces = $state.aces
+} | ConvertTo-Json -Compress -Depth 4
+`;
+const standaloneVerifiedWindowsPaths = /* @__PURE__ */ new Set();
+function assertStandaloneWindowsExclusive(path, label) {
+  if (standaloneVerifiedWindowsPaths.has(path)) return;
+  const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+  const probeEnv = {
+    COVEN_CAVE_CLIENT_V1_ACL_PATH: path,
+    // Next augments ProcessEnv to require this. It carries no secret.
+    NODE_ENV: process.env.NODE_ENV,
+    SystemRoot: systemRoot,
+    windir: systemRoot,
+    PATH: join(systemRoot, "System32"),
+    PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD",
+    TEMP: process.env.TEMP || process.env.TMP || join(systemRoot, "Temp"),
+    TMP: process.env.TMP || process.env.TEMP || join(systemRoot, "Temp")
+  };
+  let report;
+  try {
+    report = JSON.parse(execFileSync(
+      join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-NoLogo",
+        "-InputFormat",
+        "None",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        WINDOWS_ACL_SCRIPT
+      ],
+      {
+        env: probeEnv,
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 15e3,
+        maxBuffer: 1024 * 1024
+      }
+    ));
+    if (!report || typeof report !== "object" || typeof report.self !== "string" || !report.self || typeof report.owner !== "string" || !report.owner || typeof report.protected !== "boolean" || typeof report.repaired !== "boolean" || !Array.isArray(report.aces) || !Array.isArray(report.removed)) {
+      throw new Error("the ACL probe returned a malformed report");
+    }
+  } catch (cause) {
+    throw new Error(
+      `Client v1 discovery ${label} ownership could not be verified on Windows: ${cause.message}. Refusing ${path}; inspect it with: icacls "${path}"`,
+      { cause }
+    );
+  }
+  const trusted = /* @__PURE__ */ new Set([report.self, WINDOWS_SYSTEM_SID, WINDOWS_ADMINISTRATORS_SID]);
+  const findings = [];
+  if (report.owner !== report.self) {
+    findings.push(`owned by ${report.owner}, not ${report.self}`);
+  }
+  if (!report.protected) findings.push("its DACL still inherits from the parent");
+  const foreign = report.aces.filter((ace) => ace.type !== "Allow" || !trusted.has(ace.sid)).map((ace) => `${ace.type}:${ace.sid}`);
+  if (foreign.length > 0) {
+    findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
+  }
+  if (findings.length > 0) {
+    throw new Error(
+      `Client v1 discovery ${label} is not exclusive to the current user: ${findings.join("; ")}. Refusing ${path}; inspect it with: icacls "${path}"`
+    );
+  }
+  if (report.repaired) {
+    console.warn(
+      `Client v1 discovery ${label} had no enforced access control on Windows; restricted ${path} to the current user and revoked ${report.removed.length > 0 ? report.removed.join(", ") : "inherited entries"}.`
+    );
+  }
+  standaloneVerifiedWindowsPaths.add(path);
+}
+function requireStandaloneOwner(path, metadata, label) {
+  if (typeof process.getuid === "function") {
+    if (metadata.uid !== process.getuid()) {
+      throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
+    }
+    return;
+  }
+  if (process.platform !== "win32") {
+    throw new Error(
+      `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: this platform exposes neither a uid nor a Windows ACL, so ${path} is refused.`
+    );
+  }
+  assertStandaloneWindowsExclusive(path, label);
 }
 function assertStandaloneDiscoveryTarget(path) {
   try {
@@ -92,7 +235,7 @@ function assertStandaloneDiscoveryTarget(path) {
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
       throw new Error(`Client v1 discovery target must be a regular file: ${path}.`);
     }
-    requireStandaloneOwner(metadata, "target");
+    requireStandaloneOwner(path, metadata, "target");
   } catch (error) {
     if (error.code === "ENOENT") return;
     throw error;
@@ -105,7 +248,7 @@ function publishStandaloneClientV1DiscoveryRecord(endpoint) {
   if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
     throw new Error("Client v1 discovery root must be a real directory.");
   }
-  requireStandaloneOwner(rootMetadata, "root");
+  requireStandaloneOwner(root, rootMetadata, "root");
   const physicalRoot = realpathSync(root);
   if (physicalRoot !== root) {
     throw new Error("Client v1 discovery root must not resolve through a symlink.");
@@ -153,7 +296,7 @@ function removeStandaloneClientV1DiscoveryRecord(nonce) {
   try {
     before = lstatSync(path);
     if (!before.isFile() || before.isSymbolicLink()) return false;
-    requireStandaloneOwner(before, "target");
+    requireStandaloneOwner(path, before, "target");
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
     if (error.code === "ENOENT") return false;
@@ -173,7 +316,11 @@ function removeStandaloneClientV1DiscoveryRecord(nonce) {
 }
 function cleanupStandaloneClientV1Discovery() {
   if (!clientV1DiscoveryPublished) return;
-  removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+  try {
+    removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+  } catch (error) {
+    console.error("[cave] failed to remove client-v1 discovery record", error);
+  }
 }
 const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
 const LOCAL_PEER_SECRET = randomUUID();

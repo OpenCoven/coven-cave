@@ -13,6 +13,10 @@ import { join, resolve } from "node:path";
 
 import { caveHome } from "../../coven-paths.ts";
 import { CLIENT_V1_DISCOVERY_CONTRACT } from "./contract.ts";
+import {
+  assertClientV1PathOwnership,
+  type ClientV1PathOwnershipOptions,
+} from "./path-ownership.ts";
 
 export const CLIENT_V1_DISCOVERY_FILE = CLIENT_V1_DISCOVERY_CONTRACT.fileName;
 
@@ -26,6 +30,7 @@ export interface ClientV1DiscoveryRecord {
 
 export interface ClientV1DiscoveryOptions {
   isProcessAlive?: (pid: number) => boolean;
+  ownership?: ClientV1PathOwnershipOptions;
   root?: string;
   temporaryRandomBytes?: (size: number) => Buffer;
 }
@@ -62,10 +67,13 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
-function requireOwned(metadata: Awaited<ReturnType<typeof lstat>>, label: string): void {
-  if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) {
-    throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
-  }
+function requireOwned(
+  path: string,
+  metadata: Awaited<ReturnType<typeof lstat>>,
+  label: string,
+  ownership: ClientV1PathOwnershipOptions | undefined,
+): Promise<void> {
+  return assertClientV1PathOwnership(path, metadata, `discovery ${label}`, ownership);
 }
 
 function requireEndpoint(value: unknown): string {
@@ -157,7 +165,10 @@ export function validateClientV1DiscoveryRecord(
   };
 }
 
-async function assertRegularTargetOrMissing(path: string): Promise<void> {
+async function assertRegularTargetOrMissing(
+  path: string,
+  ownership: ClientV1PathOwnershipOptions | undefined,
+): Promise<void> {
   try {
     const metadata = await lstat(path);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
@@ -165,14 +176,17 @@ async function assertRegularTargetOrMissing(path: string): Promise<void> {
         `Client v1 discovery target must be a regular file, not a symlink: ${path}.`,
       );
     }
-    requireOwned(metadata, "target");
+    await requireOwned(path, metadata, "target", ownership);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
 }
 
-async function initializeLocation(configuredRoot: string): Promise<DiscoveryLocation> {
+async function initializeLocation(
+  configuredRoot: string,
+  ownership: ClientV1PathOwnershipOptions | undefined,
+): Promise<DiscoveryLocation> {
   const resolvedRoot = resolve(configuredRoot);
   try {
     const configuredMetadata = await lstat(resolvedRoot);
@@ -189,14 +203,19 @@ async function initializeLocation(configuredRoot: string): Promise<DiscoveryLoca
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
     throw new Error("Client v1 discovery root must be a real directory.");
   }
-  requireOwned(metadata, "root");
+  // Ownership first: on Windows the assertion is also what restricts the
+  // directory, and the chmod below is the no-op it has always been there.
+  await requireOwned(physicalRoot, metadata, "root", ownership);
   await chmod(physicalRoot, 0o700);
   const path = join(physicalRoot, CLIENT_V1_DISCOVERY_FILE);
-  await assertRegularTargetOrMissing(path);
+  await assertRegularTargetOrMissing(path, ownership);
   return { path, root: physicalRoot };
 }
 
-async function existingLocation(configuredRoot: string): Promise<DiscoveryLocation | null> {
+async function existingLocation(
+  configuredRoot: string,
+  ownership: ClientV1PathOwnershipOptions | undefined,
+): Promise<DiscoveryLocation | null> {
   const resolvedRoot = resolve(configuredRoot);
   try {
     const configuredMetadata = await lstat(resolvedRoot);
@@ -212,14 +231,17 @@ async function existingLocation(configuredRoot: string): Promise<DiscoveryLocati
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
     throw new Error("Client v1 discovery root must be a real directory.");
   }
-  requireOwned(metadata, "root");
+  await requireOwned(physicalRoot, metadata, "root", ownership);
   return {
     path: join(physicalRoot, CLIENT_V1_DISCOVERY_FILE),
     root: physicalRoot,
   };
 }
 
-async function assertLocation(location: DiscoveryLocation): Promise<void> {
+async function assertLocation(
+  location: DiscoveryLocation,
+  ownership: ClientV1PathOwnershipOptions | undefined,
+): Promise<void> {
   const metadata = await lstat(location.root);
   if (
     !metadata.isDirectory()
@@ -228,8 +250,8 @@ async function assertLocation(location: DiscoveryLocation): Promise<void> {
   ) {
     throw new Error("Client v1 discovery root was replaced.");
   }
-  requireOwned(metadata, "root");
-  await assertRegularTargetOrMissing(location.path);
+  await requireOwned(location.root, metadata, "root", ownership);
+  await assertRegularTargetOrMissing(location.path, ownership);
 }
 
 export function clientV1DiscoveryPath(root = caveHome()): string {
@@ -241,11 +263,11 @@ export async function publishClientV1DiscoveryRecord(
   options: ClientV1DiscoveryOptions = {},
 ): Promise<ClientV1DiscoveryRecord> {
   const record = validateClientV1DiscoveryRecord(value, options);
-  const location = await initializeLocation(options.root ?? caveHome());
+  const location = await initializeLocation(options.root ?? caveHome(), options.ownership);
   const random = options.temporaryRandomBytes ?? randomBytes;
 
   return runExclusive(location.path, async () => {
-    await assertLocation(location);
+    await assertLocation(location, options.ownership);
     const temporaryPath =
       `${location.path}.${process.pid}.${random(6).toString("hex")}.tmp`;
     let handle: Awaited<ReturnType<typeof open>> | null = null;
@@ -258,7 +280,7 @@ export async function publishClientV1DiscoveryRecord(
       await handle.sync();
       await handle.close();
       handle = null;
-      await assertLocation(location);
+      await assertLocation(location, options.ownership);
       await rename(temporaryPath, location.path);
       ownsTemporaryPath = false;
       await chmod(location.path, 0o600);
@@ -275,17 +297,19 @@ export async function publishClientV1DiscoveryRecord(
 
 export async function removeClientV1DiscoveryRecord({
   nonce,
+  ownership,
   root = caveHome(),
 }: {
   nonce: string;
+  ownership?: ClientV1PathOwnershipOptions;
   root?: string;
 }): Promise<boolean> {
   if (!nonce) return false;
-  const location = await existingLocation(root);
+  const location = await existingLocation(root, ownership);
   if (!location) return false;
 
   return runExclusive(location.path, async () => {
-    await assertLocation(location);
+    await assertLocation(location, ownership);
     let before: Awaited<ReturnType<typeof lstat>>;
     let raw: string;
     try {
@@ -298,7 +322,7 @@ export async function removeClientV1DiscoveryRecord({
     if (!before.isFile() || before.isSymbolicLink()) {
       throw new Error("Client v1 discovery target must be a regular file.");
     }
-    requireOwned(before, "target");
+    await requireOwned(location.path, before, "target", ownership);
 
     let parsed: unknown;
     try {

@@ -21,6 +21,10 @@ import {
   parseClientV1PairingScopes,
   type ClientV1Scope,
 } from "./contract.ts";
+import {
+  assertClientV1PathOwnership,
+  type ClientV1PathOwnershipOptions,
+} from "./path-ownership.ts";
 import type { ClientV1PairingApproved } from "./pairing-store.ts";
 
 export const CLIENT_V1_CREDENTIAL_STORE_FILE = "client-v1-credentials.json";
@@ -72,6 +76,7 @@ export interface CredentialStoreOptions {
    */
   chmodCommittedFile?: (path: string, mode: number) => Promise<void>;
   now?: () => number;
+  ownership?: ClientV1PathOwnershipOptions;
   readFile?: (path: string, encoding: "utf8") => Promise<string>;
   root?: string;
   temporaryRandomBytes?: (size: number) => Buffer;
@@ -156,7 +161,10 @@ function cloneMap(
   return new Map(Array.from(records, ([id, record]) => [id, cloneRecord(record)]));
 }
 
-async function assertRegularCredentialFileOrMissing(path: string): Promise<void> {
+async function assertRegularCredentialFileOrMissing(
+  path: string,
+  ownership: ClientV1PathOwnershipOptions | undefined,
+): Promise<void> {
   try {
     const metadata = await lstat(path);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
@@ -164,6 +172,7 @@ async function assertRegularCredentialFileOrMissing(path: string): Promise<void>
         `Client v1 credential store file must be a regular file, not a symlink: ${path}.`,
       );
     }
+    await assertClientV1PathOwnership(path, metadata, "credential store file", ownership);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
@@ -172,6 +181,7 @@ async function assertRegularCredentialFileOrMissing(path: string): Promise<void>
 
 async function initializeCredentialStoreLocation(
   configuredRoot: string,
+  ownership: ClientV1PathOwnershipOptions | undefined,
 ): Promise<CredentialStoreLocation> {
   const resolvedRoot = resolve(configuredRoot);
   try {
@@ -188,10 +198,18 @@ async function initializeCredentialStoreLocation(
       `Client v1 credential store root must resolve to a real directory: ${resolvedRoot}.`,
     );
   }
+  // Ownership first: on Windows the assertion is also what restricts the
+  // directory, and the chmod below is the no-op it has always been there.
+  await assertClientV1PathOwnership(
+    physicalRoot,
+    metadata,
+    "credential store root",
+    ownership,
+  );
   await chmod(physicalRoot, 0o700);
 
   const path = join(physicalRoot, CLIENT_V1_CREDENTIAL_STORE_FILE);
-  await assertRegularCredentialFileOrMissing(path);
+  await assertRegularCredentialFileOrMissing(path, ownership);
   return {
     path,
     queueKey: path,
@@ -201,6 +219,7 @@ async function initializeCredentialStoreLocation(
 
 async function assertCredentialStoreLocation(
   location: CredentialStoreLocation,
+  ownership: ClientV1PathOwnershipOptions | undefined,
 ): Promise<void> {
   const metadata = await lstat(location.root);
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
@@ -213,7 +232,13 @@ async function assertCredentialStoreLocation(
       `Client v1 credential store root was replaced by a symlink: ${location.root}.`,
     );
   }
-  await assertRegularCredentialFileOrMissing(location.path);
+  await assertClientV1PathOwnership(
+    location.root,
+    metadata,
+    "credential store root",
+    ownership,
+  );
+  await assertRegularCredentialFileOrMissing(location.path, ownership);
 }
 
 function parseRecord(value: unknown): ClientV1CredentialRecord | null {
@@ -358,6 +383,7 @@ export function clientV1CredentialStorePath(root = caveHome()): string {
 
 export class FileCredentialStore implements CredentialStore {
   readonly #configuredRoot: string;
+  readonly #ownership: ClientV1PathOwnershipOptions | undefined;
   readonly #now: () => number;
   readonly #readFile: (path: string, encoding: "utf8") => Promise<string>;
   readonly #temporaryRandomBytes: (size: number) => Buffer;
@@ -367,6 +393,7 @@ export class FileCredentialStore implements CredentialStore {
 
   constructor(options: CredentialStoreOptions = {}) {
     this.#configuredRoot = options.root ?? caveHome();
+    this.#ownership = options.ownership;
     this.#now = options.now ?? Date.now;
     this.#readFile = options.readFile ?? readFile;
     this.#temporaryRandomBytes = options.temporaryRandomBytes ?? randomBytes;
@@ -376,7 +403,10 @@ export class FileCredentialStore implements CredentialStore {
   #location(): Promise<CredentialStoreLocation> {
     if (this.#locationPromise) return this.#locationPromise;
     let pending!: Promise<CredentialStoreLocation>;
-    pending = initializeCredentialStoreLocation(this.#configuredRoot).catch((error) => {
+    pending = initializeCredentialStoreLocation(
+      this.#configuredRoot,
+      this.#ownership,
+    ).catch((error) => {
       if (this.#locationPromise === pending) this.#locationPromise = null;
       throw error;
     });
@@ -389,7 +419,7 @@ export class FileCredentialStore implements CredentialStore {
   ): Promise<T> {
     const location = await this.#location();
     return runExclusive(location.queueKey, async () => {
-      await assertCredentialStoreLocation(location);
+      await assertCredentialStoreLocation(location, this.#ownership);
       return operation(location);
     });
   }
@@ -412,7 +442,7 @@ export class FileCredentialStore implements CredentialStore {
   }
 
   async #persist(location: CredentialStoreLocation): Promise<void> {
-    await assertCredentialStoreLocation(location);
+    await assertCredentialStoreLocation(location, this.#ownership);
     await writeStoreAtomic(
       location.path,
       this.#records,
