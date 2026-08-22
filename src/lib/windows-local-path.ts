@@ -62,8 +62,24 @@ const WINDOWS_LOCAL_FILESYSTEM_ROOT = /^\\\\[?.]\\[a-z]:\\/i;
  */
 const WINDOWS_PARENT_SEGMENT = /(?:^|\\)\.\.(?:\\|$)/;
 
+/**
+ * The edge whitespace both this module and its Rust mirror fold away before
+ * deciding — deliberately spelled out rather than left to each language's
+ * default, because those defaults are not the same set.
+ *
+ * `String.prototype.trim` folds U+FEFF and not U+0085; Rust's `str::trim` folds
+ * U+0085 (it is `White_Space`) and not U+FEFF (it is not). A differential over
+ * 203 spellings found exactly those two disagreements and nothing else, each
+ * one a `\\host\share\…` value that one copy refused and the other admitted.
+ * Both were inert only because every caller of the executable boundary tests
+ * `isAbsolute` before asking, and neither character is a path root — which is
+ * a property of those callers, not of this boundary, so the union is folded
+ * here rather than left resting on them.
+ */
+const WINDOWS_EDGE_WHITESPACE = /^[\s\x85]+|[\s\x85]+$/g;
+
 function failsToProveLocal(candidate: string, localRoot: RegExp): boolean {
-  const normalized = candidate.trim().replaceAll("/", "\\");
+  const normalized = candidate.replace(WINDOWS_EDGE_WHITESPACE, "").replaceAll("/", "\\");
   if (!normalized.startsWith("\\\\")) return false;
   if (WINDOWS_PARENT_SEGMENT.test(normalized)) return true;
   return !localRoot.test(normalized);

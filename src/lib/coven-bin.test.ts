@@ -45,6 +45,18 @@ for (const admitted of [
 // as written, before anything else trims it.
 assert.equal(isWindowsRemoteExecutablePath("//./UNC/remote-host/share/coven.exe"), true);
 assert.equal(isWindowsRemoteExecutablePath("  \\\\remote-host\\share\\coven.exe  "), true);
+// The edge-whitespace fold is spelled out because `String.prototype.trim` and
+// Rust's `str::trim` disagree on exactly two characters: JS folds U+FEFF and
+// not U+0085, Rust the reverse. A differential over 203 spellings found both,
+// and each was a value one copy refused while the other admitted it, so the
+// union is pinned on both sides.
+for (const [name, code] of [["U+0085 NEL", 0x85], ["U+FEFF BOM", 0xfeff]] as const) {
+  assert.equal(
+    isWindowsRemoteExecutablePath(`${String.fromCharCode(code)}\\\\remote-host\\share\\coven.exe`),
+    true,
+    `a leading ${name} is folded on both sides, so the TS and Rust copies agree`,
+  );
+}
 // The pipe device stays on this machine, but no launcher lives there, so the
 // executable boundary is one notch tighter than the daemon-socket one.
 assert.equal(isWindowsRemoteExecutablePath("\\\\.\\pipe\\coven"), true);
@@ -872,6 +884,16 @@ assert.equal(
   ),
   "it is not on a local drive",
   "the operator hears about a device-namespace share, not only the obvious spelling",
+);
+// The canonical re-check has its own sentence, and it is the one branch of
+// `covenOverrideRejection` no assertion reached: reverting it to the old UNC
+// wording left every test in this file and `coven-daemon.test.ts` passing.
+// Reproducing it behaviourally needs a reparse point aimed at a real share, so
+// the shape is pinned here instead — the branch and its wording together.
+assert.match(
+  source,
+  /isWindowsRemoteExecutablePath\(canonical\)\) \{\s*return "it resolves off this machine";/,
+  "a COVEN_BIN whose reparse target leaves the machine says so, and is not described as UNC",
 );
 assert.equal(
   covenOverrideRejection(path.join(os.tmpdir(), "cave-coven-override-absent")),

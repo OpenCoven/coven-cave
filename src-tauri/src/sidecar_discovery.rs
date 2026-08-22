@@ -308,8 +308,14 @@ pub(super) enum PathProbe {
 /// the daemon-socket boundary admits it.
 #[cfg(desktop)]
 pub(super) fn is_windows_remote_executable_path(candidate: &str) -> bool {
+    // `str::trim` and JS `String.prototype.trim` do NOT fold the same set:
+    // Rust takes U+0085 (it is `White_Space`) and not U+FEFF, JS the reverse.
+    // A differential over 203 spellings found exactly those two disagreements,
+    // each one a `\\host\share\…` value one copy refused and the other
+    // admitted, so both copies now fold the union explicitly. See
+    // `WINDOWS_EDGE_WHITESPACE` in `src/lib/windows-local-path.ts`.
     let normalized: String = candidate
-        .trim()
+        .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
         .chars()
         .map(|c| if c == '/' { '\\' } else { c })
         .collect();
@@ -704,6 +710,18 @@ mod coven_binary_tests {
         // The pipe device stays on this machine, but no launcher lives there,
         // so the executable boundary is tighter than the daemon-socket one.
         assert!(is_windows_remote_executable_path("\\\\.\\pipe\\coven"));
+        // The edge-whitespace fold is the union of the two languages' `trim`,
+        // not either default: `str::trim` takes U+0085 and not U+FEFF, JS the
+        // reverse. A differential over 203 spellings found exactly those two
+        // disagreements, so both are pinned on both sides.
+        for lead in ['\u{85}', '\u{feff}'] {
+            assert!(
+                is_windows_remote_executable_path(&format!(
+                    "{lead}\\\\server\\share\\coven.exe"
+                )),
+                "a leading {lead:?} must fold away here as it does in TS"
+            );
+        }
     }
 
     #[test]
@@ -755,6 +773,31 @@ mod coven_binary_tests {
             OverrideRejection::Missing.reason(),
             OverrideRejection::NotAFile.reason()
         );
+    }
+
+    /// Every reason is interpolated after the bare word `it` in the `COVEN_BIN`
+    /// warning, and mirrors the sentence `covenOverrideRejection` returns on the
+    /// TS side. `NotAbsolute` was missing its verb — the operator was told "it
+    /// not an absolute path" — and nothing failed, because no test read any of
+    /// these strings. They are pinned here so a reword has to be deliberate.
+    #[test]
+    fn every_override_reason_completes_the_sentence_it_is_spliced_into() {
+        for (rejection, expected) in [
+            (OverrideRejection::NotAbsolute, "is not an absolute path"),
+            (OverrideRejection::RemotePath, "is not on a local drive"),
+            (OverrideRejection::Missing, "does not exist"),
+            (OverrideRejection::NotAFile, "is not a file"),
+        ] {
+            let reason = rejection.reason();
+            assert_eq!(reason, expected);
+            assert!(
+                matches!(
+                    reason.split(' ').next(),
+                    Some("is") | Some("does") | Some("resolves")
+                ),
+                "`it {reason}` must read as a sentence"
+            );
+        }
     }
 
     #[test]
