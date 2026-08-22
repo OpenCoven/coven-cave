@@ -478,35 +478,54 @@ final class ChatThread: Identifiable, Hashable {
     /// Where a message lives on the server, when it lives there at all.
     ///
     /// Deliberately narrow. Only a direct chat is ever restored from a server
-    /// transcript — `reload` no-ops for groups, which are N sessions behind
-    /// one presented thread — so only a direct chat's messages can be named
-    /// back to a turn. A queued send, inline slash output, and a thread with
-    /// no session yet have nothing on the server to remove, and for those the
-    /// local removal is already the whole truth.
+    /// transcript — `reload` no-ops for groups, and `AppModel.loadHistory`
+    /// only ever runs against a thread it built with a single familiar — so
+    /// only a direct chat's messages can be named back to a turn. A queued
+    /// send, inline slash output, and a thread with no session yet have
+    /// nothing on the server to remove, and for those the local removal is
+    /// already the whole truth.
     private func serverDeleteTarget(for message: DisplayMessage,
                                     at index: Int) -> ServerDeleteTarget? {
-        guard !isGroup, !message.isQueued, message.role != .system,
+        guard !isGroup, !message.isQueued,
+              // Inline slash output is local-only — but a `system` turn the
+              // server named on a restore is a real turn there (the server
+              // persists chain-less system turns) and deletes like any other.
+              // Refusing every system message would leave those undeletable
+              // by the silent local splice this whole path exists to end.
+              message.role != .system || message.serverTurnId != nil,
               let familiarId = familiarIds.first,
               let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return nil }
         // Messages the server never receives do not occupy a turn, so they
-        // must not be counted when locating one.
-        let ordinal = messages[..<index].filter { Self.occupiesServerTurn($0) }.count
+        // must not be counted when locating one. Kept whole rather than
+        // counted: naming a turn by position is only safe if the positions
+        // before it can be checked against the server's own transcript.
+        let preceding = messages[..<index].filter { Self.occupiesServerTurn($0) }
         return ServerDeleteTarget(sessionId: sessionId, turnId: message.serverTurnId,
-                                  ordinal: ordinal)
+                                  preceding: preceding)
     }
 
     private struct ServerDeleteTarget {
         let sessionId: String
         /// Known only for a message the server named to us on a restore.
         let turnId: String?
-        /// Position among the turns the server can see, used to name a message
-        /// composed in this session — one that has never been through a
-        /// restore and so carries no `serverTurnId`.
-        let ordinal: Int
+        /// Every local message before this one that occupies a server turn,
+        /// in order. Its COUNT is the ordinal used to name a message composed
+        /// in this session — one that has never been through a restore and so
+        /// carries no `serverTurnId` — and its contents are what proves that
+        /// ordinal actually lines up with the server's transcript.
+        let preceding: [DisplayMessage]
     }
 
+    /// Does this message hold a position in the server's turn list?
+    ///
+    /// A message the server named on a restore does, whatever its role: a
+    /// restored `system` turn sits in `conversation.turns` like any other, and
+    /// skipping it here would shift every later ordinal one turn early. A
+    /// message the server never named counts only if it is the kind that gets
+    /// sent — inline slash output and a queued send never become turns.
     nonisolated private static func occupiesServerTurn(_ message: DisplayMessage) -> Bool {
-        message.role != .system && !message.isQueued
+        if message.serverTurnId != nil { return true }
+        return message.role != .system && !message.isQueued
     }
 
     private func persistDelete(of message: DisplayMessage, at index: Int,
@@ -518,19 +537,25 @@ final class ChatThread: Identifiable, Hashable {
         } else {
             // A message composed in this session has no server-assigned id
             // yet, and nothing in the send path hands one back. Reading the
-            // conversation is the only way to name the turn — and it also
-            // separates the two cases a nil id otherwise conflates: the read
-            // FAILING is a real failure to report, while the read succeeding
-            // and matching nothing means the server genuinely does not have
-            // this message and the local removal was the whole delete.
-            guard let convo = try? await client.conversation(sessionId: target.sessionId) else {
+            // conversation is the only way to name the turn — and the read
+            // has to separate two outcomes a `try?` collapses into one: the
+            // read THROWING is a real failure to report, while it returning
+            // no conversation is the server saying it holds no transcript for
+            // this chat, in which case the local removal was already the
+            // whole delete and there is nothing to roll back.
+            let convo: Conversation?
+            do {
+                convo = try await client.conversation(sessionId: target.sessionId)
+            } catch {
                 rollBack(message, to: index, reason: "the desktop could not be reached",
                          onChange: onChange)
                 return
             }
-            turnId = Self.turnId(matching: message, at: target.ordinal, in: convo.turns)
+            guard let convo else { return }
+            turnId = Self.turnId(matching: message, following: target.preceding,
+                                 in: convo.turns)
         }
-        guard let turnId else { return }
+        guard let turnId, !turnId.isEmpty else { return }
         do {
             try await client.deleteConversationTurn(sessionId: target.sessionId, turnId: turnId)
         } catch {
@@ -538,16 +563,48 @@ final class ChatThread: Identifiable, Hashable {
         }
     }
 
-    /// Name a turn by position, then refuse unless it is the same message.
-    /// Position alone would delete a stranger's turn whenever the transcripts
-    /// have drifted; role and text agreeing as well is what makes a match a
-    /// match rather than a guess.
-    nonisolated private static func turnId(matching message: DisplayMessage, at ordinal: Int,
+    /// Name a turn from the server's own transcript, and refuse unless the
+    /// transcript names it beyond doubt.
+    ///
+    /// Position alone deletes a stranger's turn as soon as the two transcripts
+    /// drift, and they drift routinely: a reply that failed ambiguously (or
+    /// was cancelled) leaves a local bubble with no server turn behind it, and
+    /// every ordinal after it is then one too high. Role and text agreeing at
+    /// the drifted position is not enough on its own either — a chat is full
+    /// of repeated short turns ("ok", "continue", "y"), and an off-by-two in
+    /// an alternating transcript lands on the same role every single time.
+    ///
+    /// So the ordinal has to be backed by a transcript that lines up, not by
+    /// arithmetic alone: EVERY position before it must agree too — by turn id
+    /// for the messages the server already named, by role and text for the
+    /// rest — and only then is the turn sitting at the ordinal this message.
+    ///
+    /// A unique role+text match elsewhere in the transcript is deliberately
+    /// NOT accepted as a second route. It would rescue a drifted ordinal, but
+    /// it would also delete an older identical turn for a message the server
+    /// never received at all, which is the failure that cannot be undone.
+    ///
+    /// Refusing costs the message reappearing on the next refresh — after
+    /// which it carries a `serverTurnId` and deletes by name, no matching
+    /// involved. Deleting the wrong turn costs someone else's message,
+    /// permanently. The cheap mistake is the one to make.
+    nonisolated private static func turnId(matching message: DisplayMessage,
+                                           following preceding: [DisplayMessage],
                                            in turns: [ChatTurn]) -> String? {
-        guard ordinal >= 0, ordinal < turns.count else { return nil }
-        let turn = turns[ordinal]
-        guard turn.role == message.role.rawValue, turn.text == message.text else { return nil }
-        return turn.id
+        let ordinal = preceding.count
+        guard ordinal < turns.count, Self.turn(turns[ordinal], is: message) else { return nil }
+        for position in preceding.indices where !Self.turn(turns[position], is: preceding[position]) {
+            return nil
+        }
+        return turns[ordinal].id
+    }
+
+    /// Is this server turn this local message? By id whenever the server has
+    /// named the message to us — the only comparison that cannot coincide —
+    /// and by role and text for a message it never named.
+    nonisolated private static func turn(_ turn: ChatTurn, is message: DisplayMessage) -> Bool {
+        if let serverTurnId = message.serverTurnId { return turn.id == serverTurnId }
+        return turn.role == message.role.rawValue && turn.text == message.text
     }
 
     /// Put a rolled-back message back where it left from and say why it is
@@ -1081,7 +1138,11 @@ final class ChatThread: Identifiable, Hashable {
               convo.turns[lastUser].text == prompt else { return false }
         if let reply = convo.turns[(lastUser + 1)...].last(where: { $0.role == "assistant" }) {
             let insertAt = messages.firstIndex(where: { $0.isQueued }) ?? messages.endIndex
-            messages.insert(DisplayMessage(role: .assistant, familiarId: familiarId,
+            // The server named this turn to us, so carry its id: an adopted
+            // reply is server-owned, and without the id a later delete has to
+            // guess at it by position instead of naming it.
+            messages.insert(DisplayMessage(serverTurnId: reply.id,
+                                           role: .assistant, familiarId: familiarId,
                                            text: reply.text, isError: reply.isError ?? false,
                                            activity: ActivityFold.steps(fromTools: reply.tools)),
                             at: insertAt)

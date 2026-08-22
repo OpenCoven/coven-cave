@@ -785,7 +785,8 @@ struct CaveClient {
     /// already gone answers 200 with `deleted: false`, and a conversation the
     /// server does not have answers 404 — neither is a failure to report, both
     /// mean the message is not there any more. Returns whether this call was
-    /// the one that removed it.
+    /// the one that removed it (a retry of a call that already landed answers
+    /// `deleted: false`, so a false return is not evidence of failure).
     @discardableResult
     func deleteConversationTurn(sessionId: String, turnId: String) async throws -> Bool {
         let session = try Self.encodedPathSegment(sessionId, describing: "chat identifier")
@@ -793,8 +794,18 @@ struct CaveClient {
         let req = try request("api/chat/conversation/\(session)/turns/\(turn)", method: "DELETE")
         let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
         try Self.checkDelete(resp)
-        struct TurnDeleteResponse: Decodable { var deleted: Bool? }
-        return (try? JSONDecoder().decode(TurnDeleteResponse.self, from: data))?.deleted ?? false
+        struct TurnDeleteResponse: Decodable { var ok: Bool?; var deleted: Bool? }
+        let decoded = try? JSONDecoder().decode(TurnDeleteResponse.self, from: data)
+        // A 404 from THIS route means the chat is not there, so neither is the
+        // message. A 404 from no route at all — a desktop too old to have
+        // shipped it — means the delete never happened, and swallowing that
+        // one would hand back the silent local-only delete this route exists
+        // to end. The route always answers in an `ok` envelope; an unrouted
+        // 404 answers with a page.
+        if (resp as? HTTPURLResponse)?.statusCode == 404, decoded?.ok == nil {
+            throw CaveError.badResponse(404)
+        }
+        return decoded?.deleted ?? false
     }
 
     func conversation(sessionId: String) async throws -> Conversation? {

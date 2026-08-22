@@ -52,6 +52,15 @@ assert.match(
   /Self\.checkDelete\(resp\)/,
   "a 404 means the message is already not there — that is not a failure to report",
 );
+// ...but ONLY when the 404 came from this route. A desktop too old to have
+// shipped it 404s the same way, and swallowing that hands back the silent
+// local-only delete the route exists to end.
+assert.match(
+  del,
+  /statusCode == 404, decoded\?\.ok == nil \{[\s\S]*?throw CaveError\.badResponse\(404\)/,
+  "a 404 that is not this route's own JSON envelope must be reported, not swallowed — " +
+    "otherwise an older desktop reads as 'already deleted'",
+);
 for (const [value, subject] of [
   ["sessionId", "chat identifier"],
   ["turnId", "message identifier"],
@@ -92,6 +101,16 @@ assert.doesNotMatch(
   /serverTurnId/,
   "a duplicated message is a NEW turn — carrying the source's server id would delete the original",
 );
+// The other place the server hands a turn id to a message: replay adopts a
+// reply that landed while the transport was down. Without the id that reply is
+// server-owned but unnamed, and a later delete has to guess at it by position.
+const adopt = blockAfter(thread, "private func adoptServerTurnIfPresent(prompt: String, familiarId: String,");
+assert.ok(adopt, "adoptServerTurnIfPresent must exist");
+assert.match(
+  adopt,
+  /DisplayMessage\(serverTurnId: reply\.id,/,
+  "an adopted reply must carry the server's turn id — the server just named it",
+);
 
 // -- Delete ---------------------------------------------------------------
 const body = blockAfter(thread, "func deleteMessage(_ messageId: String, client: CaveClient?,");
@@ -123,8 +142,17 @@ const target = blockAfter(thread, "private func serverDeleteTarget(for message: 
 assert.ok(target, "serverDeleteTarget must exist");
 assert.match(
   target,
-  /guard !isGroup, !message\.isQueued, message\.role != \.system,/,
-  "a group turn, a queued send and inline slash output have no server turn to remove",
+  /guard !isGroup, !message\.isQueued,/,
+  "a group turn and a queued send have no server turn to remove",
+);
+// Inline slash output is local-only, but the server persists chain-less
+// `system` turns of its own and hands them back on a restore. Refusing every
+// system message leaves those deletable only by the local splice being fixed.
+assert.match(
+  target,
+  /message\.role != \.system \|\| message\.serverTurnId != nil,/,
+  "a system turn the SERVER named is a real turn and must delete like one; only " +
+    "inline slash output (never named) stays local",
 );
 assert.match(
   target,
@@ -133,22 +161,55 @@ assert.match(
 );
 assert.match(
   target,
-  /messages\[\.\.<index\]\.filter \{ Self\.occupiesServerTurn\(\$0\) \}\.count/,
+  /let preceding = messages\[\.\.<index\]\.filter \{ Self\.occupiesServerTurn\(\$0\) \}/,
   "the ordinal must skip messages the server never receives, or it names the wrong turn",
+);
+assert.match(
+  target,
+  /preceding: preceding\)/,
+  "the preceding messages must be carried, not just counted — the count alone cannot be " +
+    "checked against the server's transcript",
+);
+
+const occupies = blockAfter(
+  thread,
+  "nonisolated private static func occupiesServerTurn(_ message: DisplayMessage) -> Bool {",
+);
+assert.ok(occupies, "occupiesServerTurn must exist");
+assert.match(
+  occupies,
+  /if message\.serverTurnId != nil \{ return true \}/,
+  "a message the server NAMED holds a position whatever its role — a restored system turn " +
+    "sits in conversation.turns, and skipping it shifts every later ordinal one turn early",
 );
 
 const persist = blockAfter(thread, "private func persistDelete(of message: DisplayMessage, at index: Int,");
 assert.ok(persist, "persistDelete must exist");
+// `try?` collapses two different answers into one: the read THROWING is a real
+// failure, while it returning no conversation is the server saying it holds no
+// transcript — in which case the local removal was already the whole delete
+// and rolling back would resurrect a message for no reason.
 assert.match(
   persist,
-  /guard let convo = try\? await client\.conversation\(sessionId: target\.sessionId\) else \{\s*\n\s*rollBack\(/,
-  "a message composed this session has no server id yet; a FAILED read is a real failure " +
-    "and must roll back rather than pass as 'the server does not have it'",
+  /do \{\s*\n\s*convo = try await client\.conversation\(sessionId: target\.sessionId\)\s*\n\s*\} catch \{\s*\n\s*rollBack\(/,
+  "a FAILED read is a real failure and must roll back",
 );
 assert.match(
   persist,
-  /turnId = Self\.turnId\(matching: message, at: target\.ordinal, in: convo\.turns\)/,
-  "the turn must be named from the server's own transcript",
+  /guard let convo else \{ return \}/,
+  "a read that succeeds with no conversation means the server does not have the message — " +
+    "that must NOT be reported as a failure",
+);
+assert.match(
+  persist,
+  /turnId = Self\.turnId\(matching: message, following: target\.preceding,\s*\n\s*in: convo\.turns\)/,
+  "the turn must be named from the server's own transcript, with the preceding messages " +
+    "available to check the position against",
+);
+assert.match(
+  persist,
+  /try await client\.deleteConversationTurn\(sessionId: target\.sessionId, turnId: turnId\)/,
+  "the named turn must actually be deleted on the server — the whole point of the bead",
 );
 assert.match(
   persist,
@@ -156,13 +217,34 @@ assert.match(
   "a refused delete must roll back AND say why",
 );
 
-const matcher = blockAfter(thread, "nonisolated private static func turnId(matching message: DisplayMessage, at ordinal: Int,");
-assert.ok(matcher, "turnId(matching:at:in:) must exist");
+const matcher = blockAfter(thread, "nonisolated private static func turnId(matching message: DisplayMessage,");
+assert.ok(matcher, "turnId(matching:following:in:) must exist");
+// Position plus role-and-text AT that position is not enough. A reply that
+// failed ambiguously leaves a local bubble with no server turn behind it, so
+// the ordinal drifts — and a chat is full of repeated short turns, so the
+// drifted position agrees on role and text often enough to delete a stranger's
+// message. Every earlier position has to line up too.
 assert.match(
   matcher,
-  /guard turn\.role == message\.role\.rawValue, turn\.text == message\.text else \{ return nil \}/,
-  "position alone would delete a stranger's turn once the transcripts drift — " +
-    "role and text must agree too",
+  /guard ordinal < turns\.count, Self\.turn\(turns\[ordinal\], is: message\) else \{ return nil \}/,
+  "the ordinal must land on a turn that IS this message",
+);
+assert.match(
+  matcher,
+  /for position in preceding\.indices where !Self\.turn\(turns\[position\], is: preceding\[position\]\) \{\s*\n\s*return nil\s*\n\s*\}/,
+  "every position before the ordinal must agree with the server's transcript, or the " +
+    "ordinal is arithmetic rather than evidence and deletes the wrong turn",
+);
+
+const sameTurn = blockAfter(
+  thread,
+  "nonisolated private static func turn(_ turn: ChatTurn, is message: DisplayMessage) -> Bool {",
+);
+assert.ok(sameTurn, "turn(_:is:) must exist");
+assert.match(
+  sameTurn,
+  /if let serverTurnId = message\.serverTurnId \{ return turn\.id == serverTurnId \}/,
+  "a message the server named is compared by id — the only comparison that cannot coincide",
 );
 
 const rollBack = blockAfter(thread, "private func rollBack(_ message: DisplayMessage, to index: Int, reason: String,");
