@@ -706,6 +706,15 @@ final class ChatThread: Identifiable, Hashable {
     /// familiar's failure in a group is retried without re-firing the others, and
     /// a 1:1 retry doesn't duplicate the user prompt. No-ops if the bubble has no
     /// familiar or no preceding user prompt to replay.
+    ///
+    /// It also drops the bubble's `serverTurnId`. A retry is an ordinary send —
+    /// `SendBody` carries no branch or replace field — so the server appends a
+    /// NEW turn pair and keeps the old assistant turn where it was. Holding on
+    /// to that id would point this bubble at a turn whose text it no longer
+    /// shows, and a delete would then remove the superseded turn while the
+    /// reply on screen stayed. Nil is the honest state: the server has never
+    /// named THIS reply to us, so a delete goes through the transcript matcher
+    /// like any other unnamed message.
     func retry(_ messageId: String, client: CaveClient, onChange: @escaping () -> Void) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               messages[idx].role == .assistant,
@@ -719,14 +728,6 @@ final class ChatThread: Identifiable, Hashable {
         )
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard requireSendProvenance(to: [familiarId]) else { return }
-        // Drop the server turn id along with the text it named. A retry is an
-        // ordinary send (`SendBody` carries no branch or replace field), so the
-        // server appends a NEW turn pair and keeps the old assistant turn where
-        // it was. Holding on to that id would point this bubble at a turn whose
-        // text it no longer shows — and a delete would then remove the
-        // superseded turn while the reply on screen stayed. Nil is the honest
-        // state: the server has never named THIS reply to us, so a delete goes
-        // through the transcript matcher like any other unnamed message.
         mutate(messageId) {
             $0.serverTurnId = nil
             $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil
