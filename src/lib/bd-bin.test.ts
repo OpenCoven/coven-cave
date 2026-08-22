@@ -221,7 +221,7 @@ for (const script of ROUTED_SCRIPTS) {
   const source = await readFile(new URL(script, ROOT), "utf8");
   assert.match(
     source,
-    /import \{ withBdLaunch \} from "\.\.\/src\/lib\/bd-bin\.ts";/,
+    /import \{[^}]*\bwithBdLaunch\b[^}]*\} from "\.\.\/src\/lib\/bd-bin\.ts";/,
     `${script} must route bd through the resolver`,
   );
   assert.doesNotMatch(
