@@ -83,6 +83,15 @@ function retryGuidance(write: (value: string) => void): void {
   );
 }
 
+function cleanupUnprovenGuidance(write: (value: string) => void): void {
+  write(
+    "[beads:sync] Verify and stop the surviving process tree before retrying; it may still hold the Dolt lock or be pushing.\n",
+  );
+  write(
+    "[beads:sync] Inspect `git ls-remote origin refs/dolt/data` before deciding whether a push retry is needed.\n",
+  );
+}
+
 function cancellationStatus(signal: AbortSignal): number {
   const reason = signal.reason;
   return typeof reason === "string" && reason in SIGNAL_EXIT_CODES
@@ -151,6 +160,12 @@ async function runPhase(
   child.stdout?.on("data", (chunk) => stdout.append(chunk));
   child.stderr?.on("data", (chunk) => stderr.append(chunk));
 
+  const releaseUnprovenChildHandles = () => {
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    child.unref();
+  };
+
   return new Promise((resolve) => {
     let settled = false;
     let terminating = false;
@@ -181,6 +196,7 @@ async function runPhase(
           graceMs: options.terminationGraceMs,
         })
         .then((cleanupProven) => {
+          if (!cleanupProven) releaseUnprovenChildHandles();
           finish({
             status: cleanupProven ? successStatus : 1,
             ...retained(),
@@ -188,6 +204,7 @@ async function runPhase(
           });
         })
         .catch(() => {
+          releaseUnprovenChildHandles();
           finish({
             status: 1,
             ...retained(),
@@ -275,13 +292,14 @@ export async function runBeadsSync(options: BeadsSyncOptions = {}): Promise<numb
       writeStderr(
         `[beads:sync] ${phase} timed out after ${timeoutMs}ms and could not prove process-tree cleanup.\n`,
       );
-      if (phase === "push") retryGuidance(writeStderr);
+      cleanupUnprovenGuidance(writeStderr);
       return 1;
     }
     if (result.kind === "cancellation-cleanup-unproven") {
       writeStderr(
         `[beads:sync] ${phase} was cancelled and could not prove process-tree cleanup.\n`,
       );
+      cleanupUnprovenGuidance(writeStderr);
       return 1;
     }
     if (result.status !== 0) {

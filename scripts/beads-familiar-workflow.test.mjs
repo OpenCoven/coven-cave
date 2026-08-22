@@ -84,8 +84,18 @@ assert.match(workflow, /public-scrubbed before committing/, "workflow doc should
 assert.match(workflow, /bd dolt pull[\s\S]*bd dolt push/, "workflow doc should name Dolt sync commands");
 assert.match(
   workflow,
-  /retry `pnpm beads:sync` once[\s\S]*Do not edit Git\s+configuration or credential helpers[\s\S]*refs\/dolt\/data/i,
+  /confirms the owned process tree was\s+terminated[\s\S]*retry `pnpm beads:sync` once/i,
   "workflow docs should explain bounded retry and remote-ref verification",
+);
+assert.match(
+  workflow,
+  /cleanup could not be proven[\s\S]*stop the surviving process tree before retrying[\s\S]*refs\/dolt\/data/i,
+  "workflow docs should block retry while cleanup remains unproven",
+);
+assert.match(
+  workflow,
+  /Do not edit Git\s+configuration or credential\s+helpers/i,
+  "workflow docs should preserve transient credential guidance",
 );
 assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
 assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");

@@ -79,9 +79,12 @@ terminates the complete owned process tree if Git or a credential helper stops
 making progress. Do not use the raw commands for routine sync in this
 repository.
 
-If push fails or times out, retry `pnpm beads:sync` once. Do not edit Git
-configuration or credential helpers after one transient 403; the known
-intermittent identity failure can succeed without any configuration change.
+If push fails or times out **and the wrapper confirms the owned process tree was
+terminated**, retry `pnpm beads:sync` once. If cleanup could not be proven,
+verify and stop the surviving process tree before retrying; it may still hold
+the Dolt lock or be pushing. Do not edit Git configuration or credential
+helpers after one transient 403; the known intermittent identity failure can
+succeed without any configuration change.
 For pending Beads changes, verify the remote ref actually advanced:
 
 ```bash

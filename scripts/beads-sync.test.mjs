@@ -261,11 +261,15 @@ test("push timeout kills a descendant that ignores SIGTERM", {
 test("unproven tree cleanup is a hard error, not an ordinary timeout", async () => {
   const stderr = outputSink();
   const fakeChild = new EventEmitter();
+  let unrefCalled = false;
   fakeChild.pid = 424242;
   fakeChild.exitCode = null;
   fakeChild.signalCode = null;
   fakeChild.stdout = new PassThrough();
   fakeChild.stderr = new PassThrough();
+  fakeChild.unref = () => {
+    unrefCalled = true;
+  };
 
   const status = await runBeadsSync({
     timeoutMs: 1,
@@ -276,7 +280,12 @@ test("unproven tree cleanup is a hard error, not an ordinary timeout", async () 
   });
 
   assert.equal(status, 1);
+  assert.equal(unrefCalled, true, "unproven child must not retain the wrapper event loop");
+  assert.equal(fakeChild.stdout.destroyed, true);
+  assert.equal(fakeChild.stderr.destroyed, true);
   assert.match(stderr.text(), /could not prove process-tree cleanup/);
+  assert.match(stderr.text(), /verify and stop the surviving process tree before retrying/i);
+  assert.doesNotMatch(stderr.text(), /Retry `pnpm beads:sync` once/);
   assert.doesNotMatch(stderr.text(), /owned process tree terminated/);
 });
 

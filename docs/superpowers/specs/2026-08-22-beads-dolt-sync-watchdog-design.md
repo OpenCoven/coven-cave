@@ -149,7 +149,10 @@ again.
 
 Documentation instructs the operator to:
 
-1. Retry `pnpm beads:sync` once.
+1. Retry `pnpm beads:sync` once only after the wrapper confirms the owned
+   process tree terminated. If cleanup is unproven, verify and stop the
+   surviving process tree before retrying because it may still hold the Dolt
+   lock or be pushing.
 2. Do not edit Git configuration or credential helpers after one transient 403;
    the known intermittent identity failure can succeed on the immediate retry.
 3. When verifying a push that should contain pending Beads changes, compare the
