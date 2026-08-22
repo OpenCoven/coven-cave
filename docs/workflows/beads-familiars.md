@@ -91,8 +91,9 @@ git ls-remote origin refs/dolt/data
 ```
 
 Compare the before and after OIDs. An expected advancement proves the remote
-accepted pending changes. No advancement is required when there were no local
-Dolt changes to publish.
+changed, but concurrent syncs mean it does not identify which actor advanced
+the ref. No advancement is required when there were no local Dolt changes to
+publish.
 
 The package shortcuts are the stable entrypoints for familiars:
 

@@ -23,11 +23,12 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "beads-sync.ts");
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "beads-sync-"));
   const bin = join(root, "bin");
+  const script = join(bin, "bd.js");
   const log = join(root, "bd-log.jsonl");
   const descendantPid = join(root, "descendant.pid");
   mkdirSync(bin, { recursive: true });
   writeFileSync(
-    join(bin, "bd"),
+    script,
     `#!/usr/bin/env node
 import { appendFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
@@ -66,6 +67,8 @@ process.exit(Number(process.env.BD_FAKE_PUSH_EXIT ?? "0"));
 `,
     "utf8",
   );
+  writeFileSync(join(bin, "bd"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, "utf8");
+  writeFileSync(join(bin, "bd.cmd"), `@"%~dp0\\bd.js" %*\r\n`, "utf8");
   chmodSync(join(bin, "bd"), 0o755);
   return {
     root,
@@ -134,6 +137,29 @@ test("sync runs pull before push with noninteractive credential settings", async
     assert.match(stdout.text(), /push ok/);
     assert.match(stderr.text(), /pull note/);
     assert.match(stderr.text(), /push note/);
+  } finally {
+    rmSync(current.root, { recursive: true, force: true });
+  }
+});
+
+test("sync resolves the Beads launcher from the injected Windows environment", {
+  skip: process.platform !== "win32",
+}, async () => {
+  const current = fixture();
+  const stderr = outputSink();
+  try {
+    const status = await runBeadsSync({
+      env: current.env,
+      platform: "win32",
+      writeStdout: () => {},
+      writeStderr: (value) => stderr.write(value),
+    });
+
+    assert.equal(status, 0, stderr.text());
+    assert.deepEqual(
+      readLog(current.log).map((entry) => entry.args),
+      [["dolt", "pull"], ["dolt", "push"]],
+    );
   } finally {
     rmSync(current.root, { recursive: true, force: true });
   }
@@ -252,6 +278,41 @@ test("unproven tree cleanup is a hard error, not an ordinary timeout", async () 
   assert.equal(status, 1);
   assert.match(stderr.text(), /could not prove process-tree cleanup/);
   assert.doesNotMatch(stderr.text(), /owned process tree terminated/);
+});
+
+test("child errors during termination do not bypass cleanup proof", async () => {
+  const stderr = outputSink();
+  const fakeChild = new EventEmitter();
+  fakeChild.pid = 424242;
+  fakeChild.exitCode = null;
+  fakeChild.signalCode = null;
+  fakeChild.stdout = new PassThrough();
+  fakeChild.stderr = new PassThrough();
+  let releaseCleanup;
+  const cleanup = new Promise((resolve) => {
+    releaseCleanup = resolve;
+  });
+
+  const statusPromise = runBeadsSync({
+    timeoutMs: 1,
+    spawnProcess: () => fakeChild,
+    terminateTree: async () => cleanup,
+    writeStdout: () => {},
+    writeStderr: (value) => stderr.write(value),
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  fakeChild.emit("error", new Error("late child error"));
+  let settled = false;
+  void statusPromise.then(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(settled, false, "termination must wait for process-tree cleanup proof");
+
+  releaseCleanup(true);
+  assert.equal(await statusPromise, 124);
+  assert.match(stderr.text(), /owned process tree terminated/);
 });
 
 test("direct CLI SIGTERM cleans its detached bd process tree", {

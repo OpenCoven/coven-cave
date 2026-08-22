@@ -6,7 +6,7 @@ import {
   type SpawnOptions,
 } from "node:child_process";
 
-import { withBdLaunch } from "../src/lib/bd-bin.ts";
+import { resolveBdLaunchCommand, withBdLaunch } from "../src/lib/bd-bin.ts";
 import {
   BoundedProcessOutput,
   safeProcessErrorMessage,
@@ -106,7 +106,14 @@ async function runPhase(
     >
   > & Pick<BeadsSyncOptions, "terminationGraceMs">,
 ): Promise<PhaseResult> {
-  const launch = withBdLaunch("bd", ["dolt", phase]);
+  const launch = withBdLaunch(
+    "bd",
+    ["dolt", phase],
+    resolveBdLaunchCommand({
+      env: options.env,
+      platform: options.platform,
+    }),
+  );
   const stdout = new BoundedProcessOutput(OUTPUT_BYTES);
   const stderr = new BoundedProcessOutput(OUTPUT_BYTES);
   if (options.signal.aborted) {
@@ -202,6 +209,7 @@ async function runPhase(
     if (options.signal.aborted) onAbort();
 
     child.once("error", (error) => {
+      if (terminating) return;
       finish({
         status: 1,
         ...retained(),

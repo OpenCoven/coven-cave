@@ -161,9 +161,10 @@ Documentation instructs the operator to:
    git ls-remote origin refs/dolt/data
    ```
 
-4. Treat an expected ref advancement as the remote success signal. If the ref
-   does not advance after the retry, report the failure instead of changing
-   credentials speculatively.
+4. Treat an expected ref advancement as evidence that the remote changed. It
+   does not prove which concurrent actor advanced the ref. If the ref does not
+   advance after the retry, report the failure instead of changing credentials
+   speculatively.
 
 No advancement is required when there were no local Dolt changes to publish.
 
