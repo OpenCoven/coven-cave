@@ -112,6 +112,19 @@ assert.match(
   "an adopted reply must carry the server's turn id — the server just named it",
 );
 
+// A retry re-streams into the SAME local bubble, but it is an ordinary send —
+// `SendBody` has no branch or replace field — so the server appends a new turn
+// pair and leaves the old assistant turn alone. Keeping the id would aim a
+// later delete at a turn whose text this bubble no longer shows: the superseded
+// turn would go and the reply on screen would stay.
+const retry = blockAfter(thread, "func retry(_ messageId: String, client: CaveClient, onChange: @escaping () -> Void) {");
+assert.ok(retry, "retry must exist");
+assert.match(
+  retry,
+  /mutate\(messageId\) \{\s*\n\s*\$0\.serverTurnId = nil/,
+  "a retried bubble must drop the server turn id along with the text it named",
+);
+
 // -- Delete ---------------------------------------------------------------
 const body = blockAfter(thread, "func deleteMessage(_ messageId: String, client: CaveClient?,");
 assert.ok(body, "deleteMessage must take a client");

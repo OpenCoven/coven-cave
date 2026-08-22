@@ -719,7 +719,18 @@ final class ChatThread: Identifiable, Hashable {
         )
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard requireSendProvenance(to: [familiarId]) else { return }
-        mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil }
+        // Drop the server turn id along with the text it named. A retry is an
+        // ordinary send (`SendBody` carries no branch or replace field), so the
+        // server appends a NEW turn pair and keeps the old assistant turn where
+        // it was. Holding on to that id would point this bubble at a turn whose
+        // text it no longer shows — and a delete would then remove the
+        // superseded turn while the reply on screen stayed. Nil is the honest
+        // state: the server has never named THIS reply to us, so a delete goes
+        // through the transcript matcher like any other unnamed message.
+        mutate(messageId) {
+            $0.serverTurnId = nil
+            $0.text = ""; $0.isError = false; $0.streaming = true; $0.activity = nil
+        }
         updatedAt = Date()
         onChange()
         Task { await self.stream(familiarId: familiarId, prompt: prompt,
