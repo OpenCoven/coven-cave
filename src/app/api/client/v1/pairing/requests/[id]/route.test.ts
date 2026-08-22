@@ -23,11 +23,18 @@ function context(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
+// Carries the listener's direct-loopback stamp, because the poll route now
+// re-checks it for itself (cave-f1xki). Every request these tests describe is a
+// client on the machine, which is the only shape that stamp is minted for; the
+// unstamped shapes get their own test below.
 function request(id: string, secret?: string, querySecret?: string): Request {
   const url = new URL(`http://127.0.0.1:3020/api/client/v1/pairing/requests/${id}`);
   if (querySecret) url.searchParams.set("secret", querySecret);
   return new Request(url, {
-    headers: secret ? { [secretHeader]: secret } : undefined,
+    headers: {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      ...(secret ? { [secretHeader]: secret } : {}),
+    },
   });
 }
 
@@ -89,6 +96,50 @@ test("poll exposes only id, status, and expiry across the complete lifecycle", a
       status: "expired",
       expiresAt: expiring.expiresAt,
     });
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("poll refuses a caller without the listener's direct-loopback stamp", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => 1_000,
+    });
+    const handler = createPairingRequestGetHandler(runtime);
+    const issued = runtime.pairingStore.create(pairingInput);
+
+    // The correct secret, so nothing but the missing/forged stamp can account
+    // for the refusal. This is the defence in depth cave-f1xki (#4854) is
+    // about: the proxy's ingress classification was slipped with a percent
+    // escape, and this route — alone among the public routes with a dynamic
+    // segment — had no locality check of its own to fall back on.
+    for (const stamp of [undefined, "", "wrong-loopback-secret"]) {
+      const headers = new Headers({ [secretHeader]: issued.secret });
+      if (stamp !== undefined) headers.set(LOCAL_PEER_HEADER, stamp);
+      const response = await handler(
+        new Request(
+          `http://127.0.0.1:3020/api/client/v1/pairing/requests/${issued.id}`,
+          { headers },
+        ),
+        context(issued.id),
+      );
+      const body = await response.json() as { error: { code: string }; data?: unknown };
+      assert.equal(response.status, 401, `stamp ${JSON.stringify(stamp)}`);
+      assert.equal(body.error.code, "unauthorized");
+      assert.equal(body.data, undefined);
+      assert.equal(JSON.stringify(body).includes(issued.secret), false);
+      assert.equal(JSON.stringify(body).includes("loopback-secret"), false);
+    }
+
+    // And the refusal is not a lockout of the legitimate holder: the stamped
+    // request with the same secret still answers.
+    const stamped = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(stamped.status, 200);
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
     await rm(root, { recursive: true, force: true });

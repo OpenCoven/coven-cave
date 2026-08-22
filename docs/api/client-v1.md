@@ -121,9 +121,10 @@ are reachable on the eight routes that exist.
 
 ## Reaching the API at all
 
-Four checks sit in front of every route here, none of them in the route file: a
-loopback `Host` gate, a cross-origin gate, control-plane body rules, and a
-direct-loopback peer gate. Every one of them answers in a **different shape from
+Five checks sit in front of every route here, none of them in the route file: a
+request-target refusal for escaped paths, a loopback `Host` gate, a
+cross-origin gate, control-plane body rules, and a direct-loopback peer gate.
+Every one of them answers in a **different shape from
 the envelope above**: the proxy returns `{"ok": false, "error": "<reason>"}`. A
 client that assumes every response parses as a Client v1 envelope will fail to
 read its own rejection. Branch on the HTTP status first.
@@ -154,28 +155,47 @@ the check fails closed: every route that depends on it answers 401 or 403.
 That branch also *skips* the mobile-access gate, which is why a phone reaching
 in over Tailscale Serve gets the 403 above rather than a mobile-auth prompt.
 
-Two of the four public routes re-check the stamp in the route itself
-(`POST /pairing/requests` and `POST .../exchange`, via
-`runtime.authenticator.isTrustedLoopback`) and answer `unauthorized` in the
-envelope when it fails. `GET /pairing/requests/:id` does not: it takes its
-locality entirely from the proxy branch, and its own 401s are about the pairing
-secret. `GET /health` performs no check of its own either — it is local because
-the proxy branch above says so, and for no other reason.
+Three of the four public routes re-check the stamp in the route itself
+(`POST /pairing/requests`, `GET /pairing/requests/:id`, and `POST .../exchange`,
+via `runtime.authenticator.isTrustedLoopback`) and answer `unauthorized` in the
+envelope when it fails. `GET /health` performs no check of its own — it is local
+because the proxy branch above says so, and for no other reason. It returns no
+user data and no paths.
 
-**That difference is load-bearing, because the proxy branch has a hole
-(`cave-f1xki`).** `clientV1IngressKind` returns `null` for any pathname
-containing `%` or `\`, while Next still percent-decodes a dynamic segment before
-matching it — so a pairing id written with one percent-escaped character
-classifies as *not* client-v1 ingress and reaches the handler anyway, skipping
-both the direct-loopback branch above and the body rules below. It is not an
-open door: such a request now has to satisfy the ordinary API gate instead, so
-an unauthenticated caller is refused where the plain path would have been
-served. But a caller that already holds the sidecar token or the mobile access
-credential can use it to reach `GET /pairing/requests/:id` from **off the
-machine**, which the 403 above otherwise forbids. `POST .../exchange` is
-unaffected — its own stamp check answers 401 — and `GET /health` and
-`POST /pairing/requests` have no dynamic segment, so a percent in their paths
-simply 404s. Reproduced against a production build; the fix is still open.
+**The poll route did not always re-check, and that gap is what made
+`cave-f1xki` (#4854) exploitable.** `clientV1IngressKind` returns `null` for any
+pathname containing `%` or `\`, while Next still percent-decodes a *dynamic*
+segment before matching it — so a pairing id written with one percent-escaped
+character classified as *not* client-v1 ingress and reached the handler anyway,
+skipping both the direct-loopback branch above and the body rules below. A
+caller already holding the sidecar token or the mobile access credential could
+use that to read `GET /pairing/requests/:id` from **off the machine**, which the
+403 above otherwise forbids. Measured against a production build: the plain path
+answered `403 forbidden peer` and the percent-written one answered `200` with
+the pairing record.
+
+**Fixed by refusing such a target outright.** `proxy.ts` answers any request
+whose pathname is inside `/api/client/v1` and contains a `%` or a `\` with
+
+```
+400 {"ok":false,"error":"invalid client v1 path"}
+```
+
+before anything is classified. Nothing a correct client sends is affected: every
+segment of this surface is a fixed literal or a UUID, and the pairing secret
+travels in a header — so no legitimate path needs an escape. Percent-encoding in
+the **query string** is untouched.
+
+The refusal is scoped by path prefix rather than by the ingress lists, so it
+covers the admin family and any dynamic-segmented route added later, including
+one nobody remembers to add to a list. Refusal was chosen over normalizing the
+pathname before classifying it because Next decodes a dynamic segment exactly
+once and does *not* treat a decoded `%2F` as a separator (both measured), so a
+normalizing fix would have to reproduce those rules exactly and keep reproducing
+them across Next versions — while decoding twice would open the `%252e` class
+instead. The poll route's own stamp check, added in the same change, is the
+second layer: the surface no longer has a route that takes its locality solely
+from the proxy branch.
 
 ### Body and content-type rules on the public routes
 
@@ -320,12 +340,16 @@ Reads the status of a pairing request you hold the secret for. This is the
 route a client polls while the user is deciding, if it does not want to poll by
 attempting the exchange.
 
-**Requires:** the pairing secret in the `x-coven-pairing-secret` header. That
-header is the only accepted carrier — a `?secret=` query parameter is refused
-with 401, so the secret never lands in a URL, a log, or a `Referer`.
+**Requires:** the loopback stamp, and the pairing secret in the
+`x-coven-pairing-secret` header. That header is the only accepted carrier — a
+`?secret=` query parameter is refused with 401, so the secret never lands in a
+URL, a log, or a `Referer`.
 
-Note that this route does **not** re-check the loopback stamp itself; the proxy
-branch is what makes it local.
+The stamp is re-checked here, as it is on both pairing POSTs, and it is checked
+before the rate-limit budget is read. It used to be left entirely to the proxy
+branch — which is what made `cave-f1xki` (#4854) reachable on this route and no
+other. A client that can call the exchange can call this, since that route has
+always required the same stamp.
 
 **200:**
 
@@ -342,7 +366,7 @@ what they need to drive the next step.
 
 | Status | Code | Cause |
 |---|---|---|
-| 401 | `unauthorized` | The id is not a UUID, the secret header is absent or not 43 base64url characters, **or** the secret is wrong for a request that exists. |
+| 401 | `unauthorized` | The loopback stamp is absent or does not match, the id is not a UUID, the secret header is absent or not 43 base64url characters, **or** the secret is wrong for a request that exists. |
 | 429 | `rate_limited` | The per-pairing wrong-secret budget is spent — **including by the exchange route**, which shares it. Checked before the secret is compared, so a correct secret gets this too. |
 | 404 | `not_found` | No request or terminal record carries this id. |
 | 409 | `conflict` | Already exchanged. `details.reason` is `"pairing_replayed"`. |
@@ -449,21 +473,32 @@ All four call `requireClientV1Admin`, which:
    case is what stops a non-browser caller skipping the check by sending no
    source header at all.
 
-`requireClientV1Admin` deliberately does **not** consult the loopback stamp. Its
-own comment gives the reason: transport locality is not proof of the
+`requireClientV1Admin` still does **not** consult the loopback stamp itself, for
+the reason its own comment gives: transport locality is not proof of the
 administrator, and the per-launch sidecar credential is.
 
-**Current gap ([#4843](https://github.com/OpenCoven/coven-cave/issues/4843)).**
-Because `/api/client/v1/admin/*` appears in neither the public nor the
-authenticated path list, `clientV1IngressKind` returns `null` for it and the
-family never enters the direct-loopback branch in `proxy.ts`. It is reachable by
-anything that holds the sidecar token, including a non-browser caller arriving
-over Tailscale Serve with no `Origin`/`Referer` — which can therefore *read* the
-credential list and the pending-request list. Mutations still fail, because a
-`ts.net` origin does not satisfy the same-origin check. Severity is low (the
-token is per-launch and never leaves the machine) and binding the family to
-direct loopback is a design decision under review, not a patch to apply
-blindly. Documented here because it is the behaviour today.
+**Locality is required as well, one layer up
+([#4843](https://github.com/OpenCoven/coven-cave/issues/4843)).** `proxy.ts`
+answers any `/api/client/v1/admin/*` request that is not a direct loopback peer
+with
+
+```
+403 {"ok":false,"error":"forbidden peer: client v1 admin requires direct loopback"}
+```
+
+The two checks answer different questions — the proxy asks *from where*,
+`requireClientV1Admin` asks *who* — and the gate binds the family without
+excusing it: the admin paths still do **not** appear in either ingress list, so
+they never take the client-v1 branch's pass-through and the sidecar token is
+still required afterwards by the ordinary gate.
+
+Before that gate existed, a non-browser caller arriving over Tailscale Serve
+with the sidecar token and no `Origin`/`Referer` could *read* the credential list
+and the pending-request list from off the machine (mutations already failed,
+because a `ts.net` origin does not satisfy the same-origin check). Severity was
+low — the token is per-launch and never leaves the machine — but the
+pairing-approval queue is the human-consent surface for the entire authority, so
+it now requires the same direct-loopback stamp the pairing routes require.
 
 ### `GET /api/client/v1/admin/pairing-requests`
 
@@ -740,10 +775,6 @@ against something that is not there.
   `src/lib/server/client-v1/discovery.ts` is reached only by its own tests. Two
   implementations of one on-disk contract can drift, and the `src/lib` one is
   the reviewed side.
-- **Admin routes are not bound to direct loopback** —
-  [#4843](https://github.com/OpenCoven/coven-cave/issues/4843), described above.
-- **A percent-encoded pairing id escapes the client-v1 ingress branch** —
-  `cave-f1xki`, described above. Reproduced, not yet fixed.
 - **`requestId` is never emitted**, so there is no server-assigned correlation
   id to quote in a bug report. The envelope field exists; no route sets it.
 
@@ -768,6 +799,15 @@ direct loopback`, and the 411/413 body rules with their 64 KiB cap. Neither
 applies to a path that classifies `null`. So an authenticated route that lands
 un-listed does not merely keep the sidecar-token gate: it *gains* a bearer
 requirement and *loses* loopback-only ingress and the body cap.
+
+The admin family shows the other way to buy locality back. It classifies `null`
+by design — its protection is the sidecar token, and listing it would return
+before the block that checks one — so `proxy.ts` binds it to a direct loopback
+peer with a check of its own (#4843) and then lets it fall through to the
+ordinary gate. A Phase 2 route that needs locality without the demotion should
+follow that shape rather than being added to the list. Nothing has to be
+remembered for the escaped-target refusal, though: that one is scoped by path
+prefix, so a new route is covered the day it lands.
 
 The invariant, asserted in `src/app/api/api-contracts.test.ts` against the repo
 rather than a list somebody must remember to prune:
