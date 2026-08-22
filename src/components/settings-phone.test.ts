@@ -75,7 +75,9 @@ test("Phone ports the handoff control-sheet hierarchy", () => {
 
 test("Phone preserves production pairing and settings behavior", () => {
   assert.match(component, /readMobileModeEnabled/);
+  assert.match(component, /subscribeMobileModeEnabled/);
   assert.match(component, /writeMobileModeEnabled/);
+  assert.match(component, /subscribeDesktopReachability/);
   assert.match(component, /reconcileMobileModeRequest/);
   assert.match(
     component,

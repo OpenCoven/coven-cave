@@ -19,13 +19,13 @@ assert.match(model, /private let connectionMonitor = NWPathMonitor\(\)/, "AppMod
 assert.match(model, /func startConnectionSupervisor\(\)/, "AppModel should expose a connection supervisor starter");
 assert.match(
   model,
-  /pathUpdateHandler = \{[\s\S]*?path\.status == \.satisfied[\s\S]*?recoverConnectionInBackground\(\)/,
-  "a satisfied network path should trigger background connection recovery",
+  /pathUpdateHandler = \{[\s\S]*?path\.status == \.satisfied[\s\S]*?updateConnectionPath\(available: pathAvailable\)/,
+  "network-path changes should feed the shared connection supervisor",
 );
 assert.match(
   app,
-  /\.task \{[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?await app\.connectWithRetry\(\)/,
-  "app launch should start the connection supervisor before the initial retry",
+  /\.task \{[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?app\.setConnectionSupervisorActive\(true\)/,
+  "app launch should start and activate the connection supervisor",
 );
 
 // --- Reconnect convergence: keep stale UI, then refresh any surface the user opened
@@ -41,7 +41,7 @@ assert.match(
 // to the relevant stale-data banners instead of issuing a duplicate load.
 assert.match(
   model,
-  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?let mirroredProjectContextFailures = loadedProjectContextFailureSurfaces[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{[\s\S]*?await self\.loadCoreResources\([\s\S]*?mirroringProjectContextFailuresTo: mirroredProjectContextFailures[\s\S]*?\)[\s\S]*?\}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}/,
+  /private func refreshLoadedSurfaces\(configurationGeneration: UInt64\) async \{[\s\S]*?connectionConfigurationLeaseIsCurrent\(configurationGeneration\)[\s\S]*?let mirroredProjectContextFailures = loadedProjectContextFailureSurfaces[\s\S]*?withTaskGroup[\s\S]*?group\.addTask \{[\s\S]*?await self\.loadCoreResources\([\s\S]*?mirroringProjectContextFailuresTo: mirroredProjectContextFailures,[\s\S]*?configurationGeneration: configurationGeneration[\s\S]*?\)[\s\S]*?\}[\s\S]*?if sessionsLoaded \{ group\.addTask \{ await self\.loadSessions\(\) \} \}[\s\S]*?if tasksLoaded \{ group\.addTask \{ await self\.loadTasks\(\) \} \}[\s\S]*?if remindersLoaded \{ group\.addTask \{ await self\.loadReminders\(\) \} \}/,
   "reconnect should refresh remaining loaded surfaces while mirroring cached project-context failures once",
 );
 assert.match(
@@ -51,7 +51,7 @@ assert.match(
 );
 assert.doesNotMatch(
   model,
-  /private func refreshLoadedSurfaces\(\) async \{[\s\S]*?group\.addTask \{ await self\.loadProjects\(\) \}/,
+  /private func refreshLoadedSurfaces\(configurationGeneration: UInt64\) async \{[\s\S]*?group\.addTask \{ await self\.loadProjects\(\) \}/,
   "reconnect should not duplicate the project-context refresh with a second projects request",
 );
 assert.match(

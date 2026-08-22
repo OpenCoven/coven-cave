@@ -54,7 +54,13 @@ PRINT_URL=1 pnpm mobile:tailscale:invite
 
 The app stores the invite in an HTTP-only cookie after the first successful request and removes it from the visible URL.
 
-In the packaged desktop app, click **Open on phone** in the top bar to create the same kind of invite as a QR code. Scan it from a phone signed into the same tailnet.
+In the packaged desktop app, click **Open on phone** in the top bar. Before Cave
+creates a QR code, it checks **Background availability** and asks for consent to
+install or repair the per-user helper when needed. Choose **Enable & show
+pairing code** for a connection that can recover after the Cave window closes,
+or **Pair for this session** as an explicit fallback; the session-only server
+ends when Cave closes. Scan the resulting code from a phone signed into the
+same tailnet.
 
 If Tailscale is stopped or signed out, the packaged app shows **Open
 Tailscale** beside the failed connection step. That action launches the
@@ -68,14 +74,17 @@ page. Cave does not show an unusable QR while the route is offline.
 The packaged macOS app has two explicit, default-off controls under **Settings
 → Phone → Keep this Mac reachable**:
 
-- **Keep Mac awake for phone** holds a macOS power assertion after a phone has
+- **Stay awake while paired** holds a macOS power assertion after a phone has
   paired. **Only keep awake on power** is on by default, so battery power keeps
   the Mac's normal sleep policy. Turning either setting off releases the
   assertion.
 - **Background availability** installs a per-user LaunchAgent. The GUI owns the
   loopback server while its main window is open; after that window closes, the
   LaunchAgent starts the bundled `server.mjs` without opening the app. Disabling
-  the option unloads and removes the LaunchAgent.
+  the option unloads and removes the LaunchAgent. The LaunchAgent keeps the
+  server running; it does not prevent the Mac from sleeping. Enable **Stay
+  awake while paired** separately when the Mac must remain reachable while
+  idle.
 
 Both the GUI server and the LaunchAgent server remain bound to
 `127.0.0.1`. Whenever either server chooses a different port, it repoints
@@ -87,6 +96,11 @@ with the computer, so the phone has no path to deliver a wake packet. Bonjour
 sleep proxy is limited to local-network mDNS and does not make wake-on-LAN work
 across a tailnet. Use the keep-awake option or an always-on Server Hub when the
 phone must remain reachable.
+
+The native iOS app also schedules `BGAppRefreshTask` maintenance. iOS decides
+when it runs; each opportunity performs one reachability ping and a token
+renewal when needed. It is not guaranteed real-time reconnect, continuous
+background execution, or a way to wake a sleeping Mac.
 
 ## Connect Cave to a remote Server Hub
 

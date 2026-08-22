@@ -413,6 +413,12 @@
   line-height: var(--leading-normal);
 }
 
+.settings-phone-pair__availability-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .settings-phone-details {
   border-top: 1px solid var(--border-hairline);
   color: var(--text-secondary);
@@ -618,6 +624,38 @@
 
 .settings-phone-reachability {
   flex: 1;
+}
+
+.settings-phone-reachability__warning {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 45%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+}
+
+.settings-phone-reachability__warning > div {
+  min-width: 0;
+}
+
+.settings-phone-reachability__warning strong,
+.settings-phone-reachability__warning span {
+  display: block;
+}
+
+.settings-phone-reachability__warning strong {
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+
+.settings-phone-reachability__warning span {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
 }
 
 .settings-phone-reachability__primary,

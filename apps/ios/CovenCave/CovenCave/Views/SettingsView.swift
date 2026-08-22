@@ -144,7 +144,7 @@ struct SettingsView: View {
     private var statusTint: Color {
         switch app.connectionState {
         case .connected: return .green
-        case .unreachable, .needsAuth, .projectContextRequired: return .orange
+        case .degraded, .unreachable, .needsAuth, .projectContextRequired: return .orange
         case .checking, .unconfigured: return .secondary
         }
     }
@@ -153,6 +153,7 @@ struct SettingsView: View {
         switch app.connectionState {
         case .connected: return app.connection?.host ?? "Connected"
         case .checking: return "Checking…"
+        case .degraded: return "Recovering…"
         case .projectContextRequired: return "Project access needed"
         case .unreachable: return "Unreachable"
         case .needsAuth: return "Needs pairing"
@@ -164,6 +165,7 @@ struct SettingsView: View {
         switch app.connectionState {
         case .connected: return "connected to \(app.connection?.host ?? "your desktop")"
         case .checking: return "checking connection"
+        case .degraded: return "connection degraded, reconnecting"
         case .projectContextRequired: return "project access needed"
         case .unreachable: return "desktop unreachable"
         case .needsAuth: return "needs pairing"
@@ -531,6 +533,8 @@ private struct ConnectionSettingsView: View {
                 Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             case .checking:
                 Label("Checking…", systemImage: "clock").foregroundStyle(.secondary)
+            case .degraded:
+                Label("Recovering…", systemImage: "arrow.trianglehead.2.clockwise.rotate.90").foregroundStyle(.orange)
             case .projectContextRequired:
                 Label("Project access", systemImage: "folder.badge.questionmark").foregroundStyle(.orange)
             case .unreachable:
