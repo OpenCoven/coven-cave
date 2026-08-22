@@ -48,6 +48,52 @@ test("the bearer is read only from a well-formed Authorization header", () => {
   }
 });
 
+test("the bearer is read from the header and from NOTHING else", () => {
+  // The module doc states this as a rule and the published reference repeats it
+  // — "never a query parameter, never a cookie" — and until this test nothing
+  // enforced it: adding a `?access_token=` fallback to clientV1BearerFrom left
+  // every suite green, including the route suites, because the credential is
+  // read before the query is parsed and so never reaches the unsupported-
+  // parameter refusal.
+  //
+  // The rule is not stylistic. A credential in a URL survives in shell history,
+  // in `Referer`, and in every access log between here and the process; a
+  // credential a browser attaches on its own (a cookie) is one an attacker can
+  // spend cross-origin, which is exactly what the loopback stamp cannot stop
+  // because a browser on this machine IS a local peer.
+  const withUrl = (url: string, headers: Record<string, string> = {}) =>
+    clientV1BearerFrom(new Request(url, { headers }));
+
+  for (const url of [
+    "http://127.0.0.1:3020/api/client/v1/projects?access_token=token-1",
+    "http://127.0.0.1:3020/api/client/v1/projects?bearer=token-1",
+    "http://127.0.0.1:3020/api/client/v1/projects?authorization=Bearer%20token-1",
+    "http://127.0.0.1:3020/api/client/v1/projects?token=token-1",
+  ]) {
+    assert.equal(withUrl(url), null, url);
+  }
+  // A cookie is not a credential here either, however it is spelled.
+  for (const cookie of [
+    "authorization=Bearer token-1",
+    "client_v1_bearer=token-1",
+    "access_token=token-1",
+  ]) {
+    assert.equal(
+      withUrl("http://127.0.0.1:3020/api/client/v1/projects", { cookie }),
+      null,
+      cookie,
+    );
+  }
+  // And a query parameter cannot override a header that IS present, which is
+  // the shape a "fallback" usually lands in.
+  assert.equal(
+    withUrl("http://127.0.0.1:3020/api/client/v1/projects?access_token=other", {
+      authorization: "Bearer token-1",
+    }),
+    "token-1",
+  );
+});
+
 test("read query parameters default, bound, and refuse what they do not serve", () => {
   const at = (query: string) =>
     parseClientV1ReadPage(new URL(`http://127.0.0.1:3020/api/client/v1/projects${query}`));
