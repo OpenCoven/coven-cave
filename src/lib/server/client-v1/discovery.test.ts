@@ -375,6 +375,18 @@ test("the standalone server enforces ownership on Windows with this module's scr
       "the exclusivity findings",
       /if \(report\.owner !== report\.self\) \{[\s\S]*?if \(foreign\.length > 0\) \{[\s\S]*?\n {2}\}/,
     ],
+    // The waiver (cave-37fxr) is the one thing in here that can ADMIT a path,
+    // so a copy that drifts is a copy that opts out on terms the module never
+    // agreed to — a laxer token, a shorter reason, a note that forgets to say
+    // a read-and-shared DACL is not covered.
+    ["the waiver variable", /const UNVERIFIED_OWNERSHIP_ENV = "([^"]+)";/],
+    ["the waiver reason variable", /const UNVERIFIED_OWNERSHIP_REASON_ENV = "([^"]+)";/],
+    ["the waiver token", /const UNVERIFIED_OWNERSHIP_TOKEN = "([^"]+)";/],
+    ["the minimum reason length", /const UNVERIFIED_OWNERSHIP_MIN_REASON = (\d+);/],
+    ["the waiver resolver", /function resolveUnverifiedOwnershipWaiver\([\s\S]*?\n\}/],
+    ["the unreadable-DACL refusal", /function unverifiableOwnershipRefusal\([\s\S]*?\n\}/],
+    ["the waived-path disclosure", /function unverifiedOwnershipDisclosure\([\s\S]*?\n\}/],
+    ["the shared-DACL refusal", /function sharedOwnershipRefusal\([\s\S]*?\n\}/],
   ];
   for (const [what, pattern] of parts) {
     assert.equal(
@@ -387,5 +399,64 @@ test("the standalone server enforces ownership on Windows with this module's scr
     source,
     /if \(findings\.length > 0\) \{\s*throw new Error\(/,
     "the standalone server must refuse on any finding, not merely collect them",
+  );
+});
+
+test("a client-v1 discovery failure degrades that surface instead of killing the server", async () => {
+  // cave-37fxr. The guard learning to read a DACL made it able to throw on
+  // win32 for the first time, and `server.listen`'s handler answered that with
+  // `server.close(() => process.exit(1))` — so a host where the DACL cannot be
+  // read at all could not start Cave, with no remedy reachable from inside the
+  // app. Measured on Windows 11: PowerShell in Constrained Language Mode exits
+  // 1 with `MethodInvocationNotSupportedInConstrainedLanguage`, and a
+  // `powershell.exe` absent from %SystemRoot% exits with ENOENT.
+  //
+  // Refusing to PUBLISH is still right; refusing to BOOT never was. Client v1
+  // is the only surface the record serves, and the request-side guard refuses
+  // every client v1 call on such a host anyway, so withholding the record
+  // costs exactly the surface that cannot be secured and nothing else.
+  const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
+
+  const listenBlock = /server\.listen\(port, hostname, \(\) => \{[\s\S]*?\n\}\);/.exec(source);
+  assert.ok(listenBlock, "server.ts must define the listener-readiness callback");
+  const handler = listenBlock![0];
+  assert.doesNotMatch(
+    handler,
+    /process\.exit/,
+    "a discovery failure must not exit the process: the whole app is not client v1",
+  );
+  assert.match(
+    handler,
+    /catch \(error\) \{\s*reportClientV1DiscoveryUnavailable\(error\)/,
+    "the failure must go to the loud reporter",
+  );
+  assert.match(
+    handler,
+    /Ready on/,
+    "the server still announces readiness — everything but client v1 is running",
+  );
+
+  const reporter =
+    /function reportClientV1DiscoveryUnavailable\([\s\S]*?\n\}/.exec(source);
+  assert.ok(reporter, "server.ts must define reportClientV1DiscoveryUnavailable");
+  assert.match(
+    reporter![0],
+    /clientV1DiscoveryPublished = false/,
+    "an unpublished record must never be treated as published, or shutdown unlinks a file it does not own",
+  );
+  assert.match(
+    reporter![0],
+    /console\.error/,
+    "the degraded state has to be loud: it is the only thing standing in for the crash",
+  );
+  assert.match(
+    reporter![0],
+    /CLIENT V1 DISABLED/,
+    "the banner must name what is off, not merely that something failed",
+  );
+  assert.match(
+    reporter![0],
+    /UNVERIFIED_OWNERSHIP_ENV/,
+    "the banner must name the waiver, which is the only remedy on a host that cannot read a DACL",
   );
 });

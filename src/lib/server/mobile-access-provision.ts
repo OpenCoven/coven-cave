@@ -17,10 +17,22 @@
 // minting a second secret would fork the pairing identity.
 
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { CAVE_PORTS, CAVE_PORT_ENV, parsePort } from "../../../scripts/ports.mjs";
+import {
+  assertExclusivePathOwnership,
+  type ClientV1PathOwnershipOptions,
+} from "./client-v1/path-ownership.ts";
 
 /**
  * Same resolution order as server.ts `cavePort()` and the Rust
@@ -83,20 +95,92 @@ export function loadPersistedMobileAccessSecret(
  * explicitly (armMobileAccessSecret) right before the serve route goes live
  * so the gate and the exposure switch on together.
  */
-export function provisionMobileAccessSecret(
+export interface MobileAccessProvisionOptions {
+  /**
+   * Seams for the ownership guard, so the win32 branch below is reachable on
+   * the Linux runners. Without this the only assertions covering the platform
+   * whose `chmod` does nothing would be the ones that cannot run in CI.
+   */
+  ownership?: ClientV1PathOwnershipOptions;
+  /** Where a refusal is announced. The route only ever sees `null`. */
+  warn?: (message: string) => void;
+}
+
+/**
+ * Restrict a path to the current user, or refuse it (cave-fawvh).
+ *
+ * `mode: 0o600` and `chmodSync(0o600)` are the whole of the access control
+ * this module used to apply, and on win32 they apply nothing — #4852 measured
+ * `mode & 0o777 === 0o666` afterwards, not even the read-only bit. That file
+ * was about `client-v1-credentials.json`, which holds SHA-256 hashes; THIS
+ * file holds the pairing secret in plaintext, so the same defect is worse
+ * here. The POSIX modes above stay (they are real on POSIX); this adds the
+ * DACL the platform actually enforces, using the guard #4852 already built.
+ */
+async function restrictToCurrentUser(
+  target: string,
+  subject: string,
+  env: Record<string, string | undefined>,
+  options: MobileAccessProvisionOptions,
+): Promise<void> {
+  await assertExclusivePathOwnership(target, lstatSync(target), subject, {
+    // The waiver is read from the same environment this module was handed, so
+    // a test can drive it and a caller cannot accidentally consult a different
+    // one than the rest of the module.
+    env,
+    ...options.ownership,
+  });
+}
+
+export async function provisionMobileAccessSecret(
   env: Record<string, string | undefined> = process.env,
-): string | null {
+  options: MobileAccessProvisionOptions = {},
+): Promise<string | null> {
   if (!provisioningAllowed(env)) return null;
-  const existing = loadPersistedMobileAccessSecret(env);
-  if (existing) return existing;
   const file = mobileAccessSecretFile(env);
+  const warn = options.warn ?? console.warn;
   try {
+    // Directory first, and before anything is written into it. The repair
+    // marks the directory's DACL inheritable, so the secret file created below
+    // is born exclusive rather than restricted a moment after it exists.
     mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    await restrictToCurrentUser(
+      path.dirname(file),
+      "Mobile access token directory",
+      env,
+      options,
+    );
+
+    // Re-verified on the reuse path too, not trusted because it is already
+    // there: every install that ran the version whose chmod did nothing has a
+    // readable secret on disk right now, and this is the path they come back
+    // through.
+    const existing = loadPersistedMobileAccessSecret(env);
+    if (existing) {
+      await restrictToCurrentUser(file, "Mobile access token file", env, options);
+      return existing;
+    }
+
     const secret = randomBytes(32).toString("base64url");
     writeFileSync(file, secret, { encoding: "utf8", mode: 0o600 });
     chmodSync(file, 0o600);
+    try {
+      await restrictToCurrentUser(file, "Mobile access token file", env, options);
+    } catch (error) {
+      // Never leave a plaintext credential on a path we could not restrict.
+      rmSync(file, { force: true });
+      throw error;
+    }
     return secret;
-  } catch {
+  } catch (error) {
+    // The route answers `null` with a terse "couldn't set up pairing", so
+    // without this line the operator sees a broken Settings pane and no reason
+    // for it — and an access-control refusal is the last thing that should be
+    // indistinguishable from a full disk.
+    warn(
+      `Mobile access token could not be provisioned; phone pairing stays off. `
+      + `${error instanceof Error ? error.message : String(error)}`,
+    );
     return null;
   }
 }
