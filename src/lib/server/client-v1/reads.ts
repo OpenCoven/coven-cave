@@ -77,6 +77,25 @@ export type ClientV1ConversationRecord = {
   familiarId: string;
   harness?: string;
   model?: string;
+  /**
+   * How the run was hosted — and, for a local run, WHERE.
+   *
+   * Not an enum, despite reading like one. `POST /api/chat/send` writes it as
+   * `` `local:${cwd}` `` (route.ts), so on a real Cave the value is
+   * `local:C:/Users/<name>/…` — an absolute path carrying the operator's home
+   * directory. Measured against a production build on a real conversation
+   * ledger, not inferred from the type.
+   *
+   * Served anyway, on the same grounds as {@link ClientV1ProjectRecord.root}: a
+   * paired credential belongs to an application running as this user on this
+   * machine, which can already read that directory. It is called out here, and
+   * in the published reference, because it is the one field on this record a
+   * client author would not expect to be a path — and a client that logs or
+   * renders it is surfacing the operator's filesystem layout.
+   *
+   * Note the conversation cwd is NOT necessarily a registered project root: it
+   * can be a worktree or any directory a familiar was pointed at.
+   */
   runtime?: string;
   title?: string;
   origin?: string;

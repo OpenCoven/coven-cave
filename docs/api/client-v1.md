@@ -642,7 +642,7 @@ sessions list is built from.
         "familiarId": "scribe",
         "harness": "claude",
         "model": "opus",
-        "runtime": "native",
+        "runtime": "local:/Users/me/code/app",
         "title": "Ledger cleanup",
         "origin": "chat",
         "status": "completed",
@@ -660,6 +660,15 @@ sessions list is built from.
 Only `id`, `familiarId` and `updatedAt` are guaranteed. `exitCode` may be
 `null`, which means the run has no exit code yet — distinct from the field being
 absent, which means none was ever recorded.
+
+**`runtime` is not an enum, and for a local run it is a path.**
+`POST /api/chat/send` writes the field as
+`local:<the run's working directory>`, so the value you actually receive on most
+conversations looks like `"local:/Users/me/code/app"` — an absolute path, often
+under the operator's home directory, and not necessarily a registered project
+root. It is served on the same grounds as a project's `root`: a paired
+credential belongs to an application running as this user on this machine. Treat
+it as an opaque string, and think before you log or display it.
 
 **No turns are included.** The transcript is served by the messages route below,
 which pages it. Inlining even the latest turn here would make the cost of a page

@@ -421,3 +421,28 @@ test("the conversation projection still serves the corrupt-file fallback row", (
     { id: "c1", familiarId: "", updatedAt: "2026-08-01T00:00:00.000Z" },
   );
 });
+
+test("a conversation's runtime is served as the path it really is", () => {
+  // Found against a production build reading this machine's real ledger, not
+  // against a fixture: POST /api/chat/send writes `runtime` as
+  // `local:${cwd}` (src/app/api/chat/send/route.ts), so the field a client
+  // receives is an absolute path under the operator's home directory — while
+  // the doc's example showed `"native"` and read like an enum.
+  //
+  // It is served deliberately, on the same grounds as a project's `root`, and
+  // pinned here so the next person to read this projection sees that `runtime`
+  // is in the path-bearing class alongside `root` rather than in the opaque
+  // -label class alongside `harness` and `model`.
+  const projected = projectClientV1Conversation({
+    sessionId: "conversation-1",
+    familiarId: "scribe",
+    runtime: "local:/Users/me/.coven/workspaces/familiars/scribe",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+  });
+  assert.equal(projected.runtime, "local:/Users/me/.coven/workspaces/familiars/scribe");
+  // The rest of the record stays free of it: nothing else on a conversation
+  // carries a path, so a client that chooses not to render `runtime` renders no
+  // filesystem layout at all.
+  const withoutRuntime = { ...projected, runtime: undefined };
+  assert.equal(JSON.stringify(withoutRuntime).includes("/Users/me"), false);
+});
