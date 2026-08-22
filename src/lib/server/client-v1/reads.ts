@@ -335,10 +335,16 @@ export function clientV1ProjectPageKey(project: CaveProject): ClientV1PageKey {
  * is required, and it is also the order listConversations already sorts by, so
  * a client sees one ordering out of Cave rather than two.
  *
- * The cost is the mutable-key cost above: a conversation that receives a turn
- * mid-pagination moves to the front and can be seen twice. That is visible to
- * the client (the same id in two pages) and recoverable, where the alternative
- * — keying on a field half the corpus lacks — is neither.
+ * The cost is the mutable-key cost above, and it is worth naming precisely
+ * because this comment used to name it backwards. `updatedAt` only ever
+ * increases and the ordering is descending, so a conversation that receives a
+ * turn mid-pagination moves *above* an open cursor: one already served stays
+ * served, and one NOT yet served is skipped by the rest of the walk. It is a
+ * skip, not a repeat — measured over a real socket by
+ * scripts/client-v1-conformance.mjs, which could not reproduce a repeat from a
+ * touch. That is the worse of the two (a repeat is deduplicable by id; a skip
+ * is silent), and it is still better than the alternative — keying on a field
+ * half the corpus lacks, which strands the rows that lack it entirely.
  */
 export function clientV1ConversationPageKey(summary: ConversationSummary): ClientV1PageKey {
   return { sort: summary.updatedAt, id: summary.sessionId };

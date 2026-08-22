@@ -24,6 +24,12 @@ streaming route, no attachment route, and the other five scopes
 This document describes behaviour; it is not the authority for it. When the two
 disagree, the code is right and this file is stale.
 
+Three places where they *did* disagree are marked ⚠️ below. They were found by
+[the real-authority conformance run](../workflows/client-v1-conformance.md),
+which drives this surface over a real socket against a release build — the only
+vantage point from which the listener, `proxy.ts` and Next's own request
+handling are visible at all.
+
 | Concern | Authority |
 |---|---|
 | Versions, scopes, capabilities, error codes, limits, public-route list | [`src/lib/server/client-v1/contract.ts`](../../src/lib/server/client-v1/contract.ts) |
@@ -200,6 +206,18 @@ before anything is classified. Nothing a correct client sends is affected: every
 segment of this surface is a fixed literal or a UUID, and the pairing secret
 travels in a header — so no legitimate path needs an escape. Percent-encoding in
 the **query string** is untouched.
+
+⚠️ **In practice only the `%` half of that is a 400 you will ever see.** Measured
+over a real socket by
+[the conformance run](../workflows/client-v1-conformance.md) on 2026-08-22: a
+request target carrying a **backslash** is normalized to `/` by Next *in the
+request target* and answered `308 Permanent Redirect` to the normalized path
+before `proxy.ts` runs at all, so `isRefusedClientV1Path` never sees it. The
+outcome is still closed — the normalized target is not a client-v1 route and is
+refused `401` by the ordinary gate, and no handler is reached — but a client
+following the redirect gets a `401`, never this `400`. The refusal in `proxy.ts`
+stays as written: it is the layer that would catch a backslash Next stopped
+normalizing, and removing it would trade a live defence for tidier prose.
 
 The refusal is scoped by path prefix rather than by the ingress lists, so it
 covers the admin family and any dynamic-segmented route added later, including
@@ -563,10 +581,21 @@ both or skip both:
 | `/conversations/:id/messages` | Transcript order, oldest first. **Not** a keyset — see that route. |
 
 **One consequence worth planning for:** `/conversations` keys on a *mutable*
-field, so a conversation that receives a turn while you are paging moves to the
-front of the ordering and can appear in two pages. The repeat is visible (the
-same `id` twice) and recoverable; the alternative — keying on a field half the
-corpus lacks — is neither.
+field, so a conversation that receives a turn while you are paging **moves out
+of the window you have not reached yet**. The ordering is `updatedAt`
+descending and a touch only ever raises the key, so the touched row moves
+*above* your open cursor: one already served stays served, and one not yet
+served is **skipped** by the rest of the walk.
+
+Earlier text here said such a row "can appear in two pages", and that the repeat
+was the cost. It is the other way round, and the difference matters: a repeat is
+deduplicable by `id`, a skip is silent. Measured over a real socket by
+[the conformance run](../workflows/client-v1-conformance.md) on 2026-08-22, no
+repeat was reproducible from a touch. **So a client that must not miss a
+conversation should re-read from the top rather than trust one walk** — and
+should still deduplicate by `id`, which costs nothing and covers the walks it
+restarts. The alternative key — a field half the corpus lacks — is worse than
+either.
 
 ### `GET /api/client/v1/familiars`
 
@@ -837,6 +866,18 @@ All four call `requireClientV1Admin`, which:
    is 503. The exchange keeps answering `pairing_pending` until the TTL expires.
 2. Compares the `x-coven-cave-token` header against it in constant time.
    Mismatch or absence is `401 unauthorized`.
+
+   ⚠️ **On a Cave that has a token configured, that envelope is unreachable.**
+   `COVEN_CAVE_AUTH_TOKEN` is also what `proxy.ts`'s ordinary sidecar-token gate
+   compares, and the admin family deliberately falls through to it — so a wrong
+   or absent header is refused there first and the wire carries the proxy's
+   shape, `401 {"ok":false,"error":"unauthorized"}`, not the Client v1 envelope
+   above. Same status, different body. Measured over a real socket by
+   [the conformance run](../workflows/client-v1-conformance.md) on 2026-08-22;
+   a handler-level test cannot see it, because it never runs the proxy. The
+   check in `requireClientV1Admin` is not redundant — it is what answers if the
+   admin family ever stops falling through — but it is the *second* refusal, and
+   the 503 for an unset token is the only one of its answers a caller observes.
 3. For **mutations only** (the decision POST and the credential DELETE),
    requires **at least one** of `Origin` and `Referer`, and requires every one
    that *is* present to be same-origin. A request carrying neither is refused;
@@ -1143,9 +1184,10 @@ against something that is not there.
   you re-read `GET /conversations/:id/messages` and diff — there is no
   server-push channel, and no revision token to make a conditional read cheap.
 - **`/conversations` pages on a mutable key.** A conversation whose transcript
-  grows while you are paging moves to the front of the ordering, so it can
-  appear in two pages. Deduplicate by `id`. See *Paging* for why the immutable
-  alternative is unavailable here.
+  grows while you are paging moves to the front of the ordering, so one you have
+  not reached yet is **skipped** by the rest of the walk. Re-read from the top
+  if you must not miss one, and deduplicate by `id` across walks. See *Paging*
+  for the measurement and for why the immutable alternative is unavailable here.
 - **A conversation's whole turn text is served inline.** There is no per-message
   size cap and no truncation, so a page of 100 long turns is a large response.
   Ask for a smaller `limit` on a constrained client.
