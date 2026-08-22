@@ -7,14 +7,17 @@ without that client being part of the Cave build and without it being handed
 the desktop shell's own per-launch secret.
 
 **Read the scope line before you read anything else.** As of this commit the
-surface is eight routes: a health handshake, three pairing routes that walk a
-client from "no credential" to "holding a bearer", and four administrator
-routes that let the Cave's own settings UI see and decide those requests. There
-is **no authenticated resource route yet**. A bearer this API issues is real,
-persisted, and revocable, and it currently opens nothing — every route that
-would consume it is unbuilt. If you are writing a client, you can implement and
-test the whole pairing handshake today, and you will have nothing to call with
-the result.
+surface is thirteen routes: a health handshake, three pairing routes that walk a
+client from "no credential" to "holding a bearer", four administrator routes
+that let the Cave's own settings UI see and decide those requests, and **five
+canonical reads** a bearer actually opens — familiars, projects, conversations,
+one conversation, and that conversation's messages.
+
+Every read is a `GET`, requires the `chat:read` scope, and is paged with an
+opaque cursor. **Everything else is still unbuilt**: there is no write route, no
+streaming route, no attachment route, and the other five scopes
+(`chat:write`, `conversations:write`, `attachments:write`, `tasks:write`,
+`github:write`) are recorded on a credential and read by nothing.
 
 ## Where the contract actually lives
 
@@ -26,7 +29,7 @@ disagree, the code is right and this file is stale.
 | Versions, scopes, capabilities, error codes, limits, public-route list | [`src/lib/server/client-v1/contract.ts`](../../src/lib/server/client-v1/contract.ts) |
 | Byte-pinned export of all of the above, plus example envelopes | [`contract-fixture.json`](../../src/lib/server/client-v1/contract-fixture.json) and its `.sha256` |
 | Who may reach which route, and from where | [`src/proxy.ts`](../../src/proxy.ts) and [`src/proxy-helpers.ts`](../../src/proxy-helpers.ts) |
-| Per-route request and response shapes | the eight `route.ts` files under `src/app/api/client/v1/` |
+| Per-route request and response shapes | the thirteen `route.ts` files under `src/app/api/client/v1/` |
 | Storage, lifetimes, hashing | `pairing-store.ts`, `credential-store.ts`, `instance-id.ts` |
 | The discovery record a client reads to find the endpoint | [`server.ts`](../../server.ts) — **not** `client-v1/discovery.ts`, which nothing in production calls |
 
@@ -38,7 +41,7 @@ constants should vendor the fixture, not re-type the tables below.
 
 `scripts/client-v1-doc-contract.test.mjs` pins *this document* to both — every
 route file on disk and every entry in the contract's `publicRoutes`, every
-scope, and every error code must appear here, so a ninth route cannot land
+scope, and every error code must appear here, so a fourteenth route cannot land
 undocumented.
 
 ## The envelope
@@ -79,17 +82,21 @@ type level as well as in practice:
   client older than the minimum should stop and tell its user to update rather
   than pair.
 - **`capabilities`** is the full list above on every response. It is what the
-  surface *declares*; several entries (`familiars`, `projects`,
-  `conversations`, `conversation-messages`, `streaming`, `cursors`,
-  `revisions`) name route families that do not exist yet. Treat it as the
-  roadmap the Cave commits to, not as an inventory of live endpoints.
+  surface *declares*, and it is now partly an inventory: `familiars`,
+  `projects`, `conversations`, `conversation-messages` and `cursors` name live
+  routes (see *Canonical read routes*). `streaming` and `revisions` still name
+  route families that do not exist. Treat the list as the roadmap the Cave
+  commits to rather than as proof any one endpoint is there.
 - **`error.retryable`** defaults to `false` and is set true only where the
   route means it. Today that is exactly `pairing_pending`, `rate_limited`, and
   the `internal_error` a failed credential issue returns.
-- `requestId`, `identity`, `revision`, and `cursor` are defined on the envelope
-  and **no current route sets any of them**. They are the forward surface for
-  the paginated, revisioned resource routes; do not write a client that depends
-  on them being present.
+- **`cursor` is set by the canonical read routes** and by nothing else — see
+  *Paging* below for its exact shape and for when it is omitted. `requestId`,
+  `identity` and `revision` remain defined on the envelope and set by **no**
+  route; do not write a client that depends on them being present. `revision`
+  in particular is deliberately still unemitted: it implies a reconcile
+  protocol (a conditional read or write keyed on the token) that nothing
+  implements, and a token nothing consumes is worse than an absent field.
 
 `apiVersion`, `minimumClientVersion`, and `capabilities` deliberately ride the
 envelope and are *not* repeated inside `data` — including on `/health`, where
@@ -101,22 +108,22 @@ different answers to the same question.
 The mapping is total and canonical (`httpStatusForClientV1ErrorCode` in
 `responses.ts`); a route cannot serve `not_found` with a 200 or a 410. All
 thirteen codes are part of the contract, but only the ones marked *in use*
-are reachable on the eight routes that exist.
+are reachable on the thirteen routes that exist.
 
 | Code | HTTP | In use | What a client should do |
 |---|---|---|---|
-| `invalid_request` | 400 | yes | Fix the request. Never retry unchanged — the body or a field failed validation. |
-| `unauthorized` | 401 | yes | On pairing routes: the pairing secret is missing, malformed, or wrong, or the loopback stamp is absent. On admin routes: the sidecar token is wrong. Do not retry with the same credential. |
-| `scope_denied` | 403 | yes | Returned by admin mutations whose `Origin`/`Referer` is not same-origin. Also the intended answer for a credential lacking a required scope, once scoped routes exist. |
-| `not_found` | 404 | yes | The id does not exist. For pairing this includes "expired long enough ago to have been evicted". |
+| `invalid_request` | 400 | yes | Fix the request. Never retry unchanged — the body or a field failed validation. On the canonical reads it also covers an unsupported or repeated query parameter, an out-of-range `limit`, and a cursor this Cave did not mint. |
+| `unauthorized` | 401 | yes | On pairing routes: the pairing secret is missing, malformed, or wrong, or the loopback stamp is absent. On the canonical reads: the bearer is missing, malformed, unknown, or revoked — or the loopback stamp is absent. On admin routes: the sidecar token is wrong. Do not retry with the same credential. |
+| `scope_denied` | 403 | yes | A credential that exists but was not granted the scope the route requires — `chat:read` on every canonical read. Also returned by admin mutations whose `Origin`/`Referer` is not same-origin. Re-pair with the scope; retrying is pointless. |
+| `not_found` | 404 | yes | The id does not exist. For pairing this includes "expired long enough ago to have been evicted"; for a conversation it also covers an id that could never name one. |
 | `conflict` | 409 | yes | The resource is in a state that refuses this operation — a pairing already exchanged (`details.reason: "pairing_replayed"`) or already decided (`"pairing_already_decided"`). |
 | `pairing_pending` | 409 | yes | Retryable. Nobody has approved or denied yet. Poll. |
 | `pairing_denied` | 403 | yes | Terminal. The user said no; do not re-request without a fresh user action. |
 | `pairing_expired` | 410 | yes | Terminal for this request. Start a new pairing request. |
 | `rate_limited` | 429 | yes | Retryable. Honour `Retry-After`; `details.limit` and `details.resetAt` (epoch ms) carry the budget. |
 | `internal_error` | 500 | yes | Retryable where the route says so — see the exchange route, where a failed credential write restores the pairing precisely so a retry works. |
-| `service_unavailable` | 503 | yes | The Cave is not configured for this operation. On admin routes it means `COVEN_CAVE_AUTH_TOKEN` is unset. Not fixable by retrying. |
-| `reconcile_required` | 409 | no | Reserved for the resource routes' revision protocol. |
+| `service_unavailable` | 503 | yes | The Cave cannot answer right now. On admin routes it means `COVEN_CAVE_AUTH_TOKEN` is unset and is not fixable by retrying; on `GET /familiars` it means the daemon roster could not be read and **is** retryable. |
+| `reconcile_required` | 409 | yes | The client's position is no longer valid against canonical state. Today that is exactly one case: a messages cursor naming a turn that has left the conversation's active branch (`details.reason: "resume_from_canonical_state"`). Not retryable — restart the read. |
 | `incompatible_version` | 426 | no | Reserved. Version incompatibility is currently discovered by reading `minimumClientVersion` off `/health`, not by being told. |
 
 ## Reaching the API at all
@@ -154,10 +161,16 @@ the check fails closed: every route that depends on it answers 401 or 403.
 That branch also *skips* the mobile-access gate, which is why a phone reaching
 in over Tailscale Serve gets the 403 above rather than a mobile-auth prompt.
 
-Two of the four public routes re-check the stamp in the route itself
-(`POST /pairing/requests` and `POST .../exchange`, via
-`runtime.authenticator.isTrustedLoopback`) and answer `unauthorized` in the
-envelope when it fails. `GET /pairing/requests/:id` does not: it takes its
+`clientV1IngressKind` also classifies the five canonical read paths, as
+`authenticated` rather than public. That classification is a **demotion**, not a
+promotion: `proxy()` skips the mobile-access gate and returns *before* the
+sidecar-token block, so on those paths the route's own bearer check is the only
+credential check in the request. See *When the authenticated routes land*.
+
+Seven of the thirteen routes re-check the stamp in the route itself, via
+`runtime.authenticator.isTrustedLoopback`, and answer `unauthorized` in the
+envelope when it fails: `POST /pairing/requests`, `POST .../exchange`, and all
+five canonical reads. `GET /pairing/requests/:id` does not: it takes its
 locality entirely from the proxy branch, and its own 401s are about the pairing
 secret. `GET /health` performs no check of its own either — it is local because
 the proxy branch above says so, and for no other reason.
@@ -417,6 +430,321 @@ pairing under attack; other pairings are unaffected. **The bucket is shared with
 `GET /pairing/requests/:id`**, so guesses against either route spend the same
 ten and lock out both.
 
+## Canonical read routes
+
+The four resources the capability list has always advertised —
+`"familiars"`, `"projects"`, `"conversations"`, `"conversation-messages"` —
+served as paged reads over `"cursors"`. Every one of them is a `GET`, requires
+the `chat:read` scope, and projects a store the Cave itself reads, so a paired
+client and the desktop never disagree about what exists.
+
+### Authentication, and how it fails
+
+Each route performs two checks of its own, in this order, **before** it reads
+anything:
+
+1. **The loopback stamp** (`x-coven-cave-local-peer`), through
+   `runtime.authenticator.isTrustedLoopback` — the same check the two pairing
+   `POST`s make. A missing or wrong stamp is `unauthorized`. This is deliberate
+   redundancy: the proxy's direct-loopback branch already covers these paths,
+   but a percent-encoded dynamic segment escapes that branch entirely (see
+   *Reaching the API at all*), and two of these five paths are
+   dynamic-segmented.
+2. **The bearer**, through `requireScope({ bearer, scope: "chat:read" })`. The
+   credential is read **only** from an `Authorization: Bearer …` header —
+   never a query parameter, never a cookie. A missing, malformed, unknown, or
+   revoked bearer is `unauthorized`; a credential that exists but was not
+   granted `chat:read` is `scope_denied`.
+
+Both failures are metered, against different buckets — see *Rate limits*.
+
+Only then is the store read. That ordering is part of the contract, not an
+implementation detail: it means an unauthenticated caller cannot use these
+routes to drive a daemon request, scan the transcript directory, or learn
+whether a conversation id exists.
+
+### Paging: `limit` and `cursor`
+
+The list routes accept exactly two query parameters. **Any other parameter, and
+any repeated parameter, is `invalid_request`** — a `?limt=5` answered with the
+default page is how a client comes to believe it asked for five.
+
+| Parameter | Default | Rules |
+|---|---|---|
+| `limit` | `50` (`defaultPageSize`) | A plain positive integer, 1 to `100` (`maxPageSize`). No leading zeros, no sign, no exponent, no surrounding space. Out of range is refused, **not** clamped. |
+| `cursor` | — | An opaque token this Cave minted. Never construct or edit one. |
+
+`GET /api/client/v1/conversations/:id` serves a single record and therefore
+accepts **no** query parameters at all, including `limit` and `cursor`.
+
+The cursor rides the shared envelope:
+
+```json
+{
+  "cursor": { "current": "eyJ2Ijox…", "next": "eyJ2Ijox…", "hasMore": true }
+}
+```
+
+- **`next` is present only when `hasMore` is true.** Follow it until it is
+  absent; that is the whole termination rule.
+- **`current` is the token you sent**, absent on a first page.
+- **The `cursor` field is omitted entirely** when there is no token to publish —
+  a first page that holds the whole set, or an empty first page. Do not treat a
+  missing `cursor` as an error.
+- **Re-sending a cursor returns the same page.** Paging is a function of (store,
+  cursor, limit); replaying never advances and never loops.
+- **A deleted record does not strand you.** The token records a position in the
+  ordering, not an index, so the next page resumes at the next surviving record.
+- `previous` is never emitted. These reads are forward-only.
+
+Orderings are total — a sort key plus the id as tiebreak — because a page
+boundary landing between two records with equal sort keys would otherwise repeat
+both or skip both:
+
+| Route | Order |
+|---|---|
+| `/familiars` | `id` ascending. A roster entry has no timestamp at all, so the identity is the sort key. |
+| `/projects` | `createdAt` descending, then `id` descending. `createdAt` is immutable; `updatedAt` moves under an open cursor. |
+| `/conversations` | `updatedAt` descending, then `id` descending. `createdAt` is optional on a conversation summary, so it cannot key the page. |
+| `/conversations/:id/messages` | Transcript order, oldest first. **Not** a keyset — see that route. |
+
+**One consequence worth planning for:** `/conversations` keys on a *mutable*
+field, so a conversation that receives a turn while you are paging moves to the
+front of the ordering and can appear in two pages. The repeat is visible (the
+same `id` twice) and recoverable; the alternative — keying on a field half the
+corpus lacks — is neither.
+
+### `GET /api/client/v1/familiars`
+
+This Cave's visible familiar roster: the daemon roster merged with
+`familiars.toml` and the local removal tombstones, which is exactly what the
+Cave's own roster UI shows.
+
+**Request:** `Authorization: Bearer …`, the loopback stamp, optional `limit` and
+`cursor`.
+
+**200:**
+
+```json
+{
+  "data": {
+    "familiars": [
+      {
+        "id": "scribe",
+        "displayName": "Scribe",
+        "role": "Archivist",
+        "description": "Keeps the ledger.",
+        "pronouns": "they/them",
+        "status": "idle",
+        "lastSeenAt": "2026-08-20T10:00:00.000Z",
+        "activeSessions": 2
+      }
+    ]
+  },
+  "cursor": { "next": "eyJ2Ijox…", "hasMore": true }
+}
+```
+
+Only `id`, `displayName` and `role` are guaranteed; every other field is omitted
+when the roster does not carry it. `lastSeenAt` is the daemon's `last_seen`
+passed through verbatim — Cave neither writes nor parses it, so treat its format
+as unspecified rather than as an ISO instant.
+
+**503 `service_unavailable`, retryable:** the roster could not be read. This is
+returned for **every** roster failure, *including the daemon answering 401 or
+403*. That failure is about the Cave's own access token, not your bearer;
+discarding a working credential and re-pairing cannot fix a daemon outage.
+
+An empty roster is a `200` with `"familiars": []`, never a `404`.
+
+### `GET /api/client/v1/projects`
+
+The Cave project registry (`<cave home>/projects.json`), deduplicated by
+normalized root.
+
+**Request:** `Authorization: Bearer …`, the loopback stamp, optional `limit` and
+`cursor`.
+
+**200:**
+
+```json
+{
+  "data": {
+    "projects": [
+      {
+        "id": "p1",
+        "name": "Cave",
+        "root": "/Users/me/code/cave",
+        "color": "#123456",
+        "repoUrl": "https://github.com/OpenCoven/coven-cave",
+        "createdAt": "2026-08-01T00:00:00.000Z",
+        "updatedAt": "2026-08-09T00:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+`color` and `repoUrl` are omitted when unset. `root` is an absolute path and is
+published deliberately: it is the registry's real identity, and a paired
+credential belongs to an application running as this user on this machine, which
+can already read the directory it names.
+
+Two fields of the stored record are **not** served. `legacyRoot` is
+response-only scaffolding that lets the Cave's own web client re-key browser
+stores after a root normalization; it is stripped before every write and is not
+part of what a project is. `access` is a familiar-scoped permission answer, and
+a Client v1 credential is not a familiar — this route serves the operator
+registry view, so there is no familiar whose access could be applied.
+
+### `GET /api/client/v1/conversations`
+
+The conversation ledger — the same rows, in the same order, that the Cave's own
+sessions list is built from.
+
+**Request:** `Authorization: Bearer …`, the loopback stamp, optional `limit` and
+`cursor`.
+
+**200:**
+
+```json
+{
+  "data": {
+    "conversations": [
+      {
+        "id": "conversation-1",
+        "familiarId": "scribe",
+        "harness": "claude",
+        "model": "opus",
+        "runtime": "native",
+        "title": "Ledger cleanup",
+        "origin": "chat",
+        "status": "completed",
+        "exitCode": 0,
+        "pending": false,
+        "createdAt": "2026-08-01T00:00:00.000Z",
+        "updatedAt": "2026-08-09T00:00:00.000Z"
+      }
+    ]
+  },
+  "cursor": { "next": "eyJ2Ijox…", "hasMore": true }
+}
+```
+
+Only `id`, `familiarId` and `updatedAt` are guaranteed. `exitCode` may be
+`null`, which means the run has no exit code yet — distinct from the field being
+absent, which means none was ever recorded.
+
+**No turns are included.** The transcript is served by the messages route below,
+which pages it. Inlining even the latest turn here would make the cost of a page
+depend on how much was said rather than on how many conversations you asked for.
+
+Three stored fields are deliberately withheld: `harnessSessionId` (it rotates on
+every resume and is never the conversation's identity), and `branch` / `prUrl`
+(working-tree attribution for the Cave's own PR badges, which describe the work
+rather than the conversation).
+
+### `GET /api/client/v1/conversations/:id`
+
+One conversation's record — the same projection, over the same source, that the
+list route serves for the same id. Use it to refresh one conversation without
+paging the whole ledger.
+
+**Request:** `Authorization: Bearer …` and the loopback stamp. **No query
+parameters**, including `limit` and `cursor`.
+
+**200:**
+
+```json
+{
+  "data": {
+    "conversation": {
+      "id": "conversation-1",
+      "familiarId": "scribe",
+      "updatedAt": "2026-08-09T00:00:00.000Z"
+    }
+  }
+}
+```
+
+**404 `not_found`:** no conversation carries that id. This is the answer for a
+malformed id too — an empty segment, a traversal attempt, an over-long string —
+because a client can act on neither differently, and one answer means the route
+cannot be used to map which id shapes the store recognises.
+
+Note this route reads the ledger rather than the transcript file, which costs a
+directory scan. That is on purpose: `status` and `exitCode` are *derived* while
+the ledger is built and do not exist in the stored file, so serving this from
+the file would answer the same question two different ways depending on which
+route you asked.
+
+### `GET /api/client/v1/conversations/:id/messages`
+
+One conversation's transcript, oldest first, paged.
+
+**Request:** `Authorization: Bearer …`, the loopback stamp, optional `limit` and
+`cursor`.
+
+**200:**
+
+```json
+{
+  "data": {
+    "messages": [
+      {
+        "id": "t3",
+        "conversationId": "conversation-1",
+        "parentId": "t1",
+        "role": "assistant",
+        "text": "Done.",
+        "createdAt": "2026-08-01T00:01:00.000Z",
+        "attachmentCount": 1,
+        "toolCount": 2,
+        "isError": false,
+        "cancelled": false
+      }
+    ]
+  },
+  "cursor": { "next": "eyJ2Ijox…", "hasMore": true }
+}
+```
+
+`role` is `"user"`, `"assistant"` or `"system"`. `parentId` is `null` for the
+root turn. `isError` and `cancelled` are omitted unless the store recorded them.
+
+**Two things about this route are not the obvious default**, and both come from
+how a conversation is stored:
+
+- **The messages are the *active branch*, not the stored array.** A conversation
+  file holds every turn of every branch in one append-ordered array; what you
+  get is the chain from the active leaf back to the root — the same path the
+  desktop renders. Turns on abandoned branches are not served.
+- **Paging resumes by position, not by comparing keys.** A user turn and the
+  assistant reply answering it are persisted with the *same* `createdAt`, and a
+  turn id is unique only inside one transcript, so any `(createdAt, id)` keyset
+  would put some replies in front of the prompts they answer.
+
+That second point makes one failure possible here that the list routes do not
+have:
+
+**409 `reconcile_required`, not retryable**, with
+`details.reason: "resume_from_canonical_state"`. The cursor names a turn that is
+no longer on the active branch — someone switched branches in the desktop while
+you were paging. Restart the read from the beginning. The route refuses to
+guess: restarting silently at the top would replay the conversation as if
+nothing had happened, and resuming at position zero would serve a different
+branch under the same token.
+
+**404 `not_found`:** the conversation does not exist, its file could not be
+read, or the id could never name one.
+
+**What is withheld, and why it matters.** A turn's `reasoning` is the harness's
+private scratchpad, and a tool call carries whatever the tool was pointed at — a
+path, a command, the contents of a file it read. Neither is served. `toolCount`
+and `attachmentCount` tell you the turn did work without handing over the work.
+`usage` and `costUsd` are also withheld. `chat:read` is a grant to read the
+conversation, not everything the conversation touched.
+
 ## Administrator routes
 
 These four are the Cave's own consent surface: the settings UI that lists
@@ -573,8 +901,8 @@ entries per category with least-recently-seen eviction.
 |---|---|---|---|
 | Pairing creation | 10 / 60 s | the loopback stamp — one process-wide constant, so this is a single shared bucket | every accepted `POST /pairing/requests` |
 | Pairing secret failure | 10 / 60 s | the pairing request id | only a **wrong** secret, on `POST .../exchange` **or** `GET /pairing/requests/:id` — one shared bucket |
-| Authenticated requests | 120 / 60 s | credential id | *nothing yet* — no route calls it |
-| Invalid bearer | 120 / 60 s | source identity | *nothing yet* — no route calls it |
+| Authenticated requests | 120 / 60 s | credential id | every accepted canonical read, **and** every `scope_denied` on one — a real credential asking for a grant it does not hold is an authenticated request |
+| Invalid bearer | 120 / 60 s | the loopback stamp — one process-wide constant, so this is a single shared bucket | every `unauthorized` on a canonical read: a missing, malformed, unknown, or revoked bearer |
 
 Creation is bounded process-wide on purpose: each accepted request occupies a
 slot in a fixed-size store, so the quantity worth bounding is the total rate of
@@ -723,16 +1051,21 @@ Client-side rules that fall out of the above:
 Stated because a client author will otherwise discover them by writing code
 against something that is not there.
 
-- **No authenticated route exists.** `requireScope`, `consumeAuthenticated`, and
-  `consumeInvalidBearer` have zero non-test call sites, so a bearer is currently
-  issued, persisted, listed, and revocable — and never verified. Nothing
-  pre-authorizes the routes that will consume it, either:
-  `CLIENT_V1_AUTHENTICATED_PATHS` (`src/proxy-helpers.ts`) is now **empty**, so
-  every client-v1 path with no handler classifies `null` and falls through to
-  the ordinary sidecar-token gate. See *When the authenticated routes land*.
-- **Scopes are recorded, not enforced.** They are validated on request, stored
-  on the credential, and shown to the approving user. Nothing reads them at
-  request time yet, because nothing consumes a credential.
+- **Reads only.** The five canonical reads are the whole authenticated surface.
+  There is no way to send a message, create a conversation, upload an
+  attachment, or act on a task through this API, and the five write scopes are
+  recorded on a credential and read by nothing.
+- **`streaming` and `revisions` are advertised and unbuilt.** Both are in the
+  capability list; neither has a route. To follow a running conversation today
+  you re-read `GET /conversations/:id/messages` and diff — there is no
+  server-push channel, and no revision token to make a conditional read cheap.
+- **`/conversations` pages on a mutable key.** A conversation whose transcript
+  grows while you are paging moves to the front of the ordering, so it can
+  appear in two pages. Deduplicate by `id`. See *Paging* for why the immutable
+  alternative is unavailable here.
+- **A conversation's whole turn text is served inline.** There is no per-message
+  size cap and no truncation, so a page of 100 long turns is a large response.
+  Ask for a smaller `limit` on a constrained client.
 - **The reviewed discovery module has no production caller** — but the record
   itself is written; see *Finding the endpoint* above. `server.ts` cannot import
   from `src/`, so it carries its own copy of the publish/remove logic and
@@ -742,24 +1075,31 @@ against something that is not there.
   the reviewed side.
 - **Admin routes are not bound to direct loopback** —
   [#4843](https://github.com/OpenCoven/coven-cave/issues/4843), described above.
-- **A percent-encoded pairing id escapes the client-v1 ingress branch** —
-  `cave-f1xki`, described above. Reproduced, not yet fixed.
-- **`requestId` is never emitted**, so there is no server-assigned correlation
-  id to quote in a bug report. The envelope field exists; no route sets it.
+- **A percent-encoded dynamic segment escapes the client-v1 ingress branch** —
+  `cave-f1xki` / [#4854](https://github.com/OpenCoven/coven-cave/issues/4854),
+  described above. Reproduced, not yet fixed. It now reaches two canonical reads
+  as well as the pairing lookup, which is why both re-check the loopback stamp
+  in the route rather than relying on the branch.
+- **`requestId` and `identity` are never emitted**, so there is no
+  server-assigned correlation id to quote in a bug report and no envelope-level
+  statement of which resource a response describes. Both envelope fields exist;
+  no route sets either.
 
 ## When the authenticated routes land
 
-Nothing here is callable yet, but the wiring a Phase 2 route inherits is already
-decided, and it is not the obvious default. Read this before adding one.
+The first five landed (cave-jfa9y). The wiring they inherited is not the obvious
+default, and it is the same wiring the next one will inherit — read this before
+adding a route here.
 
-`CLIENT_V1_AUTHENTICATED_PATHS` is empty on purpose. **Matching it is a
-demotion, not a promotion**: `proxy()` computes the ingress kind before the
-mobile-access gate, skips that gate for any client-v1 match, and returns before
-the sidecar-token block ever runs — so for a listed path the *only* credential
-check left is the one the route performs on itself. That is a sound trade for a
-route that really calls `requireScope`, and a hole for a path that does not
-exist yet: a handler landing later would inherit an exemption it never opted
-into. The list previously named thirteen Phase 2 paths against zero handlers.
+`CLIENT_V1_AUTHENTICATED_PATHS` now holds exactly those five paths. **Matching
+it is a demotion, not a promotion**: `proxy()` computes the ingress kind before
+the mobile-access gate, skips that gate for any client-v1 match, and returns
+before the sidecar-token block ever runs — so for a listed path the *only*
+credential check left is the one the route performs on itself. That is a sound
+trade for a route that really calls `requireScope`, and a hole for a path that
+does not exist yet: a handler landing later would inherit an exemption it never
+opted into. The list previously named thirteen Phase 2 paths against zero
+handlers, which is why it was emptied before any of them existed.
 
 **But absence is a decision too, and it costs something.** Both of the
 client-v1-only protections described under *Reaching the API at all* are gated
@@ -783,3 +1123,22 @@ rather than a list somebody must remember to prune:
    `requireClientV1Admin`. Both are matched against a comment-, string- and
    regex-stripped view of the source, so a `// TODO: … requireScope(…)` on a
    route with no credential check does not satisfy them.
+3. the same route must also call `consumeAuthenticated`. A pre-authorized path
+   has already given up the sidecar-token gate, so an unmetered one lets a
+   single valid bearer drive the credential store, the daemon, and the
+   transcript directory without bound — and nothing else in the suite would
+   notice, because an unmetered route passes every functional test it has.
+
+Two consequences of that first assertion are worth stating outright, because
+both look like bugs from outside:
+
+- **The route must not depend on the ingress branch it is listed for.** The
+  percent-encoding hole above means the branch can be skipped entirely, so each
+  of the five re-checks the loopback stamp itself. Being on the list is not a
+  guarantee that `proxy()` classified the request.
+- **A path can be listed without being a distinct route.**
+  `/api/client/v1/conversations/search` classifies `authenticated` because there
+  is no static `search` route under `conversations` — the App Router serves that
+  path from the `[id]` handler with the id `"search"`, which answers
+  `not_found`. Classifying it any other way would describe a route that does not
+  exist.
