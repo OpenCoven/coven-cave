@@ -312,3 +312,65 @@ test("no transcript is opened before the credential is checked", async () => {
     assert.equal(reads, 0);
   });
 });
+
+test("conversationId is the transcript's own id, never the spelling in the URL", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    // A conversation resolves to a FILE, and both filesystems this ships on are
+    // case-insensitive, so `/conversations/CONVERSATION-1/messages` reads
+    // conversation-1.json and answers 200. Echoing the requested spelling
+    // handed the client a `conversationId` that `GET /conversations/<that>`
+    // then answers `not_found` for, because the ledger route matches sessionId
+    // exactly — two canonical reads disagreeing about one conversation's id.
+    //
+    // The fixture is the seam, not the filesystem: loadConversation is the
+    // thing that resolves loosely, so the source below stands in for it.
+    const handler = createClientV1ConversationMessagesGetHandler(
+      runtime,
+      sources({
+        loadConversation: async (id) =>
+          (id.toLowerCase() === "conversation-1" ? BRANCHED : null),
+      }),
+    );
+    const response = await handler(
+      request("CONVERSATION-1", { authorization: `Bearer ${bearer}` }),
+      context("CONVERSATION-1"),
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json() as { data: { messages: { conversationId: string }[] } };
+    assert.ok(body.data.messages.length > 0);
+    for (const message of body.data.messages) {
+      assert.equal(message.conversationId, "conversation-1");
+    }
+  });
+});
+
+test("an unprojectable turn answers an envelope, not a Next error page", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    // loadConversation validates nothing beyond "this parsed", so a transcript
+    // whose turn carries no text reached the envelope builder as `undefined`
+    // and threw out of the handler. Next answered with its own body, which no
+    // Client v1 client can parse.
+    const handler = createClientV1ConversationMessagesGetHandler(
+      runtime,
+      sources({
+        loadConversation: async () => ({
+          ...BRANCHED,
+          activeLeafId: "t9",
+          turns: [{ id: "t9", parentId: null, role: "user" } as ChatTurn],
+        }),
+      }),
+    );
+    const response = await handler(
+      request("conversation-1", { authorization: `Bearer ${bearer}` }),
+      context("conversation-1"),
+    );
+    assert.equal(response.status, 500);
+    const body = await response.json() as {
+      apiVersion: string;
+      error: { code: string; retryable: boolean };
+    };
+    assert.equal(body.error.code, "internal_error");
+    assert.equal(body.error.retryable, false);
+    assert.equal(body.apiVersion, "1.0");
+  });
+});

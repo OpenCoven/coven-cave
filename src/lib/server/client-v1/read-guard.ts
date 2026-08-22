@@ -162,5 +162,33 @@ export function clientV1InvalidReadRequest(cause: unknown): Response {
   });
 }
 
+/**
+ * The 500 a route answers when the store, or the projection over it, refused.
+ *
+ * Without it the throw escaped the handler and Next answered with its own
+ * error page — a body that is not a Client v1 envelope, on a surface whose
+ * whole contract is that every response is one. A client parsing the envelope
+ * fails to read its own failure, which is the exact trap the *Reaching the API
+ * at all* section warns about for the proxy's rejections.
+ *
+ * It is reachable from ordinary data, not just from a bug: no store behind
+ * these routes validates the JSON it returns, and `projectClientV1*` refuses a
+ * record whose required field is absent or wrongly typed (see reads.ts). One
+ * hand-edited `projects.json` row, one conversation file written by an older
+ * Cave, or one daemon that renamed a roster field reaches this path.
+ *
+ * `retryable` is deliberately false. The store answers the same way next
+ * second, so a client that retries is spending its budget to be told the same
+ * thing; the operator has to repair the record.
+ *
+ * The cause is deliberately NOT forwarded to the client. Every message on this
+ * path names a field of a stored record, and some of them would carry the
+ * value — details on an error a caller cannot fix is a description of the
+ * server's disk.
+ */
+export function clientV1ReadFailure(): Response {
+  return clientV1ErrorResponse("internal_error", "The read could not be served.");
+}
+
 /** The contract's page-size ceiling, re-exported so routes can name it once. */
 export const CLIENT_V1_MAX_PAGE_SIZE = CLIENT_V1_LIMITS.maxPageSize;

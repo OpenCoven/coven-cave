@@ -121,7 +121,7 @@ are reachable on the thirteen routes that exist.
 | `pairing_denied` | 403 | yes | Terminal. The user said no; do not re-request without a fresh user action. |
 | `pairing_expired` | 410 | yes | Terminal for this request. Start a new pairing request. |
 | `rate_limited` | 429 | yes | Retryable. Honour `Retry-After`; `details.limit` and `details.resetAt` (epoch ms) carry the budget. |
-| `internal_error` | 500 | yes | Retryable where the route says so — see the exchange route, where a failed credential write restores the pairing precisely so a retry works. |
+| `internal_error` | 500 | yes | Retryable where the route says so — see the exchange route, where a failed credential write restores the pairing precisely so a retry works. On the canonical reads it is **not** retryable: it means a stored record could not be projected, and the store answers the same way next second. |
 | `service_unavailable` | 503 | yes | The Cave cannot answer right now. On admin routes it means `COVEN_CAVE_AUTH_TOKEN` is unset and is not fixable by retrying; on `GET /familiars` it means the daemon roster could not be read and **is** retryable. |
 | `reconcile_required` | 409 | yes | The client's position is no longer valid against canonical state. Today that is exactly one case: a messages cursor naming a turn that has left the conversation's active branch (`details.reason: "resume_from_canonical_state"`). Not retryable — restart the read. |
 | `incompatible_version` | 426 | no | Reserved. Version incompatibility is currently discovered by reading `minimumClientVersion` off `/health`, not by being told. |
@@ -463,6 +463,29 @@ implementation detail: it means an unauthenticated caller cannot use these
 routes to drive a daemon request, scan the transcript directory, or learn
 whether a conversation id exists.
 
+### When a stored record cannot be projected
+
+**500 `internal_error`, not retryable.** None of the stores behind these routes
+validates the JSON it returns, so a required field can arrive absent or wrongly
+typed — a hand-edited `projects.json` row with no `createdAt`, a conversation
+file written by an older Cave, a daemon that renamed a roster field. The
+projection refuses such a record rather than serving a shape that contradicts
+the types above, and the route answers this.
+
+Three things follow, and a client should plan for all three:
+
+- **It is envelope-shaped**, like every other answer here. It replaced an
+  uncaught throw, which Next answered with a body that is not a Client v1
+  envelope at all.
+- **It is not retryable and carries no `details`.** The record reads the same
+  next second, and naming the field would describe the contents of the
+  operator's disk to a caller who cannot repair it. Surface it and stop.
+- **It is per *page*, not per record.** One unprojectable row fails every page
+  that contains it, so a paging walk stops there rather than skipping the row —
+  quietly dropping a record from a *canonical* read would tell a client the
+  conversation does not exist. Rows before it in the ordering are served
+  normally.
+
 ### Paging: `limit` and `cursor`
 
 The list routes accept exactly two query parameters. **Any other parameter, and
@@ -487,7 +510,10 @@ The cursor rides the shared envelope:
 
 - **`next` is present only when `hasMore` is true.** Follow it until it is
   absent; that is the whole termination rule.
-- **`current` is the token you sent**, absent on a first page.
+- **`current` is the token you sent**, absent on a first page. Strictly it is a
+  re-mint of the position that token named, which is the same bytes for every
+  token this Cave issued and need not be for one you wrote yourself — another
+  reason not to.
 - **The `cursor` field is omitted entirely** when there is no token to publish —
   a first page that holds the whole set, or an empty first page. Do not treat a
   missing `cursor` as an error.
@@ -709,8 +735,17 @@ One conversation's transcript, oldest first, paged.
 }
 ```
 
-`role` is `"user"`, `"assistant"` or `"system"`. `parentId` is `null` for the
-root turn. `isError` and `cancelled` are omitted unless the store recorded them.
+`role` is `"user"`, `"assistant"` or `"system"` — a turn carrying anything else
+is refused rather than served. `parentId` is `null` for the root turn. `isError`
+and `cancelled` are omitted unless the store recorded them.
+
+**`conversationId` is the transcript's own id, not the one you spelled in the
+URL.** A conversation resolves to a file, and the filesystems this ships on are
+case-insensitive, so `/conversations/CONVERSATION-1/messages` answers with the
+messages of `conversation-1`. The id you get back is therefore always one
+`GET /conversations/:id` will also answer to — the requested spelling need not
+be, because that route matches the ledger exactly and answers `not_found` for a
+case that does not match.
 
 **Two things about this route are not the obvious default**, and both come from
 how a conversation is stored:

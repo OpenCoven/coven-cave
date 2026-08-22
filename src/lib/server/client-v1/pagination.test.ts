@@ -299,3 +299,65 @@ test("sequence pagination on an empty transcript publishes no cursor", () => {
   assert.deepEqual(empty!.items, []);
   assert.equal(empty!.cursor, undefined);
 });
+
+test("the encoder never mints a token this module's own decoder refuses", () => {
+  // encode and decode are a pair, and nothing asserted they agreed. Page keys
+  // are read straight out of stores that do not validate their own JSON, so a
+  // non-string sort key is reachable — and JSON.stringify carries a number
+  // through happily while dropping an `undefined` key entirely. The token then
+  // came back as `invalid_request` ("its sort key is not a string") for a
+  // cursor THIS SERVER wrote, which a client following `next` reads as its own
+  // bug and cannot page past.
+  assert.throws(
+    () => encodeClientV1Cursor({ sort: 1767225600000 as unknown as string, id: "c1" }),
+    /page key must be two strings/,
+  );
+  assert.throws(
+    () => encodeClientV1Cursor({ sort: undefined as unknown as string, id: "c1" }),
+    /page key must be two strings/,
+  );
+  assert.throws(
+    () => encodeClientV1Cursor({ sort: "s", id: "" }),
+    /page key must be two strings/,
+  );
+  // The property the pair owes each other, stated once: anything minted decodes
+  // back to the key it was minted from.
+  for (const key of [
+    { sort: "", id: "i" },
+    { sort: "2026-08-01T00:00:00.000Z", id: "conversation-1" },
+    { sort: "💀", id: "💀" },
+    { sort: "a".repeat(120), id: "b".repeat(120) },
+  ]) {
+    assert.deepEqual(decodeClientV1Cursor(encodeClientV1Cursor(key)), key);
+  }
+});
+
+test("the key comparator stays a strict weak order when a sort key is not a string", () => {
+  // `undefined < "a"` and `undefined > "a"` are BOTH false, so an unguarded
+  // comparison collapses to a tie against every string — and the id tiebreak
+  // then makes the order CYCLIC rather than merely arbitrary. These three keys
+  // are the measured witness: before the coercion each compared greater than
+  // the next, and Array#sort returned three different orders for the three
+  // input permutations. A keyset over a cyclic order skips rows.
+  const bad = { sort: undefined as unknown as string, id: "m" };
+  const low = { sort: "a", id: "z" };
+  const high = { sort: "b", id: "a" };
+  const cycle = compareClientV1RecencyKeys(bad, low) > 0
+    && compareClientV1RecencyKeys(low, high) > 0
+    && compareClientV1RecencyKeys(high, bad) > 0;
+  assert.equal(cycle, false);
+  const orders = new Set(
+    [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]].map((permutation) =>
+      permutation
+        .map((index) => [bad, low, high][index])
+        .sort(compareClientV1RecencyKeys)
+        .map((key) => key.id)
+        .join(",")),
+  );
+  assert.equal(orders.size, 1, `sort order depended on input order: ${[...orders].join(" | ")}`);
+  // Antisymmetry, in both comparators, for the same reason.
+  assert.equal(
+    Math.sign(compareClientV1AscendingKeys(bad, low)),
+    -Math.sign(compareClientV1AscendingKeys(low, bad)),
+  );
+});

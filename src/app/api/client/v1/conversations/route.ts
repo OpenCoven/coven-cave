@@ -25,6 +25,7 @@ import {
   chargeClientV1AuthFailure,
   clientV1BearerFrom,
   clientV1InvalidReadRequest,
+  clientV1ReadFailure,
   parseClientV1ReadPage,
 } from "@/lib/server/client-v1/read-guard.ts";
 import {
@@ -75,17 +76,25 @@ export function createClientV1ConversationsGetHandler(
 
     // Reading the ledger touches every transcript file on disk, so it happens
     // only once the credential and its budget are settled.
-    const summaries = await sources.listConversations();
-    const { cursor, items } = paginateClientV1Keyset(sortClientV1Conversations(summaries), {
-      limit: page.limit,
-      after: page.after,
-      keyOf: clientV1ConversationPageKey,
-      compare: compareClientV1RecencyKeys,
-    });
-    return clientV1SuccessResponse(
-      { conversations: items.map(projectClientV1Conversation) },
-      cursor ? { cursor } : {},
-    );
+    //
+    // Guarded from here down: readConversationSummary copies conv.updatedAt out
+    // of a file that merely parsed, so one transcript missing it is refused by
+    // projectClientV1Conversation instead of escaping as a non-envelope 500.
+    try {
+      const summaries = await sources.listConversations();
+      const { cursor, items } = paginateClientV1Keyset(sortClientV1Conversations(summaries), {
+        limit: page.limit,
+        after: page.after,
+        keyOf: clientV1ConversationPageKey,
+        compare: compareClientV1RecencyKeys,
+      });
+      return clientV1SuccessResponse(
+        { conversations: items.map(projectClientV1Conversation) },
+        cursor ? { cursor } : {},
+      );
+    } catch {
+      return clientV1ReadFailure();
+    }
   };
 }
 

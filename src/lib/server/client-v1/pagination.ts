@@ -69,7 +69,31 @@ function cursorError(detail: string): Error {
   return new Error(`Client v1 cursor is not readable: ${detail}.`);
 }
 
+/**
+ * Refuse to mint a token this module's own decoder would reject.
+ *
+ * Every page key is read out of a store that does not validate its own JSON —
+ * a hand-edited `projects.json` row, a conversation file written by an older
+ * Cave, a daemon roster field that changed type — so `sort` and `id` are only
+ * strings by convention. `JSON.stringify` carries a number through happily and
+ * drops an `undefined` key entirely, and `decodeClientV1Cursor` then answers
+ * `invalid_request` ("its sort key is not a string") for a token *this server
+ * wrote*. A client following `next` cannot advance and is told its own cursor
+ * is malformed. Throwing here turns that into the route's `internal_error`,
+ * which is at least true.
+ */
+function assertMintableKey(key: ClientV1PageKey): void {
+  const sort: unknown = key.sort;
+  const id: unknown = key.id;
+  if (typeof sort !== "string" || typeof id !== "string" || id.length === 0) {
+    throw new Error(
+      "Client v1 cursor cannot be minted: a page key must be two strings with a non-empty id.",
+    );
+  }
+}
+
 export function encodeClientV1Cursor(key: ClientV1PageKey): string {
+  assertMintableKey(key);
   return Buffer.from(
     JSON.stringify({ v: CLIENT_V1_CURSOR_VERSION, s: key.sort, i: key.id }),
     "utf8",
@@ -89,8 +113,15 @@ export function decodeClientV1Cursor(raw: unknown): ClientV1PageKey {
   const decoded = Buffer.from(raw, "base64url");
   // Buffer.from is lenient: it drops characters it cannot place rather than
   // failing, so a token with trailing junk decodes to a perfectly valid
-  // payload. Re-encoding is what makes the token canonical, and canonical is
-  // what makes "this is a cursor we minted" checkable at all.
+  // payload. Re-encoding is what pins the token to one spelling, so two
+  // tokens that mean the same position cannot be spelled differently.
+  //
+  // It does NOT make "this is a cursor we minted" checkable, and nothing here
+  // does: the payload is unauthenticated, so anyone can produce a token that
+  // decodes. That is deliberate rather than an omission — a cursor names a
+  // position in an ordering the caller is already authorized to read, so
+  // forging one buys a different page of the same data and no more. Do not let
+  // a later change hang an authorization decision off a decoded cursor.
   if (decoded.toString("base64url") !== raw) {
     throw cursorError("it is not a canonical encoding");
   }
@@ -147,8 +178,21 @@ function compareStrings(left: string, right: string): number {
   // Codepoint order, never localeCompare: the comparator has to agree with
   // itself across processes and locales or a cursor minted by one request
   // resumes somewhere else on the next.
-  if (left < right) return -1;
-  if (left > right) return 1;
+  //
+  // Coerced first, because "total" is a claim about the values that actually
+  // arrive and no store behind these routes validates its own JSON. Both `<`
+  // and `>` are FALSE against `undefined`, so an unvalidated key collapses to a
+  // tie against every string — and the id tiebreak then makes the order
+  // *cyclic* rather than merely arbitrary. Measured on
+  // `{sort: undefined, id: "m"}`, `{sort: "a", id: "z"}`, `{sort: "b", id:
+  // "a"}`: each compares greater than the next, and Array#sort returned three
+  // different orders for the three input permutations. A keyset over a cyclic
+  // order skips rows. Coercion keeps trichotomy; the record is refused later,
+  // by the projection, where refusing is meaningful.
+  const l = typeof left === "string" ? left : "";
+  const r = typeof right === "string" ? right : "";
+  if (l < r) return -1;
+  if (l > r) return 1;
   return 0;
 }
 

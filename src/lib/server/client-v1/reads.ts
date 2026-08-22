@@ -100,6 +100,74 @@ export type ClientV1MessageRecord = {
   cancelled?: boolean;
 };
 
+/**
+ * A field the projection promises to serve, refused when the store cannot
+ * supply it.
+ *
+ * None of the four stores validates the JSON it hands back. `loadProjects`
+ * returns whatever `projects.json` parsed to, `readConversationSummary` copies
+ * `conv.updatedAt` straight out of a file that merely parsed, and the familiar
+ * roster is a daemon HTTP response with no schema in front of it. So a required
+ * field arriving absent or wrongly typed is a reachable state, not a type-system
+ * impossibility — and without this check it failed two different silent ways:
+ *
+ *   - `undefined` reached parseClientV1JsonObject, which throws. Nothing caught
+ *     it, so the route answered a non-envelope 500 and one bad row took down
+ *     every page that contained it.
+ *   - a wrongly *typed* value (a numeric `updatedAt`, say) is JSON-safe, so it
+ *     was served as-is — contradicting the published type — and then minted a
+ *     cursor whose sort key was a number, which this Cave's own decoder refuses.
+ *     Measured: the client got row 1 and a `next` token, and following it
+ *     answered `invalid_request`. The walk could not advance past the row.
+ *
+ * Refusing is loud and honest: the route turns it into `internal_error`. It is
+ * deliberately not a skip — quietly dropping a record from a "canonical read"
+ * would tell a client the conversation does not exist.
+ */
+function requiredText(value: unknown, field: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Client v1 cannot project a record whose ${field} is not a string.`);
+  }
+  return value;
+}
+
+/**
+ * The same check for a field that is also a page key or an addressable id.
+ *
+ * Empty is tolerated by requiredText because the stores really do produce it —
+ * `fallbackConversationSummary` sets `familiarId: ""` for a file it could not
+ * read, and serving that row is better than losing it. An *id* is different:
+ * decodeClientV1Cursor refuses a token with an empty id, so an empty one here
+ * would mint exactly the undecodable cursor assertMintableKey exists to stop.
+ */
+function requiredId(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(
+      `Client v1 cannot project a record whose ${field} is not a non-empty string.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * A turn's role, checked for membership rather than for type.
+ *
+ * The doc tells a client to branch on exactly these three. A transcript
+ * carrying a fourth would make that instruction wrong with nothing failing,
+ * and a transcript carrying none at all reached the envelope builder as
+ * `undefined` and threw there instead.
+ */
+const MESSAGE_ROLES = new Set<ChatTurn["role"]>(["user", "assistant", "system"]);
+
+function requiredRole(value: unknown): ChatTurn["role"] {
+  if (!MESSAGE_ROLES.has(value as ChatTurn["role"])) {
+    throw new Error(
+      'Client v1 cannot project a message whose role is not "user", "assistant" or "system".',
+    );
+  }
+  return value as ChatTurn["role"];
+}
+
 function optionalText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
@@ -121,9 +189,9 @@ export function projectClientV1Familiar(
   const lastSeenAt = optionalText(entry.last_seen);
   const activeSessions = optionalCount(entry.active_sessions);
   return {
-    id: entry.id,
-    displayName: entry.display_name,
-    role: entry.role,
+    id: requiredId(entry.id, "familiar id"),
+    displayName: requiredText(entry.display_name, "familiar display_name"),
+    role: requiredText(entry.role, "familiar role"),
     ...(description ? { description } : {}),
     ...(pronouns ? { pronouns } : {}),
     ...(status ? { status } : {}),
@@ -136,13 +204,13 @@ export function projectClientV1Project(project: CaveProject): ClientV1ProjectRec
   const color = optionalText(project.color);
   const repoUrl = optionalText(project.repoUrl);
   return {
-    id: project.id,
-    name: project.name,
-    root: project.root,
+    id: requiredId(project.id, "project id"),
+    name: requiredText(project.name, "project name"),
+    root: requiredText(project.root, "project root"),
     ...(color ? { color } : {}),
     ...(repoUrl ? { repoUrl } : {}),
-    createdAt: project.createdAt,
-    updatedAt: project.updatedAt,
+    createdAt: requiredText(project.createdAt, "project createdAt"),
+    updatedAt: requiredText(project.updatedAt, "project updatedAt"),
   };
 }
 
@@ -157,8 +225,8 @@ export function projectClientV1Conversation(
   const status = optionalText(summary.status);
   const createdAt = optionalText(summary.createdAt);
   return {
-    id: summary.sessionId,
-    familiarId: summary.familiarId,
+    id: requiredId(summary.sessionId, "conversation sessionId"),
+    familiarId: requiredText(summary.familiarId, "conversation familiarId"),
     ...(harness ? { harness } : {}),
     ...(model ? { model } : {}),
     ...(runtime ? { runtime } : {}),
@@ -170,7 +238,7 @@ export function projectClientV1Conversation(
     ...(summary.exitCode === undefined ? {} : { exitCode: summary.exitCode }),
     ...(summary.pending === undefined ? {} : { pending: summary.pending }),
     ...(createdAt ? { createdAt } : {}),
-    updatedAt: summary.updatedAt,
+    updatedAt: requiredText(summary.updatedAt, "conversation updatedAt"),
   };
 }
 
@@ -179,14 +247,14 @@ export function projectClientV1Message(
   turn: ChatTurn,
 ): ClientV1MessageRecord {
   return {
-    id: turn.id,
-    conversationId,
+    id: requiredId(turn.id, "message id"),
+    conversationId: requiredId(conversationId, "message conversationId"),
     // `undefined` on a legacy turn, `null` on an authored root. Both mean root,
     // and only one of them is a value the envelope can carry.
     parentId: turn.parentId ?? null,
-    role: turn.role,
-    text: turn.text,
-    createdAt: turn.createdAt,
+    role: requiredRole(turn.role),
+    text: requiredText(turn.text, "message text"),
+    createdAt: requiredText(turn.createdAt, "message createdAt"),
     // Counts, not contents. `reasoning` is the harness's private scratchpad and
     // a tool call carries whatever the tool was pointed at — a path, a command,
     // a file it read. `chat:read` is a grant to read the conversation, not to

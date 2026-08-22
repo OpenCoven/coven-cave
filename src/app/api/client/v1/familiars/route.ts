@@ -25,6 +25,7 @@ import {
   chargeClientV1AuthFailure,
   clientV1BearerFrom,
   clientV1InvalidReadRequest,
+  clientV1ReadFailure,
   parseClientV1ReadPage,
 } from "@/lib/server/client-v1/read-guard.ts";
 import {
@@ -76,29 +77,38 @@ export function createClientV1FamiliarsGetHandler(
     // Read the roster only after the credential is settled: this is a live
     // request to the daemon, so running it first would let an unauthenticated
     // caller drive traffic off the machine and time the answer.
-    const result = await sources.listFamiliars();
-    if (!result.ok) {
-      // Reported as unavailable whatever the daemon said — including its own
-      // 401/403. That failure is about Cave's access token, not the client's
-      // bearer, and answering `unauthorized` would tell a correctly paired
-      // client to discard a credential that is working perfectly.
-      return clientV1ErrorResponse(
-        "service_unavailable",
-        "The familiar roster is unavailable.",
-        { retryable: true },
-      );
-    }
+    //
+    // Everything from here down is inside the guard: the roster is a daemon
+    // HTTP response with no schema in front of it, so a renamed or retyped
+    // field reaches projectClientV1Familiar, which refuses it. Uncaught, that
+    // refusal left the handler as a non-envelope 500.
+    try {
+      const result = await sources.listFamiliars();
+      if (!result.ok) {
+        // Reported as unavailable whatever the daemon said — including its own
+        // 401/403. That failure is about Cave's access token, not the client's
+        // bearer, and answering `unauthorized` would tell a correctly paired
+        // client to discard a credential that is working perfectly.
+        return clientV1ErrorResponse(
+          "service_unavailable",
+          "The familiar roster is unavailable.",
+          { retryable: true },
+        );
+      }
 
-    const { cursor, items } = paginateClientV1Keyset(sortClientV1Familiars(result.roster), {
-      limit: page.limit,
-      after: page.after,
-      keyOf: clientV1FamiliarPageKey,
-      compare: compareClientV1AscendingKeys,
-    });
-    return clientV1SuccessResponse(
-      { familiars: items.map(projectClientV1Familiar) },
-      cursor ? { cursor } : {},
-    );
+      const { cursor, items } = paginateClientV1Keyset(sortClientV1Familiars(result.roster), {
+        limit: page.limit,
+        after: page.after,
+        keyOf: clientV1FamiliarPageKey,
+        compare: compareClientV1AscendingKeys,
+      });
+      return clientV1SuccessResponse(
+        { familiars: items.map(projectClientV1Familiar) },
+        cursor ? { cursor } : {},
+      );
+    } catch {
+      return clientV1ReadFailure();
+    }
   };
 }
 

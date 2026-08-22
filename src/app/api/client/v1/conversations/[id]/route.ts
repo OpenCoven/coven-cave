@@ -23,6 +23,7 @@ import {
   chargeClientV1AuthFailure,
   clientV1BearerFrom,
   clientV1InvalidReadRequest,
+  clientV1ReadFailure,
 } from "@/lib/server/client-v1/read-guard.ts";
 import {
   clientV1ReadSources,
@@ -71,16 +72,23 @@ export function createClientV1ConversationGetHandler(
     }
 
     const id = (await params).id;
-    const summary = (await sources.listConversations())
-      .find((candidate) => candidate.sessionId === id);
-    if (!summary) {
-      // One answer for "no such conversation" and for an id that could never
-      // name one — a traversal attempt, an empty segment, an over-long string.
-      // A client can act on neither differently, and one answer means this
-      // route cannot be used to map which id shapes the store recognises.
-      return clientV1ErrorResponse("not_found", "Conversation not found.");
+    try {
+      const summary = (await sources.listConversations())
+        .find((candidate) => candidate.sessionId === id);
+      if (!summary) {
+        // One answer for "no such conversation" and for an id that could never
+        // name one — a traversal attempt, an empty segment, an over-long string.
+        // A client can act on neither differently, and one answer means this
+        // route cannot be used to map which id shapes the store recognises.
+        return clientV1ErrorResponse("not_found", "Conversation not found.");
+      }
+      // Guarded because the ledger row is unvalidated JSON: a transcript that
+      // parsed but carries no `updatedAt` is refused by the projection, and
+      // uncaught that refusal left this handler as a non-envelope 500.
+      return clientV1SuccessResponse({ conversation: projectClientV1Conversation(summary) });
+    } catch {
+      return clientV1ReadFailure();
     }
-    return clientV1SuccessResponse({ conversation: projectClientV1Conversation(summary) });
   };
 }
 

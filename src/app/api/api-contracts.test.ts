@@ -747,9 +747,10 @@ for (const { file, route } of clientV1Routes) {
   // nothing else in the suite would notice, since an unmetered route passes
   // every functional test it has.
   //
-  // Matched on the success-path charge specifically. A future route that needs
-  // a different budget should widen this alternation deliberately, in review,
-  // rather than inherit an exemption by being written differently.
+  // Matched on the success-path charge specifically, and on that name ALONE —
+  // there is no alternation here, deliberately. A future route that meters
+  // against a different budget fails this assertion and has to widen it in
+  // review rather than inherit an exemption by being written differently.
   assert.match(
     source,
     /consumeAuthenticated\s*\(/,

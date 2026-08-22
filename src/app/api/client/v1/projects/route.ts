@@ -22,6 +22,7 @@ import {
   chargeClientV1AuthFailure,
   clientV1BearerFrom,
   clientV1InvalidReadRequest,
+  clientV1ReadFailure,
   parseClientV1ReadPage,
 } from "@/lib/server/client-v1/read-guard.ts";
 import {
@@ -70,17 +71,24 @@ export function createClientV1ProjectsGetHandler(
       return clientV1InvalidReadRequest(cause);
     }
 
-    const projects = await sources.listProjects();
-    const { cursor, items } = paginateClientV1Keyset(sortClientV1Projects(projects), {
-      limit: page.limit,
-      after: page.after,
-      keyOf: clientV1ProjectPageKey,
-      compare: compareClientV1RecencyKeys,
-    });
-    return clientV1SuccessResponse(
-      { projects: items.map(projectClientV1Project) },
-      cursor ? { cursor } : {},
-    );
+    // Guarded from the read down: loadProjects returns whatever projects.json
+    // parsed to, so a hand-edited row missing createdAt is refused by
+    // projectClientV1Project rather than escaping as a non-envelope 500.
+    try {
+      const projects = await sources.listProjects();
+      const { cursor, items } = paginateClientV1Keyset(sortClientV1Projects(projects), {
+        limit: page.limit,
+        after: page.after,
+        keyOf: clientV1ProjectPageKey,
+        compare: compareClientV1RecencyKeys,
+      });
+      return clientV1SuccessResponse(
+        { projects: items.map(projectClientV1Project) },
+        cursor ? { cursor } : {},
+      );
+    } catch {
+      return clientV1ReadFailure();
+    }
   };
 }
 

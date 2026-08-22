@@ -16,6 +16,7 @@ import {
   chargeClientV1AuthFailure,
   clientV1BearerFrom,
   clientV1InvalidReadRequest,
+  clientV1ReadFailure,
   parseClientV1ReadPage,
 } from "./read-guard.ts";
 import { createClientV1Runtime } from "./runtime.ts";
@@ -184,5 +185,31 @@ test("the loopback stamp header the routes require is the server-stamped one", a
     assert.equal(LOCAL_PEER_HEADER, "x-coven-cave-local-peer");
   } finally {
     await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("the read failure is an envelope that describes nothing about the record", async () => {
+  // It exists because the throw used to escape the handler, and Next answered
+  // with its own body — not a Client v1 envelope, on a surface whose contract
+  // is that every response is one. A client that only knows this shape has to
+  // be able to read its own failure.
+  const response = clientV1ReadFailure();
+  assert.equal(response.status, 500);
+  assert.equal(response.headers.get("content-type"), "application/json");
+  const body = await response.json() as {
+    apiVersion: string;
+    error: { code: string; message: string; retryable: boolean; details?: unknown };
+  };
+  assert.equal(body.error.code, "internal_error");
+  assert.equal(body.apiVersion, "1.0");
+  // Not retryable: the record reads the same next second, so retrying spends
+  // the caller's budget to be told the same thing.
+  assert.equal(body.error.retryable, false);
+  // And carries no details. Every message on this path names a field of a
+  // stored record, and some would carry its value — a description of the
+  // operator's disk, handed to a caller who cannot repair it.
+  assert.equal(body.error.details, undefined);
+  for (const disclosure of ["projects.json", "conversations", "updatedAt", "createdAt", "/", "\\"]) {
+    assert.equal(body.error.message.includes(disclosure), false, disclosure);
   }
 });

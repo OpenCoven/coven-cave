@@ -33,6 +33,7 @@ import {
   chargeClientV1AuthFailure,
   clientV1BearerFrom,
   clientV1InvalidReadRequest,
+  clientV1ReadFailure,
   parseClientV1ReadPage,
 } from "@/lib/server/client-v1/read-guard.ts";
 import {
@@ -87,31 +88,43 @@ export function createClientV1ConversationMessagesGetHandler(
     }
 
     const id = (await params).id;
-    const conversation = await sources.loadConversation(id);
-    if (!conversation) {
-      // Absent covers "no such conversation", "unreadable file", and "that id
-      // could never name one" — loadConversation resolves the id through a
-      // traversal guard and answers null for all three.
-      return clientV1ErrorResponse("not_found", "Conversation not found.");
-    }
+    try {
+      const conversation = await sources.loadConversation(id);
+      if (!conversation) {
+        // Absent covers "no such conversation", "unreadable file", and "that id
+        // could never name one" — loadConversation resolves the id through a
+        // traversal guard and answers null for all three.
+        return clientV1ErrorResponse("not_found", "Conversation not found.");
+      }
 
-    const result = paginateClientV1Sequence(clientV1ConversationSequence(conversation), {
-      limit: page.limit,
-      after: page.after,
-      keyOf: clientV1MessagePageKey,
-    });
-    if (!result) {
-      return clientV1ErrorResponse(
-        "reconcile_required",
-        "The cursor names a message that is no longer on this conversation's active branch.",
-        { details: { reason: "resume_from_canonical_state" } },
+      const result = paginateClientV1Sequence(clientV1ConversationSequence(conversation), {
+        limit: page.limit,
+        after: page.after,
+        keyOf: clientV1MessagePageKey,
+      });
+      if (!result) {
+        return clientV1ErrorResponse(
+          "reconcile_required",
+          "The cursor names a message that is no longer on this conversation's active branch.",
+          { details: { reason: "resume_from_canonical_state" } },
+        );
+      }
+
+      // `conversation.sessionId`, never the `id` off the URL. Conversations
+      // resolve to a FILE, and the two common filesystems here are
+      // case-insensitive, so `/conversations/CHAT/messages` serves `chat.json`
+      // — and echoing the requested spelling handed the client a
+      // `conversationId` that `/conversations/CHAT` then answers `not_found`
+      // for, because that route matches `sessionId` exactly. One canonical
+      // read must not mint an id another canonical read denies.
+      const conversationId = conversation.sessionId;
+      return clientV1SuccessResponse(
+        { messages: result.items.map((turn) => projectClientV1Message(conversationId, turn)) },
+        result.cursor ? { cursor: result.cursor } : {},
       );
+    } catch {
+      return clientV1ReadFailure();
     }
-
-    return clientV1SuccessResponse(
-      { messages: result.items.map((turn) => projectClientV1Message(id, turn)) },
-      result.cursor ? { cursor: result.cursor } : {},
-    );
   };
 }
 

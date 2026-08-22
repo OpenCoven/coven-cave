@@ -344,3 +344,80 @@ test("the message projection normalizes a root turn's parent to null", () => {
     createdAt: "2026-08-01T00:00:00.000Z",
   }), { sort: "2026-08-01T00:00:00.000Z", id: "t1" });
 });
+
+test("a projection refuses a record whose required field the store did not supply", () => {
+  // None of the four stores validates its own JSON. `loadProjects` returns
+  // whatever projects.json parsed to, `readConversationSummary` copies
+  // `conv.updatedAt` out of a file that merely parsed (a *parse* failure takes
+  // the fallback row; a file that parses without the field does not), and the
+  // roster is a daemon HTTP response with no schema in front of it. Before this
+  // refusal, `undefined` reached parseClientV1JsonObject and threw from inside
+  // the envelope builder, which nothing caught — so one bad row answered a
+  // non-envelope 500 and took down every page that contained it.
+  assert.throws(
+    () => projectClientV1Conversation({ sessionId: "c1", familiarId: "f" } as ConversationSummary),
+    /conversation updatedAt is not a string/,
+  );
+  assert.throws(
+    () => projectClientV1Project({ id: "p1", name: "n", root: "/r", updatedAt: "u" } as CaveProject),
+    /project createdAt is not a string/,
+  );
+  assert.throws(
+    () => projectClientV1Familiar({ id: "a", role: "r" } as VisibleFamiliarRosterEntry),
+    /familiar display_name is not a string/,
+  );
+  assert.throws(
+    () => projectClientV1Message("c1", { id: "t1", role: "user", createdAt: "x" } as ChatTurn),
+    /message text is not a string/,
+  );
+  assert.throws(
+    () => projectClientV1Message("c1", {
+      id: "t1",
+      role: "narrator" as ChatTurn["role"],
+      text: "hi",
+      createdAt: "x",
+    }),
+    /role is not "user", "assistant" or "system"/,
+  );
+});
+
+test("a projection refuses a required field that is present but wrongly typed", () => {
+  // The harder half, and the one nothing else would catch: a numeric
+  // `updatedAt` is JSON-safe, so the envelope builder accepts it. Served, it
+  // contradicts the published string type — and it also mints a cursor whose
+  // sort key is a number, which decodeClientV1Cursor refuses. Measured before
+  // the fix: the client received row 1 with a `next` token and following that
+  // token answered `invalid_request`, so the walk could not advance past the
+  // row. Refusing at the projection is what keeps that unreachable.
+  assert.throws(
+    () => projectClientV1Conversation({
+      sessionId: "c1",
+      familiarId: "f",
+      updatedAt: 1767225600000 as unknown as string,
+    }),
+    /conversation updatedAt is not a string/,
+  );
+  // An empty id is refused for a different reason than an empty familiarId is
+  // tolerated: decodeClientV1Cursor rejects a token carrying no id, so an empty
+  // one here would mint a cursor this Cave cannot read back.
+  assert.throws(
+    () => projectClientV1Conversation({ sessionId: "", familiarId: "f", updatedAt: "u" }),
+    /sessionId is not a non-empty string/,
+  );
+});
+
+test("the conversation projection still serves the corrupt-file fallback row", () => {
+  // fallbackConversationSummary (cave-conversations.ts) is what listConversations
+  // substitutes for a file it could not read or parse, and it sets
+  // `familiarId: ""`. That row is a real conversation with an unreadable body,
+  // so it has to reach the client — an emptiness check on familiarId would have
+  // turned every corrupt transcript into a 500 for the whole page.
+  assert.deepEqual(
+    projectClientV1Conversation({
+      sessionId: "c1",
+      familiarId: "",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    }),
+    { id: "c1", familiarId: "", updatedAt: "2026-08-01T00:00:00.000Z" },
+  );
+});

@@ -198,3 +198,62 @@ test("no transcript is read before the credential is checked", async () => {
     assert.equal(reads, 0);
   });
 });
+
+test("an unprojectable ledger row answers an envelope, not a Next error page", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    // A conversation file that PARSES but carries no `updatedAt` does not take
+    // listConversations' fallback row — that substitution is keyed on a parse
+    // failure — so the field reaches the projection as `undefined`. It used to
+    // throw out of the handler, and Next answered with its own error body:
+    // not a Client v1 envelope, on a surface whose whole contract is that every
+    // response is one. One bad row took down every page containing it.
+    const handler = createClientV1ConversationsGetHandler(
+      runtime,
+      sources({
+        listConversations: async () => [
+          ...LEDGER,
+          { sessionId: "conversation-broken", familiarId: "scribe" } as ConversationSummary,
+        ],
+      }),
+    );
+    const response = await handler(request("", { authorization: `Bearer ${bearer}` }));
+    assert.equal(response.status, 500);
+    const body = await response.json() as {
+      apiVersion: string;
+      error: { code: string; message: string; retryable: boolean; details?: unknown };
+    };
+    assert.equal(body.error.code, "internal_error");
+    // Not retryable: the store answers the same way next second, so a retry
+    // spends the caller's budget to be told the same thing.
+    assert.equal(body.error.retryable, false);
+    // The envelope is intact — a client that only knows how to parse this shape
+    // can still read its own failure.
+    assert.equal(body.apiVersion, "1.0");
+    // And the refusal names no field of a stored record: details on an error
+    // the caller cannot fix is a description of the server's disk.
+    assert.equal(body.error.details, undefined);
+    assert.equal(body.error.message.includes("updatedAt"), false);
+  });
+});
+
+test("a store that throws answers an envelope too", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    // listConversations swallows a readdir failure, but ensureDir above it does
+    // not, and neither does loadConfig on the roster route. The guard covers
+    // the read as well as the projection over it.
+    const handler = createClientV1ConversationsGetHandler(
+      runtime,
+      sources({
+        listConversations: async () => {
+          throw new Error("EACCES: permission denied, scandir '/home/me/.coven/cave/conversations'");
+        },
+      }),
+    );
+    const response = await handler(request("", { authorization: `Bearer ${bearer}` }));
+    assert.equal(response.status, 500);
+    const body = await response.json() as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "internal_error");
+    // The path the store named must not reach the wire.
+    assert.equal(body.error.message.includes("/home/me"), false);
+  });
+});
