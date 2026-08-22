@@ -157,19 +157,37 @@ test("valid scope returns only the active credential record", async () => {
   assert.equal(JSON.stringify(result).includes("valid-bearer"), false);
 });
 
-test("client-v1 ingress allowlists only the reviewed public and authenticated routes", () => {
+test("client-v1 ingress allowlists only the reviewed public routes", () => {
   const publicRoutes = [
     "/api/client/v1/health",
     "/api/client/v1/pairing/requests",
     "/api/client/v1/pairing/requests/request-1",
     "/api/client/v1/pairing/requests/request-1/exchange",
   ];
-  const authenticatedRoutes = [
+  for (const route of publicRoutes) {
+    assert.equal(clientV1IngressKind(route), CLIENT_V1_PUBLIC_INGRESS, route);
+  }
+  // Nothing is pre-authorized (cave-4841). A client-v1 ingress match makes
+  // proxy() skip the mobile access gate and return before the sidecar-token
+  // block, so it is only ever safe for a path whose own handler authenticates —
+  // and the Phase 2 paths below have no handler at all. Listing them ahead of
+  // time meant the first one to land would arrive already exempt. They classify
+  // null until their route.ts exists, which keeps them on the ordinary
+  // sidecar-token gate in the meantime.
+  for (const route of [
+    "/api/client/v1",
+    "/api/client/v1/admin",
+    "/api/client/v1/admin/credentials",
+    "/api/client/v1/admin/pairing-requests",
+    "/api/client/v1/private",
+    "/api/client/v10/health",
+    "/api/chat/conversation",
     "/api/client/v1/familiars",
     "/api/client/v1/projects",
     "/api/client/v1/conversations",
     "/api/client/v1/conversations/search",
     "/api/client/v1/conversations/conversation-1",
+    "/api/client/v1/conversations/conversation-1/messages",
     "/api/client/v1/messages/send",
     "/api/client/v1/attachments",
     "/api/client/v1/attachments/attachment-1",
@@ -180,22 +198,6 @@ test("client-v1 ingress allowlists only the reviewed public and authenticated ro
     "/api/client/v1/runs/run-1/retry",
     "/api/client/v1/attention/attention-1/respond",
     "/api/client/v1/github/actions",
-  ];
-  for (const route of publicRoutes) {
-    assert.equal(clientV1IngressKind(route), CLIENT_V1_PUBLIC_INGRESS, route);
-  }
-  for (const route of authenticatedRoutes) {
-    assert.equal(clientV1IngressKind(route), "authenticated", route);
-  }
-  for (const route of [
-    "/api/client/v1",
-    "/api/client/v1/admin",
-    "/api/client/v1/admin/credentials",
-    "/api/client/v1/admin/pairing-requests",
-    "/api/client/v1/private",
-    "/api/client/v1/conversations/conversation-1/messages",
-    "/api/client/v10/health",
-    "/api/chat/conversation",
   ]) {
     assert.equal(clientV1IngressKind(route), null, route);
   }
@@ -273,15 +275,19 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
 
     for (const route of [
       "/api/client/v1/pairing/requests",
-      "/api/client/v1/conversations",
+      "/api/client/v1/pairing/requests/request-1/exchange",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));
       assert.equal(passedThrough(response), true, `${route} returned ${response.status}`);
     }
 
+    // /api/client/v1/conversations sits with the private routes rather than the
+    // loopback-ingress ones: it has no handler, so it is not pre-authorized and
+    // a bare loopback caller gets the ordinary 401 (cave-4841).
     for (const route of [
       "/api/client/v1/admin/credentials",
       "/api/client/v1/private",
+      "/api/client/v1/conversations",
       "/api/chat/conversation",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));
@@ -413,11 +419,15 @@ test("client-v1 body-bearing ingress requires a known Content-Length", async () 
     }));
     await assertProxyError(chunked, 400, "invalid content-length");
 
-    const authenticatedMissing = await proxy(proxyRequest("/api/client/v1/conversations", {
-      method: "POST",
-      headers: baseHeaders,
-    }));
-    await assertProxyError(authenticatedMissing, 411, "content-length required");
+    // The rule is a property of client-v1 ingress, not of one route, so check a
+    // second ingress path. It has to be a path that classifies — since
+    // cave-4841 that is the reviewed public set, because nothing is
+    // pre-authorized ahead of its handler.
+    const exchangeMissing = await proxy(proxyRequest(
+      "/api/client/v1/pairing/requests/request-1/exchange",
+      { method: "POST", headers: baseHeaders },
+    ));
+    await assertProxyError(exchangeMissing, 411, "content-length required");
   } finally {
     restoreProxyEnv();
   }
@@ -519,7 +529,7 @@ test("client-v1 loopback bypass preserves host, origin, and content-type gates",
       COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
     });
 
-    const badHost = await proxy(proxyRequest("/api/client/v1/conversations", {
+    const badHost = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
       headers: {
         [LOCAL_PEER_HEADER]: "loopback-secret",
         host: "evil.example",
@@ -527,7 +537,7 @@ test("client-v1 loopback bypass preserves host, origin, and content-type gates",
     }));
     assert.equal(badHost.status, 403);
 
-    const badOrigin = await proxy(proxyRequest("/api/client/v1/conversations", {
+    const badOrigin = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
       headers: {
         [LOCAL_PEER_HEADER]: "loopback-secret",
         origin: "https://evil.example",
@@ -535,7 +545,7 @@ test("client-v1 loopback bypass preserves host, origin, and content-type gates",
     }));
     assert.equal(badOrigin.status, 403);
 
-    const badContentType = await proxy(proxyRequest("/api/client/v1/conversations", {
+    const badContentType = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
       method: "POST",
       headers: {
         [LOCAL_PEER_HEADER]: "loopback-secret",

@@ -15,6 +15,11 @@ import {
   projectConversationExecutionAttempts,
 } from "../../lib/server/familiar-execution-analytics-projection.ts";
 import { serializeExecutionAttemptLedgerRecord } from "../../lib/server/familiar-execution-analytics-store.ts";
+import {
+  CLIENT_V1_AUTHENTICATED_PATHS,
+  CLIENT_V1_PUBLIC_INGRESS,
+  clientV1IngressKind,
+} from "../../proxy-helpers.ts";
 
 const root = process.cwd();
 const apiRoot = path.join(root, "src", "app", "api");
@@ -464,6 +469,78 @@ assert.deepEqual(
   "Phase 1 must expose exactly the reviewed client-v1 bootstrap and admin routes",
 );
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
+
+// --- client-v1 proxy pre-authorization (cave-4841) -------------------------
+//
+// clientV1IngressKind classifies a request BEFORE proxy() reaches the
+// sidecar-token block, and a match makes proxy() return early: the mobile
+// access gate is skipped and no bearer is checked. Everything after that point
+// is the route's own responsibility. The two assertions below are the halves of
+// that bargain, checked against what is actually on disk rather than against a
+// list someone has to remember to prune.
+//
+// A concrete probe path per route, because the ingress classifier takes a
+// request pathname and the App Router directory speaks in [param] segments.
+// Any bracketed segment (including a [...catchAll]) stands in as one literal
+// segment, which is exactly what the single-segment [^/]+ patterns match.
+function clientV1ProbePath(route: string): string {
+  const segments = route
+    .slice(1)
+    .split("/")
+    .map((segment) => (segment.startsWith("[") ? "probe-segment" : segment));
+  return `/api/${segments.join("/")}`;
+}
+
+const clientV1Routes = routeFiles
+  .map((file) => ({ file, route: routeFromFile(file) }))
+  .filter(({ route }) => route.startsWith("/client/v1"));
+const clientV1ProbePaths = clientV1Routes.map(({ route }) => clientV1ProbePath(route));
+
+// Half one: the list may not pre-authorize a path that nothing serves. Before
+// cave-4841 it named thirteen Phase 2 paths and none of them had a route.ts, so
+// the first Phase 2 handler to land would have been exempted from the sidecar
+// token on the day it appeared — with its own requireScope call as the sole
+// remaining layer, and no test anywhere insisting that call exist. Adding the
+// entry is now part of adding the handler.
+for (const pattern of CLIENT_V1_AUTHENTICATED_PATHS) {
+  assert.ok(
+    clientV1ProbePaths.some((probe) => pattern.test(probe)),
+    `${pattern} pre-authorizes client-v1 ingress but no src/app/api/client/v1 route.ts matches it`,
+  );
+}
+
+// Half two: every client-v1 route that is not deliberately credential-free has
+// to enforce a credential in its own source. That holds whether or not the path
+// is pre-authorized above — the pre-authorization removes the sidecar token,
+// and this check is what makes removing it survivable. Classification is read
+// from the repo, not hardcoded: the admin family from the directory it lives
+// in, the credential-free bootstrap surface from clientV1IngressKind itself.
+// Growing the public set to dodge this check is not a quiet edit —
+// CLIENT_V1_PUBLIC_PATHS only matches a path the allow-list assertion above
+// already admits by name.
+for (const { file, route } of clientV1Routes) {
+  const source = effectiveRouteSource(file, readFileSync(file, "utf8"));
+  if (route === "/client/v1/admin" || route.startsWith("/client/v1/admin/")) {
+    // Admin routes never reach the client-v1 ingress branch at all
+    // (clientV1IngressKind returns null for them), so they keep the ordinary
+    // sidecar-token path and layer requireClientV1Admin on top. Different
+    // credential, same obligation to name one.
+    assert.match(
+      source,
+      /requireClientV1Admin\s*\(/,
+      `${route} must call requireClientV1Admin`,
+    );
+    continue;
+  }
+  if (clientV1IngressKind(clientV1ProbePath(route)) === CLIENT_V1_PUBLIC_INGRESS) {
+    continue;
+  }
+  assert.match(
+    source,
+    /requireScope\s*\(/,
+    `${route} is neither the admin family nor the reviewed credential-free bootstrap surface, so it must call requireScope`,
+  );
+}
 
 for (const contract of contracts) {
   const file = path.join(apiRoot, ...contract.route.slice(1).split("/"), "route.ts");
