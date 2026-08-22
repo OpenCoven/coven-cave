@@ -2085,7 +2085,10 @@ struct ChatView: View {
     }
 
     private func deleteMessage(_ message: DisplayMessage) {
-        thread.deleteMessage(message.id)
+        // `app.client` may be nil (not connected yet). The thread refuses the
+        // delete in that case if the message has a server copy, rather than
+        // removing it here and telling nobody.
+        thread.deleteMessage(message.id, client: app.client) { app.touch(thread) }
         app.touch(thread)
     }
 
