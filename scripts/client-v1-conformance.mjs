@@ -76,6 +76,15 @@ import { fileURLToPath } from "node:url";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "..");
 
+/**
+ * The `updatedAt` a mid-walk touch writes.
+ *
+ * Far in the future so it is unambiguously the newest row in the ledger by that
+ * field: under the old, mutable page key this value is exactly what lifted a
+ * touched row above an open cursor and lost it (cave-fhjlu).
+ */
+export const TOUCHED_AT = "2026-12-31T00:00:00.000Z";
+
 export const PAIRING_SECRET_HEADER = "x-coven-pairing-secret";
 export const ADMIN_TOKEN_HEADER = "x-coven-cave-token";
 export const CLIENT_V1_PREFIX = "/api/client/v1";
@@ -1980,6 +1989,19 @@ async function walkConversationsAcross(client, bearer, mutate) {
   const token0 = first.json?.cursor?.next ?? null;
   await mutate({ served: firstIds, cursorNames: firstIds[firstIds.length - 1] });
 
+  // Prove the mutation actually reached the server before asserting anything
+  // about how the walk survived it. listConversations caches a summary against
+  // the file's (mtime, ctime, size), so a rewrite that changed nothing else
+  // could be served from cache — and every case below would then pass for the
+  // wrong reason, which is the exact "green against a broken server" failure
+  // this harness exists to avoid. The probe is a separate read at limit 100; it
+  // does not consume the open cursor, because a page is a pure function of
+  // (set, cursor, limit).
+  const probe = await client.read("/conversations?limit=100", bearer);
+  const observed = new Map(
+    (probe.json?.data?.conversations ?? []).map((row) => [row.id, row]),
+  );
+
   const remainder = [];
   let status = first.status;
   let token = token0;
@@ -1993,7 +2015,27 @@ async function walkConversationsAcross(client, bearer, mutate) {
     remainder.push(...(resumed.json?.data?.conversations ?? []).map((row) => row.id));
     token = resumed.json?.cursor?.next ?? null;
   }
-  return { firstIds, remainder, served: [...firstIds, ...remainder], status, opened: token0 !== null };
+  return {
+    firstIds,
+    remainder,
+    served: [...firstIds, ...remainder],
+    status,
+    opened: token0 !== null,
+    observed,
+  };
+}
+
+/** The mutation has to be visible to the server, or the walk survived nothing. */
+function checkTouchLanded(walk, sessionId) {
+  const row = walk.observed.get(sessionId);
+  if (!row) return [`${sessionId} was not in the ledger after the touch, so nothing was touched`];
+  if (row.updatedAt !== TOUCHED_AT) {
+    return [
+      `${sessionId} still reads updatedAt ${JSON.stringify(row.updatedAt)} after the touch — the` +
+      " ledger did not move, so this walk proves nothing",
+    ];
+  }
+  return [];
 }
 
 /**
@@ -2109,49 +2151,64 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   // assertion rather than a loop because each fails for a different reason and a
   // reader of the record has to be able to tell which.
   const byId = new Map(conversations.map((conversation) => [conversation.sessionId, conversation]));
+  // The touch lengthens a WITHHELD field as well as raising updatedAt. Both
+  // timestamps are the same width, so a rewrite that only moved updatedAt left
+  // the file's size unchanged and could be answered from listConversations'
+  // (mtime, ctime, size) cache within the same millisecond. Changing the size
+  // makes the cache miss deterministic; checkTouchLanded still verifies it.
   const touch = (sessionId) =>
-    writeConversation(caveHomeDir, { ...byId.get(sessionId), updatedAt: "2026-12-31T00:00:00.000Z" });
+    writeConversation(caveHomeDir, {
+      ...byId.get(sessionId),
+      harnessSessionId: `${byId.get(sessionId).harnessSessionId}-touched-mid-walk`,
+      updatedAt: TOUCHED_AT,
+    });
 
   // 1. A row the walk has NOT reached. This is the case that lost data.
+  let touchedUnserved = null;
   const unserved = await walkConversationsAcross(client, bearer, async ({ served }) => {
-    await touch(expectedIds.filter((id) => !served.includes(id)).at(-1));
+    touchedUnserved = expectedIds.filter((id) => !served.includes(id)).at(-1);
+    await touch(touchedUnserved);
   });
   recorder.expect(
     "reads.conversations-touch-unserved-row-is-still-served",
     unserved.opened
-      ? checkConversationWalk(unserved, expectedIds)
+      ? [...checkTouchLanded(unserved, touchedUnserved), ...checkConversationWalk(unserved, expectedIds)]
       : ["the ledger did not page at limit 2, so no cursor was open across the touch"],
-    `touched the last unserved row; the whole walk served [${unserved.served}]`,
+    `touched the unserved ${touchedUnserved}; the whole walk served [${unserved.served}]`,
   );
   await restore();
 
   // 2. A row the walk has ALREADY served. Under the old key this one was
   //    harmless — it moved above a cursor it was already above — but a key that
   //    moved the other way would repeat it, and only a whole-walk check sees it.
+  let touchedServed = null;
   const served = await walkConversationsAcross(client, bearer, async (state) => {
-    await touch(state.served[0]);
+    touchedServed = state.served[0];
+    await touch(touchedServed);
   });
   recorder.expect(
     "reads.conversations-touch-served-row-is-not-repeated",
     served.opened
-      ? checkConversationWalk(served, expectedIds)
+      ? [...checkTouchLanded(served, touchedServed), ...checkConversationWalk(served, expectedIds)]
       : ["the ledger did not page at limit 2, so no cursor was open across the touch"],
-    `touched the first row already served; the whole walk served [${served.served}]`,
+    `touched the already-served ${touchedServed}; the whole walk served [${served.served}]`,
   );
   await restore();
 
   // 3. The row the open cursor NAMES. The token carries that row's sort key, so
   //    if the key can move, the cursor is left pointing at a position the
   //    ordering no longer has.
+  let touchedAtCursor = null;
   const atCursor = await walkConversationsAcross(client, bearer, async ({ cursorNames }) => {
-    await touch(cursorNames);
+    touchedAtCursor = cursorNames;
+    await touch(touchedAtCursor);
   });
   recorder.expect(
     "reads.conversations-touch-cursor-row-keeps-the-position",
     atCursor.opened
-      ? checkConversationWalk(atCursor, expectedIds)
+      ? [...checkTouchLanded(atCursor, touchedAtCursor), ...checkConversationWalk(atCursor, expectedIds)]
       : ["the ledger did not page at limit 2, so no cursor was open across the touch"],
-    `touched the row the cursor names; the whole walk served [${atCursor.served}]`,
+    `touched ${touchedAtCursor}, the row the cursor names; the whole walk served [${atCursor.served}]`,
   );
   await restore();
 
@@ -2170,7 +2227,12 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   recorder.expect(
     "reads.conversations-row-created-mid-walk-is-not-served",
     created.opened
-      ? checkConversationWalk(created, expectedIds)
+      ? [
+          ...(created.observed.has("conversation-new")
+            ? []
+            : ["conversation-new never reached the ledger, so nothing was inserted mid-walk"]),
+          ...checkConversationWalk(created, expectedIds),
+        ]
       : ["the ledger did not page at limit 2, so no cursor was open across the insert"],
     "a row created above the cursor is left for the next read from the top",
   );
@@ -2188,7 +2250,12 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   recorder.expect(
     "reads.conversations-row-deleted-mid-walk-does-not-strand",
     deleted.opened
-      ? checkConversationWalk(deleted, expectedIds.filter((id) => id !== deletedId))
+      ? [
+          ...(deleted.observed.has(deletedId)
+            ? [`${deletedId} was still in the ledger after the deletion, so nothing was deleted`]
+            : []),
+          ...checkConversationWalk(deleted, expectedIds.filter((id) => id !== deletedId)),
+        ]
       : ["the ledger did not page at limit 2, so no cursor was open across the deletion"],
     `deleted the unserved ${deletedId}; the whole walk served [${deleted.served}]`,
   );
