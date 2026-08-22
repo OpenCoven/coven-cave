@@ -251,9 +251,30 @@ export type ResearchPromptRecommendation = {
   brief: ResearchBrief;
 };
 
-/** Trim a mission title down to something that reads as a prompt subject. */
+/**
+ * Recover the reusable question behind a mission title.
+ *
+ * Generated mission titles are capped at 80 characters, but the mission still
+ * carries the full intent. Prefer that intent when the title matches the
+ * generated form, then remove research-wrapper copy so a recommendation does
+ * not load a truncated title or nest prompt instructions into the composer.
+ * Explicitly named missions keep their title.
+ */
 function subject(mission: ResearchMission): string {
-  return mission.title.replace(/\s+/g, " ").trim();
+  const intent = mission.intent.replace(/\s+/g, " ").trim();
+  const generatedTitle = intent.length <= 80 ? intent : `${intent.slice(0, 77)}…`;
+  let value = mission.title.replace(/\s+/g, " ").trim() === generatedTitle
+    ? intent
+    : mission.title.replace(/\s+/g, " ").trim();
+  value = value.replace(
+    /^research(?:\s+(?:and\s+compare|prompt|brief|mission|task))?\s*[:\-–—]\s*/i,
+    "",
+  );
+  const instructionTail = value.search(
+    /[.!?]\s+(?:primary\s+questions?|questions?|task|recommend|compare|focus)\b/i,
+  );
+  if (instructionTail !== -1) value = value.slice(0, instructionTail);
+  return value.replace(/[\s.…:;,–—-]+$/u, "");
 }
 
 /**
