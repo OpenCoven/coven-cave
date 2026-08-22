@@ -395,7 +395,7 @@ export function MobileHandoffModal({
                 : enablingAvailability
                   ? "Enabling…"
                   : loading
-                    ? "Starting..."
+                    ? "Starting…"
                     : availabilityGate === "needs-consent"
                       ? "Choose availability"
                       : "No QR"}

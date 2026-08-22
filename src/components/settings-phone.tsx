@@ -825,24 +825,37 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
     };
   }, []);
 
-  const onMobileModeChange = async (enabled: boolean) => {
-    if (enabled && pairingAvailabilityGate !== "ready") {
-      setMobileModeEnablePending(true);
-      announce("Choose how Cave stays available before showing a pairing code.", "polite");
-      return;
-    }
-    setMobileModeEnablePending(false);
-    writeMobileModeEnabled(enabled);
-    const result = await reconcileMobileMode(enabled, { busy: true, force: true });
-    announce(
-      enabled
-        ? result.ok
-          ? "Mobile mode on."
-          : "Mobile mode on; pairing needs attention."
-        : "Mobile mode off.",
-      result.ok ? "polite" : "assertive",
-    );
-  };
+  const onMobileModeChange = useCallback(
+    async (enabled: boolean) => {
+      if (enabled && pairingAvailabilityGate !== "ready") {
+        setMobileModeEnablePending(true);
+        announce("Choose how Cave stays available before showing a pairing code.", "polite");
+        return;
+      }
+      setMobileModeEnablePending(false);
+      writeMobileModeEnabled(enabled);
+      const result = await reconcileMobileMode(enabled, { busy: true, force: true });
+      announce(
+        enabled
+          ? result.ok
+            ? "Mobile mode on."
+            : "Mobile mode on; pairing needs attention."
+          : "Mobile mode off.",
+        result.ok ? "polite" : "assertive",
+      );
+    },
+    [pairingAvailabilityGate, reconcileMobileMode],
+  );
+
+  useEffect(() => {
+    if (!mobileModeEnablePending || pairingAvailabilityGate !== "ready" || mobileModeEnabled) return;
+    void onMobileModeChange(true);
+  }, [
+    mobileModeEnablePending,
+    mobileModeEnabled,
+    onMobileModeChange,
+    pairingAvailabilityGate,
+  ]);
 
   const enablePairingAvailability = async () => {
     if (!pairingReachability || busy) return;

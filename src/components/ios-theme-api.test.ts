@@ -23,11 +23,15 @@ assert.match(appModel, /var chrome:\s*ChromePalette = \.fallback/, "AppModel own
 assert.match(appModel, /func loadTheme\(\) async[\s\S]*client\.fetchTheme\(\)[\s\S]*adopt\(snapshot\)/, "AppModel fetches and adopts the desktop palette");
 // Project-context bootstrap keeps theme/profile best-effort while the required
 // project scope loads through the same core-resource entry point.
-assert.match(appModel, /connectionState = \.connected[\s\S]*await (?:loadCoreResources|refreshLoadedSurfaces)\(\)/, "AppModel loads core resources after connecting");
 assert.match(
   appModel,
-  /func loadCoreResources\([\s\S]*async let theme = Result\.capturing \{ try await client\.fetchTheme\(\) \}[\s\S]*await loadProjectContext\(using: client[\s\S]*if case \.success\(let snapshot\) = await theme \{ adopt\(snapshot\) \}/,
-  "core-resource bootstrap adopts the theme snapshot alongside project context",
+  /let shouldGateShell = !hasLoadedSurfaces[\s\S]*await (?:loadCoreResources|refreshLoadedSurfaces)\([\s\S]*connectionState = \.connected/,
+  "AppModel gates the connected state on its initial core-resource load",
+);
+assert.match(
+  appModel,
+  /func loadCoreResources\([\s\S]*async let theme = Result\.capturing \{ try await client\.fetchTheme\(\) \}[\s\S]*await loadProjectContext\(using: client[\s\S]*if case \.success\(let snapshot\) = await theme,[\s\S]*connectionConfigurationLeaseIsCurrent\(configurationGeneration\)[\s\S]*adopt\(snapshot\)/,
+  "core-resource bootstrap adopts the theme snapshot alongside project context while its connection lease remains current",
 );
 assert.match(appModel, /private func adopt\(_ snapshot: ThemeSnapshot\)[\s\S]*ChromePalette\(snapshot: snapshot\)/, "adopt maps the snapshot into the chrome palette");
 

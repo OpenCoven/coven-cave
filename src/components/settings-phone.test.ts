@@ -81,6 +81,16 @@ test("Phone preserves production pairing and settings behavior", () => {
   assert.match(component, /reconcileMobileModeRequest/);
   assert.match(
     component,
+    /const onMobileModeChange = useCallback\(\s*async \(enabled: boolean\) =>/,
+    "the mode transition is stable enough to drive readiness effects",
+  );
+  assert.match(
+    component,
+    /if \(!mobileModeEnablePending \|\| pairingAvailabilityGate !== "ready" \|\| mobileModeEnabled\) return;[\s\S]*void onMobileModeChange\(true\)/,
+    "a pending enable completes automatically when availability becomes ready",
+  );
+  assert.match(
+    component,
     /reconcileMobileMode\(true, \{ busy: true, force: true \}\)/,
   );
   assert.match(
