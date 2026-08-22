@@ -743,7 +743,18 @@ final class ChatThread: Identifiable, Hashable {
             // would leave the bubble gone here and the turn alive there — a
             // silent local-only delete, which is the bug this whole path
             // exists to end, not a success.
-            return .unresolved("the desktop's copy of this chat has changed; refresh and try again")
+            //
+            // "Refresh and try again" is real advice in a DIRECT chat and only
+            // there: pull-to-refresh calls `reload`, the transcript comes back
+            // from the server with a `serverTurnId` on every message, and the
+            // next swipe deletes by name without the matcher at all. `reload`
+            // opens with `guard !isGroup`, so a group has no such route — the
+            // gesture is a no-op and the sentence would be sending someone to
+            // pull at a list that cannot change. Say what is true instead.
+            return .unresolved(
+                isGroup
+                    ? "the desktop's copy of this chat has changed and a group chat can't be refreshed to catch up"
+                    : "the desktop's copy of this chat has changed; refresh and try again")
         }
     }
 
@@ -836,6 +847,16 @@ final class ChatThread: Identifiable, Hashable {
     /// only guard that catches a fan-out that reached some familiars and not
     /// others — that session's turns are shifted, the walk disagrees, and the
     /// delete is refused rather than aimed at whatever sits at the ordinal.
+    ///
+    /// One sentence above does NOT survive the move, and it is the one about
+    /// the price of refusing. A direct chat pays a swipe: refreshing reloads
+    /// the transcript, every message comes back named, and the retry needs no
+    /// matching. `reload` refuses groups, so a group has no way to re-acquire
+    /// those ids — a session whose turns are shifted stays shifted, and every
+    /// later delete in the thread is refused for as long as the thread lives.
+    /// That is still the right side to err on (the alternative is deleting a
+    /// stranger's turn) but it is a standing cost, not a swipe, and the
+    /// refusal says so rather than promising a refresh that does nothing.
     nonisolated private static func turnMatch(for message: DisplayMessage,
                                               following preceding: [DisplayMessage],
                                               in turns: [ChatTurn]) -> ServerTurnMatch {

@@ -212,6 +212,17 @@ assert.match(
   /let sessionId = sessionIds\[familiarId\], !sessionId\.isEmpty else \{ return nil \}/,
   "a familiar with no server session must not attempt a server call",
 );
+// The message and the messages before it must be projected into the SAME
+// session. Projecting the message into one familiar's session while counting
+// the ordinal in another's names a turn in a transcript nobody checked — and
+// for a reply, whose holder is a single familiar, it silently drops the only
+// session that had it and the delete never reaches the server at all.
+assert.match(
+  target,
+  /guard let projected = Self\.sessionTurn\(message, in: familiarId, isGroup: group\) else \{/,
+  "the message must be projected into the session whose ordinal is about to be counted, " +
+    "not into some other familiar's",
+);
 assert.match(
   target,
   /let preceding = messages\[\.\.<index\]\.compactMap \{\s*\n\s*Self\.sessionTurn\(\$0, in: familiarId, isGroup: group\)\s*\n\s*\}/,
@@ -418,9 +429,26 @@ assert.match(
 );
 assert.match(
   resolve,
-  /case \.ambiguous:[\s\S]*?return \.unresolved\("[^"]+"\)/,
+  /case \.ambiguous:[\s\S]*?return \.unresolved\(\s*\n?\s*isGroup/,
   "a transcript that DISAGREES says nothing about where this message is — keeping the " +
     "removal there is a silent local-only delete, which is the bug being fixed",
+);
+// "Refresh and try again" is only advice a DIRECT chat can act on. `reload`
+// opens with `guard !isGroup`, so pull-to-refresh is a no-op for a group and
+// the transcript can never re-acquire the server turn ids that would let the
+// retry skip the matcher. Telling a group's user to refresh is sending them to
+// pull at a list that cannot change.
+assert.match(
+  resolve,
+  /\?\s*"the desktop's copy of this chat has changed and a group chat can't be refreshed to catch up"\s*\n\s*:\s*"the desktop's copy of this chat has changed; refresh and try again"\)/,
+  "only a direct chat may be told to refresh — `reload` refuses groups, so that advice " +
+    "cannot work there and the refusal must say something true instead",
+);
+assert.match(
+  thread,
+  /func reload\(client: CaveClient\) async throws \{\s*\n\s*guard !isGroup/,
+  "the assertion above is only worth anything while `reload` really does refuse groups — " +
+    "if that changes, the refusal copy should change with it",
 );
 
 // -- A partial group delete is stated, never undone and never hidden --------
@@ -448,6 +476,12 @@ assert.match(
   /familiarNames\[\$0\.familiarId\] \?\? \$0\.familiarId/,
   "the report must name the chats the message survived in, by display name where the view " +
     "knows one and by familiar id when it does not",
+);
+assert.match(
+  partial,
+  /onChange\(\)/,
+  "the note is the ONLY record a partial delete leaves — unpersisted it is gone at the next " +
+    "launch, which is the silent local-only delete again with an extra step",
 );
 
 const matcher = blockAfter(thread, "nonisolated private static func turnMatch(for message: DisplayMessage,");
