@@ -8,6 +8,7 @@ import {
   createClientV1Authenticator,
   type ClientV1AuthResult,
 } from "./auth.ts";
+import { CLIENT_V1_PUBLIC_ROUTES } from "./contract.ts";
 import type {
   ClientV1CredentialRecord,
   CredentialStore,
@@ -157,6 +158,18 @@ test("valid scope returns only the active credential record", async () => {
   assert.equal(JSON.stringify(result).includes("valid-bearer"), false);
 });
 
+/**
+ * The contract's public routes as request pathnames: `:id` templates filled in,
+ * and the GET/POST pair on one path collapsed, because ingress classification
+ * is method-blind.
+ */
+function contractPublicPaths(): string[] {
+  const paths = CLIENT_V1_PUBLIC_ROUTES.map((route) =>
+    route.path.replace(/:[A-Za-z0-9_]+/g, "request-1"),
+  );
+  return paths.filter((path, index) => paths.indexOf(path) === index);
+}
+
 test("client-v1 ingress allowlists only the reviewed public and authenticated routes", () => {
   const publicRoutes = [
     "/api/client/v1/health",
@@ -181,6 +194,10 @@ test("client-v1 ingress allowlists only the reviewed public and authenticated ro
     "/api/client/v1/attention/attention-1/respond",
     "/api/client/v1/github/actions",
   ];
+  // Pinned to the contract so this literal cannot drift into a stale
+  // restatement of it. Written out rather than derived because a list that
+  // derives its own expectation asserts nothing about the proxy.
+  assert.deepEqual(publicRoutes, contractPublicPaths());
   for (const route of publicRoutes) {
     assert.equal(clientV1IngressKind(route), CLIENT_V1_PUBLIC_INGRESS, route);
   }
@@ -201,6 +218,23 @@ test("client-v1 ingress allowlists only the reviewed public and authenticated ro
   }
 });
 
+test("proxy public ingress follows the contract's public routes", () => {
+  // The list above states the reviewed set; this states where it comes from.
+  // CLIENT_V1_PUBLIC_ROUTES is what the discovery fixture advertises, so a
+  // route the contract publishes and the proxy does not classify is a route
+  // clients are told to call and the proxy answers with 403 — a divergence no
+  // suite could see while the proxy restated the set by hand (cave-d1sjz).
+  for (const path of contractPublicPaths()) {
+    assert.equal(clientV1IngressKind(path), CLIENT_V1_PUBLIC_INGRESS, path);
+  }
+  // Public ingress skips the credential the resource paths must present, so it
+  // may not reach further than the contract does either.
+  assert.equal(
+    contractPublicPaths().some((path) => path.startsWith("/api/client/v1/admin")),
+    false,
+  );
+});
+
 const ENV_KEYS = [
   "COVEN_CAVE_ACCESS_TOKEN",
   "COVEN_CAVE_AUTH_TOKEN",
@@ -213,6 +247,10 @@ const ENV_KEYS = [
 ] as const;
 const ORIGINAL_ENV = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
 const ORIGIN = "http://localhost:3000";
+// Shaped like an issued credential (32 random bytes, base64url) so the proxy's
+// syntactic check is exercised against the real thing. It matches no stored
+// credential — the proxy never looks one up, which is the point.
+const PRESENTED_BEARER = "a".repeat(43);
 
 function setProxyEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string>>): void {
   for (const key of ENV_KEYS) delete process.env[key];
@@ -273,11 +311,18 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
 
     for (const route of [
       "/api/client/v1/pairing/requests",
-      "/api/client/v1/conversations",
+      "/api/client/v1/pairing/requests/request-1/exchange",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));
       assert.equal(passedThrough(response), true, `${route} returned ${response.status}`);
     }
+
+    // Resource ingress reaches the same pass-through, but only behind a
+    // presented credential — see the bearer test below for the refusals.
+    const resource = await proxy(proxyRequest("/api/client/v1/conversations", {
+      headers: { ...headers, authorization: `Bearer ${PRESENTED_BEARER}` },
+    }));
+    assert.equal(passedThrough(resource), true, `conversations returned ${resource.status}`);
 
     for (const route of [
       "/api/client/v1/admin/credentials",
@@ -287,6 +332,60 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
       const response = await proxy(proxyRequest(route, { headers }));
       assert.equal(passedThrough(response), false, route);
       assert.equal(response.status, 401, route);
+    }
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("client-v1 resource ingress refuses a request that presents no bearer", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_AUTH_TOKEN: "configured-sidecar-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const headers = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
+
+    // Resource ingress skips the sidecar token, so without this the only thing
+    // between a loopback process and the handler is the handler's own
+    // requireScope call.
+    for (const route of [
+      "/api/client/v1/conversations",
+      "/api/client/v1/messages/send",
+      "/api/client/v1/runs/run-1/stream",
+      "/api/client/v1/github/actions",
+    ]) {
+      await assertProxyError(
+        await proxy(proxyRequest(route, { headers })),
+        401,
+        "unauthorized",
+      );
+    }
+
+    for (const authorization of [
+      PRESENTED_BEARER,
+      `Basic ${PRESENTED_BEARER}`,
+      "Bearer",
+      "Bearer ",
+      "Bearer two words",
+      `Bearer ${PRESENTED_BEARER}!`,
+    ]) {
+      const response = await proxy(proxyRequest("/api/client/v1/conversations", {
+        headers: { ...headers, authorization },
+      }));
+      assert.equal(response.status, 401, authorization);
+      assert.deepEqual(await response.json(), { ok: false, error: "unauthorized" });
+    }
+
+    // The public set stays credential-free: pairing is how a client gets one.
+    for (const path of contractPublicPaths()) {
+      const response = await proxy(proxyRequest(path, { headers }));
+      assert.equal(passedThrough(response), true, `${path} returned ${response.status}`);
     }
   } finally {
     restoreProxyEnv();
