@@ -175,3 +175,32 @@ test("admin inspection lists pending requests and returns decision metadata with
   assert.equal(store.get(approved.id)?.status, "approved");
   assert.equal(JSON.stringify(store.listPending()).includes(pending.secret), false);
 });
+
+test("restoreConsumed returns a spent approval to exchangeable exactly once", () => {
+  let now = 90_000;
+  const store = createPairingStore({ now: () => now });
+  const issued = store.create(pairingInput);
+  now += 10;
+  assert.equal(store.decide(issued.id, "approved", now), true);
+  assert.equal(store.consumeForExchange(issued.id, issued.secret).kind, "approved");
+  assert.equal(store.consumeForExchange(issued.id, issued.secret).kind, "consumed");
+
+  // The exchange route consumes before it issues, so that a failed issue does
+  // not cost the user a fresh request and a second administrator approval.
+  assert.equal(store.restoreConsumed(issued.id), true);
+  assert.equal(store.get(issued.id)?.status, "approved");
+  assert.equal(store.consumeForExchange(issued.id, issued.secret).kind, "approved");
+
+  // Nothing to restore is not the same as restoring nothing: a live record, an
+  // unknown id, and an expired one all refuse rather than manufacture state.
+  const live = store.create({
+    ...pairingInput,
+    installationId: "9e8b1b3e-9c1a-4f0a-8b1a-0c1d2e3f4a60",
+  });
+  assert.equal(store.restoreConsumed(live.id), false);
+  assert.equal(store.restoreConsumed("00000000-0000-4000-8000-000000000000"), false);
+
+  now = issued.expiresAt + 1;
+  assert.equal(store.restoreConsumed(issued.id), false);
+  assert.equal(store.get(issued.id), null);
+});

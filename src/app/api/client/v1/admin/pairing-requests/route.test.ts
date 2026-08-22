@@ -46,12 +46,14 @@ test("lists pending pairing metadata without any secret material", async () => {
       }),
     );
     const payload = await response.json() as {
-      ok: boolean;
-      pairingRequests: unknown[];
+      apiVersion: string;
+      data: { pairingRequests: unknown[] };
     };
     assert.equal(response.status, 200);
-    assert.equal(payload.ok, true);
-    assert.deepEqual(payload.pairingRequests, [{
+    // The shared Client v1 envelope, the same one this route's auth failures
+    // already answered in — one endpoint, one parser.
+    assert.equal(typeof payload.apiVersion, "string");
+    assert.deepEqual(payload.data.pairingRequests, [{
       id: pending.id,
       appName: "OpenCoven Chat",
       installationId: "chat-install-pending",

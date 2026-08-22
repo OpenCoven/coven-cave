@@ -59,13 +59,15 @@ test("approves or denies only explicit pending pairing decisions", async () => {
         context(issued.id),
       );
       const payload = await response.json() as {
-        ok: boolean;
-        pairingRequest: { status: string; decidedAt: number };
+        apiVersion: string;
+        data: { pairingRequest: { status: string; decidedAt: number } };
       };
       assert.equal(response.status, 200);
-      assert.equal(payload.ok, true);
-      assert.equal(payload.pairingRequest.status, decision);
-      assert.equal(payload.pairingRequest.decidedAt, now);
+      // The shared Client v1 envelope, the same one this route's auth failures
+      // already answered in — one endpoint, one parser.
+      assert.equal(typeof payload.apiVersion, "string");
+      assert.equal(payload.data.pairingRequest.status, decision);
+      assert.equal(payload.data.pairingRequest.decidedAt, now);
       assert.equal(JSON.stringify(payload).includes(issued.secret), false);
     }
   } finally {
@@ -98,10 +100,8 @@ test("rejects malformed, implicit, and missing decisions", async () => {
     ]) {
       const response = await handler(request(body), context(issued.id));
       assert.equal(response.status, 400);
-      assert.deepEqual(await response.json(), {
-        ok: false,
-        error: "invalid pairing decision",
-      });
+      const payload = await response.json() as { error: { code: string } };
+      assert.equal(payload.error.code, "invalid_request");
     }
 
     const missing = await handler(
@@ -109,10 +109,24 @@ test("rejects malformed, implicit, and missing decisions", async () => {
       context("00000000-0000-4000-8000-000000000000"),
     );
     assert.equal(missing.status, 404);
-    assert.deepEqual(await missing.json(), {
-      ok: false,
-      error: "pairing request not found",
-    });
+    assert.equal(
+      ((await missing.json()) as { error: { code: string } }).error.code,
+      "not_found",
+    );
+
+    // A pairing that has already been decided is a conflict, in the same
+    // envelope rather than a bare { ok: false } beside it.
+    assert.equal(runtime.pairingStore.decide(issued.id, "approved", 3_000), true);
+    const alreadyDecided = await handler(
+      request(JSON.stringify({ decision: "denied" })),
+      context(issued.id),
+    );
+    assert.equal(alreadyDecided.status, 409);
+    const conflict = await alreadyDecided.json() as {
+      error: { code: string; details?: { reason?: string } };
+    };
+    assert.equal(conflict.error.code, "conflict");
+    assert.equal(conflict.error.details?.reason, "pairing_already_decided");
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
     await rm(root, { recursive: true, force: true });

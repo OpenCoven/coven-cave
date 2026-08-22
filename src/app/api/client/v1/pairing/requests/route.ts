@@ -20,6 +20,15 @@ export function createPairingRequestPostHandler(runtime: ClientV1Runtime) {
     if (!runtime.authenticator.isTrustedLoopback(loopbackStamp)) {
       return clientV1ErrorResponse("unauthorized", "Unauthorized.");
     }
+    // Creation is bounded process-wide, on purpose. The loopback stamp is one
+    // constant for the process lifetime, so this is a single bucket shared by
+    // every local caller — and that is what the limit is for: each accepted
+    // request occupies a slot in a fixed-size pairing store, so the thing worth
+    // bounding is the total rate of creation, not any one caller's share.
+    // Every candidate key inside the request would be caller-chosen
+    // (installationId, appName) and so trivially varied to escape the bound.
+    // The exchange route does NOT share this bucket — it polls, so it is
+    // limited per pairing request and only on a failed secret.
     const limit = runtime.rateLimiter.consumePairingCreate(loopbackStamp!);
     if (!limit.allowed) return clientV1RateLimitResponse(limit);
 

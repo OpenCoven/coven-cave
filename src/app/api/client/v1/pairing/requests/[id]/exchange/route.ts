@@ -28,8 +28,6 @@ export function createPairingExchangePostHandler(runtime: ClientV1Runtime) {
     if (!runtime.authenticator.isTrustedLoopback(loopbackStamp)) {
       return clientV1ErrorResponse("unauthorized", "Unauthorized.");
     }
-    const limit = runtime.rateLimiter.consumePairingCreate(loopbackStamp!);
-    if (!limit.allowed) return clientV1RateLimitResponse(limit);
 
     let id: string;
     let secret: string;
@@ -42,11 +40,27 @@ export function createPairingExchangePostHandler(runtime: ClientV1Runtime) {
       return clientV1ErrorResponse("unauthorized", "Unauthorized.");
     }
 
+    // The exchange is polled: `pairing_pending` is retryable, and a client
+    // waiting on an administrator decision asks again every couple of seconds
+    // until its 5-minute pairing TTL runs out. So the budget here is spent
+    // only by a WRONG secret, and it is keyed by pairing request id rather
+    // than by caller — that bounds brute force against this pairing's secret
+    // without ever charging the legitimate holder for waiting, and without one
+    // client's failures blocking another's exchange. Read the budget before
+    // comparing secrets, or a limit charged after the fact would bound
+    // nothing.
+    const limit = runtime.rateLimiter.peekPairingExchangeFailure(id);
+    if (!limit.allowed) return clientV1RateLimitResponse(limit);
+
     const result = runtime.pairingStore.consumeForExchange(id, secret);
     switch (result.kind) {
       case "secret_mismatch":
+        runtime.rateLimiter.consumePairingExchangeFailure(id);
         return clientV1ErrorResponse("unauthorized", "Unauthorized.");
       case "not_found":
+        // Not charged: the store answers `not_found` only when no record and
+        // no terminal record carries this id, so there is no secret to guess
+        // here, and charging would create one bucket per guessed id.
         return clientV1ErrorResponse("not_found", "Pairing request not found.");
       case "pending":
         return clientV1ErrorResponse("pairing_pending", "Pairing request is pending.", {
@@ -61,7 +75,23 @@ export function createPairingExchangePostHandler(runtime: ClientV1Runtime) {
           details: { reason: "pairing_replayed" },
         });
       case "approved": {
-        const issued = await runtime.credentialStore.issue(result.pairing);
+        // The pairing is already consumed at this point, which is what makes
+        // two concurrent exchanges unable to both issue against one approval.
+        // Issuing writes to disk and can fail for ordinary reasons, so put the
+        // pairing back when it does: without this the client is left holding a
+        // spent request that answers `pairing_replayed` forever, recoverable
+        // only through a fresh request and a second administrator approval.
+        let issued;
+        try {
+          issued = await runtime.credentialStore.issue(result.pairing);
+        } catch {
+          runtime.pairingStore.restoreConsumed(id);
+          return clientV1ErrorResponse(
+            "internal_error",
+            "Failed to issue the client credential.",
+            { retryable: true },
+          );
+        }
         return clientV1SuccessResponse({
           bearer: issued.bearer,
           credential: clientV1CredentialMetadata(issued.credential),

@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import {
   CLIENT_V1_CREDENTIAL_STORE_FILE,
@@ -34,6 +34,29 @@ async function withCredentialRoot(
   }
 }
 
+/**
+ * Assert an owner-only POSIX mode where the platform actually enforces one.
+ *
+ * Windows does not implement POSIX permission bits: `stat` reports 0o666 for
+ * every regular file and 0o777 for every directory whatever mode `mkdir`/`open`
+ * was given, so asserting 0o600/0o700 there measures the platform rather than
+ * the store. Same treatment as the symlink guards below — skip only the
+ * assertion the platform cannot answer, keeping every other assertion in the
+ * test live everywhere and the mode contract unweakened on POSIX.
+ */
+function assertOwnerOnlyMode(
+  t: TestContext,
+  mode: number,
+  expected: number,
+  what: string,
+): void {
+  if (process.platform === "win32") {
+    t.diagnostic(`skipped ${what} mode assertion: POSIX permission bits are not enforced on win32`);
+    return;
+  }
+  assert.equal(mode & 0o777, expected, what);
+}
+
 function isUnsupportedSymlinkError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return code === "ENOSYS"
@@ -42,14 +65,14 @@ function isUnsupportedSymlinkError(error: unknown): boolean {
     || (process.platform === "win32" && (code === "EPERM" || code === "EACCES"));
 }
 
-test("first operation creates a private configured root", async () => {
+test("first operation creates a private configured root", async (t) => {
   const parent = await mkdtemp(join(tmpdir(), "cave-client-v1-root-parent-"));
   const root = join(parent, "credentials");
   try {
     await createCredentialStore({ root }).reload();
     const metadata = await stat(root);
     assert.equal(metadata.isDirectory(), true);
-    assert.equal(metadata.mode & 0o777, 0o700);
+    assertOwnerOnlyMode(t, metadata.mode, 0o700, "credential store root");
   } finally {
     await rm(parent, { recursive: true, force: true });
   }
@@ -80,7 +103,7 @@ test("credential file symlinks are rejected instead of followed", async (t) => {
   });
 });
 
-test("issued bearers are high-entropy URL-safe values and never persist raw", async () => {
+test("issued bearers are high-entropy URL-safe values and never persist raw", async (t) => {
   await withCredentialRoot(async (root) => {
     const store = createCredentialStore({ root, now: () => 1_000 });
     const issued = await store.issue(credentialInput);
@@ -95,7 +118,7 @@ test("issued bearers are high-entropy URL-safe values and never persist raw", as
     assert.notEqual(parsed.credentials[0].bearerHash, issued.bearer);
 
     const file = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
-    assert.equal((await stat(file)).mode & 0o777, 0o600);
+    assertOwnerOnlyMode(t, (await stat(file)).mode, 0o600, "credential store file");
     assert.deepEqual(await readdir(root), [CLIENT_V1_CREDENTIAL_STORE_FILE]);
   });
 });

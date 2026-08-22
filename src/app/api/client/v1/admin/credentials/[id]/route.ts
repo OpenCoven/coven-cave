@@ -1,6 +1,10 @@
 import { clientV1CredentialMetadata } from "@/lib/server/client-v1/credential-store.ts";
 import { requireClientV1Admin } from "@/lib/server/client-v1/admin-auth.ts";
 import {
+  clientV1ErrorResponse,
+  clientV1SuccessResponse,
+} from "@/lib/server/client-v1/responses.ts";
+import {
   getClientV1Runtime,
   type ClientV1Runtime,
 } from "@/lib/server/client-v1/runtime.ts";
@@ -10,10 +14,14 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 function invalidReason(): Response {
-  return Response.json(
-    { ok: false, error: "invalid revocation reason" },
-    { status: 400 },
+  return clientV1ErrorResponse(
+    "invalid_request",
+    "Invalid credential revocation reason.",
   );
+}
+
+function credentialNotFound(): Response {
+  return clientV1ErrorResponse("not_found", "Credential not found.");
 }
 
 function parseReason(value: unknown): string | null {
@@ -52,22 +60,11 @@ export function createAdminCredentialDeleteHandler(runtime: ClientV1Runtime) {
     if (!reason) return invalidReason();
 
     const before = await runtime.credentialStore.reload();
-    if (!before.has(id)) {
-      return Response.json(
-        { ok: false, error: "credential not found" },
-        { status: 404 },
-      );
-    }
+    if (!before.has(id)) return credentialNotFound();
     await runtime.credentialStore.revoke(id, reason);
     const credential = (await runtime.credentialStore.reload()).get(id);
-    if (!credential) {
-      return Response.json(
-        { ok: false, error: "credential not found" },
-        { status: 404 },
-      );
-    }
-    return Response.json({
-      ok: true,
+    if (!credential) return credentialNotFound();
+    return clientV1SuccessResponse({
       credential: clientV1CredentialMetadata(credential),
     });
   };

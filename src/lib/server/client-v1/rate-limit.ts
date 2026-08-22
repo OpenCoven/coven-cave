@@ -1,5 +1,6 @@
 export const CLIENT_V1_RATE_LIMIT_WINDOW_MS = 60_000;
 export const CLIENT_V1_PAIRING_CREATE_LIMIT = 10;
+export const CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT = 10;
 export const CLIENT_V1_AUTHENTICATED_LIMIT = 120;
 export const CLIENT_V1_INVALID_BEARER_LIMIT = 120;
 export const CLIENT_V1_RATE_LIMIT_MAX_ENTRIES_PER_CATEGORY = 1_024;
@@ -16,6 +17,25 @@ export interface ClientV1RateLimiter {
   consumePairingCreate(sourceIdentity: string): ClientV1RateLimitResult;
   consumeAuthenticated(credentialId: string): ClientV1RateLimitResult;
   consumeInvalidBearer(sourceIdentity: string): ClientV1RateLimitResult;
+  /**
+   * Charge one failed pairing-secret attempt against a single pairing request.
+   *
+   * Keyed by pairing request id rather than by caller, so a brute-force run
+   * against one pairing cannot be widened by reconnecting, and cannot starve
+   * any other pairing. Only a *wrong* secret is ever charged: a correct secret
+   * — including the repeated polls a client makes while its request is still
+   * pending — costs nothing, so legitimate polling is never rate limited.
+   */
+  consumePairingExchangeFailure(pairingRequestId: string): ClientV1RateLimitResult;
+  /**
+   * Read the failure budget for one pairing request without charging it.
+   *
+   * The exchange route has to know whether the budget is already exhausted
+   * *before* it compares secrets, or the limit would bound nothing. Reading
+   * never creates an entry, so probing unknown ids cannot evict the entries
+   * that are bounding a real brute-force attempt.
+   */
+  peekPairingExchangeFailure(pairingRequestId: string): ClientV1RateLimitResult;
 }
 
 export interface ClientV1RateLimiterOptions {
@@ -23,7 +43,11 @@ export interface ClientV1RateLimiterOptions {
   now?: () => number;
 }
 
-type RateLimitCategory = "authenticated" | "invalid-bearer" | "pairing-create";
+type RateLimitCategory =
+  | "authenticated"
+  | "invalid-bearer"
+  | "pairing-create"
+  | "pairing-exchange-failure";
 
 type RateLimitEntry = {
   count: number;
@@ -35,6 +59,7 @@ const LIMITS: Record<RateLimitCategory, number> = {
   authenticated: CLIENT_V1_AUTHENTICATED_LIMIT,
   "invalid-bearer": CLIENT_V1_INVALID_BEARER_LIMIT,
   "pairing-create": CLIENT_V1_PAIRING_CREATE_LIMIT,
+  "pairing-exchange-failure": CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
 };
 
 function requireNow(now: number): number {
@@ -65,7 +90,56 @@ export function createClientV1RateLimiter(
     authenticated: new Map(),
     "invalid-bearer": new Map(),
     "pairing-create": new Map(),
+    "pairing-exchange-failure": new Map(),
   };
+
+  function peek(
+    category: RateLimitCategory,
+    rawIdentity: string,
+  ): ClientV1RateLimitResult {
+    const currentTime = requireNow(now());
+    const identity = requireIdentity(rawIdentity);
+    const entries = categories[category];
+    const limit = LIMITS[category];
+
+    for (const [key, entry] of entries) {
+      if (entry.resetAt <= currentTime) entries.delete(key);
+    }
+
+    // Deliberately does not create an entry: an unrecorded identity has spent
+    // nothing, and inserting one here would let an attacker churn the map with
+    // identities it never charges, evicting the entries that are bounding a
+    // real attempt.
+    const entry = entries.get(identity);
+    if (!entry) {
+      return {
+        allowed: true,
+        limit,
+        remaining: limit,
+        resetAt: currentTime + CLIENT_V1_RATE_LIMIT_WINDOW_MS,
+        retryAfterSeconds: 0,
+      };
+    }
+    if (entry.count >= limit) {
+      return {
+        allowed: false,
+        limit,
+        remaining: 0,
+        resetAt: entry.resetAt,
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((entry.resetAt - currentTime) / 1_000),
+        ),
+      };
+    }
+    return {
+      allowed: true,
+      limit,
+      remaining: limit - entry.count,
+      resetAt: entry.resetAt,
+      retryAfterSeconds: 0,
+    };
+  }
 
   function consume(
     category: RateLimitCategory,
@@ -135,6 +209,12 @@ export function createClientV1RateLimiter(
     },
     consumePairingCreate(sourceIdentity) {
       return consume("pairing-create", sourceIdentity);
+    },
+    consumePairingExchangeFailure(pairingRequestId) {
+      return consume("pairing-exchange-failure", pairingRequestId);
+    },
+    peekPairingExchangeFailure(pairingRequestId) {
+      return peek("pairing-exchange-failure", pairingRequestId);
     },
   };
 }

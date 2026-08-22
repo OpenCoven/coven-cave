@@ -1,8 +1,15 @@
 import {
   parseClientV1PairingRequestId,
 } from "@/lib/server/client-v1/contract.ts";
-import type { ClientV1PairingDecision } from "@/lib/server/client-v1/pairing-store.ts";
+import {
+  clientV1PairingRequestMetadata,
+  type ClientV1PairingDecision,
+} from "@/lib/server/client-v1/pairing-store.ts";
 import { requireClientV1Admin } from "@/lib/server/client-v1/admin-auth.ts";
+import {
+  clientV1ErrorResponse,
+  clientV1SuccessResponse,
+} from "@/lib/server/client-v1/responses.ts";
 import {
   getClientV1Runtime,
   type ClientV1Runtime,
@@ -13,10 +20,11 @@ export const dynamic = "force-dynamic";
 type RouteContext = { params: Promise<{ id: string }> };
 
 function invalidDecision(): Response {
-  return Response.json(
-    { ok: false, error: "invalid pairing decision" },
-    { status: 400 },
-  );
+  return clientV1ErrorResponse("invalid_request", "Invalid pairing decision.");
+}
+
+function pairingRequestNotFound(): Response {
+  return clientV1ErrorResponse("not_found", "Pairing request not found.");
 }
 
 function parseDecision(value: unknown): ClientV1PairingDecision | null {
@@ -43,10 +51,7 @@ export function createAdminPairingDecisionPostHandler(runtime: ClientV1Runtime) 
     try {
       id = parseClientV1PairingRequestId((await rawParams).id);
     } catch {
-      return Response.json(
-        { ok: false, error: "pairing request not found" },
-        { status: 404 },
-      );
+      return pairingRequestNotFound();
     }
 
     let body: unknown;
@@ -59,26 +64,19 @@ export function createAdminPairingDecisionPostHandler(runtime: ClientV1Runtime) 
     if (!decision) return invalidDecision();
 
     const before = runtime.pairingStore.get(id);
-    if (!before) {
-      return Response.json(
-        { ok: false, error: "pairing request not found" },
-        { status: 404 },
-      );
-    }
+    if (!before) return pairingRequestNotFound();
     if (!runtime.pairingStore.decide(id, decision, runtime.now())) {
-      return Response.json(
-        { ok: false, error: "pairing request already decided" },
-        { status: 409 },
+      return clientV1ErrorResponse(
+        "conflict",
+        "Pairing request was already decided.",
+        { details: { reason: "pairing_already_decided" } },
       );
     }
     const pairingRequest = runtime.pairingStore.get(id);
-    if (!pairingRequest) {
-      return Response.json(
-        { ok: false, error: "pairing request not found" },
-        { status: 404 },
-      );
-    }
-    return Response.json({ ok: true, pairingRequest });
+    if (!pairingRequest) return pairingRequestNotFound();
+    return clientV1SuccessResponse({
+      pairingRequest: clientV1PairingRequestMetadata(pairingRequest),
+    });
   };
 }
 

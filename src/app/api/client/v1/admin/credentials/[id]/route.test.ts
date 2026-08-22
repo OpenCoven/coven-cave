@@ -60,16 +60,18 @@ test("revokes a credential by id and reason with persisted metadata", async () =
       context(issued.credential.id),
     );
     const payload = await response.json() as {
-      ok: boolean;
-      credential: Record<string, unknown>;
+      apiVersion: string;
+      data: { credential: Record<string, unknown> };
     };
 
     assert.equal(response.status, 200);
-    assert.equal(payload.ok, true);
-    assert.equal(payload.credential.revokedAt, 7_000);
-    assert.equal(payload.credential.revocationReason, "operator revoked");
+    // The shared Client v1 envelope, the same one this route's auth failures
+    // already answered in — one endpoint, one parser.
+    assert.equal(typeof payload.apiVersion, "string");
+    assert.equal(payload.data.credential.revokedAt, 7_000);
+    assert.equal(payload.data.credential.revocationReason, "operator revoked");
     assert.equal(JSON.stringify(payload).includes(issued.bearer), false);
-    assert.equal("bearerHash" in payload.credential, false);
+    assert.equal("bearerHash" in payload.data.credential, false);
 
     const reloaded = await createClientV1Runtime({
       credentialRoot: root,
@@ -106,16 +108,18 @@ test("rejects missing reasons, malformed JSON, and unknown credential ids", asyn
     ]) {
       const response = await handler(request(body), context(issued.credential.id));
       assert.equal(response.status, 400);
-      assert.deepEqual(await response.json(), {
-        ok: false,
-        error: "invalid revocation reason",
-      });
+      const payload = await response.json() as { error: { code: string } };
+      assert.equal(payload.error.code, "invalid_request");
     }
     const missing = await handler(
       request(JSON.stringify({ reason: "operator revoked" })),
       context("00000000-0000-4000-8000-000000000000"),
     );
     assert.equal(missing.status, 404);
+    assert.equal(
+      ((await missing.json()) as { error: { code: string } }).error.code,
+      "not_found",
+    );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);
     await rm(root, { recursive: true, force: true });

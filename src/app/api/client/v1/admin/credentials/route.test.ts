@@ -51,17 +51,19 @@ test("lists persisted active and revoked credential metadata without bearer mate
       }),
     );
     const payload = await response.json() as {
-      ok: boolean;
-      credentials: Array<Record<string, unknown>>;
+      apiVersion: string;
+      data: { credentials: Array<Record<string, unknown>> };
     };
     assert.equal(response.status, 200);
-    assert.equal(payload.ok, true);
-    assert.equal(payload.credentials.length, 2);
+    // The shared Client v1 envelope, the same one this route's auth failures
+    // already answered in — one endpoint, one parser.
+    assert.equal(typeof payload.apiVersion, "string");
+    assert.equal(payload.data.credentials.length, 2);
     assert.deepEqual(
-      payload.credentials.map((credential) => credential.id),
+      payload.data.credentials.map((credential) => credential.id),
       [active.credential.id, revoked.credential.id],
     );
-    assert.equal(payload.credentials[1].revocationReason, "operator revoked");
+    assert.equal(payload.data.credentials[1].revocationReason, "operator revoked");
     const serialized = JSON.stringify(payload);
     assert.equal(serialized.includes(active.bearer), false);
     assert.equal(serialized.includes(revoked.bearer), false);

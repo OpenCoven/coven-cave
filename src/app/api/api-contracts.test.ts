@@ -76,12 +76,26 @@ const contracts: RouteContract[] = [
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
   { route: "/chat/stream/status", methods: ["GET"], kind: "json" },
   { route: "/chat/usage", methods: ["GET"], kind: "json" },
-  // Client v1 deliberately carries no localOriginGuard: an external client
-  // must be able to read its compatibility answer and walk the pairing
-  // exchange before it holds a credential, which is the whole reason these
-  // routes exist. Health returns no user data and no paths; the pairing and
-  // admin routes carry their own loopback, secret, and admin-credential
-  // guards (src/lib/server/client-v1/auth.ts, admin-auth.ts).
+  // Client v1 deliberately carries no localOriginGuard, but for two different
+  // reasons — and only the first is an exemption at all.
+  //
+  // Health and the pairing routes are the exemption: an external client must
+  // be able to read its compatibility answer and walk the pairing exchange
+  // before it holds a credential, which is the whole reason they exist. They
+  // are the paths clientV1IngressKind (src/proxy-helpers.ts) classifies as
+  // public, so proxy.ts applies the client-v1 ingress rules to them instead of
+  // the ordinary gate. Health returns no user data and no paths; the pairing
+  // routes then guard themselves — the loopback stamp through
+  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts) and the
+  // per-request pairing secret.
+  //
+  // The admin routes are NOT exempted. clientV1IngressKind returns null for
+  // them, so they never leave the ordinary sidecar-token path in proxy.ts, and
+  // that is where their locality comes from. requireClientV1Admin
+  // (client-v1/admin-auth.ts) then adds the per-launch COVEN_CAVE_AUTH_TOKEN,
+  // plus a same-origin Origin/Referer on mutations; it reads no loopback stamp
+  // of its own, deliberately, because transport locality is not proof of the
+  // administrator.
   { route: "/client/v1/admin/credentials", methods: ["GET"], kind: "json" },
   { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
   { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },

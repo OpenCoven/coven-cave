@@ -3,8 +3,14 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { CLIENT_V1_CREDENTIAL_STORE_FILE } from "@/lib/server/client-v1/credential-store.ts";
-import { CLIENT_V1_PAIRING_CREATE_LIMIT } from "@/lib/server/client-v1/rate-limit.ts";
+import {
+  CLIENT_V1_CREDENTIAL_STORE_FILE,
+  type CredentialStore,
+} from "@/lib/server/client-v1/credential-store.ts";
+import {
+  CLIENT_V1_PAIRING_CREATE_LIMIT,
+  CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+} from "@/lib/server/client-v1/rate-limit.ts";
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
@@ -97,7 +103,7 @@ test("exchanges an approved request once and persists only the bearer hash", asy
   }
 });
 
-test("exchange explicitly reports pending, denied, expired, bad-secret, and rate-limit failures", async () => {
+test("exchange explicitly reports pending, denied, expired, and bad-secret failures", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
     let now = 5_000;
@@ -165,28 +171,220 @@ test("exchange explicitly reports pending, denied, expired, bad-secret, and rate
       "unauthorized",
     );
 
-    const limitedRuntime = createClientV1Runtime({
-      credentialRoot: resolve(root, "limited"),
+    // Creation and exchange must not share one bucket. The create bucket is
+    // keyed on the loopback stamp, which is a single process-wide constant, so
+    // a shared bucket would let ten pairing creations anywhere on the machine
+    // lock out a client trying to redeem its own approved pairing.
+    const spentCreateRuntime = createClientV1Runtime({
+      credentialRoot: resolve(root, "spent-create"),
       loopbackSecret: "loopback-secret",
       now: () => now,
     });
-    const limitedHandler = createPairingExchangePostHandler(limitedRuntime);
-    const limited = limitedRuntime.pairingStore.create(pairingInput);
-    assert.equal(limitedRuntime.pairingStore.decide(limited.id, "approved", now), true);
+    const spentCreateHandler = createPairingExchangePostHandler(spentCreateRuntime);
+    const redeemable = spentCreateRuntime.pairingStore.create(pairingInput);
+    assert.equal(
+      spentCreateRuntime.pairingStore.decide(redeemable.id, "approved", now),
+      true,
+    );
     for (let attempt = 0; attempt < CLIENT_V1_PAIRING_CREATE_LIMIT; attempt += 1) {
       assert.equal(
-        limitedRuntime.rateLimiter.consumePairingCreate("loopback-secret").allowed,
+        spentCreateRuntime.rateLimiter.consumePairingCreate("loopback-secret").allowed,
         true,
       );
     }
-    const limitedResponse = await limitedHandler(
-      request(limited.id, limited.secret),
-      context(limited.id),
-    );
-    assert.equal(limitedResponse.status, 429);
     assert.equal(
-      ((await limitedResponse.json()) as { error: { code: string } }).error.code,
+      spentCreateRuntime.rateLimiter.consumePairingCreate("loopback-secret").allowed,
+      false,
+      "the create bucket really is exhausted",
+    );
+    const redeemed = await spentCreateHandler(
+      request(redeemable.id, redeemable.secret),
+      context(redeemable.id),
+    );
+    assert.equal(redeemed.status, 200);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("polling a pending-then-approved pairing with the correct secret is never rate limited", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = 9_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const handler = createPairingExchangePostHandler(runtime);
+    const issued = runtime.pairingStore.create(pairingInput);
+
+    // `pairing_pending` is returned retryable, so a client polls until an
+    // administrator decides. 150 polls is a 2 s interval across the full
+    // 5-minute pairing TTL, and it is well past both the create limit and the
+    // exchange failure limit: presenting the correct secret must cost the
+    // holder nothing at all.
+    const polls = 150;
+    assert.ok(polls > CLIENT_V1_PAIRING_CREATE_LIMIT);
+    assert.ok(polls > CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT);
+    for (let poll = 0; poll < polls; poll += 1) {
+      const pending = await handler(request(issued.id, issued.secret), context(issued.id));
+      assert.equal(pending.status, 409, `poll ${poll} must stay pending, not rate limited`);
+      assert.equal(
+        ((await pending.json()) as { error: { code: string } }).error.code,
+        "pairing_pending",
+      );
+    }
+
+    assert.equal(runtime.pairingStore.decide(issued.id, "approved", now), true);
+    const exchanged = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(exchanged.status, 200);
+    const payload = await exchanged.json() as { data: { bearer: string } };
+    assert.match(payload.data.bearer, /^[A-Za-z0-9_-]{43}$/);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("wrong pairing secrets are bounded per pairing request and leave other pairings alone", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = 11_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const handler = createPairingExchangePostHandler(runtime);
+    const attacked = runtime.pairingStore.create(pairingInput);
+    const bystander = runtime.pairingStore.create({
+      ...pairingInput,
+      installationId: "chat-install-bystander",
+    });
+    assert.equal(runtime.pairingStore.decide(attacked.id, "approved", now), true);
+    assert.equal(runtime.pairingStore.decide(bystander.id, "approved", now), true);
+
+    // A well-formed guess, not a malformed one: a secret that fails the
+    // contract shape is refused before the store ever compares it, so only
+    // this kind of attempt is brute force worth bounding.
+    const guess = `${attacked.secret.slice(0, -1)}${attacked.secret.endsWith("A") ? "B" : "A"}`;
+    assert.notEqual(guess, attacked.secret);
+
+    for (
+      let attempt = 0;
+      attempt < CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT;
+      attempt += 1
+    ) {
+      const rejected = await handler(
+        request(attacked.id, guess),
+        context(attacked.id),
+      );
+      assert.equal(rejected.status, 401, `guess ${attempt} must be refused, not limited`);
+    }
+
+    const limited = await handler(
+      request(attacked.id, guess),
+      context(attacked.id),
+    );
+    assert.equal(limited.status, 429);
+    assert.equal(
+      ((await limited.json()) as { error: { code: string } }).error.code,
       "rate_limited",
+    );
+
+    // The budget has to gate the secret comparison itself, so while it is
+    // spent the correct secret is refused too — a deliberate per-pairing
+    // lockout for the rest of the 60 s window, not a consequence of the
+    // holder's own polling, which never charges the bucket.
+    const holder = await handler(
+      request(attacked.id, attacked.secret),
+      context(attacked.id),
+    );
+    assert.equal(holder.status, 429);
+
+    // And the lockout is confined to the pairing under attack.
+    const untouched = await handler(
+      request(bystander.id, bystander.secret),
+      context(bystander.id),
+    );
+    assert.equal(untouched.status, 200);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a failed credential issue answers in the client-v1 envelope and leaves the pairing redeemable", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = 13_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const persistent = runtime.credentialStore;
+    const issueFailure = Object.assign(
+      new Error("deterministic injected issue failure"),
+      { code: "ENOSPC" },
+    );
+    let issueAttempts = 0;
+    const failingOnce: CredentialStore = {
+      issue: async (input) => {
+        issueAttempts += 1;
+        if (issueAttempts === 1) throw issueFailure;
+        return persistent.issue(input);
+      },
+      verify: (id, bearer) => persistent.verify(id, bearer),
+      findByBearer: (bearer) => persistent.findByBearer(bearer),
+      revoke: (id, reason) => persistent.revoke(id, reason),
+      reload: () => persistent.reload(),
+      readPersistedFile: () => persistent.readPersistedFile(),
+    };
+    runtime.credentialStore = failingOnce;
+
+    const handler = createPairingExchangePostHandler(runtime);
+    const issued = runtime.pairingStore.create(pairingInput);
+    assert.equal(runtime.pairingStore.decide(issued.id, "approved", now), true);
+
+    const failed = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(failed.status, 500);
+    const failedPayload = await failed.json() as {
+      error: { code: string; message: string; retryable: boolean };
+      data?: unknown;
+    };
+    assert.equal(failedPayload.error.code, "internal_error");
+    assert.equal(failedPayload.error.retryable, true);
+    assert.equal(failedPayload.data, undefined);
+    // The envelope, not a raw Next 500 — every other route on this surface
+    // answers this way and a client parses exactly one shape.
+    assert.equal(
+      (failedPayload as unknown as { apiVersion?: string }).apiVersion !== undefined,
+      true,
+    );
+    const serialized = JSON.stringify(failedPayload);
+    assert.equal(serialized.includes(issued.secret), false);
+    assert.equal(serialized.includes("ENOSPC"), false);
+
+    // A spent pairing would need a fresh request and a second administrator
+    // approval to recover, so the failure has to leave it exchangeable.
+    const retried = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(retried.status, 200);
+    const retriedPayload = await retried.json() as { data: { bearer: string } };
+    assert.match(retriedPayload.data.bearer, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(issueAttempts, 2);
+    assert.equal((await persistent.reload()).size, 1);
+
+    // Still exactly one exchange: the restore does not make the pairing
+    // redeemable twice.
+    const replay = await handler(request(issued.id, issued.secret), context(issued.id));
+    assert.equal(replay.status, 409);
+    assert.equal(
+      ((await replay.json()) as { error: { details?: { reason?: string } } })
+        .error.details?.reason,
+      "pairing_replayed",
     );
   } finally {
     assert.equal(resolve(root).startsWith(scratchPrefix), true);

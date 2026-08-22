@@ -7,6 +7,7 @@ import {
 
 import {
   parseClientV1PairingScopes,
+  type ClientV1Record,
   type ClientV1Scope,
 } from "./contract.ts";
 
@@ -74,6 +75,20 @@ export interface PairingStore {
   decide(id: string, decision: ClientV1PairingDecision, now: number): boolean;
   consume(id: string, secret: string): ClientV1PairingApproved | null;
   consumeForExchange(id: string, secret: string): ClientV1PairingExchangeResult;
+  /**
+   * Undo a `consumeForExchange` whose caller could not finish the exchange.
+   *
+   * Consumption has to happen before the credential is issued, or two
+   * concurrent exchanges could both issue against one approval. That leaves
+   * the pairing spent if issuing then fails for an ordinary reason (a full
+   * disk, an unreadable store), and recovering would otherwise cost the user a
+   * fresh request and a second administrator approval. Restoring returns the
+   * record to its approved, exchangeable state so the client can simply retry.
+   *
+   * Returns false when there is nothing to restore — an unknown id, a pairing
+   * that was never consumed, or one whose id has since been re-created.
+   */
+  restoreConsumed(id: string): boolean;
   get(id: string): ClientV1PairingStatus | null;
   inspect(id: string): { secretHash: string } | null;
   listPending(): ClientV1PairingStatus[];
@@ -136,6 +151,28 @@ function publicRecord(record: PairingRecord): ClientV1PairingStatus {
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
     decidedAt: record.decidedAt,
+  };
+}
+
+/**
+ * The pairing fields an administrator surface may see, as a Client v1 record.
+ *
+ * Enumerated rather than spread so the envelope carries exactly this
+ * projection: `secret` and `secretHash` are not on `ClientV1PairingStatus`
+ * today, and this keeps that true if either is ever added to it.
+ */
+export function clientV1PairingRequestMetadata(
+  pairing: ClientV1PairingStatus,
+): ClientV1Record {
+  return {
+    id: pairing.id,
+    appName: pairing.appName,
+    installationId: pairing.installationId,
+    scopes: [...pairing.scopes],
+    status: pairing.status,
+    createdAt: pairing.createdAt,
+    expiresAt: pairing.expiresAt,
+    decidedAt: pairing.decidedAt,
   };
 }
 
@@ -261,6 +298,20 @@ export class ProcessLocalPairingStore implements PairingStore {
         status: "approved",
       },
     };
+  }
+
+  restoreConsumed(id: string): boolean {
+    const now = requireTimestamp(this.#now());
+    this.#pruneExpired(now);
+    const terminal = this.#terminalRecords.get(id);
+    if (!terminal || terminal.kind !== "consumed") return false;
+    if (this.#records.has(id)) return false;
+    // An expired pairing is not exchangeable, so restoring it would only
+    // manufacture a record the very next prune deletes.
+    if (terminal.record.expiresAt <= now) return false;
+    this.#terminalRecords.delete(id);
+    this.#records.set(id, { ...terminal.record });
+    return true;
   }
 
   get(id: string): ClientV1PairingStatus | null {

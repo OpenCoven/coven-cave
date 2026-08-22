@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import {
   CLIENT_V1_DISCOVERY_FILE,
@@ -41,6 +41,29 @@ function record(overrides: Record<string, unknown> = {}) {
     startedAt: "2026-08-20T20:20:12.617Z",
     ...overrides,
   };
+}
+
+/**
+ * Assert an owner-only POSIX mode where the platform actually enforces one.
+ *
+ * Windows does not implement POSIX permission bits: `stat` reports 0o666 for
+ * every regular file and 0o777 for every directory whatever mode `mkdir`/`open`
+ * was given, so asserting 0o600/0o700 there measures the platform rather than
+ * the publisher. Same treatment as the symlink guards below — skip only the
+ * assertion the platform cannot answer, keeping every other assertion in the
+ * test live everywhere and the mode contract unweakened on POSIX.
+ */
+function assertOwnerOnlyMode(
+  t: TestContext,
+  mode: number,
+  expected: number,
+  what: string,
+): void {
+  if (process.platform === "win32") {
+    t.diagnostic(`skipped ${what} mode assertion: POSIX permission bits are not enforced on win32`);
+    return;
+  }
+  assert.equal(mode & 0o777, expected, what);
 }
 
 function unsupportedSymlink(error: unknown): boolean {
@@ -104,15 +127,15 @@ test("validates live version-1 discovery records at path-free loopback endpoints
   );
 });
 
-test("publishes atomically with owner-only modes and no leftover temporary files", async () => {
+test("publishes atomically with owner-only modes and no leftover temporary files", async (t) => {
   await withOwnedRoot(async (root) => {
     const published = await publishClientV1DiscoveryRecord(record(), { root });
     const path = clientV1DiscoveryPath(root);
 
     assert.equal(path, join(root, CLIENT_V1_DISCOVERY_FILE));
     assert.deepEqual(JSON.parse(await readFile(path, "utf8")), published);
-    assert.equal((await stat(root)).mode & 0o777, 0o700);
-    assert.equal((await stat(path)).mode & 0o777, 0o600);
+    assertOwnerOnlyMode(t, (await stat(root)).mode, 0o700, "discovery root");
+    assertOwnerOnlyMode(t, (await stat(path)).mode, 0o600, "discovery record");
     assert.deepEqual(await readdir(root), [CLIENT_V1_DISCOVERY_FILE]);
   });
 });
