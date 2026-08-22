@@ -39,7 +39,8 @@ test("the fs-browse route is loopback-gated and walks from trusted volume roots"
 
 test("the modal navigates via the fs-browse API with up/select controls", () => {
   const src = read("./directory-picker-modal.tsx");
-  assert.match(src, /\/api\/fs-browse\?dir=\$\{encodeURIComponent\(dir\)\}/, "fetches the browse API");
+  assert.match(src, /params\.set\("dir", dir\)/, "fetches the browse API for the requested folder");
+  assert.match(src, /`\/api\/fs-browse\?\$\{query\}`/, "builds the browse URL from encoded params");
   assert.match(src, /LOCAL_REQUEST_REQUIRED_CODE/, "reads the stable local-only error code from fs-browse");
   assert.match(src, /LOCAL_PROJECT_CREATION_MESSAGE/, "maps local-only browse failures to project-registration guidance");
   assert.match(src, /body\.code === LOCAL_REQUEST_REQUIRED_CODE/, "uses the machine-readable code instead of matching forbidden text");
@@ -90,7 +91,11 @@ test("the modal keeps inline folder creation hooks, session guards, and focus ta
   assert.match(src, /const loadGenerationRef = useRef\(0\);/, "tracks per-load ordering within a modal session");
   assert.match(
     src,
-    /modalSessionRef\.current \+= 1;[\s\S]*if \(open\) \{\s*void load\(null, sessionGeneration\);\s*void loadPlaces\(sessionGeneration\);/,
+    // The restore of the session-scoped "show hidden" preference sits between
+    // the branch and the load, because `load` reads that ref synchronously —
+    // hence [\s\S]*? rather than \s* here. The generation bump still has to
+    // come first, which is what this actually guards.
+    /modalSessionRef\.current \+= 1;[\s\S]*if \(open\) \{[\s\S]*?void load\(null, sessionGeneration\);\s*void loadPlaces\(sessionGeneration\);/,
     "opening or closing the modal bumps the session generation before loading",
   );
   assert.match(
@@ -387,5 +392,134 @@ test("the modal browses above $HOME to volume roots and drives", () => {
     src,
     /disabled=\{loading \|\| createBusy \|\| !cwd \|\| creatingFolder \|\| cwd === DRIVES\}/,
     "New folder is unavailable on the drives list",
+  );
+});
+
+// ── Hidden (dot-prefixed) folders ───────────────────────────────────────────
+// Dot folders used to be listed unconditionally, which buried an ordinary
+// project pick under .git/.cache/.local noise. They are hidden by default now
+// and revealed on demand; the two halves that must not drift are that the
+// server owns the default, and that hiding is presentation rather than a
+// second access rule layered on top of the trusted walk.
+
+test("fs-browse hides dot folders by default and reveals them only on request", () => {
+  const src = read("../app/api/fs-browse/route.ts");
+  assert.match(
+    src,
+    /const includeHidden = req\.nextUrl\.searchParams\.get\("hidden"\) === "1"/,
+    "the reveal is an explicit opt-in query flag",
+  );
+  assert.match(
+    src,
+    /listSubdirs\(dir, \{ includeHidden \}\)/,
+    "the listing helper owns the hiding default — the route must not re-filter",
+  );
+  assert.match(src, /hiddenCount: listing\.hiddenCount/, "reports how many folders are hidden");
+  assert.match(src, /hiddenCount: 0/, "the drives location reports a stable shape too");
+  // Hiding must not narrow what resolveBrowsableDir will admit: a pinned or
+  // crumbed .config has to keep resolving whatever the toggle says.
+  assert.doesNotMatch(
+    src,
+    /resolveBrowsableDir\([^)]*includeHidden/,
+    "the trusted walk never takes the hidden flag",
+  );
+});
+
+test("listSubdirs is the single place the hiding default lives", () => {
+  const src = read("../lib/server/home-browse.ts");
+  assert.match(src, /export function isHiddenDirName/, "exports the dot-prefix rule");
+  assert.match(src, /return name\.startsWith\("\."\)/, "hidden means dot-prefixed, cross-platform");
+  assert.match(
+    src,
+    /\{ includeHidden = false \}: \{ includeHidden\?: boolean \} = \{\}/,
+    "hiding is the default and revealing is opt-in",
+  );
+  assert.match(
+    src,
+    /includeHidden \? all : all\.filter\(\(entry\) => !entry\.hidden\)/,
+    "hidden entries are dropped from the listing, not from the count",
+  );
+  // SKIP is the separate, unconditional build-noise list. Revealing dot
+  // folders must not smuggle node_modules back into the picker.
+  assert.match(
+    src,
+    /\.filter\(\(d\) => d\.isDirectory\(\) && !SKIP\.has\(d\.name\)\)/,
+    "build-noise filtering stays unconditional",
+  );
+});
+
+test("the picker offers an accessible, session-scoped reveal toggle", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /if \(showHiddenRef\.current\) params\.set\("hidden", "1"\)/, "asks the server to reveal");
+  assert.match(src, /aria-pressed=\{showHidden\}/, "the control reports its pressed state");
+  assert.match(
+    src,
+    /aria-label=\{\s*hiddenCount > 0 \? `Show hidden folders \(\$\{hiddenCount\}\)` : "Show hidden folders"\s*\}/,
+    "the accessible name keeps a constant verb so the pressed state is unambiguous",
+  );
+  assert.doesNotMatch(
+    src,
+    /aria-label=\{showHidden \? "Hide/,
+    "the label must not flip to Hide — aria-pressed already carries the state",
+  );
+  assert.match(src, /window\.sessionStorage\.getItem\(SHOW_HIDDEN_KEY\)/, "session-scoped, not persistent");
+  assert.doesNotMatch(src, /localStorage\.setItem\(SHOW_HIDDEN_KEY/, "the reveal must not outlive the session");
+  assert.match(src, /leadingIcon=\{showHidden \? "ph:eye" : "ph:eye-slash"\}/, "the glyph tracks the state");
+  assert.doesNotMatch(src, /<button\b/, "the toggle uses the shared Button primitive");
+});
+
+test("toggling reveal reloads the current folder and drops a stale highlight", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /const toggleShowHidden = useCallback\(/, "toggling is a callback, not inline state juggling");
+  // Scoped to the toggle body on purpose: a bare `setSelectedPath(null);`
+  // occurs four times in this file (navigate, filter, close), so an unscoped
+  // match would pass with the toggle's own call deleted. Re-hiding while a dot
+  // folder is highlighted has to drop that highlight.
+  assert.match(
+    src,
+    /const toggleShowHidden = useCallback\(\(\) => \{[\s\S]*?setSelectedPath\(null\);[\s\S]*?void load\(cwd\);/,
+    "the toggle itself clears the highlight before reloading",
+  );
+  assert.match(src, /void load\(cwd\);/, "reloads the folder in place rather than returning to $HOME");
+  assert.match(src, /writeShowHidden\(next\)/, "the new state is persisted for the session");
+  // load() must stay dependency-free of the toggle: a new load identity
+  // re-runs the open effect and bounces the user back to $HOME.
+  assert.match(src, /const showHiddenRef = useRef\(false\)/, "the flag reaches load through a ref");
+  assert.match(src, /\}, \[cwd, load\]\)/, "the toggle depends on the folder it reloads");
+});
+
+test("creating a dot folder reveals it instead of hiding what the user just made", () => {
+  const src = read("./directory-picker-modal.tsx");
+  // The footer resolves its pending selection out of the *visible* entries, so
+  // a new folder that vanishes into the hidden set does not merely disappear —
+  // "Select .config" silently becomes "Select <parent>" and the wrong root gets
+  // registered. Creating it by name is an explicit request to see it.
+  assert.match(
+    src,
+    /requestedName\.startsWith\("\."\) && !showHiddenRef\.current[\s\S]*?showHiddenRef\.current = true/,
+    "a freshly created dot folder flips the reveal on",
+  );
+  assert.match(
+    src,
+    /showHiddenRef\.current = true;\s*setShowHidden\(true\);\s*writeShowHidden\(true\);\s*\}\s*await load\(cwd, sessionGeneration\)/,
+    "the reveal is set before the reload that has to return the new folder",
+  );
+});
+
+test("the picker never reports a folder as empty while it is withholding dot folders", () => {
+  const src = read("./directory-picker-modal.tsx");
+  // "This folder is empty" beside a toggle reading "Hidden folders (3)" is a
+  // flat contradiction, and a filter typed as ".config" would otherwise report
+  // no match for a folder that is really there.
+  assert.match(src, /const withheldHidden = showHidden \? 0 : hiddenCount;/, "the empty state knows what is withheld");
+  assert.match(
+    src,
+    /withheldHidden > 0\s*\? "Only hidden folders here"\s*: "This folder is empty"/,
+    "an all-dot folder is not described as empty",
+  );
+  assert.match(
+    src,
+    /\$\{withheldHidden\} hidden folder\$\{withheldHidden === 1 \? " is" : "s are"\} not shown\./,
+    "the sub-line says how many are withheld, under the no-match copy too",
   );
 });
