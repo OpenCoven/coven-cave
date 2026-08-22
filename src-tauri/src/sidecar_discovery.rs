@@ -287,7 +287,7 @@ pub(super) enum PathProbe {
 /// can stall on an offline share.
 ///
 /// This is an allowlist, and it has to be. The denylist it replaces refused
-/// `\\host\` and `\\?\UNC\` and admitted five spellings that were measured
+/// `\\host\` and `\\?\UNC\` and admitted six spellings that were measured
 /// reaching another machine on Windows 11 — `fs` read
 /// `\\localhost\C$\Windows\win.ini` through each of them:
 ///
@@ -296,10 +296,12 @@ pub(super) enum PathProbe {
 ///     \\?\GLOBALROOT\Device\LanmanRedirector\host\share\coven.exe
 ///     \\?\GLOBALROOT\??\UNC\host\share\coven.exe
 ///     \\.\C:\..\..\UNC\host\share\coven.exe
+///     \\?\C:\..\..\UNC\host\share\coven.exe
 ///
-/// The last two show the set does not close by enumeration: `GLOBALROOT` re-
+/// The last three show the set does not close by enumeration: `GLOBALROOT` re-
 /// enters the object-manager root so remote routes nest arbitrarily, and a `..`
-/// pops whichever component was allowed and lands back at the device root.
+/// pops whichever component was allowed and lands back at the device root —
+/// under `\\?\` as well as `\\.\`, whatever the prefix does for a pipe name.
 ///
 /// So: a path not rooted at `\\` cannot leave the machine by spelling alone. A
 /// path rooted at `\\` is eligible only as a drive letter behind a device
