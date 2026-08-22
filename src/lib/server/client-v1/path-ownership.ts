@@ -18,9 +18,11 @@ const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
 
 // ── The unverified-ownership waiver ─────────────────────────────────────────
-// Everything from here to the end of `resolveUnverifiedOwnershipWaiver` is
-// duplicated verbatim in server.ts, for the same reason the PowerShell above
-// is, and discovery.test.ts fails if the two ever drift.
+// The four constants below, `resolveUnverifiedOwnershipWaiver`, and the three
+// message builders after it are duplicated verbatim in server.ts, for the same
+// reason the PowerShell above is (`build:server` runs esbuild with
+// `--bundle=false`, so server.mjs cannot import this module). discovery.test.ts
+// compares each of those regions byte-for-byte and fails if they drift.
 //
 // This exists because reading the DACL is not possible on every Windows host.
 // Measured on Windows 11: PowerShell under Constrained Language Mode answers
@@ -152,13 +154,6 @@ function sharedOwnershipRefusal(
         + `one was, and it is shared. Repair it with: icacls "${path}" /reset`
       : "");
 }
-
-/** The waiver's contract, for callers that have to name it in their own output. */
-export const UNVERIFIED_PATH_OWNERSHIP_WAIVER = {
-  env: UNVERIFIED_OWNERSHIP_ENV,
-  reasonEnv: UNVERIFIED_OWNERSHIP_REASON_ENV,
-  token: UNVERIFIED_OWNERSHIP_TOKEN,
-} as const;
 
 /** Result of one `windows-acl` probe: the state of the path after any repair. */
 export interface ClientV1WindowsAclReport {

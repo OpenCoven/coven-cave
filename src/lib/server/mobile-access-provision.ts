@@ -87,14 +87,6 @@ export function loadPersistedMobileAccessSecret(
   }
 }
 
-/**
- * Load the persisted pairing secret, minting and persisting a fresh one when
- * missing. Returns null when provisioning is not allowed here (packaged
- * bundle, e2e) or persistence fails — callers fall back to the existing
- * "unavailable" response. Does NOT arm the process env; callers arm
- * explicitly (armMobileAccessSecret) right before the serve route goes live
- * so the gate and the exposure switch on together.
- */
 export interface MobileAccessProvisionOptions {
   /**
    * Seams for the ownership guard, so the win32 branch below is reachable on
@@ -132,6 +124,19 @@ async function restrictToCurrentUser(
   });
 }
 
+/**
+ * Load the persisted pairing secret, minting and persisting a fresh one when
+ * missing. Returns null when provisioning is not allowed here (packaged
+ * bundle, e2e), when persistence fails, or when the path holding a plaintext
+ * secret cannot be restricted to this user — callers fall back to the existing
+ * "unavailable" response, and the reason is logged rather than swallowed. Does
+ * NOT arm the process env; callers arm explicitly (armMobileAccessSecret) right
+ * before the serve route goes live so the gate and the exposure switch on
+ * together.
+ *
+ * Async since cave-fawvh: restricting the path on Windows means reading a DACL
+ * out of a subprocess, because `chmod` there sets nothing.
+ */
 export async function provisionMobileAccessSecret(
   env: Record<string, string | undefined> = process.env,
   options: MobileAccessProvisionOptions = {},
