@@ -54,6 +54,12 @@ import {
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
 import { materializeSavedLinkForMission } from "./research-link-materialization.ts";
 import {
+  ResearchMissionXHydrationError,
+  mergeXSourceRefs,
+  researchMissionHoldsXRuntime,
+  type ResearchMissionXHydration,
+} from "./research-mission-x-runtime.ts";
+import {
   applyStartResult,
   createMissionRecord,
   stopBeforeNextIteration,
@@ -190,6 +196,20 @@ export type ResearchMissionRunnerDeps = {
     mission: ResearchMission,
     savedLinkId: string,
   ): Promise<{ source: ResearchSourceRef; rollback(): Promise<void> }>;
+  /**
+   * Rehydrate the mission's attached X posts into its `runtime/x/` directory
+   * immediately before an iteration launches, and report what the iteration
+   * can and cannot see. Throws `ResearchMissionXHydrationError` when an
+   * attached source cannot be retrieved for a non-durable reason — the launch
+   * is then refused rather than run without the user's attached evidence.
+   */
+  hydrateXSources(mission: ResearchMission): Promise<ResearchMissionXHydration>;
+  /**
+   * Remove that temporary post text. Called from every persisted transition
+   * into a non-active status, so it must be idempotent, safe on a mission that
+   * never hydrated, and cheap when there is nothing to remove.
+   */
+  dropXRuntime(missionId: string): Promise<void>;
   publishKnowledge(entry: KnowledgeEntry): Promise<KnowledgeEntry>;
   killSession(
     sessionId: string,
@@ -663,6 +683,26 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       throw error;
     }
+    // THE removal choke point. Hydrated X post text may exist only while a run
+    // is live, so every persisted transition out of an active status takes it
+    // off disk — completed, checkpoint, paused, failed, cancelled, archived,
+    // and a launch that never started.
+    //
+    // This is deliberately here rather than in a `finally` around the happy
+    // path: settling happens through at least eight distinct code paths in
+    // this file (normal reconciliation, orphan recovery, session-owner
+    // mismatch, a failed flow run, cancel, finish, archive, a refused launch),
+    // and every one of them ends in this single write. A per-path `try/finally`
+    // would have to be re-added correctly to each of them and to each one added
+    // later; this cannot be forgotten.
+    //
+    // A removal failure is swallowed on purpose. The mission state is already
+    // durably saved and must be returned, and two independent mechanisms retry
+    // the removal: the next launch purges before it hydrates, and the startup
+    // sweep clears residue a dead process left behind.
+    if (!researchMissionHoldsXRuntime(mission.status)) {
+      await deps.dropXRuntime(mission.id).catch(() => {});
+    }
   };
   const saveUpdated = async (mission: ResearchMission): Promise<ResearchMission> => {
     const updated = { ...mission, updatedAt: deps.now().toISOString() };
@@ -831,6 +871,44 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
   };
 
   /**
+   * Just-in-time X hydration for the iteration that is about to start.
+   *
+   * Runs after the start target is resolved and immediately before startFlow,
+   * so post text is on disk for the shortest window that still lets the
+   * iteration read it. Every failure becomes a refused launch — the mission
+   * settles as failed with an actionable reason and Retry re-hydrates — rather
+   * than a run that quietly proceeds without evidence the user attached, or a
+   * mission stranded in "planning" by a raw throw.
+   */
+  const hydrateForLaunch = async (
+    mission: ResearchMission,
+  ): Promise<
+    | { ok: true; mission: ResearchMission; hydration: ResearchMissionXHydration }
+    | { ok: false; error: string }
+  > => {
+    let hydration: ResearchMissionXHydration;
+    try {
+      hydration = await deps.hydrateXSources(mission);
+    } catch (error) {
+      await deps.dropXRuntime(mission.id).catch(() => {});
+      return {
+        ok: false,
+        error: error instanceof ResearchMissionXHydrationError
+          ? error.message
+          : "An X source attached to this mission could not be prepared for the run. Resolve it or detach the source, then retry.",
+      };
+    }
+    return {
+      ok: true,
+      mission: hydration.sources.length === 0 ? mission : {
+        ...mission,
+        sources: mergeXSourceRefs(mission.sources, hydration.sources),
+      },
+      hydration,
+    };
+  };
+
+  /**
    * Start options for one iteration. A configured project may be the research
    * context while artifacts still belong in Cave's canonical mission
    * workspace, so that verified workspace is the one narrow secondary grant.
@@ -958,12 +1036,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     await assertNoActiveSessionOwner(next.id);
     await saveMission(next);
     const target = await missionStartTarget(next);
-    const result = target.ok
-      ? await deps.startFlow(
-          buildResearchMissionFlow(next, number),
+    let result: ResearchFlowStartResult;
+    if (!target.ok) {
+      result = { ok: false, error: target.error };
+    } else {
+      const hydrated = await hydrateForLaunch(next);
+      if (!hydrated.ok) {
+        result = { ok: false, error: hydrated.error };
+      } else {
+        next = hydrated.mission;
+        result = await deps.startFlow(
+          buildResearchMissionFlow(next, number, hydrated.hydration),
           missionStartOptions(next.id, number, target.projectRoot, target.missionWorkspace, next),
-        )
-      : { ok: false, error: target.error };
+        );
+      }
+    }
     return persistLaunchResult(next, result);
   };
 
@@ -1002,12 +1089,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     await assertNoActiveSessionOwner(retried.id);
     await saveMission(retried);
     const target = await missionStartTarget(retried);
-    const result = target.ok
-      ? await deps.startFlow(
-          buildResearchMissionFlow(retried, current.number),
+    let result: ResearchFlowStartResult;
+    if (!target.ok) {
+      result = { ok: false, error: target.error };
+    } else {
+      const hydrated = await hydrateForLaunch(retried);
+      if (!hydrated.ok) {
+        result = { ok: false, error: hydrated.error };
+      } else {
+        retried = hydrated.mission;
+        result = await deps.startFlow(
+          buildResearchMissionFlow(retried, current.number, hydrated.hydration),
           missionStartOptions(retried.id, current.number, target.projectRoot, target.missionWorkspace, retried),
-        )
-      : { ok: false, error: target.error };
+        );
+      }
+    }
     return persistLaunchResult(retried, result);
   };
 
@@ -1854,12 +1950,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         if (TERMINAL_RESEARCH_MISSION_STATUSES.includes(current.status)) return current;
         const target = await missionStartTarget(current);
         if (target.ok) await assertNoActiveSessionOwner(current.id);
-        const result = target.ok
-          ? await deps.startFlow(
-            buildResearchMissionFlow(current, 1),
-            missionStartOptions(current.id, 1, target.projectRoot, target.missionWorkspace, current),
-          )
-          : { ok: false, error: target.error };
+        let result: ResearchFlowStartResult;
+        if (!target.ok) {
+          result = { ok: false, error: target.error };
+        } else {
+          const hydrated = await hydrateForLaunch(current);
+          if (!hydrated.ok) {
+            result = { ok: false, error: hydrated.error };
+          } else {
+            current = hydrated.mission;
+            result = await deps.startFlow(
+              buildResearchMissionFlow(current, 1, hydrated.hydration),
+              missionStartOptions(current.id, 1, target.projectRoot, target.missionWorkspace, current),
+            );
+          }
+        }
         return persistLaunchResult(current, result);
       });
     },
@@ -2145,6 +2250,14 @@ export function makeProductionResearchMissionRunner() {
       return parseResearchSourcesFile(raw);
     },
     materializeSavedLink: materializeSavedLinkForMission,
+    hydrateXSources: async (mission) => {
+      const { hydrateMissionXSources } = await import("./research-mission-x-runtime.ts");
+      return hydrateMissionXSources(mission);
+    },
+    dropXRuntime: async (missionId) => {
+      const { dropMissionXRuntime } = await import("./research-mission-x-runtime.ts");
+      await dropMissionXRuntime(missionId);
+    },
     publishKnowledge: async (entry) => {
       const { writeKnowledgeEntry } = await import("./knowledge-vault.ts");
       return writeKnowledgeEntry(entry);

@@ -65,7 +65,58 @@ function sourceRequirement(mission: ResearchMission): string {
   return `Target ${mission.bounds.sourceTarget} useful sources and record every candidate, used, conflicting, or rejected source in sources.json.`;
 }
 
-function boundedContext(mission: ResearchMission, iteration: number, workspace: string): string {
+/**
+ * What the user attached from X and what this iteration can actually see.
+ *
+ * The hydrated files are temporary and mission-scoped; naming them in the
+ * shared context is the only way the iteration knows they are user-requested
+ * sources rather than incidental workspace files. Naming the UNAVAILABLE ones
+ * matters just as much: a post that was deleted must be visibly absent, never
+ * silently absent.
+ */
+export type ResearchMissionXAttachments = {
+  files: ReadonlyArray<{
+    postId: string;
+    canonicalUrl: string;
+    authorUsername: string;
+    relativePath: string;
+  }>;
+  unavailable: ReadonlyArray<{
+    postId: string;
+    canonicalUrl: string;
+    reason: "deleted";
+  }>;
+};
+
+const NO_X_ATTACHMENTS: ResearchMissionXAttachments = { files: [], unavailable: [] };
+
+function xAttachmentContext(attachments: ResearchMissionXAttachments): string[] {
+  if (attachments.files.length === 0 && attachments.unavailable.length === 0) return [];
+  const lines = ["Attached X sources (requested by the user for this mission):"];
+  for (const file of attachments.files) {
+    lines.push(
+      `- ${file.relativePath} — @${file.authorUsername}, post ${file.postId}, ${file.canonicalUrl}`,
+    );
+  }
+  for (const missing of attachments.unavailable) {
+    lines.push(
+      `- UNAVAILABLE: post ${missing.postId} (${missing.canonicalUrl}) was ${missing.reason} on X and could not be retrieved. Do not cite, infer, or invent its content; say it was unavailable if it matters.`,
+    );
+  }
+  if (attachments.files.length > 0) {
+    lines.push(
+      "Those files are temporary. Cave wrote them for this iteration only and deletes them when it ends. Cite and synthesize them, and record each one in sources.json by canonical URL and post ID — never by copying the post body into a durable file.",
+    );
+  }
+  return lines;
+}
+
+function boundedContext(
+  mission: ResearchMission,
+  iteration: number,
+  workspace: string,
+  attachments: ResearchMissionXAttachments,
+): string {
   return [
     `Mission: ${mission.id}`,
     `Mode: ${mission.mode}`,
@@ -77,6 +128,7 @@ function boundedContext(mission: ResearchMission, iteration: number, workspace: 
     `Workspace: ${workspace}`,
     `Read existing mission state before acting. Write only under ${workspace}.`,
     sourceRequirement(mission),
+    ...xAttachmentContext(attachments),
     `Wall-clock bound: ${mission.bounds.wallClockMinutes} minutes total.`,
     mission.bounds.maxSpendUsd === undefined
       ? "No reported spend ceiling is configured."
@@ -107,12 +159,13 @@ function publishPrompt(): string {
 export function buildResearchMissionFlow(
   mission: ResearchMission,
   iteration: number,
+  attachments: ResearchMissionXAttachments = NO_X_ATTACHMENTS,
 ): FlowDoc {
   if (!Number.isInteger(iteration) || iteration < 1 || iteration > mission.bounds.maxIterations) {
     throw new Error("invalid research iteration");
   }
   const workspace = researchMissionWorkspacePath(mission.id);
-  const context = boundedContext(mission, iteration, workspace);
+  const context = boundedContext(mission, iteration, workspace, attachments);
   const now = mission.updatedAt || mission.createdAt;
   const nodes: FlowNode[] = [
     {

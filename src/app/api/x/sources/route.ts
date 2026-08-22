@@ -11,7 +11,14 @@ import {
   withXAuthenticatedRead,
 } from "@/lib/server/x-access";
 import { lookupXPost } from "@/lib/server/x-client";
-import { loadResearchMission } from "@/lib/server/research-mission-store";
+import {
+  loadResearchMission,
+  updateResearchMissionSources,
+} from "@/lib/server/research-mission-store";
+import {
+  mergeXSourceRefs,
+  xSourceLedgerRef,
+} from "@/lib/server/research-mission-x-runtime";
 import {
   listSavedXSources,
   markXPostAvailability,
@@ -129,7 +136,19 @@ export async function POST(req: Request) {
         // source mutated even when the mission turned out to be missing or
         // to belong to someone else.
         await setXSourceMissionAttached(familiarId, sourceId, missionId);
-        return NextResponse.json({ ok: true, mission });
+        // The attachment has to be visible on the MISSION as well, not only as
+        // a bookmark on the X-side record. Without this the user is told "X
+        // source attached to the mission" while the mission's own ledger never
+        // mentions it and nothing but a launch would ever reveal the gap
+        // (cave-v3ajh). Identity only — the post body is never written here.
+        const attached = (await listSavedXSources(familiarId))
+          .find((candidate) => candidate.id === sourceId);
+        if (!attached) throw new XApiError("not-found", "Saved X source was not found");
+        const updated = await updateResearchMissionSources(
+          missionId,
+          (sources) => mergeXSourceRefs(sources, [xSourceLedgerRef(attached)]),
+        );
+        return NextResponse.json({ ok: true, mission: updated ?? mission });
       }
 
       case "refresh": {
