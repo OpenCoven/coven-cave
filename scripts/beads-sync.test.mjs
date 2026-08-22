@@ -202,7 +202,7 @@ test("push timeout kills a descendant that ignores SIGTERM", {
   try {
     const status = await runBeadsSync({
       env: { ...current.env, BD_FAKE_PUSH_HANG: "1" },
-      timeoutMs: 200,
+      timeoutMs: 1_000,
       terminationGraceMs: 200,
       writeStdout: () => {},
       writeStderr: (value) => stderr.write(value),
@@ -211,7 +211,7 @@ test("push timeout kills a descendant that ignores SIGTERM", {
     assert.equal(status, 124, stderr.text());
     const pid = Number(readFileSync(current.descendantPid, "utf8"));
     assert.equal(await waitForMissingProcess(pid), true, `descendant ${pid} survived timeout`);
-    assert.match(stderr.text(), /push timed out after 200ms/);
+    assert.match(stderr.text(), /push timed out after 1000ms/);
     assert.match(stderr.text(), /owned process tree terminated/);
     assert.match(stderr.text(), /Retry `pnpm beads:sync` once/);
   } finally {
