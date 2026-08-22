@@ -57,7 +57,7 @@ assert.match(
 // local-only delete the route exists to end.
 assert.match(
   del,
-  /statusCode == 404, decoded\?\.ok == nil \{[\s\S]*?throw CaveError\.badResponse\(404\)/,
+  /statusCode == 404, decoded\?\.ok == nil \{[\s\S]*?throw CaveError\.transport\(/,
   "a 404 that is not this route's own JSON envelope must be reported, not swallowed — " +
     "otherwise an older desktop reads as 'already deleted'",
 );

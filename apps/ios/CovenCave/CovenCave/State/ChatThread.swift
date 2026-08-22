@@ -477,13 +477,20 @@ final class ChatThread: Identifiable, Hashable {
 
     /// Where a message lives on the server, when it lives there at all.
     ///
-    /// Deliberately narrow. Only a direct chat is ever restored from a server
-    /// transcript — `reload` no-ops for groups, and `AppModel.loadHistory`
-    /// only ever runs against a thread it built with a single familiar — so
-    /// only a direct chat's messages can be named back to a turn. A queued
-    /// send, inline slash output, and a thread with no session yet have
-    /// nothing on the server to remove, and for those the local removal is
-    /// already the whole truth.
+    /// Deliberately narrow, and the group exclusion is load-bearing rather
+    /// than incidental: a group is N independent server sessions presented as
+    /// one transcript, so `familiarIds.first` names an arbitrary one of them
+    /// and a position in the merged local list answers to no position in any
+    /// of their turn lists. A direct chat is the only shape with one session
+    /// to address. Group messages also mostly carry no server turn id —
+    /// `reload` no-ops for groups and `AppModel.loadHistory` only ever runs
+    /// against a thread it built with a single familiar — but replay CAN
+    /// adopt one, so it is the guard below that holds, not the absence of an
+    /// id.
+    ///
+    /// A queued send, inline slash output, and a thread with no session yet
+    /// have nothing on the server to remove either, and for those the local
+    /// removal is already the whole truth.
     private func serverDeleteTarget(for message: DisplayMessage,
                                     at index: Int) -> ServerDeleteTarget? {
         guard !isGroup, !message.isQueued,
@@ -616,7 +623,10 @@ final class ChatThread: Identifiable, Hashable {
         if !messages.contains(where: { $0.id == message.id }) {
             messages.insert(message, at: min(max(index, 0), messages.count))
         }
-        appendSystem("That message was not deleted — \(reason).", isError: true)
+        // Most `localizedDescription`s already end in a full stop, and
+        // "… status 404.." is a shabby thing to read back to someone.
+        let detail = reason.hasSuffix(".") ? String(reason.dropLast()) : reason
+        appendSystem("That message was not deleted — \(detail).", isError: true)
         updatedAt = Date()
         onChange()
     }

@@ -801,9 +801,10 @@ struct CaveClient {
         // shipped it — means the delete never happened, and swallowing that
         // one would hand back the silent local-only delete this route exists
         // to end. The route always answers in an `ok` envelope; an unrouted
-        // 404 answers with a page.
+        // 404 answers with a page. Said in words rather than as a status code,
+        // because this one is read back to the user in a chat bubble.
         if (resp as? HTTPURLResponse)?.statusCode == 404, decoded?.ok == nil {
-            throw CaveError.badResponse(404)
+            throw CaveError.transport("This Cave is too old to delete a single message.")
         }
         return decoded?.deleted ?? false
     }
