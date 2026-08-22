@@ -20,10 +20,15 @@
  *    `uncertain` record. This panel holds the whole composer on that, not just
  *    the record — see `composerGate` for why the wider hold is the right one
  *    in front of a person.
- *  - **A refusal is shown, never worked around.** Publishing disabled for this
- *    familiar, or no connected account, renders the server's own sentence and
- *    nothing else. There is no local fallback path, because the point of the
- *    grant is that there isn't one.
+ *  - **A refusal is shown, never worked around.** Publishing not granted for
+ *    this familiar renders the server's own sentence and nothing else — no
+ *    composer underneath to fill in meanwhile.
+ *
+ *    A missing X connection is deliberately NOT that shape. The route serves
+ *    this history without one, so the backlog stays readable after a
+ *    disconnect; the panel therefore loads normally and the refusal arrives at
+ *    the publish, in the server's own words. Either way there is no local
+ *    fallback path, because the point of the grant is that there isn't one.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -42,11 +47,11 @@ import {
 import { SurfaceError, SurfaceLoading } from "./surface-room";
 
 /**
- * A refusal the server *answered* — publishing not granted, no connected
- * account — is data, not a load failure. Throwing it would collapse it into
- * the one fixed message `useLatestAsyncData` shows on error, and the whole
- * value of these refusals is that they say which of several things is wrong.
- * Only an unreachable Cave takes the error path.
+ * A refusal the server *answered* — publishing not granted for this familiar,
+ * or the familiar id refused outright — is data, not a load failure. Throwing
+ * it would collapse it into the one fixed message `useLatestAsyncData` shows on
+ * error, and the whole value of these refusals is that they say which of
+ * several things is wrong. Only an unreachable Cave takes the error path.
  */
 type PublicationsState =
   | { ok: true; publications: XPublicationRecord[] }
@@ -252,7 +257,17 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
   useEffect(() => {
     if (!confirmation) return;
     const record = publications.find((entry) => entry.id === confirmation.publicationId);
-    // Not loaded yet, or still editable: the approval still means what it says.
+    // Not in the list, or still editable: the approval still means what it says.
+    //
+    // `!record` deliberately does NOT clear, and it must not be "tightened" to
+    // clear once a list has loaded successfully. A confirmation is set before
+    // the reload that would fetch the list naming its draft, and in a browser
+    // that GET takes real time — so this effect runs, repeatedly, against a
+    // list that predates the record. Clearing there would revoke the approval a
+    // person had just been given. The residual cost is narrow and self-healing:
+    // a record that vanished outright (a quarantined store) leaves the approval
+    // naming an id the server 404s until the room is re-entered, which remounts
+    // this panel.
     if (!record || record.status === "draft") return;
     setConfirmation(null);
     if (record.status !== "published") return;
@@ -370,7 +385,17 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
 
       <label className="role-surface-field">
         <span className="role-surface-field-label">Post text</span>
+        {/*
+          `role-surface-field` styles `input` and `select` only, so a textarea
+          under it carries its own class or it renders with no border, no
+          background, no padding and — the part that matters — no focus ring.
+          `role-surface-notes` is the rooms' textarea style (the Message box
+          below in this same canvas, and the Scribe draft body, are its only
+          other users); `--short` is the 90px modifier that matches `rows`
+          here, because this box sits above that one rather than replacing it.
+        */}
         <textarea
+          className="role-surface-notes role-surface-notes--short"
           value={text}
           onChange={(event) => setText(event.target.value)}
           rows={4}

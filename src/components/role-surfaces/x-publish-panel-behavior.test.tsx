@@ -76,7 +76,28 @@ async function draftAndPublish(renderer, wording: string) {
   await act(async () => button(renderer, "Publish to X").props.onClick());
 }
 
-const text = (renderer) => JSON.stringify(renderer.toJSON());
+/**
+ * The panel's OWN subtree, serialized — never the whole tree.
+ *
+ * `renderer.toJSON()` also carries the announcer's two live regions, and this
+ * panel announces every message it renders. An assertion over the whole tree
+ * therefore passes on the announcement alone and says nothing about what the
+ * room shows. Verified by mutation: with a whole-tree helper, deleting the
+ * visible error element outright left all thirteen tests green — while the
+ * announcement it would have been standing in for is cleared after 250ms.
+ */
+function panelText(renderer): string {
+  const tree = renderer.toJSON();
+  const roots = Array.isArray(tree) ? tree : [tree];
+  return JSON.stringify(roots.filter((node) => node && node.type === "section"));
+}
+
+/** The wording previews the panel renders, in order. */
+function previews(renderer): string[] {
+  return renderer.root
+    .findAll((node) => node.type === "pre" && node.props.className === "role-surface-content")
+    .map((node) => node.children.join(""));
+}
 
 function button(renderer, label: string) {
   return renderer.root
@@ -88,7 +109,7 @@ test("a refused grant is stated, and no composer is offered underneath it", asyn
   handler = () => ({ status: 403, body: { ok: false, error: "Enable X publishing for this familiar" } });
   const renderer = await render();
 
-  expect(text(renderer)).toContain("Enable X publishing for this familiar");
+  expect(panelText(renderer)).toContain("Enable X publishing for this familiar");
   // The refusal IS the panel. Rendering a composer below it would invite
   // someone to type a post that can never go anywhere.
   expect(renderer.root.findAll((node) => node.type === "textarea")).toHaveLength(0);
@@ -98,10 +119,10 @@ test("an unreachable Cave is a failure, not a refusal", async () => {
   handler = () => ({ status: 500, body: null });
   const renderer = await render();
 
-  expect(text(renderer)).toContain("Couldn't load X publishing.");
+  expect(panelText(renderer)).toContain("Couldn't load X publishing.");
   // A 500 must not be reported as "publishing is not available for this
   // familiar" — that reads as a settled policy answer to a transient outage.
-  expect(text(renderer)).not.toContain("not available for this familiar");
+  expect(panelText(renderer)).not.toContain("not available for this familiar");
 });
 
 test("publishing sends the token minted for the exact text that was confirmed", async () => {
@@ -123,6 +144,11 @@ test("publishing sends the token minted for the exact text that was confirmed", 
   const renderer = await render();
 
   const textarea = renderer.root.find((node) => node.type === "textarea");
+  // `role-surface-field` styles `input` and `select` only, so a textarea under
+  // it needs the rooms' own textarea class or it renders with no border, no
+  // background, no padding and no focus ring — none of which any behavioural
+  // assertion here would notice.
+  expect(textarea.props.className).toContain("role-surface-notes");
   await act(async () => textarea.props.onChange({ target: { value: "ship it" } }));
 
   // Before confirming there is nothing to publish with.
@@ -130,6 +156,10 @@ test("publishing sends the token minted for the exact text that was confirmed", 
 
   await act(async () => button(renderer, "Review this wording").props.onClick());
   expect(button(renderer, "Publish to X").props.disabled).toBe(false);
+  // The confirmation step is worth nothing unless the exact wording is put in
+  // front of the person separately from the box they typed it in.
+  expect(panelText(renderer)).toContain("This exact text is confirmed");
+  expect(previews(renderer)).toEqual(["ship it"]);
 
   await act(async () => button(renderer, "Publish to X").props.onClick());
   const published = requests.find((request) => request.body?.action === "publish");
@@ -187,7 +217,11 @@ test("an unresolved attempt holds the composer until a human settles it", async 
   };
   const renderer = await render();
 
-  expect(text(renderer)).toContain("may or may not be posted");
+  expect(panelText(renderer)).toContain("may or may not be posted");
+  // The wording is the whole instruction: the person is being sent to the
+  // account on X to look for THIS post. A hold that does not say what to look
+  // for cannot be settled honestly.
+  expect(previews(renderer)).toEqual(["did this go out?"]);
   expect(renderer.root.find((node) => node.type === "textarea").props.disabled).toBe(true);
   expect(button(renderer, "Publish to X").props.disabled).toBe(true);
 
@@ -217,7 +251,7 @@ test("resolving as posted refuses without the post id, and never guesses one", a
   const renderer = await render();
 
   await act(async () => button(renderer, "It posted").props.onClick());
-  expect(text(renderer)).toContain("Enter the post's numeric ID");
+  expect(panelText(renderer)).toContain("Enter the post's numeric ID");
   expect(requests.some((request) => request.body?.action === "resolve")).toBe(false);
 });
 
@@ -235,7 +269,7 @@ test("a pasted post address is refused by the field, not by a round trip", async
 
   // The store's id is digits only. Sending the address would come back as the
   // route's generic refusal, aimed at nothing the person can see.
-  expect(text(renderer)).toContain("digits only");
+  expect(panelText(renderer)).toContain("digits only");
   expect(requests.some((request) => request.body?.action === "resolve")).toBe(false);
 });
 
@@ -250,16 +284,16 @@ test("a 500 carrying the route's own envelope is still a failure, not a refusal"
   });
   const renderer = await render();
 
-  expect(text(renderer)).toContain("Couldn't load X publishing.");
-  expect(text(renderer)).toContain("Retry");
+  expect(panelText(renderer)).toContain("Couldn't load X publishing.");
+  expect(panelText(renderer)).toContain("Retry");
 });
 
 test("an ok envelope with no list is a failure, not a refusal", async () => {
   handler = () => ({ status: 200, body: { ok: true } });
   const renderer = await render();
 
-  expect(text(renderer)).toContain("Couldn't load X publishing.");
-  expect(text(renderer)).not.toContain("not available for this familiar");
+  expect(panelText(renderer)).toContain("Couldn't load X publishing.");
+  expect(panelText(renderer)).not.toContain("not available for this familiar");
 });
 
 test("a failed publish surfaces the record it left behind", async () => {
@@ -287,11 +321,11 @@ test("a failed publish surfaces the record it left behind", async () => {
   const renderer = await render();
   await draftAndPublish(renderer, "ship it");
 
-  expect(text(renderer)).toContain("A previous attempt may already have posted.");
+  expect(panelText(renderer)).toContain("A previous attempt may already have posted.");
   // Reloading on the failure path is the whole point: without it the room
   // never learns about the record, so nothing holds the composer and the
   // resolve form that settles it is unreachable from the room that made it.
-  expect(text(renderer)).toContain("may or may not be posted");
+  expect(panelText(renderer)).toContain("may or may not be posted");
   expect(button(renderer, "It posted")).toBeTruthy();
   expect(textarea(renderer).props.disabled).toBe(true);
 });
@@ -349,7 +383,7 @@ test("settling the attempt leaves the composer usable, not wedged on a spent id"
   await act(async () => button(renderer, "Review this wording").props.onClick());
   const redraft = requests.filter((request) => request.body?.action === "draft").at(-1);
   expect(redraft?.body?.publicationId).toBeUndefined();
-  expect(text(renderer)).not.toContain("cannot be edited");
+  expect(panelText(renderer)).not.toContain("cannot be edited");
   expect(button(renderer, "Publish to X").props.disabled).toBe(false);
 });
 
@@ -373,7 +407,7 @@ test("a publish the store had already sent says so rather than implying a second
   const renderer = await render();
   await draftAndPublish(renderer, "ship it");
 
-  expect(text(renderer)).toContain("Nothing new was sent");
+  expect(panelText(renderer)).toContain("Nothing new was sent");
 });
 
 test("a lost publish response is reconciled from the record, not left inviting a retype", async () => {
@@ -401,7 +435,15 @@ test("a lost publish response is reconciled from the record, not left inviting a
   const renderer = await render();
   await draftAndPublish(renderer, "ship it");
 
-  expect(text(renderer)).toContain("recorded as published");
+  expect(panelText(renderer)).toContain("recorded as published");
+  // What did go out is listed, with the id that names it. Without this the
+  // room's only account of the post is a notice that clears on the next click.
+  expect(
+    renderer.root.findAll(
+      (node) => node.type === "li" && node.props.className === "role-surface-list-row",
+    ),
+  ).toHaveLength(1);
+  expect(panelText(renderer)).toContain("1234567890123456789");
   // Leaving the wording in the box next to an error is how the same post gets
   // sent twice by hand.
   expect(textarea(renderer).props.value).toBe("");
@@ -412,4 +454,28 @@ test("a lost publish response is reconciled from the record, not left inviting a
       (node) => node.props?.className === "role-surface-notice role-surface-notice--error",
     ),
   ).toHaveLength(0);
+});
+
+test("an approval survives a list that does not name its record", async () => {
+  // The reconciliation effect drops an approval whose record has left `draft`.
+  // It must NOT also drop one whose record is simply absent, and the reason is
+  // timing rather than tolerance: a confirmation is set before the reload that
+  // would fetch the list naming its draft, so the effect necessarily runs
+  // against lists that predate the record. This holds the permanent form of
+  // that window — a list that never names the record at all — because it is
+  // the one a test can pin deterministically. Verified by mutation: clearing on
+  // `!record` fails five of the tests in this file.
+  handler = (url, init) => {
+    if (init?.method !== "POST") return { body: { ok: true, publications: [] } };
+    return {
+      body: { ok: true, publication: { ...DRAFT, text: "ship it" }, confirmationToken: "t" },
+    };
+  };
+  const renderer = await render();
+
+  await act(async () => textarea(renderer).props.onChange({ target: { value: "ship it" } }));
+  await act(async () => button(renderer, "Review this wording").props.onClick());
+
+  expect(button(renderer, "Publish to X").props.disabled).toBe(false);
+  expect(previews(renderer)).toEqual(["ship it"]);
 });
