@@ -1996,14 +1996,39 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
   if (openToken && touchedId) {
     const touched = conversations.find((conversation) => conversation.sessionId === touchedId);
     await writeConversation(caveHomeDir, { ...touched, updatedAt: "2026-12-31T00:00:00.000Z" });
-    const resumed = await client.read(`/conversations?limit=2&cursor=${encodeURIComponent(openToken)}`, bearer);
-    const resumedIds = (resumed.json?.data?.conversations ?? []).map((row) => row.id);
+
+    // The REST of the walk, not just the next page. "Skipped" is a claim about
+    // every page after the touch — a row that reappeared three pages later
+    // would be a repeat, which is what the reference used to say happens, and a
+    // single-page probe cannot tell the two apart.
+    const remainder = [];
+    let token = openToken;
+    let resumedStatus = 0;
+    for (let page = 0; page < 50 && token; page += 1) {
+      const resumed = await client.read(`/conversations?limit=2&cursor=${encodeURIComponent(token)}`, bearer);
+      resumedStatus = resumed.status;
+      if (resumed.status !== 200) break;
+      remainder.push(...(resumed.json?.data?.conversations ?? []).map((row) => row.id));
+      token = resumed.json?.cursor?.next ?? null;
+    }
+    const mutableFailures = [];
+    if (resumedStatus !== 200) mutableFailures.push(`resuming the walk answered ${resumedStatus}, expected 200`);
+    if (remainder.includes(touchedId)) {
+      mutableFailures.push(
+        `after touching the unserved ${touchedId} the rest of the walk still served it: [${remainder}]`,
+      );
+    }
+    const alreadyServed = firstPage[0]?.ids ?? [];
+    for (const id of remainder) {
+      if (alreadyServed.includes(id)) mutableFailures.push(`${id} was served before the touch and again after it`);
+    }
+    if (new Set(remainder).size !== remainder.length) {
+      mutableFailures.push(`the rest of the walk repeated a row: [${remainder}]`);
+    }
     recorder.expect(
       "reads.conversations-mutable-key-moves-a-row",
-      resumed.status === 200 && !resumedIds.includes(touchedId)
-        ? []
-        : [`after touching the unserved ${touchedId} the walk served [${resumedIds}] (status ${resumed.status}); it was expected to have moved above the open cursor`],
-      "a touched, not-yet-served conversation leaves the window; deduplicate and re-read from the top",
+      mutableFailures,
+      `touched ${touchedId}; the rest of the walk served [${remainder}] — a skip, and no repeat anywhere in it`,
     );
     await writeConversation(caveHomeDir, touched);
   } else {
