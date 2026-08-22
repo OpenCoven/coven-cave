@@ -2085,8 +2085,14 @@ struct ChatView: View {
     }
 
     private func deleteMessage(_ message: DisplayMessage) {
-        thread.deleteMessage(message.id)
-        app.touch(thread)
+        // `app.client` may be nil (not connected yet). The thread refuses the
+        // delete in that case if the message has a server copy, rather than
+        // removing it here and telling nobody.
+        // The closure IS the persist: `deleteMessage` calls it on the optimistic
+        // removal, on the refusal, and again on a rollback that lands after the
+        // request. Touching again here only re-wrote the threads file a second
+        // time for the same change.
+        thread.deleteMessage(message.id, client: app.client) { app.touch(thread) }
     }
 
     private func openReader(text: String, familiar: Familiar?) {
