@@ -1025,6 +1025,7 @@ export const SUITES = {
     "src/components/settings-action-buttons.test.ts",
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
+    "src/components/settings-client-access.test.tsx",
     "src/components/settings-save-feedback.test.ts",
     "src/components/settings-save-feedback.behavior.test.tsx",
     "src/components/voice-engine-settings.test.ts",
@@ -2179,6 +2180,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   "src/lib/home-composer-context.test.ts",
   "src/components/streaming-turn-response.test.tsx",
+  "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/chat-preview-card.test.tsx",
   "src/components/document-reader-view.test.ts",
