@@ -52,7 +52,11 @@ const WEIGHT_ONE_RANGES: readonly (readonly [number, number])[] = [
 
 export function weightedPostLength(text: string): number {
   let total = 0;
-  for (const character of text) {
+  // Normalized first, exactly as X does before it counts. An "é" typed as
+  // `e` + U+0301 is two code points and would otherwise be charged two, while
+  // X composes it to one and charges one — so an unnormalized count warns
+  // about a limit the post is nowhere near.
+  for (const character of text.normalize("NFC")) {
     const code = character.codePointAt(0) ?? 0;
     const light = WEIGHT_ONE_RANGES.some(([low, high]) => code >= low && code <= high);
     total += light ? 1 : 2;
@@ -121,11 +125,23 @@ export function composerGate(input: {
 }
 
 /**
+ * A stored instant as the rooms render one. Every other role surface shows a
+ * timestamp through `toLocaleString`, and this is the last message that should
+ * make someone parse an ISO string — they are being asked to go and look at
+ * a clock-time on X. A value that will not parse is passed through rather than
+ * rendered as "Invalid Date": the raw string is still evidence.
+ */
+function humanInstant(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+/**
  * Why an unresolved attempt is being held, in one line the room can render.
  * Names the dispatch time because that is the only fact anyone has: what was
  * sent, and when — never whether it arrived.
  */
 export function unresolvedSummary(publication: XPublicationRecord): string {
-  const when = publication.dispatchedAt ?? publication.updatedAt;
+  const when = humanInstant(publication.dispatchedAt ?? publication.updatedAt);
   return `Sent at ${when} — X never confirmed it. It may or may not be posted.`;
 }

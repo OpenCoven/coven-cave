@@ -38,6 +38,20 @@ test("weighted length charges two for what X charges two for", () => {
   assert.equal(weightedPostLength("☀"), 2, "a code point in no weight-1 range costs two");
 });
 
+test("weighted length composes before it counts, as X does", () => {
+  const composed = "é";
+  const decomposed = "é";
+  assert.notEqual(composed, decomposed, "the two spellings really are different strings");
+  assert.equal(weightedPostLength(composed), 1);
+  assert.equal(
+    weightedPostLength(decomposed),
+    1,
+    "X normalizes to NFC before counting; charging two here would warn about a limit the post is nowhere near",
+  );
+  // A whole line of accented text is the case where the difference is visible.
+  assert.equal(weightedPostLength("é".repeat(140)), 140);
+});
+
 test("the standard limit is a mark, not a gate", () => {
   // The store deliberately does not hard-code 280 because an entitlement can
   // raise it. This constant exists to LABEL text, so nothing here should ever
@@ -132,10 +146,15 @@ test("unresolved and published partitions are exactly the two statuses they name
 });
 
 test("the unresolved summary states what is known and nothing more", () => {
-  const summary = unresolvedSummary(
-    record({ status: "uncertain", dispatchedAt: "2026-08-02T10:00:00.000Z" }),
+  const dispatchedAt = "2026-08-02T10:00:00.000Z";
+  const summary = unresolvedSummary(record({ status: "uncertain", dispatchedAt }));
+  // A clock time the reader can compare against X, not an ISO string — every
+  // other role surface renders an instant this way.
+  assert.ok(
+    summary.includes(new Date(dispatchedAt).toLocaleString()),
+    `expected a locale-rendered dispatch time in: ${summary}`,
   );
-  assert.match(summary, /2026-08-02T10:00:00\.000Z/);
+  assert.doesNotMatch(summary, /2026-08-02T10:00:00\.000Z/, "the raw ISO string is not for reading");
   assert.match(summary, /may or may not/);
   // It must never assert an outcome; that is the whole reason the record is
   // uncertain and the reason a human is being asked.
@@ -145,7 +164,17 @@ test("the unresolved summary states what is known and nothing more", () => {
 test("a record whose dispatch time is missing still names a time", () => {
   // `dispatchedAt` is present exactly while the status is uncertain, but the
   // summary must not render "Sent at undefined" if that invariant ever slips.
-  const summary = unresolvedSummary(record({ status: "uncertain", updatedAt: "2026-08-04T00:00:00.000Z" }));
-  assert.match(summary, /2026-08-04T00:00:00\.000Z/);
+  const updatedAt = "2026-08-04T00:00:00.000Z";
+  const summary = unresolvedSummary(record({ status: "uncertain", updatedAt }));
+  assert.ok(summary.includes(new Date(updatedAt).toLocaleString()), summary);
   assert.doesNotMatch(summary, /undefined/);
+});
+
+test("a dispatch time that will not parse is shown raw, never as Invalid Date", () => {
+  // The stored string is evidence of what was sent and when. If it is ever
+  // something `Date` cannot read, showing it verbatim keeps that evidence;
+  // "Invalid Date" would destroy it in the one message that must not.
+  const summary = unresolvedSummary(record({ status: "uncertain", dispatchedAt: "not-a-date" }));
+  assert.match(summary, /Sent at not-a-date/);
+  assert.doesNotMatch(summary, /Invalid Date/);
 });

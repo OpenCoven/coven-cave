@@ -26,7 +26,8 @@
  *    grant is that there isn't one.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import {
@@ -62,6 +63,21 @@ type PublishWire = {
 
 const REFUSAL_FALLBACK = "X publishing is not available for this familiar.";
 
+/**
+ * One stable empty list. `publications` feeds `useMemo` dependency arrays and
+ * an effect, and a fresh `[]` literal on every render would make all three
+ * recompute forever.
+ */
+const NO_PUBLICATIONS: readonly XPublicationRecord[] = [];
+
+/**
+ * The store's own shape for a post id. Checked here as well so the person
+ * settling an uncertain record is corrected by the field they are typing in —
+ * a pasted post URL is the obvious mistake — rather than by a round trip that
+ * comes back with the route's generic refusal.
+ */
+const POST_ID = /^\d+$/;
+
 async function postPublishAction(body: Record<string, unknown>): Promise<PublishWire> {
   const res = await fetch("/api/x/publish", {
     method: "POST",
@@ -81,7 +97,9 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
   const [confirmation, setConfirmation] = useState<XComposerConfirmation | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [postIdDrafts, setPostIdDrafts] = useState<Record<string, string>>({});
+  const { announce } = useAnnouncer();
 
   const load = useCallback(async (): Promise<PublicationsState> => {
     const res = await fetch(
@@ -89,11 +107,18 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       { cache: "no-store" },
     );
     const json = (await res.json().catch(() => null)) as PublishWire | null;
-    if (res.ok && json?.ok && Array.isArray(json.publications)) {
+    // The Cave failing rather than answering: no envelope at all, or a 5xx.
+    // The status is what separates the two, because the route's own internal
+    // error DOES carry `{ok: false, error}` — envelope-shaped and 500 — and
+    // rendering that as a refusal would report an outage as settled policy.
+    if (!json || res.status >= 500) throw new Error("bad response");
+    if (res.ok && json.ok) {
+      // An `ok` envelope that does not carry the list is a malfunction too.
+      // It must not fall through to the refusal branch, where it would read
+      // as "publishing is not available for this familiar".
+      if (!Array.isArray(json.publications)) throw new Error("bad response");
       return { ok: true, publications: json.publications };
     }
-    // A 5xx with no JSON envelope is the Cave failing, not answering.
-    if (res.status >= 500 || !json) throw new Error("bad response");
     return { ok: false, reason: json.error?.trim() || REFUSAL_FALLBACK };
   }, [familiarId]);
 
@@ -103,7 +128,10 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
     errorMessage: "Couldn't load X publishing.",
   });
 
-  const publications = data?.ok ? data.publications : [];
+  const publications = useMemo(
+    () => (data?.ok ? data.publications : NO_PUBLICATIONS),
+    [data],
+  );
   const gate = useMemo(
     () => composerGate({ text, confirmation, publications }),
     [text, confirmation, publications],
@@ -111,18 +139,32 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
   const published = useMemo(() => publishedPublications(publications), [publications]);
   const weighted = weightedPostLength(text);
 
-  /** Every action shares one busy/error discipline so no two can interleave. */
+  /**
+   * Every action shares one busy/error discipline so no two can interleave,
+   * and every action ends with a reload — success or failure.
+   *
+   * The failure half is the load-bearing one. The action most likely to fail
+   * is `publish`, and the record a failed publish leaves behind is exactly the
+   * `uncertain` one this panel exists to surface. Reloading only on success
+   * would mean the room never learned about it: the composer would stay
+   * unheld, the resolve form would never render, and the only way to reach the
+   * record would be to leave the room and come back.
+   */
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true);
     setActionError(null);
+    setNotice(null);
     try {
       await action();
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : String(cause));
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setActionError(message);
+      announce(message, "assertive");
     } finally {
+      await reload({ retainData: true });
       setBusy(false);
     }
-  }, []);
+  }, [announce, reload]);
 
   const confirm = useCallback(() => run(async () => {
     const result = await postPublishAction({
@@ -130,8 +172,10 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       familiarId,
       text,
       // Reuse this composer's own draft record rather than accumulating one
-      // per keystroke-session; the store rejects editing anything that is not
-      // still a draft, so a settled record can never be rewritten this way.
+      // per keystroke-session. Only a record still in `draft` can be reused —
+      // the store refuses to edit anything else — and the reconciliation
+      // effect below drops the confirmation the moment a reload shows the
+      // record has left `draft`, so a settled id is never re-sent here.
       ...(confirmation ? { publicationId: confirmation.publicationId } : {}),
     });
     if (!result.publication || typeof result.confirmationToken !== "string") {
@@ -142,12 +186,12 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       text: result.publication.text,
       token: result.confirmationToken,
     });
-    await reload({ retainData: true });
-  }), [confirmation, familiarId, reload, run, text]);
+    announce("This wording is confirmed. Publishing sends it once.");
+  }), [announce, confirmation, familiarId, run, text]);
 
   const publish = useCallback(() => run(async () => {
     if (gate.kind !== "publish") return;
-    await postPublishAction({
+    const result = await postPublishAction({
       action: "publish",
       familiarId,
       publicationId: gate.confirmation.publicationId,
@@ -155,14 +199,27 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
     });
     setText("");
     setConfirmation(null);
-    await reload({ retainData: true });
-  }), [familiarId, gate, reload, run]);
+    // The store answers `alreadyPublished` when it sent nothing because the
+    // post had already gone out — a retried request, or a response that was
+    // lost the first time. Saying so is the difference between someone
+    // believing they posted twice and knowing they did not.
+    const settled = result.alreadyPublished === true
+      ? "That post had already gone out. Nothing new was sent."
+      : "Posted to X.";
+    if (result.alreadyPublished === true) setNotice(settled);
+    announce(settled);
+  }), [announce, familiarId, gate, run]);
 
   const resolve = useCallback(
     (publicationId: string, outcome: "published" | "abandoned") => run(async () => {
       const postId = (postIdDrafts[publicationId] ?? "").trim();
       if (outcome === "published" && postId === "") {
         throw new Error("Enter the post's numeric ID from X so the record names what went out.");
+      }
+      if (outcome === "published" && !POST_ID.test(postId)) {
+        throw new Error(
+          "A post ID is digits only — the number at the end of the post's address on X.",
+        );
       }
       await postPublishAction({
         action: "resolve",
@@ -176,10 +233,38 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         delete next[publicationId];
         return next;
       });
-      await reload({ retainData: true });
+      announce(outcome === "published" ? "Recorded as posted." : "Recorded as not posted.");
     }),
-    [familiarId, postIdDrafts, reload, run],
+    [announce, familiarId, postIdDrafts, run],
   );
+
+  /**
+   * Keep the held approval honest against the store.
+   *
+   * A confirmation names one record, and every request the composer makes with
+   * it — the reused `publicationId` on a re-confirm, the publish itself — is
+   * refused the moment that record leaves `draft`. Nothing else clears it: a
+   * publish that fails never reaches its own cleanup, and `resolve` settles
+   * the record without touching composer state. Left alone the panel would
+   * re-send a dead id forever, and nothing could be drafted from this room
+   * again without leaving it.
+   */
+  useEffect(() => {
+    if (!confirmation) return;
+    const record = publications.find((entry) => entry.id === confirmation.publicationId);
+    // Not loaded yet, or still editable: the approval still means what it says.
+    if (!record || record.status === "draft") return;
+    setConfirmation(null);
+    if (record.status !== "published") return;
+    // It went out after all — the response was lost, not the post. Take the
+    // wording out of the box rather than leaving it there inviting a second
+    // one, and retract the error that reported the lost response as a failure.
+    setText((current) => (current === confirmation.text ? "" : current));
+    setActionError(null);
+    const settled = "That post is recorded as published. Nothing more was sent.";
+    setNotice(settled);
+    announce(settled);
+  }, [announce, confirmation, publications]);
 
   if (error) {
     return (
@@ -241,7 +326,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
                 <Icon name="ph:warning-diamond" width={13} height={13} aria-hidden />
                 {unresolvedSummary(publication)}
               </p>
-              <p className="role-surface-notes role-surface-notes--short">{publication.text}</p>
+              <pre className="role-surface-content">{publication.text}</pre>
               <p className="role-surface-hint">
                 Open the account on X and look. Nothing else can be published from this
                 room until this is settled — publishing again could post it twice.
@@ -294,7 +379,16 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         />
       </label>
 
-      <p className={weighted > X_POST_WEIGHTED_LIMIT ? "role-surface-metric-warn" : "role-surface-metric"}>
+      {/*
+        `role-surface-metric-warn` sets a colour and nothing else — everywhere
+        else in the rooms it is added to a base class, not swapped for one. Used
+        as a replacement the counter would change size the moment it went over.
+      */}
+      <p
+        className={`role-surface-metric${
+          weighted > X_POST_WEIGHTED_LIMIT ? " role-surface-metric-warn" : ""
+        }`}
+      >
         {weighted} / {X_POST_WEIGHTED_LIMIT} weighted characters
         {weighted > X_POST_WEIGHTED_LIMIT
           ? " — over the standard limit. X will refuse it unless this account is entitled to more."
@@ -307,15 +401,21 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
             <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
             This exact text is confirmed. Publishing sends it once.
           </p>
-          <p className="role-surface-notes role-surface-notes--short">{gate.confirmation.text}</p>
+          <pre className="role-surface-content">{gate.confirmation.text}</pre>
         </div>
       )}
 
+      {/*
+        Neither of these carries `role="alert"`. Both are announced through
+        `useAnnouncer` at the moment they are set, which is the room's idiom
+        and the reliable one — a live region that mounts already holding its
+        text is not guaranteed to be spoken at all.
+      */}
       {actionError && (
-        <p className="role-surface-notice role-surface-notice--error" role="alert">
-          {actionError}
-        </p>
+        <p className="role-surface-notice role-surface-notice--error">{actionError}</p>
       )}
+
+      {notice && <p className="role-surface-notice">{notice}</p>}
 
       <div className="role-surface-btn-row">
         <button
@@ -340,9 +440,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         <ul className="role-surface-list">
           {published.map((publication) => (
             <li key={publication.id} className="role-surface-list-row">
-              <span className="role-surface-notes role-surface-notes--short">
-                {publication.text}
-              </span>
+              <span className="role-surface-memory-excerpt">{publication.text}</span>
               <span className="role-surface-tag">{publication.postId ?? "posted"}</span>
             </li>
           ))}
