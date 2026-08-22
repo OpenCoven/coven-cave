@@ -280,6 +280,58 @@ test("poll refuses once exchange failures alone have spent the shared budget", a
   }
 });
 
+test("poll checks the loopback stamp before it reads the rate-limit budget", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const now = 19_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const poll = createPairingRequestGetHandler(runtime);
+    const exchange = createPairingExchangePostHandler(runtime);
+    const attacked = runtime.pairingStore.create(pairingInput);
+    assert.equal(runtime.pairingStore.decide(attacked.id, "approved", now), true);
+
+    const guess = nearMiss(attacked.secret);
+    for (
+      let attempt = 0;
+      attempt < CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT;
+      attempt += 1
+    ) {
+      const rejected = await exchange(
+        exchangeRequest(attacked.id, guess),
+        context(attacked.id),
+      );
+      assert.equal(rejected.status, 401, `guess ${attempt} must be refused, not limited`);
+    }
+
+    // The ORDER of the two checks is the assertion, not either check alone: the
+    // test above shows a stamped holder gets 429 in this exact state, so an
+    // unstamped caller getting 401 can only mean the stamp was read first. Move
+    // the stamp check below the budget peek and this flips to 429 — which would
+    // hand a caller who never proved locality a live read on whether some
+    // pairing id is currently under attack, and is the shape docs/api/client-v1.md
+    // states ("checked before the rate-limit budget is read").
+    const unstamped = await poll(
+      new Request(
+        `http://127.0.0.1:3020/api/client/v1/pairing/requests/${attacked.id}`,
+        { headers: { [secretHeader]: attacked.secret } },
+      ),
+      context(attacked.id),
+    );
+    assert.equal(unstamped.status, 401);
+    const body = await unstamped.json() as { error: { code: string } };
+    assert.equal(body.error.code, "unauthorized");
+    assert.equal(unstamped.headers.get("retry-after"), null);
+    assert.equal(JSON.stringify(body).includes(attacked.secret), false);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("polling with the correct secret is never rate limited", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {

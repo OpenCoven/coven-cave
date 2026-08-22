@@ -194,8 +194,9 @@ once and does *not* treat a decoded `%2F` as a separator (both measured), so a
 normalizing fix would have to reproduce those rules exactly and keep reproducing
 them across Next versions — while decoding twice would open the `%252e` class
 instead. The poll route's own stamp check, added in the same change, is the
-second layer: the surface no longer has a route that takes its locality solely
-from the proxy branch.
+second layer: no route that serves *user data* takes its locality from the proxy
+branch alone any more. `GET /health` still does, and deliberately — it answers
+the same compatibility envelope to everyone and carries nothing to leak.
 
 ### Body and content-type rules on the public routes
 
