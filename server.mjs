@@ -150,6 +150,17 @@ const standaloneVerifiedWindowsPaths = /* @__PURE__ */ new Set();
 function assertStandaloneWindowsExclusive(path, label) {
   if (standaloneVerifiedWindowsPaths.has(path)) return;
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+  const probeEnv = {
+    COVEN_CAVE_CLIENT_V1_ACL_PATH: path,
+    // Next augments ProcessEnv to require this. It carries no secret.
+    NODE_ENV: process.env.NODE_ENV,
+    SystemRoot: systemRoot,
+    windir: systemRoot,
+    PATH: join(systemRoot, "System32"),
+    PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD",
+    TEMP: process.env.TEMP || process.env.TMP || join(systemRoot, "Temp"),
+    TMP: process.env.TMP || process.env.TEMP || join(systemRoot, "Temp")
+  };
   let report;
   try {
     report = JSON.parse(execFileSync(
@@ -166,7 +177,7 @@ function assertStandaloneWindowsExclusive(path, label) {
         WINDOWS_ACL_SCRIPT
       ],
       {
-        env: { ...process.env, COVEN_CAVE_CLIENT_V1_ACL_PATH: path },
+        env: probeEnv,
         encoding: "utf8",
         windowsHide: true,
         timeout: 15e3,

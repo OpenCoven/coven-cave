@@ -287,3 +287,33 @@ test("the real probe restricts and verifies a real path on Windows", async (t: T
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("the ACL probe is spawned without this process's environment", async () => {
+  // Both copies of the probe run inside the Cave server, which holds
+  // COVEN_CAVE_ACCESS_TOKEN and COVEN_CAVE_AUTH_TOKEN. A subprocess that only
+  // has to read a DACL must not receive them — the same rule sanitizedEnv()
+  // enforces for PTY shells, and the reason `server-pty-ws.test.ts` bans the
+  // spread outright in server.ts.
+  const { readFile } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+  for (const file of ["src/lib/server/client-v1/path-ownership.ts", "server.ts"]) {
+    const source = await readFile(resolve(process.cwd(), file), "utf8");
+    assert.doesNotMatch(
+      source,
+      /env: \{\s*\.\.\.process\.env/,
+      `${file} must not hand the server's environment to the ACL probe`,
+    );
+  }
+
+  const source = await readFile(
+    resolve(process.cwd(), "src/lib/server/client-v1/path-ownership.ts"),
+    "utf8",
+  );
+  const probeEnv = /function windowsProbeEnv\([\s\S]*?\n}/.exec(source);
+  assert.ok(probeEnv, "the probe environment must be built explicitly");
+  assert.doesNotMatch(
+    probeEnv![0],
+    /COVEN_CAVE_(?!CLIENT_V1_ACL_PATH)/,
+    "only the path under test may cross into the probe from the COVEN_CAVE namespace",
+  );
+});

@@ -125,12 +125,42 @@ if (-not (Test-Exclusive $state)) {
 } | ConvertTo-Json -Compress -Depth 4
 `;
 
+function windowsSystemRoot(): string {
+  return process.env.SystemRoot || process.env.windir || "C:\\Windows";
+}
+
 function windowsPowerShellPath(): string {
   // Absolute, never PATH: an attacker who can prepend a directory to PATH could
   // otherwise answer the ownership question with their own `powershell.exe`,
   // which is the one spoof a guard like this must not accept.
-  const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
-  return join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  return join(windowsSystemRoot(), "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+/**
+ * The smallest environment PowerShell needs, never the server's own.
+ *
+ * This process holds `COVEN_CAVE_ACCESS_TOKEN` and `COVEN_CAVE_AUTH_TOKEN`;
+ * a subprocess that only has to read a DACL has no business receiving them.
+ * `SystemRoot`/`windir` locate the runtime, `PATHEXT` and a System32-only
+ * `PATH` keep command resolution inside the system directory, and `TEMP`/`TMP`
+ * give the host somewhere to write. The path under test travels here too, so
+ * no quoting rule stands between a path containing a quote or a `$` and the
+ * identity being checked.
+ */
+function windowsProbeEnv(path: string): NodeJS.ProcessEnv {
+  const systemRoot = windowsSystemRoot();
+  const system32 = join(systemRoot, "System32");
+  return {
+    COVEN_CAVE_CLIENT_V1_ACL_PATH: path,
+    // Next augments ProcessEnv to require this. It carries no secret.
+    NODE_ENV: process.env.NODE_ENV,
+    SystemRoot: systemRoot,
+    windir: systemRoot,
+    PATH: system32,
+    PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD",
+    TEMP: process.env.TEMP || process.env.TMP || join(systemRoot, "Temp"),
+    TMP: process.env.TMP || process.env.TEMP || join(systemRoot, "Temp"),
+  };
 }
 
 function parseAclReport(raw: string): ClientV1WindowsAclReport {
@@ -175,9 +205,7 @@ export const probeWindowsAcl: ClientV1WindowsAclProbe = async (path) => {
       WINDOWS_ACL_SCRIPT,
     ],
     {
-      // The path travels in the environment so no quoting rule stands between a
-      // path containing a quote or a `$` and the identity being checked.
-      env: { ...process.env, COVEN_CAVE_CLIENT_V1_ACL_PATH: path },
+      env: windowsProbeEnv(path),
       encoding: "utf8",
       windowsHide: true,
       timeout: 15_000,

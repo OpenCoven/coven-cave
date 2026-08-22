@@ -216,6 +216,23 @@ const standaloneVerifiedWindowsPaths = new Set<string>();
 function assertStandaloneWindowsExclusive(path: string, label: string): void {
   if (standaloneVerifiedWindowsPaths.has(path)) return;
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+  // The smallest environment PowerShell needs, never this server's own: it
+  // holds COVEN_CAVE_ACCESS_TOKEN and COVEN_CAVE_AUTH_TOKEN, and a subprocess
+  // that only has to read a DACL has no business receiving them. Same rule
+  // sanitizedEnv() enforces for PTY shells. The path under test travels here
+  // too, so no quoting rule stands between a path containing a quote and the
+  // identity being checked.
+  const probeEnv: NodeJS.ProcessEnv = {
+    COVEN_CAVE_CLIENT_V1_ACL_PATH: path,
+    // Next augments ProcessEnv to require this. It carries no secret.
+    NODE_ENV: process.env.NODE_ENV,
+    SystemRoot: systemRoot,
+    windir: systemRoot,
+    PATH: join(systemRoot, "System32"),
+    PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD",
+    TEMP: process.env.TEMP || process.env.TMP || join(systemRoot, "Temp"),
+    TMP: process.env.TMP || process.env.TEMP || join(systemRoot, "Temp"),
+  };
   let report: {
     self: string;
     owner: string;
@@ -239,7 +256,7 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
         WINDOWS_ACL_SCRIPT,
       ],
       {
-        env: { ...process.env, COVEN_CAVE_CLIENT_V1_ACL_PATH: path },
+        env: probeEnv,
         encoding: "utf8",
         windowsHide: true,
         timeout: 15_000,
