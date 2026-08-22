@@ -677,7 +677,7 @@ After the existing Dolt workflow assertion, add:
 ```js
 assert.match(
   workflow,
-  /Retry `pnpm beads:sync` once[\s\S]*Do not edit Git configuration or credential helpers[\s\S]*refs\/dolt\/data/,
+  /Retry `pnpm beads:sync` once[\s\S]*Do not edit Git\s+configuration or credential helpers[\s\S]*refs\/dolt\/data/,
   "workflow docs should explain bounded retry and remote-ref verification",
 );
 ```

@@ -40,7 +40,7 @@ assert.deepEqual(
     worktreesJson: "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --json",
     patrol: "pnpm beads:prs:patrol && pnpm beads:worktrees",
     patrolApply: "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
-    sync: "bd dolt pull && bd dolt push",
+    sync: "node --experimental-strip-types scripts/beads-sync.ts",
     doctor: "bd doctor && bd lint",
   },
   "package scripts should give familiars stable Beads and PR entrypoints",
@@ -50,7 +50,16 @@ assert.match(agents, /Beads Issue Tracker/, "AGENTS.md should install Beads issu
 assert.match(agents, /Coven Familiar Beads Protocol/, "AGENTS.md should add Coven-specific familiar workflow guidance");
 assert.match(agents, /bd prime[\s\S]*bd ready --json[\s\S]*bd update <id> --claim[\s\S]*bd close <id>/, "agents should learn the claim-and-close loop");
 assert.doesNotMatch(agents, /Do NOT use external issue trackers/, "Cave must bridge GitHub and Linear instead of banning them");
-assert.match(claude, /bd dolt push[\s\S]*git push/, "Claude session close guidance should include Beads Dolt sync before git push");
+assert.match(
+  claude,
+  /pnpm beads:sync[\s\S]*git push/,
+  "Claude session close guidance should use bounded Beads sync before git push",
+);
+assert.match(
+  agents,
+  /pnpm beads:sync[\s\S]*git push/,
+  "agent session close guidance should use bounded Beads sync before git push",
+);
 
 assert.equal(beadsMetadata.dolt_database, "cave", "Cave Beads IDs should use the short cave- prefix");
 assert.match(beadsConfig, /sync\.remote:\s+"git\+https:\/\/github\.com\/OpenCoven\/coven-cave\.git"/, "Beads should be configured for Dolt sync through origin");
@@ -73,6 +82,11 @@ assert.match(workflow, /No secrets in bead text/, "workflow doc should include t
 assert.match(workflow, /\.beads\/issues\.jsonl is an export, not the sync protocol/, "workflow doc should prevent JSONL sync misuse");
 assert.match(workflow, /public-scrubbed before committing/, "workflow doc should require public-safe JSONL review exports");
 assert.match(workflow, /bd dolt pull[\s\S]*bd dolt push/, "workflow doc should name Dolt sync commands");
+assert.match(
+  workflow,
+  /Retry `pnpm beads:sync` once[\s\S]*Do not edit Git\s+configuration or credential helpers[\s\S]*refs\/dolt\/data/,
+  "workflow docs should explain bounded retry and remote-ref verification",
+);
 assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
 assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");
 assert.match(

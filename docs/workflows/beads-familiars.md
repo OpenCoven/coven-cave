@@ -67,12 +67,32 @@ Beads state lives in Dolt. `.beads/issues.jsonl is an export, not the sync proto
 
 The committed `.beads/issues.jsonl` snapshot is only for review and CI guards. Keep it public-scrubbed before committing: no local git emails, no personal machine paths, no secrets, and no private agent transcript text. Use live `bd` output or Dolt sync for canonical state.
 
-Use Dolt sync when a bead graph needs to move between machines:
+Use the bounded repository entrypoint when a bead graph needs to move between
+machines:
 
 ```bash
-bd dolt pull
-bd dolt push
+pnpm beads:sync
 ```
+
+It runs `bd dolt pull` and then `bd dolt push`, but bounds each phase and
+terminates the complete owned process tree if Git or a credential helper stops
+making progress. Do not use the raw commands for routine sync in this
+repository.
+
+If push fails or times out, Retry `pnpm beads:sync` once. Do not edit Git
+configuration or credential helpers after one transient 403; the known
+intermittent identity failure can succeed without any configuration change.
+For pending Beads changes, verify the remote ref actually advanced:
+
+```bash
+git ls-remote origin refs/dolt/data
+pnpm beads:sync
+git ls-remote origin refs/dolt/data
+```
+
+Compare the before and after OIDs. An expected advancement proves the remote
+accepted pending changes. No advancement is required when there were no local
+Dolt changes to publish.
 
 The package shortcuts are the stable entrypoints for familiars:
 
