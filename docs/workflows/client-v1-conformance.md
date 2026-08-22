@@ -150,7 +150,7 @@ the claim.
 
 The committed record for `cave-2hjtv` is
 [`2026-08-22-v0.3.9-win32.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32.json):
-**93 passed, 0 failed, 0 skipped** at `12ed1f73` on `win32-x64`, run with
+**93 passed, 0 failed, 0 skipped** at `bc3be685` on `win32-x64`, run with
 `--include-ttl`, so `pairing.ttl-poll-expired` and `pairing.ttl-exchange-expired`
 are recorded as passes rather than skips.
 
@@ -204,6 +204,13 @@ themselves hold:
    client-visible consequence is the opposite of the documented one — a repeat
    is deduplicable by `id`, a skip is silent unless the client re-reads from the
    top.
+
+   Measured over the **whole** walk rather than the page after the touch, which
+   is what separates the two claims: a row that came back three pages later
+   would be the documented repeat, and a one-page probe cannot tell. The ledger
+   orders `conversation-06` down to `conversation-01`; the first page serves
+   `[06, 05]`; after touching the unserved `conversation-01` the rest of the walk
+   serves `[04, 03, 02]` and nothing is served twice anywhere in it.
 
 ## Harness mutation results
 

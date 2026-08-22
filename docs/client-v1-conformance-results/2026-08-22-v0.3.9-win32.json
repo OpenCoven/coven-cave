@@ -5,9 +5,9 @@
     "OpenCoven/coven-cave#4838"
   ],
   "scope": "cave-only",
-  "ranAt": "2026-08-22T20:28:01.705Z",
+  "ranAt": "2026-08-22T20:39:46.737Z",
   "caveVersion": "0.3.9",
-  "commit": "12ed1f735d11fb5c9e3416b263c92dec13dc32c9",
+  "commit": "bc3be68548574653d6e4498f945d228d8bb88970",
   "platform": "win32-x64",
   "nodeVersion": "v24.18.0",
   "includeTtl": true,
@@ -436,7 +436,7 @@
     {
       "id": "reads.conversations-mutable-key-moves-a-row",
       "result": "pass",
-      "detail": "a touched, not-yet-served conversation leaves the window; deduplicate and re-read from the top"
+      "detail": "touched conversation-01; the rest of the walk served [conversation-04,conversation-03,conversation-02] — a skip, and no repeat anywhere in it"
     },
     {
       "id": "reads.messages-active-branch",
