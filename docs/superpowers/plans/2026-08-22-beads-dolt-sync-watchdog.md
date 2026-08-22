@@ -103,7 +103,7 @@ if (process.env.BD_FAKE_PUSH_HANG === "1") {
   );
   writeFileSync(process.env.BD_FAKE_DESCENDANT_PID, String(descendant.pid));
   process.on("SIGTERM", () => {});
-  setInterval(() => {}, 1000);
+  await new Promise(() => {});
 }
 
 process.stdout.write("push ok\\n");
