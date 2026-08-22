@@ -21,7 +21,7 @@
 // OAuth flow is settled through the service's own cancellation path, which
 // records an outcome before it ever reaches getXClientId().
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -41,6 +41,7 @@ process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = path.join(root, "local-vault.key")
 
 const { GET, DELETE } = await import("./connection/route.ts");
 const { xOAuthService } = await import("@/lib/server/x-oauth");
+const { xCredentialService } = await import("@/lib/server/x-credentials");
 const {
   cacheNormalizedXPosts,
   listSavedXSources,
@@ -140,4 +141,38 @@ test("DELETE purges normalized post content and keeps the saved identity", async
   assert.equal(sources[0]!.postId, "100");
   assert.equal(sources[0]!.note, "user-authored note");
   assert.deepEqual(sources[0]!.tags, ["research"]);
+});
+
+// DELETE purges BEFORE dropping the bundle, and the route comment calls that
+// ordering load-bearing: a purge failure must abort the disconnect rather than
+// strand post bodies behind a disconnected account. Until this test the
+// ordering was unenforced — swapping the two statements left every other
+// assertion in this file, and both source pins next door, green.
+//
+// A regular file where the cache directory belongs is the cross-platform way to
+// make the purge fail; an unprivileged Windows process cannot create a symlink.
+test("a failed cache purge aborts the disconnect rather than dropping the bundle", async () => {
+  await rm(cacheDir, { recursive: true, force: true });
+  await writeFile(cacheDir, "not a directory", "utf8");
+  xCredentialService.replaceBundle({
+    accessToken: "synthetic-access-token",
+    refreshToken: "synthetic-refresh-token",
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    scopes: ["tweet.read", "users.read"],
+    account: { id: "42", username: "opencoven", name: "Open Coven" },
+  });
+  assert.equal(xCredentialService.getConnectionStatus().connected, true);
+
+  await assert.rejects(
+    () => DELETE(localRequest("DELETE")),
+    /real directory/,
+    "a cache root that is not a real directory must fail the disconnect loudly",
+  );
+  assert.equal(
+    xCredentialService.getConnectionStatus().connected,
+    true,
+    "the bundle must survive a failed purge — the purge runs BEFORE disconnect",
+  );
+
+  await rm(cacheDir, { force: true });
 });
