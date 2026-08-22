@@ -263,9 +263,10 @@ export type ResearchPromptRecommendation = {
 function subject(mission: ResearchMission): string {
   const intent = mission.intent.replace(/\s+/g, " ").trim();
   const generatedTitle = intent.length <= 80 ? intent : `${intent.slice(0, 77)}…`;
-  let value = mission.title.replace(/\s+/g, " ").trim() === generatedTitle
-    ? intent
-    : mission.title.replace(/\s+/g, " ").trim();
+  const title = mission.title.replace(/\s+/g, " ").trim();
+  if (title !== generatedTitle) return title;
+
+  let value = intent;
   value = value.replace(
     /^research(?:\s+(?:and\s+compare|prompt|brief|mission|task))?\s*[:\-–—]\s*/i,
     "",

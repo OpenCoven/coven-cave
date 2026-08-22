@@ -145,7 +145,7 @@ test("promptRecommendations derives one card per real signal, each explaining it
   }
 });
 
-test("promptRecommendations recover full questions from generated truncated titles", () => {
+test("promptRecommendations recovers full questions from generated truncated titles", () => {
   const intent = [
     "Research and compare: Visual planning for agentic guided coding sessions.",
     "Primary questions: identify the strongest interaction patterns and tradeoffs.",
@@ -164,16 +164,16 @@ test("promptRecommendations recover full questions from generated truncated titl
   assert.doesNotMatch(assembleBrief(rec.brief), /Primary questions|…/);
 });
 
-test("promptRecommendations preserve explicit mission titles", () => {
+test("promptRecommendations preserves explicit mission titles", () => {
   const [rec] = promptRecommendations([
     mission({
       id: "m-named",
-      title: "Planning systems landscape",
+      title: "Research brief: Planning systems landscape. Focus on team workflows",
       intent: "Research and compare: Visual planning for guided coding.",
       status: "completed",
     }),
   ]);
-  assert.equal(rec.title, "Planning systems landscape");
+  assert.equal(rec.title, "Research brief: Planning systems landscape. Focus on team workflows");
   assert.equal(rec.brief.question, rec.title);
 });
 
