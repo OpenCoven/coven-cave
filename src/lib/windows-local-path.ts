@@ -1,13 +1,19 @@
-// windows-local-path: the one place that decides whether a Windows path can
-// still be on this machine.
+// windows-local-path: the shared boundary for the two resolvers that take a
+// Windows path from outside Cave and then dial or spawn it — the daemon socket
+// (`coven-daemon.ts`) and the CLI binary (`coven-bin.ts`, and `codex-bin.ts`
+// through it).
 //
-// Two callers used to answer that separately — `coven-daemon.ts` for the
-// daemon socket and `coven-bin.ts` for the CLI binary — and they drifted. The
-// socket side moved to the allowlist below; the binary side kept a two-regex
-// denylist, so a `COVEN_BIN` or PATH entry written in any of the spellings
-// this module refuses still sourced and spawned `coven.exe` from an
-// attacker-controlled share. One predicate is the point: the next spelling
-// anyone measures has to be closed once, not once per caller.
+// Those two used to answer separately and they drifted. The socket side moved
+// to the allowlist below; the binary side kept a two-regex denylist, so a
+// `COVEN_BIN` or PATH entry written in any of the spellings this module
+// refuses still sourced and spawned `coven.exe` from an attacker-controlled
+// share. One predicate is the point: the next spelling anyone measures has to
+// be closed once, not once per caller.
+//
+// It is not the only Windows-locality test in the tree, and should not be read
+// as one. `research-launch-policy.ts` and `research-session-authority.ts` each
+// keep a narrower `\\.\pipe\`-prefix test for the unattended-write authority,
+// on values this module's callers have already admitted upstream.
 
 /**
  * The rooted Windows shapes that provably stay on this machine: the local
@@ -38,15 +44,21 @@ const WINDOWS_LOCAL_FILESYSTEM_ROOT = /^\\\\[?.]\\[a-z]:\\/i;
  *
  * Only an exact `..` component escapes: `.. `, `...` and `. .` were all
  * measured ENOENT, because a `\\.\` path is canonicalized but its components
- * are not space/dot-trimmed. `\\?\` skips canonicalization entirely, so a `..`
- * there is a literal name and also ENOENT — it is refused anyway rather than
- * relying on that, since the difference between the two prefixes is not
- * something a reader should have to hold.
+ * are not space/dot-trimmed.
  *
- * Neither caller has a legitimate `..`: the daemon publishes a flat pipe name
- * and its fallback is built by `path.join`, and an installed launcher is found
- * by joining a PATH entry to a file name. This only ever refuses a value that
- * was written to traverse.
+ * ⚠️ `\\?\` does NOT make a `..` inert, and do not relax this check on the
+ * belief that it does. That reading holds for a *pipe* name, where the
+ * component is literal, and it does not carry over to a *file* path: measured
+ * on Windows 11, `fs.readFileSync` read `\\localhost\C$\Windows\win.ini`
+ * through `\\?\C:\..\..\UNC\localhost\C$\Windows\win.ini`. For the executable
+ * boundary this refusal is therefore load-bearing under both prefixes.
+ *
+ * Refusing `..` outright costs the callers close to nothing. The daemon
+ * publishes a flat pipe name and its fallback is built by `path.join`; an
+ * installed launcher is found by joining a PATH entry to a file name. Only a
+ * hand-written `COVEN_BIN` could carry a `..` innocently, and only while also
+ * rooted at `\\` — which is the one shape whose traversal cannot be told apart
+ * from an attack by spelling, so it is refused rather than guessed about.
  */
 const WINDOWS_PARENT_SEGMENT = /(?:^|\\)\.\.(?:\\|$)/;
 
@@ -96,12 +108,21 @@ export function isRemoteWindowsPath(candidate: string): boolean {
 /**
  * The same boundary for an executable Cave is about to read or spawn.
  *
- * Every spelling {@link isRemoteWindowsPath} refuses was measured reaching
- * another machine as a *file* too — `fs.readFileSync` read
- * `\\localhost\C$\Windows\win.ini` through each of the extended forms — so the
- * CLI binary needs the same allowlist and not the narrower `\\host\` /
- * `\\?\UNC\` denylist it replaces. It is stricter in one direction: the pipe
- * device is not a place a launcher can live.
+ * The spellings {@link isRemoteWindowsPath} was written against reach another
+ * machine as *files* too, so the CLI binary needs the same allowlist and not
+ * the narrower `\\host\` / `\\?\UNC\` denylist it replaces. Measured on
+ * Windows 11, `fs.readFileSync` read `\\localhost\C$\Windows\win.ini` through
+ * every one of these, and the first five are exactly what that denylist let
+ * past:
+ *
+ *     \\.\UNC\host\C$\…                    \\?\GLOBALROOT\Device\Mup\host\C$\…
+ *     \\?\GLOBALROOT\Device\LanmanRedirector\host\C$\…
+ *     \\?\GLOBALROOT\??\UNC\host\C$\…      \\.\C:\..\..\UNC\host\C$\…
+ *     \\?\C:\..\..\UNC\host\C$\…           \\host\C$\…
+ *     \\?\UNC\host\C$\…
+ *
+ * It is stricter than the socket boundary in one direction: the pipe device is
+ * not a place a launcher can live.
  *
  * Callers still canonicalize and re-check, because this reads the spelling and
  * cannot see a reparse point aimed off-machine.

@@ -256,7 +256,11 @@ pub(super) enum OverrideRejection {
 impl OverrideRejection {
     pub(super) fn reason(self) -> &'static str {
         match self {
-            OverrideRejection::NotAbsolute => "not an absolute path",
+            // Every arm is interpolated after the word "it" at the single call
+            // site below, and mirrors the sentence `covenOverrideRejection`
+            // returns on the TS side. This one was missing its verb, so the
+            // operator was told "it not an absolute path".
+            OverrideRejection::NotAbsolute => "is not an absolute path",
             OverrideRejection::RemotePath => "is not on a local drive",
             OverrideRejection::Missing => "does not exist",
             OverrideRejection::NotAFile => "is not a file",
@@ -349,8 +353,10 @@ pub(super) fn is_absolute_binary_path(candidate: &str, windows: bool) -> bool {
 }
 
 /// Apply the same admission rules to `COVEN_BIN` that `verifiedAbsoluteBinary`
-/// applies on the TS side: absolute, existing, a file, and never a remote UNC
-/// path on Windows.
+/// applies on the TS side: absolute, existing, a file, and on Windows never a
+/// path that fails to prove it is on a local drive — see
+/// `is_windows_remote_executable_path`, which is an allowlist rather than a
+/// `UNC` denylist.
 ///
 /// One deliberate difference from the TS resolver: the *literal* path is
 /// returned, not the canonical one. The result here is not executed directly —
@@ -670,8 +676,12 @@ mod coven_binary_tests {
         assert!(!is_windows_remote_executable_path("coven.exe"));
     }
 
-    /// The five spellings the two-regex denylist admitted, each measured
-    /// reading `\\localhost\C$\Windows\win.ini` on Windows 11.
+    /// Spellings the two-regex denylist admitted. Each of the first six was
+    /// measured on Windows 11 reading `\\localhost\C$\Windows\win.ini` with
+    /// the host spelled `localhost`, so each is a live redirection and not a
+    /// theoretical shape. The last two are the same routes re-spelled — with
+    /// forward slashes, and with the surrounding whitespace an environment
+    /// variable carries — which the predicate folds away before deciding.
     #[test]
     fn device_namespace_spellings_that_reach_another_machine_are_refused() {
         for admitted in [
@@ -680,6 +690,9 @@ mod coven_binary_tests {
             "\\\\?\\GLOBALROOT\\Device\\LanmanRedirector\\server\\share\\coven.exe",
             "\\\\?\\GLOBALROOT\\??\\UNC\\server\\share\\coven.exe",
             "\\\\.\\C:\\..\\..\\UNC\\server\\share\\coven.exe",
+            // `\\?\` does not make a `..` inert for a file path, whatever it
+            // does for a pipe name: this one read the remote file too.
+            "\\\\?\\C:\\..\\..\\UNC\\server\\share\\coven.exe",
             "//./UNC/server/share/coven.exe",
             "  \\\\server\\share\\coven.exe  ",
         ] {

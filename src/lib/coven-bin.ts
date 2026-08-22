@@ -401,7 +401,9 @@ function environmentValue(
  * onboarding operate inside user-controlled project/workspace directories,
  * so a bare `where coven` or `spawn("coven")` can select a planted launcher.
  * Only an existing absolute override or a launcher inside an absolute PATH
- * entry is eligible here. Relative entries and remote UNC paths fail closed.
+ * entry is eligible here. Relative entries fail closed, and so does anything
+ * rooted at `\\` that is not a drive letter behind a device prefix — the
+ * boundary is every spelling that can leave this machine, not only `UNC`.
  */
 export function covenBinaryFromEnvironment(
   env: NodeJS.ProcessEnv,

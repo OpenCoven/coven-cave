@@ -20,15 +20,20 @@ const childSpawnEnvSource = await readFile(
 assert.equal(isWindowsRemoteExecutablePath("\\\\server\\share\\coven.exe"), true);
 assert.equal(isWindowsRemoteExecutablePath("\\\\?\\UNC\\server\\share\\coven.exe"), true);
 assert.equal(isWindowsRemoteExecutablePath("\\\\?\\C:\\Tools\\coven.exe"), false);
-// The five spellings the two-regex denylist admitted. Each was measured
-// reading `\\localhost\C$\Windows\win.ini` on Windows 11, so each would have
-// sourced and spawned coven.exe from another machine.
+// Spellings the two-regex denylist admitted. Each was measured on Windows 11
+// reading `\\localhost\C$\Windows\win.ini` with the host spelled `localhost`,
+// so each would have sourced and spawned coven.exe from another machine.
 for (const admitted of [
   String.raw`\\.\UNC\remote-host\share\coven.exe`,
   String.raw`\\?\GLOBALROOT\Device\Mup\remote-host\share\coven.exe`,
   String.raw`\\?\GLOBALROOT\Device\LanmanRedirector\remote-host\share\coven.exe`,
   String.raw`\\?\GLOBALROOT\??\UNC\remote-host\share\coven.exe`,
   String.raw`\\.\C:\..\..\UNC\remote-host\share\coven.exe`,
+  // The `\\?\` prefix does not make a `..` inert for a *file* path, whatever
+  // it does for a pipe name — this one read the remote file just as the `\\.\`
+  // spelling above it did. The traversal refusal is load-bearing under both
+  // prefixes, so do not narrow it to one of them.
+  String.raw`\\?\C:\..\..\UNC\remote-host\share\coven.exe`,
 ]) {
   assert.equal(
     isWindowsRemoteExecutablePath(admitted),
