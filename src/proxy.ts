@@ -27,9 +27,7 @@ import {
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
-  CLIENT_V1_PUBLIC_INGRESS,
   clientV1IngressKind,
-  presentsClientV1Bearer,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
@@ -468,19 +466,6 @@ export async function proxy(req: NextRequest) {
   if (clientV1Ingress) {
     if (!trustedLocalPeer || remoteIngress) {
       return jsonError(403, "forbidden peer: client v1 requires direct loopback");
-    }
-    // Resource ingress returns below without ever reaching the sidecar-token
-    // block, so a route reached this way is guarded by its own requireScope
-    // call and nothing else. Demanding the credential here makes the paired
-    // bearer a condition of arrival rather than a courtesy each handler pays
-    // separately, which is what the first author to forget one would otherwise
-    // cost (cave-d1sjz). Public ingress is exempt by definition: pairing is
-    // how a client obtains the credential.
-    if (
-      clientV1Ingress !== CLIENT_V1_PUBLIC_INGRESS
-      && !presentsClientV1Bearer(req.headers.get("authorization"))
-    ) {
-      return jsonError(401, "unauthorized");
     }
     return nextWithMobileAccessMarker(req, false);
   }

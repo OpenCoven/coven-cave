@@ -50,14 +50,11 @@ export function createPairingExchangePostHandler(runtime: ClientV1Runtime) {
     // blocking another's exchange. Read the budget before comparing secrets,
     // or a limit charged after the fact would bound nothing.
     //
-    // Known gap, deliberately not closed here: the bound is per-route, not
-    // system-wide. GET /api/client/v1/pairing/requests/[id] calls
-    // pairingStore.lookup(id, secret), which runs the byte-identical
-    // hashesEqual against the same secretHash and distinguishes
-    // `secret_mismatch` (401) from `found`/`consumed` — while referencing no
-    // rate limiter at all. An attacker holding a pairing id can therefore
-    // guess the secret unmetered through GET and spend a single exchange call
-    // once it has one. Metering that oracle is tracked separately.
+    // The bound is system-wide, not per-route: GET
+    // /api/client/v1/pairing/requests/[id] compares the same secretHash
+    // through pairingStore.lookup and charges THIS bucket for its own
+    // mismatches. Keep it that way — a second bucket for that route would
+    // meter it while leaving the pair of them unbounded.
     const limit = runtime.rateLimiter.peekPairingExchangeFailure(id);
     if (!limit.allowed) return clientV1RateLimitResponse(limit);
 

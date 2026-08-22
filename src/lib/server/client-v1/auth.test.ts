@@ -170,19 +170,41 @@ function contractPublicPaths(): string[] {
   return paths.filter((path, index) => paths.indexOf(path) === index);
 }
 
-test("client-v1 ingress allowlists only the reviewed public and authenticated routes", () => {
+test("client-v1 ingress allowlists only the reviewed public routes", () => {
   const publicRoutes = [
     "/api/client/v1/health",
     "/api/client/v1/pairing/requests",
     "/api/client/v1/pairing/requests/request-1",
     "/api/client/v1/pairing/requests/request-1/exchange",
   ];
-  const authenticatedRoutes = [
+  // Pinned to the contract so this literal cannot drift into a stale
+  // restatement of it. Written out rather than derived because a list that
+  // derives its own expectation asserts nothing about the proxy.
+  assert.deepEqual(publicRoutes, contractPublicPaths());
+  for (const route of publicRoutes) {
+    assert.equal(clientV1IngressKind(route), CLIENT_V1_PUBLIC_INGRESS, route);
+  }
+  // Nothing is pre-authorized (cave-4841). A client-v1 ingress match makes
+  // proxy() skip the mobile access gate and return before the sidecar-token
+  // block, so it is only ever safe for a path whose own handler authenticates —
+  // and the Phase 2 paths below have no handler at all. Listing them ahead of
+  // time meant the first one to land would arrive already exempt. They classify
+  // null until their route.ts exists, which keeps them on the ordinary
+  // sidecar-token gate in the meantime.
+  for (const route of [
+    "/api/client/v1",
+    "/api/client/v1/admin",
+    "/api/client/v1/admin/credentials",
+    "/api/client/v1/admin/pairing-requests",
+    "/api/client/v1/private",
+    "/api/client/v10/health",
+    "/api/chat/conversation",
     "/api/client/v1/familiars",
     "/api/client/v1/projects",
     "/api/client/v1/conversations",
     "/api/client/v1/conversations/search",
     "/api/client/v1/conversations/conversation-1",
+    "/api/client/v1/conversations/conversation-1/messages",
     "/api/client/v1/messages/send",
     "/api/client/v1/attachments",
     "/api/client/v1/attachments/attachment-1",
@@ -193,34 +215,14 @@ test("client-v1 ingress allowlists only the reviewed public and authenticated ro
     "/api/client/v1/runs/run-1/retry",
     "/api/client/v1/attention/attention-1/respond",
     "/api/client/v1/github/actions",
-  ];
-  // Pinned to the contract so this literal cannot drift into a stale
-  // restatement of it. Written out rather than derived because a list that
-  // derives its own expectation asserts nothing about the proxy.
-  assert.deepEqual(publicRoutes, contractPublicPaths());
-  for (const route of publicRoutes) {
-    assert.equal(clientV1IngressKind(route), CLIENT_V1_PUBLIC_INGRESS, route);
-  }
-  for (const route of authenticatedRoutes) {
-    assert.equal(clientV1IngressKind(route), "authenticated", route);
-  }
-  for (const route of [
-    "/api/client/v1",
-    "/api/client/v1/admin",
-    "/api/client/v1/admin/credentials",
-    "/api/client/v1/admin/pairing-requests",
-    "/api/client/v1/private",
-    "/api/client/v1/conversations/conversation-1/messages",
-    "/api/client/v10/health",
-    "/api/chat/conversation",
-    // Near-misses of the DERIVED public patterns. The four they replaced were
-    // hand-written regexes a reviewer read directly; these are generated, so
+    // Near-misses of the DERIVED public patterns. The four regexes they
+    // replaced were literals a reviewer read directly; these are generated, so
     // the generator's anchoring and its one-segment `:id` scoping need
     // assertions of their own. Without them, widening `:id` to `.+` or
-    // dropping the `^`/`$` anchors leaves every suite green while the
-    // credential-free surface silently grows past the reviewed set —
-    // credential-free being exactly what the bearer gate below does not
-    // demand of public ingress (cave-d1sjz).
+    // dropping the `^`/`$` anchors leaves every suite green while the public
+    // set silently grows past the reviewed one — and public is the set that
+    // skips the mobile-access gate and returns before the sidecar-token block,
+    // so growing it is a widening of credential-free ingress (cave-d1sjz).
     "/api/client/v1/healthz",
     "/decoy/api/client/v1/health",
     "/api/client/v1/pairing/requests/",
@@ -264,10 +266,6 @@ const ENV_KEYS = [
 ] as const;
 const ORIGINAL_ENV = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
 const ORIGIN = "http://localhost:3000";
-// Shaped like an issued credential (32 random bytes, base64url) so the proxy's
-// syntactic check is exercised against the real thing. It matches no stored
-// credential — the proxy never looks one up, which is the point.
-const PRESENTED_BEARER = "a".repeat(43);
 
 function setProxyEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string>>): void {
   for (const key of ENV_KEYS) delete process.env[key];
@@ -334,16 +332,13 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
       assert.equal(passedThrough(response), true, `${route} returned ${response.status}`);
     }
 
-    // Resource ingress reaches the same pass-through, but only behind a
-    // presented credential — see the bearer test below for the refusals.
-    const resource = await proxy(proxyRequest("/api/client/v1/conversations", {
-      headers: { ...headers, authorization: `Bearer ${PRESENTED_BEARER}` },
-    }));
-    assert.equal(passedThrough(resource), true, `conversations returned ${resource.status}`);
-
+    // /api/client/v1/conversations sits with the private routes rather than the
+    // loopback-ingress ones: it has no handler, so it is not pre-authorized and
+    // a bare loopback caller gets the ordinary 401 (cave-4841).
     for (const route of [
       "/api/client/v1/admin/credentials",
       "/api/client/v1/private",
+      "/api/client/v1/conversations",
       "/api/chat/conversation",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));
@@ -355,7 +350,7 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
   }
 });
 
-test("client-v1 resource ingress refuses a request that presents no bearer", async () => {
+test("derived public ingress reaches the proxy pass-through with no credential", async () => {
   try {
     setProxyEnv({
       COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
@@ -368,57 +363,11 @@ test("client-v1 resource ingress refuses a request that presents no bearer", asy
       referer: `${ORIGIN}/`,
     };
 
-    const resourceRoutes = [
-      "/api/client/v1/conversations",
-      "/api/client/v1/messages/send",
-      "/api/client/v1/runs/run-1/stream",
-      "/api/client/v1/github/actions",
-    ];
-
-    // The gate below only exists for RESOURCE ingress, and every assertion in
-    // this test would still pass if these paths stopped classifying that way:
-    // a path that classifies null falls through to the ordinary sidecar-token
-    // gate, whose refusal is byte-identical — same 401, same
-    // {ok:false,error:"unauthorized"} — so the whole test would go green while
-    // never reaching the code it is about. Measured, not hypothetical: emptying
-    // CLIENT_V1_AUTHENTICATED_PATHS turns three tests in this file red and
-    // leaves this one passing. State the precondition so that stops being a
-    // silent pass (cave-d1sjz).
-    for (const route of resourceRoutes) {
-      assert.equal(clientV1IngressKind(route), "authenticated", route);
-    }
-
-    // Resource ingress skips the sidecar token, so without this the only thing
-    // between a loopback process and the handler is the handler's own
-    // requireScope call.
-    for (const route of resourceRoutes) {
-      await assertProxyError(
-        await proxy(proxyRequest(route, { headers })),
-        401,
-        "unauthorized",
-      );
-    }
-
-    for (const authorization of [
-      PRESENTED_BEARER,
-      `Basic ${PRESENTED_BEARER}`,
-      "Bearer",
-      "Bearer ",
-      "Bearer two words",
-      `Bearer ${PRESENTED_BEARER}!`,
-      // The credential is attacker-controlled and reaches a regex, so its
-      // length is capped. An issued bearer is 43 characters; 4097 is the far
-      // side of the cap.
-      `Bearer ${"a".repeat(4097)}`,
-    ]) {
-      const response = await proxy(proxyRequest("/api/client/v1/conversations", {
-        headers: { ...headers, authorization },
-      }));
-      assert.equal(response.status, 401, authorization);
-      assert.deepEqual(await response.json(), { ok: false, error: "unauthorized" });
-    }
-
-    // The public set stays credential-free: pairing is how a client gets one.
+    // clientV1IngressKind is where the other derivation tests stop; this one
+    // runs the derived patterns through proxy() itself, because the property
+    // #4844 is about is end-to-end: a route the contract advertises must not be
+    // one the proxy answers with 403. Credential-free by definition — pairing
+    // is how a client obtains the credential these paths exist to hand out.
     for (const path of contractPublicPaths()) {
       const response = await proxy(proxyRequest(path, { headers }));
       assert.equal(passedThrough(response), true, `${path} returned ${response.status}`);
@@ -548,11 +497,15 @@ test("client-v1 body-bearing ingress requires a known Content-Length", async () 
     }));
     await assertProxyError(chunked, 400, "invalid content-length");
 
-    const authenticatedMissing = await proxy(proxyRequest("/api/client/v1/conversations", {
-      method: "POST",
-      headers: baseHeaders,
-    }));
-    await assertProxyError(authenticatedMissing, 411, "content-length required");
+    // The rule is a property of client-v1 ingress, not of one route, so check a
+    // second ingress path. It has to be a path that classifies — since
+    // cave-4841 that is the reviewed public set, because nothing is
+    // pre-authorized ahead of its handler.
+    const exchangeMissing = await proxy(proxyRequest(
+      "/api/client/v1/pairing/requests/request-1/exchange",
+      { method: "POST", headers: baseHeaders },
+    ));
+    await assertProxyError(exchangeMissing, 411, "content-length required");
   } finally {
     restoreProxyEnv();
   }
@@ -654,7 +607,7 @@ test("client-v1 loopback bypass preserves host, origin, and content-type gates",
       COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
     });
 
-    const badHost = await proxy(proxyRequest("/api/client/v1/conversations", {
+    const badHost = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
       headers: {
         [LOCAL_PEER_HEADER]: "loopback-secret",
         host: "evil.example",
@@ -662,7 +615,7 @@ test("client-v1 loopback bypass preserves host, origin, and content-type gates",
     }));
     assert.equal(badHost.status, 403);
 
-    const badOrigin = await proxy(proxyRequest("/api/client/v1/conversations", {
+    const badOrigin = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
       headers: {
         [LOCAL_PEER_HEADER]: "loopback-secret",
         origin: "https://evil.example",
@@ -670,7 +623,7 @@ test("client-v1 loopback bypass preserves host, origin, and content-type gates",
     }));
     assert.equal(badOrigin.status, 403);
 
-    const badContentType = await proxy(proxyRequest("/api/client/v1/conversations", {
+    const badContentType = await proxy(proxyRequest("/api/client/v1/pairing/requests", {
       method: "POST",
       headers: {
         [LOCAL_PEER_HEADER]: "loopback-secret",
