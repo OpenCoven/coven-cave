@@ -155,11 +155,20 @@ the TTL leg ran. The commit is there for the reason
 a claim about *which bytes* answered, and one that cannot say which has not made
 the claim.
 
-The committed record for `cave-2hjtv` is
-[`2026-08-22-v0.3.9-win32.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32.json):
-**93 passed, 0 failed, 0 skipped** at `bc3be685` on `win32-x64`, run with
+The current record is
+[`2026-08-22-v0.3.9-win32-cave-fhjlu.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32-cave-fhjlu.json):
+**99 passed, 0 failed, 0 skipped** at `ed6cc4b1` on `win32-x64`, run with
 `--include-ttl`, so `pairing.ttl-poll-expired` and `pairing.ttl-exchange-expired`
-are recorded as passes rather than skips.
+are recorded as passes rather than skips. It is the first record taken after
+`/conversations` moved to an immutable page key, so it carries the seven
+mid-walk assertions described above and two findings rather than three.
+
+The record for `cave-2hjtv` is
+[`2026-08-22-v0.3.9-win32.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32.json):
+**93 passed, 0 failed, 0 skipped** at `bc3be685`, the run that *found*
+`cave-fhjlu`. Two records share a date because the fix landed the same day; the
+filename carries the bead rather than a second date, since the date is what
+makes a record findable and inventing one would make it wrong.
 
 ⚠️ **Take the record from a clean tree, and commit the code before the record.**
 The first version of this file named `63f14013` — the *base* commit. The run had
@@ -254,6 +263,18 @@ the source. Measured 2026-08-22 on `win32-x64` against Cave 0.3.9.
 | `ClientV1MessageRecord` widened and `projectClientV1Message` serves `reasoning` + `costUsd` | **caught**, 1 failure naming 12 leaks | `reads.messages-active-branch`, naming both fields on all six turns |
 | `FileCredentialStore.findByBearer` ignores `revokedAt` | **caught**, 1 failure | `revocation.bearer-refused-after` |
 | `parseClientV1PageLimit` clamps instead of refusing | **caught**, 5 failures | every `reads.refuses.limit-*` case: zero, over-ceiling, leading zero, exponent, signed |
+| `clientV1ConversationPageKey` reverted to the mutable `updatedAt` | **caught**, 9 failures | all seven mid-walk ids, plus `reads.conversations-shape` and `reads.conversations-paging`. The run reproduces the skip on the wire: the walk serves `[01, 02, 04, 05, 06]` and `conversation-03` is lost |
+
+Three further mutations were aimed at the assertions rather than the route,
+because a fixture that cannot distinguish two behaviours is the failure mode this
+harness has been burned by twice. Each was applied, run against
+`scripts/client-v1-conformance.test.mjs`, and reverted:
+
+| Mutation | Result | Caught by |
+|---|---|---|
+| the fixture's `updatedAt` ordering agrees with `createdAt` again | **caught** | `the fixture orders by createdAt and by updatedAt in opposite directions` |
+| the fixture's `createdAt` tie removed | **caught** | `the fixture ties exactly two conversations on createdAt` |
+| `expectedConversationOrder` sorts a row with no `createdAt` first | **caught** | `expectedConversationOrder puts a row with no createdAt at the tail` |
 
 ### The four that were NOT caught, and what closed them
 
