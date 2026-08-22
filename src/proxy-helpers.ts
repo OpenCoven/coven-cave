@@ -170,21 +170,39 @@ const CLIENT_V1_PUBLIC_PATHS = [
   /^\/api\/client\/v1\/pairing\/requests\/[^/]+\/exchange$/,
 ];
 
-const CLIENT_V1_AUTHENTICATED_PATHS = [
-  /^\/api\/client\/v1\/familiars$/,
-  /^\/api\/client\/v1\/projects$/,
-  /^\/api\/client\/v1\/conversations$/,
-  /^\/api\/client\/v1\/conversations\/search$/,
-  /^\/api\/client\/v1\/conversations\/[^/]+$/,
-  /^\/api\/client\/v1\/messages\/send$/,
-  /^\/api\/client\/v1\/attachments$/,
-  /^\/api\/client\/v1\/attachments\/[^/]+$/,
-  /^\/api\/client\/v1\/commands$/,
-  /^\/api\/client\/v1\/tasks\/handoff$/,
-  /^\/api\/client\/v1\/runs\/[^/]+\/(?:stream|stop|retry)$/,
-  /^\/api\/client\/v1\/attention\/[^/]+\/respond$/,
-  /^\/api\/client\/v1\/github\/actions$/,
-];
+/**
+ * Client-v1 paths whose OWN handler authenticates the bearer credential.
+ *
+ * Matching here is a DEMOTION, not a promotion: proxy() skips mobileAccessGate
+ * for a client-v1 ingress and returns before the sidecar-token block, so the
+ * only credential check left is the one the route performs for itself
+ * (requireScope, src/lib/server/client-v1/auth.ts). That trade is sound for a
+ * path that really does check — and a hole for a path that does not exist yet,
+ * because a handler landing later inherits the exemption without ever opting
+ * into it.
+ *
+ * The converse is not free either, so absence is a decision rather than a safe
+ * default. Both of the client-v1-only protections in proxy() are gated on the
+ * ingress classification this list feeds: the hard `403 forbidden peer: client
+ * v1 requires direct loopback` that rejects anything but a direct loopback
+ * peer, and clientV1RequestBodyError's 411/413 content-length gate with its
+ * 64 KB cap. Neither applies to a path that classifies null. So a future
+ * authenticated route that lands un-listed does not merely keep the sidecar
+ * gate: it gains a bearer requirement and loses loopback-only ingress and the
+ * body cap. Listing it once it checks its own credential restores both.
+ *
+ * So the invariant is: a pattern belongs here only once a route.ts on disk
+ * matches it AND that route calls requireScope. Both halves are asserted in
+ * src/app/api/api-contracts.test.ts. Phase 2 adds its entry in the same change
+ * that adds its handler; until then this list is empty and every unhandled
+ * client-v1 path falls through to the ordinary sidecar-token gate, which is
+ * where an unauthenticated loopback caller should land.
+ *
+ * It was NOT empty before cave-4841: thirteen Phase 2 paths were listed against
+ * zero handlers, so the first Phase 2 route to land would have been reachable
+ * from any loopback process with no sidecar token at all.
+ */
+export const CLIENT_V1_AUTHENTICATED_PATHS: RegExp[] = [];
 
 export function clientV1IngressKind(pathname: string): ClientV1IngressKind | null {
   if (pathname.includes("%") || pathname.includes("\\")) return null;
