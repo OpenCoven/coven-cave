@@ -9,9 +9,15 @@
  * approval state, delivery status. Bottom drawer: queued deliveries and
  * recent sends.
  *
- * Nothing here sends externally — the Cave has no external delivery approval
- * flow yet, so every draft ends at "approved, awaiting delivery integration"
- * and the delivery panel says so honestly.
+ * Local drafts still send nowhere: the Cave has no general delivery
+ * integration, so every draft ends at "approved, awaiting delivery
+ * integration" and the delivery panel says so honestly.
+ *
+ * X is the one exception, and it is deliberately NOT a channel of the draft
+ * pipeline above. It has its own durable record, its own per-wording
+ * confirmation, and its own unresolved-attempt backlog, so it lives in its own
+ * panel (`XPublishPanel`) rather than pretending to be another value of
+ * `MessageChannel`.
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -30,6 +36,7 @@ import {
   useActiveSelectionRail,
 } from "./surface-room";
 import { MESSENGER_SURFACE_ID } from "./ids";
+import { XPublishPanel } from "./x-publish-panel";
 
 export type MessageChannel = "email" | "discord" | "slack" | "sms" | "teams" | "social";
 
@@ -293,6 +300,13 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
       </SurfaceRail>
 
       <SurfaceCanvas label="Composer">
+        {/*
+          Outside the `selected` branch on purpose: X publishing is its own
+          record with its own confirmation, not a delivery mode of a local
+          draft, so it must not disappear because nobody has a draft picked —
+          least of all when it is holding an unresolved attempt.
+        */}
+        <XPublishPanel familiarId={familiarId} />
         {!selected ? (
           <SurfaceEmpty
             iconName="ph:paper-plane-tilt"
@@ -446,7 +460,7 @@ export function MessengerSurface({ context }: { context: RoleSurfaceContext }) {
             <RailSection title="Delivery status" iconName="ph:paper-plane-tilt">
               <SurfaceEmpty
                 title="No delivery integrations connected."
-                hint="Approved drafts stay queued locally; nothing leaves the Cave."
+                hint="Approved drafts stay queued locally. X is published from its own panel, not from here."
               />
             </RailSection>
           </>

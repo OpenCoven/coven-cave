@@ -47,6 +47,25 @@ test("scheduled deliveries do not turn inbox loading or failure into an empty sc
   );
 });
 
+test("X publishing sits outside the selected-draft branch of the canvas", () => {
+  const canvas = section('<SurfaceCanvas label="Composer">', "</SurfaceCanvas>");
+  // The panel carries its own durable record, its own confirmation, and — the
+  // part that matters here — the backlog of attempts whose outcome nobody
+  // knows. Nesting it under `!selected` would make that backlog vanish the
+  // moment someone picked a local draft, which is exactly when they are most
+  // likely to publish something twice.
+  assert.match(
+    canvas,
+    /<XPublishPanel familiarId=\{familiarId\} \/>[\s\S]*?\{!selected \?/,
+    "XPublishPanel must render before, and outside, the `selected` conditional",
+  );
+  assert.doesNotMatch(
+    canvas.slice(canvas.indexOf("{!selected ?")),
+    /<XPublishPanel/,
+    "no copy of the panel may live inside the selected-draft branch",
+  );
+});
+
 test("compact Traffic and Dispatch rails stay mutually exclusive", () => {
   assert.match(
     surface,
