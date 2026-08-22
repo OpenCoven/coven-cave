@@ -116,6 +116,14 @@ test("public client v1 changes run Cave API, E2E, and documentation validation",
     "scripts/export-client-v1-contract.mjs",
     "scripts/client-v1-release-smoke.mjs",
     "scripts/client-v1-release-smoke.test.mjs",
+    // The real-authority conformance harness (cave-2hjtv). It is operator-run,
+    // so CI never drives it — but a change to it must still be validated by the
+    // lane that owns this surface, or the harness that judges client-v1 could
+    // rot without a single check noticing.
+    "scripts/client-v1-conformance.mjs",
+    "scripts/client-v1-conformance.test.mjs",
+    "docs/workflows/client-v1-conformance.md",
+    "docs/client-v1-conformance-results/2026-08-22-v0.3.9-win32.json",
     "src/app/api/client/v1/health/route.ts",
     "src/app/api/client/v1/health/route.test.ts",
     "src/app/api/api-contracts.test.ts",

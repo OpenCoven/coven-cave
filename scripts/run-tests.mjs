@@ -1337,6 +1337,7 @@ export const SUITES = {
     "scripts/export-client-v1-contract.test.mjs",
     "scripts/client-v1-doc-contract.test.mjs",
     "scripts/client-v1-release-smoke.test.mjs",
+    "scripts/client-v1-conformance.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
     "scripts/main-health.test.mjs",
