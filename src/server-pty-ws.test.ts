@@ -473,15 +473,44 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     /function loopbackHostname\([\s\S]*?return "127\.0\.0\.1";\n}/,
   );
   assert.ok(hostnameBlock, "server defines a testable loopback-only hostname selector");
-  const loopbackHostname = new Function(
-    `${hostnameBlock[0]}; return loopbackHostname;`,
-  )();
+  const endpointBlock = src.match(
+    /function loopbackHttpEndpoint\([\s\S]*?\n}/,
+  );
+  assert.ok(endpointBlock, "server defines a testable loopback endpoint formatter");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${hostnameBlock[0]}\n${endpointBlock[0]}\nexport { loopbackHostname, loopbackHttpEndpoint };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  const loopbackModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const loopbackHostname = loopbackModule.loopbackHostname as (raw?: string) => string;
+  const loopbackHttpEndpoint = loopbackModule.loopbackHttpEndpoint as (
+    hostname: string,
+    port: number,
+  ) => string;
   for (const hostname of ["127.0.0.1", "localhost", "::1"]) {
     assert.equal(loopbackHostname(hostname), hostname, `${hostname} remains a supported loopback bind`);
   }
   for (const hostname of ["0.0.0.0", "192.168.1.20", "cave-host", ""]) {
     assert.equal(loopbackHostname(hostname), "127.0.0.1", `${hostname || "empty"} cannot expose the server`);
   }
+  assert.equal(
+    loopbackHttpEndpoint("127.0.0.1", 3020),
+    "http://127.0.0.1:3020",
+    "IPv4 loopback discovery endpoints remain unchanged",
+  );
+  assert.equal(
+    loopbackHttpEndpoint("localhost", 3020),
+    "http://localhost:3020",
+    "localhost discovery endpoints remain unchanged",
+  );
+  assert.equal(
+    loopbackHttpEndpoint("::1", 3020),
+    "http://[::1]:3020",
+    "IPv6 loopback discovery endpoints use URL brackets",
+  );
 }
 
 {

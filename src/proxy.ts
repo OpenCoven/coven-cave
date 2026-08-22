@@ -27,6 +27,7 @@ import {
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
+  clientV1IngressKind,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
@@ -207,6 +208,46 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
+function hasReviewedPairingContentType(req: NextRequest) {
+  if (
+    req.method !== "POST"
+    || req.nextUrl.pathname !== "/api/client/v1/pairing/requests"
+  ) {
+    return true;
+  }
+  const contentType = req.headers.get("content-type")?.trim();
+  return Boolean(
+    contentType
+    && /^application\/json(?:\s*;\s*charset\s*=\s*(?:"utf-8"|utf-8))?$/i.test(contentType)
+  );
+}
+
+const CLIENT_V1_CONTROL_BODY_LIMIT_BYTES = 64 * 1024;
+const CLIENT_V1_BODY_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function clientV1RequestBodyError(
+  req: NextRequest,
+  clientV1Ingress: ReturnType<typeof clientV1IngressKind>,
+) {
+  if (!clientV1Ingress || !CLIENT_V1_BODY_METHODS.has(req.method)) {
+    return null;
+  }
+  if (req.headers.has("transfer-encoding")) {
+    return { status: 400, error: "invalid content-length" };
+  }
+  const contentLength = req.headers.get("content-length");
+  if (contentLength === null) {
+    return { status: 411, error: "content-length required" };
+  }
+  if (!/^\d+$/.test(contentLength)) {
+    return { status: 400, error: "invalid content-length" };
+  }
+  if (BigInt(contentLength) > BigInt(CLIENT_V1_CONTROL_BODY_LIMIT_BYTES)) {
+    return { status: 413, error: "request body too large" };
+  }
+  return null;
+}
+
 function isLocalOnlyAutomationRun(pathname: string, method: string) {
   return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
 }
@@ -271,12 +312,15 @@ export async function proxy(req: NextRequest) {
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
-  const mobileRes = await mobileAccessGate(
-    req,
-    trustedLocalPeer,
-    tailnetPeerVerified,
-    sidecarAuthenticatedAtGate,
-  );
+  const clientV1Ingress = clientV1IngressKind(req.nextUrl.pathname);
+  const mobileRes = clientV1Ingress
+    ? null
+    : await mobileAccessGate(
+      req,
+      trustedLocalPeer,
+      tailnetPeerVerified,
+      sidecarAuthenticatedAtGate,
+    );
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
@@ -411,8 +455,19 @@ export async function proxy(req: NextRequest) {
       return jsonError(403, "missing request source");
     }
   }
-  if (!hasSafeContentType(req)) {
+  if (!hasSafeContentType(req) || !hasReviewedPairingContentType(req)) {
     return jsonError(415, "unsupported content-type");
+  }
+  const clientV1BodyError = clientV1RequestBodyError(req, clientV1Ingress);
+  if (clientV1BodyError) {
+    return jsonError(clientV1BodyError.status, clientV1BodyError.error);
+  }
+
+  if (clientV1Ingress) {
+    if (!trustedLocalPeer || remoteIngress) {
+      return jsonError(403, "forbidden peer: client v1 requires direct loopback");
+    }
+    return nextWithMobileAccessMarker(req, false);
   }
 
   const suppliedToken =

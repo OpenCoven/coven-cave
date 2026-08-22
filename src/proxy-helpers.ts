@@ -158,6 +158,45 @@ export function isTrustedLocalPeer(headerValue: string | null, secret: string | 
   return timingSafeEqualString(headerValue, secret);
 }
 
+export const CLIENT_V1_PUBLIC_INGRESS = "public";
+export type ClientV1IngressKind =
+  | typeof CLIENT_V1_PUBLIC_INGRESS
+  | "authenticated";
+
+const CLIENT_V1_PUBLIC_PATHS = [
+  /^\/api\/client\/v1\/health$/,
+  /^\/api\/client\/v1\/pairing\/requests$/,
+  /^\/api\/client\/v1\/pairing\/requests\/[^/]+$/,
+  /^\/api\/client\/v1\/pairing\/requests\/[^/]+\/exchange$/,
+];
+
+const CLIENT_V1_AUTHENTICATED_PATHS = [
+  /^\/api\/client\/v1\/familiars$/,
+  /^\/api\/client\/v1\/projects$/,
+  /^\/api\/client\/v1\/conversations$/,
+  /^\/api\/client\/v1\/conversations\/search$/,
+  /^\/api\/client\/v1\/conversations\/[^/]+$/,
+  /^\/api\/client\/v1\/messages\/send$/,
+  /^\/api\/client\/v1\/attachments$/,
+  /^\/api\/client\/v1\/attachments\/[^/]+$/,
+  /^\/api\/client\/v1\/commands$/,
+  /^\/api\/client\/v1\/tasks\/handoff$/,
+  /^\/api\/client\/v1\/runs\/[^/]+\/(?:stream|stop|retry)$/,
+  /^\/api\/client\/v1\/attention\/[^/]+\/respond$/,
+  /^\/api\/client\/v1\/github\/actions$/,
+];
+
+export function clientV1IngressKind(pathname: string): ClientV1IngressKind | null {
+  if (pathname.includes("%") || pathname.includes("\\")) return null;
+  if (CLIENT_V1_PUBLIC_PATHS.some((pattern) => pattern.test(pathname))) {
+    return CLIENT_V1_PUBLIC_INGRESS;
+  }
+  if (CLIENT_V1_AUTHENTICATED_PATHS.some((pattern) => pattern.test(pathname))) {
+    return "authenticated";
+  }
+  return null;
+}
+
 /**
  * The allowlisted Tailscale stable node ID behind this request, or null.
  *

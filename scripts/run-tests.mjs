@@ -1378,7 +1378,21 @@ export const SUITES = {
     "src/app/api/api-contracts.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
+    "src/lib/server/client-v1/pairing-store.test.ts",
+    "src/lib/server/client-v1/credential-store.test.ts",
+    "src/lib/server/client-v1/auth.test.ts",
+    "src/lib/server/client-v1/rate-limit.test.ts",
+    "src/lib/server/client-v1/discovery.test.ts",
+    "src/lib/server/client-v1/runtime.test.ts",
     "src/app/api/client/v1/health/route.test.ts",
+    "src/app/api/client/v1/pairing/requests/route.test.ts",
+    "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
+    "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",
+    "src/app/api/client/v1/admin/pairing-requests/route.test.ts",
+    "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
+    "src/app/api/client/v1/admin/credentials/route.test.ts",
+    "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+    "src/app/api/client/v1/admin/security.e2e.test.ts",
     "src/app/api/x/account-routes.test.ts",
     "src/app/api/x/research-routes.test.ts",
     "src/app/api/research/recommendations/route.test.ts",
@@ -1840,6 +1854,16 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // Imports proxy.ts, which resolves Next's extensionless next/server entry.
+  "src/lib/server/client-v1/auth.test.ts",
+  "src/app/api/client/v1/pairing/requests/route.test.ts",
+  "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
+  "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",
+  "src/app/api/client/v1/admin/pairing-requests/route.test.ts",
+  "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
+  "src/app/api/client/v1/admin/credentials/route.test.ts",
+  "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+  "src/app/api/client/v1/admin/security.e2e.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",

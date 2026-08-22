@@ -76,10 +76,39 @@ const contracts: RouteContract[] = [
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
   { route: "/chat/stream/status", methods: ["GET"], kind: "json" },
   { route: "/chat/usage", methods: ["GET"], kind: "json" },
-  // Deliberately no localOriginGuard: an external client must be able to read
-  // its compatibility answer before it holds a credential, which is the whole
-  // reason this route exists. It returns no user data and no paths.
+  // Client v1 deliberately carries no localOriginGuard, but for two different
+  // reasons — and only the first is an exemption at all.
+  //
+  // Health and the pairing routes are the exemption: an external client must
+  // be able to read its compatibility answer and walk the pairing exchange
+  // before it holds a credential, which is the whole reason they exist. They
+  // are the paths clientV1IngressKind (src/proxy-helpers.ts) classifies as
+  // public, so proxy.ts applies the client-v1 ingress rules to them instead of
+  // the ordinary gate. Health returns no user data and no paths. The three
+  // pairing routes do not guard themselves uniformly, so read them one at a
+  // time: both POSTs re-check the loopback stamp through
+  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts), while
+  // GET /client/v1/pairing/requests/[id] never calls it and takes its locality
+  // solely from the clientV1Ingress branch in proxy.ts. Both id-bearing routes
+  // do require the per-request pairing secret; the creating POST mints that
+  // secret rather than checking one, and is bounded by the pairing-create rate
+  // limit instead.
+  //
+  // The admin routes are NOT exempted. clientV1IngressKind returns null for
+  // them, so they never leave the ordinary sidecar-token path in proxy.ts, and
+  // that is where their locality comes from. requireClientV1Admin
+  // (client-v1/admin-auth.ts) then adds the per-launch COVEN_CAVE_AUTH_TOKEN,
+  // plus a same-origin Origin/Referer on mutations; it reads no loopback stamp
+  // of its own, deliberately, because transport locality is not proof of the
+  // administrator.
+  { route: "/client/v1/admin/credentials", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
+  { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/client/v1/health", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests/[id]/exchange", methods: ["POST"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
@@ -366,8 +395,15 @@ function exportedMethods(source: string): string[] {
   return [...functions, ...constants, ...aliases];
 }
 
+// Client v1 routes hand response construction to the shared envelope builders
+// so every route answers in the same shape. Name those builders here rather
+// than inlining `client-v1/responses.ts` into the route source: the builders
+// are recognisable at the call site, the check does not depend on how a route
+// spells the import specifier (`…/responses` vs `…/responses.ts`), and the
+// readsJson / invalidJson assertions below keep reading the route itself
+// instead of an unrelated module's text.
 function usesJsonResponse(source: string): boolean {
-  return /NextResponse\.json|Response\.json|new Response\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
+  return /NextResponse\.json|Response\.json|new Response\(|clientV1(?:Success|Error|RateLimit)Response\s*\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
 }
 
 function effectiveRouteSource(file: string, source: string): string {
@@ -394,13 +430,6 @@ function effectiveRouteSource(file: string, source: string): string {
   if (source.includes('from "@/lib/server/onboarding-bootstrap-route"')) {
     parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "onboarding-bootstrap-route.ts"), "utf8"));
   }
-  // Client v1 routes never build a Response by hand: the envelope builders own
-  // that so every route answers in the same shape. Inline them like the OAuth
-  // route above, or the checks below read a route with no `Response.json` in
-  // it and conclude it returns nothing.
-  if (source.includes('from "@/lib/server/client-v1/responses"')) {
-    parts.push(readFileSync(path.join(apiRoot, "..", "..", "lib", "server", "client-v1", "responses.ts"), "utf8"));
-  }
   if (source.includes('from "./install-service"')) {
     parts.push(readFileSync(path.join(path.dirname(file), "install-service.ts"), "utf8"));
   }
@@ -412,15 +441,27 @@ const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
 // Phase 0 forbade every /api/client/v1 route while the public contract was
-// still an unserved module. Health ends that for exactly one route: a client
-// cannot discover it is too old without an endpoint to ask. The gate is
-// narrowed rather than dropped, because what it was really protecting against
-// is client-v1 surface appearing faster than it is reviewed — so each new
-// route has to be added here deliberately, not just by existing on disk.
+// still an unserved module. Phase 1 ends that for the reviewed bootstrap and
+// admin surface: health (a client cannot discover it is too old without an
+// endpoint to ask), the pairing exchange, and the admin routes that approve
+// and revoke credentials. The gate is narrowed rather than dropped, because
+// what it was really protecting against is client-v1 surface appearing faster
+// than it is reviewed — so each new route has to be added here deliberately,
+// not just by existing on disk. This is the single allow-list: health and the
+// pairing authority narrow it once, together, to the routes that exist.
 assert.deepEqual(
   actualRoutes.filter((route) => route.startsWith("/client/v1")),
-  ["/client/v1/health"],
-  "client v1 exposes only the reviewed health route until the pairing surface lands",
+  [
+    "/client/v1/admin/credentials",
+    "/client/v1/admin/credentials/[id]",
+    "/client/v1/admin/pairing-requests",
+    "/client/v1/admin/pairing-requests/[id]/decision",
+    "/client/v1/health",
+    "/client/v1/pairing/requests",
+    "/client/v1/pairing/requests/[id]",
+    "/client/v1/pairing/requests/[id]/exchange",
+  ],
+  "Phase 1 must expose exactly the reviewed client-v1 bootstrap and admin routes",
 );
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
 

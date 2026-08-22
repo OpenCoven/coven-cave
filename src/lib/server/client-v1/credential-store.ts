@@ -1,0 +1,541 @@
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  rename,
+  rm,
+} from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+import { caveHome } from "../../coven-paths.ts";
+import {
+  parseClientV1PairingScopes,
+  type ClientV1Scope,
+} from "./contract.ts";
+import type { ClientV1PairingApproved } from "./pairing-store.ts";
+
+export const CLIENT_V1_CREDENTIAL_STORE_FILE = "client-v1-credentials.json";
+export const CLIENT_V1_LAST_USED_WRITE_INTERVAL_MS = 60_000;
+
+export interface ClientV1CredentialIssueInput {
+  appName: ClientV1PairingApproved["appName"];
+  installationId: ClientV1PairingApproved["installationId"];
+  scopes: ClientV1PairingApproved["scopes"];
+}
+
+export interface ClientV1CredentialRecord {
+  id: string;
+  appName: string;
+  installationId: string;
+  scopes: ClientV1Scope[];
+  bearerHash: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
+  revocationReason: string | null;
+}
+
+export interface ClientV1IssuedCredential {
+  bearer: string;
+  credential: ClientV1CredentialRecord;
+}
+
+export type ClientV1CredentialMetadata = Omit<
+  ClientV1CredentialRecord,
+  "bearerHash"
+>;
+
+export interface CredentialStore {
+  issue(input: ClientV1CredentialIssueInput): Promise<ClientV1IssuedCredential>;
+  verify(id: string, bearer: string): Promise<boolean>;
+  findByBearer(bearer: string): Promise<ClientV1CredentialRecord | null>;
+  revoke(id: string, reason: string): Promise<void>;
+  reload(): Promise<Map<string, ClientV1CredentialRecord>>;
+  readPersistedFile(): Promise<string>;
+}
+
+export interface CredentialStoreOptions {
+  /**
+   * Post-commit mode repair for the store file. Seam for tests only: the write
+   * is already committed when this runs and its failure is swallowed, so an
+   * injected implementation can only prove that swallowing, never weaken the
+   * mode contract (which the pre-rename handling in `writeStoreAtomic` owns).
+   */
+  chmodCommittedFile?: (path: string, mode: number) => Promise<void>;
+  now?: () => number;
+  readFile?: (path: string, encoding: "utf8") => Promise<string>;
+  root?: string;
+  temporaryRandomBytes?: (size: number) => Buffer;
+}
+
+type CredentialStoreFile = {
+  version: 1;
+  credentials: ClientV1CredentialRecord[];
+};
+
+type CredentialStoreLocation = {
+  path: string;
+  queueKey: string;
+  root: string;
+};
+
+const BEARER_HASH_RE = /^[a-f0-9]{64}$/;
+const DECOY_BEARER_HASH = createHash("sha256")
+  .update("cave-client-v1-credential-decoy")
+  .digest("hex");
+const operationTails = new Map<string, Promise<void>>();
+
+async function runExclusive<T>(
+  path: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = operationTails.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolveCurrent) => {
+    release = resolveCurrent;
+  });
+  operationTails.set(path, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (operationTails.get(path) === current) operationTails.delete(path);
+  }
+}
+
+function hashBearer(bearer: string): string {
+  return createHash("sha256").update(bearer).digest("hex");
+}
+
+function hashesEqual(leftHex: string, rightHex: string): boolean {
+  return timingSafeEqual(Buffer.from(leftHex, "hex"), Buffer.from(rightHex, "hex"));
+}
+
+function requireTimestamp(now: number): number {
+  if (!Number.isFinite(now) || now < 0) {
+    throw new Error("Client v1 credential timestamps must be finite non-negative numbers.");
+  }
+  return now;
+}
+
+function cloneRecord(record: ClientV1CredentialRecord): ClientV1CredentialRecord {
+  return {
+    ...record,
+    scopes: [...record.scopes],
+  };
+}
+
+export function clientV1CredentialMetadata(
+  record: ClientV1CredentialRecord,
+): ClientV1CredentialMetadata {
+  return {
+    id: record.id,
+    appName: record.appName,
+    installationId: record.installationId,
+    scopes: [...record.scopes],
+    createdAt: record.createdAt,
+    lastUsedAt: record.lastUsedAt,
+    revokedAt: record.revokedAt,
+    revocationReason: record.revocationReason,
+  };
+}
+
+function cloneMap(
+  records: ReadonlyMap<string, ClientV1CredentialRecord>,
+): Map<string, ClientV1CredentialRecord> {
+  return new Map(Array.from(records, ([id, record]) => [id, cloneRecord(record)]));
+}
+
+async function assertRegularCredentialFileOrMissing(path: string): Promise<void> {
+  try {
+    const metadata = await lstat(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new Error(
+        `Client v1 credential store file must be a regular file, not a symlink: ${path}.`,
+      );
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+}
+
+async function initializeCredentialStoreLocation(
+  configuredRoot: string,
+): Promise<CredentialStoreLocation> {
+  const resolvedRoot = resolve(configuredRoot);
+  try {
+    await lstat(resolvedRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    await mkdir(resolvedRoot, { recursive: true, mode: 0o700 });
+  }
+
+  const physicalRoot = await realpath(resolvedRoot);
+  const metadata = await lstat(physicalRoot);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error(
+      `Client v1 credential store root must resolve to a real directory: ${resolvedRoot}.`,
+    );
+  }
+  await chmod(physicalRoot, 0o700);
+
+  const path = join(physicalRoot, CLIENT_V1_CREDENTIAL_STORE_FILE);
+  await assertRegularCredentialFileOrMissing(path);
+  return {
+    path,
+    queueKey: path,
+    root: physicalRoot,
+  };
+}
+
+async function assertCredentialStoreLocation(
+  location: CredentialStoreLocation,
+): Promise<void> {
+  const metadata = await lstat(location.root);
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error(
+      `Client v1 credential store root is no longer a real directory: ${location.root}.`,
+    );
+  }
+  if (await realpath(location.root) !== location.root) {
+    throw new Error(
+      `Client v1 credential store root was replaced by a symlink: ${location.root}.`,
+    );
+  }
+  await assertRegularCredentialFileOrMissing(location.path);
+}
+
+function parseRecord(value: unknown): ClientV1CredentialRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.id !== "string"
+    || !record.id
+    || typeof record.appName !== "string"
+    || !record.appName
+    || typeof record.installationId !== "string"
+    || !record.installationId
+    || typeof record.bearerHash !== "string"
+    || !BEARER_HASH_RE.test(record.bearerHash)
+    || typeof record.createdAt !== "number"
+    || !Number.isFinite(record.createdAt)
+    || record.createdAt < 0
+    || (record.lastUsedAt !== null
+      && (typeof record.lastUsedAt !== "number"
+        || !Number.isFinite(record.lastUsedAt)
+        || record.lastUsedAt < record.createdAt))
+    || (record.revokedAt !== null
+      && (typeof record.revokedAt !== "number"
+        || !Number.isFinite(record.revokedAt)
+        || record.revokedAt < record.createdAt))
+    || (record.revocationReason !== null
+      && (typeof record.revocationReason !== "string"
+        || !record.revocationReason.trim()))
+    || ((record.revokedAt === null) !== (record.revocationReason === null))
+  ) {
+    return null;
+  }
+
+  let scopes: ClientV1Scope[];
+  try {
+    scopes = parseClientV1PairingScopes(record.scopes);
+  } catch {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    appName: record.appName,
+    installationId: record.installationId,
+    scopes,
+    bearerHash: record.bearerHash,
+    createdAt: record.createdAt,
+    lastUsedAt: record.lastUsedAt as number | null,
+    revokedAt: record.revokedAt as number | null,
+    revocationReason: record.revocationReason as string | null,
+  };
+}
+
+function parseStore(raw: string): Map<string, ClientV1CredentialRecord> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error("Client v1 credential store contains malformed JSON.", {
+      cause,
+    });
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Client v1 credential store must contain an object.");
+  }
+  const file = parsed as Record<string, unknown>;
+  if (file.version !== 1) {
+    throw new Error("Client v1 credential store has an unsupported version.");
+  }
+  if (!Array.isArray(file.credentials)) {
+    throw new Error("Client v1 credential store credentials must be an array.");
+  }
+
+  const records = new Map<string, ClientV1CredentialRecord>();
+  for (const [index, value] of file.credentials.entries()) {
+    const record = parseRecord(value);
+    if (!record) {
+      throw new Error(
+        `Client v1 credential store contains an invalid credential record at index ${index}.`,
+      );
+    }
+    if (records.has(record.id)) {
+      throw new Error(
+        `Client v1 credential store contains duplicate credential id "${record.id}".`,
+      );
+    }
+    records.set(record.id, record);
+  }
+  return records;
+}
+
+async function writeStoreAtomic(
+  path: string,
+  records: ReadonlyMap<string, ClientV1CredentialRecord>,
+  temporaryRandomBytes: (size: number) => Buffer,
+  chmodCommittedFile: (path: string, mode: number) => Promise<void>,
+): Promise<void> {
+  const temporaryPath = `${path}.${process.pid}.${temporaryRandomBytes(6).toString("hex")}.tmp`;
+  const file: CredentialStoreFile = {
+    version: 1,
+    credentials: Array.from(records.values(), cloneRecord),
+  };
+  let ownsTemporaryPath = false;
+  let temporaryHandle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    temporaryHandle = await open(temporaryPath, "wx", 0o600);
+    ownsTemporaryPath = true;
+    await temporaryHandle.writeFile(JSON.stringify(file, null, 2), {
+      encoding: "utf8",
+    });
+    await temporaryHandle.chmod(0o600);
+    await temporaryHandle.close();
+    temporaryHandle = null;
+    await rename(temporaryPath, path);
+    ownsTemporaryPath = false;
+  } catch (error) {
+    if (temporaryHandle) {
+      await temporaryHandle.close().catch(() => {});
+    }
+    if (ownsTemporaryPath) {
+      await rm(temporaryPath, { force: true }).catch(() => {});
+    }
+    throw error;
+  }
+
+  // The rename above IS the commit, so nothing after it may reject. This mode
+  // repair is therefore best effort and deliberately sits outside the try: the
+  // temporary file was opened `wx` with 0o600 and chmod'd to exactly 0o600
+  // before the rename, and rename keeps the inode, so the committed file
+  // already carries the mode this call would set. Letting it throw — EPERM or
+  // EBUSY from a scanner holding the just-renamed file is plausible on Windows
+  // — would reject the write with the record already durably on disk. The
+  // exchange route reads that rejection as "issuing failed", restores the
+  // consumed pairing, and the client's retry appends a SECOND live bearer for
+  // one administrator approval, which no single revocation then clears.
+  await chmodCommittedFile(path, 0o600).catch(() => {});
+}
+
+export function clientV1CredentialStorePath(root = caveHome()): string {
+  return join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+}
+
+export class FileCredentialStore implements CredentialStore {
+  readonly #configuredRoot: string;
+  readonly #now: () => number;
+  readonly #readFile: (path: string, encoding: "utf8") => Promise<string>;
+  readonly #temporaryRandomBytes: (size: number) => Buffer;
+  readonly #chmodCommittedFile: (path: string, mode: number) => Promise<void>;
+  #locationPromise: Promise<CredentialStoreLocation> | null = null;
+  #records = new Map<string, ClientV1CredentialRecord>();
+
+  constructor(options: CredentialStoreOptions = {}) {
+    this.#configuredRoot = options.root ?? caveHome();
+    this.#now = options.now ?? Date.now;
+    this.#readFile = options.readFile ?? readFile;
+    this.#temporaryRandomBytes = options.temporaryRandomBytes ?? randomBytes;
+    this.#chmodCommittedFile = options.chmodCommittedFile ?? chmod;
+  }
+
+  #location(): Promise<CredentialStoreLocation> {
+    if (this.#locationPromise) return this.#locationPromise;
+    let pending!: Promise<CredentialStoreLocation>;
+    pending = initializeCredentialStoreLocation(this.#configuredRoot).catch((error) => {
+      if (this.#locationPromise === pending) this.#locationPromise = null;
+      throw error;
+    });
+    this.#locationPromise = pending;
+    return pending;
+  }
+
+  async #exclusive<T>(
+    operation: (location: CredentialStoreLocation) => Promise<T>,
+  ): Promise<T> {
+    const location = await this.#location();
+    return runExclusive(location.queueKey, async () => {
+      await assertCredentialStoreLocation(location);
+      return operation(location);
+    });
+  }
+
+  async #loadFromDisk(path: string): Promise<void> {
+    let raw: string;
+    try {
+      raw = await this.#readFile(path, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        this.#records = new Map();
+        return;
+      }
+      throw new Error(
+        `Failed to read client v1 credential store at ${path}.`,
+        { cause: error },
+      );
+    }
+    this.#records = parseStore(raw);
+  }
+
+  async #persist(location: CredentialStoreLocation): Promise<void> {
+    await assertCredentialStoreLocation(location);
+    await writeStoreAtomic(
+      location.path,
+      this.#records,
+      this.#temporaryRandomBytes,
+      this.#chmodCommittedFile,
+    );
+  }
+
+  async #recordUse(
+    location: CredentialStoreLocation,
+    record: ClientV1CredentialRecord,
+  ): Promise<ClientV1CredentialRecord> {
+    const now = Math.max(
+      requireTimestamp(this.#now()),
+      record.createdAt,
+      record.lastUsedAt ?? 0,
+    );
+    if (
+      record.lastUsedAt !== null
+      && now - record.lastUsedAt < CLIENT_V1_LAST_USED_WRITE_INTERVAL_MS
+    ) {
+      return record;
+    }
+    record.lastUsedAt = now;
+    await this.#persist(location);
+    return record;
+  }
+
+  async issue(input: ClientV1CredentialIssueInput): Promise<ClientV1IssuedCredential> {
+    return this.#exclusive(async (location) => {
+      await this.#loadFromDisk(location.path);
+      const appName = input.appName.trim();
+      const installationId = input.installationId.trim();
+      if (!appName || !installationId) {
+        throw new Error("Client v1 credential appName and installationId are required.");
+      }
+      const scopes = parseClientV1PairingScopes([...input.scopes]);
+      const bearer = randomBytes(32).toString("base64url");
+      const now = requireTimestamp(this.#now());
+      const credential: ClientV1CredentialRecord = {
+        id: randomUUID(),
+        appName,
+        installationId,
+        scopes,
+        bearerHash: hashBearer(bearer),
+        createdAt: now,
+        lastUsedAt: null,
+        revokedAt: null,
+        revocationReason: null,
+      };
+      this.#records.set(credential.id, credential);
+      await this.#persist(location);
+      return {
+        bearer,
+        credential: cloneRecord(credential),
+      };
+    });
+  }
+
+  async verify(id: string, bearer: string): Promise<boolean> {
+    return this.#exclusive(async (location) => {
+      await this.#loadFromDisk(location.path);
+      const record = this.#records.get(id);
+      const matches = hashesEqual(record?.bearerHash ?? DECOY_BEARER_HASH, hashBearer(bearer));
+      if (!record || record.revokedAt !== null || !matches) return false;
+      await this.#recordUse(location, record);
+      return true;
+    });
+  }
+
+  async findByBearer(bearer: string): Promise<ClientV1CredentialRecord | null> {
+    return this.#exclusive(async (location) => {
+      await this.#loadFromDisk(location.path);
+      const candidateHash = hashBearer(bearer);
+      let match: ClientV1CredentialRecord | null = null;
+      let activeMatches = 0;
+
+      for (const record of this.#records.values()) {
+        const matches = hashesEqual(record.bearerHash, candidateHash);
+        if (record.revokedAt === null && matches) {
+          activeMatches += 1;
+          if (!match) match = record;
+        }
+      }
+
+      if (activeMatches !== 1 || !match) return null;
+      return cloneRecord(await this.#recordUse(location, match));
+    });
+  }
+
+  async revoke(id: string, reason: string): Promise<void> {
+    await this.#exclusive(async (location) => {
+      await this.#loadFromDisk(location.path);
+      const record = this.#records.get(id);
+      if (!record || record.revokedAt !== null) return;
+      const revocationReason = reason.trim();
+      if (!revocationReason) {
+        throw new Error("Client v1 credential revocation reason is required.");
+      }
+      record.revokedAt = Math.max(
+        requireTimestamp(this.#now()),
+        record.createdAt,
+        record.lastUsedAt ?? 0,
+      );
+      record.revocationReason = revocationReason;
+      await this.#persist(location);
+    });
+  }
+
+  async reload(): Promise<Map<string, ClientV1CredentialRecord>> {
+    return this.#exclusive(async (location) => {
+      await this.#loadFromDisk(location.path);
+      return cloneMap(this.#records);
+    });
+  }
+
+  readPersistedFile(): Promise<string> {
+    return this.#exclusive((location) => this.#readFile(location.path, "utf8"));
+  }
+}
+
+export function createCredentialStore(
+  options: CredentialStoreOptions = {},
+): CredentialStore {
+  return new FileCredentialStore(options);
+}

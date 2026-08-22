@@ -93,5 +93,18 @@ test("answers without leaking paths, configuration, or user data", async () => {
     const serialized = JSON.stringify(envelope);
     assert.equal(serialized.includes(process.cwd()), false);
     assert.equal(/[A-Za-z]:\\\\|\/Users\/|\/home\//.test(serialized), false);
+    // Health is the one Client v1 route reachable without a credential, so it
+    // must never carry a pairing secret or bearer back out.
+    assert.equal(/secret|bearer/i.test(serialized), false);
+  });
+});
+
+test("advertises the pairing and credential capabilities a client pairs against", async () => {
+  await withTemporaryCaveHome(async () => {
+    const envelope = await (await GET()).json();
+    // A client reads these before it opens a pairing request; losing either
+    // would make the pairing authority undiscoverable.
+    assert.equal(envelope.capabilities.includes("pairing"), true);
+    assert.equal(envelope.capabilities.includes("credentials"), true);
   });
 });
