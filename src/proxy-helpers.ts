@@ -181,6 +181,16 @@ const CLIENT_V1_PUBLIC_PATHS = [
  * because a handler landing later inherits the exemption without ever opting
  * into it.
  *
+ * The converse is not free either, so absence is a decision rather than a safe
+ * default. Both of the client-v1-only protections in proxy() are gated on the
+ * ingress classification this list feeds: the hard `403 forbidden peer: client
+ * v1 requires direct loopback` that rejects anything but a direct loopback
+ * peer, and clientV1RequestBodyError's 411/413 content-length gate with its
+ * 64 KB cap. Neither applies to a path that classifies null. So a future
+ * authenticated route that lands un-listed does not merely keep the sidecar
+ * gate: it gains a bearer requirement and loses loopback-only ingress and the
+ * body cap. Listing it once it checks its own credential restores both.
+ *
  * So the invariant is: a pattern belongs here only once a route.ts on disk
  * matches it AND that route calls requireScope. Both halves are asserted in
  * src/app/api/api-contracts.test.ts. Phase 2 adds its entry in the same change
