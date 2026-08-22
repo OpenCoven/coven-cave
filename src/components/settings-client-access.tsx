@@ -43,6 +43,8 @@ type AlertState = {
   message: string;
 };
 
+type LedgerLoadOutcome = "succeeded" | "failed" | "superseded" | "aborted";
+
 type ListState<T> = {
   status: "loading" | "ready" | "error";
   items: T[];
@@ -359,11 +361,17 @@ function StatusChip({
   );
 }
 
-function ScopeList({ scopes }: { scopes: string[] }) {
+function ScopeList({
+  scopes,
+  ariaLabel,
+}: {
+  scopes: string[];
+  ariaLabel: string;
+}) {
   return (
     <div className="settings-client-access__scopes-block">
       <p className="settings-client-access__scopes-label">Scopes</p>
-      <ul className="settings-client-access__scopes" role="list" aria-label="Requested scopes">
+      <ul className="settings-client-access__scopes" role="list" aria-label={ariaLabel}>
         {scopes.map((scope) => (
           <li key={scope} className="settings-client-access__scope">
             {scope}
@@ -436,7 +444,7 @@ function PairingRequestItem({
         </div>
       </dl>
 
-      <ScopeList scopes={item.scopes} />
+      <ScopeList scopes={item.scopes} ariaLabel="Requested scopes" />
     </article>
   );
 }
@@ -510,7 +518,7 @@ function CredentialItem({
         ) : null}
       </dl>
 
-      <ScopeList scopes={item.scopes} />
+      <ScopeList scopes={item.scopes} ariaLabel="Issued credential scopes" />
     </article>
   );
 }
@@ -524,6 +532,7 @@ export function ClientAccessSection() {
   const [busyActions, setBusyActions] = useState<Record<string, BusyAction>>({});
   const loadControllerRef = useRef<AbortController | null>(null);
   const loadRequestIdRef = useRef(0);
+  const latestLoadPromiseRef = useRef<Promise<LedgerLoadOutcome> | null>(null);
   const mountedRef = useRef(true);
   const busyActionsRef = useRef(new Map<string, BusyAction>());
   const mutationControllersRef = useRef(new Map<string, AbortController>());
@@ -549,65 +558,79 @@ export function ClientAccessSection() {
     return controller;
   }, []);
 
-  const loadLedger = useCallback(async (
-    options: { announceResult?: boolean } = {},
-  ): Promise<boolean> => {
-    const requestId = loadRequestIdRef.current + 1;
-    loadRequestIdRef.current = requestId;
-    loadControllerRef.current?.abort();
-    const controller = new AbortController();
-    loadControllerRef.current = controller;
-
-    setRefreshing(true);
-    setPairings((current) => markRefreshing(current));
-    setCredentials((current) => markRefreshing(current));
-
-    try {
-      const [pairingsResult, credentialsResult] = await Promise.allSettled([
-        loadPairingRequests(controller.signal),
-        loadCredentials(controller.signal),
-      ]);
-
-      if (
-        controller.signal.aborted
-        || !mountedRef.current
-        || requestId !== loadRequestIdRef.current
-      ) {
-        return false;
-      }
-
-      setPairings((current) =>
-        settleList(current, pairingsResult, {
-          load: "Couldn't load pending approvals.",
-          refresh: "Couldn't refresh pending approvals.",
-        }),
-      );
-      setCredentials((current) =>
-        settleList(current, credentialsResult, {
-          load: "Couldn't load issued credentials.",
-          refresh: "Couldn't refresh issued credentials.",
-        }),
-      );
-
-      const succeeded =
-        pairingsResult.status === "fulfilled"
-        && credentialsResult.status === "fulfilled";
-      if (succeeded) setLastSuccessfulRefreshAt(Date.now());
-
-      if (options.announceResult) {
-        announce(
-          succeeded
-            ? "Client access refreshed."
-            : "Couldn't refresh client access. Check the sections below.",
-          succeeded ? "polite" : "assertive",
-        );
-      }
-      return succeeded;
-    } finally {
-      if (mountedRef.current && requestId === loadRequestIdRef.current) {
-        setRefreshing(false);
-      }
+  const awaitAuthoritativeRefresh = useCallback(async (
+    refreshPromise: Promise<LedgerLoadOutcome>,
+  ): Promise<LedgerLoadOutcome> => {
+    let pendingRefresh = refreshPromise;
+    while (true) {
+      const outcome = await pendingRefresh;
+      if (outcome !== "superseded") return outcome;
+      const latestRefresh = latestLoadPromiseRef.current;
+      if (!latestRefresh || latestRefresh === pendingRefresh) return "aborted";
+      pendingRefresh = latestRefresh;
     }
+  }, []);
+
+  const loadLedger = useCallback((
+    options: { announceResult?: boolean } = {},
+  ): Promise<LedgerLoadOutcome> => {
+    const loadPromise = (async (): Promise<LedgerLoadOutcome> => {
+      const requestId = loadRequestIdRef.current + 1;
+      loadRequestIdRef.current = requestId;
+      loadControllerRef.current?.abort();
+      const controller = new AbortController();
+      loadControllerRef.current = controller;
+
+      setRefreshing(true);
+      setPairings((current) => markRefreshing(current));
+      setCredentials((current) => markRefreshing(current));
+
+      try {
+        const [pairingsResult, credentialsResult] = await Promise.allSettled([
+          loadPairingRequests(controller.signal),
+          loadCredentials(controller.signal),
+        ]);
+
+        if (!mountedRef.current) return "aborted";
+        if (requestId !== loadRequestIdRef.current) return "superseded";
+        if (controller.signal.aborted) return "aborted";
+
+        setPairings((current) =>
+          settleList(current, pairingsResult, {
+            load: "Couldn't load pending approvals.",
+            refresh: "Couldn't refresh pending approvals.",
+          }),
+        );
+        setCredentials((current) =>
+          settleList(current, credentialsResult, {
+            load: "Couldn't load issued credentials.",
+            refresh: "Couldn't refresh issued credentials.",
+          }),
+        );
+
+        const succeeded =
+          pairingsResult.status === "fulfilled"
+          && credentialsResult.status === "fulfilled";
+        if (succeeded) setLastSuccessfulRefreshAt(Date.now());
+
+        if (options.announceResult) {
+          announce(
+            succeeded
+              ? "Client access refreshed."
+              : "Couldn't refresh client access. Check the sections below.",
+            succeeded ? "polite" : "assertive",
+          );
+        }
+        return succeeded ? "succeeded" : "failed";
+      } finally {
+        if (mountedRef.current && requestId === loadRequestIdRef.current) {
+          setRefreshing(false);
+        }
+      }
+    })();
+
+    latestLoadPromiseRef.current = loadPromise;
+    return loadPromise;
   }, [announce]);
 
   useEffect(() => {
@@ -615,6 +638,7 @@ export function ClientAccessSection() {
     return () => {
       mountedRef.current = false;
       loadControllerRef.current?.abort();
+      latestLoadPromiseRef.current = null;
       for (const controller of mutationControllersRef.current.values()) {
         controller.abort();
       }
@@ -670,8 +694,9 @@ export function ClientAccessSection() {
         items: current.items.filter((entry) => entry.id !== decided.id),
         alert: null,
       }));
-      const refreshed = await loadLedger();
-      if (controller.signal.aborted || !mountedRef.current) return;
+      const refreshOutcome = await awaitAuthoritativeRefresh(loadLedger());
+      if (controller.signal.aborted || !mountedRef.current || refreshOutcome === "aborted") return;
+      const refreshed = refreshOutcome === "succeeded";
       const verb = decision === "approved" ? "Approved" : "Denied";
       announce(
         refreshed
@@ -695,7 +720,7 @@ export function ClientAccessSection() {
     } finally {
       finishAction(key);
     }
-  }, [announce, beginAction, finishAction, loadLedger]);
+  }, [announce, awaitAuthoritativeRefresh, beginAction, finishAction, loadLedger]);
 
   const handleRevokeCredential = useCallback(async (item: CredentialRecord) => {
     const key = `credential:${item.id}`;
@@ -712,8 +737,9 @@ export function ClientAccessSection() {
         ),
         alert: null,
       }));
-      const refreshed = await loadLedger();
-      if (controller.signal.aborted || !mountedRef.current) return;
+      const refreshOutcome = await awaitAuthoritativeRefresh(loadLedger());
+      if (controller.signal.aborted || !mountedRef.current || refreshOutcome === "aborted") return;
+      const refreshed = refreshOutcome === "succeeded";
       announce(
         refreshed
           ? `Revoked ${item.appName} credential.`
@@ -735,7 +761,7 @@ export function ClientAccessSection() {
     } finally {
       finishAction(key);
     }
-  }, [announce, beginAction, finishAction, loadLedger]);
+  }, [announce, awaitAuthoritativeRefresh, beginAction, finishAction, loadLedger]);
 
   return (
     <div className="settings-client-access">

@@ -62,6 +62,53 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function abortError(): Error {
+  return typeof DOMException === "function"
+    ? new DOMException("The operation was aborted.", "AbortError")
+    : Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
+}
+
+function abortableResponse(
+  pending: Promise<Response>,
+  signal: AbortSignal | null | undefined,
+  onAbort: () => void,
+): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", handleAbort);
+      callback();
+    };
+    const handleAbort = () => {
+      finish(() => {
+        onAbort();
+        reject(abortError());
+      });
+    };
+
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+    pending.then(
+      (value) => {
+        finish(() => {
+          resolve(value);
+        });
+      },
+      (error) => {
+        finish(() => {
+          reject(error);
+        });
+      },
+    );
+  });
+}
+
 function textContent(node: unknown): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(textContent).join("");
@@ -226,6 +273,16 @@ test("renders pending pairing and credential metadata without exposing secrets",
   expect(rendered).not.toContain("pair-secret");
   expect(rendered).not.toContain("secret-bearer");
   expect(rendered).not.toContain("secret-bearer-hash");
+  expect(
+    renderer.root.findAll(
+      (node) => node.type === "ul" && node.props["aria-label"] === "Requested scopes",
+    ),
+  ).toHaveLength(1);
+  expect(
+    renderer.root.findAll(
+      (node) => node.type === "ul" && node.props["aria-label"] === "Issued credential scopes",
+    ),
+  ).toHaveLength(2);
 
   const calls = (globalThis.fetch as FetchMock).mock.calls;
   expect(calls.map(([url]) => url)).toEqual([PAIRING_REQUESTS_URL, CREDENTIALS_URL]);
@@ -455,6 +512,171 @@ test("approves, denies, and revokes through authoritative refreshes", async () =
       "Revoked Gamma Client credential.",
     ]),
   );
+
+  await act(async () => renderer.unmount());
+});
+
+test("overlapping successful mutations wait for the newest authoritative refresh", async () => {
+  const firstRefreshPairings = deferred<Response>();
+  const firstRefreshCredentials = deferred<Response>();
+  const secondRefreshPairings = deferred<Response>();
+  const secondRefreshCredentials = deferred<Response>();
+  const abortedRefreshes: string[] = [];
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      if (pairingLoads === 1) {
+        return Promise.resolve(success({
+          pairingRequests: [
+            {
+              id: "pair-alpha",
+              appName: "Alpha Client",
+              installationId: "alpha-install",
+              scopes: ["chat:read"],
+              status: "pending",
+              createdAt: Date.now() - 60_000,
+              expiresAt: Date.now() + 4 * 60_000,
+              decidedAt: null,
+            },
+          ],
+        }));
+      }
+      if (pairingLoads === 2) {
+        return abortableResponse(
+          firstRefreshPairings.promise,
+          init?.signal,
+          () => abortedRefreshes.push("pairings:first"),
+        );
+      }
+      if (pairingLoads === 3) {
+        return abortableResponse(
+          secondRefreshPairings.promise,
+          init?.signal,
+          () => abortedRefreshes.push("pairings:second"),
+        );
+      }
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      if (credentialLoads === 1) {
+        return Promise.resolve(success({
+          credentials: [
+            {
+              id: "cred-gamma",
+              appName: "Gamma Client",
+              installationId: "gamma-install",
+              scopes: ["github:write"],
+              createdAt: Date.now() - 10 * 60_000,
+              lastUsedAt: Date.now() - 2 * 60_000,
+              revokedAt: null,
+              revocationReason: null,
+            },
+          ],
+        }));
+      }
+      if (credentialLoads === 2) {
+        return abortableResponse(
+          firstRefreshCredentials.promise,
+          init?.signal,
+          () => abortedRefreshes.push("credentials:first"),
+        );
+      }
+      if (credentialLoads === 3) {
+        return abortableResponse(
+          secondRefreshCredentials.promise,
+          init?.signal,
+          () => abortedRefreshes.push("credentials:second"),
+        );
+      }
+    }
+    if (url === "/api/client/v1/admin/pairing-requests/pair-alpha/decision") {
+      return Promise.resolve(success({
+        pairingRequest: {
+          id: "pair-alpha",
+          appName: "Alpha Client",
+          installationId: "alpha-install",
+          scopes: ["chat:read"],
+          status: "approved",
+          createdAt: Date.now() - 60_000,
+          expiresAt: Date.now() + 4 * 60_000,
+          decidedAt: Date.now(),
+        },
+      }));
+    }
+    if (url === "/api/client/v1/admin/credentials/cred-gamma") {
+      return Promise.resolve(success({
+        credential: {
+          id: "cred-gamma",
+          appName: "Gamma Client",
+          installationId: "gamma-install",
+          scopes: ["github:write"],
+          createdAt: Date.now() - 10 * 60_000,
+          lastUsedAt: Date.now() - 2 * 60_000,
+          revokedAt: Date.now(),
+          revocationReason: "revoked from Settings",
+        },
+      }));
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+
+  await act(async () => {
+    findButton(renderer, "Approve Alpha Client pairing request").props.onClick();
+    await flushMicrotasks();
+  });
+  expect(rootText(renderer)).not.toContain("alpha-install");
+
+  await act(async () => {
+    findButton(renderer, "Revoke Gamma Client credential").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(abortedRefreshes).toEqual(
+    expect.arrayContaining(["pairings:first", "credentials:first"]),
+  );
+  expect(announce).not.toHaveBeenCalled();
+
+  await act(async () => {
+    secondRefreshPairings.resolve(success({ pairingRequests: [] }));
+    secondRefreshCredentials.resolve(success({
+      credentials: [
+        {
+          id: "cred-gamma",
+          appName: "Gamma Client",
+          installationId: "gamma-install",
+          scopes: ["github:write"],
+          createdAt: Date.now() - 10 * 60_000,
+          lastUsedAt: Date.now() - 2 * 60_000,
+          revokedAt: Date.now(),
+          revocationReason: "revoked from Settings",
+        },
+      ],
+    }));
+    await secondRefreshPairings.promise;
+    await secondRefreshCredentials.promise;
+    await flushMicrotasks();
+  });
+
+  expect(
+    announce.mock.calls.map(([message]) => message),
+  ).toEqual(
+    expect.arrayContaining([
+      "Approved Alpha Client pairing request.",
+      "Revoked Gamma Client credential.",
+    ]),
+  );
+  expect(
+    announce.mock.calls.some(([message]) => String(message).includes("Couldn't refresh the access ledger")),
+  ).toBe(false);
+  expect(rootText(renderer)).toContain("revoked from Settings");
+  expect(pairingLoads).toBe(3);
+  expect(credentialLoads).toBe(3);
 
   await act(async () => renderer.unmount());
 });
