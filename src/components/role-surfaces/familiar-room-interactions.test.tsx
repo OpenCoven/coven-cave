@@ -231,6 +231,23 @@ function liveLoadingCount(renderer: ReactTestRenderer): number {
   ).length;
 }
 
+/**
+ * The labels of those live statuses, sorted. A count alone cannot tell "each
+ * independent request owns one live status" from "one request grew a second
+ * live copy" — which is the whole distinction this describe block exists for.
+ */
+function liveLoadingLabels(renderer: ReactTestRenderer): string[] {
+  return renderer.root
+    .findAll(
+      (node) =>
+        node.type === "div" &&
+        node.props["aria-busy"] === "true" &&
+        node.props.role === "status",
+    )
+    .map((node) => String(node.props["aria-label"]))
+    .sort();
+}
+
 describe("SurfaceLoading live ownership", () => {
   test("passive dependent copies keep busy semantics without becoming live regions", async () => {
     let renderer!: ReactTestRenderer;
@@ -266,7 +283,7 @@ describe("SurfaceLoading live ownership", () => {
     await act(async () => renderer.unmount());
   });
 
-  test("Messenger gives its shared inbox request one live loading owner", async () => {
+  test("Messenger gives each independent request one live loading owner", async () => {
     const familiarId = "messenger-loading";
     writeRoleSurfaceState(familiarId, MESSENGER_SURFACE_ID, {
       ...MESSENGER_INITIAL_STATE,
@@ -274,7 +291,14 @@ describe("SurfaceLoading live ownership", () => {
     });
     globalThis.fetch = vi.fn(() => pending());
     const renderer = await renderSurface(MessengerSurface, context(familiarId));
-    expect(liveLoadingCount(renderer)).toBe(1);
+    // Two independent requests: the shared inbox, and the X publish panel's
+    // own list. Asserted by label rather than by count, because the property
+    // that matters is that the INBOX still owns exactly one — it is fetched
+    // once and rendered in two places, and its "Scheduled" copy stays passive.
+    expect(liveLoadingLabels(renderer)).toEqual([
+      "Loading X publishing…",
+      "Loading inbox…",
+    ]);
     await act(async () => renderer.unmount());
   });
 });
