@@ -20,6 +20,34 @@ const childSpawnEnvSource = await readFile(
 assert.equal(isWindowsRemoteExecutablePath("\\\\server\\share\\coven.exe"), true);
 assert.equal(isWindowsRemoteExecutablePath("\\\\?\\UNC\\server\\share\\coven.exe"), true);
 assert.equal(isWindowsRemoteExecutablePath("\\\\?\\C:\\Tools\\coven.exe"), false);
+// The five spellings the two-regex denylist admitted. Each was measured
+// reading `\\localhost\C$\Windows\win.ini` on Windows 11, so each would have
+// sourced and spawned coven.exe from another machine.
+for (const admitted of [
+  String.raw`\\.\UNC\remote-host\share\coven.exe`,
+  String.raw`\\?\GLOBALROOT\Device\Mup\remote-host\share\coven.exe`,
+  String.raw`\\?\GLOBALROOT\Device\LanmanRedirector\remote-host\share\coven.exe`,
+  String.raw`\\?\GLOBALROOT\??\UNC\remote-host\share\coven.exe`,
+  String.raw`\\.\C:\..\..\UNC\remote-host\share\coven.exe`,
+]) {
+  assert.equal(
+    isWindowsRemoteExecutablePath(admitted),
+    true,
+    `${admitted} reaches another machine and must not be eligible`,
+  );
+}
+// Forward slashes reach the same object-manager routes, and the value is read
+// as written, before anything else trims it.
+assert.equal(isWindowsRemoteExecutablePath("//./UNC/remote-host/share/coven.exe"), true);
+assert.equal(isWindowsRemoteExecutablePath("  \\\\remote-host\\share\\coven.exe  "), true);
+// The pipe device stays on this machine, but no launcher lives there, so the
+// executable boundary is one notch tighter than the daemon-socket one.
+assert.equal(isWindowsRemoteExecutablePath("\\\\.\\pipe\\coven"), true);
+// Local spellings stay eligible: a plain drive letter is not rooted at `\\` at
+// all, and a drive behind either device prefix is on this machine.
+assert.equal(isWindowsRemoteExecutablePath("C:\\Tools\\coven.exe"), false);
+assert.equal(isWindowsRemoteExecutablePath("\\\\.\\C:\\Tools\\coven.exe"), false);
+assert.equal(isWindowsRemoteExecutablePath("coven.exe"), false);
 assert.match(
   source,
   /const canonical = realpathSync[\s\S]*isWindowsRemoteExecutablePath\(canonical\)[\s\S]*return st\.isFile\(\) \? canonical : null/,
@@ -830,7 +858,15 @@ assert.equal(
 );
 assert.equal(
   covenOverrideRejection("\\\\remote-host\\share\\coven.exe", "win32"),
-  "it refers to a remote UNC share",
+  "it is not on a local drive",
+);
+assert.equal(
+  covenOverrideRejection(
+    String.raw`\\?\GLOBALROOT\Device\Mup\remote-host\share\coven.exe`,
+    "win32",
+  ),
+  "it is not on a local drive",
+  "the operator hears about a device-namespace share, not only the obvious spelling",
 );
 assert.equal(
   covenOverrideRejection(path.join(os.tmpdir(), "cave-coven-override-absent")),

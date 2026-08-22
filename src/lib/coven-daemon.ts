@@ -21,6 +21,11 @@ import {
   recordDaemonDiagnosticEvent,
   type DaemonDiagnosticContext,
 } from "./server/daemon-diagnostics.ts";
+import { isRemoteWindowsPath } from "./windows-local-path.ts";
+
+// Re-exported so the socket resolver's own callers and tests keep importing the
+// boundary from the module that applies it.
+export { isRemoteWindowsPath } from "./windows-local-path.ts";
 
 type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
@@ -55,81 +60,6 @@ export function normalizeWindowsDaemonSocket(socket: string): string {
   }
 
   return `${WINDOWS_PIPE_PREFIX}${trimmed}`;
-}
-
-/**
- * The two rooted Windows shapes that provably stay on this machine: the local
- * named-pipe device, and a drive letter behind the long-path prefix.
- */
-const WINDOWS_LOCAL_DEVICE_ROOT = /^\\\\[?.]\\(?:pipe\\|[a-z]:\\)/i;
-
-/**
- * A `..` component, which walks back out of whichever root was allowed.
- *
- * `\\.\` paths are canonicalized by Win32 before they reach the object
- * manager, so a `..` pops the very component the allowlist above matched on
- * and lands back at the device root — from which `UNC\` and
- * `GLOBALROOT\Device\Mup\` re-enter the SMB redirector. Measured on Windows 11
- * against a local `net.createServer` pipe, all of these connected to it
- * through the redirector while spelled as an allowed local root:
- *
- *     \\.\pipe\..\UNC\host\pipe\p          \\.\pipe\..\..\UNC\host\pipe\p
- *     \\.\C:\..\..\UNC\host\pipe\p         //./pipe/../UNC/host/pipe/p
- *     \\.\pipe\..\GLOBALROOT\Device\Mup\host\pipe\p
- *
- * Only an exact `..` component escapes: `.. `, `...` and `. .` were all
- * measured ENOENT, because a `\\.\` path is canonicalized but its components
- * are not space/dot-trimmed. `\\?\` skips canonicalization entirely, so a `..`
- * there is a literal pipe name and also ENOENT — it is refused anyway rather
- * than relying on that, since the difference between the two prefixes is not
- * something a reader should have to hold.
- *
- * No local socket target has a `..` component: the daemon publishes a flat
- * pipe name, and the fallback is built by `path.join`. This only ever refuses
- * a value that was written to traverse.
- */
-const WINDOWS_PARENT_SEGMENT = /(?:^|\\)\.\.(?:\\|$)/;
-
-/**
- * Whether a Windows path fails to prove it stays on this machine.
- *
- * This is an allowlist, and it has to be: enumerating off-machine spellings
- * does not converge. Measured on Windows 11 with `net.connect({ path })`
- * against a local `net.createServer` pipe, every one of these delivered to it
- * through the SMB redirector, and the last shows the nesting is open-ended
- * rather than a fixed set to denylist:
- *
- *     \\host\pipe\p
- *     \\?\UNC\host\pipe\p                    \\.\UNC\host\pipe\p
- *     \\?\GLOBALROOT\Device\Mup\host\pipe\p
- *     \\?\GLOBALROOT\Device\LanmanRedirector\host\pipe\p
- *     \\?\GLOBALROOT\??\UNC\host\pipe\p
- *
- * A path not rooted at `\\` — a drive letter, a bare pipe name, a relative
- * name — cannot leave the machine by spelling alone and is accepted without
- * enumeration. Note this is only true of the value as written: a relative name
- * is one `normalizeWindowsDaemonSocket` call away from being rooted at the
- * pipe device, which is why the caller re-checks the normalized value too.
- * A path rooted at `\\` must match one of the two local device
- * roots above and must not walk back out of it via {@link
- * WINDOWS_PARENT_SEGMENT}; everything else is refused, including spellings
- * nobody has written down yet. The local daemon is owner-local by definition,
- * so a target outside those roots is never it — it is a redirection, and every
- * request Cave would send (commands, conversation content, whatever the daemon
- * is asked to do) would reach the remote listener instead.
- *
- * What this cannot see: a drive letter mapped to a share
- * (`net use Z: \\host\share`) resolves off-machine while spelled `Z:\…`. No
- * syntactic check reaches that; it needs the connected pipe's owner.
- *
- * {@link isWindowsRemoteExecutablePath} in `coven-bin.ts` still draws the old,
- * narrower boundary for the CLI binary and admits the four spellings above.
- */
-export function isRemoteWindowsPath(candidate: string): boolean {
-  const normalized = candidate.trim().replaceAll("/", "\\");
-  if (!normalized.startsWith("\\\\")) return false;
-  if (WINDOWS_PARENT_SEGMENT.test(normalized)) return true;
-  return !WINDOWS_LOCAL_DEVICE_ROOT.test(normalized);
 }
 
 type RefusedSocketSource = "coven-socket-env" | "coven-home-env" | "daemon-status-file";

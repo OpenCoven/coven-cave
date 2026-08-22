@@ -257,7 +257,7 @@ impl OverrideRejection {
     pub(super) fn reason(self) -> &'static str {
         match self {
             OverrideRejection::NotAbsolute => "not an absolute path",
-            OverrideRejection::RemotePath => "refers to a remote UNC share",
+            OverrideRejection::RemotePath => "is not on a local drive",
             OverrideRejection::Missing => "does not exist",
             OverrideRejection::NotAFile => "is not a file",
         }
@@ -277,24 +277,56 @@ pub(super) enum PathProbe {
     File { canonical: String },
 }
 
-/// Mirror of `isWindowsRemoteExecutablePath` in `src/lib/coven-bin.ts`: a
-/// Cave-owned local CLI must not be sourced from a remote UNC share. Besides
-/// crossing the local trust boundary, probing one can stall on an offline
-/// share. `\\?\` and `\\.\` device namespaces are local and stay eligible;
-/// `\\?\UNC\` is the extended spelling of a share and is not.
+/// Mirror of `isWindowsRemoteExecutablePath` in
+/// `src/lib/windows-local-path.ts`: a Cave-owned local CLI must not be sourced
+/// from another machine. Besides crossing the local trust boundary, probing one
+/// can stall on an offline share.
+///
+/// This is an allowlist, and it has to be. The denylist it replaces refused
+/// `\\host\` and `\\?\UNC\` and admitted five spellings that were measured
+/// reaching another machine on Windows 11 — `fs` read
+/// `\\localhost\C$\Windows\win.ini` through each of them:
+///
+///     \\.\UNC\host\share\coven.exe
+///     \\?\GLOBALROOT\Device\Mup\host\share\coven.exe
+///     \\?\GLOBALROOT\Device\LanmanRedirector\host\share\coven.exe
+///     \\?\GLOBALROOT\??\UNC\host\share\coven.exe
+///     \\.\C:\..\..\UNC\host\share\coven.exe
+///
+/// The last two show the set does not close by enumeration: `GLOBALROOT` re-
+/// enters the object-manager root so remote routes nest arbitrarily, and a `..`
+/// pops whichever component was allowed and lands back at the device root.
+///
+/// So: a path not rooted at `\\` cannot leave the machine by spelling alone. A
+/// path rooted at `\\` is eligible only as a drive letter behind a device
+/// prefix (`\\?\C:\`, `\\.\C:\`) with no `..` component. The pipe device is
+/// local but is not a place a launcher lives, so it is refused here even though
+/// the daemon-socket boundary admits it.
 #[cfg(desktop)]
 pub(super) fn is_windows_remote_executable_path(candidate: &str) -> bool {
     let normalized: String = candidate
+        .trim()
         .chars()
         .map(|c| if c == '/' { '\\' } else { c })
         .collect();
-    if let Some(rest) = normalized.strip_prefix("\\\\") {
-        match rest.chars().next() {
-            Some('?') | Some('.') | Some('\\') | None => {}
-            Some(_) => return true,
-        }
+    let Some(rest) = normalized.strip_prefix("\\\\") else {
+        return false;
+    };
+    if normalized.split('\\').any(|segment| segment == "..") {
+        return true;
     }
-    normalized.to_ascii_lowercase().starts_with("\\\\?\\unc\\")
+    let Some(after_prefix) = rest
+        .strip_prefix('?')
+        .or_else(|| rest.strip_prefix('.'))
+        .and_then(|tail| tail.strip_prefix('\\'))
+    else {
+        return true;
+    };
+    let bytes = after_prefix.as_bytes();
+    !(bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && bytes[2] == b'\\')
 }
 
 /// Host-independent `path.isAbsolute`. `Path::is_absolute` answers for the
@@ -626,7 +658,8 @@ mod coven_binary_tests {
         assert!(is_windows_remote_executable_path(
             "\\\\?\\unc\\server\\share\\coven.exe"
         ));
-        // Local device namespaces are not shares.
+        // Only a drive letter behind a device prefix is admitted, and only
+        // without a `..`.
         assert!(!is_windows_remote_executable_path(
             "\\\\?\\C:\\bin\\coven.exe"
         ));
@@ -634,6 +667,30 @@ mod coven_binary_tests {
             "\\\\.\\C:\\bin\\coven.exe"
         ));
         assert!(!is_windows_remote_executable_path("C:\\bin\\coven.exe"));
+        assert!(!is_windows_remote_executable_path("coven.exe"));
+    }
+
+    /// The five spellings the two-regex denylist admitted, each measured
+    /// reading `\\localhost\C$\Windows\win.ini` on Windows 11.
+    #[test]
+    fn device_namespace_spellings_that_reach_another_machine_are_refused() {
+        for admitted in [
+            "\\\\.\\UNC\\server\\share\\coven.exe",
+            "\\\\?\\GLOBALROOT\\Device\\Mup\\server\\share\\coven.exe",
+            "\\\\?\\GLOBALROOT\\Device\\LanmanRedirector\\server\\share\\coven.exe",
+            "\\\\?\\GLOBALROOT\\??\\UNC\\server\\share\\coven.exe",
+            "\\\\.\\C:\\..\\..\\UNC\\server\\share\\coven.exe",
+            "//./UNC/server/share/coven.exe",
+            "  \\\\server\\share\\coven.exe  ",
+        ] {
+            assert!(
+                is_windows_remote_executable_path(admitted),
+                "{admitted} reaches another machine and must not be eligible"
+            );
+        }
+        // The pipe device stays on this machine, but no launcher lives there,
+        // so the executable boundary is tighter than the daemon-socket one.
+        assert!(is_windows_remote_executable_path("\\\\.\\pipe\\coven"));
     }
 
     #[test]
