@@ -8,6 +8,7 @@ import {
   createClientV1Authenticator,
   type ClientV1AuthResult,
 } from "./auth.ts";
+import { CLIENT_V1_PUBLIC_ROUTES } from "./contract.ts";
 import type {
   ClientV1CredentialRecord,
   CredentialStore,
@@ -157,6 +158,18 @@ test("valid scope returns only the active credential record", async () => {
   assert.equal(JSON.stringify(result).includes("valid-bearer"), false);
 });
 
+/**
+ * The contract's public routes as request pathnames: `:id` templates filled in,
+ * and the GET/POST pair on one path collapsed, because ingress classification
+ * is method-blind.
+ */
+function contractPublicPaths(): string[] {
+  const paths = CLIENT_V1_PUBLIC_ROUTES.map((route) =>
+    route.path.replace(/:[A-Za-z0-9_]+/g, "request-1"),
+  );
+  return paths.filter((path, index) => paths.indexOf(path) === index);
+}
+
 test("client-v1 ingress allowlists only the reviewed public routes", () => {
   const publicRoutes = [
     "/api/client/v1/health",
@@ -164,6 +177,10 @@ test("client-v1 ingress allowlists only the reviewed public routes", () => {
     "/api/client/v1/pairing/requests/request-1",
     "/api/client/v1/pairing/requests/request-1/exchange",
   ];
+  // Pinned to the contract so this literal cannot drift into a stale
+  // restatement of it. Written out rather than derived because a list that
+  // derives its own expectation asserts nothing about the proxy.
+  assert.deepEqual(publicRoutes, contractPublicPaths());
   for (const route of publicRoutes) {
     assert.equal(clientV1IngressKind(route), CLIENT_V1_PUBLIC_INGRESS, route);
   }
@@ -198,8 +215,42 @@ test("client-v1 ingress allowlists only the reviewed public routes", () => {
     "/api/client/v1/runs/run-1/retry",
     "/api/client/v1/attention/attention-1/respond",
     "/api/client/v1/github/actions",
+    // Near-misses of the DERIVED public patterns. The four regexes they
+    // replaced were literals a reviewer read directly; these are generated, so
+    // the generator's anchoring and its one-segment `:id` scoping need
+    // assertions of their own. Without them, widening `:id` to `.+` or
+    // dropping the `^`/`$` anchors leaves every suite green while the public
+    // set silently grows past the reviewed one — and public is the set that
+    // skips the mobile-access gate and returns before the sidecar-token block,
+    // so growing it is a widening of credential-free ingress (cave-d1sjz).
+    "/api/client/v1/healthz",
+    "/decoy/api/client/v1/health",
+    "/api/client/v1/pairing/requests/",
+    "/api/client/v1/pairing/requests/request-1/messages",
+    "/api/client/v1/pairing/requests/request-1/exchange/extra",
   ]) {
     assert.equal(clientV1IngressKind(route), null, route);
+  }
+});
+
+test("proxy public ingress follows the contract's public routes", () => {
+  // The list above states the reviewed set; this states where it comes from.
+  // CLIENT_V1_PUBLIC_ROUTES is what the discovery fixture advertises, so a
+  // route the contract publishes and the proxy does not classify is a route
+  // clients are told to call and the proxy answers with 403 — a divergence no
+  // suite could see while the proxy restated the set by hand (cave-d1sjz).
+  for (const path of contractPublicPaths()) {
+    assert.equal(clientV1IngressKind(path), CLIENT_V1_PUBLIC_INGRESS, path);
+  }
+  // Deriving the proxy's public set from the contract also hands contract.ts
+  // authority over which paths skip the mobile-access gate and return before
+  // the sidecar-token block. Bound that authority rather than inherit it: a
+  // derived public path may only be a non-admin path inside the client-v1
+  // surface, so a contract entry for, say, /api/mobile-token/refresh cannot
+  // quietly buy credential-free ingress for a route outside client v1.
+  for (const path of contractPublicPaths()) {
+    assert.equal(path.startsWith("/api/client/v1/"), true, path);
+    assert.equal(path.startsWith("/api/client/v1/admin"), false, path);
   }
 });
 
@@ -293,6 +344,33 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
       const response = await proxy(proxyRequest(route, { headers }));
       assert.equal(passedThrough(response), false, route);
       assert.equal(response.status, 401, route);
+    }
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("derived public ingress reaches the proxy pass-through with no credential", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_AUTH_TOKEN: "configured-sidecar-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+    const headers = {
+      [LOCAL_PEER_HEADER]: "loopback-secret",
+      origin: ORIGIN,
+      referer: `${ORIGIN}/`,
+    };
+
+    // clientV1IngressKind is where the other derivation tests stop; this one
+    // runs the derived patterns through proxy() itself, because the property
+    // #4844 is about is end-to-end: a route the contract advertises must not be
+    // one the proxy answers with 403. Credential-free by definition — pairing
+    // is how a client obtains the credential these paths exist to hand out.
+    for (const path of contractPublicPaths()) {
+      const response = await proxy(proxyRequest(path, { headers }));
+      assert.equal(passedThrough(response), true, `${path} returned ${response.status}`);
     }
   } finally {
     restoreProxyEnv();

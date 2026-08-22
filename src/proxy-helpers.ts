@@ -5,6 +5,10 @@
 // The proxy() function in proxy.ts re-exports these so consumers still
 // have one canonical import path.
 
+// Data only — contract.ts declares the client-v1 surface and imports nothing,
+// so pulling it in here costs the proxy no runtime dependency.
+import { CLIENT_V1_PUBLIC_ROUTES } from "./lib/server/client-v1/contract.ts";
+
 export function timingSafeEqualString(a: string, b: string) {
   const encoder = new TextEncoder();
   const aBytes = encoder.encode(a);
@@ -163,12 +167,30 @@ export type ClientV1IngressKind =
   | typeof CLIENT_V1_PUBLIC_INGRESS
   | "authenticated";
 
-const CLIENT_V1_PUBLIC_PATHS = [
-  /^\/api\/client\/v1\/health$/,
-  /^\/api\/client\/v1\/pairing\/requests$/,
-  /^\/api\/client\/v1\/pairing\/requests\/[^/]+$/,
-  /^\/api\/client\/v1\/pairing\/requests\/[^/]+\/exchange$/,
-];
+const CLIENT_V1_PATH_PARAMETER = /^:[A-Za-z0-9_]+$/;
+
+/** One contract route path (`/…/pairing/requests/:id`) as an exact matcher. */
+function clientV1PathPattern(path: string) {
+  const segments = path.split("/").map((segment) =>
+    CLIENT_V1_PATH_PARAMETER.test(segment)
+      ? "[^/]+"
+      : segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  );
+  return new RegExp(`^${segments.join("/")}$`);
+}
+
+/**
+ * Derived from the contract rather than restated from it. These are the paths
+ * a client may call before it holds a credential, and CLIENT_V1_PUBLIC_ROUTES
+ * is what the discovery fixture tells clients that set is — so a hand-kept
+ * second copy here could publish a route the proxy then answers with 403, with
+ * nothing in the suite able to see the disagreement (cave-d1sjz). Methods are
+ * dropped because ingress classification is method-blind; the routes
+ * themselves reject the methods they do not serve.
+ */
+const CLIENT_V1_PUBLIC_PATHS = CLIENT_V1_PUBLIC_ROUTES.map((route) =>
+  clientV1PathPattern(route.path),
+);
 
 /**
  * Client-v1 paths whose OWN handler authenticates the bearer credential.
