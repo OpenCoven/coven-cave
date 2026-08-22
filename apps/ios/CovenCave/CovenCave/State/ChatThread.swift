@@ -469,11 +469,24 @@ final class ChatThread: Identifiable, Hashable {
         onChange()
 
         guard let client, let target else { return }
-        Task { [weak self] in
+        // One at a time, per thread. A second swipe lands well inside the
+        // first request, and a message with no server id is named by reading
+        // the conversation — a read that would still be showing the turn the
+        // first delete is in the middle of removing. Its transcript then
+        // disagrees with ours, which is a refusal, so the second delete of a
+        // two-swipe cleanup would fail for no reason but timing. Chaining
+        // costs nothing visible: the bubble is already gone by here.
+        let previous = pendingServerDelete
+        pendingServerDelete = Task { [weak self] in
+            _ = await previous?.value
             await self?.persistDelete(of: removed, at: index, target: target,
                                       client: client, onChange: onChange)
         }
     }
+
+    /// The tail of this thread's serialized server deletes. Nothing renders
+    /// it, so it stays out of observation. See `deleteMessage`.
+    @ObservationIgnored private var pendingServerDelete: Task<Void, Never>?
 
     /// Where a message lives on the server, when it lives there at all.
     ///
@@ -513,7 +526,8 @@ final class ChatThread: Identifiable, Hashable {
 
     private struct ServerDeleteTarget {
         let sessionId: String
-        /// Known only for a message the server named to us on a restore.
+        /// Known only for a message the server has already named to us — on a
+        /// restore, or on the replay that adopted a reply the server had.
         let turnId: String?
         /// Every local message before this one that occupies a server turn,
         /// in order. Its COUNT is the ordinal used to name a message composed
@@ -538,36 +552,72 @@ final class ChatThread: Identifiable, Hashable {
     private func persistDelete(of message: DisplayMessage, at index: Int,
                                target: ServerDeleteTarget, client: CaveClient,
                                onChange: @escaping () -> Void) async {
-        let turnId: String?
-        if let known = target.turnId {
+        let turnId: String
+        if let known = target.turnId, !known.isEmpty {
             turnId = known
         } else {
             // A message composed in this session has no server-assigned id
             // yet, and nothing in the send path hands one back. Reading the
             // conversation is the only way to name the turn — and the read
-            // has to separate two outcomes a `try?` collapses into one: the
-            // read THROWING is a real failure to report, while it returning
-            // no conversation is the server saying it holds no transcript for
-            // this chat, in which case the local removal was already the
-            // whole delete and there is nothing to roll back.
+            // has THREE outcomes a `try?` collapses into one:
+            //
+            //  - it THROWS 404: `GET /api/chat/conversation/{id}` answers 404
+            //    when the server holds no transcript for this chat (see that
+            //    route's final `not found`). The desktop was reached and told
+            //    us it has nothing, so the local removal was already the whole
+            //    delete. Blaming the network here would be a lie AND would put
+            //    back a message no server copy will ever resurrect.
+            //  - it THROWS anything else: a real failure, report it.
+            //  - it RETURNS nil: same answer as the 404, reached through the
+            //    narrow `conversation: null` shape the route uses when a board
+            //    card claims the session but no transcript exists yet.
             let convo: Conversation?
             do {
                 convo = try await client.conversation(sessionId: target.sessionId)
+            } catch CaveError.badResponse(404) {
+                return
             } catch {
-                rollBack(message, to: index, reason: "the desktop could not be reached",
+                rollBack(message, to: index, reason: error.localizedDescription,
                          onChange: onChange)
                 return
             }
             guard let convo else { return }
-            turnId = Self.turnId(matching: message, following: target.preceding,
-                                 in: convo.turns)
+            switch Self.turnMatch(for: message, following: target.preceding, in: convo.turns) {
+            case .named(let id):
+                turnId = id
+            case .absent:
+                return
+            case .ambiguous:
+                // The server HAS a transcript and it does not line up with
+                // ours, so we cannot say whether it holds this message. Saying
+                // nothing would leave the bubble gone here and the turn alive
+                // there — a silent local-only delete, which is the bug this
+                // whole path exists to end, not a success.
+                rollBack(message, to: index,
+                         reason: "the desktop's copy of this chat has changed; refresh and try again",
+                         onChange: onChange)
+                return
+            }
         }
-        guard let turnId, !turnId.isEmpty else { return }
         do {
             try await client.deleteConversationTurn(sessionId: target.sessionId, turnId: turnId)
         } catch {
             rollBack(message, to: index, reason: error.localizedDescription, onChange: onChange)
         }
+    }
+
+    /// What the server's transcript says about a message it never named.
+    private enum ServerTurnMatch {
+        /// The transcript lines up and this turn is the message.
+        case named(String)
+        /// The transcript lines up as far as it goes and simply ends before
+        /// this message: the server never received it, so the local removal
+        /// was already the whole delete.
+        case absent
+        /// The transcript disagrees. Whether the server holds this message is
+        /// unknowable from here, so neither deleting nor claiming success is
+        /// honest.
+        case ambiguous
     }
 
     /// Name a turn from the server's own transcript, and refuse unless the
@@ -591,27 +641,46 @@ final class ChatThread: Identifiable, Hashable {
     /// it would also delete an older identical turn for a message the server
     /// never received at all, which is the failure that cannot be undone.
     ///
-    /// Refusing costs the message reappearing on the next refresh — after
-    /// which it carries a `serverTurnId` and deletes by name, no matching
-    /// involved. Deleting the wrong turn costs someone else's message,
-    /// permanently. The cheap mistake is the one to make.
-    nonisolated private static func turnId(matching message: DisplayMessage,
-                                           following preceding: [DisplayMessage],
-                                           in turns: [ChatTurn]) -> String? {
-        let ordinal = preceding.count
-        guard ordinal < turns.count, Self.turn(turns[ordinal], is: message) else { return nil }
-        for position in preceding.indices where !Self.turn(turns[position], is: preceding[position]) {
-            return nil
+    /// Refusing costs the user a swipe: the message stays, with a note saying
+    /// so, and one refresh later it carries a `serverTurnId` and deletes by
+    /// name with no matching involved. Deleting the wrong turn costs someone
+    /// else's message, permanently. The cheap mistake is the one to make.
+    ///
+    /// The prefix is walked BEFORE the ordinal so a refusal can say which kind
+    /// it is. Running off the end of a transcript that has agreed the whole
+    /// way is the server being behind us — every message from there on is one
+    /// it never received — while a disagreement inside the transcript says
+    /// nothing at all about where this message is. Only the first of those is
+    /// evidence that the local removal was the whole delete.
+    nonisolated private static func turnMatch(for message: DisplayMessage,
+                                              following preceding: [DisplayMessage],
+                                              in turns: [ChatTurn]) -> ServerTurnMatch {
+        for position in preceding.indices {
+            guard position < turns.count else { return .absent }
+            guard Self.turn(turns[position], is: preceding[position]) else { return .ambiguous }
         }
-        return turns[ordinal].id
+        let ordinal = preceding.count
+        guard ordinal < turns.count else { return .absent }
+        guard Self.turn(turns[ordinal], is: message) else { return .ambiguous }
+        return .named(turns[ordinal].id)
     }
 
     /// Is this server turn this local message? By id whenever the server has
     /// named the message to us — the only comparison that cannot coincide —
     /// and by role and text for a message it never named.
+    ///
+    /// Text is compared with the edges trimmed because the two sides store the
+    /// same reply differently: `chat/send` persists the assistant turn as
+    /// `text.trim()`, while the stream that filled the local bubble appended
+    /// every chunk exactly as it arrived. A reply that ends in a newline would
+    /// otherwise read as a disagreeing transcript and refuse every later
+    /// delete in the session. The guard's strength is the whole prefix
+    /// agreeing, not one turn matching byte for byte.
     nonisolated private static func turn(_ turn: ChatTurn, is message: DisplayMessage) -> Bool {
         if let serverTurnId = message.serverTurnId { return turn.id == serverTurnId }
-        return turn.role == message.role.rawValue && turn.text == message.text
+        guard turn.role == message.role.rawValue else { return false }
+        return turn.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            == message.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Put a rolled-back message back where it left from and say why it is

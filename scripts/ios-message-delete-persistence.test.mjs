@@ -134,8 +134,16 @@ assert.match(
 );
 assert.match(
   body,
-  /Task \{ \[weak self\] in\s*\n\s*await self\?\.persistDelete\(of: removed, at: index, target: target,/,
-  "the removal must be followed by a durable delete",
+  /Task \{ \[weak self\] in\s*\n\s*_ = await previous\?\.value\s*\n\s*await self\?\.persistDelete\(of: removed, at: index, target: target,/,
+  "the removal must be followed by a durable delete, and one delete must wait for the " +
+    "one before it — a second swipe lands inside the first request, and the conversation " +
+    "read that names an unnamed message would still see the turn being removed, refuse, " +
+    "and fail the second delete of a two-swipe cleanup for nothing but timing",
+);
+assert.match(
+  body,
+  /let previous = pendingServerDelete\s*\n\s*pendingServerDelete = Task \{/,
+  "the serialization must be a chain the NEXT delete can await, not a fire-and-forget task",
 );
 
 const target = blockAfter(thread, "private func serverDeleteTarget(for message: DisplayMessage,");
@@ -185,14 +193,27 @@ assert.match(
 
 const persist = blockAfter(thread, "private func persistDelete(of message: DisplayMessage, at index: Int,");
 assert.ok(persist, "persistDelete must exist");
-// `try?` collapses two different answers into one: the read THROWING is a real
-// failure, while it returning no conversation is the server saying it holds no
-// transcript — in which case the local removal was already the whole delete
-// and rolling back would resurrect a message for no reason.
+// `try?` collapses three different answers into one. The read THROWING is a
+// real failure — except for the 404 that `GET /api/chat/conversation/{id}`
+// returns when it holds no transcript at all, which is the server saying the
+// message is not there. Returning no conversation says the same thing through
+// the route's narrow `conversation: null` shape.
 assert.match(
   persist,
-  /do \{\s*\n\s*convo = try await client\.conversation\(sessionId: target\.sessionId\)\s*\n\s*\} catch \{\s*\n\s*rollBack\(/,
+  /\} catch CaveError\.badResponse\(404\) \{\s*\n\s*return\s*\n\s*\} catch \{\s*\n\s*rollBack\(/,
+  "a 404 from the conversation read means the server holds no transcript for this chat — " +
+    "reporting it as 'the desktop could not be reached' is a lie AND resurrects a message " +
+    "no server copy will ever bring back",
+);
+assert.match(
+  persist,
+  /do \{\s*\n\s*convo = try await client\.conversation\(sessionId: target\.sessionId\)/,
   "a FAILED read is a real failure and must roll back",
+);
+assert.doesNotMatch(
+  persist,
+  /try\? await client\.conversation/,
+  "`try?` collapses a failed read into 'the server does not have it'",
 );
 assert.match(
   persist,
@@ -202,9 +223,24 @@ assert.match(
 );
 assert.match(
   persist,
-  /turnId = Self\.turnId\(matching: message, following: target\.preceding,\s*\n\s*in: convo\.turns\)/,
+  /switch Self\.turnMatch\(for: message, following: target\.preceding, in: convo\.turns\)/,
   "the turn must be named from the server's own transcript, with the preceding messages " +
     "available to check the position against",
+);
+// The three outcomes have to stay three. Collapsing `ambiguous` into `absent`
+// is the silent local-only delete this whole bead exists to end: the bubble is
+// gone here, the turn is alive there, and nobody is told.
+assert.match(
+  persist,
+  /case \.absent:\s*\n\s*return/,
+  "a transcript that agrees and simply ends before this message proves the server never " +
+    "received it — the local removal was already the whole delete",
+);
+assert.match(
+  persist,
+  /case \.ambiguous:[\s\S]*?rollBack\(message, to: index,\s*\n\s*reason: "[^"]+",/,
+  "a transcript that DISAGREES says nothing about where this message is — keeping the " +
+    "removal there is a silent local-only delete, which is the bug being fixed",
 );
 assert.match(
   persist,
@@ -217,8 +253,8 @@ assert.match(
   "a refused delete must roll back AND say why",
 );
 
-const matcher = blockAfter(thread, "nonisolated private static func turnId(matching message: DisplayMessage,");
-assert.ok(matcher, "turnId(matching:following:in:) must exist");
+const matcher = blockAfter(thread, "nonisolated private static func turnMatch(for message: DisplayMessage,");
+assert.ok(matcher, "turnMatch(for:following:in:) must exist");
 // Position plus role-and-text AT that position is not enough. A reply that
 // failed ambiguously leaves a local bubble with no server turn behind it, so
 // the ordinal drifts — and a chat is full of repeated short turns, so the
@@ -226,14 +262,24 @@ assert.ok(matcher, "turnId(matching:following:in:) must exist");
 // message. Every earlier position has to line up too.
 assert.match(
   matcher,
-  /guard ordinal < turns\.count, Self\.turn\(turns\[ordinal\], is: message\) else \{ return nil \}/,
-  "the ordinal must land on a turn that IS this message",
+  /guard ordinal < turns\.count else \{ return \.absent \}\s*\n\s*guard Self\.turn\(turns\[ordinal\], is: message\) else \{ return \.ambiguous \}/,
+  "the ordinal must land on a turn that IS this message; a turn that is not this message " +
+    "is a disagreement, not proof the message is missing",
 );
 assert.match(
   matcher,
-  /for position in preceding\.indices where !Self\.turn\(turns\[position\], is: preceding\[position\]\) \{\s*\n\s*return nil\s*\n\s*\}/,
+  /for position in preceding\.indices \{\s*\n\s*guard position < turns\.count else \{ return \.absent \}\s*\n\s*guard Self\.turn\(turns\[position\], is: preceding\[position\]\) else \{ return \.ambiguous \}/,
   "every position before the ordinal must agree with the server's transcript, or the " +
     "ordinal is arithmetic rather than evidence and deletes the wrong turn",
+);
+// The prefix walk has to come FIRST. Running off the end of a transcript that
+// has agreed the whole way is the server being behind us; running off the end
+// of one that never agreed proves nothing, and calling that `absent` is how a
+// refusal turns back into a silent local-only delete.
+assert.ok(
+  matcher.indexOf("for position in preceding.indices") < matcher.indexOf("let ordinal = preceding.count"),
+  "the prefix must be checked before the ordinal, so `absent` is only ever reached through " +
+    "a transcript that agreed as far as it goes",
 );
 
 const sameTurn = blockAfter(
@@ -245,6 +291,16 @@ assert.match(
   sameTurn,
   /if let serverTurnId = message\.serverTurnId \{ return turn\.id == serverTurnId \}/,
   "a message the server named is compared by id — the only comparison that cannot coincide",
+);
+// `chat/send` persists the assistant turn as `text.trim()`; the stream that
+// filled the local bubble appended every chunk as it arrived. Comparing raw
+// makes a reply ending in a newline read as a disagreeing transcript, which
+// refuses every later delete in the session.
+assert.match(
+  sameTurn,
+  /turn\.text\.trimmingCharacters\(in: \.whitespacesAndNewlines\)\s*\n?\s*== message\.text\.trimmingCharacters\(in: \.whitespacesAndNewlines\)/,
+  "text must be compared with the edges trimmed — the server trims what it persists and " +
+    "the stream does not",
 );
 
 const rollBack = blockAfter(thread, "private func rollBack(_ message: DisplayMessage, to index: Int, reason: String,");
