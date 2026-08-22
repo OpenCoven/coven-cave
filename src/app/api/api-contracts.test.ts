@@ -89,23 +89,28 @@ const contracts: RouteContract[] = [
   // before it holds a credential, which is the whole reason they exist. They
   // are the paths clientV1IngressKind (src/proxy-helpers.ts) classifies as
   // public, so proxy.ts applies the client-v1 ingress rules to them instead of
-  // the ordinary gate. Health returns no user data and no paths. The three
-  // pairing routes do not guard themselves uniformly, so read them one at a
-  // time: both POSTs re-check the loopback stamp through
-  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts), while
-  // GET /client/v1/pairing/requests/[id] never calls it and takes its locality
-  // solely from the clientV1Ingress branch in proxy.ts. Both id-bearing routes
-  // do require the per-request pairing secret; the creating POST mints that
-  // secret rather than checking one, and is bounded by the pairing-create rate
-  // limit instead.
+  // the ordinary gate. Health returns no user data and no paths, and is the one
+  // route on this surface whose locality comes from that proxy branch alone.
+  // All three pairing routes re-check the loopback stamp for themselves through
+  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts) — the two POSTs
+  // always did, and GET /client/v1/pairing/requests/[id] joined them in #4854,
+  // because being the one dynamic-segmented route with no check of its own is
+  // what made the escaped-path ingress hole answer there and nowhere else. Both
+  // id-bearing routes also require the per-request pairing secret; the creating
+  // POST mints that secret rather than checking one, and is bounded by the
+  // pairing-create rate limit instead.
   //
   // The admin routes are NOT exempted. clientV1IngressKind returns null for
-  // them, so they never leave the ordinary sidecar-token path in proxy.ts, and
-  // that is where their locality comes from. requireClientV1Admin
+  // them, so they never take the client-v1 ingress branch's pass-through and
+  // stay on the ordinary sidecar-token path in proxy.ts. Their locality is not
+  // a by-product of that path: proxy.ts binds the family to a direct loopback
+  // peer with a check of its own (#4843), refusing a forwarded caller with
+  // `403 forbidden peer: client v1 admin requires direct loopback` before
+  // falling through to that gate. requireClientV1Admin
   // (client-v1/admin-auth.ts) then adds the per-launch COVEN_CAVE_AUTH_TOKEN,
   // plus a same-origin Origin/Referer on mutations; it reads no loopback stamp
   // of its own, deliberately, because transport locality is not proof of the
-  // administrator.
+  // administrator — the proxy check asks FROM WHERE, this one asks WHO.
   { route: "/client/v1/admin/credentials", methods: ["GET"], kind: "json" },
   { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
   { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
@@ -115,10 +120,10 @@ const contracts: RouteContract[] = [
   // load-bearing rather than routine, because these five paths are the first
   // entries in CLIENT_V1_AUTHENTICATED_PATHS and a listed path returns from
   // proxy() before the sidecar-token block ever runs. They also re-check the
-  // loopback stamp for themselves, the way the two pairing POSTs do, because a
-  // percent-encoded dynamic segment escapes the client-v1 ingress branch that
-  // would otherwise guarantee it (#4854) — and two of these five are
-  // dynamic-segmented.
+  // loopback stamp for themselves, the way all three pairing routes do. That
+  // began as cover for #4854, which #4855 has since closed at the proxy; it
+  // stays because a route this list DEMOTES should not take its locality on
+  // trust from the thing that demoted it.
   { route: "/client/v1/conversations", methods: ["GET"], kind: "json" },
   { route: "/client/v1/conversations/[id]", methods: ["GET"], kind: "json" },
   { route: "/client/v1/conversations/[id]/messages", methods: ["GET"], kind: "json" },

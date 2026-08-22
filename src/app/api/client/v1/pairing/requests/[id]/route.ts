@@ -12,6 +12,7 @@ import {
   getClientV1Runtime,
   type ClientV1Runtime,
 } from "@/lib/server/client-v1/runtime.ts";
+import { LOCAL_PEER_HEADER } from "@/proxy-helpers.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,18 @@ export function createPairingRequestGetHandler(runtime: ClientV1Runtime) {
     request: Request,
     { params: rawParams }: RouteContext,
   ): Promise<Response> {
+    // Defence in depth, and the direct lesson of cave-f1xki (#4854): this was
+    // the ONLY public route that was both dynamic-segmented and free of a
+    // locality check of its own, so when the proxy's ingress classification
+    // could be slipped with a percent-escape, this was the route that answered.
+    // POST /pairing/requests and POST .../exchange already re-check the same
+    // stamp and answered 401 to the identical request. A legitimate poller is
+    // on the machine — it is about to call the exchange, which has always
+    // required this — so the check costs a real client nothing.
+    if (!runtime.authenticator.isTrustedLoopback(request.headers.get(LOCAL_PEER_HEADER))) {
+      return clientV1ErrorResponse("unauthorized", "Unauthorized.");
+    }
+
     let id: string;
     let secret: string;
     try {

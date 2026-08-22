@@ -12,8 +12,11 @@
  * *demoted* by proxy() — the mobile-access gate is skipped and the request
  * returns before the sidecar-token block, leaving this call to requireScope as
  * the only credential check in the whole request. The loopback stamp is checked
- * first for defence in depth, because the proxy branch that would otherwise
- * guarantee it is escapable through a percent-encoded path segment (#4854).
+ * first anyway, as the second of two layers: #4855 made proxy() refuse any
+ * client-v1 request-target containing a `%` or a `\` outright, closing the
+ * percent-encoded escape from that branch (#4854) — but the route still does not
+ * assume the branch it is listed for ran, because the cost of assuming wrong is
+ * an unauthenticated read and the cost of checking is one string compare.
  */
 
 import {
