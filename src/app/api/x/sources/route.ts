@@ -1,4 +1,8 @@
-import { NextResponse } from "next/server";
+// "next/server.js", not "next/server": sources-route-behavior.test.ts imports
+// these handlers directly under raw Node, where the extensionless specifier
+// does not resolve. 25 other routes already carry the .js form for the same
+// reason.
+import { NextResponse } from "next/server.js";
 import { MAX_X_JSON_BYTES, XApiError, type XScope } from "@/lib/x-api";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
@@ -10,9 +14,11 @@ import { lookupXPost } from "@/lib/server/x-client";
 import { loadResearchMission } from "@/lib/server/research-mission-store";
 import {
   listSavedXSources,
+  markXPostAvailability,
   refreshSavedXSourceFromPost,
   saveCachedXPostAsSource,
   setXSourceMissionAttached,
+  sweepExpiredXCache,
 } from "@/lib/server/x-sources";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +64,13 @@ export async function GET(req: Request) {
     // previously-saved sources stay readable after a disconnect, which is
     // what lets the surface show them alongside a reconnect prompt.
     await requireXCapability(familiarId, "research");
+    // The Research Desk load sweep. Cache expiry is otherwise purely lazy and
+    // per-post-id — getCachedXPost drops an entry it is asked for and finds
+    // expired — so a post nobody looks up again keeps its text, author id and
+    // handle on disk forever, which is not the bounded cache the design
+    // promises (cave-1tu16). Awaited rather than fired-and-forgotten so a
+    // symlinked cache root surfaces as an error instead of being swallowed.
+    await sweepExpiredXCache();
     const sources = await listSavedXSources(familiarId);
     return NextResponse.json({ ok: true, sources });
   } catch (error) {
@@ -126,9 +139,27 @@ export async function POST(req: Request) {
         if (!existing) throw new XApiError("not-found", "Saved X source was not found");
         // Refresh is the one source action that must hit upstream: its whole
         // purpose is to re-read the post and re-derive availability.
-        const post = await withXAuthenticatedRead(familiarId, READ_SCOPES, (accessToken) =>
-          lookupXPost(accessToken, existing.postId),
-        );
+        let post;
+        try {
+          post = await withXAuthenticatedRead(familiarId, READ_SCOPES, (accessToken) =>
+            lookupXPost(accessToken, existing.postId),
+          );
+        } catch (error) {
+          // A not-found IS the re-derived availability, so it must be recorded
+          // rather than only reported. Without this the cached body survived a
+          // post that no longer exists and the durable record still read
+          // "available" after a reload — the deletion was React state only
+          // (cave-1tu16). markXPostAvailability purges the cache entry and
+          // marks every familiar's record for this post in one transaction.
+          //
+          // Deliberately not swallowed: if recording the deletion fails, that
+          // fault surfaces instead of the 404, because a silent failure here
+          // is what leaves content on disk.
+          if (error instanceof XApiError && error.code === "not-found") {
+            await markXPostAvailability(existing.postId, "deleted");
+          }
+          throw error;
+        }
         const result = await refreshSavedXSourceFromPost(familiarId, sourceId, post);
         return NextResponse.json({ ok: true, source: result.source, post });
       }

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { draftTokens, matchReason, matchSavedLinks } from "./research-quick-saves";
+import {
+  draftTokens,
+  matchReason,
+  matchSavedLinks,
+  updateVisibleQuickSaveSelection,
+} from "./research-quick-saves";
 import type { SavedLink } from "@/lib/link-organizer";
 
 function link(patch: Partial<SavedLink> & Pick<SavedLink, "id" | "title">): SavedLink {
@@ -92,4 +97,55 @@ test("counts across groups always sum to the input", () => {
 
 test("no links means no groups at all", () => {
   assert.deepEqual(matchSavedLinks([], "rollback"), []);
+});
+
+test("selecting visible quick saves preserves hidden selections and canonical order", () => {
+  const links = [
+    link({ id: "a", title: "Alpha" }),
+    link({ id: "b", title: "Beta" }),
+    link({ id: "c", title: "Gamma" }),
+  ];
+  assert.deepEqual(
+    updateVisibleQuickSaveSelection(links, [links[2]], [links[0], links[1]]),
+    links,
+  );
+});
+
+test("clearing fully selected search results removes only visible saves", () => {
+  const links = [
+    link({ id: "a", title: "Alpha" }),
+    link({ id: "b", title: "Beta" }),
+    link({ id: "c", title: "Gamma" }),
+  ];
+  assert.deepEqual(
+    updateVisibleQuickSaveSelection(links, links, [links[0], links[1]]),
+    [links[2]],
+  );
+});
+
+test("bulk selection drops saves that no longer exist in the current library", () => {
+  const current = [
+    link({ id: "a", title: "Alpha" }),
+    link({ id: "deleted", title: "Deleted" }),
+  ];
+  const allLinks = [
+    link({ id: "a", title: "Alpha" }),
+    link({ id: "b", title: "Beta" }),
+  ];
+  assert.deepEqual(
+    updateVisibleQuickSaveSelection(allLinks, current, [allLinks[1]]),
+    allLinks,
+  );
+});
+
+test("empty search results preserve selection while restoring canonical order", () => {
+  const links = [
+    link({ id: "a", title: "Alpha" }),
+    link({ id: "b", title: "Beta" }),
+  ];
+  const deleted = link({ id: "deleted", title: "Deleted" });
+  assert.deepEqual(
+    updateVisibleQuickSaveSelection(links, [links[1], deleted, links[0]], []),
+    links,
+  );
 });

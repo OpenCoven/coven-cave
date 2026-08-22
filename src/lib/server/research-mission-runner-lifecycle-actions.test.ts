@@ -166,6 +166,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
   let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
+    removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
@@ -279,6 +280,112 @@ test("create/start persists before launch and records the real session", async (
   assert.equal(result.iterations[0].sessionId, "session-1");
   assert.equal(result.iterations[0].flowRunId, "run-1");
   assert.equal(result.status, "running");
+});
+
+test("create/start materializes selected saved links before the first launch", async () => {
+  const calls: string[] = [];
+  const savedMissionSources: string[][] = [];
+  const runner = makeResearchMissionRunner(deps({
+    createWorkspace: async (mission) => {
+      calls.push("create");
+      return mission;
+    },
+    materializeSavedLink: async (_mission, savedLinkId) => {
+      calls.push(`materialize:${savedLinkId}`);
+      return {
+        source: {
+          id: `saved-${savedLinkId}`,
+          title: `Saved ${savedLinkId}`,
+          url: `https://example.com/${savedLinkId}`,
+          sourceType: "web",
+          status: "candidate",
+        },
+        rollback: async () => {},
+      };
+    },
+    saveMission: async (mission) => {
+      calls.push("save");
+      savedMissionSources.push(mission.sources.map((source) => source.id));
+    },
+    startFlow: async () => {
+      calls.push("start");
+      assert.deepEqual(savedMissionSources.at(-1), ["saved-link-a", "saved-link-b"]);
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+
+  const result = await runner.createAndStart({
+    ...INPUT,
+    savedLinkIds: ["link-a", "link-b"],
+  });
+
+  assert.deepEqual(calls, [
+    "create",
+    "materialize:link-a",
+    "materialize:link-b",
+    "save",
+    "start",
+    "save",
+  ]);
+  assert.deepEqual(result.sources.map((source) => source.id), [
+    "saved-link-a",
+    "saved-link-b",
+  ]);
+});
+
+test("create/start rolls back initial resource files when pre-launch persistence fails", async () => {
+  const rollbackCalls: string[] = [];
+  let startCalls = 0;
+  const runner = makeResearchMissionRunner(deps({
+    removeWorkspace: async (id) => {
+      rollbackCalls.push(`workspace:${id}`);
+    },
+    materializeSavedLink: async () => ({
+      source: {
+        id: "saved-link-a",
+        title: "Saved link",
+        url: "https://example.com/link-a",
+        sourceType: "web",
+        status: "candidate",
+      },
+      rollback: async () => {
+          rollbackCalls.push("resource");
+      },
+    }),
+    saveMission: async () => {
+      throw new Error("disk full");
+    },
+    startFlow: async () => {
+      startCalls += 1;
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+
+  await assert.rejects(
+    runner.createAndStart({ ...INPUT, savedLinkIds: ["link-a"] }),
+    /disk full/,
+  );
+  assert.deepEqual(rollbackCalls, ["resource", "workspace:mission-1"]);
+  assert.equal(startCalls, 0);
+});
+
+test("create/start removes the new workspace when initial resource materialization fails", async () => {
+  const calls: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    removeWorkspace: async (id) => {
+      calls.push(`remove:${id}`);
+    },
+    materializeSavedLink: async () => {
+      calls.push("materialize");
+      throw new Error("saved link unavailable");
+    },
+  }));
+
+  await assert.rejects(
+    runner.createAndStart({ ...INPUT, savedLinkIds: ["link-a"] }),
+    /saved link unavailable/,
+  );
+  assert.deepEqual(calls, ["materialize", "remove:mission-1"]);
 });
 
 test("create/start records exact daemon authority outside public mission state", async () => {

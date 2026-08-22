@@ -3,9 +3,11 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 
-// Non-dot build-artifact / noise directories the folder browser hides. Dot
-// folders stay visible because they may themselves be intentional project
-// roots (for example, a configuration repository).
+// Non-dot build-artifact / noise directories the folder browser always hides.
+// Dot-prefixed folders are hidden separately, and only by default: they are
+// noise for almost every project pick, but a dot folder can itself be an
+// intentional project root (a configuration repository, say), so the picker
+// offers to reveal them rather than pretending they do not exist.
 const SKIP = new Set([
   "node_modules",
   "dist",
@@ -141,7 +143,12 @@ export function resolveWithinRoot(
   return current;
 }
 
-export type DirEntry = { name: string; path: string };
+export type DirEntry = {
+  name: string;
+  path: string;
+  /** Dot-prefixed, so hidden from the listing unless the picker asks for it. */
+  hidden?: boolean;
+};
 
 export type CreateSubdirResult =
   | { ok: true; path: string }
@@ -429,15 +436,56 @@ export function listPlaceGroups(): PlaceGroup[] {
 }
 
 /** Immediate subdirectories of `dir` (one level), sorted and noise-skipped. */
-export function listSubdirs(dir: string): DirEntry[] {
+/**
+ * True for a dot-prefixed directory name — the cross-platform convention for
+ * a hidden folder, and the only rule the picker applies. Windows'
+ * FILE_ATTRIBUTE_HIDDEN is deliberately not consulted: reading it costs a
+ * stat per entry, and honouring it would hide a different set of folders on
+ * Windows than on macOS or Linux for the very same repository.
+ */
+export function isHiddenDirName(name: string): boolean {
+  return name.startsWith(".");
+}
+
+/**
+ * A folder's browsable children plus the number of dot-prefixed ones, so the
+ * picker can label its reveal control ("Show hidden folders (4)") without a
+ * second request. `hiddenCount` counts every dot folder the listing knows
+ * about, whether or not this call returned them.
+ */
+export type SubdirListing = { entries: DirEntry[]; hiddenCount: number };
+
+/**
+ * Immediate subdirectories of `dir`, build noise removed and each entry
+ * tagged `hidden` for a dot-prefixed name. Hidden entries are omitted unless
+ * `includeHidden` is set — that flag is the picker's "Show hidden folders"
+ * toggle, and nothing else.
+ *
+ * Hiding is presentational only. `resolveBrowsableDir` still admits a hidden
+ * path, so a crumb, a pinned place, or a directly requested `.config` keeps
+ * resolving whatever the toggle says; a listing that omits a folder never
+ * means the walk would have refused it.
+ */
+export function listSubdirs(
+  dir: string,
+  { includeHidden = false }: { includeHidden?: boolean } = {},
+): SubdirListing {
   let dirents: fs.Dirent[];
   try {
     dirents = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
-    return [];
+    return { entries: [], hiddenCount: 0 };
   }
-  return dirents
+  const all = dirents
     .filter((d) => d.isDirectory() && !SKIP.has(d.name))
-    .map((d) => ({ name: d.name, path: path.join(dir, d.name) }))
+    .map((d) => ({
+      name: d.name,
+      path: path.join(dir, d.name),
+      hidden: isHiddenDirName(d.name),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    entries: includeHidden ? all : all.filter((entry) => !entry.hidden),
+    hiddenCount: all.reduce((total, entry) => total + (entry.hidden ? 1 : 0), 0),
+  };
 }

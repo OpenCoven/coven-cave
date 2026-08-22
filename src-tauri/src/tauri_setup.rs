@@ -109,6 +109,38 @@ mod native_startup_terminal_tests {
     }
 }
 
+/// Keep the native macOS window controls in sync with the primary side panel.
+/// When the side panel is closed the shell asks for them to disappear, Dia-style,
+/// and brings them back the moment the panel (or its hover-peek) opens.
+#[cfg(desktop)]
+#[tauri::command]
+fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let win = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            let Ok(ns_ptr) = win.ns_window() else { return };
+            unsafe {
+                use objc2::msg_send;
+                use objc2::runtime::AnyObject;
+                let ns_window = ns_ptr as *mut AnyObject;
+                // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
+                for kind in 0u64..=2u64 {
+                    let button: *mut AnyObject =
+                        msg_send![&*ns_window, standardWindowButton: kind];
+                    if !button.is_null() {
+                        let _: () = msg_send![&*button, setHidden: !visible];
+                    }
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, visible);
+    }
+}
+
 #[cfg(all(test, desktop))]
 #[path = "shell_open_tests.rs"]
 mod shell_open_tests;
@@ -240,6 +272,8 @@ pub fn run() {
     #[cfg(desktop)]
     let reliability_recorder = Arc::new(ReliabilityRecorder::default());
     #[cfg(desktop)]
+    let offline_cache = Arc::new(offline_cache::OfflineCacheState::default());
+    #[cfg(desktop)]
     let builder = builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
@@ -266,6 +300,7 @@ pub fn run() {
             open_x_oauth_url,
             shell_open_path,
             shell_pick_directory,
+            set_traffic_lights_visible,
             #[cfg(target_os = "macos")]
             microphone::microphone_permission_request,
             #[cfg(target_os = "macos")]
@@ -277,6 +312,10 @@ pub fn run() {
             desktop_reachability_status,
             desktop_reachability_configure,
             record_daemon_reliability_measurement,
+            offline_cache::offline_cache_read,
+            offline_cache::offline_cache_write,
+            offline_cache::offline_cache_clear,
+            offline_cache::offline_cache_status,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
             #[cfg(target_os = "windows")]
@@ -287,6 +326,7 @@ pub fn run() {
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
         .manage(Arc::clone(&reliability_recorder))
+        .manage(Arc::clone(&offline_cache))
         .manage(browser::BrowserLifecycleState::default());
     // Registered on every desktop platform even though the watcher thread is
     // non-Windows: the teardown path reads this flag unconditionally, and a
@@ -303,6 +343,11 @@ pub fn run() {
                     .configure(app_data_dir);
             }
             if let Ok(app_local_data_dir) = app.path().app_local_data_dir() {
+                // Local data, not roaming app data: the offline cache is a
+                // machine-local copy of daemon state and must not follow a
+                // roaming profile onto another machine.
+                app.state::<Arc<offline_cache::OfflineCacheState>>()
+                    .configure(app_local_data_dir.clone());
                 let diagnostics_path =
                     app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
                 if let Err(error) =

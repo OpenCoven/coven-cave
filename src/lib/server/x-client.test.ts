@@ -302,6 +302,72 @@ for (const failure of [
   assert.equal(stalled.fetches(), 1, "a post-body stall must not trigger a second create request");
 }
 
+// Once X has answered 2xx to a write, the post may exist. Every failure past
+// that point must be ambiguous: reporting it as definite tells the publication
+// store the draft is safe to send again, which is how a duplicate is made.
+for (const accepted of [
+  new Response("not json", { status: 201, headers: { "content-type": "application/json" } }),
+  response(201, { data: { id: "1234567890", text: "synthetic text", unexpected: true } }),
+  response(201, { data: { id: "not-numeric", text: "synthetic text" } }),
+  response(201, { data: { id: "1234567890" } }),
+  response(201, { id: "1234567890", text: "synthetic text" }),
+]) {
+  const { client, requests } = clientWith(accepted);
+  await assert.rejects(
+    () => client.createXPost("synthetic-access-token", "synthetic text"),
+    (error: unknown) => assertXError(error, "ambiguous-write", true),
+    "an unreadable reply to an accepted write is ambiguous, not a definite failure",
+  );
+  assert.equal(requests.length, 1, "and it is never retried");
+}
+
+{
+  const encoder = new TextEncoder();
+  const oversized = `${JSON.stringify({ data: { id: "1234567890", text: "x" } })}${" ".repeat(MAX_X_JSON_BYTES)}`;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(oversized));
+      controller.close();
+    },
+  });
+  const { client } = clientWith(new Response(body, {
+    status: 201,
+    headers: { "content-type": "application/json" },
+  }));
+  await assert.rejects(
+    () => client.createXPost("synthetic-access-token", "synthetic text"),
+    (error: unknown) => assertXError(error, "ambiguous-write", true),
+    "an oversized reply to an accepted write is still an accepted write",
+  );
+}
+
+// A 5xx means X failed after the request arrived and says nothing about
+// whether the post was made.
+for (const status of [500, 502, 503, 504]) {
+  const { client } = clientWith(response(status, {}));
+  await assert.rejects(
+    () => client.createXPost("synthetic-access-token", "synthetic text"),
+    (error: unknown) => assertXError(error, "ambiguous-write", true),
+    `a ${status} to a write is ambiguous`,
+  );
+}
+
+// A 4xx is X refusing the request outright: nothing was created, so the caller
+// is free to fix the problem and try again.
+for (const [status, code] of [
+  [400, "invalid-request"],
+  [401, "unauthorized"],
+  [403, "capability-disabled"],
+  [429, "rate-limited"],
+] as const) {
+  const { client } = clientWith(response(status, {}));
+  await assert.rejects(
+    () => client.createXPost("synthetic-access-token", "synthetic text"),
+    (error: unknown) => assertXError(error, code, false),
+    `a ${status} to a write is a definite refusal`,
+  );
+}
+
 for (const invalidQuery of ["   ", "x".repeat(513), "🦇".repeat(513)]) {
   const { client, requests } = clientWith();
   await assert.rejects(() => client.searchRecentXPosts("synthetic-access-token", invalidQuery), (error: unknown) => assertXError(error, "invalid-request"));

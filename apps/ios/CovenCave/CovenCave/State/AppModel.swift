@@ -1421,7 +1421,6 @@ final class AppModel {
             projectId: projectContext(for: thread).projectId
         ))
     }
-
     /// Switch the visible conversation to one chosen in the session picker.
     ///
     /// Re-choosing the conversation already open is a no-op: routing it through
@@ -1509,7 +1508,7 @@ final class AppModel {
     var remindersError: String?
     var remindersLoaded = false
 
-    // MARK: - Developer surface
+    // MARK: - Projects
 
     var projectContext: ProjectContext?
     var projectContextError: String?

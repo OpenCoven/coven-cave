@@ -19,12 +19,32 @@ assert.match(connection, /export async function GET\(req: Request\)/);
 assert.match(connection, /export async function DELETE\(req: Request\)/);
 assert.match(connection, /rejectNonLocalRequest\(req\)/);
 assert.match(connection, /xCredentialService\.getConnectionStatus\(\)/);
-assert.match(connection, /xOAuthService\.status\(\)/);
+// flowStatus(), NOT status(). status() reports only whether a flow is running;
+// FamiliarXSection's post-authorization poll settles on oauthFlowId and
+// oauthOutcome, and with those missing it read a SUCCESSFUL authorization as a
+// refused permission and never saved the grant (cave-1tu16). The behavioural
+// proof is in connection-route-behavior.test.ts; this pin stops a later edit
+// reverting to the outcome-blind call.
+assert.match(connection, /xOAuthService\.flowStatus\(\)/);
+assert.doesNotMatch(
+  connection,
+  /xOAuthService\.status\(\)/,
+  "connection status must report the settled flow, not just whether one is active",
+);
 assert.match(connection, /xCredentialService\.disconnect\(\)/);
+// Disconnect must also drop the normalized cache — it is the only place a post
+// BODY is persisted, so leaving it behind outlives the disconnect that exists
+// to remove it (cave-1tu16). Durable identities, notes, mission links and
+// receipts live elsewhere and stay.
+assert.match(connection, /purgeXSourceCache\(\)/);
 
 // Both callers reject the response unless these three are booleans, so they
 // are the contract rather than an implementation detail.
 for (const field of ["configured", "connected", "activeFlow"]) {
+  assert.match(connection, new RegExp(`${field}:`), `connection must report ${field}`);
+}
+// The two fields the connect UI settles on.
+for (const field of ["oauthFlowId", "oauthOutcome"]) {
   assert.match(connection, new RegExp(`${field}:`), `connection must report ${field}`);
 }
 

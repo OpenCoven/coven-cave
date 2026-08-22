@@ -52,6 +52,8 @@ mod discord_presence;
 #[cfg(all(desktop, target_os = "macos"))]
 mod microphone;
 #[cfg(desktop)]
+mod offline_cache;
+#[cfg(desktop)]
 mod platform_lifecycle;
 #[cfg(desktop)]
 mod pty;

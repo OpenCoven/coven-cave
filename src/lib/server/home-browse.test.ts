@@ -10,6 +10,7 @@ import {
   listDrivePlaces,
   listKnownFolders,
   listPlaceGroups,
+  isHiddenDirName,
   listSubdirs,
   listSystemRoots,
   resolveBrowsableDir,
@@ -276,20 +277,80 @@ test("place groups lead with home and list volumes separately", () => {
   assert.ok(groups[1].places.length >= 1, "at least one volume is offered");
 });
 
-test("listSubdirs exposes dot folders while retaining non-dot noise filtering", () => {
+test("listSubdirs hides dot folders by default while retaining non-dot noise filtering", () => {
   withScratchDir((base) => {
     for (const name of [".git", ".next", "visible", "node_modules", "dist"]) {
       fs.mkdirSync(path.join(base, name));
     }
     fs.writeFileSync(path.join(base, ".env"), "not a directory");
 
-    const names = listSubdirs(base).map((entry) => entry.name);
+    const listing = listSubdirs(base);
+    const names = listing.entries.map((entry) => entry.name);
 
-    assert.ok(names.includes(".git"), "ordinary dot folders are visible");
-    assert.ok(names.includes(".next"), "dot-prefixed build folders are visible too");
+    assert.ok(!names.includes(".git"), "dot folders are hidden by default");
+    assert.ok(!names.includes(".next"), "dot-prefixed build folders are hidden too");
     assert.ok(names.includes("visible"), "ordinary folders remain visible");
     assert.ok(!names.includes("node_modules"), "non-dot dependency noise stays hidden");
     assert.ok(!names.includes("dist"), "non-dot build noise stays hidden");
     assert.ok(!names.includes(".env"), "files are never returned as folders");
+    // The count is what lets the picker label its reveal control without a
+    // second request, so it must survive the entries being filtered out.
+    assert.equal(listing.hiddenCount, 2, "both dot folders are still counted");
   });
+});
+
+test("listSubdirs reveals dot folders on request, still minus the non-dot noise", () => {
+  withScratchDir((base) => {
+    for (const name of [".git", ".next", "visible", "node_modules", "dist"]) {
+      fs.mkdirSync(path.join(base, name));
+    }
+    fs.writeFileSync(path.join(base, ".env"), "not a directory");
+
+    const listing = listSubdirs(base, { includeHidden: true });
+    const names = listing.entries.map((entry) => entry.name);
+
+    assert.ok(names.includes(".git"), "dot folders are revealed");
+    assert.ok(names.includes(".next"), "a dot-prefixed build folder is a dot folder, not SKIP noise");
+    assert.ok(names.includes("visible"), "ordinary folders are unaffected");
+    assert.ok(!names.includes("node_modules"), "revealing dot folders does not lift the SKIP list");
+    assert.ok(!names.includes("dist"), "revealing dot folders does not lift the SKIP list");
+    assert.ok(!names.includes(".env"), "files are never returned as folders");
+    assert.equal(listing.hiddenCount, 2, "the count is the same either way");
+
+    const hidden = listing.entries.filter((entry) => entry.hidden).map((entry) => entry.name);
+    assert.deepEqual(hidden, [".git", ".next"], "each revealed entry is tagged for the client");
+    assert.equal(
+      listing.entries.find((entry) => entry.name === "visible")?.hidden,
+      false,
+      "ordinary entries are tagged not-hidden rather than left undefined",
+    );
+  });
+});
+
+test("hiding dot folders is presentational — the walk still resolves one", () => {
+  withScratchDir((base) => {
+    fs.mkdirSync(path.join(base, ".config"));
+
+    assert.ok(
+      !listSubdirs(base).entries.some((entry) => entry.name === ".config"),
+      "the listing omits it",
+    );
+    // A crumb, a pinned place, or a directly requested path must keep working:
+    // omitting a folder from a listing is not the same as refusing it, and
+    // conflating the two would strand anyone whose project lives in a dot
+    // folder the moment the default flipped.
+    assert.equal(
+      resolveBrowsableDir(path.join(base, ".config")),
+      path.join(base, ".config"),
+      "the trusted walk still admits it",
+    );
+  });
+});
+
+test("isHiddenDirName keys on the dot prefix alone", () => {
+  assert.equal(isHiddenDirName(".git"), true);
+  assert.equal(isHiddenDirName("."), true, "the current-directory name is dot-prefixed");
+  assert.equal(isHiddenDirName("git"), false);
+  assert.equal(isHiddenDirName("a.b"), false, "an interior dot does not hide a folder");
+  assert.equal(isHiddenDirName(""), false);
 });

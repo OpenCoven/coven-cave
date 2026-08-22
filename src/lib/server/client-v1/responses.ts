@@ -23,6 +23,7 @@ import {
   type ClientV1Revision,
   type ClientV1SuccessEnvelope,
 } from "./contract.ts";
+import type { ClientV1RateLimitResult } from "./rate-limit.ts";
 
 export type ClientV1EnvelopeOptions = {
   capabilities?: readonly ClientV1Capability[];
@@ -33,11 +34,13 @@ export type ClientV1EnvelopeOptions = {
 };
 
 export type ClientV1SuccessResponseOptions = ClientV1EnvelopeOptions & {
+  headers?: HeadersInit;
   status?: number;
 };
 
 export type ClientV1ErrorResponseOptions = ClientV1EnvelopeOptions & {
   details?: Record<string, string>;
+  headers?: HeadersInit;
   retryable?: boolean;
   status?: number;
 };
@@ -209,9 +212,9 @@ export function clientV1SuccessResponse<TData extends ClientV1Record>(
   data: TData,
   options: ClientV1SuccessResponseOptions = {},
 ): Response {
-  const status = options.status ?? 200;
+  const { headers, status = 200, ...envelopeOptions } = options;
   assertSuccessStatus(status);
-  return Response.json(clientV1Success(data, options), { status });
+  return Response.json(clientV1Success(data, envelopeOptions), { headers, status });
 }
 
 export function clientV1ErrorResponse(
@@ -219,9 +222,27 @@ export function clientV1ErrorResponse(
   message: string,
   options: ClientV1ErrorResponseOptions = {},
 ): Response {
-  const { status: requestedStatus, ...envelopeOptions } = options;
+  const { headers, status: requestedStatus, ...envelopeOptions } = options;
   const status = canonicalErrorStatus(code, requestedStatus);
-  return Response.json(clientV1Error(code, message, envelopeOptions), { status });
+  return Response.json(clientV1Error(code, message, envelopeOptions), {
+    headers,
+    status,
+  });
+}
+
+export function clientV1RateLimitResponse(
+  result: ClientV1RateLimitResult,
+): Response {
+  return clientV1ErrorResponse("rate_limited", "Rate limit exceeded.", {
+    details: {
+      limit: String(result.limit),
+      resetAt: String(result.resetAt),
+    },
+    headers: {
+      "retry-after": String(result.retryAfterSeconds),
+    },
+    retryable: true,
+  });
 }
 
 export function clientV1OperationInProgressError(operation: string): ClientV1ErrorEnvelope {

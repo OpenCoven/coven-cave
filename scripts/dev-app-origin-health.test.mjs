@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, symlinkSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
+  isDirectRun,
   loopbackOriginResponds,
   parsePort,
   parseTimeout,
@@ -314,5 +320,56 @@ assert.equal(
   false,
   "an unavailable loopback origin is not ready",
 );
+
+// ── the probe CLI actually runs (cave-gcb0i) ──────────────────────────────
+// scripts/dev-app.sh reads this script's EXIT STATUS as `origin_is_ready`.
+// The retired `import.meta.url === new URL(process.argv[1], "file:").href`
+// guard is false on Windows, so the probe never executed, no exit code was
+// set, and every readiness check answered "ready" — the launcher then opened
+// the Tauri window against a server that had answered nothing, which is the
+// permanently black window this file exists to prevent.
+const PROBE = fileURLToPath(new URL("./dev-app-origin-health.mjs", import.meta.url));
+const REPO_ROOT = path.dirname(path.dirname(PROBE));
+const runProbe = (scriptPath, args = [], cwd = REPO_ROOT) =>
+  spawnSync(process.execPath, [scriptPath, ...args], { cwd, encoding: "utf8", timeout: 60_000 });
+
+assert.equal(
+  runProbe(PROBE).status,
+  1,
+  "an invocation with no --port must fail, not exit 0 without probing",
+);
+assert.equal(
+  runProbe(PROBE, ["--port", "not-a-port"]).status,
+  1,
+  "a malformed port must fail, not exit 0 without probing",
+);
+// How dev-app.sh invokes it: a relative path from the repository root.
+assert.equal(
+  runProbe(path.join("scripts", "dev-app-origin-health.mjs")).status,
+  1,
+  "the relative invocation used by scripts/dev-app.sh must execute the probe",
+);
+
+const linkDir = mkdtempSync(path.join(tmpdir(), "origin-health-link-"));
+const linkedProbe = path.join(linkDir, "linked-dev-app-origin-health.mjs");
+let symlinked = true;
+try {
+  symlinkSync(PROBE, linkedProbe, "file");
+} catch {
+  symlinked = false; // unprivileged Windows cannot create symlinks
+}
+if (symlinked) {
+  assert.equal(
+    runProbe(linkedProbe).status,
+    1,
+    "Node realpaths the main module URL but not argv[1]; the guard must still match",
+  );
+}
+
+assert.equal(isDirectRun(PROBE, new URL("./dev-app-origin-health.mjs", import.meta.url).href), true);
+assert.equal(isDirectRun(PROBE, new URL("./dev-app.test.mjs", import.meta.url).href), false);
+assert.equal(isDirectRun("", import.meta.url), false);
+assert.equal(isDirectRun(undefined, import.meta.url), false);
+assert.equal(isDirectRun(PROBE, "not-a-url"), false);
 
 console.log("dev-app-origin-health: ok");

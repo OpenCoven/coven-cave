@@ -144,13 +144,11 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(/Return ONLY a valid JSON object/.test(prompt));
   });
 
-  it("falls back to a context-free instruction when no transcript is given", () => {
-    const prompt = buildThreadReflectPrompt({ sessionId: "sess-2" });
-    assert.ok(prompt.includes("No transcript was captured"));
-    assert.ok(prompt.includes("session: sess-2"));
-    assert.ok(
-      /do not treat the missing transcript as a finding/i.test(prompt),
-      "an absent transcript must not be reported as a thread finding",
+  it("refuses to score a thread without transcript evidence", () => {
+    assert.throws(
+      () => buildThreadReflectPrompt({ sessionId: "sess-2", transcript: "   " }),
+      /requires transcript evidence/i,
+      "an absent transcript must not produce a scored self-report",
     );
   });
 
@@ -550,6 +548,26 @@ describe("aggregateThreadSignals stale signal clearing", () => {
       assert.equal(queue.some((item) => item.kind === "context-pressure"), false);
       assert.equal(queue.some((item) => item.kind === "low-score"), false);
     }
+  });
+
+  it("keeps valid zero scores visible in the current review queue", () => {
+    const current = reportAt("session-zero", "2026-08-20T14:00:00.000Z", {
+      overallConfidence: 0,
+      toolReliability: { score: 0, failedTools: ["harness"], unreliableTools: [] },
+      contextPressure: "adequate",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 0,
+      fileLocatabilityScore: 0,
+      persistentBlockers: [],
+    });
+
+    const lowScores = buildThreadSignalReviewQueue(aggregateThreadSignals([current]))
+      .filter((item) => item.kind === "low-score");
+    assert.equal(lowScores.length, 4);
+    assert.ok(lowScores.every((item) => item.severity === "critical"));
   });
 });
 

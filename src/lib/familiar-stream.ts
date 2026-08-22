@@ -99,6 +99,7 @@ export async function streamFamiliarText(opts: {
   let buffer = "";
   const attentionText = createAttentionSafeTextAccumulator();
   let error: string | null = null;
+  let receivedDone = false;
   let sessionId: string | undefined;
   let responseMetadata: ChatResponseMetadata | undefined;
 
@@ -118,6 +119,7 @@ export async function streamFamiliarText(opts: {
       opts.onText?.(visible);
     } else if (ev.kind === "session") noteSession(ev.sessionId);
     else if (ev.kind === "done") {
+      receivedDone = true;
       noteSession(ev.sessionId);
       if (ev.responseMetadata) {
         responseMetadata = ev.responseMetadata;
@@ -142,10 +144,15 @@ export async function streamFamiliarText(opts: {
     // and process a last frame that arrived without its trailing blank line.
     buffer += decoder.decode();
     if (buffer.trim()) handleFrame(buffer);
+    if (!receivedDone) {
+      error = error ?? "the connection closed before the familiar finished responding";
+    }
   } catch (err) {
-    error = opts.signal?.aborted
-      ? "cancelled"
-      : error ?? (err as Error)?.message ?? "the connection dropped mid-generation";
+    if (!receivedDone) {
+      error = opts.signal?.aborted
+        ? "cancelled"
+        : error ?? (err as Error)?.message ?? "the connection dropped mid-generation";
+    }
   }
   return {
     text: error !== null ? attentionText.terminal() : attentionText.settled(),

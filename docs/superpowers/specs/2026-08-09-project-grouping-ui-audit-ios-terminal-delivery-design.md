@@ -6,7 +6,7 @@
 
 **Date:** 2026-08-09  
 **Beads:** `cave-1vpy`, `cave-ui5z`, `cave-nv1dk.2`  
-**Status:** Approved for implementation
+**Status:** Partially superseded
 
 ## Delivery model
 

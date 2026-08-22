@@ -15,8 +15,9 @@ struct CaveConnection: Codable, Equatable {
         guard !trimmed.isEmpty else { return nil }
 
         // Already a full URL? MagicDNS hosts always use HTTPS. A pasted
-        // `http://*.ts.net` URL would otherwise be rejected by ATS despite
-        // Tailscale Serve issuing a certificate for the host.
+        // `http://*.ts.net` URL would otherwise be rejected by ATS (and derive
+        // an insecure endpoint), despite Tailscale Serve issuing a certificate
+        // for the host.
         if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
             if var components = URLComponents(string: trimmed),
                components.scheme?.lowercased() == "http",
