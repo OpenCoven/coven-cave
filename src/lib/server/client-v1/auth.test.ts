@@ -213,6 +213,19 @@ test("client-v1 ingress allowlists only the reviewed public and authenticated ro
     "/api/client/v1/conversations/conversation-1/messages",
     "/api/client/v10/health",
     "/api/chat/conversation",
+    // Near-misses of the DERIVED public patterns. The four they replaced were
+    // hand-written regexes a reviewer read directly; these are generated, so
+    // the generator's anchoring and its one-segment `:id` scoping need
+    // assertions of their own. Without them, widening `:id` to `.+` or
+    // dropping the `^`/`$` anchors leaves every suite green while the
+    // credential-free surface silently grows past the reviewed set —
+    // credential-free being exactly what the bearer gate below does not
+    // demand of public ingress (cave-d1sjz).
+    "/api/client/v1/healthz",
+    "/decoy/api/client/v1/health",
+    "/api/client/v1/pairing/requests/",
+    "/api/client/v1/pairing/requests/request-1/messages",
+    "/api/client/v1/pairing/requests/request-1/exchange/extra",
   ]) {
     assert.equal(clientV1IngressKind(route), null, route);
   }
@@ -227,12 +240,16 @@ test("proxy public ingress follows the contract's public routes", () => {
   for (const path of contractPublicPaths()) {
     assert.equal(clientV1IngressKind(path), CLIENT_V1_PUBLIC_INGRESS, path);
   }
-  // Public ingress skips the credential the resource paths must present, so it
-  // may not reach further than the contract does either.
-  assert.equal(
-    contractPublicPaths().some((path) => path.startsWith("/api/client/v1/admin")),
-    false,
-  );
+  // Deriving the proxy's public set from the contract also hands contract.ts
+  // authority over which paths skip the mobile-access gate and return before
+  // the sidecar-token block. Bound that authority rather than inherit it: a
+  // derived public path may only be a non-admin path inside the client-v1
+  // surface, so a contract entry for, say, /api/mobile-token/refresh cannot
+  // quietly buy credential-free ingress for a route outside client v1.
+  for (const path of contractPublicPaths()) {
+    assert.equal(path.startsWith("/api/client/v1/"), true, path);
+    assert.equal(path.startsWith("/api/client/v1/admin"), false, path);
+  }
 });
 
 const ENV_KEYS = [
@@ -374,6 +391,10 @@ test("client-v1 resource ingress refuses a request that presents no bearer", asy
       "Bearer ",
       "Bearer two words",
       `Bearer ${PRESENTED_BEARER}!`,
+      // The credential is attacker-controlled and reaches a regex, so its
+      // length is capped. An issued bearer is 43 characters; 4097 is the far
+      // side of the cap.
+      `Bearer ${"a".repeat(4097)}`,
     ]) {
       const response = await proxy(proxyRequest("/api/client/v1/conversations", {
         headers: { ...headers, authorization },
