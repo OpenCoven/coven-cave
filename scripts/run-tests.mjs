@@ -442,6 +442,7 @@ export const SUITES = {
     "src/lib/server/research-mission-runner-reconciliation-evidence.test.ts",
     "src/lib/server/research-mission-runner-automation-scheduling.test.ts",
     "src/lib/server/research-mission-runner-concurrency-terminal.test.ts",
+    "src/lib/server/research-mission-x-hydration.test.ts",
     "src/lib/flow/flow-execution-data.test.ts",
     "src/lib/required-inputs.test.ts",
     "src/lib/server/flow-store.test.ts",
