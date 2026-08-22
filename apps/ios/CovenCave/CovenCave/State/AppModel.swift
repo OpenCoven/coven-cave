@@ -329,6 +329,11 @@ final class AppModel {
         /// failed, so the shell stays gated behind an actionable retry state
         /// rather than reading as auth or transport failure.
         case projectContextRequired
+        /// The endpoint is configured and the last transport was reachable,
+        /// but a foreground surface/stream failed. Cached data remains mounted
+        /// while the single supervisor verifies whether this is a transient
+        /// API failure or a real disconnect.
+        case degraded(ConnectionDiagnosis)
         /// Discovery failed everywhere. Carries the classified diagnosis so
         /// the connect screen can say WHICH way it failed (DNS vs refused vs
         /// timeout…) instead of one generic shrug.
@@ -351,6 +356,12 @@ final class AppModel {
             }
             if oldValue != .connected, connectionState == .connected {
                 connectedAt = Date()
+                if lastConnectedAt != nil, hasLoadedSurfaces {
+                    showToast(
+                        "Reconnected to Cave",
+                        systemImage: "antenna.radiowaves.left.and.right"
+                    )
+                }
             }
         }
     }
@@ -362,6 +373,33 @@ final class AppModel {
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
+    /// One lifecycle-owned recovery worker replaces the old path callback,
+    /// foreground retry, RootView heartbeat, and ConnectionView retry ticker.
+    /// A separate cancellable sleeper lets a real signal wake the worker from
+    /// jittered backoff without spawning a second probe loop.
+    @ObservationIgnored private var connectionSupervisorTask: Task<Void, Never>?
+    @ObservationIgnored private var connectionSupervisorDelayTask: Task<Bool, Never>?
+    @ObservationIgnored private var connectionSupervisorDelayID: UUID?
+    @ObservationIgnored private var connectionSupervisorGeneration: UInt64 = 0
+    /// Epoch for the configured authority/credential. Unlike the supervisor
+    /// generation this also fences manual refreshes, BG maintenance, and queued
+    /// replay that were launched against a previous endpoint.
+    @ObservationIgnored private var connectionConfigurationGeneration: UInt64 = 0
+    /// Opaque authority snapshot captured synchronously with a live-send
+    /// CaveClient. ChatView can carry it through the durability checkpoint
+    /// without learning or mutating the underlying generation counter.
+    struct ConnectionDispatchLease: Equatable {
+        fileprivate let generation: UInt64
+        fileprivate let baseURL: URL?
+    }
+    /// `disconnect()` is synchronous for the authenticated Settings action, but
+    /// coordinator cancellation is actor-isolated. Retain that bridge so a new
+    /// configure can cancel it before launching a probe for the replacement
+    /// endpoint; the coordinator re-checks caller cancellation on entry.
+    @ObservationIgnored private var disconnectRefreshCancellationTask: Task<Void, Never>?
+    @ObservationIgnored private var connectionSupervisorActive = false
+    @ObservationIgnored private var connectionPathAvailable = true
+    @ObservationIgnored private var connectionSupervisorRefreshProfile = false
     /// Single-flight for `refreshConnection`: overlapping reconnect signals
     /// (foreground probe, path monitor, pill tap, retry tickers) collapse
     /// into one discovery sweep instead of stacking probes.
@@ -1799,7 +1837,9 @@ final class AppModel {
     /// fallback when a poll briefly can't reach the desktop.
     func loadTheme() async {
         guard let client else { return }
+        let configurationGeneration = connectionConfigurationGeneration
         if let snapshot = try? await client.fetchTheme() {
+            guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
             adopt(snapshot)
         }
     }
@@ -1826,7 +1866,9 @@ final class AppModel {
     /// "You" on a transient poll miss), mirroring `loadTheme`.
     func loadOperatorProfile() async {
         guard let client else { return }
+        let configurationGeneration = connectionConfigurationGeneration
         if let profile = try? await client.operatorProfile() {
+            guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
             if operatorProfile != profile { operatorProfile = profile }
         }
     }
@@ -1849,11 +1891,13 @@ final class AppModel {
     @discardableResult
     func setDesktopTheme(themeId: String, mode: String) async -> Bool {
         guard let client else { return false }
+        let configurationGeneration = connectionConfigurationGeneration
         publishingTheme = true
         defer { publishingTheme = false }
         guard let snapshot = try? await client.publishTheme(themeId: themeId, mode: mode) else {
             return false
         }
+        guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return false }
         adopt(snapshot)
         // The desktop resolves the real hex tokens asynchronously after it
         // adopts; re-poll shortly so the phone upgrades from the preset's
@@ -2624,13 +2668,15 @@ final class AppModel {
     }
 
     func loadTasks(using client: any ProjectContextLoadingClient) async {
+        let configurationGeneration = connectionConfigurationGeneration
         let navigationGeneration = currentProjectNavigationConnectionGeneration()
         noteProjectNavigationSurfaceAttempt(.tasks, generation: navigationGeneration)
         let load = await coordinatedTasksLoad(
             using: client,
             generation: navigationGeneration
         )
-        guard coordinatedLoadShouldApply(load.token, state: tasksLoadState) else { return }
+        guard connectionConfigurationLeaseIsCurrent(configurationGeneration),
+              coordinatedLoadShouldApply(load.token, state: tasksLoadState) else { return }
         markCoordinatedLoadApplied(load.token, state: &tasksLoadState)
 
         switch load.result {
@@ -2645,6 +2691,7 @@ final class AppModel {
         tasksLoaded = true
         // A task that finished on the desktop should drop its Lock Screen activity.
         await LiveActivityManager.shared.reconcile(tasks)
+        guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
         _ = resolvePendingProjectNavigationIntent(
             attemptHydrationIfNeeded: tasksError == nil
         )
@@ -3698,7 +3745,9 @@ final class AppModel {
         navigationGeneration: UInt64?
     ) async throws -> ProjectContextSelectionResolution {
         await awaitThreadHydration()
-        guard loadNonce == projectContextLoadNonce else { throw CancellationError() }
+        guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
+            throw CancellationError()
+        }
 
         let haveUsableSessions = sessionsLoaded && sessionsError == nil
         let haveUsableTasks = tasksLoaded && tasksError == nil
@@ -3749,6 +3798,9 @@ final class AppModel {
                 using: client,
                 generation: navigationGeneration
             )
+            guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
+                throw CancellationError()
+            }
             sessionsLoadToken = loadedSessions.token
             switch loadedSessions.result {
             case .success(let nextSessions):
@@ -3758,7 +3810,9 @@ final class AppModel {
                 sessionsError = handleSurfaceError(error)
             }
         }
-        guard loadNonce == projectContextLoadNonce else { throw CancellationError() }
+        guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
+            throw CancellationError()
+        }
 
         explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
         let postSessionThreads = selectionThreadsForProjectContextSelection(
@@ -3798,6 +3852,9 @@ final class AppModel {
                 using: client,
                 generation: navigationGeneration
             )
+            guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
+                throw CancellationError()
+            }
             tasksLoadToken = loadedTasks.token
             switch loadedTasks.result {
             case .success(let nextTasks):
@@ -3807,7 +3864,9 @@ final class AppModel {
                 tasksError = handleSurfaceError(error)
             }
         }
-        guard loadNonce == projectContextLoadNonce else { throw CancellationError() }
+        guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
+            throw CancellationError()
+        }
 
         explicitSelection = explicitProjectContextSelectionCandidate(in: nextProjects)
         let finalThreads = selectionThreadsForProjectContextSelection(
@@ -3907,7 +3966,7 @@ final class AppModel {
             let grants = try await loadedGrants
             let nextFamiliars = try await loadedFamiliars
 
-            guard loadNonce == projectContextLoadNonce else { return }
+            guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
 
             let membership = ProjectMembershipIndex.build(
                 projects: nextProjects,
@@ -3923,7 +3982,7 @@ final class AppModel {
                 navigationGeneration: navigationGeneration
             )
 
-            guard loadNonce == projectContextLoadNonce else { return }
+            guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
 
             projects = nextProjects
             projectsError = nil
@@ -3964,6 +4023,7 @@ final class AppModel {
                 noteProjectNavigationSurfaceAttempt(.tasks, generation: navigationGeneration)
                 noteProjectNavigationSurfaceSuccess(.tasks, generation: navigationGeneration)
                 await LiveActivityManager.shared.reconcile(tasks)
+                guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
             }
             if let tasksError = selectionResolution.tasksError,
                let token = selectionResolution.tasksLoadToken,
@@ -4003,7 +4063,7 @@ final class AppModel {
             _ = resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true)
             publishWidgetSnapshot()
         } catch {
-            guard loadNonce == projectContextLoadNonce else { return }
+            guard !Task.isCancelled, loadNonce == projectContextLoadNonce else { return }
             let message = handleSurfaceError(error)
             noteProjectNavigationSurfaceFailure(.projects, generation: navigationGeneration)
             projectContextError = message
@@ -4084,10 +4144,14 @@ final class AppModel {
 
     func loadReminders() async {
         guard let client = reminderClient else { return }
+        let configurationGeneration = connectionConfigurationGeneration
         do {
-            reminders = try await client.reminders()
+            let loadedReminders = try await client.reminders()
+            guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
+            reminders = loadedReminders
             remindersError = nil
         } catch {
+            guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
             remindersError = handleSurfaceError(error)
         }
         remindersLoaded = true
@@ -4347,6 +4411,23 @@ final class AppModel {
     // MARK: - Connection lifecycle
 
     func configure(host: String, token: String? = nil) async {
+        // Revoke every owner of the previous authority before touching its
+        // credential. A refresh can already be past discovery and suspended in
+        // bootstrap/token renewal, where cancelling the coordinator alone no
+        // longer reaches it; the configuration epoch fences those continuations.
+        disconnectRefreshCancellationTask?.cancel()
+        disconnectRefreshCancellationTask = nil
+        stopConnectionSupervisorWorker()
+        cancelQueuedMessageFlush()
+        connectionConfigurationGeneration &+= 1
+        let transitionGeneration = connectionConfigurationGeneration
+        invalidateProjectContextLoads()
+        await refreshCoordinator.cancelActiveRefresh()
+        // A newer configure/disconnect may have taken ownership while actor
+        // cancellation suspended this call. The older transition must not save
+        // credentials or overwrite the newer endpoint when it resumes.
+        guard connectionConfigurationLeaseIsCurrent(transitionGeneration) else { return }
+
         let conn = CaveConnection(host: host)
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         let hostIsExplicitURL = trimmedHost.lowercased().hasPrefix("http://") || trimmedHost.lowercased().hasPrefix("https://")
@@ -4365,6 +4446,13 @@ final class AppModel {
             // changes authority or downgrades the same authority to remote HTTP.
             CaveConnection.saveAccessToken(nil)
         }
+        // Work may have been scheduled while cancellation of the old discovery
+        // coordinator was awaiting its owner. Advance once more so anything
+        // that captured that transition epoch/old client is also fenced.
+        cancelQueuedMessageFlush()
+        connectionConfigurationGeneration &+= 1
+        let configuredGeneration = connectionConfigurationGeneration
+        invalidateProjectContextLoads()
         advanceProjectNavigationConnectionGeneration()
         if !isSameEndpoint {
             resetHostScopedStateForNewConnection()
@@ -4372,10 +4460,10 @@ final class AppModel {
 
         connection = conn
         conn.save(defaults: projectContextDefaults)
-        // A probe of the previous endpoint must not be joined as this
-        // configuration's outcome.
-        await refreshCoordinator.cancelActiveRefresh()
         await refreshConnection()
+        guard connectionConfigurationLeaseIsCurrent(configuredGeneration),
+              connection?.baseURL == conn.baseURL else { return }
+        requestConnectionRecovery(.foreground)
     }
 
     private func resetHostScopedStateForNewConnection() {
@@ -4384,7 +4472,10 @@ final class AppModel {
         familiars = []
         familiarsError = nil
         familiarsLoaded = false
+        serverSessions = []
+        sessionsError = nil
         sessionsLoaded = false
+        lastSessionsLoadedAt = nil
         tasks = []
         tasksError = nil
         tasksLoaded = false
@@ -4401,14 +4492,17 @@ final class AppModel {
         chrome = .fallback
         publishedThemeId = nil
         publishedMode = nil
+        operatorProfile = nil
     }
 
     func disconnect() {
         // An in-flight probe's outcome is moot once the endpoint is gone; the
         // post-probe `connection != nil` guard in refreshConnection catches
         // any that already resolved.
-        let coordinator = refreshCoordinator
-        Task { await coordinator.cancelActiveRefresh() }
+        disconnectRefreshCancellationTask?.cancel()
+        stopConnectionSupervisorWorker()
+        cancelQueuedMessageFlush()
+        connectionConfigurationGeneration &+= 1
         advanceProjectNavigationConnectionGeneration()
         invalidateProjectNavigationHydrations()
         invalidateProjectContextLoads()
@@ -4421,6 +4515,10 @@ final class AppModel {
         projectMembership = ProjectMembershipIndex()
         projectMembershipLoaded = false
         connectionState = .unconfigured
+        let coordinator = refreshCoordinator
+        disconnectRefreshCancellationTask = Task {
+            await coordinator.cancelActiveRefreshIfCallerCurrent()
+        }
     }
 
     private func invalidateProjectContextLoads() {
@@ -4431,13 +4529,232 @@ final class AppModel {
         guard !connectionMonitorStarted else { return }
         connectionMonitorStarted = true
         connectionMonitor.pathUpdateHandler = { [weak self] path in
-            guard path.status == .satisfied else { return }
+            let pathAvailable = path.status == .satisfied
             Task { @MainActor [weak self] in
-                guard let self, self.connection != nil else { return }
-                await self.recoverConnectionInBackground()
+                await self?.updateConnectionPath(available: pathAvailable)
             }
         }
         connectionMonitor.start(queue: connectionMonitorQueue)
+    }
+
+    /// Scene lifecycle is another signal, not another retry loop. The one
+    /// supervisor sleeps while the app is backgrounded; BGAppRefreshTask owns
+    /// a separate single maintenance ping when iOS grants background time.
+    func setConnectionSupervisorActive(_ active: Bool) async {
+        connectionSupervisorActive = active
+        if active {
+            requestConnectionRecovery(.foreground)
+        } else {
+            stopConnectionSupervisorWorker()
+            // The coordinator owns the actual discovery Task. Cancelling only
+            // the supervisor handle would let that probe keep loading state in
+            // the background and race the one-shot BGAppRefresh pass.
+            await refreshCoordinator.cancelActiveRefresh()
+        }
+    }
+
+    private func updateConnectionPath(available: Bool) async {
+        connectionPathAvailable = available
+        guard connection != nil else { connectionState = .unconfigured; return }
+        if available {
+            requestConnectionRecovery(.networkAvailable)
+        } else {
+            stopConnectionSupervisorWorker()
+            if case .needsAuth = connectionState { return }
+            connectionState = .unreachable(.diagnosis(for: .offline))
+            await refreshCoordinator.cancelActiveRefresh()
+        }
+    }
+
+    /// Wake (or start) the only automatic recovery worker. If it is currently
+    /// backing off, cancelling only its sleeper makes the real signal probe
+    /// immediately; an in-flight probe is already the work this trigger wants.
+    func requestConnectionRecovery(_ trigger: ConnectionRecoveryTrigger) {
+        if case .foreground = trigger {
+            connectionSupervisorRefreshProfile = true
+        }
+        guard connectionSupervisorActive, connectionPathAvailable else { return }
+        guard connection != nil else { connectionState = .unconfigured; return }
+        switch connectionState {
+        case .needsAuth, .projectContextRequired, .unconfigured:
+            return
+        default:
+            break
+        }
+
+        connectionSupervisorDelayTask?.cancel()
+        guard connectionSupervisorTask == nil else { return }
+        connectionSupervisorGeneration &+= 1
+        let generation = connectionSupervisorGeneration
+        connectionSupervisorTask = Task { @MainActor [weak self] in
+            await self?.runConnectionSupervisor(generation: generation)
+        }
+    }
+
+    private func stopConnectionSupervisorWorker() {
+        connectionSupervisorGeneration &+= 1
+        connectionSupervisorDelayTask?.cancel()
+        connectionSupervisorDelayTask = nil
+        connectionSupervisorDelayID = nil
+        connectionSupervisorTask?.cancel()
+        connectionSupervisorTask = nil
+    }
+
+    /// Cancellation alone is not a sufficient fence: a URLSession completion
+    /// can resume after a scene/path transition has already minted a newer
+    /// worker. Every post-await side effect also proves it still owns the
+    /// current supervisor generation.
+    private func supervisorLeaseIsCurrent(_ generation: UInt64) -> Bool {
+        !Task.isCancelled
+            && connectionSupervisorActive
+            && connectionPathAvailable
+            && connectionSupervisorGeneration == generation
+    }
+
+    private func refreshLeaseIsCurrent(_ generation: UInt64?) -> Bool {
+        guard !Task.isCancelled else { return false }
+        guard let generation else { return true }
+        return supervisorLeaseIsCurrent(generation)
+    }
+
+    private func connectionConfigurationLeaseIsCurrent(_ generation: UInt64) -> Bool {
+        !Task.isCancelled && connectionConfigurationGeneration == generation
+    }
+
+    func captureConnectionDispatchLease() -> ConnectionDispatchLease {
+        ConnectionDispatchLease(
+            generation: connectionConfigurationGeneration,
+            baseURL: connection?.baseURL
+        )
+    }
+
+    func connectionDispatchLeaseIsCurrent(_ lease: ConnectionDispatchLease) -> Bool {
+        connectionConfigurationLeaseIsCurrent(lease.generation)
+            && connection?.baseURL == lease.baseURL
+    }
+
+    /// A live-send checkpoint owns network authority only while its captured
+    /// endpoint epoch remains current on both sides of the disk suspension.
+    /// Rollback persistence deliberately uses `flushThreadsAndWait()` directly
+    /// instead, because it must still land after this lease is revoked.
+    func persistThreadsBeforeDispatch(for lease: ConnectionDispatchLease) async -> Bool {
+        guard connectionDispatchLeaseIsCurrent(lease) else { return false }
+        let persisted = await flushThreadsAndWait()
+        return persisted && connectionDispatchLeaseIsCurrent(lease)
+    }
+
+    private func refreshLeaseIsCurrent(
+        _ supervisorGeneration: UInt64?,
+        configurationGeneration: UInt64
+    ) -> Bool {
+        connectionConfigurationLeaseIsCurrent(configurationGeneration)
+            && refreshLeaseIsCurrent(supervisorGeneration)
+    }
+
+    private func runConnectionSupervisor(generation: UInt64) async {
+        defer {
+            if connectionSupervisorGeneration == generation {
+                connectionSupervisorDelayTask = nil
+                connectionSupervisorDelayID = nil
+                connectionSupervisorTask = nil
+            }
+        }
+
+        var failureCount = 0
+        var probeImmediately = true
+        while supervisorLeaseIsCurrent(generation) {
+            guard connectionSupervisorActive, connectionPathAvailable,
+                  connection != nil else { return }
+            switch connectionState {
+            case .needsAuth, .projectContextRequired, .unconfigured:
+                return
+            default:
+                break
+            }
+
+            let delaySeconds: Double
+            if probeImmediately {
+                delaySeconds = 0
+                probeImmediately = false
+            } else if connectionState == .connected {
+                delaySeconds = ConnectionRetryPolicy.heartbeatSeconds
+            } else {
+                delaySeconds = ConnectionRetryPolicy.delaySeconds(
+                    afterFailureCount: max(failureCount, 1),
+                    jitter: Double.random(in: 0.8...1.2)
+                )
+            }
+
+            if delaySeconds > 0 {
+                let nanoseconds = UInt64(delaySeconds * 1_000_000_000)
+                let sleeper = Task<Bool, Never> {
+                    do {
+                        try await Task.sleep(nanoseconds: nanoseconds)
+                        return true
+                    } catch {
+                        return false
+                    }
+                }
+                let sleeperID = UUID()
+                connectionSupervisorDelayTask = sleeper
+                connectionSupervisorDelayID = sleeperID
+                _ = await sleeper.value
+                // A canceled old continuation may resume after a replacement
+                // generation installed its own backoff sleeper. It may clear
+                // only the exact slot it created, never the new worker's handle.
+                if connectionSupervisorGeneration == generation,
+                   connectionSupervisorDelayID == sleeperID {
+                    connectionSupervisorDelayTask = nil
+                    connectionSupervisorDelayID = nil
+                }
+                guard supervisorLeaseIsCurrent(generation) else { return }
+                guard connectionSupervisorActive, connectionPathAvailable,
+                      connection != nil else { return }
+            }
+
+            // Healthy foreground heartbeats stay cheap and do not reload any
+            // surfaces. A miss becomes degraded first, preserving cached UI,
+            // then falls through to the normal discovery/relocation path.
+            if connectionState == .connected {
+                var heartbeatAnswered = false
+                if let client {
+                    heartbeatAnswered = await client.ping()
+                }
+                guard supervisorLeaseIsCurrent(generation) else { return }
+                if heartbeatAnswered {
+                    if connectionSupervisorRefreshProfile {
+                        connectionSupervisorRefreshProfile = false
+                        await loadOperatorProfile()
+                        guard supervisorLeaseIsCurrent(generation) else { return }
+                    }
+                    await refreshAccessTokenIfNeeded {
+                        self.supervisorLeaseIsCurrent(generation)
+                    }
+                    guard supervisorLeaseIsCurrent(generation) else { return }
+                    flushQueuedMessages()
+                    failureCount = 0
+                    continue
+                }
+                guard connectionState == .connected else { continue }
+                connectionState = .degraded(.generic)
+            }
+
+            await refreshConnection(
+                reloadLoadedSurfaces: shouldReloadLoadedSurfaces,
+                quiet: true,
+                supervisorGeneration: generation
+            )
+            guard supervisorLeaseIsCurrent(generation) else { return }
+            switch connectionState {
+            case .connected:
+                connectionSupervisorRefreshProfile = false
+                failureCount = 0
+            case .checking, .degraded, .unreachable:
+                failureCount += 1
+            case .needsAuth, .projectContextRequired, .unconfigured:
+                return
+            }
+        }
     }
 
     /// Quiet: the state only changes on an outcome, so a healthy path change
@@ -4484,74 +4801,89 @@ final class AppModel {
     private func handleSurfaceError(_ error: Error) -> String {
         if CaveError.isAuthFailure(error) {
             connectionState = .needsAuth(pairingMessage())
-        } else if connectionState == .connected {
-            scheduleAutoRecover()
+        } else {
+            switch connectionState {
+            case .connected, .degraded:
+                connectionState = .degraded(.generic)
+                requestConnectionRecovery(.surfaceFailure)
+            default:
+                break
+            }
         }
         return error.localizedDescription
     }
 
-    /// Last time a failed surface load triggered an automatic reconnect —
-    /// bounds the recovery loop so cascading failures fold into one probe.
-    private var lastAutoRecoverAt: Date = .distantPast
-
-    /// A surface load failed while the state says connected — the desktop may
-    /// have restarted or moved ports without a network-path change, which
-    /// NWPathMonitor can't see. Re-run discovery in the background, at most
-    /// once per cooldown, so the app heals itself instead of sitting on a
-    /// stale "connected" with every surface erroring.
-    private func scheduleAutoRecover() {
-        let cooldown: TimeInterval = 10
-        guard Date().timeIntervalSince(lastAutoRecoverAt) > cooldown else { return }
-        lastAutoRecoverAt = Date()
-        Task { [weak self] in await self?.recoverConnectionInBackground() }
-    }
-
-    /// The connected state can be stale after a long suspension: the desktop
-    /// may have restarted or relocated while iOS had the app frozen, with no
-    /// path change for the supervisor to see. Revalidate with one cheap probe
-    /// on foreground — the common case (still reachable) costs a single
-    /// request and repaints nothing; a dead endpoint falls into the usual
-    /// retry/discovery path. A successful probe also gives the rolling token
-    /// renewal a chance to run for long-foregrounded devices.
-    func validateConnectionOnForeground() async {
-        await validateCurrentConnection(refreshProfile: true)
-    }
-
-    /// Keep a long-lived foreground session honest even when the network path
-    /// itself never changes. This prevents the next chat send from being the
-    /// first operation to discover that the desktop restarted or moved.
-    func maintainConnectionWhileActive() async {
-        await validateCurrentConnection(refreshProfile: false)
-    }
-
-    private func validateCurrentConnection(refreshProfile: Bool) async {
-        guard connection != nil, connectionState == .connected else { return }
-        if let client, await client.ping() {
-            if refreshProfile {
-                await loadOperatorProfile()
-            }
-            await refreshAccessTokenIfNeeded()
-            flushQueuedMessages()
+    /// A chat stream exhausted live resume and transcript resync. Surface
+    /// failures already reach the reconnect path through `handleSurfaceError`;
+    /// this closes the equivalent transport gap for the app's longest-lived
+    /// request. Semantic 4xx/project errors and cancellation are deliberately
+    /// ignored by the pure classifier, while a real transport loss immediately
+    /// enables offline compose and starts the existing single-flight recovery.
+    func noteConnectionFailure(_ error: Error) {
+        switch ConnectionFailureDisposition.classify(error) {
+        case .ignore:
             return
+        case .needsAuth:
+            connectionState = .needsAuth(pairingMessage())
+        case .reconnect(let failure):
+            guard connection != nil else { connectionState = .unconfigured; return }
+            if case .needsAuth = connectionState { return }
+            connectionState = .degraded(.diagnosis(for: failure))
+            requestConnectionRecovery(.streamFailure)
         }
-        guard connectionState == .connected else { return }
-        await connectWithRetry()
+    }
+
+    /// One opportunistic BGAppRefreshTask maintenance pass. It intentionally
+    /// does not discover, retry, reload surfaces, flush queued writes, or drive
+    /// foreground state: iOS grants a short, non-deterministic window, so this
+    /// path performs one ping and rolls the token only when the endpoint answers.
+    func performBackgroundConnectionMaintenance() async -> Bool {
+        guard connection != nil, let client else { return false }
+        let configurationGeneration = connectionConfigurationGeneration
+        let shouldNotifyReconnect: Bool
+        switch connectionState {
+        case .degraded, .unreachable:
+            shouldNotifyReconnect = true
+        default:
+            shouldNotifyReconnect = false
+        }
+        guard await client.ping(),
+              connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return false }
+        await refreshAccessTokenIfNeeded {
+            self.connectionConfigurationLeaseIsCurrent(configurationGeneration)
+        }
+        guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return false }
+        if shouldNotifyReconnect {
+            await ConnectionNotifications.postReconnected()
+            guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else {
+                return false
+            }
+        }
+        return connectionConfigurationLeaseIsCurrent(configurationGeneration)
     }
 
     /// Project context (projects + grants + familiars) loads alongside the
     /// theme/profile reads so initial connection and reconnect recover one
     /// coherent scope before the shell relies on it.
     private func loadCoreResources(
-        mirroringProjectContextFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = []
+        mirroringProjectContextFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = [],
+        configurationGeneration: UInt64
     ) async {
+        guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
         guard let client = coreResourceClient else { return }
         async let theme = Result.capturing { try await client.fetchTheme() }
         async let profile = Result.capturing { try await client.operatorProfile() }
         await loadProjectContext(using: client, mirrorFailuresTo: mirroredSurfaces)
+        guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
         // Theme and profile stay best-effort: on failure the last snapshot
         // stands (no flash back to the fallback chrome / "You").
-        if case .success(let snapshot) = await theme { adopt(snapshot) }
-        if case .success(let loadedProfile) = await profile, operatorProfile != loadedProfile {
+        if case .success(let snapshot) = await theme,
+           connectionConfigurationLeaseIsCurrent(configurationGeneration) {
+            adopt(snapshot)
+        }
+        if case .success(let loadedProfile) = await profile,
+           connectionConfigurationLeaseIsCurrent(configurationGeneration),
+           operatorProfile != loadedProfile {
             operatorProfile = loadedProfile
         }
     }
@@ -4559,12 +4891,14 @@ final class AppModel {
     /// Each loader owns disjoint state and applies on the main actor, so they
     /// can overlap their network waits — wall time tracks the slowest surface
     /// rather than the sum of all of them.
-    private func refreshLoadedSurfaces() async {
+    private func refreshLoadedSurfaces(configurationGeneration: UInt64) async {
+        guard connectionConfigurationLeaseIsCurrent(configurationGeneration) else { return }
         let mirroredProjectContextFailures = loadedProjectContextFailureSurfaces
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 await self.loadCoreResources(
-                    mirroringProjectContextFailuresTo: mirroredProjectContextFailures
+                    mirroringProjectContextFailuresTo: mirroredProjectContextFailures,
+                    configurationGeneration: configurationGeneration
                 )
             }
             if sessionsLoaded { group.addTask { await self.loadSessions() } }
@@ -4577,8 +4911,13 @@ final class AppModel {
     /// background retry (e.g. the unreachable screen's auto-retry ticker)
     /// doesn't bounce the UI through intermediate states — the state only
     /// changes when the probe has an outcome.
-    func refreshConnection(reloadLoadedSurfaces: Bool = false, quiet: Bool = false) async {
+    func refreshConnection(
+        reloadLoadedSurfaces: Bool = false,
+        quiet: Bool = false,
+        supervisorGeneration: UInt64? = nil
+    ) async {
         guard let connection else { connectionState = .unconfigured; return }
+        let configurationGeneration = connectionConfigurationGeneration
         if !quiet { connectionState = .checking }
 
         // Single-flight the transport decision: concurrent callers join the
@@ -4608,6 +4947,17 @@ final class AppModel {
             }
         }
         guard refresh.launched else { return }
+        guard refreshLeaseIsCurrent(
+            supervisorGeneration,
+            configurationGeneration: configurationGeneration
+        ) else { return }
+        // A probe can finish after NWPathMonitor has already declared the
+        // route unavailable. Never let that stale outcome overwrite the
+        // immediate honest offline state; the satisfied edge launches fresh.
+        guard connectionPathAvailable else {
+            connectionState = .unreachable(.diagnosis(for: .offline))
+            return
+        }
         // The user may have disconnected while the probe ran; its outcome no
         // longer describes anything configured.
         guard self.connection != nil else { connectionState = .unconfigured; return }
@@ -4657,10 +5007,18 @@ final class AppModel {
             let shouldGateShell = !hasLoadedSurfaces
             if shouldGateShell {
                 if refresh.surfaceReloadRequested {
-                    await refreshLoadedSurfaces()
+                    await refreshLoadedSurfaces(
+                        configurationGeneration: configurationGeneration
+                    )
                 } else {
-                    await loadCoreResources()
+                    await loadCoreResources(
+                        configurationGeneration: configurationGeneration
+                    )
                 }
+                guard refreshLeaseIsCurrent(
+                    supervisorGeneration,
+                    configurationGeneration: configurationGeneration
+                ) else { return }
                 if case .needsAuth = connectionState {
                     return
                 }
@@ -4671,16 +5029,41 @@ final class AppModel {
                     return
                 }
             }
+            guard refreshLeaseIsCurrent(
+                supervisorGeneration,
+                configurationGeneration: configurationGeneration
+            ) else { return }
             connectionState = .connected
-            await refreshAccessTokenIfNeeded()
+            await refreshAccessTokenIfNeeded {
+                self.refreshLeaseIsCurrent(
+                    supervisorGeneration,
+                    configurationGeneration: configurationGeneration
+                )
+            }
+            guard refreshLeaseIsCurrent(
+                supervisorGeneration,
+                configurationGeneration: configurationGeneration
+            ) else { return }
             flushQueuedMessages()
             if !shouldGateShell {
+                guard refreshLeaseIsCurrent(
+                    supervisorGeneration,
+                    configurationGeneration: configurationGeneration
+                ) else { return }
                 // OR of this launcher's own flag and any joiner's merged intent.
                 if refresh.surfaceReloadRequested {
-                    await refreshLoadedSurfaces()
+                    await refreshLoadedSurfaces(
+                        configurationGeneration: configurationGeneration
+                    )
                 } else {
-                    await loadCoreResources()
+                    await loadCoreResources(
+                        configurationGeneration: configurationGeneration
+                    )
                 }
+                guard refreshLeaseIsCurrent(
+                    supervisorGeneration,
+                    configurationGeneration: configurationGeneration
+                ) else { return }
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
@@ -4696,19 +5079,90 @@ final class AppModel {
     /// stream in like any send, and a re-drop mid-flush re-queues cleanly
     /// (the next reconnect picks it back up). Guarded so overlapping
     /// reconnect signals (foreground probe + path monitor) flush once.
-    private var flushingQueued = false
+    @ObservationIgnored private var flushingQueued = false
+    @ObservationIgnored private var queuedMessageFlushTask: Task<Void, Never>?
+    @ObservationIgnored private var queuedMessageFlushID: UUID?
+
+    private func cancelQueuedMessageFlush() {
+        queuedMessageFlushTask?.cancel()
+        queuedMessageFlushTask = nil
+        queuedMessageFlushID = nil
+        flushingQueued = false
+    }
+
     func flushQueuedMessages() {
+        guard connectionState == .connected else { return }
         guard let client, !flushingQueued else { return }
         let pending = threads.filter { thread in thread.messages.contains { $0.isQueued } }
         guard !pending.isEmpty else { return }
+        let configurationGeneration = connectionConfigurationGeneration
+        let dispatchLease = captureConnectionDispatchLease()
+        let flushID = UUID()
         flushingQueued = true
-        Task {
-            defer { flushingQueued = false }
+        queuedMessageFlushID = flushID
+        queuedMessageFlushTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.queuedMessageFlushID == flushID {
+                    self.flushingQueued = false
+                    self.queuedMessageFlushTask = nil
+                    self.queuedMessageFlushID = nil
+                }
+            }
             for thread in pending {
-                await thread.replayQueued(client: client) { [weak self] in
-                    guard let self else { return }
+                guard self.queuedMessageFlushID == flushID,
+                      self.connectionConfigurationLeaseIsCurrent(configurationGeneration),
+                      self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                else { return }
+                await thread.replayQueued(
+                    client: client,
+                    onConnectionFailure: { [weak self] error in
+                        guard let self,
+                              self.queuedMessageFlushID == flushID,
+                              self.connectionConfigurationLeaseIsCurrent(configurationGeneration),
+                              self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        else { return }
+                        self.noteConnectionFailure(error)
+                    },
+                    dispatchLeaseIsCurrent: { [weak self] in
+                        guard let self else { return false }
+                        return self.queuedMessageFlushID == flushID
+                            && self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: { [weak self] in
+                        // Stable queued run identity must reach the atomic
+                        // snapshot before its POST, closing the kill/suspend
+                        // window that otherwise duplicates an accepted turn.
+                        guard let self,
+                              self.queuedMessageFlushID == flushID,
+                              self.connectionConfigurationLeaseIsCurrent(configurationGeneration),
+                              self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        else { return false }
+                        let persisted = await self.flushThreadsAndWait()
+                        return persisted
+                            && self.queuedMessageFlushID == flushID
+                            && self.connectionConfigurationLeaseIsCurrent(configurationGeneration)
+                            && self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistAfterRollback: { [weak self] in
+                        // Deliberately endpoint-unfenced: replay has already
+                        // proved no POST began, and this save only makes its
+                        // rollback durable after configure/disconnect cancelled
+                        // the old network lease.
+                        await self?.flushThreadsAndWait() ?? false
+                    }
+                ) { [weak self] in
+                    guard let self,
+                          self.queuedMessageFlushID == flushID,
+                          self.connectionConfigurationLeaseIsCurrent(configurationGeneration),
+                          self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    else { return }
                     self.touch(thread)
                 }
+                guard self.queuedMessageFlushID == flushID,
+                      self.connectionConfigurationLeaseIsCurrent(configurationGeneration),
+                      self.connectionDispatchLeaseIsCurrent(dispatchLease)
+                else { return }
             }
         }
     }
@@ -4717,7 +5171,7 @@ final class AppModel {
     /// expiry, exchange it for a fresh 30-day one. Failures are non-fatal —
     /// the current token keeps working until it actually expires, at which
     /// point refreshConnection lands in `.needsAuth` with re-pair guidance.
-    private func refreshAccessTokenIfNeeded() async {
+    private func refreshAccessTokenIfNeeded(onlyWhile isCurrent: (() -> Bool)? = nil) async {
         guard let client = coreResourceClient, let token = CaveConnection.accessToken else { return }
         guard let expiry = CaveInvite.tokenExpiry(token) else {
             // Legacy raw-secret pairing: no expiry, so the rolling renewal
@@ -4729,6 +5183,7 @@ final class AppModel {
             // failure (offline, tokenless server) the raw secret keeps
             // working and the next connect retries.
             if let fresh = await client.refreshAccessToken() {
+                guard !Task.isCancelled, isCurrent?() ?? true else { return }
                 CaveConnection.saveAccessToken(fresh)
             }
             return
@@ -4737,35 +5192,17 @@ final class AppModel {
         let secondsUntilExpiry = expiry.timeIntervalSinceNow
         guard secondsUntilExpiry > 0 && secondsUntilExpiry < renewalWindow else { return }
         if let fresh = await client.refreshAccessToken() {
+            guard !Task.isCancelled, isCurrent?() ?? true else { return }
             CaveConnection.saveAccessToken(fresh)
         }
     }
 
-    /// Connect with a few backoff retries before surfacing the "unreachable" setup
-    /// screen — a slow tailnet, or a desktop still spinning up on a cold launch,
-    /// shouldn't read as a configuration failure. Between attempts the state is held
-    /// at `.checking` so a transient miss shows the "Connecting…" screen (cold
-    /// launch) or recovers invisibly in the background (once familiars are loaded),
-    /// never a flash of the unreachable screen. Actionable bootstrap blockers
-    /// (pairing or project context) stop the retry loop and leave their own
-    /// recovery UI mounted. Drives launch + foreground reconnect.
+    /// Compatibility entry point for explicit project-gate retries. Automatic
+    /// launch/foreground/path/heartbeat recovery belongs exclusively to the
+    /// lifecycle supervisor above, including its jittered backoff.
     func connectWithRetry() async {
         guard connection != nil else { connectionState = .unconfigured; return }
-        // Delays BETWEEN attempts (4 attempts total, ~7s before giving up).
-        let backoffSeconds: [UInt64] = [1, 2, 4]
         await refreshConnection(reloadLoadedSurfaces: shouldReloadLoadedSurfaces)
-        var attempt = 0
-        while connectionState != .connected, attempt < backoffSeconds.count {
-            if case .needsAuth = connectionState { return }
-            if connectionState == .projectContextRequired { return }
-            connectionState = .checking
-            try? await Task.sleep(nanoseconds: backoffSeconds[attempt] * 1_000_000_000)
-            if Task.isCancelled { return }
-            // The user may have disconnected/reconfigured during the wait.
-            guard connection != nil else { connectionState = .unconfigured; return }
-            await refreshConnection(reloadLoadedSurfaces: shouldReloadLoadedSurfaces)
-            attempt += 1
-        }
     }
 
     enum DiscoveryOutcome: Equatable {
@@ -5077,7 +5514,8 @@ final class AppModel {
             using: client,
             generation: navigationGeneration
         )
-        guard coordinatedLoadShouldApply(load.token, state: sessionsLoadState) else { return }
+        guard !Task.isCancelled,
+              coordinatedLoadShouldApply(load.token, state: sessionsLoadState) else { return }
         markCoordinatedLoadApplied(load.token, state: &sessionsLoadState)
 
         switch load.result {
@@ -6676,7 +7114,7 @@ final class AppModel {
     /// saves can never interleave — but actors make no FIFO promise, so without
     /// this the OLDER snapshot could still resume last and overwrite newer
     /// state on disk.
-    @ObservationIgnored private var threadWriteTask: Task<Void, Never>?
+    @ObservationIgnored private var threadWriteTask: Task<Bool, Never>?
 
     /// Guards against saving before the async `hydrateThreads()` restore has
     /// settled. Without it, a background/flush that fires before hydration
@@ -6719,8 +7157,12 @@ final class AppModel {
         previous?.cancel()
         threadWriteTask = Task.detached(priority: .utility) { [threadStore] in
             _ = await previous?.value
-            // Non-fatal: persistence is best-effort.
-            try? await threadStore.save(snapshots)
+            do {
+                try await threadStore.save(snapshots)
+                return true
+            } catch {
+                return false
+            }
         }
     }
 
@@ -6728,9 +7170,10 @@ final class AppModel {
     /// app leaves the foreground: `flushThreads()` alone returns the instant
     /// the task is spawned, so the process could be suspended before the bytes
     /// reach disk — which is exactly the durability the caller believed it had.
-    func flushThreadsAndWait() async {
+    @discardableResult
+    func flushThreadsAndWait() async -> Bool {
         flushThreads()
-        _ = await threadWriteTask?.value
+        return await threadWriteTask?.value ?? false
     }
 
     /// One-shot restore at launch: load off-main via the store and publish the

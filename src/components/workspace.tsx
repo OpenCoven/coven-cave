@@ -54,7 +54,11 @@ import type { PaletteIntent } from "@/components/command-palette";
 // a new in-shell surface from main.
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
-import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import {
+  readMobileModeEnabled,
+  subscribeMobileModeEnabled,
+  writeMobileModeEnabled,
+} from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
@@ -1229,7 +1233,11 @@ export function Workspace() {
   });
   // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
   const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
-  const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
+  const mobileModeEnabled = useSyncExternalStore(
+    subscribeMobileModeEnabled,
+    readMobileModeEnabled,
+    readMobileModeEnabled,
+  );
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
   const responseNeededRef = useRef(responseNeeded);
@@ -1272,7 +1280,6 @@ export function Workspace() {
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
-    setMobileModeEnabledState(enabled);
   }, []);
 
   const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean; suppressError?: boolean }) => {

@@ -172,6 +172,12 @@ struct ChatTurn: Identifiable, Codable, Hashable {
     var modelOverride: String?
     var modelOverrideScope: ChatModelOverrideScope?
     var responseMetadata: ChatTurnResponseMetadata?
+    /// Exact client delivery identity persisted by the desktop on the user
+    /// turn. Queued replay uses it instead of unsafe prompt-text matching.
+    var attentionClearOperationId: String?
+    /// Conversation-tree parent. The reply for an interrupted delivery is
+    /// adopted only when this points at the exact run-owned user turn.
+    var parentId: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, text, reasoning, tools
@@ -179,6 +185,7 @@ struct ChatTurn: Identifiable, Codable, Hashable {
         case isError
         case usage
         case reasoningEffort, responseSpeed, modelControls, modelOverride, modelOverrideScope, responseMetadata
+        case attentionClearOperationId, parentId
     }
 }
 

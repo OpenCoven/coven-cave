@@ -31,8 +31,13 @@ const view = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
 function blockAfter(src, marker) {
   const start = src.indexOf(marker);
   if (start < 0) return null;
+  const markerBrace = marker.lastIndexOf("{");
+  const openingBrace = markerBrace >= 0
+    ? start + markerBrace
+    : src.indexOf("{", start + marker.length);
+  if (openingBrace < 0) return null;
   let depth = 0;
-  for (let i = start + marker.length - 1; i < src.length; i += 1) {
+  for (let i = openingBrace; i < src.length; i += 1) {
     if (src[i] === "{") depth += 1;
     else if (src[i] === "}") {
       depth -= 1;
@@ -113,11 +118,11 @@ assert.doesNotMatch(
 // The other place the server hands a turn id to a message: replay adopts a
 // reply that landed while the transport was down. Without the id that reply is
 // server-owned but unnamed, and a later delete has to guess at it by position.
-const adopt = blockAfter(thread, "private func adoptServerTurnIfPresent(prompt: String, familiarId: String,");
+const adopt = blockAfter(thread, "private func adoptServerTurnIfPresent(");
 assert.ok(adopt, "adoptServerTurnIfPresent must exist");
 assert.match(
   adopt,
-  /DisplayMessage\(serverTurnId: reply\.id,/,
+  /mutate\(messageId\) \{\s*\n\s*\$0\.serverTurnId = reply\.id/,
   "an adopted reply must carry the server's turn id — the server just named it",
 );
 
@@ -126,7 +131,7 @@ assert.match(
 // pair and leaves the old assistant turn alone. Keeping the id would aim a
 // later delete at a turn whose text this bubble no longer shows: the superseded
 // turn would go and the reply on screen would stay.
-const retry = blockAfter(thread, "func retry(_ messageId: String, client: CaveClient, onChange: @escaping () -> Void) {");
+const retry = blockAfter(thread, "func retry(_ messageId: String, client: CaveClient,");
 assert.ok(retry, "retry must exist");
 assert.match(
   retry,
