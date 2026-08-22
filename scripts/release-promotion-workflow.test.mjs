@@ -611,9 +611,15 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
   // whole test would pass against a step that publishes nothing — the
   // neighbouring recovery step, which rewrites the renderer from an audited
   // blob, mentions the same script and does not run it.
+  // Anchored to the start of a line, because a substring is not an invocation:
+  // `# bash scripts/release-notes.sh …` leaves every character an unanchored
+  // regex looks for while running nothing at all. That is the same
+  // naming-not-consulting failure this section opens by describing, and it
+  // applies to the publish match below just as much.
+  const invokesRenderer = /^[ \t]*bash (?:\.\/)?scripts\/release-notes\.sh\b/m;
   const renderers = Object.entries(release.jobs).flatMap(([jobName, job]) =>
     (job.steps ?? [])
-      .filter((candidate) => /(?:^|\s)bash scripts\/release-notes\.sh\b/m.test(candidate.run ?? ""))
+      .filter((candidate) => invokesRenderer.test(candidate.run ?? ""))
       .map((step) => ({ jobName, job, step })),
   );
   assert.equal(renderers.length, 1, "exactly one step renders and publishes the release body");
@@ -623,9 +629,19 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
   // dropped. A step that writes the body to a temp file and never sends it
   // publishes nothing, while both env expressions below still read perfectly
   // and every assertion in this test still passes.
+  //
+  // The publish is matched against the file the render actually wrote, not
+  // against `--notes-file` in the abstract, so pointing the upload at some
+  // other path — or at a body composed by hand — fails here rather than
+  // reading as a publish that happens to send the wrong bytes.
+  const rendered = /^[ \t]*bash (?:\.\/)?scripts\/release-notes\.sh\b[^\n]*?>\s*(\S+)/m.exec(
+    step.run,
+  );
+  assert.ok(rendered, `${jobName} no longer renders the release body to a file`);
+  const renderedBody = rendered[1].replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   assert.match(
     step.run,
-    /gh release edit\b[^\n]*--notes-file/,
+    new RegExp(String.raw`^[ \t]*gh release edit\b[^\n]*--notes-file\s+${renderedBody}(?:\s|$)`, "m"),
     `${jobName} renders the release body but no longer publishes it`,
   );
 
@@ -690,11 +706,16 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
     );
   }
 
+  // Actions resolves `env` step → job → workflow, and the renderer sees the
+  // value from whichever of the three declares it, so all three placements are
+  // a real disclosure and only absence from every one of them loses the banner.
+  // Resolving in that order also keeps a step-level entry authoritative, which
+  // is what Actions does: a step that shadows a correct job-level expression
+  // with a constant must still fail here.
+  const disclosureEnv = (name) => step.env?.[name] ?? job.env?.[name] ?? release.env?.[name];
+
   for (const [name, hatch] of Object.entries(disclosures)) {
-    // Job-level `env` reaches every step in the job, so either placement
-    // genuinely passes the disclosure to the renderer; only absence from both
-    // loses the banner.
-    const expression = step.env?.[name] ?? job.env?.[name];
+    const expression = disclosureEnv(name);
     // Dropping the entry is the quietest way to lose the banner: the renderer
     // reads an unset variable as "not skipped" and says nothing.
     assert.ok(expression !== undefined, `${name} is no longer passed to the release-notes renderer`);
@@ -722,7 +743,7 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
     for (const [other, otherHatch] of Object.entries(disclosures)) {
       if (other === name) continue;
       assert.equal(
-        interpolate(step.env?.[other] ?? job.env?.[other], pulled),
+        interpolate(disclosureEnv(other), pulled),
         "false",
         `${other} is disclosed by ${hatch}, which is ${otherHatch}'s hatch`,
       );
