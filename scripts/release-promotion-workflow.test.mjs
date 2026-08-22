@@ -594,6 +594,93 @@ test("no release gate can be switched off by a step-level or job-level if:", asy
   );
 });
 
+// The same family of off switch as the X gate's env above, one step further
+// out. `release-notes.test.mjs` pins the CONSUMER thoroughly — only the literal
+// "true" turns the banner on, "1" and "false" do not — and nothing pinned the
+// PRODUCER. Replacing either expression with a constant `false`, or dropping
+// the env entry, silences the banner for a cut that really did ship with the
+// baseline parsers, while every check stays green and every naming regex still
+// matches. That is cave-yp21x exactly: v0.2.0 shipped with both guards skipped
+// and nobody noticed for four days, because the only evidence was a grey
+// "skipped" line in a workflow run.
+test("the release-notes guard disclosure is on exactly when its own hatch was pulled", async () => {
+  const release = await workflow("release.yml");
+  // Located by what it runs rather than by what it is called, so a rename
+  // cannot take this pin quiet with it. Collected rather than `find`-ed
+  // because a second invoker would otherwise shadow the real one and this
+  // whole test would pass against a step that publishes nothing — the
+  // neighbouring recovery step, which rewrites the renderer from an audited
+  // blob, mentions the same script and does not run it.
+  const renderers = Object.values(release.jobs)
+    .flatMap((job) => job.steps ?? [])
+    .filter((candidate) => /(?:^|\s)bash scripts\/release-notes\.sh\b/m.test(candidate.run ?? ""));
+  assert.equal(renderers.length, 1, "exactly one step renders and publishes the release body");
+  const [step] = renderers;
+
+  // Each disclosure belongs to exactly one hatch. Pairing them here is what
+  // makes the cross-checks below possible: a disclosure wired to the wrong
+  // input reads as fine in isolation.
+  const disclosures = {
+    COVEN_RELEASE_REGISTRY_GUARDS_SKIPPED: "allow_unconfigured_registries",
+    COVEN_RELEASE_X_GUARD_SKIPPED: "allow_unconfigured_x_app",
+  };
+
+  // A dispatch carries every declared default, so "nothing pulled" is the
+  // workflow's own definition of it rather than this file's guess — and a
+  // default flipped to true fails here instead of quietly disclosing on every
+  // recovery run.
+  const declared = release.on.workflow_dispatch.inputs;
+  const defaults = Object.fromEntries(
+    Object.entries(declared).map(([name, spec]) => [name, spec.default]),
+  );
+  for (const hatch of Object.values(disclosures)) {
+    assert.equal(declared[hatch].type, "boolean", `${hatch} is no longer a boolean hatch`);
+    assert.equal(declared[hatch].default, false, `${hatch} defaults to pulled`);
+  }
+
+  const tagPush = releaseRun();
+  const plainDispatch = releaseRun({ event: "workflow_dispatch", inputs: defaults });
+
+  for (const [name, hatch] of Object.entries(disclosures)) {
+    const expression = step.env?.[name];
+    // Dropping the entry is the quietest way to lose the banner: the renderer
+    // reads an unset variable as "not skipped" and says nothing.
+    assert.ok(expression !== undefined, `${name} is no longer passed to the release-notes renderer`);
+
+    assert.equal(
+      interpolate(expression, tagPush),
+      "false",
+      `${name} discloses a skipped guard on a tag push, which cannot skip one`,
+    );
+    assert.equal(
+      interpolate(expression, plainDispatch),
+      "false",
+      `${name} discloses a skipped guard on an ordinary recovery dispatch`,
+    );
+
+    // Pulling the hatch is the only thing that turns it on, and it turns on
+    // only its own disclosure — an X-app recovery must not report the schema
+    // registries as skipped, or the banner stops meaning anything.
+    const pulled = releaseRun({
+      event: "workflow_dispatch",
+      inputs: { ...defaults, [hatch]: true },
+    });
+    assert.equal(
+      interpolate(expression, pulled),
+      "true",
+      `${name} stays silent on a dispatch that pulled ${hatch}`,
+    );
+    for (const [other, otherHatch] of Object.entries(disclosures)) {
+      if (other === name) continue;
+      assert.equal(
+        interpolate(step.env[other], pulled),
+        "false",
+        `${other} is disclosed by ${hatch}, which is ${otherHatch}'s hatch`,
+      );
+    }
+  }
+});
+
 test("checksums publishes SHA256SUMS only for a wholly successful build", async () => {
   const release = await workflow("release.yml");
   const condition = release.jobs.checksums.if;
