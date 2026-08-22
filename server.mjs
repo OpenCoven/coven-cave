@@ -1,10 +1,25 @@
 import { execFile } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
@@ -55,6 +70,111 @@ function accessToken() {
   return process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
 }
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
+const CLIENT_V1_DISCOVERY_FILE = "client-v1-discovery.json";
+const CLIENT_V1_DISCOVERY_NONCE = randomUUID();
+const CLIENT_V1_DISCOVERY_STARTED_AT = (/* @__PURE__ */ new Date()).toISOString();
+let clientV1DiscoveryPublished = false;
+function standaloneCaveHome() {
+  const covenHome = process.env.COVEN_HOME || join(homedir(), ".coven");
+  return resolve(process.env.COVEN_CAVE_HOME || join(covenHome, "cave"));
+}
+function clientV1DiscoveryFile() {
+  return join(standaloneCaveHome(), CLIENT_V1_DISCOVERY_FILE);
+}
+function requireStandaloneOwner(metadata, label) {
+  if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) {
+    throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
+  }
+}
+function assertStandaloneDiscoveryTarget(path) {
+  try {
+    const metadata = lstatSync(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new Error(`Client v1 discovery target must be a regular file: ${path}.`);
+    }
+    requireStandaloneOwner(metadata, "target");
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+}
+function publishStandaloneClientV1DiscoveryRecord(endpoint) {
+  const root = join(clientV1DiscoveryFile(), "..");
+  mkdirSync(root, { recursive: true, mode: 448 });
+  const rootMetadata = lstatSync(root);
+  if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
+    throw new Error("Client v1 discovery root must be a real directory.");
+  }
+  requireStandaloneOwner(rootMetadata, "root");
+  const physicalRoot = realpathSync(root);
+  if (physicalRoot !== root) {
+    throw new Error("Client v1 discovery root must not resolve through a symlink.");
+  }
+  chmodSync(root, 448);
+  const url = new URL(endpoint);
+  const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]";
+  if (url.protocol !== "http:" || !loopback || !url.port || url.username || url.password || url.pathname !== "/" || url.search || url.hash || /%(?:2f|5c)/i.test(endpoint)) {
+    throw new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.");
+  }
+  const path = clientV1DiscoveryFile();
+  assertStandaloneDiscoveryTarget(path);
+  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  let fd = null;
+  let ownsTemporaryPath = false;
+  try {
+    fd = openSync(temporaryPath, "wx", 384);
+    ownsTemporaryPath = true;
+    writeFileSync(fd, `${JSON.stringify({
+      version: 1,
+      endpoint,
+      pid: process.pid,
+      nonce: CLIENT_V1_DISCOVERY_NONCE,
+      startedAt: CLIENT_V1_DISCOVERY_STARTED_AT
+    }, null, 2)}
+`, "utf8");
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = null;
+    assertStandaloneDiscoveryTarget(path);
+    renameSync(temporaryPath, path);
+    ownsTemporaryPath = false;
+    chmodSync(path, 384);
+    clientV1DiscoveryPublished = true;
+  } catch (error) {
+    if (fd !== null) closeSync(fd);
+    if (ownsTemporaryPath) rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+}
+function removeStandaloneClientV1DiscoveryRecord(nonce) {
+  const path = clientV1DiscoveryFile();
+  let before;
+  let parsed;
+  try {
+    before = lstatSync(path);
+    if (!before.isFile() || before.isSymbolicLink()) return false;
+    requireStandaloneOwner(before, "target");
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || parsed.nonce !== nonce) {
+    return false;
+  }
+  const current = lstatSync(path);
+  if (!current.isFile() || current.isSymbolicLink() || current.dev !== before.dev || current.ino !== before.ino) {
+    return false;
+  }
+  unlinkSync(path);
+  clientV1DiscoveryPublished = false;
+  return true;
+}
+function cleanupStandaloneClientV1Discovery() {
+  if (!clientV1DiscoveryPublished) return;
+  removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+}
 const LOCAL_PEER_HEADER = "x-coven-cave-local-peer";
 const LOCAL_PEER_SECRET = randomUUID();
 process.env.COVEN_CAVE_LOCAL_PEER_SECRET = LOCAL_PEER_SECRET;
@@ -100,6 +220,7 @@ async function terminatePackagedUnixSidecarTree() {
   } catch (error) {
     console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
   } finally {
+    cleanupStandaloneClientV1Discovery();
     terminatePtySessions();
     try {
       process.kill(-process.pid, "SIGKILL");
@@ -729,6 +850,10 @@ function loopbackHostname(raw = process.env.HOSTNAME) {
   }
   return "127.0.0.1";
 }
+function loopbackHttpEndpoint(hostname2, port2) {
+  const urlHostname = hostname2 === "::1" ? `[${hostname2}]` : hostname2;
+  return `http://${urlHostname}:${port2}`;
+}
 const dev = process.env.NODE_ENV !== "production";
 const hostname = loopbackHostname();
 const port = cavePort();
@@ -816,13 +941,36 @@ server.on("upgrade", (req, socket, head) => {
 server.keepAliveTimeout = 75e3;
 server.headersTimeout = 8e4;
 server.listen(port, hostname, () => {
-  console.log(`> Ready on http://${hostname}:${port}`);
+  try {
+    publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
+  } catch (error) {
+    console.error("[cave] failed to publish client-v1 discovery", error);
+    server.close(() => process.exit(1));
+    return;
+  }
+  console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
 });
+let httpShutdownStarted = false;
+function shutdownHttpServer() {
+  if (httpShutdownStarted) return;
+  httpShutdownStarted = true;
+  cleanupStandaloneClientV1Discovery();
+  terminatePtySessions();
+  const timer = setTimeout(() => process.exit(1), 2e3);
+  timer.unref?.();
+  server.close(() => {
+    clearTimeout(timer);
+    process.exit(0);
+  });
+}
+process.once("SIGINT", shutdownHttpServer);
+process.once("SIGTERM", shutdownHttpServer);
 if (allowedTailnetNodeIds().size > 0) {
   void refreshTailnetPeers();
   setInterval(() => void refreshTailnetPeers(), TAILNET_STATUS_REFRESH_MS).unref();
 }
 server.once("error", (err) => {
+  cleanupStandaloneClientV1Discovery();
   console.error(err);
   process.exit(1);
 });

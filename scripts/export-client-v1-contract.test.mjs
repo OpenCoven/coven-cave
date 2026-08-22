@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   CLIENT_V1_CONTRACT_FIXTURE_PATH,
   CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH,
+  REVIEWED_CLIENT_V1_PUBLIC_ROUTES,
   clientV1ContractFixtureSha256,
   renderClientV1ContractFixture,
 } from "./export-client-v1-contract.mjs";
@@ -147,4 +148,26 @@ test("exports deterministic client v1 bytes across consecutive writes", () => {
     assert.equal(firstHash, clientV1ContractFixtureSha256(firstFixture));
     assert.equal(firstHash, `${createHash("sha256").update(firstFixture).digest("hex")}\n`);
   });
+});
+
+test("ratchets the exported fixture to the reviewed Phase 1 public routes", () => {
+  const fixture = JSON.parse(renderClientV1ContractFixture());
+  assert.deepEqual(fixture.contract.publicRoutes, REVIEWED_CLIENT_V1_PUBLIC_ROUTES);
+  assert.equal(fixture.contract.pairingSecretHeader, "x-coven-pairing-secret");
+  assert.deepEqual(fixture.contract.discovery, {
+    fileName: "client-v1-discovery.json",
+    mode: "0600",
+    version: 1,
+  });
+  // /api/client/v1/health answers with the release-compatibility record, so
+  // the exported health envelope has to carry the same shape rather than a
+  // bare status the route never sends.
+  assert.deepEqual(fixture.examples.healthEnvelope.data, fixture.examples.health);
+  assert.deepEqual(Object.keys(fixture.examples.healthEnvelope.data).sort(), [
+    "instanceId",
+    "pairingRequired",
+    "releaseVersion",
+  ]);
+  assert.equal(typeof fixture.examples.pairingCreatedEnvelope.data.secret, "string");
+  assert.equal(typeof fixture.examples.pairingExchangeEnvelope.data.bearer, "string");
 });
