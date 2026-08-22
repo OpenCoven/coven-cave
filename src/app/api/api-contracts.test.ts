@@ -15,6 +15,11 @@ import {
   projectConversationExecutionAttempts,
 } from "../../lib/server/familiar-execution-analytics-projection.ts";
 import { serializeExecutionAttemptLedgerRecord } from "../../lib/server/familiar-execution-analytics-store.ts";
+import {
+  CLIENT_V1_AUTHENTICATED_PATHS,
+  CLIENT_V1_PUBLIC_INGRESS,
+  clientV1IngressKind,
+} from "../../proxy-helpers.ts";
 
 const root = process.cwd();
 const apiRoot = path.join(root, "src", "app", "api");
@@ -84,31 +89,50 @@ const contracts: RouteContract[] = [
   // before it holds a credential, which is the whole reason they exist. They
   // are the paths clientV1IngressKind (src/proxy-helpers.ts) classifies as
   // public, so proxy.ts applies the client-v1 ingress rules to them instead of
-  // the ordinary gate. Health returns no user data and no paths. The three
-  // pairing routes do not guard themselves uniformly, so read them one at a
-  // time: both POSTs re-check the loopback stamp through
-  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts), while
-  // GET /client/v1/pairing/requests/[id] never calls it and takes its locality
-  // solely from the clientV1Ingress branch in proxy.ts. Both id-bearing routes
-  // do require the per-request pairing secret; the creating POST mints that
-  // secret rather than checking one, and is bounded by the pairing-create rate
-  // limit instead.
+  // the ordinary gate. Health returns no user data and no paths, and is the one
+  // route on this surface whose locality comes from that proxy branch alone.
+  // All three pairing routes re-check the loopback stamp for themselves through
+  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts) — the two POSTs
+  // always did, and GET /client/v1/pairing/requests/[id] joined them in #4854,
+  // because being the one dynamic-segmented route with no check of its own is
+  // what made the escaped-path ingress hole answer there and nowhere else. Both
+  // id-bearing routes also require the per-request pairing secret; the creating
+  // POST mints that secret rather than checking one, and is bounded by the
+  // pairing-create rate limit instead.
   //
   // The admin routes are NOT exempted. clientV1IngressKind returns null for
-  // them, so they never leave the ordinary sidecar-token path in proxy.ts, and
-  // that is where their locality comes from. requireClientV1Admin
+  // them, so they never take the client-v1 ingress branch's pass-through and
+  // stay on the ordinary sidecar-token path in proxy.ts. Their locality is not
+  // a by-product of that path: proxy.ts binds the family to a direct loopback
+  // peer with a check of its own (#4843), refusing a forwarded caller with
+  // `403 forbidden peer: client v1 admin requires direct loopback` before
+  // falling through to that gate. requireClientV1Admin
   // (client-v1/admin-auth.ts) then adds the per-launch COVEN_CAVE_AUTH_TOKEN,
   // plus a same-origin Origin/Referer on mutations; it reads no loopback stamp
   // of its own, deliberately, because transport locality is not proof of the
-  // administrator.
+  // administrator — the proxy check asks FROM WHERE, this one asks WHO.
   { route: "/client/v1/admin/credentials", methods: ["GET"], kind: "json" },
   { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
   { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
   { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true },
+  // The Phase 2 canonical reads (cave-jfa9y). Every one is a GET with no body,
+  // and every one authenticates its own bearer through requireScope — which is
+  // load-bearing rather than routine, because these five paths are the first
+  // entries in CLIENT_V1_AUTHENTICATED_PATHS and a listed path returns from
+  // proxy() before the sidecar-token block ever runs. They also re-check the
+  // loopback stamp for themselves, the way all three pairing routes do. That
+  // began as cover for #4854, which #4855 has since closed at the proxy; it
+  // stays because a route this list DEMOTES should not take its locality on
+  // trust from the thing that demoted it.
+  { route: "/client/v1/conversations", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations/[id]/messages", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/familiars", methods: ["GET"], kind: "json" },
   { route: "/client/v1/health", methods: ["GET"], kind: "json" },
   { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
   { route: "/client/v1/pairing/requests/[id]/exchange", methods: ["POST"], kind: "json" },
+  { route: "/client/v1/projects", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
@@ -436,19 +460,151 @@ function effectiveRouteSource(file: string, source: string): string {
   return parts.join("\n");
 }
 
+// --- source text vs. source code ---------------------------------------------
+//
+// assert.match reads a route file as text, so any check spelled as "the source
+// mentions X" is satisfied by a comment, a string, or a doc block that merely
+// names X. For the credential assertions below that is not a nit: the whole
+// point of those checks is to catch an author who MEANT to call the guard, and
+// "meant to" is exactly what a `// TODO: … requireScope(…)` line looks like.
+// Strip comments and literal text first so only code can satisfy them.
+//
+// A character scanner rather than a regex pair, because the naive
+// `replace(/\/\/.*/g, "")` corrupts as much as it removes: a `//` inside a
+// string literal, or a quote inside a regex character class such as /["']/,
+// flips the state and eats real code up to the next delimiter. Anything the
+// scanner cannot classify is dropped rather than kept, so the failure mode is a
+// noisy assertion, not a silent pass.
+function skipQuoted(source: string, start: number, quote: string): number {
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === quote || ch === "\n") return i + 1;
+    i += 1;
+  }
+  return i;
+}
+
+function skipTemplate(source: string, start: number): number {
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "`") return i + 1;
+    // A ${…} substitution is dropped with the literal around it: real code has
+    // no reason to call a credential guard from inside an interpolation, and
+    // dropping it keeps the scanner from mistaking the closing brace for the
+    // end of the template.
+    if (ch === "$" && source[i + 1] === "{") {
+      i += 2;
+      let depth = 1;
+      while (i < source.length && depth > 0) {
+        const inner = source[i];
+        if (inner === "\\") {
+          i += 2;
+          continue;
+        }
+        if (inner === "`") {
+          i = skipTemplate(source, i);
+          continue;
+        }
+        if (inner === '"' || inner === "'") {
+          i = skipQuoted(source, i, inner);
+          continue;
+        }
+        if (inner === "{") depth += 1;
+        else if (inner === "}") depth -= 1;
+        i += 1;
+      }
+      continue;
+    }
+    i += 1;
+  }
+  return i;
+}
+
+function skipRegexLiteral(source: string, start: number): number {
+  let i = start + 1;
+  let inClass = false;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "\n") return i; // unterminated: it was division after all
+    if (ch === "[") inClass = true;
+    else if (ch === "]") inClass = false;
+    else if (ch === "/" && !inClass) return i + 1;
+    i += 1;
+  }
+  return i;
+}
+
+// A `/` opens a regex literal only where a value may begin. Reading the last
+// meaningful character already emitted is the standard way to tell that from
+// division without a full parser.
+const REGEX_MAY_FOLLOW = /(?:[(,=:[!&|?{};+\-*%~^<>]|\b(?:return|typeof|instanceof|in|of|new|delete|void|do|else|case|yield|await))$/;
+
+function executableSource(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
+      i += 2;
+      out += " ";
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      i = skipQuoted(source, i, ch);
+      out += `${ch}${ch}`;
+      continue;
+    }
+    if (ch === "`") {
+      i = skipTemplate(source, i);
+      out += "``";
+      continue;
+    }
+    if (ch === "/" && REGEX_MAY_FOLLOW.test(out.trimEnd())) {
+      i = skipRegexLiteral(source, i);
+      out += " ";
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 const routeFiles = walkRoutes(apiRoot);
 const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
 // Phase 0 forbade every /api/client/v1 route while the public contract was
-// still an unserved module. Phase 1 ends that for the reviewed bootstrap and
+// still an unserved module. Phase 1 ended that for the reviewed bootstrap and
 // admin surface: health (a client cannot discover it is too old without an
 // endpoint to ask), the pairing exchange, and the admin routes that approve
-// and revoke credentials. The gate is narrowed rather than dropped, because
-// what it was really protecting against is client-v1 surface appearing faster
-// than it is reviewed — so each new route has to be added here deliberately,
-// not just by existing on disk. This is the single allow-list: health and the
-// pairing authority narrow it once, together, to the routes that exist.
+// and revoke credentials. Phase 2 adds the canonical reads the contract's
+// capability list has been advertising since Phase 0 — familiars, projects,
+// conversations, and a conversation's messages (cave-jfa9y). The gate is
+// narrowed rather than dropped, because what it was really protecting against
+// is client-v1 surface appearing faster than it is reviewed — so each new route
+// has to be added here deliberately, not just by existing on disk.
 assert.deepEqual(
   actualRoutes.filter((route) => route.startsWith("/client/v1")),
   [
@@ -456,14 +612,156 @@ assert.deepEqual(
     "/client/v1/admin/credentials/[id]",
     "/client/v1/admin/pairing-requests",
     "/client/v1/admin/pairing-requests/[id]/decision",
+    "/client/v1/conversations",
+    "/client/v1/conversations/[id]",
+    "/client/v1/conversations/[id]/messages",
+    "/client/v1/familiars",
     "/client/v1/health",
     "/client/v1/pairing/requests",
     "/client/v1/pairing/requests/[id]",
     "/client/v1/pairing/requests/[id]/exchange",
+    "/client/v1/projects",
   ],
-  "Phase 1 must expose exactly the reviewed client-v1 bootstrap and admin routes",
+  "client-v1 must expose exactly the reviewed bootstrap, admin, and canonical-read routes",
 );
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
+
+// --- client-v1 proxy pre-authorization (cave-4841) -------------------------
+//
+// clientV1IngressKind classifies a request BEFORE proxy() reaches the
+// sidecar-token block, and a match makes proxy() return early: the mobile
+// access gate is skipped and no bearer is checked. Everything after that point
+// is the route's own responsibility. The two assertions below are the halves of
+// that bargain, checked against what is actually on disk rather than against a
+// list someone has to remember to prune.
+//
+// Concrete probe paths per route, because the ingress classifier takes a
+// request pathname and the App Router directory speaks in [param] segments. A
+// single [param] stands in as one literal segment, which is exactly what the
+// single-segment [^/]+ patterns match.
+//
+// A [...catchAll] does NOT reduce to one segment, and treating it as if it did
+// is how a route impersonates a reviewed public path:
+// pairing/requests/[...rest] would probe as /api/client/v1/pairing/requests/
+// probe-segment, match the single-segment public pattern, and be excused from
+// the requireScope assertion below — while actually serving an unbounded tail
+// that no one reviewed. So a catch-all is probed at every width it serves: the
+// one-segment case it shares with [param], a two-segment case standing in for
+// the whole tail, and — for the optional [[...catchAll]] — the parent path with
+// the segment absent. The classification below then only excuses the route if
+// EVERY one of those shapes is in the reviewed public set.
+const PROBE_SEGMENT = "probe-segment";
+
+function isDynamicSegment(segment: string): boolean {
+  return segment.startsWith("[");
+}
+
+function isCatchAllSegment(segment: string): boolean {
+  return segment.startsWith("[...") || segment.startsWith("[[...");
+}
+
+function isOptionalCatchAllSegment(segment: string): boolean {
+  return segment.startsWith("[[...");
+}
+
+function clientV1ProbePaths(route: string): string[] {
+  const segments = route.slice(1).split("/");
+  let paths: string[][] = [[]];
+  for (const segment of segments) {
+    const widths = !isDynamicSegment(segment)
+      ? [[segment]]
+      : isCatchAllSegment(segment)
+        ? [
+            ...(isOptionalCatchAllSegment(segment) ? [[] as string[]] : []),
+            [PROBE_SEGMENT],
+            [PROBE_SEGMENT, PROBE_SEGMENT],
+          ]
+        : [[PROBE_SEGMENT]];
+    paths = paths.flatMap((prefix) => widths.map((width) => [...prefix, ...width]));
+  }
+  return paths.map((parts) => `/api/${parts.join("/")}`);
+}
+
+const clientV1Routes = routeFiles
+  .map((file) => ({ file, route: routeFromFile(file) }))
+  .filter(({ route }) => route.startsWith("/client/v1"));
+const clientV1ProbeSurface = clientV1Routes.flatMap(({ route }) => clientV1ProbePaths(route));
+
+// Half one: the list may not pre-authorize a path that nothing serves. Before
+// cave-4841 it named thirteen Phase 2 paths and none of them had a route.ts, so
+// the first Phase 2 handler to land would have been exempted from the sidecar
+// token on the day it appeared — with its own requireScope call as the sole
+// remaining layer, and no test anywhere insisting that call exist. Adding the
+// entry is now part of adding the handler.
+for (const pattern of CLIENT_V1_AUTHENTICATED_PATHS) {
+  assert.ok(
+    clientV1ProbeSurface.some((probe) => pattern.test(probe)),
+    `${pattern} pre-authorizes client-v1 ingress but no src/app/api/client/v1 route.ts matches it`,
+  );
+}
+
+// Half two: every client-v1 route that is not deliberately credential-free has
+// to enforce a credential in its own source. That holds whether or not the path
+// is pre-authorized above — the pre-authorization removes the sidecar token,
+// and this check is what makes removing it survivable. Classification is read
+// from the repo, not hardcoded: the admin family from the directory it lives
+// in, the credential-free bootstrap surface from clientV1IngressKind itself.
+// Growing the public set to dodge this check is not a quiet edit —
+// CLIENT_V1_PUBLIC_PATHS only matches a path the allow-list assertion above
+// already admits by name.
+for (const { file, route } of clientV1Routes) {
+  // executableSource, not the raw text: both assertions below are satisfied by
+  // a call the route really makes, never by the NAME appearing in a comment or
+  // a string. `// TODO(next): route this through requireScope(...)` on a route
+  // with no credential check at all is exactly the accident this pair exists to
+  // catch, and it read as a pass until cave-4841's review.
+  const source = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+  if (route === "/client/v1/admin" || route.startsWith("/client/v1/admin/")) {
+    // Admin routes never reach the client-v1 ingress branch at all
+    // (clientV1IngressKind returns null for them), so they keep the ordinary
+    // sidecar-token path and layer requireClientV1Admin on top. Different
+    // credential, same obligation to name one.
+    assert.match(
+      source,
+      /requireClientV1Admin\s*\(/,
+      `${route} must call requireClientV1Admin`,
+    );
+    continue;
+  }
+  // EVERY shape the route serves has to be in the reviewed public set, not just
+  // the narrowest one — a catch-all that happens to cover a reviewed
+  // single-segment path still serves the rest of its tail credential-free.
+  if (
+    clientV1ProbePaths(route).every(
+      (probe) => clientV1IngressKind(probe) === CLIENT_V1_PUBLIC_INGRESS,
+    )
+  ) {
+    continue;
+  }
+  assert.match(
+    source,
+    /requireScope\s*\(/,
+    `${route} is neither the admin family nor the reviewed credential-free bootstrap surface, so it must call requireScope`,
+  );
+  // Half three (cave-jfa9y): the same route must also meter the credential it
+  // just accepted. Added with the first routes that actually call requireScope,
+  // because until then consumeAuthenticated had no caller and the obligation
+  // had nothing to attach to. A pre-authorized path has already given up the
+  // sidecar-token gate, so an unmetered one lets a single valid bearer drive
+  // the store, the daemon, and the transcript directory without bound — and
+  // nothing else in the suite would notice, since an unmetered route passes
+  // every functional test it has.
+  //
+  // Matched on the success-path charge specifically, and on that name ALONE —
+  // there is no alternation here, deliberately. A future route that meters
+  // against a different budget fails this assertion and has to widen it in
+  // review rather than inherit an exemption by being written differently.
+  assert.match(
+    source,
+    /consumeAuthenticated\s*\(/,
+    `${route} calls requireScope but never charges the authenticated rate-limit budget`,
+  );
+}
 
 for (const contract of contracts) {
   const file = path.join(apiRoot, ...contract.route.slice(1).split("/"), "route.ts");

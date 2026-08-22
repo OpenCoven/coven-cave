@@ -757,7 +757,15 @@ final class ChatThread: Identifiable, Hashable {
     /// it left from — not appended — and the failure is said out loud as an
     /// inline note. A silent local-only delete is the exact bug being fixed,
     /// so failing quietly here would only move it.
+    ///
+    /// A GROUP message is one bubble over several server sessions, so this can
+    /// be several deletes rather than one — see `serverDeleteTarget` for how
+    /// they are located and `persistDelete` for what happens when only some of
+    /// them land. `familiarNames` is only ever read to write that report: the
+    /// thread knows familiar ids and the sentence is read back to a person, so
+    /// the display names come from the view that has them.
     func deleteMessage(_ messageId: String, client: CaveClient?,
+                       familiarNames: [String: String] = [:],
                        onChange: @escaping () -> Void) {
         guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
         let removed = messages[index]
@@ -791,7 +799,8 @@ final class ChatThread: Identifiable, Hashable {
         pendingServerDelete = Task { [weak self] in
             _ = await previous?.value
             await self?.persistDelete(of: removed, at: index, target: target,
-                                      client: client, onChange: onChange)
+                                      client: client, familiarNames: familiarNames,
+                                      onChange: onChange)
         }
     }
 
@@ -799,53 +808,129 @@ final class ChatThread: Identifiable, Hashable {
     /// it, so it stays out of observation. See `deleteMessage`.
     @ObservationIgnored private var pendingServerDelete: Task<Void, Never>?
 
-    /// Where a message lives on the server, when it lives there at all.
+    /// Where a message lives on the server, when it lives there at all — one
+    /// entry per session that can be holding a copy of it.
     ///
-    /// Deliberately narrow, and the group exclusion is load-bearing rather
-    /// than incidental: a group is N independent server sessions presented as
-    /// one transcript, so `familiarIds.first` names an arbitrary one of them
-    /// and a position in the merged local list answers to no position in any
-    /// of their turn lists. A direct chat is the only shape with one session
-    /// to address. Group messages also mostly carry no server turn id —
-    /// `reload` no-ops for groups and `AppModel.loadHistory` only ever runs
-    /// against a thread it built with a single familiar — but replay CAN
-    /// adopt one, so it is the guard below that holds, not the absence of an
-    /// id.
+    /// A group used to be refused outright here, and the reason was real: a
+    /// group is N independent server sessions presented as one transcript, so
+    /// `familiarIds.first` names an arbitrary one of them and a position in
+    /// the merged local list answers to no position in any of their turn
+    /// lists. What was missing was not a session id but a PROJECTION. Session
+    /// F's turn list is exactly the sub-sequence of this thread's messages
+    /// that F was sent: every user prompt, because `send` fans one prompt out
+    /// to every familiar, plus the replies F itself produced and no other
+    /// familiar's. Take that sub-sequence and the merged list resolves into as
+    /// many honest per-session transcripts as the thread has familiars, each
+    /// of which the existing prefix-agreement matcher can check position by
+    /// position exactly as it does for a direct chat.
+    ///
+    /// So the shape of the answer follows the shape of the message. An
+    /// assistant bubble carries the `familiarId` that produced it, which names
+    /// exactly one session — one delete, and no way to fail halfway. A user
+    /// bubble was fanned out, so it is N server turns with N different ids,
+    /// and deleting it is N deletes; `persistDelete` owns what that means when
+    /// only some of them land. A direct chat is the same code with one entry,
+    /// not a special case beside it.
     ///
     /// A queued send, inline slash output, and a thread with no session yet
-    /// have nothing on the server to remove either, and for those the local
-    /// removal is already the whole truth.
+    /// have nothing on the server to remove, and for those the local removal
+    /// is already the whole truth.
     private func serverDeleteTarget(for message: DisplayMessage,
                                     at index: Int) -> ServerDeleteTarget? {
-        guard !isGroup, !message.isQueued,
+        guard !message.isQueued,
               // Inline slash output is local-only — but a `system` turn the
               // server named on a restore is a real turn there (the server
               // persists chain-less system turns) and deletes like any other.
               // Refusing every system message would leave those undeletable
               // by the silent local splice this whole path exists to end.
-              message.role != .system || message.serverTurnId != nil,
-              let familiarId = familiarIds.first,
-              let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return nil }
-        // Messages the server never receives do not occupy a turn, so they
-        // must not be counted when locating one. Kept whole rather than
-        // counted: naming a turn by position is only safe if the positions
-        // before it can be checked against the server's own transcript.
-        let preceding = messages[..<index].filter { Self.occupiesServerTurn($0) }
-        return ServerDeleteTarget(sessionId: sessionId, turnId: message.serverTurnId,
-                                  preceding: preceding)
+              message.role != .system || message.serverTurnId != nil
+        else { return nil }
+        let group = isGroup
+        let sessions: [ServerDeleteTarget.Session] = holders(of: message).compactMap { familiarId in
+            guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return nil }
+            guard let projected = Self.sessionTurn(message, in: familiarId, isGroup: group) else {
+                return nil
+            }
+            // Messages this session never received do not occupy a turn in it,
+            // so they must not be counted when locating one. Kept whole rather
+            // than counted: naming a turn by position is only safe if the
+            // positions before it can be checked against that session's own
+            // transcript.
+            let preceding = messages[..<index].compactMap {
+                Self.sessionTurn($0, in: familiarId, isGroup: group)
+            }
+            return ServerDeleteTarget.Session(familiarId: familiarId, sessionId: sessionId,
+                                              message: projected, preceding: preceding)
+        }
+        return sessions.isEmpty ? nil : ServerDeleteTarget(sessions: sessions)
+    }
+
+    /// Which of this thread's familiars could be holding this message.
+    ///
+    /// A reply lives in exactly one session — the one that produced it — so
+    /// deleting it anywhere else would remove a different familiar's turn. A
+    /// user prompt went to all of them, because that is what `send` does.
+    private func holders(of message: DisplayMessage) -> [String] {
+        guard message.role == .assistant else { return familiarIds }
+        if let familiarId = message.familiarId { return [familiarId] }
+        // An unattributed reply can only be a direct chat's, where there is one
+        // session and it is that one. In a group it names no session at all,
+        // and picking one would be the arbitrary `familiarIds.first` this whole
+        // projection exists to replace.
+        return isGroup ? [] : familiarIds
     }
 
     private struct ServerDeleteTarget {
-        let sessionId: String
-        /// Known only for a message the server has already named to us — on a
-        /// restore, or on the replay that adopted a reply the server had.
-        let turnId: String?
-        /// Every local message before this one that occupies a server turn,
-        /// in order. Its COUNT is the ordinal used to name a message composed
-        /// in this session — one that has never been through a restore and so
-        /// carries no `serverTurnId` — and its contents are what proves that
-        /// ordinal actually lines up with the server's transcript.
-        let preceding: [DisplayMessage]
+        /// Every server session that can hold this message: one for a direct
+        /// chat or a group reply, N for a group's user turn.
+        let sessions: [Session]
+
+        struct Session {
+            let familiarId: String
+            let sessionId: String
+            /// The message as THIS session's transcript sees it — see
+            /// `sessionTurn(_:in:isGroup:)`. Its `serverTurnId`, when it has
+            /// one, names a turn in this session and no other.
+            let message: DisplayMessage
+            /// Every local message before it that occupies a turn in THIS
+            /// session, in order. Its COUNT is the ordinal used to name a
+            /// message the server has never named to us, and its contents are
+            /// what proves that ordinal actually lines up with this session's
+            /// transcript.
+            let preceding: [DisplayMessage]
+        }
+    }
+
+    /// This message as one session's transcript sees it, or nil when that
+    /// session never held it.
+    ///
+    /// This is the whole of what makes a group addressable. Dropping another
+    /// familiar's reply is not tidying: counted, each of the N-1 replies the
+    /// fan-out produced for the other familiars would push every later
+    /// position that many turns too far down THIS session's turn list, and the
+    /// ordinal would name a stranger's turn.
+    ///
+    /// The turn id is narrowed for the same reason the position is. A
+    /// `serverTurnId` names a turn in the one session whose transcript handed
+    /// it over. In a direct chat that is the only session there is, so it
+    /// stands. In a group, adoption is the only route that names anything and
+    /// it only ever names a reply, so an id on a fanned-out user turn cannot
+    /// have come from the session being asked — comparing it there would
+    /// report a disagreeing transcript that is nothing but the wrong
+    /// session's id. Stripped, the turn falls back to role-and-text under the
+    /// same prefix agreement as any message the server never named.
+    nonisolated private static func sessionTurn(_ message: DisplayMessage,
+                                                in familiarId: String,
+                                                isGroup: Bool) -> DisplayMessage? {
+        guard occupiesServerTurn(message) else { return nil }
+        if message.role == .assistant {
+            if let owner = message.familiarId { return owner == familiarId ? message : nil }
+            return isGroup ? nil : message
+        }
+        guard isGroup else { return message }
+        var projected = message
+        projected.serverTurnId = nil
+        return projected
     }
 
     /// Does this message hold a position in the server's turn list?
@@ -860,61 +945,162 @@ final class ChatThread: Identifiable, Hashable {
         return message.role != .system && !message.isQueued
     }
 
+    /// Delete this message from every session that holds it — naming all of
+    /// the turns before removing any of them.
+    ///
+    /// The two phases are the point. A group's user turn is N deletes, and
+    /// discovering at the third session that the turn cannot be named would
+    /// leave two sessions deleted and two not, over a message nothing can put
+    /// back. Resolving first turns every "we cannot say where it is" refusal —
+    /// the common one, and the only one this code can provoke — into a refusal
+    /// that has changed nothing at all, so it rolls back cleanly and costs the
+    /// user a swipe.
+    ///
+    /// What survives that is a delete that was named in every session and then
+    /// refused by some of them: a desktop that went away between requests. That
+    /// one cannot be made atomic from here — the route deletes one turn in one
+    /// session and has no undelete — so it is reported rather than hidden.
     private func persistDelete(of message: DisplayMessage, at index: Int,
                                target: ServerDeleteTarget, client: CaveClient,
+                               familiarNames: [String: String],
                                onChange: @escaping () -> Void) async {
-        let turnId: String
-        if let known = target.turnId, !known.isEmpty {
-            turnId = known
-        } else {
-            // A message composed in this session has no server-assigned id
-            // yet, and nothing in the send path hands one back. Reading the
-            // conversation is the only way to name the turn — and the read
-            // has THREE outcomes a `try?` collapses into one:
-            //
-            //  - it THROWS 404: `GET /api/chat/conversation/{id}` answers 404
-            //    when the server holds no transcript for this chat (see that
-            //    route's final `not found`). The desktop was reached and told
-            //    us it has nothing, so the local removal was already the whole
-            //    delete. Blaming the network here would be a lie AND would put
-            //    back a message no server copy will ever resurrect.
-            //  - it THROWS anything else: a real failure, report it.
-            //  - it RETURNS nil: same answer as the 404, reached through the
-            //    narrow `conversation: null` shape the route uses when a board
-            //    card claims the session but no transcript exists yet.
-            let convo: Conversation?
-            do {
-                convo = try await client.conversation(sessionId: target.sessionId)
-            } catch CaveError.badResponse(404) {
-                return
-            } catch {
-                rollBack(message, to: index, reason: error.localizedDescription,
-                         onChange: onChange)
-                return
-            }
-            guard let convo else { return }
-            switch Self.turnMatch(for: message, following: target.preceding, in: convo.turns) {
-            case .named(let id):
-                turnId = id
+        var deletions: [(familiarId: String, sessionId: String, turnId: String)] = []
+        for session in target.sessions {
+            switch await resolveTurn(in: session, client: client) {
+            case .named(let turnId):
+                deletions.append((session.familiarId, session.sessionId, turnId))
             case .absent:
-                return
-            case .ambiguous:
-                // The server HAS a transcript and it does not line up with
-                // ours, so we cannot say whether it holds this message. Saying
-                // nothing would leave the bubble gone here and the turn alive
-                // there — a silent local-only delete, which is the bug this
-                // whole path exists to end, not a success.
-                rollBack(message, to: index,
-                         reason: "the desktop's copy of this chat has changed; refresh and try again",
-                         onChange: onChange)
+                // This session's transcript agreed as far as it goes and ends
+                // before the message — a prompt whose fan-out never reached
+                // this familiar. There is nothing here to delete, and that is
+                // not a reason to refuse the sessions that do hold it.
+                continue
+            case .unresolved(let reason):
+                // Nothing has been deleted yet, so refusing is free.
+                rollBack(message, to: index, reason: reason, onChange: onChange)
                 return
             }
         }
-        do {
-            try await client.deleteConversationTurn(sessionId: target.sessionId, turnId: turnId)
-        } catch {
-            rollBack(message, to: index, reason: error.localizedDescription, onChange: onChange)
+        var failures: [(familiarId: String, reason: String)] = []
+        for deletion in deletions {
+            do {
+                try await client.deleteConversationTurn(sessionId: deletion.sessionId,
+                                                        turnId: deletion.turnId)
+            } catch {
+                // Keep going: every session that still answers is one fewer
+                // surviving copy, and the report below wants the whole list.
+                failures.append((deletion.familiarId, error.localizedDescription))
+            }
         }
+        guard let firstFailure = failures.first else { return }
+        if failures.count == deletions.count {
+            // Nothing landed anywhere. The server is in exactly the state it
+            // was in before the swipe, so put the message back and say why —
+            // the direct chat's behaviour, and the one every "desktop
+            // unreachable" failure takes whatever the thread's shape.
+            rollBack(message, to: index, reason: firstFailure.reason, onChange: onChange)
+            return
+        }
+        reportPartialDelete(failures, familiarNames: familiarNames, onChange: onChange)
+    }
+
+    /// What one session says about where this message is, if anywhere.
+    private enum ServerTurnResolution {
+        case named(String)
+        case absent
+        /// The session could not be asked, or answered with a transcript that
+        /// does not line up. Either way we cannot name a turn, and guessing is
+        /// how a delete removes a stranger's message.
+        case unresolved(String)
+    }
+
+    /// Name this message's turn inside one session, without deleting anything.
+    private func resolveTurn(in session: ServerDeleteTarget.Session,
+                             client: CaveClient) async -> ServerTurnResolution {
+        if let known = session.message.serverTurnId, !known.isEmpty { return .named(known) }
+        // A message composed in this session has no server-assigned id yet,
+        // and nothing in the send path hands one back. Reading the
+        // conversation is the only way to name the turn — and the read has
+        // THREE outcomes a `try?` collapses into one:
+        //
+        //  - it THROWS 404: `GET /api/chat/conversation/{id}` answers 404 when
+        //    the server holds no transcript for this chat (see that route's
+        //    final `not found`). The desktop was reached and told us it has
+        //    nothing, so the local removal was already the whole delete for
+        //    this session. Blaming the network here would be a lie AND would
+        //    put back a message no server copy will ever resurrect.
+        //  - it THROWS anything else: a real failure, report it.
+        //  - it RETURNS nil: same answer as the 404, reached through the
+        //    narrow `conversation: null` shape the route uses when a board
+        //    card claims the session but no transcript exists yet.
+        let convo: Conversation?
+        do {
+            convo = try await client.conversation(sessionId: session.sessionId)
+        } catch CaveError.badResponse(404) {
+            return .absent
+        } catch {
+            return .unresolved(error.localizedDescription)
+        }
+        guard let convo else { return .absent }
+        switch Self.turnMatch(for: session.message, following: session.preceding,
+                              in: convo.turns) {
+        case .named(let id):
+            return .named(id)
+        case .absent:
+            return .absent
+        case .ambiguous:
+            // The server HAS a transcript and it does not line up with ours,
+            // so we cannot say whether it holds this message. Saying nothing
+            // would leave the bubble gone here and the turn alive there — a
+            // silent local-only delete, which is the bug this whole path
+            // exists to end, not a success.
+            //
+            // "Refresh and try again" is real advice in a DIRECT chat and only
+            // there: pull-to-refresh calls `reload`, the transcript comes back
+            // from the server with a `serverTurnId` on every message, and the
+            // next swipe deletes by name without the matcher at all. `reload`
+            // opens with `guard !isGroup`, so a group has no such route — the
+            // gesture is a no-op and the sentence would be sending someone to
+            // pull at a list that cannot change. Say what is true instead.
+            return .unresolved(
+                isGroup
+                    ? "the desktop's copy of this chat has changed and a group chat can't be refreshed to catch up"
+                    : "the desktop's copy of this chat has changed; refresh and try again")
+        }
+    }
+
+    /// Say out loud that a delete landed in some of a group's sessions and not
+    /// others, and deliberately leave the message removed.
+    ///
+    /// Rolling back is the wrong instrument here, and it is worth being exact
+    /// about why, because everywhere else on this path rolling back is the
+    /// honest move. It is honest there because nothing happened. Here
+    /// something did: the turn is really gone from at least one session and
+    /// the route has no undelete, so re-inserting the bubble would assert
+    /// copies the server has already destroyed. Worse, it would assert them
+    /// unrecoverably — those sessions' transcripts have moved, so the next
+    /// swipe's prefix walk finds them disagreeing, refuses as `ambiguous`, and
+    /// the copies that DID survive can never be deleted at all. Keeping the
+    /// removal is the description that is true of most sessions and leaves the
+    /// user somewhere to go.
+    ///
+    /// The one thing never done here is nothing. An unreported partial delete
+    /// is the silent local-only delete this whole path exists to end, just with
+    /// fewer sessions holding the evidence.
+    private func reportPartialDelete(_ failures: [(familiarId: String, reason: String)],
+                                     familiarNames: [String: String],
+                                     onChange: @escaping () -> Void) {
+        let names = failures.map { familiarNames[$0.familiarId] ?? $0.familiarId }
+        let reason = failures[0].reason
+        // Most `localizedDescription`s already end in a full stop, and
+        // "… status 404.." is a shabby thing to read back to someone.
+        let detail = reason.hasSuffix(".") ? String(reason.dropLast()) : reason
+        appendSystem(
+            "That message was deleted, but it is still in this chat with "
+                + "\(names.joined(separator: ", ")) — \(detail).",
+            isError: true)
+        updatedAt = Date()
+        onChange()
     }
 
     /// What the server's transcript says about a message it never named.
@@ -963,6 +1149,25 @@ final class ChatThread: Identifiable, Hashable {
     /// it never received — while a disagreement inside the transcript says
     /// nothing at all about where this message is. Only the first of those is
     /// evidence that the local removal was the whole delete.
+    ///
+    /// Reused unchanged for a group, one session at a time. `preceding` is by
+    /// then the session's own projection rather than the whole merged list
+    /// (see `sessionTurn(_:in:isGroup:)`), so what arrives here is the same
+    /// question it has always answered: does one local transcript line up with
+    /// one server transcript, position by position. It also happens to be the
+    /// only guard that catches a fan-out that reached some familiars and not
+    /// others — that session's turns are shifted, the walk disagrees, and the
+    /// delete is refused rather than aimed at whatever sits at the ordinal.
+    ///
+    /// One sentence above does NOT survive the move, and it is the one about
+    /// the price of refusing. A direct chat pays a swipe: refreshing reloads
+    /// the transcript, every message comes back named, and the retry needs no
+    /// matching. `reload` refuses groups, so a group has no way to re-acquire
+    /// those ids — a session whose turns are shifted stays shifted, and every
+    /// later delete in the thread is refused for as long as the thread lives.
+    /// That is still the right side to err on (the alternative is deleting a
+    /// stranger's turn) but it is a standing cost, not a swipe, and the
+    /// refusal says so rather than promising a refresh that does nothing.
     nonisolated private static func turnMatch(for message: DisplayMessage,
                                               following preceding: [DisplayMessage],
                                               in turns: [ChatTurn]) -> ServerTurnMatch {

@@ -484,3 +484,116 @@ test("lastUsedAt persistence is coalesced to at most once per minute per credent
     assert.equal((await store.reload()).get(issued.credential.id)?.lastUsedAt, 71_000);
   });
 });
+
+test("refuses a credential store a foreign Windows principal can write", async () => {
+  // The severe half of the defect: an attacker who can write this file injects
+  // a record with a bearerHash of their choosing and any scopes, which mints
+  // full authority with no pairing and no admin approval. On win32 nothing
+  // stopped that — `process.getuid` is undefined, `lstat` reports uid 0, and
+  // `chmod(0o600)` only toggles the read-only bit. Injecting the platform keeps
+  // the branch under test on the POSIX runners, where it is otherwise dead.
+  const exclusive = {
+    self: "S-1-5-21-11-22-33-1001",
+    owner: "S-1-5-21-11-22-33-1001",
+    protected: true,
+    repaired: false,
+    removed: [],
+    aces: [{ sid: "S-1-5-21-11-22-33-1001", type: "Allow" }],
+  };
+  const windows = (aces: { sid: string; type: string }[]) => ({
+    platform: "win32" as const,
+    getuid: null,
+    warn: () => {},
+    probeWindowsAcl: async () => ({ ...exclusive, aces }),
+  });
+  const shared = [
+    { sid: "S-1-5-21-11-22-33-1001", type: "Allow" },
+    { sid: "S-1-5-32-545", type: "Allow" },
+  ];
+
+  await withCredentialRoot(async (root) => {
+    const store = createCredentialStore({ root, ownership: windows(shared) });
+    await assert.rejects(
+      store.issue(credentialInput),
+      /Client v1 credential store root is not exclusive to the current user/,
+    );
+    await assert.rejects(store.reload(), /is not exclusive to the current user/);
+    await assert.rejects(
+      readFile(join(root, CLIENT_V1_CREDENTIAL_STORE_FILE), "utf8"),
+      { code: "ENOENT" },
+      "a refused store must not have been written",
+    );
+  });
+
+  await withCredentialRoot(async (root) => {
+    const store = createCredentialStore({ root, ownership: windows(exclusive.aces) });
+    const issued = await store.issue(credentialInput);
+    assert.equal(
+      await store.verify(issued.credential.id, issued.bearer),
+      true,
+      "an exclusive Windows path must still issue and verify",
+    );
+  });
+});
+
+test("refuses a planted credential file a foreign Windows principal can write", async () => {
+  // The root can be exclusive while the file is not — a record planted before
+  // the directory was ever restricted keeps its own inherited DACL. This is the
+  // attack in its most direct form: a valid-looking record whose bearerHash the
+  // attacker chose, sitting where the store will read it.
+  const exclusive = {
+    self: "S-1-5-21-11-22-33-1001",
+    owner: "S-1-5-21-11-22-33-1001",
+    protected: true,
+    repaired: false,
+    removed: [],
+    aces: [{ sid: "S-1-5-21-11-22-33-1001", type: "Allow" }],
+  };
+
+  await withCredentialRoot(async (root) => {
+    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        credentials: [{
+          id: "planted",
+          appName: "Attacker",
+          installationId: "planted-installation",
+          scopes: ["chat:read"],
+          bearerHash: "a".repeat(64),
+          createdAt: 1,
+          lastUsedAt: null,
+          revokedAt: null,
+          revocationReason: null,
+        }],
+      }),
+    );
+
+    const store = createCredentialStore({
+      root,
+      ownership: {
+        platform: "win32" as const,
+        getuid: null,
+        warn: () => {},
+        // Only the file is shared; the root passes, so nothing but the file
+        // check can produce this refusal.
+        probeWindowsAcl: async (probed: string) => ({
+          ...exclusive,
+          aces: probed === path
+            ? [...exclusive.aces, { sid: "S-1-5-32-545", type: "Allow" }]
+            : exclusive.aces,
+        }),
+      },
+    });
+
+    await assert.rejects(
+      store.reload(),
+      /Client v1 credential store file is not exclusive to the current user/,
+    );
+    await assert.rejects(
+      store.findByBearer("anything"),
+      /Client v1 credential store file is not exclusive to the current user/,
+    );
+  });
+});

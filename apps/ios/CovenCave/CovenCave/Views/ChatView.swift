@@ -2136,7 +2136,20 @@ struct ChatView: View {
         // removal, on the refusal, and again on a rollback that lands after the
         // request. Touching again here only re-wrote the threads file a second
         // time for the same change.
-        thread.deleteMessage(message.id, client: app.client) { app.touch(thread) }
+        // The names are only read if a group delete lands in some of its
+        // familiars' sessions and not others: that report names the chats the
+        // message survived in, and it is read by a person, so it says "Nyx"
+        // rather than the familiar id the thread stores.
+        // `uniquingKeysWith:` rather than `uniqueKeysWithValues:` — the latter
+        // traps on a repeated key, and a duplicated familiar id in a thread
+        // must not turn a swipe into a crash.
+        let familiarNames = Dictionary(
+            thread.familiarIds.compactMap { id in
+                app.familiar(id).map { (id, $0.displayName) }
+            },
+            uniquingKeysWith: { first, _ in first })
+        thread.deleteMessage(message.id, client: app.client,
+                             familiarNames: familiarNames) { app.touch(thread) }
     }
 
     private func openReader(text: String, familiar: Familiar?) {

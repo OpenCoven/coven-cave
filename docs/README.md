@@ -28,6 +28,10 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`performance-budgets.md`](performance-budgets.md) — the single catalogue of approved production performance budgets: which gate enforces each, why a missing measurement fails closed, and how a limit is seeded and re-seeded
 - [`workflows/`](workflows) — branching, release, and PR mechanics
 
+### Public APIs
+
+- [`api/client-v1.md`](api/client-v1.md) — the Client v1 HTTP surface: the shared envelope, the loopback ingress rules, the pairing handshake, the administrator routes, the rate limits, and the routes that do not exist yet
+
 ### Platform and runtime
 
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
@@ -119,6 +123,7 @@ Point-in-time records. Read for intent, not for current behavior.
 
 ## Other trees under `docs/`
 
+- [`api/`](api) — reference documentation for versioned public HTTP surfaces, listed individually under **Living** above
 - [`superpowers/`](superpowers) — the approved spec and plan store beads cite (142 files)
 - [`specs/`](specs) — **frozen** (55 files). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: beads cite these by path, including one open unit. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
 - [`plans/`](plans), [`audits/`](audits) — small point-in-time sets predating the `superpowers/` store

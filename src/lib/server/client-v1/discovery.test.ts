@@ -226,6 +226,67 @@ test("removes only a matching current nonce and preserves replaced records", asy
   });
 });
 
+test("refuses to publish or remove a discovery record a foreign Windows principal can write", async () => {
+  // `process.getuid` is undefined on win32 and `lstat` reports uid 0 there, so
+  // the ownership guard used to pass unconditionally on the platform this
+  // repository develops on. Injecting the platform keeps that branch under test
+  // on the POSIX runners, where it is otherwise unreachable.
+  const exclusive = {
+    self: "S-1-5-21-11-22-33-1001",
+    owner: "S-1-5-21-11-22-33-1001",
+    protected: true,
+    repaired: false,
+    removed: [],
+    aces: [{ sid: "S-1-5-21-11-22-33-1001", type: "Allow" }],
+  };
+  const windows = (aces: { sid: string; type: string }[]) => ({
+    platform: "win32" as const,
+    getuid: null,
+    warn: () => {},
+    probeWindowsAcl: async () => ({ ...exclusive, aces }),
+  });
+  const shared = [{ sid: "S-1-5-21-11-22-33-1001", type: "Allow" }, {
+    sid: "S-1-5-32-545",
+    type: "Allow",
+  }];
+
+  await withOwnedRoot(async (root) => {
+    await assert.rejects(
+      publishClientV1DiscoveryRecord(record(), { root, ownership: windows(shared) }),
+      /Client v1 discovery root is not exclusive to the current user/,
+    );
+    await assert.rejects(readFile(clientV1DiscoveryPath(root)), { code: "ENOENT" });
+  });
+
+  await withOwnedRoot(async (root) => {
+    await publishClientV1DiscoveryRecord(record(), {
+      root,
+      ownership: windows(exclusive.aces),
+    });
+    assert.deepEqual(
+      JSON.parse(await readFile(clientV1DiscoveryPath(root), "utf8")),
+      record(),
+      "an exclusive Windows path must still publish",
+    );
+
+    // The root is already a verified path by now, so removal trips on the
+    // target instead — the module caches only successes, and only per path.
+    await assert.rejects(
+      removeClientV1DiscoveryRecord({
+        nonce: "discovery-nonce-1",
+        root,
+        ownership: windows(shared),
+      }),
+      /Client v1 discovery target is not exclusive to the current user/,
+    );
+    assert.deepEqual(
+      JSON.parse(await readFile(clientV1DiscoveryPath(root), "utf8")),
+      record(),
+      "a refused removal must leave the record in place",
+    );
+  });
+});
+
 test("server lifecycle publishes only from listener readiness and performs nonce-safe shutdown cleanup", async () => {
   const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
   const listen = source.indexOf("server.listen(port, hostname");
@@ -248,4 +309,83 @@ test("server lifecycle publishes only from listener readiness and performs nonce
   );
   assert.match(source, /process\.once\("SIGINT"/);
   assert.match(source, /process\.once\("SIGTERM"/);
+
+  // The cleanup runs first inside the signal handler, so an ownership refusal
+  // there would escape it and kill the process before PTY children are
+  // terminated and the listener is closed — leaving behind the record this is
+  // supposed to remove. The guard could not throw on win32 until it learned to
+  // read a DACL; the cleanup must absorb it.
+  const cleanup =
+    /function cleanupStandaloneClientV1Discovery\(\): void \{[\s\S]*?\n\}/.exec(source);
+  assert.ok(cleanup, "server.ts must define cleanupStandaloneClientV1Discovery");
+  assert.match(
+    cleanup![0],
+    /try \{\s*removeStandaloneClientV1DiscoveryRecord\(CLIENT_V1_DISCOVERY_NONCE\);\s*\} catch/,
+    "an ownership refusal must skip the unlink, never abort shutdown",
+  );
+  const shutdown = /function shutdownHttpServer\(\): void \{[\s\S]*?\n\}/.exec(source);
+  assert.ok(shutdown, "server.ts must define shutdownHttpServer");
+  assert.ok(
+    shutdown![0].indexOf("cleanupStandaloneClientV1Discovery()")
+      < shutdown![0].indexOf("terminatePtySessions()"),
+    "cleanup runs before PTY teardown, which is why it must not be able to throw",
+  );
+});
+
+test("the standalone server enforces ownership on Windows with this module's script", async () => {
+  const source = await readFile(resolve(process.cwd(), "server.ts"), "utf8");
+
+  // `--bundle=false` keeps server.mjs from importing path-ownership.ts, so the
+  // guard is inlined; these assertions are what stops the copy rotting back
+  // into the version that passed unconditionally on win32.
+  assert.doesNotMatch(
+    source,
+    /typeof process\.getuid === "function" && metadata\.uid !== process\.getuid\(\)/,
+    "the standalone owner guard must not short-circuit on a platform without getuid",
+  );
+  assert.match(
+    source,
+    /if \(process\.platform !== "win32"\) \{[\s\S]{0,240}?ownership cannot be verified on/,
+    "a platform with neither a uid nor a Windows ACL must be refused, not admitted",
+  );
+  assert.match(source, /assertStandaloneWindowsExclusive\(path, label\)/);
+
+  const moduleSource = await readFile(
+    resolve(process.cwd(), "src/lib/server/client-v1/path-ownership.ts"),
+    "utf8",
+  );
+
+  // Compare every part of the copy that can drift, not just the PowerShell.
+  // The script text alone leaves three holes, each of which silently disarms
+  // the standalone server while this test stays green: the trusted-SID
+  // constants (the script names them by IDENTIFIER, so changing a value in one
+  // file only is invisible to a text compare), the JS-side verification that
+  // turns the report into a refusal, and the ACE filter inside it.
+  const region = (text: string, what: string, pattern: RegExp): string => {
+    const match = pattern.exec(text);
+    assert.ok(match, `${what} must define ${pattern.source.slice(0, 40)}…`);
+    return (match![1] ?? match![0])!;
+  };
+  const parts: [string, RegExp][] = [
+    ["the inlined ACL script", /const WINDOWS_ACL_SCRIPT = `([\s\S]*?)`;/],
+    ["the trusted SYSTEM SID", /const WINDOWS_SYSTEM_SID = "([^"]+)";/],
+    ["the trusted Administrators SID", /const WINDOWS_ADMINISTRATORS_SID = "([^"]+)";/],
+    ["the trusted-principal set", /const trusted = new Set\(\[[^\]]*\]\);/],
+    [
+      "the exclusivity findings",
+      /if \(report\.owner !== report\.self\) \{[\s\S]*?if \(foreign\.length > 0\) \{[\s\S]*?\n {2}\}/,
+    ],
+  ];
+  for (const [what, pattern] of parts) {
+    assert.equal(
+      region(source, "server.ts", pattern),
+      region(moduleSource, "path-ownership.ts", pattern),
+      `${what} must stay identical to the module server.mjs cannot import`,
+    );
+  }
+  assert.match(
+    source,
+    /if \(findings\.length > 0\) \{\s*throw new Error\(/,
+    "the standalone server must refuse on any finding, not merely collect them",
+  );
 });

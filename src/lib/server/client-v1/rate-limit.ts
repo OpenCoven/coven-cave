@@ -25,15 +25,21 @@ export interface ClientV1RateLimiter {
    * any other pairing. Only a *wrong* secret is ever charged: a correct secret
    * — including the repeated polls a client makes while its request is still
    * pending — costs nothing, so legitimate polling is never rate limited.
+   *
+   * One bucket covers *every* route that compares a pairing secret, which
+   * today is the exchange POST and the pairing-request GET. The name records
+   * where the budget was introduced, not who may spend it: a second bucket per
+   * comparison site would meter each route while bounding neither, since the
+   * cheapest attack is simply to exhaust one oracle and then use the other.
    */
   consumePairingExchangeFailure(pairingRequestId: string): ClientV1RateLimitResult;
   /**
    * Read the failure budget for one pairing request without charging it.
    *
-   * The exchange route has to know whether the budget is already exhausted
-   * *before* it compares secrets, or the limit would bound nothing. Reading
-   * never creates an entry, so probing unknown ids cannot evict the entries
-   * that are bounding a real brute-force attempt.
+   * A route has to know whether the budget is already exhausted *before* it
+   * compares secrets, or the limit would bound nothing. Reading never creates
+   * an entry, so probing unknown ids cannot evict the entries that are
+   * bounding a real brute-force attempt.
    */
   peekPairingExchangeFailure(pairingRequestId: string): ClientV1RateLimitResult;
 }

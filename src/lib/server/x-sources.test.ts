@@ -562,6 +562,32 @@ test("expired cache entries are never returned and are swept from disk", async (
   assert.deepEqual(await readdir(cacheDir), []);
 });
 
+// cave-1tu16 follow-up: instrumentation.ts now sweeps on EVERY server boot, so
+// "there is no cache at all" is the case that actually runs on almost every
+// launch — any install that has never connected an X account. It has to cost
+// nothing and leave nothing behind, and taking the cache lock first failed
+// both: acquireProcessIntentLock mkdirs its intents directory and probes this
+// process's start identity to get there (a PowerShell Get-CimInstance spawn on
+// Windows), so every boot created <cacheDir>.locks/ inside the user's cave home
+// and paid ~600ms only to discover there was nothing to sweep.
+test("sweeping with no cache directory creates nothing and takes no lock", async () => {
+  const locksDir = `${cacheDir}.locks`;
+  await rm(locksDir, { recursive: true, force: true });
+
+  assert.equal(await sweepExpiredXCache(), 0);
+
+  await assert.rejects(
+    () => readdir(cacheDir),
+    /ENOENT/,
+    "a sweep must not create the cache directory it found missing",
+  );
+  await assert.rejects(
+    () => readdir(locksDir),
+    /ENOENT/,
+    "a sweep with nothing to sweep must not take the cache lock",
+  );
+});
+
 test("malformed source and cache files are preserved aside before recovery", async () => {
   await mkdir(sourcesDir, { recursive: true });
   await mkdir(cacheDir, { recursive: true });
