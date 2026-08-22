@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 
@@ -417,6 +417,138 @@ test("a malformed store is quarantined rather than read or deleted", async () =>
     .filter((name) => name.startsWith(`${FAMILIAR}.json.corrupt-`));
   assert.equal(aside.length, 1, "the unreadable file is kept for inspection");
   assert.equal(await readFile(path.join(publicationsDir, aside[0]!), "utf8"), "{ this is not json");
+});
+
+test("two overlapping publishes of one draft send exactly once", async () => {
+  const { publication, confirmationToken } = await draft("Exactly once, under contention.");
+  const sent: string[] = [];
+  const dependencies = {
+    // Held open so both calls are genuinely in flight together: the loser must
+    // be stopped by the record's own state, not by arriving after the winner
+    // finished. The send deliberately runs outside the store's lock, so this
+    // is the window in which a second caller could slip through.
+    send: async (text: string) => {
+      sent.push(text);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return { id: POST_ID };
+    },
+    accountUsername: () => "novaops",
+  };
+
+  const attempt = () => publishXPublication(
+    { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken },
+    dependencies,
+  );
+  const results = await Promise.allSettled([attempt(), attempt()]);
+
+  assert.deepEqual(sent, ["Exactly once, under contention."], "one post, not two");
+  const refused = results.filter((result) => result.status === "rejected");
+  assert.equal(refused.length, 1, "the second caller is refused rather than served a second send");
+  const reason = (refused[0] as PromiseRejectedResult).reason as unknown;
+  assert.ok(
+    reason instanceof XApiError && reason.code === "ambiguous-write",
+    "and refused as ambiguous, because the first attempt's outcome is not yet known",
+  );
+  assert.equal((await statusOf(publication.id))?.status, "published");
+});
+
+test("a same-length or multi-byte token is refused, never crashed", async () => {
+  const { publication, confirmationToken } = await draft("Forge me.");
+  const sent: string[] = [];
+  const forged = `${confirmationToken[0] === "0" ? "1" : "0"}${confirmationToken.slice(1)}`;
+  assert.equal(forged.length, confirmationToken.length);
+  assert.notEqual(forged, confirmationToken);
+  // 64 characters but 128 bytes: `timingSafeEqual` throws on a byte-length
+  // mismatch, so a string-length pre-check would turn a refusal into a 500.
+  const multiByte = "é".repeat(confirmationToken.length);
+
+  for (const token of [forged, multiByte]) {
+    await assert.rejects(
+      publishXPublication(
+        { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken: token },
+        recordingSend(sent),
+      ),
+      (error: unknown) => error instanceof XApiError && error.code === "invalid-request",
+    );
+  }
+  assert.deepEqual(sent, []);
+  assert.equal((await statusOf(publication.id))?.status, "draft");
+});
+
+test("an unusable confirmation key is replaced, and every token minted under the old one dies", async () => {
+  const { publication, confirmationToken } = await draft("Keyed to this install.");
+  const keyPath = path.join(publicationsDir, ".confirmation-key");
+  const original = await readFile(keyPath, "utf8");
+  await writeFile(keyPath, "truncated", "utf8");
+
+  const sent: string[] = [];
+  await assert.rejects(
+    publishXPublication(
+      { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken },
+      recordingSend(sent),
+    ),
+    (error: unknown) => error instanceof XApiError && error.code === "invalid-request",
+  );
+  assert.deepEqual(sent, [], "a token that cannot be verified is not honoured");
+
+  const replaced = await readFile(keyPath, "utf8");
+  assert.notEqual(replaced, original);
+  assert.equal(Buffer.from(replaced.trim(), "base64").length, 32, "a real key replaces the wreckage");
+});
+
+test("a usable confirmation key is adopted, not rotated, on every mint", async () => {
+  await draft("First.");
+  const keyPath = path.join(publicationsDir, ".confirmation-key");
+  const key = await readFile(keyPath, "utf8");
+
+  const second = await draft("Second.");
+  assert.equal(await readFile(keyPath, "utf8"), key, "minting never replaces a working key");
+
+  // The proof that matters: a token minted earlier still publishes.
+  const sent: string[] = [];
+  const ok = await publishXPublication(
+    {
+      familiarId: FAMILIAR,
+      publicationId: second.publication.id,
+      confirmationToken: second.confirmationToken,
+    },
+    recordingSend(sent),
+  );
+  assert.equal(ok.publication.status, "published");
+});
+
+test("a stored record contradicting itself is quarantined, not offered for publishing", async () => {
+  const target = path.join(publicationsDir, `${FAMILIAR}.json`);
+  const base = {
+    id: "00000000-0000-4000-8000-000000000000",
+    familiarId: FAMILIAR,
+    text: "Contradiction.",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+  };
+  const contradictions = [
+    // Says a post already exists, yet invites the action that would send it
+    // again — the exact shape that produces a duplicate.
+    { ...base, status: "draft", postId: POST_ID, canonicalUrl: `https://x.com/novaops/status/${POST_ID}`, publishedAt: base.updatedAt },
+    // Claims an unknown outcome with nothing in flight.
+    { ...base, status: "uncertain" },
+    // Claims something is in flight when the record is settled.
+    { ...base, status: "abandoned", dispatchedAt: base.updatedAt },
+  ];
+
+  for (const publication of contradictions) {
+    await mkdir(publicationsDir, { recursive: true });
+    await writeFile(target, JSON.stringify({ version: 1, publications: [publication] }), "utf8");
+    assert.deepEqual(
+      await listXPublications(FAMILIAR),
+      [],
+      `${publication.status} record is not read back`,
+    );
+    const aside = (await readdir(publicationsDir))
+      .filter((name) => name.startsWith(`${FAMILIAR}.json.corrupt-`));
+    assert.equal(aside.length, 1, "the bytes are preserved rather than dropped");
+    for (const name of aside) await rm(path.join(publicationsDir, name));
+  }
 });
 
 test("a stored record claiming published without its post id is rejected wholesale", async () => {

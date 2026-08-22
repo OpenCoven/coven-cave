@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
 import { caveHome } from "../coven-paths.ts";
@@ -35,7 +35,11 @@ export type XPublication = {
   status: XPublicationStatus;
   createdAt: string;
   updatedAt: string;
-  /** When a write was dispatched, whatever came of it. */
+  /**
+   * The in-flight marker: set when a write is dispatched and cleared the
+   * moment the record settles, so it is present exactly while `status` is
+   * `uncertain`.
+   */
   dispatchedAt?: string;
   postId?: string;
   canonicalUrl?: string;
@@ -177,7 +181,21 @@ function parseStoredPublication(value: unknown, familiarId: string): XPublicatio
   }
   // A published record missing the pair it exists to preserve is worse than
   // no record at all: it would read as "this went out" while losing where.
-  if (status === "published" && (!publication.postId || !publication.canonicalUrl)) return null;
+  if (status === "published"
+    && (!publication.postId || !publication.canonicalUrl || !publication.publishedAt)) {
+    return null;
+  }
+  // Only a published record may claim a post exists. A `draft` carrying a post
+  // id is the dangerous contradiction: it says something already went out
+  // while inviting the one action that would send it again.
+  if (status !== "published"
+    && (publication.postId !== undefined
+      || publication.canonicalUrl !== undefined
+      || publication.publishedAt !== undefined)) {
+    return null;
+  }
+  // The in-flight marker is present exactly while the outcome is unknown.
+  if ((publication.dispatchedAt !== undefined) !== (status === "uncertain")) return null;
   return publication;
 }
 
@@ -226,6 +244,34 @@ async function savePublicationsFile(familiarId: string, file: XPublicationsFile)
   await writeJsonAtomic(publicationsPath(familiarId), file);
 }
 
+type StoredConfirmationKey =
+  | { kind: "ok"; key: Buffer }
+  | { kind: "missing" }
+  | { kind: "unusable" };
+
+async function readConfirmationKey(target: string): Promise<StoredConfirmationKey> {
+  let stored: string;
+  try {
+    stored = await readFile(/* turbopackIgnore: true */ target, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
+    throw error;
+  }
+  const key = Buffer.from(stored.trim(), "base64");
+  return key.length === CONFIRMATION_KEY_BYTES ? { kind: "ok", key } : { kind: "unusable" };
+}
+
+async function writeConfirmationKey(target: string, exclusive: boolean): Promise<Buffer> {
+  const key = randomBytes(CONFIRMATION_KEY_BYTES);
+  const handle = await open(/* turbopackIgnore: true */ target, exclusive ? "wx" : "w", 0o600);
+  try {
+    await handle.writeFile(key.toString("base64"));
+  } finally {
+    await handle.close();
+  }
+  return key;
+}
+
 /**
  * Per-install key backing the confirmation token.
  *
@@ -244,16 +290,26 @@ async function confirmationKey(): Promise<Buffer> {
   await ensureRealDirectory(publicationsRoot());
   const target = confirmationKeyPath();
   await assertRegularFileOrMissing(target);
-  try {
-    const stored = await readFile(/* turbopackIgnore: true */ target, "utf8");
-    const key = Buffer.from(stored.trim(), "base64");
-    if (key.length === CONFIRMATION_KEY_BYTES) return key;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  const stored = await readConfirmationKey(target);
+  if (stored.kind === "ok") return stored.key;
+
+  if (stored.kind === "missing") {
+    try {
+      // Exclusive create. Two callers reaching a fresh install at once must
+      // not each write their own key: the loser's write would silently
+      // invalidate a token the winner has already handed to a person.
+      return await writeConfirmationKey(target, true);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    const winner = await readConfirmationKey(target);
+    if (winner.kind === "ok") return winner.key;
   }
-  const key = randomBytes(CONFIRMATION_KEY_BYTES);
-  await writeFile(/* turbopackIgnore: true */ target, key.toString("base64"), { mode: 0o600 });
-  return key;
+
+  // The file exists but holds no usable key — truncated, replaced, or written
+  // by something else. Replacing it invalidates every outstanding token, which
+  // is the safe direction: a token that cannot be verified is not honoured.
+  return writeConfirmationKey(target, false);
 }
 
 async function mintConfirmationToken(
@@ -270,8 +326,15 @@ async function mintConfirmationToken(
 }
 
 function tokensMatch(expected: string, provided: unknown): boolean {
-  if (typeof provided !== "string" || provided.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(provided, "utf8"));
+  if (typeof provided !== "string") return false;
+  const expectedBytes = Buffer.from(expected, "utf8");
+  const providedBytes = Buffer.from(provided, "utf8");
+  // Compare BYTE lengths, not string lengths. `timingSafeEqual` throws on a
+  // length mismatch, and one multi-byte character makes a same-`length` string
+  // a different byte length — so a 64-character token of "é" would crash the
+  // comparison instead of failing it, turning a refusal into a 500.
+  if (providedBytes.length !== expectedBytes.length) return false;
+  return timingSafeEqual(expectedBytes, providedBytes);
 }
 
 export type XPublicationDraft = { publication: XPublication; confirmationToken: string };

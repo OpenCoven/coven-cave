@@ -124,9 +124,10 @@ export async function POST(req: Request) {
             confirmationToken: body.confirmationToken,
           },
           {
-            // The preflight sits inside `send` rather than around the whole
-            // call so a capability or token failure never marks the record
-            // dispatched — only the moment a request can actually reach X.
+            // The preflight sits inside `send` so the access token is minted
+            // as late as possible, right before the request goes out. A
+            // capability or token failure here is a definite failure — nothing
+            // reached X — so the store returns the record to `draft`.
             send: (text) =>
               withXWritePreflight(familiarId, WRITE_SCOPES, (accessToken) =>
                 createXPost(accessToken, text)),
@@ -141,15 +142,17 @@ export async function POST(req: Request) {
       }
 
       case "resolve": {
+        // Read the connection once: two calls re-read the credential store and
+        // can disagree, which would pass an explicit `undefined` handle after
+        // the first call said there was one.
+        const username = connectedUsername();
         const publication = await resolveXPublication({
           familiarId,
           publicationId: requireString(body.publicationId, "publicationId"),
           outcome: body.outcome,
           postId: body.postId,
           note: body.note,
-          ...(connectedUsername() === undefined
-            ? {}
-            : { accountUsername: connectedUsername() }),
+          ...(username === undefined ? {} : { accountUsername: username }),
         });
         return NextResponse.json({ ok: true, publication });
       }
