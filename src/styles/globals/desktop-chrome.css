@@ -2055,6 +2055,13 @@ button:active > .edge-rail-chip {
   line-height: 1.45;
 }
 
+.mobile-handoff__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
 .mobile-handoff__url {
   margin: 0;
   padding: var(--space-2) 10px;

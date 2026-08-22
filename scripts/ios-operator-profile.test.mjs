@@ -44,16 +44,16 @@ assert.match(model, /var operatorProfile: OperatorProfile\?/, "AppModel holds th
 assert.match(model, /var operatorDisplayName: String \{ operatorProfile\?\.displayName \?\? "You" \}/, "display-name helper");
 assert.match(model, /func loadOperatorProfile\(\) async/, "load method exists");
 assert.match(model, /if operatorProfile != profile \{ operatorProfile = profile \}/, "assign-on-change (no needless invalidation)");
-// Hydrated on foreground revalidation directly, and on connect / full surface
-// refresh through the concurrent bootstrap (profile beside familiars + theme).
+// Hydrated by the shared supervisor's foreground signal, and on connect / full
+// surface refresh through the concurrent bootstrap (profile beside familiars + theme).
 assert.match(
   model,
-  /func validateConnectionOnForeground\(\) async \{[\s\S]*?await loadOperatorProfile\(\)/,
-  "foreground revalidation reloads the operator profile",
+  /if case \.foreground = trigger[\s\S]*?connectionSupervisorRefreshProfile = true[\s\S]*?if connectionSupervisorRefreshProfile[\s\S]*?await loadOperatorProfile\(\)/,
+  "the supervisor's foreground revalidation reloads the operator profile",
 );
 assert.match(
   model,
-  /if case \.success\(let loadedProfile\) = await profile, operatorProfile != loadedProfile \{\s*\n\s*operatorProfile = loadedProfile/,
+  /if case \.success\(let loadedProfile\) = await profile,[\s\S]{0,160}connectionConfigurationLeaseIsCurrent\(configurationGeneration\),[\s\S]{0,100}operatorProfile != loadedProfile \{\s*\n\s*operatorProfile = loadedProfile/,
   "connect/refresh bootstrap adopts the fetched operator profile",
 );
 

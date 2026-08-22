@@ -3,7 +3,6 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -47,30 +46,6 @@ struct RootView: View {
         .overlay {
             ConnectedMomentOverlay()
         }
-        // Keep the active app connected for long sessions. Unreachable Cave
-        // instances retry every tick; a nominally connected instance gets a
-        // cheap heartbeat once a minute so a same-path desktop restart is
-        // discovered before the user's next send.
-        .task(id: scenePhase) {
-            guard scenePhase == .active else { return }
-            var connectedTicks = 0
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(10))
-                if Task.isCancelled { return }
-                switch app.connectionState {
-                case .connected:
-                    connectedTicks += 1
-                    guard connectedTicks >= 6 else { continue }
-                    connectedTicks = 0
-                    await app.maintainConnectionWhileActive()
-                case .unreachable where app.hasLoadedSurfaces:
-                    connectedTicks = 0
-                    await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
-                default:
-                    connectedTicks = 0
-                }
-            }
-        }
         .background(chrome.bgBase.ignoresSafeArea())
         .foregroundStyle(chrome.textPrimary)
         // Frosted, accent-infused navigation bars that track the desktop
@@ -83,7 +58,7 @@ struct RootView: View {
     private var showsReconnectPill: Bool {
         guard app.hasLoadedSurfaces else { return false }
         switch app.connectionState {
-        case .unreachable, .checking: return true
+        case .unreachable, .degraded, .checking: return true
         default: return false
         }
     }

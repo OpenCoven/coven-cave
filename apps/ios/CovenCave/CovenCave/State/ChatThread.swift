@@ -20,6 +20,11 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     var role: Role
     var familiarId: String?
     var text: String
+    /// The exact prompt sent over the wire when the visible user bubble is a
+    /// shortened label (diagram/forward actions). Keeping it separate makes a
+    /// crash-time replay or manual retry semantically identical to the original
+    /// send. nil means `text` is already the wire prompt.
+    var sendPrompt: String?
     var streaming: Bool = false
     var isError: Bool = false
     var createdAt: Date = Date()
@@ -28,6 +33,28 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     /// Composed while the desktop was unreachable; waiting for reconnect.
     /// Optional so messages persisted before offline compose still decode.
     var queued: Bool?
+    /// A queued durability marker can also cover an ordinary online send until
+    /// every fan-out leg settles. This distinguishes that brief in-flight state
+    /// in the UI while making it replay-eligible after suspension or a crash.
+    var queuedDispatchInFlight: Bool?
+    /// Familiar fan-out targets that already produced a definitive result
+    /// while this durable queued turn was replaying. Optional for snapshots
+    /// written before acknowledgement-safe replay shipped.
+    var queuedCompletedFamiliarIds: [String]?
+    /// Stable client delivery identity per familiar. A replay persists this
+    /// before POSTing, then resumes or reconciles the exact server run after a
+    /// suspension instead of comparing prompt text (two intentional "hello"
+    /// turns are distinct deliveries). Optional for older snapshots.
+    var queuedRunIdsByFamiliarId: [String: String]?
+    /// Targets whose stable run id was durably marked as dispatched. If Cave
+    /// dies after that marker but before the response is saved, replay must
+    /// resume/reconcile the id and never issue a second POST automatically.
+    var queuedAttemptedFamiliarIds: [String]?
+    /// Immutable fan-out captured when the user composed the turn. Membership
+    /// of a group can change while the phone is offline; replaying against the
+    /// live thread membership would skip an original target or send to a new
+    /// one the user never selected. Optional for pre-migration snapshots.
+    var queuedTargetFamiliarIds: [String]?
     /// Per-send response controls. Optional so snapshots written before the
     /// controls shipped remain decodable and replay with current defaults.
     var reasoningEffort: ChatThinkingEffort?
@@ -64,6 +91,7 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     var activity: [ActivityStep]?
 
     var isQueued: Bool { queued == true }
+    var isQueuedDispatchInFlight: Bool { queued == true && queuedDispatchInFlight == true }
     var activitySteps: [ActivityStep] { activity ?? [] }
 }
 
@@ -148,6 +176,7 @@ extension DisplayMessage {
             role: message.role,
             familiarId: message.familiarId,
             text: message.text,
+            sendPrompt: message.sendPrompt,
             isError: message.isError,
             attachmentDataUrls: message.attachmentDataUrls,
             reasoningEffort: message.reasoningEffort,
@@ -179,6 +208,13 @@ enum ChatSendOutcome: Equatable {
     case failed
     case cancelled
     case noAcknowledgement
+
+    /// Only explicit terminal outcomes advance one durable group fan-out leg.
+    /// A stopped placeholder is not proof: cancellation and exact-transcript
+    /// recovery failure also stop rendering while their run remains unsettled.
+    var completesQueuedFanOutLeg: Bool {
+        self == .acknowledged || self == .failed
+    }
 }
 
 struct ChatSendResult: Equatable {
@@ -321,6 +357,11 @@ final class ChatThread: Identifiable, Hashable {
               modelOverride: String? = nil,
               modelOverrideScope: ChatModelOverrideScope? = nil,
               onStreamResult: ((ChatSendResult) -> Void)? = nil,
+              onConnectionFailure: ((Error) -> Void)? = nil,
+              liveDispatchLeaseIsCurrent: @escaping () -> Bool,
+              persistBeforeDispatch: @escaping () async -> Bool,
+              persistAfterRollback: @escaping () async -> Bool,
+              onDeliverySettled: (() -> Void)? = nil,
               client: CaveClient, onChange: @escaping () -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // An image with no caption is a valid prompt (the familiar reads it).
@@ -329,10 +370,19 @@ final class ChatThread: Identifiable, Hashable {
         let shown = (displayText?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
             $0.isEmpty ? nil : $0
         } ?? trimmed
+        let deliveryRunIds = familiarIds.reduce(into: [String: String]()) { runIds, familiarId in
+            runIds[familiarId] = UUID().uuidString
+        }
 
         let userMessage = DisplayMessage(
             role: .user, familiarId: nil, text: shown,
+            sendPrompt: shown == trimmed ? nil : trimmed,
             attachmentDataUrls: attachments.map(\.dataUrl),
+            queued: true,
+            queuedDispatchInFlight: true,
+            queuedRunIdsByFamiliarId: deliveryRunIds,
+            queuedAttemptedFamiliarIds: familiarIds,
+            queuedTargetFamiliarIds: familiarIds,
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
@@ -341,21 +391,84 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
         onChange()
 
+        var deliveries: [(familiarId: String, messageId: String, runId: String)] = []
         for familiarId in familiarIds {
+            guard let runId = deliveryRunIds[familiarId],
+                  claimActiveDelivery(
+                      userMessageId: userMessage.id,
+                      familiarId: familiarId,
+                      runId: runId
+                  ) else {
+                continue
+            }
             let placeholder = DisplayMessage(role: .assistant, familiarId: familiarId,
                                              text: "", streaming: true)
             messages.append(placeholder)
-            let messageId = placeholder.id
-            Task { await self.stream(familiarId: familiarId, prompt: trimmed,
-                                     attachments: attachments, into: messageId,
-                                     userMessageId: userMessage.id,
-                                     reasoningEffort: reasoningEffort,
-                                     responseSpeed: responseSpeed,
-                                     modelControls: modelControls,
-                                     modelOverride: modelOverride,
-                                     modelOverrideScope: modelOverrideScope ?? (modelOverride == nil ? nil : .session),
-                                     client: client, onChange: onChange,
-                                     onStreamResult: onStreamResult) }
+            deliveries.append((familiarId, placeholder.id, runId))
+        }
+        onChange()
+
+        // Persist every fan-out id and attempted marker as one checkpoint
+        // before any child request can start. A suspension can therefore
+        // reconcile each exact delivery rather than repeat a prompt.
+        Task {
+            guard await persistBeforeDispatch(),
+                  !Task.isCancelled,
+                  liveDispatchLeaseIsCurrent() else {
+                mutate(userMessage.id) {
+                    $0.queuedDispatchInFlight = false
+                    $0.queuedRunIdsByFamiliarId = nil
+                    $0.queuedAttemptedFamiliarIds = nil
+                }
+                for delivery in deliveries {
+                    mutate(delivery.messageId) {
+                        $0.text = "Cave couldn’t save this delivery before sending. Try again."
+                        $0.isError = true
+                        $0.streaming = false
+                    }
+                    releaseActiveDelivery(
+                        userMessageId: userMessage.id,
+                        familiarId: delivery.familiarId,
+                        runId: delivery.runId
+                    )
+                }
+                updatedAt = Date()
+                // A competing lifecycle flush can supersede the checkpoint
+                // write after snapshotting these attempted markers, making the
+                // await above return false while that newer stale snapshot still
+                // lands. Immediately persist the rollback before yielding the
+                // failure; the ordinary debounced onChange is not a durability
+                // boundary if iOS suspends us in the next instant.
+                onChange()
+                _ = await persistAfterRollback()
+                onDeliverySettled?()
+                return
+            }
+            for delivery in deliveries {
+                Task {
+                    await self.stream(
+                        familiarId: delivery.familiarId,
+                        prompt: trimmed,
+                        attachments: attachments,
+                        into: delivery.messageId,
+                        userMessageId: userMessage.id,
+                        reasoningEffort: reasoningEffort,
+                        responseSpeed: responseSpeed,
+                        modelControls: modelControls,
+                        modelOverride: modelOverride,
+                        modelOverrideScope: modelOverrideScope ?? (modelOverride == nil ? nil : .session),
+                        runId: delivery.runId,
+                        activeDeliveryClaimed: true,
+                        liveDispatchLeaseIsCurrent: liveDispatchLeaseIsCurrent,
+                        persistAfterProvablyUnsentRollback: persistAfterRollback,
+                        client: client,
+                        onChange: onChange,
+                        onStreamResult: onStreamResult,
+                        onConnectionFailure: onConnectionFailure,
+                        onDeliverySettled: onDeliverySettled
+                    )
+                }
+            }
         }
     }
 
@@ -375,6 +488,7 @@ final class ChatThread: Identifiable, Hashable {
         var message = DisplayMessage(
             role: .user, familiarId: nil, text: trimmed,
             attachmentDataUrls: attachments.map(\.dataUrl),
+            queuedTargetFamiliarIds: familiarIds,
             reasoningEffort: reasoningEffort, responseSpeed: responseSpeed,
             modelControls: modelControls.isEmpty ? nil : modelControls,
             modelOverride: modelOverride,
@@ -384,52 +498,249 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
-    /// Send every queued (offline-composed) message through the normal
-    /// fan-out, oldest first, now that the desktop is reachable. Before
-    /// re-sending, ask the server whether the turn already landed — the
-    /// original send may have reached it right as the transport died — and
-    /// adopt the existing reply instead of doubling the turn. Sequential so
-    /// turns land in compose order; a re-drop mid-replay re-queues through
-    /// the stream error path and the next reconnect picks it back up.
-    func replayQueued(client: CaveClient, onChange: @escaping () -> Void) async {
+    /// Send every queued (offline-composed) message through the normal fan-out,
+    /// oldest first, once the desktop is reachable. The queue bit stays durable
+    /// until every familiar has produced either an acknowledgement or a visible
+    /// terminal error. Before the first POST for a target, its stable run id and
+    /// attempted marker are flushed to disk. A restart therefore resumes or
+    /// reconciles that exact id instead of comparing prompt text or sending a
+    /// second POST. Sequential replay preserves compose order; per-familiar
+    /// progress and live ownership protect partial group fan-out.
+    func replayQueued(client: CaveClient,
+                      onConnectionFailure: ((Error) -> Void)? = nil,
+                      dispatchLeaseIsCurrent: @escaping () -> Bool,
+                      persistBeforeDispatch: @escaping () async -> Bool,
+                      persistAfterRollback: @escaping () async -> Bool,
+                      onChange: @escaping () -> Void) async {
         guard !replayingQueued else { return }
         replayingQueued = true
         defer { replayingQueued = false }
         while let queuedMessage = messages.first(where: { $0.isQueued }) {
-            guard requireSendProvenance(to: familiarIds) else { return }
+            guard !Task.isCancelled else { return }
+            let targets = queuedMessage.queuedTargetFamiliarIds
+                ?? queuedMessage.queuedRunIdsByFamiliarId.map { Array($0.keys).sorted() }
+                ?? familiarIds
+            guard requireSendProvenance(to: targets) else { return }
             let queuedId = queuedMessage.id
-            let prompt = queuedMessage.text
+            let prompt = queuedMessage.sendPrompt ?? queuedMessage.text
             let attachments = Self.attachments(fromDataUrls: queuedMessage.attachmentDataUrls)
             let reasoningEffort = queuedMessage.reasoningEffort
             let responseSpeed = queuedMessage.responseSpeed
             let modelControls = queuedMessage.modelControls ?? [:]
-            mutate(queuedId) { $0.queued = false }
-            updatedAt = Date()
-            onChange()
-            for familiarId in familiarIds {
-                if await adoptServerTurnIfPresent(prompt: prompt, familiarId: familiarId,
-                                                  client: client) {
+            var completed = Set(queuedMessage.queuedCompletedFamiliarIds ?? [])
+            for familiarId in targets where !completed.contains(familiarId) {
+                guard !Task.isCancelled else { return }
+                // A sibling from the original concurrent fan-out can still be
+                // streaming when another leg proves offline and queues their
+                // shared user bubble. Never start a second request for it.
+                guard !isActiveDelivery(userMessageId: queuedId, familiarId: familiarId) else {
+                    return
+                }
+                let existingPlaceholder = replayPlaceholder(
+                    after: queuedId,
+                    familiarId: familiarId
+                )
+                // Reconciliation may need to clear a cursor-zero resume target,
+                // but a transient GET failure is not permission to overwrite a
+                // reply already persisted on the phone. Restore this exact value
+                // on retryLater and let the next reconnect try the same run id.
+                let placeholderBeforeReconciliation = existingPlaceholder
+                let placeholder = existingPlaceholder ?? DisplayMessage(
+                    role: .assistant,
+                    familiarId: familiarId,
+                    text: "",
+                    streaming: true
+                )
+                let insertedPlaceholder = existingPlaceholder == nil
+                if insertedPlaceholder {
+                    guard let insertAt = replayInsertionIndex(after: queuedId) else { return }
+                    messages.insert(placeholder, at: insertAt)
+                } else {
+                    // Resume starts at cursor zero, so retaining persisted text
+                    // would append the same buffered prefix a second time.
+                    mutate(placeholder.id) {
+                        $0.serverTurnId = nil
+                        $0.text = ""
+                        $0.isError = false
+                        $0.streaming = true
+                        $0.activity = nil
+                    }
+                }
+
+                let persistedRunId = messages.first(where: { $0.id == queuedId })?
+                    .queuedRunIdsByFamiliarId?[familiarId]
+                var runId = persistedRunId
+                let attempted = messages.first(where: { $0.id == queuedId })?
+                    .queuedAttemptedFamiliarIds?.contains(familiarId) == true
+
+                if let existingRunId = runId, attempted {
+                    let reconciliation = await reconcileQueuedRun(
+                        runId: existingRunId,
+                        familiarId: familiarId,
+                        into: placeholder.id,
+                        userMessageId: queuedId,
+                        client: client,
+                        onChange: onChange
+                    )
+                    guard !Task.isCancelled else {
+                        if insertedPlaceholder {
+                            messages.removeAll { $0.id == placeholder.id }
+                        } else if let placeholderBeforeReconciliation {
+                            mutate(placeholder.id) { $0 = placeholderBeforeReconciliation }
+                        }
+                        onChange()
+                        return
+                    }
+                    switch reconciliation {
+                    case .completed:
+                        break
+                    case .unconfirmed:
+                        mutate(placeholder.id) {
+                            $0.text = "Cave couldn’t confirm the previous delivery. Retry this reply to send it again."
+                            $0.isError = true
+                            $0.streaming = false
+                        }
+                    case .retryLater(let error):
+                        if insertedPlaceholder {
+                            messages.removeAll { $0.id == placeholder.id }
+                        } else if let placeholderBeforeReconciliation {
+                            mutate(placeholder.id) { $0 = placeholderBeforeReconciliation }
+                        } else {
+                            mutate(placeholder.id) { $0.streaming = false }
+                        }
+                        onConnectionFailure?(error)
+                        onChange()
+                        return
+                    }
+                    completed.insert(familiarId)
+                    mutate(queuedId) {
+                        $0.queuedCompletedFamiliarIds = completed.sorted()
+                    }
+                    updatedAt = Date()
                     onChange()
                     continue
                 }
-                let placeholder = DisplayMessage(role: .assistant, familiarId: familiarId,
-                                                 text: "", streaming: true)
-                // Replies slot in before any still-queued later prompts so the
-                // transcript keeps compose order.
-                let insertAt = messages.firstIndex(where: { $0.isQueued }) ?? messages.endIndex
-                messages.insert(placeholder, at: insertAt)
-                await stream(familiarId: familiarId, prompt: prompt,
-                             attachments: attachments, into: placeholder.id,
-                             userMessageId: queuedId,
-                             reasoningEffort: reasoningEffort,
-                             responseSpeed: responseSpeed,
-                             modelControls: modelControls,
-                             modelOverride: queuedMessage.modelOverride,
-                             modelOverrideScope: queuedMessage.modelOverrideScope ?? (queuedMessage.modelOverride == nil ? nil : .session),
-                             client: client, onChange: onChange)
-                // Re-queued mid-replay (offline again) — stop; don't spin.
-                if messages.first(where: { $0.id == queuedId })?.isQueued == true { return }
+
+                if runId == nil { runId = UUID().uuidString }
+                guard let runId else {
+                    messages.removeAll { $0.id == placeholder.id }
+                    return
+                }
+
+                // Persist the stable id and at-most-once boundary in the same
+                // atomic snapshot before network I/O. If that write fails, fail
+                // closed: no request leaves the phone.
+                mutate(queuedId) {
+                    var runIds = $0.queuedRunIdsByFamiliarId ?? [:]
+                    runIds[familiarId] = runId
+                    $0.queuedRunIdsByFamiliarId = runIds
+                    var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
+                    attemptedIds.insert(familiarId)
+                    $0.queuedAttemptedFamiliarIds = attemptedIds.sorted()
+                }
+                updatedAt = Date()
+                onChange()
+                guard await persistBeforeDispatch(),
+                      !Task.isCancelled,
+                      dispatchLeaseIsCurrent() else {
+                    mutate(queuedId) {
+                        var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
+                        attemptedIds.remove(familiarId)
+                        $0.queuedAttemptedFamiliarIds = attemptedIds.isEmpty
+                            ? nil
+                            : attemptedIds.sorted()
+                        if persistedRunId == nil {
+                            var runIds = $0.queuedRunIdsByFamiliarId ?? [:]
+                            runIds.removeValue(forKey: familiarId)
+                            $0.queuedRunIdsByFamiliarId = runIds.isEmpty ? nil : runIds
+                        }
+                    }
+                    mutate(placeholder.id) {
+                        $0.text = "Cave couldn’t save this delivery before sending. It will retry after reconnecting."
+                        $0.isError = true
+                        $0.streaming = false
+                    }
+                    updatedAt = Date()
+                    // The checkpoint may have reached disk before cancellation
+                    // invalidated its endpoint lease. Persist this local rollback
+                    // without that network lease so a process kill cannot revive
+                    // an unsent leg as "attempted" on the next launch.
+                    _ = await persistAfterRollback()
+                    onChange()
+                    return
+                }
+
+                // Cancellation after the checkpoint but before `stream` begins
+                // proves this leg never left the phone. Roll its boundary back so
+                // an endpoint re-pair can safely deliver it to the replacement.
+                guard !Task.isCancelled, dispatchLeaseIsCurrent() else {
+                    mutate(queuedId) {
+                        var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
+                        attemptedIds.remove(familiarId)
+                        $0.queuedAttemptedFamiliarIds = attemptedIds.isEmpty
+                            ? nil
+                            : attemptedIds.sorted()
+                        if persistedRunId == nil {
+                            var runIds = $0.queuedRunIdsByFamiliarId ?? [:]
+                            runIds.removeValue(forKey: familiarId)
+                            $0.queuedRunIdsByFamiliarId = runIds.isEmpty ? nil : runIds
+                        }
+                    }
+                    if insertedPlaceholder {
+                        messages.removeAll { $0.id == placeholder.id }
+                    } else if let placeholderBeforeReconciliation {
+                        mutate(placeholder.id) { $0 = placeholderBeforeReconciliation }
+                    }
+                    updatedAt = Date()
+                    // Network ownership is gone, but the proven-pre-POST rollback
+                    // still owns local durability. Its save must not be fenced by
+                    // the superseded endpoint/flush id.
+                    _ = await persistAfterRollback()
+                    onChange()
+                    return
+                }
+
+                let streamOutcome = await stream(
+                    familiarId: familiarId,
+                    prompt: prompt,
+                    attachments: attachments,
+                    into: placeholder.id,
+                    userMessageId: queuedId,
+                    reasoningEffort: reasoningEffort,
+                    responseSpeed: responseSpeed,
+                    modelControls: modelControls,
+                    modelOverride: queuedMessage.modelOverride,
+                    modelOverrideScope: queuedMessage.modelOverrideScope ?? (queuedMessage.modelOverride == nil ? nil : .session),
+                    runId: runId,
+                    liveDispatchLeaseIsCurrent: dispatchLeaseIsCurrent,
+                    persistAfterProvablyUnsentRollback: persistAfterRollback,
+                    client: client,
+                    onChange: onChange,
+                    onConnectionFailure: onConnectionFailure
+                )
+                // A provably-unsent reconnect failure removes its placeholder
+                // and leaves the durable queue bit set. Stop without spinning;
+                // the next supervisor success resumes this familiar only.
+                guard streamOutcome.completesQueuedFanOutLeg,
+                      let settled = messages.first(where: { $0.id == placeholder.id }),
+                      !settled.streaming else { return }
+                completed.insert(familiarId)
+                mutate(queuedId) {
+                    $0.queuedCompletedFamiliarIds = completed.sorted()
+                }
+                updatedAt = Date()
+                onChange()
             }
+            mutate(queuedId) {
+                $0.queued = false
+                $0.queuedDispatchInFlight = nil
+                $0.queuedCompletedFamiliarIds = nil
+                $0.queuedRunIdsByFamiliarId = nil
+                $0.queuedAttemptedFamiliarIds = nil
+                $0.queuedTargetFamiliarIds = nil
+            }
+            updatedAt = Date()
+            onChange()
         }
     }
 
@@ -715,12 +1026,14 @@ final class ChatThread: Identifiable, Hashable {
     /// reply on screen stayed. Nil is the honest state: the server has never
     /// named THIS reply to us, so a delete goes through the transcript matcher
     /// like any other unnamed message.
-    func retry(_ messageId: String, client: CaveClient, onChange: @escaping () -> Void) {
+    func retry(_ messageId: String, client: CaveClient,
+               onConnectionFailure: ((Error) -> Void)? = nil,
+               onChange: @escaping () -> Void) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }),
               messages[idx].role == .assistant,
               let familiarId = messages[idx].familiarId else { return }
         let source = messages[..<idx].last(where: { $0.role == .user })
-        let prompt = source?.text ?? ""
+        let prompt = source?.sendPrompt ?? source?.text ?? ""
         let retryModel = source?.retryModel(for: familiarId)
         let modelBinding = ChatModelTurnBinding.resolveRetry(
             retryModel: retryModel,
@@ -741,7 +1054,8 @@ final class ChatThread: Identifiable, Hashable {
                                  modelControls: source?.modelControls ?? [:],
                                  modelOverride: modelBinding.modelOverride,
                                  modelOverrideScope: modelBinding.scope,
-                                 client: client, onChange: onChange) }
+                                 client: client, onChange: onChange,
+                                 onConnectionFailure: onConnectionFailure) }
     }
 
     /// Append an inline system note (slash-command output) and return its id so
@@ -784,6 +1098,78 @@ final class ChatThread: Identifiable, Hashable {
     }
 
     private var replayingQueued = false
+    /// In-memory ownership for every live familiar leg of a user turn. Normal
+    /// group fan-out claims all targets synchronously before spawning tasks, so
+    /// one fast offline failure cannot make queued replay duplicate a sibling
+    /// task that has not started executing yet. This is intentionally not
+    /// persisted: after hydration, stable run ids reconcile any interrupted leg.
+    @ObservationIgnored private var activeDeliveries: [String: [String: String]] = [:]
+
+    private func claimActiveDelivery(userMessageId: String, familiarId: String,
+                                     runId: String) -> Bool {
+        var familiars = activeDeliveries[userMessageId] ?? [:]
+        guard familiars[familiarId] == nil else { return false }
+        familiars[familiarId] = runId
+        activeDeliveries[userMessageId] = familiars
+        return true
+    }
+
+    private func releaseActiveDelivery(userMessageId: String, familiarId: String,
+                                       runId: String) {
+        guard var familiars = activeDeliveries[userMessageId] else { return }
+        // A stale task must not release a newer retry that owns the same leg.
+        guard familiars[familiarId] == runId else { return }
+        familiars.removeValue(forKey: familiarId)
+        if familiars.isEmpty {
+            activeDeliveries.removeValue(forKey: userMessageId)
+        } else {
+            activeDeliveries[userMessageId] = familiars
+        }
+    }
+
+    private func isActiveDelivery(userMessageId: String, familiarId: String) -> Bool {
+        activeDeliveries[userMessageId]?[familiarId] != nil
+    }
+
+    private func ownsActiveDelivery(userMessageId: String, familiarId: String,
+                                    runId: String) -> Bool {
+        activeDeliveries[userMessageId]?[familiarId] == runId
+    }
+
+    /// Revoke one live fan-out leg that was checkpointed but never reached the
+    /// network. The matching run id is part of the guard: an obsolete child
+    /// task must never erase a newer retry for the same familiar. Sibling
+    /// delivery markers and completions remain intact for exact reconciliation.
+    @discardableResult
+    func rollbackLiveDeliveryBeforeDispatch(
+        userMessageId: String,
+        familiarId: String,
+        messageId: String,
+        runId: String
+    ) -> Bool {
+        guard let userMessage = messages.first(where: { $0.id == userMessageId }),
+              userMessage.queuedRunIdsByFamiliarId?[familiarId] == runId,
+              userMessage.queuedAttemptedFamiliarIds?.contains(familiarId) == true
+        else { return false }
+
+        messages.removeAll { $0.id == messageId }
+        mutate(userMessageId) {
+            $0.queued = true
+            $0.queuedDispatchInFlight = false
+            var runIds = $0.queuedRunIdsByFamiliarId ?? [:]
+            if runIds[familiarId] == runId {
+                runIds.removeValue(forKey: familiarId)
+            }
+            $0.queuedRunIdsByFamiliarId = runIds.isEmpty ? nil : runIds
+            var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
+            attemptedIds.remove(familiarId)
+            $0.queuedAttemptedFamiliarIds = attemptedIds.isEmpty
+                ? nil
+                : attemptedIds.sorted()
+        }
+        updatedAt = Date()
+        return true
+    }
 
     var canChangeProject: Bool {
         !sessionIds.values.contains {
@@ -884,6 +1270,7 @@ final class ChatThread: Identifiable, Hashable {
         rowPositionByMessageID = rowPositions
     }
 
+    @discardableResult
     private func stream(familiarId: String, prompt: String,
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
                         userMessageId: String? = nil,
@@ -892,12 +1279,70 @@ final class ChatThread: Identifiable, Hashable {
                         modelControls: [String: String] = [:],
                         modelOverride: String? = nil,
                         modelOverrideScope: ChatModelOverrideScope? = nil,
+                        runId suppliedRunId: String? = nil,
+                        activeDeliveryClaimed: Bool = false,
+                        liveDispatchLeaseIsCurrent: (() -> Bool)? = nil,
+                        persistAfterProvablyUnsentRollback: (() async -> Bool)? = nil,
                         client: CaveClient, onChange: @escaping () -> Void,
-                        onStreamResult: ((ChatSendResult) -> Void)? = nil) async {
+                        onStreamResult: ((ChatSendResult) -> Void)? = nil,
+                        onConnectionFailure: ((Error) -> Void)? = nil,
+                        onDeliverySettled: (() -> Void)? = nil) async -> ChatSendOutcome {
         // Per-send token: the server keys its resumable run buffer under this
         // (cave-h40l), so even a brand-new chat (no sessionId yet) can
-        // re-attach mid-turn after a transport drop.
-        let runId = UUID().uuidString
+        // re-attach mid-turn after a transport drop. Queued replay supplies a
+        // durably persisted token; ordinary sends mint one here.
+        let runId = suppliedRunId ?? UUID().uuidString
+        var ownsActiveDelivery = false
+        if let userMessageId {
+            if activeDeliveryClaimed {
+                guard self.ownsActiveDelivery(
+                    userMessageId: userMessageId,
+                    familiarId: familiarId,
+                    runId: runId
+                ) else { return .noAcknowledgement }
+                ownsActiveDelivery = true
+            } else {
+                guard claimActiveDelivery(
+                    userMessageId: userMessageId,
+                    familiarId: familiarId,
+                    runId: runId
+                ) else { return .noAcknowledgement }
+                ownsActiveDelivery = true
+            }
+        }
+        defer {
+            if ownsActiveDelivery, let userMessageId {
+                releaseActiveDelivery(
+                    userMessageId: userMessageId,
+                    familiarId: familiarId,
+                    runId: runId
+                )
+            }
+            onDeliverySettled?()
+        }
+
+        guard !Task.isCancelled else { return .cancelled }
+
+        // A live send can suspend while its durability checkpoint reaches disk.
+        // Re-pairing or disconnecting during that await revokes the captured
+        // endpoint. Check again inside every fan-out child, immediately before
+        // request construction/network setup, so a late-scheduled sibling
+        // cannot POST through the old CaveClient. This rollback is one leg only.
+        if let liveDispatchLeaseIsCurrent, !liveDispatchLeaseIsCurrent() {
+            guard let userMessageId,
+                  rollbackLiveDeliveryBeforeDispatch(
+                      userMessageId: userMessageId,
+                      familiarId: familiarId,
+                      messageId: messageId,
+                      runId: runId
+                  ) else { return .cancelled }
+            onChange()
+            if let persistAfterProvablyUnsentRollback {
+                _ = await persistAfterProvablyUnsentRollback()
+            }
+            return .queued
+        }
+
         guard let body = makeSendBody(
             familiarId: familiarId,
             prompt: prompt,
@@ -908,9 +1353,19 @@ final class ChatThread: Identifiable, Hashable {
             modelControls: modelControls,
             modelOverride: modelOverride,
             modelOverrideScope: modelOverrideScope
-        ) else { return }
-        ChatTurnNotifier.shared.turnStarted(thread: self, familiarId: familiarId,
-                                            messageId: messageId)
+        ) else {
+            mutate(messageId) {
+                $0.text = "Cave couldn’t start this delivery. It will retry when its chat context is available."
+                $0.isError = true
+                $0.streaming = false
+            }
+            if let userMessageId {
+                mutate(userMessageId) { $0.queuedDispatchInFlight = false }
+            }
+            updatedAt = Date()
+            onChange()
+            return .noAcknowledgement
+        }
         var receivedAnyEvent = false
         // Resume cursor: the last applied frame's SSE id (run-buffer seq).
         var cursor = 0
@@ -918,13 +1373,28 @@ final class ChatThread: Identifiable, Hashable {
         var outcome = ChatSendOutcome.noAcknowledgement
         let coalescer = StreamCoalescer()
         do {
-            for try await frame in client.sendStream(body) {
+            for try await frame in client.sendStream(
+                body,
+                preflight: { liveDispatchLeaseIsCurrent?() ?? true },
+                onRequestStarted: {
+                    ChatTurnNotifier.shared.turnStarted(
+                        thread: self,
+                        familiarId: familiarId,
+                        messageId: messageId
+                    )
+                }
+            ) {
                 receivedAnyEvent = true
                 apply(frame.event, into: messageId, familiarId: familiarId,
                       userMessageId: userMessageId,
                       sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                 if let id = frame.id { cursor = id }
             }
+            // A complete chat stream always carries `.done`. URLSession can
+            // otherwise report a graceful EOF when a proxy/backend disappears,
+            // which used to turn a truncated partial answer into an
+            // acknowledged success and leave AppModel falsely connected.
+            guard sawDone else { throw URLError(.networkConnectionLost) }
             flush(coalescer, into: messageId, onChange: onChange)
             mutate(messageId) {
                 $0.streaming = false
@@ -946,33 +1416,120 @@ final class ChatThread: Identifiable, Hashable {
             // ago / server restarted) fall back to adopting the persisted
             // transcript.
             flush(coalescer, into: messageId, onChange: onChange)
-            let serverError = error as? CaveError
-            var recovered = false
-            if serverError?.isDefinitiveServerResponse != true {
-                recovered = await resumeInterruptedStream(
-                    runId: runId,
-                    cursor: cursor,
-                    into: messageId,
+            if error is CaveClient.SendPreflightRevoked {
+                guard let userMessageId,
+                      rollbackLiveDeliveryBeforeDispatch(
+                          userMessageId: userMessageId,
+                          familiarId: familiarId,
+                          messageId: messageId,
+                          runId: runId
+                      ) else { return .cancelled }
+                onChange()
+                if let persistAfterProvablyUnsentRollback {
+                    _ = await persistAfterProvablyUnsentRollback()
+                }
+                let result = ChatSendResult(
                     familiarId: familiarId,
                     userMessageId: userMessageId,
-                    sawDone: &sawDone,
-                    coalescer: coalescer,
-                    client: client,
-                    onChange: onChange
+                    assistantMessageId: messageId,
+                    outcome: .queued
                 )
-                if !recovered {
-                    recovered = await resyncInterruptedTurn(
+                onStreamResult?(result)
+                return .queued
+            }
+            if error is CancellationError || Task.isCancelled {
+                mutate(messageId) { $0.streaming = false }
+                outcome = .cancelled
+                updatedAt = Date()
+                onChange()
+                ChatTurnNotifier.shared.turnFinished(thread: self, messageId: messageId)
+                onStreamResult?(
+                    ChatSendResult(
                         familiarId: familiarId,
-                        prompt: prompt,
-                        into: messageId,
                         userMessageId: userMessageId,
-                        client: client
+                        assistantMessageId: messageId,
+                        outcome: outcome
                     )
+                )
+                return outcome
+            }
+            let serverError = error as? CaveError
+            // These connect-level errors plus zero response frames prove that
+            // the POST never reached Cave. Later recovery GETs can fail for the
+            // same offline reason, but that cannot erase the stronger original
+            // evidence and turn an auto-replayable send into manual retry.
+            let deliveryProvenUnsent = !receivedAnyEvent
+                && Self.isOfflineTransportError(error)
+            var recovery = InterruptedStreamRecovery(accepted: receivedAnyEvent)
+            var recoveryError: Error?
+            if serverError?.isDefinitiveServerResponse != true {
+                do {
+                    recovery.merge(try await resumeInterruptedStream(
+                        runId: runId,
+                        cursor: cursor,
+                        into: messageId,
+                        familiarId: familiarId,
+                        userMessageId: userMessageId,
+                        sawDone: &sawDone,
+                        coalescer: coalescer,
+                        client: client,
+                        onChange: onChange
+                    ))
+                    try Task.checkCancellation()
+                    if !recovery.completed {
+                        switch try await resyncInterruptedTurn(
+                            familiarId: familiarId,
+                            runId: runId,
+                            into: messageId,
+                            userMessageId: userMessageId,
+                            client: client
+                        ) {
+                        case .completed:
+                            recovery.completed = true
+                            recovery.accepted = true
+                        case .pending:
+                            // The exact run-id user turn exists server-side. Its
+                            // reply is not yet adoptable, but automatic reposting is
+                            // forbidden because the original delivery was accepted.
+                            recovery.accepted = true
+                        case .absent:
+                            break
+                        }
+                    }
+                    try Task.checkCancellation()
+                } catch is CancellationError {
+                    mutate(messageId) { $0.streaming = false }
+                    outcome = .cancelled
+                    updatedAt = Date()
+                    onChange()
+                    ChatTurnNotifier.shared.turnFinished(thread: self, messageId: messageId)
+                    onStreamResult?(
+                        ChatSendResult(
+                            familiarId: familiarId,
+                            userMessageId: userMessageId,
+                            assistantMessageId: messageId,
+                            outcome: outcome
+                        )
+                    )
+                    return outcome
+                } catch {
+                    recoveryError = error
                 }
             }
-            if !recovered {
+            if let recoveryError,
+               !(deliveryProvenUnsent && !recovery.accepted) {
+                // The POST/run may have been accepted, but exact transcript
+                // adoption is temporarily unavailable. Keep the durable run id
+                // and queued bit so the next reconnect performs another GET/
+                // resume; never turn this uncertainty into an automatic repost.
+                applyProjectRecovery(for: recoveryError)
+                onConnectionFailure?(recoveryError)
+                mutate(messageId) { $0.streaming = false }
+                outcome = .noAcknowledgement
+            } else if !recovery.completed {
                 applyProjectRecovery(for: error)
-                if let userMessageId, !receivedAnyEvent, Self.isOfflineTransportError(error) {
+                onConnectionFailure?(error)
+                if let userMessageId, !recovery.accepted, deliveryProvenUnsent {
                     // The send never reached the server (no route, DNS failure,
                     // refused connection — and not a single SSE event came
                     // back): queue the prompt for the next reconnect instead
@@ -980,7 +1537,26 @@ final class ChatThread: Identifiable, Hashable {
                     // (timeouts, drops after first byte) stay on the error
                     // path — replaying those could double the turn.
                     messages.removeAll { $0.id == messageId }
-                    mutate(userMessageId) { $0.queued = true }
+                    mutate(userMessageId) {
+                        $0.queued = true
+                        $0.queuedDispatchInFlight = false
+                        var runIds = $0.queuedRunIdsByFamiliarId ?? [:]
+                        runIds.removeValue(forKey: familiarId)
+                        $0.queuedRunIdsByFamiliarId = runIds.isEmpty ? nil : runIds
+                        var attemptedIds = Set($0.queuedAttemptedFamiliarIds ?? [])
+                        attemptedIds.remove(familiarId)
+                        $0.queuedAttemptedFamiliarIds = attemptedIds.isEmpty
+                            ? nil
+                            : attemptedIds.sorted()
+                    }
+                    // The attempted marker was checkpointed before POST. This
+                    // transport class proves the POST never left the phone, so
+                    // make its removal durable immediately; degraded state
+                    // blocks AppModel's follow-up queue flush and iOS may suspend
+                    // before the ordinary 400ms onChange debounce fires.
+                    if let persistAfterProvablyUnsentRollback {
+                        _ = await persistAfterProvablyUnsentRollback()
+                    }
                     outcome = .queued
                 } else {
                     mutate(messageId) {
@@ -996,9 +1572,18 @@ final class ChatThread: Identifiable, Hashable {
                 outcome = settledSendOutcome(
                     assistantMessageId: messageId,
                     userMessageId: userMessageId,
-                    receivedAnyEvent: receivedAnyEvent,
+                    receivedAnyEvent: recovery.accepted,
                     sawDone: sawDone
                 )
+            }
+        }
+        if outcome.completesQueuedFanOutLeg,
+           let userMessageId,
+           let assistant = messages.first(where: { $0.id == messageId }),
+           !assistant.streaming {
+            markQueuedFamiliarCompleted(userMessageId, familiarId: familiarId)
+            if activeDeliveryClaimed {
+                clearQueuedDeliveryIfComplete(userMessageId)
             }
         }
         updatedAt = Date()
@@ -1012,6 +1597,7 @@ final class ChatThread: Identifiable, Hashable {
                 outcome: outcome
             )
         )
+        return outcome
     }
 
     /// Apply one stream event to the thread — shared by the original send
@@ -1021,7 +1607,12 @@ final class ChatThread: Identifiable, Hashable {
                        sawDone: inout Bool, coalescer: StreamCoalescer, onChange: @escaping () -> Void) {
         switch event {
         case .session(let sid):
-            if !sid.isEmpty { sessionIds[familiarId] = sid }
+            if !sid.isEmpty {
+                sessionIds[familiarId] = sid
+                // Persist the address needed for exact run-id reconciliation
+                // as soon as the server names a new conversation.
+                onChange()
+            }
         case .assistantChunk(let chunk):
             // Coalesce tokens: buffer chunk text and flush to the message on a
             // short cadence instead of mutating the (observed) messages array +
@@ -1113,70 +1704,220 @@ final class ChatThread: Identifiable, Hashable {
     /// attempts ride out the network still settling (Wi-Fi handoff, tunnel
     /// re-established). Returns true when the bubble finished live; false
     /// falls back to the post-hoc transcript resync.
+    private struct InterruptedStreamRecovery {
+        var completed = false
+        var accepted = false
+
+        mutating func merge(_ other: InterruptedStreamRecovery) {
+            completed = completed || other.completed
+            accepted = accepted || other.accepted
+        }
+    }
+
+    private static func isResumeGap(_ event: StreamEvent) -> Bool {
+        guard case .progress(let id, _, _, _, _) = event else { return false }
+        return id == "resume-gap"
+    }
+
     private func resumeInterruptedStream(runId: String, cursor: Int, into messageId: String,
                                          familiarId: String, userMessageId: String?,
                                          sawDone: inout Bool,
                                          coalescer: StreamCoalescer,
-                                         client: CaveClient, onChange: @escaping () -> Void) async -> Bool {
+                                         client: CaveClient, onChange: @escaping () -> Void) async throws -> InterruptedStreamRecovery {
         var nextCursor = cursor
+        var recovery = InterruptedStreamRecovery()
+        var sawResumeGap = false
         for attempt in 0..<3 {
             if attempt > 0 {
-                try? await Task.sleep(for: .milliseconds(600 * Int64(attempt)))
+                try await Task.sleep(for: .milliseconds(600 * Int64(attempt)))
             }
+            try Task.checkCancellation()
             do {
                 for try await frame in client.resumeStream(runId: runId, cursor: nextCursor) {
+                    try Task.checkCancellation()
+                    recovery.accepted = true
+                    if Self.isResumeGap(frame.event) { sawResumeGap = true }
                     apply(frame.event, into: messageId, familiarId: familiarId,
                           userMessageId: userMessageId,
                           sawDone: &sawDone, coalescer: coalescer, onChange: onChange)
                     if let id = frame.id { nextCursor = id }
                 }
+                try Task.checkCancellation()
+                // A normal 2xx resume that closes without frames still proves
+                // the exact run buffer existed (it may have been reaped between
+                // the route's existence probe and subscription). That evidence
+                // forbids clearing the run marker and automatically POSTing it.
+                recovery.accepted = true
                 flush(coalescer, into: messageId, onChange: onChange)
                 // The resume stream closes when the run finishes. Without a
                 // done event the run may still be live (our tail dropped
                 // again) — retry from the advanced cursor.
                 if sawDone {
-                    mutate(messageId) { $0.streaming = false }
-                    return true
+                    if !sawResumeGap {
+                        mutate(messageId) { $0.streaming = false }
+                        recovery.completed = true
+                    }
+                    return recovery
                 }
             } catch is CaveClient.NoResumableRun {
                 flush(coalescer, into: messageId, onChange: onChange)
                 // Nothing buffered under that run — turn ended long ago or
                 // the server restarted. Post-hoc resync owns recovery.
-                return false
+                return recovery
             } catch {
+                if error is CancellationError || Task.isCancelled {
+                    throw CancellationError()
+                }
                 flush(coalescer, into: messageId, onChange: onChange)
                 // Transport still flaky — back off and retry from the cursor.
             }
         }
-        return false
+        return recovery
     }
 
     /// After a transport failure mid-stream, pull the persisted conversation
-    /// and adopt the server's copy of the interrupted reply. Anchors on the
-    /// prompt: the reply must be an assistant turn AFTER a final user turn
-    /// carrying exactly what we sent, and must extend what already streamed
-    /// into the bubble. Anything else means the reply never persisted (or
-    /// belongs to an older exchange) and the caller falls back to the error
-    /// path. Returns true when the bubble recovered.
-    private func resyncInterruptedTurn(familiarId: String, prompt: String, into messageId: String,
+    /// and adopt the server's copy of this exact client delivery. Prompt text
+    /// is deliberately irrelevant: repeated prompts are separate turns, while
+    /// `attentionClearOperationId` is the run id persisted on the user turn.
+    private func resyncInterruptedTurn(familiarId: String, runId: String, into messageId: String,
                                        userMessageId: String?,
-                                       client: CaveClient) async -> Bool {
-        guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return false }
+                                       client: CaveClient) async throws -> PersistedQueuedRun {
         // Give the server a beat to flush the transcript after the drop.
-        try? await Task.sleep(for: .milliseconds(600))
-        guard let convo = try? await client.conversation(sessionId: sessionId),
-              let lastUser = convo.turns.lastIndex(where: { $0.role == "user" }),
-              convo.turns[lastUser].text == prompt,
-              let reply = convo.turns[(lastUser + 1)...].last(where: { $0.role == "assistant" })
-        else { return false }
-        let streamed = messages.first(where: { $0.id == messageId })?.text ?? ""
-        guard !reply.text.isEmpty, reply.text.hasPrefix(streamed) else { return false }
+        try await Task.sleep(for: .milliseconds(600))
+        try Task.checkCancellation()
+        return try await adoptServerTurnIfPresent(
+            runId: runId,
+            familiarId: familiarId,
+            into: messageId,
+            userMessageId: userMessageId,
+            client: client
+        )
+    }
+
+    private enum PersistedQueuedRun: Equatable {
+        case absent
+        case pending
+        case completed
+    }
+
+    private enum QueuedRunReconciliation {
+        case completed
+        case unconfirmed
+        case retryLater(Error)
+    }
+
+    /// An attempted queued run is never POSTed twice. First re-attach to the
+    /// server's run buffer by its stable id; if the buffer aged out, reconcile
+    /// the exact id persisted on the conversation's user turn. A missing or
+    /// incomplete accepted run becomes a visible manual-retry result rather
+    /// than an automatic duplicate.
+    private func reconcileQueuedRun(
+        runId: String,
+        familiarId: String,
+        into messageId: String,
+        userMessageId: String,
+        client: CaveClient,
+        onChange: @escaping () -> Void
+    ) async -> QueuedRunReconciliation {
+        var sawDone = false
+        var sawResumeGap = false
+        let coalescer = StreamCoalescer()
+        do {
+            for try await frame in client.resumeStream(runId: runId, cursor: 0) {
+                try Task.checkCancellation()
+                if Self.isResumeGap(frame.event) { sawResumeGap = true }
+                apply(
+                    frame.event,
+                    into: messageId,
+                    familiarId: familiarId,
+                    userMessageId: userMessageId,
+                    sawDone: &sawDone,
+                    coalescer: coalescer,
+                    onChange: onChange
+                )
+            }
+            try Task.checkCancellation()
+            flush(coalescer, into: messageId, onChange: onChange)
+            guard sawDone else {
+                return .retryLater(URLError(.networkConnectionLost))
+            }
+            if !sawResumeGap {
+                mutate(messageId) {
+                    $0.streaming = false
+                    if let settled = ActivityFold.settle($0.activitySteps, success: !$0.isError) {
+                        $0.activity = settled
+                    }
+                }
+                return .completed
+            }
+            // A retained run-buffer tail can contain `.done` while its earlier
+            // text was evicted. Only the exact persisted conversation is a
+            // complete reply in that case; fall through to adopt it by run id.
+        } catch is CaveClient.NoResumableRun {
+            flush(coalescer, into: messageId, onChange: onChange)
+        } catch {
+            flush(coalescer, into: messageId, onChange: onChange)
+            return .retryLater(error)
+        }
+
+        do {
+            switch try await adoptServerTurnIfPresent(
+                runId: runId,
+                familiarId: familiarId,
+                into: messageId,
+                userMessageId: userMessageId,
+                client: client
+            ) {
+            case .completed:
+                return .completed
+            case .pending, .absent:
+                return .unconfirmed
+            }
+        } catch CaveError.badResponse(404) {
+            return .unconfirmed
+        } catch {
+            return .retryLater(error)
+        }
+    }
+
+    /// Find a persisted user turn by its exact client run id and adopt only its
+    /// direct assistant child. Conversation history is a tree, so proximity in
+    /// the flat turn array is not proof that two turns belong together.
+    private func adoptServerTurnIfPresent(
+        runId: String,
+        familiarId: String,
+        into messageId: String,
+        userMessageId: String?,
+        client: CaveClient
+    ) async throws -> PersistedQueuedRun {
+        guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else {
+            return .absent
+        }
+        guard let convo = try await client.conversation(sessionId: sessionId) else {
+            return .absent
+        }
+        try Task.checkCancellation()
+        guard let userIndex = convo.turns.lastIndex(where: {
+            $0.role == "user" && $0.attentionClearOperationId == runId
+        }) else {
+            return .absent
+        }
+        let userTurn = convo.turns[userIndex]
+        guard let reply = convo.turns.last(where: {
+            $0.role == "assistant" && $0.parentId == userTurn.id
+        }) else {
+            return .pending
+        }
         if let userMessageId {
             mutate(userMessageId) {
-                $0.recordRetryModel(reply.responseMetadata?.retryModel ?? convo.turns[lastUser].modelOverride, for: familiarId)
+                $0.recordRetryModel(
+                    reply.responseMetadata?.retryModel ?? userTurn.modelOverride,
+                    for: familiarId
+                )
             }
         }
         mutate(messageId) {
+            $0.serverTurnId = reply.id
             $0.text = reply.text
             $0.isError = reply.isError ?? false
             $0.streaming = false
@@ -1197,7 +1938,7 @@ final class ChatThread: Identifiable, Hashable {
                 $0.activity = settled
             }
         }
-        return true
+        return .completed
     }
 
     /// Connect-level failures where the request provably never reached the
@@ -1208,7 +1949,7 @@ final class ChatThread: Identifiable, Hashable {
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {
         case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
-             .dnsLookupFailed, .networkConnectionLost, .dataNotAllowed,
+             .dnsLookupFailed, .dataNotAllowed,
              .internationalRoamingOff:
             return true
         default:
@@ -1216,30 +1957,65 @@ final class ChatThread: Identifiable, Hashable {
         }
     }
 
-    /// True when the conversation's tail already carries this exact prompt —
-    /// the original send made it through before the transport died, so
-    /// replaying would double the turn. Adopts the server's reply (when the
-    /// harness already answered) into the transcript. New sessions can't
-    /// have the turn.
-    private func adoptServerTurnIfPresent(prompt: String, familiarId: String,
-                                          client: CaveClient) async -> Bool {
-        guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return false }
-        guard let convo = try? await client.conversation(sessionId: sessionId),
-              let lastUser = convo.turns.lastIndex(where: { $0.role == "user" }),
-              convo.turns[lastUser].text == prompt else { return false }
-        if let reply = convo.turns[(lastUser + 1)...].last(where: { $0.role == "assistant" }) {
-            let insertAt = messages.firstIndex(where: { $0.isQueued }) ?? messages.endIndex
-            // The server named this turn to us, so carry its id: an adopted
-            // reply is server-owned, and without the id a later delete has to
-            // guess at it by position instead of naming it.
-            messages.insert(DisplayMessage(serverTurnId: reply.id,
-                                           role: .assistant, familiarId: familiarId,
-                                           text: reply.text, isError: reply.isError ?? false,
-                                           activity: ActivityFold.steps(fromTools: reply.tools)),
-                            at: insertAt)
-            updatedAt = Date()
+    /// Place replayed replies after their own user bubble and any earlier
+    /// familiar replies, but before the next user turn. Keeping the current
+    /// bubble queued for durability means "first queued message" is its own
+    /// index and would invert assistant/user order.
+    private func replayInsertionIndex(after userMessageId: String) -> Int? {
+        guard let userIndex = messages.firstIndex(where: { $0.id == userMessageId }) else {
+            return nil
         }
-        return true
+        let replyStart = messages.index(after: userIndex)
+        return messages[replyStart..<messages.endIndex]
+            .firstIndex(where: { $0.role == .user }) ?? messages.endIndex
+    }
+
+    /// Reuse the reply bubble that belongs to this exact queued user turn.
+    /// Searching only until the next user keeps repeated prompts and later
+    /// branches from borrowing each other's assistant placeholders.
+    private func replayPlaceholder(after userMessageId: String,
+                                   familiarId: String) -> DisplayMessage? {
+        guard let userIndex = messages.firstIndex(where: { $0.id == userMessageId }) else {
+            return nil
+        }
+        let replyStart = messages.index(after: userIndex)
+        let replyEnd = messages[replyStart..<messages.endIndex]
+            .firstIndex(where: { $0.role == .user }) ?? messages.endIndex
+        return messages[replyStart..<replyEnd].last(where: {
+            $0.role == .assistant && $0.familiarId == familiarId
+        })
+    }
+
+    private func markQueuedFamiliarCompleted(_ userMessageId: String, familiarId: String) {
+        guard messages.first(where: { $0.id == userMessageId })?.isQueued == true else {
+            return
+        }
+        mutate(userMessageId) {
+            var completed = Set($0.queuedCompletedFamiliarIds ?? [])
+            completed.insert(familiarId)
+            $0.queuedCompletedFamiliarIds = completed.sorted()
+        }
+    }
+
+    /// Online sends are also durable until every original fan-out leg settles.
+    /// Clear that transient replay marker before result callbacks (notably the
+    /// forwarded-thread hydration gate) observe the acknowledged user turn.
+    private func clearQueuedDeliveryIfComplete(_ userMessageId: String) {
+        guard let message = messages.first(where: { $0.id == userMessageId }),
+              message.isQueued else { return }
+        let targets = message.queuedTargetFamiliarIds
+            ?? message.queuedRunIdsByFamiliarId.map { Array($0.keys) }
+            ?? familiarIds
+        let completed = Set(message.queuedCompletedFamiliarIds ?? [])
+        guard Set(targets).isSubset(of: completed) else { return }
+        mutate(userMessageId) {
+            $0.queued = false
+            $0.queuedDispatchInFlight = nil
+            $0.queuedCompletedFamiliarIds = nil
+            $0.queuedRunIdsByFamiliarId = nil
+            $0.queuedAttemptedFamiliarIds = nil
+            $0.queuedTargetFamiliarIds = nil
+        }
     }
 
     /// Rebuild sendable attachments from persisted `data:` URLs (the only
@@ -1276,14 +2052,10 @@ final class ChatThread: Identifiable, Hashable {
 
     private func settledSendOutcome(
         assistantMessageId: String,
-        userMessageId: String?,
+        userMessageId _: String?,
         receivedAnyEvent: Bool,
         sawDone: Bool
     ) -> ChatSendOutcome {
-        if let userMessageId,
-           messages.first(where: { $0.id == userMessageId })?.isQueued == true {
-            return .queued
-        }
         guard let assistantMessage = messages.first(where: { $0.id == assistantMessageId }) else {
             return receivedAnyEvent ? .failed : .noAcknowledgement
         }
