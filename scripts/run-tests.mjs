@@ -1381,6 +1381,7 @@ export const SUITES = {
     "src/lib/server/client-v1/auth.test.ts",
     "src/lib/server/client-v1/rate-limit.test.ts",
     "src/lib/server/client-v1/discovery.test.ts",
+    "src/lib/server/client-v1/path-ownership.test.ts",
     "src/lib/server/client-v1/runtime.test.ts",
     "src/app/api/client/v1/health/route.test.ts",
     "src/app/api/client/v1/pairing/requests/route.test.ts",
