@@ -58,8 +58,8 @@ assert.match(
 // --- The pill: shown over mounted tabs during a drop, tap = retry now --------
 assert.match(
   root,
-  /private var showsReconnectPill: Bool \{[\s\S]*?guard app\.hasLoadedSurfaces else \{ return false \}[\s\S]*?case \.unreachable, \.checking: return true/,
-  "the pill shows for unreachable/checking only once surfaces are loaded",
+  /private var showsReconnectPill: Bool \{[\s\S]*?guard app\.hasLoadedSurfaces else \{ return false \}[\s\S]*?case \.unreachable, \.degraded, \.checking: return true/,
+  "the pill shows for unreachable/degraded/checking only once surfaces are loaded",
 );
 assert.match(
   root,
@@ -82,28 +82,22 @@ assert.match(
   "the pill announces itself to VoiceOver",
 );
 
-// --- While the pill is up, something must actually retry ---------------------
-// The Connect screen's own 10s ticker no longer runs for unreachable-with-
-// surfaces (that screen isn't mounted), so RootView carries its own quiet
-// re-probe, mutually exclusive via the hasLoadedSurfaces guard.
-// Pinned as BEHAVIOUR, not control-flow spelling. This previously required a
-// literal `guard app.hasLoadedSurfaces, case .unreachable = …` block;
-// 3e54ecdbe4 ("fix(ios): sustain chat connectivity") refactored the same logic
-// into a `switch` with a `where` clause and the assertion broke on `main`
-// while the behaviour was intact. What matters is that the scene-phase task
-// re-probes ONLY when the desktop is unreachable AND surfaces are already
-// loaded (so it cannot fight the Connect screen's own ticker), and that the
-// probe is the quiet, surface-reloading one.
-const scenePhaseTask = root.slice(root.indexOf(".task(id: scenePhase)"));
-assert.match(
-  scenePhaseTask,
-  /case \.unreachable where app\.hasLoadedSurfaces|guard app\.hasLoadedSurfaces,\s*\n\s*case \.unreachable = app\.connectionState/,
-  "RootView re-probes only when unreachable AND surfaces are loaded",
+// --- While the pill is up, the shared supervisor owns recovery ---------------
+// RootView must remain presentation-only. The one AppModel worker performs the
+// quiet, surface-reloading probes for both degraded and unreachable states.
+const rootViewType = root.slice(
+  root.indexOf("struct RootView: View"),
+  root.indexOf("private struct ConnectedMomentOverlay"),
+);
+assert.doesNotMatch(
+  rootViewType,
+  /\.task\(id: scenePhase\)/,
+  "RootView must not launch a second scene-phase reconnect ticker",
 );
 assert.match(
-  scenePhaseTask,
-  /await app\.refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/,
-  "RootView quietly re-probes while the pill covers an unreachable desktop",
+  model,
+  /func runConnectionSupervisor[\s\S]*?refreshConnection\([\s\S]*?case \.checking, \.degraded, \.unreachable:\s*\n\s*failureCount \+= 1/,
+  "the shared supervisor quietly retries every recoverable reconnect-pill state",
 );
 
 // --- AppModel: honest 'last seen' + shared surfaces gate ---------------------

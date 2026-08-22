@@ -46,9 +46,15 @@
   cursor: default;
 }
 .cave-project-picker__trigger-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cave-project-picker__trigger-caret {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-muted);
 }
 .cave-project-picker__filter {
   width: calc(100% - 12px);

@@ -316,28 +316,17 @@
   border: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
-/* Grouping is a first-class choice, not a setting hidden in the overflow menu.
-   The two visible tabs mirror the reference rail while retaining the existing
-   persisted Recent/Projects preference. The overflow menu rides at the end of
-   the same row — the separate utilities band it used to share with the
-   Scheduled/Plugins chips is retired. */
-.cnav__tabs-row {
+/* Search */
+.cnav__search-wrap {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  margin: 0 var(--cnav-pad) var(--space-2);
-}
-.cnav__tabs {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Search */
-.cnav__search-wrap {
   padding: 2px var(--cnav-pad) var(--space-2);
 }
 .cnav__search {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
   gap: 7px;
   height: 32px;

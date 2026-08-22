@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PairingStepsList } from "@/components/pairing-steps-list";
 import { TailscaleRecoveryActions } from "@/components/tailscale-recovery-actions";
 import { copyText } from "@/lib/clipboard";
+import {
+  backgroundAvailabilityReadiness,
+  enableDesktopBackgroundAvailability,
+  readDesktopReachability,
+  type DesktopReachabilityStatus,
+} from "@/lib/desktop-reachability";
 import type { PairingStep } from "@/lib/mobile-handoff";
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -37,6 +43,7 @@ type HandoffError = {
 };
 
 type HandoffResponse = HandoffReady | HandoffError;
+type AvailabilityGate = "checking" | "needs-consent" | "ready";
 
 type Props = {
   open: boolean;
@@ -80,10 +87,36 @@ export function MobileHandoffModal({
   /** Live paired signal: flips the "Phone seen" rung the moment a scan lands. */
   const [phoneSeenAt, setPhoneSeenAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [availabilityGate, setAvailabilityGate] = useState<AvailabilityGate>("checking");
+  const [reachability, setReachability] = useState<DesktopReachabilityStatus | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [enablingAvailability, setEnablingAvailability] = useState(false);
+  const [sessionOnly, setSessionOnly] = useState(false);
   const [copied, setCopied] = useState<"host" | "invite" | null>(null);
   const lastAutoCopyRequestRef = useRef(0);
   /** Aborts an in-flight start when the modal closes, remounts, or Refresh races. */
   const startAbortRef = useRef<AbortController | null>(null);
+  /** Invalidates native availability work before a closing modal can unmount. */
+  const availabilityGenerationRef = useRef(0);
+
+  const closeModal = useCallback(() => {
+    availabilityGenerationRef.current += 1;
+    startAbortRef.current?.abort();
+    startAbortRef.current = null;
+    onClose();
+  }, [onClose]);
+
+  // Parent navigation can unmount the conditional modal without calling its
+  // onClose prop. A layout cleanup invalidates the attempt during that commit,
+  // before a resolved native promise can enqueue an app-start microtask.
+  useLayoutEffect(
+    () => () => {
+      availabilityGenerationRef.current += 1;
+      startAbortRef.current?.abort();
+      startAbortRef.current = null;
+    },
+    [],
+  );
 
   const copyHandoffUrl = useCallback(async (nextHandoff: HandoffReady) => {
     const url = nextHandoff.inviteUrl || nextHandoff.url || nextHandoff.nativeUrl;
@@ -152,18 +185,86 @@ export function MobileHandoffModal({
   }, [chatId, copyHandoffUrl]);
 
   useEffect(() => {
+    const generation = availabilityGenerationRef.current + 1;
+    availabilityGenerationRef.current = generation;
     if (!open) {
       startAbortRef.current?.abort();
       startAbortRef.current = null;
       setLoading(false);
       return;
     }
-    void start(autoCopyRequest);
+    let cancelled = false;
+    setAvailabilityGate("checking");
+    setAvailabilityError(null);
+    setReachability(null);
+    setHandoff(null);
+    void readDesktopReachability()
+      .then((status) => {
+        if (cancelled || availabilityGenerationRef.current !== generation) return;
+        setReachability(status);
+        const readiness = backgroundAvailabilityReadiness(status);
+        if (readiness === "needs-consent") {
+          // Do not mint/show a durable-looking pairing code until packaged
+          // macOS has either installed its existing background helper or the
+          // user explicitly chooses a session-only link.
+          setAvailabilityGate("needs-consent");
+          return;
+        }
+        setSessionOnly(readiness === "not-applicable");
+        setAvailabilityGate("ready");
+        void start(autoCopyRequest);
+      })
+      .catch((cause) => {
+        if (cancelled || availabilityGenerationRef.current !== generation) return;
+        setAvailabilityGate("needs-consent");
+        setAvailabilityError(
+          cause instanceof Error
+            ? cause.message
+            : "Couldn’t check background availability.",
+        );
+      });
     return () => {
+      cancelled = true;
+      if (availabilityGenerationRef.current === generation) {
+        availabilityGenerationRef.current += 1;
+      }
       startAbortRef.current?.abort();
       startAbortRef.current = null;
     };
   }, [autoCopyRequest, open, start]);
+
+  const enableBackgroundAvailability = useCallback(async () => {
+    if (!reachability || enablingAvailability) return;
+    const generation = availabilityGenerationRef.current;
+    setEnablingAvailability(true);
+    setAvailabilityError(null);
+    try {
+      const next = await enableDesktopBackgroundAvailability(reachability);
+      if (availabilityGenerationRef.current !== generation) return;
+      setReachability(next);
+      setSessionOnly(false);
+      setAvailabilityGate("ready");
+      await start(autoCopyRequest);
+    } catch (cause) {
+      if (availabilityGenerationRef.current !== generation) return;
+      setAvailabilityError(
+        cause instanceof Error
+          ? cause.message
+          : "Couldn’t enable background availability.",
+      );
+    } finally {
+      if (availabilityGenerationRef.current === generation) {
+        setEnablingAvailability(false);
+      }
+    }
+  }, [autoCopyRequest, enablingAvailability, reachability, start]);
+
+  const continueForThisSession = useCallback(() => {
+    setSessionOnly(true);
+    setAvailabilityGate("ready");
+    setAvailabilityError(null);
+    void start(autoCopyRequest);
+  }, [autoCopyRequest, start]);
 
   const copyUrl = useCallback(async () => {
     if (handoff) await copyHandoffUrl(handoff);
@@ -243,7 +344,7 @@ export function MobileHandoffModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={closeModal}
       breadcrumb={["CovenCave", chatId ? "Continue this chat on phone" : "Open on phone"]}
       footerActions={
         <>
@@ -259,7 +360,12 @@ export function MobileHandoffModal({
               {mobileModeEnabled ? "Turn off mobile mode" : "Turn on mobile mode"}
             </Button>
           ) : null}
-          <Button variant="secondary" onClick={() => void start()} loading={loading}>
+          <Button
+            variant="secondary"
+            onClick={() => void start()}
+            loading={loading}
+            disabled={availabilityGate !== "ready"}
+          >
             Refresh link
           </Button>
           <Button variant="secondary" onClick={() => void copyHost()} disabled={!handoff?.nativeHost || loading}>
@@ -280,24 +386,71 @@ export function MobileHandoffModal({
               dangerouslySetInnerHTML={{ __html: handoff.qrSvg }}
             />
           ) : (
-            <div className="mobile-handoff-qr__placeholder" aria-busy={loading || undefined}>
-              {loading ? "Starting..." : "No QR"}
+            <div
+              className="mobile-handoff-qr__placeholder"
+              aria-busy={loading || enablingAvailability || availabilityGate === "checking" || undefined}
+            >
+              {availabilityGate === "checking"
+                ? "Checking availability…"
+                : enablingAvailability
+                  ? "Enabling…"
+                  : loading
+                    ? "Starting…"
+                    : availabilityGate === "needs-consent"
+                      ? "Choose availability"
+                      : "No QR"}
             </div>
           )}
         </div>
 
         <div className="mobile-handoff__body">
-          <p className="mobile-handoff__title">
-            {chatId
-              ? "Scan to continue this conversation on your phone."
-              : "Connect CovenCave on your phone."}
-          </p>
-          {handoff ? (
+          {availabilityGate === "needs-consent" ? (
+            <>
+              <p className="mobile-handoff__title">Keep Cave available after this window closes?</p>
+              <p className="mobile-handoff__meta">
+                Remote reconnect needs a per-user background helper on this Mac. It stays
+                loopback-only, still requires Tailscale and your paired token, and does not
+                prevent Mac sleep.
+              </p>
+              <div className="mobile-handoff__actions">
+                <Button
+                  onClick={() => void enableBackgroundAvailability()}
+                  loading={enablingAvailability}
+                  disabled={!reachability}
+                >
+                  Enable &amp; show pairing code
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={continueForThisSession}
+                  disabled={enablingAvailability}
+                >
+                  Pair for this session
+                </Button>
+              </div>
+              <p className="mobile-handoff__hint">
+                To remain reachable while idle, separately enable “Stay awake while paired”
+                in Settings → Phone. The default keeps normal battery sleep behavior.
+              </p>
+              {availabilityError ? (
+                <p className="mobile-handoff__error" role="alert">{availabilityError}</p>
+              ) : null}
+            </>
+          ) : (
+            <p className="mobile-handoff__title">
+              {chatId
+                ? "Scan to continue this conversation on your phone."
+                : "Connect CovenCave on your phone."}
+            </p>
+          )}
+          {availabilityGate !== "ready" ? null : handoff ? (
             <>
               {handoff.nativeHost ? (
                 <>
                   <p className="mobile-handoff__meta">
-                    Enter this host in the native iOS app. Mobile mode stays alive until you turn it off in Settings.
+                    {sessionOnly
+                      ? "Enter this host in the native iOS app. This session ends when Cave closes."
+                      : "Enter this host in the native iOS app. Background availability keeps the server running after this window closes."}
                   </p>
                   <button
                     type="button"

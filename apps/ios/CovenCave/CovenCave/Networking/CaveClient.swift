@@ -968,17 +968,39 @@ struct CaveClient {
         return body
     }
 
+    /// Raised only when a caller-owned authority lease is revoked before the
+    /// POST is constructed. The caller can therefore roll its durable attempted
+    /// marker back without risking a duplicate server turn.
+    struct SendPreflightRevoked: Error {}
+
     /// Open the SSE stream for a chat send. Yields decoded frames — keep the
     /// last applied frame's `id` to resume mid-turn via `resumeStream`.
+    ///
+    /// Request creation is deferred into this stream task, so a model-layer
+    /// check before calling `sendStream` is not sufficient. Run the supplied
+    /// authority preflight on MainActor in the same uninterrupted actor turn as
+    /// request construction and the call that starts URLSession. Configure and
+    /// disconnect mutate their epoch on that actor, closing the deferred-task
+    /// window without cancelling requests that already began legitimately.
     func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamFrame, Error> {
+        sendStream(body, preflight: { true }, onRequestStarted: {})
+    }
+
+    func sendStream(
+        _ body: SendBody,
+        preflight: @escaping @MainActor () -> Bool,
+        onRequestStarted: @escaping @MainActor () -> Void
+    ) -> AsyncThrowingStream<StreamFrame, Error> {
         AsyncThrowingStream { continuation in
-            let task = Task {
+            let task = Task { @MainActor in
                 do {
+                    guard preflight() else { throw SendPreflightRevoked() }
                     let payload = try JSONEncoder().encode(body)
                     var req = try request("api/chat/send", method: "POST", body: payload)
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
+                    onRequestStarted()
                     let (bytes, resp) = try await Self.streamSession.bytes(for: req)
                     if let http = resp as? HTTPURLResponse,
                        !(200..<300).contains(http.statusCode) {

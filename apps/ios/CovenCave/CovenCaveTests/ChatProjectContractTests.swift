@@ -2,6 +2,14 @@ import XCTest
 @testable import CovenCave
 
 final class ChatProjectContractTests: XCTestCase {
+    func testOnlyExplicitTerminalOutcomesCompleteQueuedFanOutLeg() {
+        XCTAssertTrue(ChatSendOutcome.acknowledged.completesQueuedFanOutLeg)
+        XCTAssertTrue(ChatSendOutcome.failed.completesQueuedFanOutLeg)
+        XCTAssertFalse(ChatSendOutcome.queued.completesQueuedFanOutLeg)
+        XCTAssertFalse(ChatSendOutcome.cancelled.completesQueuedFanOutLeg)
+        XCTAssertFalse(ChatSendOutcome.noAcknowledgement.completesQueuedFanOutLeg)
+    }
+
     private func project(_ id: String, _ name: String, root: String? = nil) -> ProjectInfo {
         ProjectInfo(
             id: id,
@@ -75,7 +83,13 @@ final class ChatProjectContractTests: XCTestCase {
         )
         var changeCount = 0
 
-        thread.send("hello", client: client) {
+        thread.send(
+            "hello",
+            liveDispatchLeaseIsCurrent: { true },
+            persistBeforeDispatch: { true },
+            persistAfterRollback: { true },
+            client: client
+        ) {
             changeCount += 1
         }
         thread.enqueue("offline hello")
@@ -83,6 +97,60 @@ final class ChatProjectContractTests: XCTestCase {
         XCTAssertTrue(thread.messages.isEmpty)
         XCTAssertEqual(changeCount, 0)
         XCTAssertTrue(thread.needsProjectSelection)
+    }
+
+    @MainActor
+    func testRevokedLiveSendLeaseRollsBackOnlyItsUnsentGroupLeg() throws {
+        let user = DisplayMessage(
+            id: "user-1",
+            role: .user,
+            familiarId: nil,
+            text: "hello group",
+            queued: true,
+            queuedDispatchInFlight: true,
+            queuedCompletedFamiliarIds: ["nyx"],
+            queuedRunIdsByFamiliarId: ["nyx": "run-nyx", "sol": "run-sol"],
+            queuedAttemptedFamiliarIds: ["nyx", "sol"],
+            queuedTargetFamiliarIds: ["nyx", "sol"]
+        )
+        let nyxReply = DisplayMessage(
+            id: "reply-nyx",
+            role: .assistant,
+            familiarId: "nyx",
+            text: "done"
+        )
+        let solPlaceholder = DisplayMessage(
+            id: "reply-sol",
+            role: .assistant,
+            familiarId: "sol",
+            text: "",
+            streaming: true
+        )
+        let thread = ChatThread(
+            title: "Group",
+            familiarIds: ["nyx", "sol"],
+            projectRoot: "/repos/shared",
+            messages: [user, nyxReply, solPlaceholder]
+        )
+
+        XCTAssertTrue(
+            thread.rollbackLiveDeliveryBeforeDispatch(
+                userMessageId: user.id,
+                familiarId: "sol",
+                messageId: solPlaceholder.id,
+                runId: "run-sol"
+            )
+        )
+
+        let rolledBack = try XCTUnwrap(thread.messages.first(where: { $0.id == user.id }))
+        XCTAssertEqual(rolledBack.queuedRunIdsByFamiliarId, ["nyx": "run-nyx"])
+        XCTAssertEqual(rolledBack.queuedAttemptedFamiliarIds, ["nyx"])
+        XCTAssertEqual(rolledBack.queuedCompletedFamiliarIds, ["nyx"])
+        XCTAssertEqual(rolledBack.queuedTargetFamiliarIds, ["nyx", "sol"])
+        XCTAssertEqual(rolledBack.queuedDispatchInFlight, false)
+        XCTAssertTrue(rolledBack.isQueued)
+        XCTAssertNotNil(thread.messages.first(where: { $0.id == nyxReply.id }))
+        XCTAssertNil(thread.messages.first(where: { $0.id == solPlaceholder.id }))
     }
 
     @MainActor

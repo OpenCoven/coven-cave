@@ -614,7 +614,7 @@ struct ChatView: View {
         if thread.isStreaming { return (Color.orange, "responding") }
         switch app.connectionState {
         case .connected: return (Color.green, "ready")
-        case .checking: return (Color.orange, "reconnecting")
+        case .checking, .degraded: return (Color.orange, "reconnecting")
         case .projectContextRequired: return (Color.orange, "setup required")
         case .unreachable: return (chrome.textSecondary, "offline")
         case .unconfigured, .needsAuth: return (chrome.textSecondary, "offline")
@@ -1530,10 +1530,20 @@ struct ChatView: View {
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
             }
+            let dispatchLease = app.captureConnectionDispatchLease()
             thread.send(outgoing, attachments: attachments,
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
+                        onConnectionFailure: { app.noteConnectionFailure($0) },
+                        liveDispatchLeaseIsCurrent: {
+                            app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        },
+                        persistBeforeDispatch: {
+                            await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                        },
+                        persistAfterRollback: { await app.flushThreadsAndWait() },
+                        onDeliverySettled: { app.flushQueuedMessages() },
                         client: client) { app.touch(thread) }
         }
     }
@@ -1558,9 +1568,19 @@ struct ChatView: View {
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(text, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -1587,7 +1607,11 @@ struct ChatView: View {
             return
         }
         Haptics.tap()
-        thread.retry(assistant.id, client: client) { app.touch(thread) }
+        thread.retry(
+            assistant.id,
+            client: client,
+            onConnectionFailure: { app.noteConnectionFailure($0) }
+        ) { app.touch(thread) }
     }
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get
@@ -1680,11 +1704,21 @@ struct ChatView: View {
         }
         let brief = args.trimmingCharacters(in: .whitespacesAndNewlines)
         let modelBinding = turnModelBinding
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(DiagramCommandPrompt.build(brief),
                     displayText: brief.isEmpty ? DiagramCommandPrompt.start : brief,
                     modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -2038,9 +2072,19 @@ struct ChatView: View {
             return
         }
         let modelBinding = turnModelBinding
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(trimmed, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -2174,6 +2218,7 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
+        let dispatchLease = app.captureConnectionDispatchLease()
         let activeContext = visibleThreadContext
         let needsDeferredHistoryHydration =
             app.landingDirectThread(for: familiar.id, in: activeContext) == nil
@@ -2230,6 +2275,15 @@ struct ChatView: View {
                         )
                     }
                     : nil,
+                onConnectionFailure: { app.noteConnectionFailure($0) },
+                liveDispatchLeaseIsCurrent: {
+                    app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                },
+                persistBeforeDispatch: {
+                    await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                },
+                persistAfterRollback: { await app.flushThreadsAndWait() },
+                onDeliverySettled: { app.flushQueuedMessages() },
                 client: client
             ) {
                 app.touch(destination)

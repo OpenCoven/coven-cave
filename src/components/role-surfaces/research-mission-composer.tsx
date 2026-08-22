@@ -672,7 +672,7 @@ export function ResearchMissionComposer({
                     key={field.key}
                     className="research-brief__row"
                     data-set={Boolean(value)}
-                    title={value || "not set"}
+                    title={value || undefined}
                   >
                     <span className="research-brief__mark" aria-hidden>{value ? "✓" : "·"}</span>
                     <span className="research-brief__cell">

@@ -250,6 +250,11 @@ assert.match(
   "trigger caret carries the stable class for collapsed-rail CSS targeting",
 );
 assert.match(
+  css,
+  /\.cave-project-picker__trigger-caret\s*\{[\s\S]*?margin-left:\s*auto;/,
+  "the project caret uses the same trailing-edge spacing as familiar selection",
+);
+assert.match(
   src,
   /\{allProjectsLabel\}/,
   "All projects row renders the allProjectsLabel string",

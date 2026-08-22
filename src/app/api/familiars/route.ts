@@ -17,6 +17,7 @@ import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-sca
 import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";
 import { loadPreferences } from "@/lib/server/preferences-store";
+import { recordMobilePresenceForRequest } from "@/lib/server/mobile-paired";
 import { voiceBindingForNewFamiliar } from "@/lib/voice/new-familiar-defaults";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,12 @@ export type DaemonFamiliar = {
 };
 
 export async function GET(req: Request) {
+  // The first successful signed mobile request is proof that pairing completed.
+  // Record it before daemon work so a temporarily unhealthy roster cannot keep
+  // desktop reachability/Serve repair disabled. The helper ignores every
+  // request the proxy did not mark as authenticated mobile ingress.
+  await recordMobilePresenceForRequest(req);
+
   const rosterResult = await loadVisibleFamiliarRoster();
   if (!rosterResult.ok) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token

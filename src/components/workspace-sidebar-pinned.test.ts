@@ -15,10 +15,10 @@ const source = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url),
 // component's own function body — pin against both scopes, not just the JSX
 // call site. See cave-zs85n Task 6 gap-fix notes.
 const start = source.indexOf('aria-label="Pinned threads"');
-// Anchor the section end on the recent view *after* the pinned rail (an earlier
-// `view === "recent"` guard exists higher in the file, so scan forward from start).
-const end = source.indexOf('view === "recent"', start);
-assert.ok(start !== -1 && end > start, "pinned rail section exists before the recent view");
+// Anchor the section end on the next rail section. The sidebar now exposes one
+// recency-oriented list rather than separate Recent/Projects views.
+const end = source.indexOf('aria-label="Awaiting you"', start);
+assert.ok(start !== -1 && end > start, "pinned rail section exists before the recency list");
 const pinnedRenderSite = source.slice(start, end);
 
 const pinnedRowFnStart = source.indexOf("function PinnedThreadRow(");

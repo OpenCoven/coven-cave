@@ -1743,6 +1743,8 @@ export const SUITES = {
     "src/lib/mobile-handoff.test.ts",
     "src/lib/mobile-mode-reconcile.test.ts",
     "src/lib/mobile-token-refresh.test.ts",
+    "src/lib/desktop-reachability.test.ts",
+    "src/lib/server/mobile-paired.test.ts",
     "scripts/ios-build-ci.test.mjs",
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
@@ -1776,6 +1778,7 @@ export const SUITES = {
     "scripts/ios-export-selected-zip.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-auto-reconnect.test.mjs",
+    "scripts/ios-background-refresh.test.mjs",
     "scripts/ios-ats-protections.test.mjs",
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
@@ -2039,6 +2042,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/passkey-store.test.ts",
   // reaches "@/proxy-helpers" and the store through the ceremony module
   "src/lib/server/passkey-ceremony.test.ts",
+  // mobile-paired resolves the Cave state path, atomic writer, and proxy marker.
+  "src/lib/server/mobile-paired.test.ts",
   "src/lib/server/preferences-store.test.ts",
   "src/lib/server/backdrop-store.test.ts",
   "src/lib/server/beads-cli.test.ts",
