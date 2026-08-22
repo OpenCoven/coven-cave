@@ -427,6 +427,15 @@ function retryGuidance(write: (value: string) => void): void {
   );
 }
 
+function cleanupUnprovenGuidance(write: (value: string) => void): void {
+  write(
+    "[beads:sync] Verify and stop the surviving process tree before retrying; it may still hold the Dolt lock or be pushing.\n",
+  );
+  write(
+    "[beads:sync] Inspect `git ls-remote origin refs/dolt/data` before deciding whether a push retry is needed.\n",
+  );
+}
+
 async function runPhase(
   phase: SyncPhase,
   options: Required<
@@ -566,7 +575,7 @@ export async function runBeadsSync(options: BeadsSyncOptions = {}): Promise<numb
       writeStderr(
         `[beads:sync] ${phase} timed out after ${timeoutMs}ms and could not prove process-tree cleanup.\n`,
       );
-      if (phase === "push") retryGuidance(writeStderr);
+      cleanupUnprovenGuidance(writeStderr);
       return 1;
     }
     if (result.status !== 0) {
@@ -935,9 +944,12 @@ terminates the complete owned process tree if Git or a credential helper stops
 making progress. Do not use the raw commands for routine sync in this
 repository.
 
-If push fails or times out, retry `pnpm beads:sync` once. Do not edit Git
-configuration or credential helpers after one transient 403; the known
-intermittent identity failure can succeed without any configuration change.
+If push fails or times out and the wrapper confirms the owned process tree was
+terminated, retry `pnpm beads:sync` once. If cleanup could not be proven, verify
+and stop the surviving process tree before retrying; it may still hold the Dolt
+lock or be pushing. Do not edit Git configuration or credential helpers after
+one transient 403; the known intermittent identity failure can succeed without
+any configuration change.
 For pending Beads changes, verify the remote ref actually advanced:
 
 ```bash
@@ -947,8 +959,9 @@ git ls-remote origin refs/dolt/data
 ```
 
 Compare the before and after OIDs. An expected advancement proves the remote
-accepted pending changes. No advancement is required when there were no local
-Dolt changes to publish.
+changed, but concurrent syncs mean it does not identify which actor advanced
+the ref. No advancement is required when there were no local Dolt changes to
+publish.
 ````
 
 - [ ] **Step 5: Update both session-completion command sequences**

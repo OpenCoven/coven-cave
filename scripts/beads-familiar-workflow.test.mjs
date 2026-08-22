@@ -9,6 +9,7 @@ const packageJson = JSON.parse(read("package.json"));
 const agents = read("AGENTS.md");
 const claude = read("CLAUDE.md");
 const workflow = read("docs/workflows/beads-familiars.md");
+const watchdogPlan = read("docs/superpowers/plans/2026-08-22-beads-dolt-sync-watchdog.md");
 const beadsConfig = read(".beads/config.yaml");
 const beadsMetadata = JSON.parse(read(".beads/metadata.json"));
 const beadsExport = read(".beads/issues.jsonl").trim().split("\n").map((line) => JSON.parse(line));
@@ -96,6 +97,16 @@ assert.match(
   workflow,
   /Do not edit Git\s+configuration or credential\s+helpers/i,
   "workflow docs should preserve transient credential guidance",
+);
+assert.match(
+  watchdogPlan,
+  /cleanup-unproven[\s\S]*cleanupUnprovenGuidance/,
+  "the executable plan must not recommend an ordinary retry after unproven cleanup",
+);
+assert.match(
+  watchdogPlan,
+  /confirms the owned process tree was[\s\S]*stop the surviving process tree before retrying[\s\S]*concurrent syncs/i,
+  "the executable plan must preserve conditional retry and concurrent-ref guidance",
 );
 assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
 assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");
