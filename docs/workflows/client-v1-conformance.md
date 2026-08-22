@@ -122,12 +122,19 @@ message projection leg went inert; see the mutation table below.) An assertion
 helper that cannot fail turns a green record into a lie, and nothing else in the
 suite would notice.
 
-Every helper mutation attempted against that suite is killed by it: 37 of 37,
+Measured against that suite: **49 of 50** helper mutations are killed by it,
 covering each branch of `checkEnvelope`, `checkRecordShape`, `checkRecordValues`,
 `checkPageWalk`, `checkEmptyFirstPage`, `checkAssertionCoverage`,
 `summarizeConformance`, `recorder.expect`, `parseConformanceArgs`,
 `parseRawResponse`, every `RECORD_SHAPES.*.forbidden` list, and every fixture
-invariant.
+invariant — including the ones that pin a value, so silently un-pinning `text`
+is caught rather than costing one unchecked field.
+
+The one survivor is *deleting an id from `EXPECTED_ASSERTION_IDS`*, and it is
+not a hole: the leg still records that id, so the next run reports it as "not in
+the expected set" and fails. The manifest is checked by the run rather than by
+the suite, which is the right place for it — a unit test cannot know which legs
+a run is supposed to have.
 
 `scripts/ci-paths.mjs` also routes the harness, this runbook, and the results
 directory into the client-v1 lane. Note the harness was already covered before

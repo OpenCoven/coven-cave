@@ -536,6 +536,13 @@ test("expectedBranchedMessages pins a value for every turn of the active branch"
   // value check would contradict the shape check.
   const allowed = new Set([...RECORD_SHAPES.message.required, ...RECORD_SHAPES.message.optional]);
   for (const key of Object.keys(rich)) assert.ok(allowed.has(key), `${key} is not a published message field`);
+  // And every REQUIRED field must be pinned. Quietly dropping one — `text`, say
+  // — costs nothing visible: the run still passes, with one fewer thing checked.
+  // That is the same silent-weakening shape the coverage guard exists for, one
+  // level down.
+  for (const key of RECORD_SHAPES.message.required) {
+    assert.ok(key in rich, `expectedBranchedMessages must pin ${key}, or a wrong value in it is unchecked`);
+  }
 });
 
 test("the fixture roster covers the optional familiar fields and enough rows to page", () => {
