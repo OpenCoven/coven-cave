@@ -611,11 +611,23 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
   // whole test would pass against a step that publishes nothing — the
   // neighbouring recovery step, which rewrites the renderer from an audited
   // blob, mentions the same script and does not run it.
-  const renderers = Object.values(release.jobs)
-    .flatMap((job) => job.steps ?? [])
-    .filter((candidate) => /(?:^|\s)bash scripts\/release-notes\.sh\b/m.test(candidate.run ?? ""));
+  const renderers = Object.entries(release.jobs).flatMap(([jobName, job]) =>
+    (job.steps ?? [])
+      .filter((candidate) => /(?:^|\s)bash scripts\/release-notes\.sh\b/m.test(candidate.run ?? ""))
+      .map((step) => ({ jobName, job, step })),
+  );
   assert.equal(renderers.length, 1, "exactly one step renders and publishes the release body");
-  const [step] = renderers;
+  const [{ jobName, job, step }] = renderers;
+
+  // Rendering is only half the job, and the half that leaves no trace if it is
+  // dropped. A step that writes the body to a temp file and never sends it
+  // publishes nothing, while both env expressions below still read perfectly
+  // and every assertion in this test still passes.
+  assert.match(
+    step.run,
+    /gh release edit\b[^\n]*--notes-file/,
+    `${jobName} renders the release body but no longer publishes it`,
+  );
 
   // Each disclosure belongs to exactly one hatch. Pairing them here is what
   // makes the cross-checks below possible: a disclosure wired to the wrong
@@ -630,8 +642,14 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
   // default flipped to true fails here instead of quietly disclosing on every
   // recovery run.
   const declared = release.on.workflow_dispatch.inputs;
+  // Declared defaults only. An input with no `default` key — `tag`,
+  // `ios_delivery_id` — would otherwise enter the run context as `undefined`
+  // and overwrite the value `releaseRun` supplies, quietly unsetting the tag
+  // of every dispatch scenario below.
   const defaults = Object.fromEntries(
-    Object.entries(declared).map(([name, spec]) => [name, spec.default]),
+    Object.entries(declared)
+      .filter(([, spec]) => spec?.default !== undefined)
+      .map(([name, spec]) => [name, spec.default]),
   );
   for (const hatch of Object.values(disclosures)) {
     assert.equal(declared[hatch].type, "boolean", `${hatch} is no longer a boolean hatch`);
@@ -640,9 +658,43 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
 
   const tagPush = releaseRun();
   const plainDispatch = releaseRun({ event: "workflow_dispatch", inputs: defaults });
+  const pulls = Object.fromEntries(
+    Object.values(disclosures).map((hatch) => [
+      hatch,
+      releaseRun({ event: "workflow_dispatch", inputs: { ...defaults, [hatch]: true } }),
+    ]),
+  );
+
+  // A correct value on a step that does not run discloses nothing. Nothing
+  // else in this file covers these two conditions — the gate sweep above only
+  // walks steps named "Require …", and this step is not one — so an `if:` on
+  // the step or on its host job that goes quiet exactly when a hatch is pulled
+  // silences the banner with every assertion below still green. Same failure
+  // as cave-yp21x, one spelling further out. `windows_diagnostics_only` is
+  // deliberately absent: that hatch legitimately skips this job, and every
+  // scenario here leaves it at its declared default.
+  for (const [occasion, context] of [
+    ["a tag push", tagPush],
+    ["an ordinary recovery dispatch", plainDispatch],
+    ...Object.entries(pulls).map(([hatch, context]) => [`a dispatch that pulled ${hatch}`, context]),
+  ]) {
+    assert.equal(
+      evaluateCondition(job.if, context),
+      true,
+      `${jobName} does not run on ${occasion} — the release body, and its disclosure, go unpublished`,
+    );
+    assert.equal(
+      evaluateCondition(step.if, context),
+      true,
+      `the release body is not published on ${occasion} — the disclosure goes with it`,
+    );
+  }
 
   for (const [name, hatch] of Object.entries(disclosures)) {
-    const expression = step.env?.[name];
+    // Job-level `env` reaches every step in the job, so either placement
+    // genuinely passes the disclosure to the renderer; only absence from both
+    // loses the banner.
+    const expression = step.env?.[name] ?? job.env?.[name];
     // Dropping the entry is the quietest way to lose the banner: the renderer
     // reads an unset variable as "not skipped" and says nothing.
     assert.ok(expression !== undefined, `${name} is no longer passed to the release-notes renderer`);
@@ -661,10 +713,7 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
     // Pulling the hatch is the only thing that turns it on, and it turns on
     // only its own disclosure — an X-app recovery must not report the schema
     // registries as skipped, or the banner stops meaning anything.
-    const pulled = releaseRun({
-      event: "workflow_dispatch",
-      inputs: { ...defaults, [hatch]: true },
-    });
+    const pulled = pulls[hatch];
     assert.equal(
       interpolate(expression, pulled),
       "true",
@@ -673,7 +722,7 @@ test("the release-notes guard disclosure is on exactly when its own hatch was pu
     for (const [other, otherHatch] of Object.entries(disclosures)) {
       if (other === name) continue;
       assert.equal(
-        interpolate(step.env[other], pulled),
+        interpolate(step.env?.[other] ?? job.env?.[other], pulled),
         "false",
         `${other} is disclosed by ${hatch}, which is ${otherHatch}'s hatch`,
       );
