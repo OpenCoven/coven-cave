@@ -28,6 +28,7 @@ disagree, the code is right and this file is stale.
 | Who may reach which route, and from where | [`src/proxy.ts`](../../src/proxy.ts) and [`src/proxy-helpers.ts`](../../src/proxy-helpers.ts) |
 | Per-route request and response shapes | the eight `route.ts` files under `src/app/api/client/v1/` |
 | Storage, lifetimes, hashing | `pairing-store.ts`, `credential-store.ts`, `instance-id.ts` |
+| The discovery record a client reads to find the endpoint | [`server.ts`](../../server.ts) — **not** `client-v1/discovery.ts`, which nothing in production calls |
 
 The fixture is generated, not hand-written: `node scripts/export-client-v1-contract.mjs`
 rewrites it from `contract.ts`, and `--check` runs as a preflight to the `api`
@@ -64,7 +65,7 @@ type level as well as in practice:
 {
   "apiVersion": "1.0",
   "minimumClientVersion": "0.1.0",
-  "capabilities": [ ],
+  "capabilities": ["pairing", "credentials", "..."],
   "error": {
     "code": "rate_limited",
     "message": "Rate limit exceeded.",
@@ -120,11 +121,17 @@ are reachable on the eight routes that exist.
 
 ## Reaching the API at all
 
-Two gates sit in front of every route here, and neither of them is in the route
-file. Both answer in a **different shape from the envelope above**: the proxy
-returns `{"ok": false, "error": "<reason>"}`. A client that assumes every
-response parses as a Client v1 envelope will fail to read its own rejection.
-Branch on the HTTP status first.
+Four checks sit in front of every route here, none of them in the route file: a
+loopback `Host` gate, a cross-origin gate, control-plane body rules, and a
+direct-loopback peer gate. Every one of them answers in a **different shape from
+the envelope above**: the proxy returns `{"ok": false, "error": "<reason>"}`. A
+client that assumes every response parses as a Client v1 envelope will fail to
+read its own rejection. Branch on the HTTP status first.
+
+(A fifth, `401 passkey presence required`, is armed only by
+`COVEN_CAVE_PASSKEY_REQUIRED=1` and applies to remote ingress, which the peer
+gate below already refuses for this surface. It is listed for completeness; a
+client on the machine never meets it.)
 
 ### The loopback stamp
 
@@ -247,9 +254,13 @@ permitted**; an unknown key is a 400, not a warning:
 
 | Field | Rules |
 |---|---|
-| `appName` | Non-empty string, trimmed, ≤ 128 chars, no control characters. Shown to the user in the approval UI. |
-| `installationId` | Non-empty, trimmed, ≤ 128 chars, matching `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`. Stable per install of your client. |
+| `appName` | Non-empty string, ≤ 128 chars, no control characters. Trimmed before it is stored. Shown to the user in the approval UI. |
+| `installationId` | Non-empty, ≤ 128 chars, trimmed, then matched against `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`. Stable per install of your client. |
 | `scopes` | Non-empty array of distinct values from the scope list below. Duplicates are rejected. |
+
+Note the 128 is measured on the string **as sent**, before trimming, while every
+other rule runs on the trimmed value — so 130 characters of which five are
+leading spaces is a 400 even though what would be stored is 125.
 
 ```json
 {
@@ -403,8 +414,16 @@ All four call `requireClientV1Admin`, which:
 2. Compares the `x-coven-cave-token` header against it in constant time.
    Mismatch or absence is `401 unauthorized`.
 3. For **mutations only** (the decision POST and the credential DELETE),
-   requires *both* `Origin` and `Referer` to be present and same-origin.
-   Failure is `403 scope_denied`. Reads require neither header.
+   requires **at least one** of `Origin` and `Referer`, and requires every one
+   that *is* present to be same-origin. A request carrying neither is refused;
+   one carrying only a same-origin `Origin` passes. Failure is
+   `403 scope_denied`. Reads require neither header.
+
+   The asymmetry is deliberate rather than sloppy. Browsers omit `Origin` on
+   same-origin GETs and can be made to omit `Referer` entirely, so *requiring*
+   both would 403 legitimate first-party mutations; refusing the both-absent
+   case is what stops a non-browser caller skipping the check by sending no
+   source header at all.
 
 `requireClientV1Admin` deliberately does **not** consult the loopback stamp. Its
 own comment gives the reason: transport locality is not proof of the
@@ -575,6 +594,41 @@ and never rotated. Two Caves starting together resolve the race by exclusive
 create-and-re-read, so the loser adopts the winner's id rather than serving one
 that will vanish at next boot.
 
+### Finding the endpoint
+
+The port is `COVEN_CAVE_PORT`, else `PORT`, else a per-channel default — it does
+not move per launch, but it is configuration rather than a constant, so a client
+should not hard-code it. `server.ts` publishes the endpoint it actually bound to
+`<cave home>/client-v1-discovery.json`, from inside the `listen` callback,
+before it prints `Ready on …`:
+
+```json
+{
+  "version": 1,
+  "endpoint": "http://127.0.0.1:3020",
+  "pid": 4321,
+  "nonce": "018f4f1a-77c2-7a31-8a15-55a25aaba003",
+  "startedAt": "2026-08-20T20:20:12.617Z"
+}
+```
+
+The file is 0600 inside a 0700 directory it verifies is neither a symlink nor
+another user's, written temp-file → `fsync` → rename, and deleted on shutdown —
+but only if the record still carries *this* process's `nonce` and the same
+inode, so a Cave that has been restarted underneath never deletes its
+successor's record. **A publish failure is fatal**: the listener closes and the
+process exits 1 rather than serving on an endpoint nothing can discover.
+
+`endpoint` is validated before it is written: `http:`, a loopback host, an
+explicit port, no credentials, no path, query, or fragment. Treat `pid` and
+`startedAt` as staleness hints — a `SIGKILL`ed Cave leaves its record behind,
+and nothing clears it until the next Cave boots and overwrites it — so confirm
+the endpoint with `GET /health` and check `instanceId` before trusting it. The
+file is 0600 and owned by the user the Cave runs as, so a client reads it only
+by already being that user on that machine.
+
+This is the one part of the surface with two implementations; see *Known gaps*.
+
 ## A complete pairing walkthrough
 
 ```
@@ -608,8 +662,9 @@ client                        Cave                        user
 
 Client-side rules that fall out of the above:
 
-1. Read `/health` first and compare your own version against
-   `minimumClientVersion`. Cache `instanceId`.
+1. Resolve the endpoint from `<cave home>/client-v1-discovery.json` rather than
+   assuming a port — see *Finding the endpoint*. Then read `/health` and compare
+   your own version against `minimumClientVersion`. Cache `instanceId`.
 2. Create the request, hold `secret` in memory, and show the user that approval
    is needed *in the Cave*, not in your app.
 3. Poll the exchange (or the GET lookup) every couple of seconds until
@@ -635,11 +690,13 @@ against something that is not there.
 - **Scopes are recorded, not enforced.** They are validated on request, stored
   on the credential, and shown to the approving user. Nothing reads them at
   request time yet, because nothing consumes a credential.
-- **The discovery record has no writer.** `CLIENT_V1_DISCOVERY_CONTRACT` and
-  `publishClientV1DiscoveryRecord` define a 0600
-  `<cave home>/client-v1-discovery.json` holding `{version, endpoint, pid,
-  nonce, startedAt}` so a client can find which port a Cave is on, and no
-  production code calls it. Until it does, a client must be told its endpoint.
+- **The reviewed discovery module has no production caller** — but the record
+  itself is written; see *Finding the endpoint* above. `server.ts` cannot import
+  from `src/`, so it carries its own copy of the publish/remove logic and
+  `publishClientV1DiscoveryRecord` in
+  `src/lib/server/client-v1/discovery.ts` is reached only by its own tests. Two
+  implementations of one on-disk contract can drift, and the `src/lib` one is
+  the reviewed side.
 - **Admin routes are not bound to direct loopback** —
   [#4843](https://github.com/OpenCoven/coven-cave/issues/4843), described above.
 - **The GET lookup route is unmetered** —
