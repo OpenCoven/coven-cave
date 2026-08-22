@@ -1395,6 +1395,14 @@ export const SUITES = {
     "src/app/api/client/v1/admin/credentials/route.test.ts",
     "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
     "src/app/api/client/v1/admin/security.e2e.test.ts",
+    "src/lib/server/client-v1/pagination.test.ts",
+    "src/lib/server/client-v1/reads.test.ts",
+    "src/lib/server/client-v1/read-guard.test.ts",
+    "src/app/api/client/v1/familiars/route.test.ts",
+    "src/app/api/client/v1/projects/route.test.ts",
+    "src/app/api/client/v1/conversations/route.test.ts",
+    "src/app/api/client/v1/conversations/[id]/route.test.ts",
+    "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
     "src/app/api/x/account-routes.test.ts",
     "src/app/api/x/research-routes.test.ts",
     "src/app/api/research/recommendations/route.test.ts",
@@ -1866,6 +1874,14 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/admin/credentials/route.test.ts",
   "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
   "src/app/api/client/v1/admin/security.e2e.test.ts",
+  // The Phase 2 canonical reads: the route modules resolve "@/lib/server/..."
+  // and "@/proxy-helpers" as runtime values, and their suites import the same
+  // aliases for the loopback header and the runtime factory.
+  "src/app/api/client/v1/familiars/route.test.ts",
+  "src/app/api/client/v1/projects/route.test.ts",
+  "src/app/api/client/v1/conversations/route.test.ts",
+  "src/app/api/client/v1/conversations/[id]/route.test.ts",
+  "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",

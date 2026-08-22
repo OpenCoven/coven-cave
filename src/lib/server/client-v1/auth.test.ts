@@ -17,6 +17,7 @@ import { proxy } from "../../../proxy.ts";
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_QUERY_PARAM,
+  CLIENT_V1_AUTHENTICATED_PATHS,
   CLIENT_V1_PUBLIC_INGRESS,
   LOCAL_PEER_HEADER,
   TAILNET_PEER_HEADER,
@@ -162,6 +163,61 @@ test("valid scope returns only the active credential record", async () => {
   assert.equal(JSON.stringify(result).includes("valid-bearer"), false);
 });
 
+test("an authentication failure names the budget its caller can be charged against", async () => {
+  // requireScope normalizes both failures into a ready-made Response, which is
+  // right for what the client sees and useless to the route: the two failures
+  // are charged against *different* rate-limit buckets, and a Response cannot
+  // be asked which one it is. Reading `response.status` back would work by
+  // coincidence — it couples the metering decision to an HTTP status the
+  // contract is free to remap. The discriminant states it directly.
+  const unknownBearer = createClientV1Authenticator({
+    credentialStore: storeWithLookup(async () => null),
+    loopbackSecret: "loopback-secret",
+  });
+  const unknown = await unknownBearer.requireScope({
+    bearer: "unknown-bearer",
+    scope: "chat:read",
+  });
+  assert.equal(unknown.ok, false);
+  if (!unknown.ok) {
+    assert.equal(unknown.reason, "unauthorized");
+    // No credential was found, so there is no authenticated identity to meter;
+    // the route has to fall back to its invalid-bearer bucket.
+    assert.equal(unknown.credential, undefined);
+  }
+
+  const missing = await unknownBearer.requireScope({ bearer: null, scope: "chat:read" });
+  assert.equal(missing.ok, false);
+  if (!missing.ok) {
+    assert.equal(missing.reason, "unauthorized");
+    assert.equal(missing.credential, undefined);
+  }
+
+  const underScoped = createClientV1Authenticator({
+    credentialStore: storeWithLookup(async () => ({
+      ...ACTIVE_CREDENTIAL,
+      scopes: ["chat:read"],
+    })),
+    loopbackSecret: "loopback-secret",
+  });
+  const denied = await underScoped.requireScope({
+    bearer: "valid-bearer",
+    scope: "chat:write",
+  });
+  assert.equal(denied.ok, false);
+  if (!denied.ok) {
+    assert.equal(denied.reason, "scope_denied");
+    // The credential rides along because this failure IS an authenticated
+    // request — a real credential asking for something it was not granted. The
+    // only other meterable key would be the bearer itself, and a rate-limit
+    // bucket keyed by a secret is a secret written into a Map.
+    assert.equal(denied.credential?.id, ACTIVE_CREDENTIAL.id);
+    // Same discipline as the success branch below: the bearer is an input, and
+    // it must not survive into anything a caller might log.
+    assert.equal(JSON.stringify(denied.credential).includes("valid-bearer"), false);
+  }
+});
+
 /**
  * The contract's public routes as request pathnames: `:id` templates filled in,
  * and the GET/POST pair on one path collapsed, because ingress classification
@@ -188,13 +244,30 @@ test("client-v1 ingress allowlists only the reviewed public routes", () => {
   for (const route of publicRoutes) {
     assert.equal(clientV1IngressKind(route), CLIENT_V1_PUBLIC_INGRESS, route);
   }
-  // Nothing is pre-authorized (cave-4841). A client-v1 ingress match makes
-  // proxy() skip the mobile access gate and return before the sidecar-token
-  // block, so it is only ever safe for a path whose own handler authenticates —
-  // and the Phase 2 paths below have no handler at all. Listing them ahead of
-  // time meant the first one to land would arrive already exempt. They classify
-  // null until their route.ts exists, which keeps them on the ordinary
-  // sidecar-token gate in the meantime.
+  // The canonical reads are pre-authorized, and only because their handlers
+  // exist (cave-jfa9y). A client-v1 ingress match makes proxy() skip the mobile
+  // access gate and return before the sidecar-token block, so it is only ever
+  // safe for a path whose own handler authenticates — which is why cave-4841
+  // emptied this list after it named thirteen Phase 2 paths against zero
+  // handlers. Each entry below has a route.ts that calls requireScope, asserted
+  // against the disk in src/app/api/api-contracts.test.ts.
+  for (const route of [
+    "/api/client/v1/familiars",
+    "/api/client/v1/projects",
+    "/api/client/v1/conversations",
+    "/api/client/v1/conversations/conversation-1",
+    "/api/client/v1/conversations/conversation-1/messages",
+    // Not a real conversation, and deliberately still "authenticated": there is
+    // no static `search` route under conversations, so the App Router serves
+    // this path from the [id] handler with the id "search". Classifying it any
+    // other way would describe a route that does not exist.
+    "/api/client/v1/conversations/search",
+  ]) {
+    assert.equal(clientV1IngressKind(route), "authenticated", route);
+  }
+  // Everything else still classifies null. The Phase 2 paths below have no
+  // handler at all, so listing them ahead of time would mean the first one to
+  // land arrives already exempt from the sidecar-token gate.
   for (const route of [
     "/api/client/v1",
     "/api/client/v1/admin",
@@ -203,12 +276,6 @@ test("client-v1 ingress allowlists only the reviewed public routes", () => {
     "/api/client/v1/private",
     "/api/client/v10/health",
     "/api/chat/conversation",
-    "/api/client/v1/familiars",
-    "/api/client/v1/projects",
-    "/api/client/v1/conversations",
-    "/api/client/v1/conversations/search",
-    "/api/client/v1/conversations/conversation-1",
-    "/api/client/v1/conversations/conversation-1/messages",
     "/api/client/v1/messages/send",
     "/api/client/v1/attachments",
     "/api/client/v1/attachments/attachment-1",
@@ -232,8 +299,51 @@ test("client-v1 ingress allowlists only the reviewed public routes", () => {
     "/api/client/v1/pairing/requests/",
     "/api/client/v1/pairing/requests/request-1/messages",
     "/api/client/v1/pairing/requests/request-1/exchange/extra",
+    // The same near-miss family for the newly authenticated set. These matter
+    // more than the public ones do: an authenticated match ALSO returns before
+    // the sidecar-token block, so an unanchored or over-wide pattern here hands
+    // credential-free ingress to a path with no client-v1 handler behind it.
+    "/decoy/api/client/v1/projects",
+    "/api/client/v1/projectsz",
+    "/api/client/v1/familiars/familiar-1",
+    "/api/client/v1/conversations/",
+    "/api/client/v1/conversations/conversation-1/messages/message-1",
+    "/api/client/v1/conversations/conversation-1/turns",
   ]) {
     assert.equal(clientV1IngressKind(route), null, route);
+  }
+});
+
+test("every pre-authorized path is one the proxy hands to a client-v1 handler", () => {
+  // Matching CLIENT_V1_AUTHENTICATED_PATHS is a DEMOTION: proxy() skips the
+  // mobile-access gate and returns before the sidecar-token block, so the
+  // route's own requireScope is the only credential check left in the request.
+  // The list therefore has to stay inside the client-v1 surface and out of the
+  // admin family, which keeps the ordinary sidecar-token path on purpose.
+  for (const pattern of CLIENT_V1_AUTHENTICATED_PATHS) {
+    // RegExp#source escapes every forward slash, so this is the anchored
+    // client-v1 prefix as the engine spells it.
+    const source = pattern.source;
+    assert.ok(source.startsWith("^\\/api\\/client\\/v1\\/"), source);
+    assert.ok(source.endsWith("$"), source);
+    assert.equal(source.includes("admin"), false, source);
+    // Single-segment parameters only. `.+` or `[\s\S]` would let one entry
+    // pre-authorize an unbounded tail of paths nobody reviewed.
+    assert.equal(source.includes(".+"), false, source);
+    assert.equal(source.includes(".*"), false, source);
+  }
+  // Public and authenticated are disjoint. An overlap would be ambiguous
+  // rather than harmless: the public branch is consulted first, so a public
+  // pattern that widened over an authenticated path would silently reclassify
+  // an authenticated route as credential-free bootstrap.
+  for (const path of [
+    "/api/client/v1/familiars",
+    "/api/client/v1/projects",
+    "/api/client/v1/conversations",
+    "/api/client/v1/conversations/conversation-1",
+    "/api/client/v1/conversations/conversation-1/messages",
+  ]) {
+    assert.notEqual(clientV1IngressKind(path), CLIENT_V1_PUBLIC_INGRESS, path);
   }
 });
 
@@ -454,18 +564,27 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
     for (const route of [
       "/api/client/v1/pairing/requests",
       "/api/client/v1/pairing/requests/request-1/exchange",
+      // The canonical reads pass the proxy with no sidecar token, which is
+      // exactly the demotion CLIENT_V1_AUTHENTICATED_PATHS buys and the reason
+      // each of these routes calls requireScope for itself (cave-jfa9y). What
+      // reaches the handler here is an unauthenticated request; the route
+      // tests assert it is refused there.
+      "/api/client/v1/familiars",
+      "/api/client/v1/projects",
+      "/api/client/v1/conversations",
+      "/api/client/v1/conversations/conversation-1",
+      "/api/client/v1/conversations/conversation-1/messages",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));
       assert.equal(passedThrough(response), true, `${route} returned ${response.status}`);
     }
 
-    // /api/client/v1/conversations sits with the private routes rather than the
-    // loopback-ingress ones: it has no handler, so it is not pre-authorized and
-    // a bare loopback caller gets the ordinary 401 (cave-4841).
+    // Admin and unhandled client-v1 paths stay on the ordinary sidecar-token
+    // gate, so a bare loopback caller gets the ordinary 401 (cave-4841).
     for (const route of [
       "/api/client/v1/admin/credentials",
       "/api/client/v1/private",
-      "/api/client/v1/conversations",
+      "/api/client/v1/messages/send",
       "/api/chat/conversation",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));

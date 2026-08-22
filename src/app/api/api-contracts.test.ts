@@ -115,10 +115,24 @@ const contracts: RouteContract[] = [
   { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
   { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
   { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true },
+  // The Phase 2 canonical reads (cave-jfa9y). Every one is a GET with no body,
+  // and every one authenticates its own bearer through requireScope — which is
+  // load-bearing rather than routine, because these five paths are the first
+  // entries in CLIENT_V1_AUTHENTICATED_PATHS and a listed path returns from
+  // proxy() before the sidecar-token block ever runs. They also re-check the
+  // loopback stamp for themselves, the way all three pairing routes do. That
+  // began as cover for #4854, which #4855 has since closed at the proxy; it
+  // stays because a route this list DEMOTES should not take its locality on
+  // trust from the thing that demoted it.
+  { route: "/client/v1/conversations", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations/[id]/messages", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/familiars", methods: ["GET"], kind: "json" },
   { route: "/client/v1/health", methods: ["GET"], kind: "json" },
   { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
   { route: "/client/v1/pairing/requests/[id]/exchange", methods: ["POST"], kind: "json" },
+  { route: "/client/v1/projects", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
@@ -582,14 +596,15 @@ const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
 // Phase 0 forbade every /api/client/v1 route while the public contract was
-// still an unserved module. Phase 1 ends that for the reviewed bootstrap and
+// still an unserved module. Phase 1 ended that for the reviewed bootstrap and
 // admin surface: health (a client cannot discover it is too old without an
 // endpoint to ask), the pairing exchange, and the admin routes that approve
-// and revoke credentials. The gate is narrowed rather than dropped, because
-// what it was really protecting against is client-v1 surface appearing faster
-// than it is reviewed — so each new route has to be added here deliberately,
-// not just by existing on disk. This is the single allow-list: health and the
-// pairing authority narrow it once, together, to the routes that exist.
+// and revoke credentials. Phase 2 adds the canonical reads the contract's
+// capability list has been advertising since Phase 0 — familiars, projects,
+// conversations, and a conversation's messages (cave-jfa9y). The gate is
+// narrowed rather than dropped, because what it was really protecting against
+// is client-v1 surface appearing faster than it is reviewed — so each new route
+// has to be added here deliberately, not just by existing on disk.
 assert.deepEqual(
   actualRoutes.filter((route) => route.startsWith("/client/v1")),
   [
@@ -597,12 +612,17 @@ assert.deepEqual(
     "/client/v1/admin/credentials/[id]",
     "/client/v1/admin/pairing-requests",
     "/client/v1/admin/pairing-requests/[id]/decision",
+    "/client/v1/conversations",
+    "/client/v1/conversations/[id]",
+    "/client/v1/conversations/[id]/messages",
+    "/client/v1/familiars",
     "/client/v1/health",
     "/client/v1/pairing/requests",
     "/client/v1/pairing/requests/[id]",
     "/client/v1/pairing/requests/[id]/exchange",
+    "/client/v1/projects",
   ],
-  "Phase 1 must expose exactly the reviewed client-v1 bootstrap and admin routes",
+  "client-v1 must expose exactly the reviewed bootstrap, admin, and canonical-read routes",
 );
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
 
@@ -722,6 +742,24 @@ for (const { file, route } of clientV1Routes) {
     source,
     /requireScope\s*\(/,
     `${route} is neither the admin family nor the reviewed credential-free bootstrap surface, so it must call requireScope`,
+  );
+  // Half three (cave-jfa9y): the same route must also meter the credential it
+  // just accepted. Added with the first routes that actually call requireScope,
+  // because until then consumeAuthenticated had no caller and the obligation
+  // had nothing to attach to. A pre-authorized path has already given up the
+  // sidecar-token gate, so an unmetered one lets a single valid bearer drive
+  // the store, the daemon, and the transcript directory without bound — and
+  // nothing else in the suite would notice, since an unmetered route passes
+  // every functional test it has.
+  //
+  // Matched on the success-path charge specifically, and on that name ALONE —
+  // there is no alternation here, deliberately. A future route that meters
+  // against a different budget fails this assertion and has to widen it in
+  // review rather than inherit an exemption by being written differently.
+  assert.match(
+    source,
+    /consumeAuthenticated\s*\(/,
+    `${route} calls requireScope but never charges the authenticated rate-limit budget`,
   );
 }
 

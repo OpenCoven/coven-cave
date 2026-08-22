@@ -293,15 +293,38 @@ const CLIENT_V1_PUBLIC_PATHS = CLIENT_V1_PUBLIC_ROUTES.map((route) =>
  * So the invariant is: a pattern belongs here only once a route.ts on disk
  * matches it AND that route calls requireScope. Both halves are asserted in
  * src/app/api/api-contracts.test.ts. Phase 2 adds its entry in the same change
- * that adds its handler; until then this list is empty and every unhandled
- * client-v1 path falls through to the ordinary sidecar-token gate, which is
- * where an unauthenticated loopback caller should land.
+ * that adds its handler; an unhandled client-v1 path stays off this list and
+ * falls through to the ordinary sidecar-token gate, which is where an
+ * unauthenticated loopback caller should land.
  *
- * It was NOT empty before cave-4841: thirteen Phase 2 paths were listed against
- * zero handlers, so the first Phase 2 route to land would have been reachable
- * from any loopback process with no sidecar token at all.
+ * It was NOT empty before cave-4841, and then it was: thirteen Phase 2 paths
+ * were listed against zero handlers, so the first Phase 2 route to land would
+ * have been reachable from any loopback process with no sidecar token at all.
+ * cave-4841 emptied it; the five entries below are the first to earn their
+ * place, and each arrives in the same change as the handler that serves it.
+ *
+ * All five are canonical reads (cave-jfa9y), and each calls requireScope for
+ * `chat:read` AND re-checks the loopback stamp for itself, the way all three
+ * pairing routes now do. That second check began as cover for #4854 — the
+ * classifier below returns null for any pathname containing a percent sign, so
+ * a percent-encoded dynamic segment used to escape the direct-loopback branch
+ * entirely, and two of these five paths are dynamic-segmented. #4855 closed
+ * that by refusing such a target in proxy() before anything is classified. The
+ * in-route check stays as the second layer: a route that is DEMOTED by this
+ * list should not take its locality on trust from the thing that demoted it.
+ *
+ * Written through clientV1PathPattern rather than as hand-rolled regexes so
+ * these share the public set's anchoring and its one-segment `:id` scoping. A
+ * hand-written pattern that forgot a `^` would silently pre-authorize
+ * `/decoy/api/client/v1/projects`.
  */
-export const CLIENT_V1_AUTHENTICATED_PATHS: RegExp[] = [];
+export const CLIENT_V1_AUTHENTICATED_PATHS: RegExp[] = [
+  "/api/client/v1/familiars",
+  "/api/client/v1/projects",
+  "/api/client/v1/conversations",
+  "/api/client/v1/conversations/:id",
+  "/api/client/v1/conversations/:id/messages",
+].map(clientV1PathPattern);
 
 export function clientV1IngressKind(pathname: string): ClientV1IngressKind | null {
   // Kept, and no longer load-bearing. proxy() refuses such a target through
