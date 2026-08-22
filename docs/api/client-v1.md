@@ -162,6 +162,21 @@ locality entirely from the proxy branch, and its own 401s are about the pairing
 secret. `GET /health` performs no check of its own either — it is local because
 the proxy branch above says so, and for no other reason.
 
+**That difference is load-bearing, because the proxy branch has a hole
+(`cave-f1xki`).** `clientV1IngressKind` returns `null` for any pathname
+containing `%` or `\`, while Next still percent-decodes a dynamic segment before
+matching it — so a pairing id written with one percent-escaped character
+classifies as *not* client-v1 ingress and reaches the handler anyway, skipping
+both the direct-loopback branch above and the body rules below. It is not an
+open door: such a request now has to satisfy the ordinary API gate instead, so
+an unauthenticated caller is refused where the plain path would have been
+served. But a caller that already holds the sidecar token or the mobile access
+credential can use it to reach `GET /pairing/requests/:id` from **off the
+machine**, which the 403 above otherwise forbids. `POST .../exchange` is
+unaffected — its own stamp check answers 401 — and `GET /health` and
+`POST /pairing/requests` have no dynamic segment, so a percent in their paths
+simply 404s. Reproduced against a production build; the fix is still open.
+
 ### Body and content-type rules on the public routes
 
 For the four public paths, and only those, `proxy.ts` applies control-plane body
@@ -328,12 +343,19 @@ what they need to drive the next step.
 | Status | Code | Cause |
 |---|---|---|
 | 401 | `unauthorized` | The id is not a UUID, the secret header is absent or not 43 base64url characters, **or** the secret is wrong for a request that exists. |
+| 429 | `rate_limited` | The per-pairing wrong-secret budget is spent — **including by the exchange route**, which shares it. Checked before the secret is compared, so a correct secret gets this too. |
 | 404 | `not_found` | No request or terminal record carries this id. |
 | 409 | `conflict` | Already exchanged. `details.reason` is `"pairing_replayed"`. |
 
 The 401/404 split is observable: a well-formed wrong secret against a *known*
 id answers 401, and against an *unknown* id answers 404. With 122-bit random
 ids this is not a practical enumeration oracle, but it is the behaviour.
+
+**Polling with the correct secret is free**, exactly as on the exchange — the
+route's own test drives 150 polls and leaves the shared bucket untouched, and
+neither `not_found` nor the already-exchanged 409 is charged either. But *free*
+is not the same as *never 429*: see *Rate limits* for the lockout the shared
+budget makes possible.
 
 ### `POST /api/client/v1/pairing/requests/:id/exchange`
 
@@ -378,7 +400,7 @@ paring by the administrator.
 | 403 | `pairing_denied` | The user declined. | No |
 | 410 | `pairing_expired` | The five minutes ran out. | No — start over |
 | 409 | `conflict` | Already exchanged. `details.reason: "pairing_replayed"`. | No |
-| 429 | `rate_limited` | The per-pairing wrong-secret budget is spent. | Yes, after `Retry-After` |
+| 429 | `rate_limited` | The per-pairing wrong-secret budget is spent — **including by the GET poll route**, which shares it. | Yes, after `Retry-After` |
 | 500 | `internal_error` | The credential could not be written. Marked retryable, and the pairing is deliberately restored to its approved state so a retry succeeds without a second approval. | Yes |
 
 **Polling with the correct secret is free.** The failure budget is charged only
@@ -391,7 +413,9 @@ The budget is read *before* the secrets are compared — a limit charged after t
 comparison would bound nothing — so once ten wrong guesses land against one
 pairing id, that pairing answers 429 to everyone for the rest of the 60 s
 window. This is a deliberate per-pairing lockout, and it is confined to the
-pairing under attack; other pairings are unaffected.
+pairing under attack; other pairings are unaffected. **The bucket is shared with
+`GET /pairing/requests/:id`**, so guesses against either route spend the same
+ten and lock out both.
 
 ## Administrator routes
 
@@ -548,7 +572,7 @@ entries per category with least-recently-seen eviction.
 | Bucket | Limit | Keyed by | Charged when |
 |---|---|---|---|
 | Pairing creation | 10 / 60 s | the loopback stamp — one process-wide constant, so this is a single shared bucket | every accepted `POST /pairing/requests` |
-| Pairing exchange failure | 10 / 60 s | the pairing request id | only a **wrong** secret on `POST .../exchange` |
+| Pairing secret failure | 10 / 60 s | the pairing request id | only a **wrong** secret, on `POST .../exchange` **or** `GET /pairing/requests/:id` — one shared bucket |
 | Authenticated requests | 120 / 60 s | credential id | *nothing yet* — no route calls it |
 | Invalid bearer | 120 / 60 s | source identity | *nothing yet* — no route calls it |
 
@@ -560,17 +584,32 @@ and so trivially varied to escape the bound.
 A 429 carries a `Retry-After` header in seconds and puts `limit` and `resetAt`
 (epoch ms, as strings) in `error.details`.
 
-**The exchange budget is not a system-wide bound
-([#4846](https://github.com/OpenCoven/coven-cave/issues/4846)).**
-`GET /pairing/requests/:id` performs the byte-identical secret comparison
-against the same hash and consults **no rate limiter at all**, distinguishing a
-wrong secret (401) from a right one (200/409). An attacker holding a pairing id
-can therefore guess through the GET route unmetered and spend a single exchange
-call once it succeeds. It is not practically exploitable — the secret is 256
-bits of randomness, ingress is loopback-only, and the request lives five
-minutes — but the exchange route's budget bounds one of the two comparison
-sites, not both. The exchange route's own comment says so rather than
-overclaiming.
+**One bucket covers both places a pairing secret is compared.** `GET
+/pairing/requests/:id` and `POST .../exchange` run the byte-identical
+`hashesEqual` against the same `secretHash`, and both distinguish a wrong secret
+(401) from a right one, so both are guessing oracles. Each peeks the budget
+*before* comparing and charges it only on a mismatch, against the same key —
+the pairing request id. Two buckets would meter each route and bound neither:
+the cheapest attack is to spend one oracle and then use the other.
+
+**The practical consequence a client author will meet: the two routes can lock
+each other out.** The budget is read before the secrets are compared, so once
+ten wrong guesses have landed against one pairing id — through *either* route —
+the next call to *either* route answers 429 for the rest of the 60-second
+window, including a call carrying the correct secret. A client polling with the
+right secret is never charged, but it is not immune to a budget someone else
+spent. Honour `Retry-After` rather than treating 429 as terminal; the pairing
+is still alive until `expiresAt`.
+
+Closed by [#4849](https://github.com/OpenCoven/coven-cave/pull/4849)
+([#4846](https://github.com/OpenCoven/coven-cave/issues/4846)); before it, the
+GET route consulted no rate limiter at all and the exchange budget bounded one
+of the two comparison sites, which is to say neither.
+
+The limiter's methods are still named `consumePairingExchangeFailure` /
+`peekPairingExchangeFailure` even though the budget now covers both routes. The
+name records where the budget was introduced, not who may spend it
+(`cave-ngro8`).
 
 ## Storage and lifetimes
 
@@ -671,7 +710,10 @@ Client-side rules that fall out of the above:
    is needed *in the Cave*, not in your app.
 3. Poll the exchange (or the GET lookup) every couple of seconds until
    `expiresAt`. `pairing_pending` is normal and free; `pairing_denied`,
-   `pairing_expired`, and `conflict` are terminal.
+   `pairing_expired`, and `conflict` are terminal. A 429 is **not** terminal:
+   both routes share one per-pairing budget that someone else's wrong guesses
+   can spend, so back off for `Retry-After` and resume — the pairing is alive
+   until `expiresAt`.
 4. On 200, persist `bearer` in the platform keychain, keyed by `instanceId`, and
    discard the pairing secret.
 5. If `instanceId` ever changes, discard the bearer and pair again.
@@ -683,12 +725,11 @@ against something that is not there.
 
 - **No authenticated route exists.** `requireScope`, `consumeAuthenticated`, and
   `consumeInvalidBearer` have zero non-test call sites, so a bearer is currently
-  issued, persisted, listed, and revocable — and never verified. Tracked as
-  [#4841](https://github.com/OpenCoven/coven-cave/issues/4841), which must be
-  resolved before the first authenticated route lands. The thirteen paths in
-  `CLIENT_V1_AUTHENTICATED_PATHS` (`src/proxy-helpers.ts`) are the ingress
-  wiring for routes that do not yet exist; a request to any of them passes the
-  same direct-loopback gate and then reaches no handler.
+  issued, persisted, listed, and revocable — and never verified. Nothing
+  pre-authorizes the routes that will consume it, either:
+  `CLIENT_V1_AUTHENTICATED_PATHS` (`src/proxy-helpers.ts`) is now **empty**, so
+  every client-v1 path with no handler classifies `null` and falls through to
+  the ordinary sidecar-token gate. See *When the authenticated routes land*.
 - **Scopes are recorded, not enforced.** They are validated on request, stored
   on the credential, and shown to the approving user. Nothing reads them at
   request time yet, because nothing consumes a credential.
@@ -701,7 +742,44 @@ against something that is not there.
   the reviewed side.
 - **Admin routes are not bound to direct loopback** —
   [#4843](https://github.com/OpenCoven/coven-cave/issues/4843), described above.
-- **The GET lookup route is unmetered** —
-  [#4846](https://github.com/OpenCoven/coven-cave/issues/4846), described above.
+- **A percent-encoded pairing id escapes the client-v1 ingress branch** —
+  `cave-f1xki`, described above. Reproduced, not yet fixed.
 - **`requestId` is never emitted**, so there is no server-assigned correlation
   id to quote in a bug report. The envelope field exists; no route sets it.
+
+## When the authenticated routes land
+
+Nothing here is callable yet, but the wiring a Phase 2 route inherits is already
+decided, and it is not the obvious default. Read this before adding one.
+
+`CLIENT_V1_AUTHENTICATED_PATHS` is empty on purpose. **Matching it is a
+demotion, not a promotion**: `proxy()` computes the ingress kind before the
+mobile-access gate, skips that gate for any client-v1 match, and returns before
+the sidecar-token block ever runs — so for a listed path the *only* credential
+check left is the one the route performs on itself. That is a sound trade for a
+route that really calls `requireScope`, and a hole for a path that does not
+exist yet: a handler landing later would inherit an exemption it never opted
+into. The list previously named thirteen Phase 2 paths against zero handlers.
+
+**But absence is a decision too, and it costs something.** Both of the
+client-v1-only protections described under *Reaching the API at all* are gated
+on that same classification — the hard `403 forbidden peer: client v1 requires
+direct loopback`, and the 411/413 body rules with their 64 KiB cap. Neither
+applies to a path that classifies `null`. So an authenticated route that lands
+un-listed does not merely keep the sidecar-token gate: it *gains* a bearer
+requirement and *loses* loopback-only ingress and the body cap.
+
+The invariant, asserted in `src/app/api/api-contracts.test.ts` against the repo
+rather than a list somebody must remember to prune:
+
+1. every pattern in the list must be matched by a `route.ts` that exists, so the
+   entry lands in the same change as the handler. A dynamic segment is probed as
+   one literal segment; a `[...catchAll]` is probed at *every* width it serves,
+   because collapsing it to one segment let a catch-all impersonate a reviewed
+   single-segment public path.
+2. every client-v1 route that is neither the admin family (identified by
+   directory) nor entirely inside the reviewed public set (identified by
+   `clientV1IngressKind` itself) must call `requireScope`; admin routes must call
+   `requireClientV1Admin`. Both are matched against a comment-, string- and
+   regex-stripped view of the source, so a `// TODO: … requireScope(…)` on a
+   route with no credential check does not satisfy them.
