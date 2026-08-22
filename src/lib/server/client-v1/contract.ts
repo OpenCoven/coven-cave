@@ -1,5 +1,6 @@
 export const CLIENT_V1_API_VERSION = "1.0";
 export const CLIENT_V1_MIN_CLIENT_VERSION = "0.1.0";
+export const CLIENT_V1_PAIRING_SECRET_HEADER = "x-coven-pairing-secret";
 
 /**
  * Every Client v1 resource route requires a paired credential. Stated as a
@@ -75,6 +76,27 @@ export const CLIENT_V1_LIMITS = freezeReadonlyObject({
   releaseVersionCharacters: 64,
 } as const);
 
+export type ClientV1PublicRoute = {
+  method: "GET" | "POST";
+  path: string;
+};
+
+export const CLIENT_V1_PUBLIC_ROUTES = Object.freeze([
+  Object.freeze({ method: "GET", path: "/api/client/v1/health" }),
+  Object.freeze({ method: "POST", path: "/api/client/v1/pairing/requests" }),
+  Object.freeze({ method: "GET", path: "/api/client/v1/pairing/requests/:id" }),
+  Object.freeze({
+    method: "POST",
+    path: "/api/client/v1/pairing/requests/:id/exchange",
+  }),
+] satisfies ClientV1PublicRoute[]);
+
+export const CLIENT_V1_DISCOVERY_CONTRACT = freezeReadonlyObject({
+  fileName: "client-v1-discovery.json",
+  mode: "0600",
+  version: 1,
+} as const);
+
 export type ClientV1Scope = (typeof CLIENT_V1_SCOPES)[number];
 export type ClientV1Capability = (typeof CLIENT_V1_CAPABILITIES)[number];
 export type ClientV1ErrorCode = (typeof CLIENT_V1_ERROR_CODES)[number];
@@ -87,6 +109,12 @@ export type ClientV1Record = JsonObject;
 export type ClientV1IdempotencyKey = string & {
   readonly __clientV1IdempotencyKey: unique symbol;
 };
+
+export interface ClientV1PairingCreateRequest {
+  appName: string;
+  installationId: string;
+  scopes: ClientV1Scope[];
+}
 
 export type ClientV1Identity = {
   kind: ClientV1IdentityKind;
@@ -157,8 +185,11 @@ export type ClientV1ContractManifest = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
   capabilities: ClientV1Capability[];
+  discovery: typeof CLIENT_V1_DISCOVERY_CONTRACT;
   pairingRequired: typeof CLIENT_V1_PAIRING_REQUIRED;
   pairingScopes: ClientV1Scope[];
+  pairingSecretHeader: typeof CLIENT_V1_PAIRING_SECRET_HEADER;
+  publicRoutes: ClientV1PublicRoute[];
   identityKinds: ClientV1IdentityKind[];
   errorCodes: ClientV1ErrorCode[];
   limits: typeof CLIENT_V1_LIMITS;
@@ -174,6 +205,37 @@ export type ClientV1ContractFixture = {
     cursor: ClientV1Cursor;
     successEnvelope: ClientV1SuccessEnvelope<ClientV1StatusRecord>;
     errorEnvelope: ClientV1ErrorEnvelope;
+    healthEnvelope: ClientV1SuccessEnvelope<ClientV1Health>;
+    pairingCreatedEnvelope: ClientV1SuccessEnvelope<{
+      requestId: string;
+      secret: string;
+      expiresAt: number;
+    }>;
+    pairingStatusEnvelope: ClientV1SuccessEnvelope<{
+      id: string;
+      status: "approved";
+      expiresAt: number;
+    }>;
+    pairingExchangeEnvelope: ClientV1SuccessEnvelope<{
+      bearer: string;
+      credential: {
+        id: string;
+        appName: string;
+        installationId: string;
+        scopes: ClientV1Scope[];
+        createdAt: number;
+        lastUsedAt: null;
+        revokedAt: null;
+        revocationReason: null;
+      };
+    }>;
+    discoveryRecord: {
+      version: 1;
+      endpoint: string;
+      pid: number;
+      nonce: string;
+      startedAt: string;
+    };
   };
 };
 
@@ -318,6 +380,47 @@ export function parseClientV1IdempotencyKey(value: unknown): ClientV1Idempotency
 
 export function parseClientV1PairingScopes(value: unknown): ClientV1Scope[] {
   return parseUniqueStringEnumList<ClientV1Scope>(value, "pairing scopes", CLIENT_V1_SCOPE_SET);
+}
+
+export function parseClientV1PairingCreateRequest(
+  value: unknown,
+): ClientV1PairingCreateRequest {
+  const request = requiredRecord(value, "pairing request");
+  const allowedKeys = new Set(["appName", "installationId", "scopes"]);
+  if (Object.keys(request).some((key) => !allowedKeys.has(key))) {
+    throw new Error("Client v1 pairing request contains an unsupported field.");
+  }
+  const appName = requiredString(request.appName, "pairing appName", 128).trim();
+  if (/[\u0000-\u001f\u007f]/u.test(appName)) {
+    throw new Error("Client v1 pairing appName contains invalid characters.");
+  }
+  const installationId = requiredString(
+    request.installationId,
+    "pairing installationId",
+    128,
+  ).trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(installationId)) {
+    throw new Error("Client v1 pairing installationId is malformed.");
+  }
+  return {
+    appName,
+    installationId,
+    scopes: parseClientV1PairingScopes(request.scopes),
+  };
+}
+
+export function parseClientV1PairingRequestId(value: unknown): string {
+  if (typeof value !== "string" || !UUID_RE.test(value)) {
+    throw new Error("Client v1 pairing request id must be a UUID.");
+  }
+  return value;
+}
+
+export function parseClientV1PairingSecret(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{43}$/u.test(value)) {
+    throw new Error("Client v1 pairing secret is malformed.");
+  }
+  return value;
 }
 
 export function parseClientV1Capabilities(value: unknown): ClientV1Capability[] {
@@ -537,14 +640,15 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
       apiVersion: CLIENT_V1_API_VERSION,
       minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
       capabilities: defaultCapabilities(),
+      discovery: cloneClientV1Record(CLIENT_V1_DISCOVERY_CONTRACT),
       pairingRequired: CLIENT_V1_PAIRING_REQUIRED,
       pairingScopes: [...CLIENT_V1_SCOPES],
+      pairingSecretHeader: CLIENT_V1_PAIRING_SECRET_HEADER,
+      publicRoutes: CLIENT_V1_PUBLIC_ROUTES.map((route) => ({ ...route })),
       identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
       errorCodes: [...CLIENT_V1_ERROR_CODES],
       limits: cloneClientV1Record(CLIENT_V1_LIMITS),
     },
-    // Phase 0 fixture governance stays foundation-only: shared primitives,
-    // generic envelopes, and no route DTOs or success-shape guessing.
     examples: {
       status,
       health,
@@ -572,6 +676,53 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
           details: { reason: "resume_from_canonical_state" },
           retryable: true,
         },
+      },
+      // The health envelope carries the compatibility record the route
+      // actually serves, not a bare status. Pinning `{ status: "ok" }` here
+      // would let the fixture agree with itself while disagreeing with
+      // /api/client/v1/health.
+      healthEnvelope: {
+        ...envelopeBase(),
+        data: { ...health },
+      },
+      pairingCreatedEnvelope: {
+        ...envelopeBase(),
+        data: {
+          requestId: "018f4f1a-77c2-7a31-8a15-55a25aaba001",
+          secret: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          expiresAt: 1_755_731_112_617,
+        },
+      },
+      pairingStatusEnvelope: {
+        ...envelopeBase(),
+        data: {
+          id: "018f4f1a-77c2-7a31-8a15-55a25aaba001",
+          status: "approved",
+          expiresAt: 1_755_731_112_617,
+        },
+      },
+      pairingExchangeEnvelope: {
+        ...envelopeBase(),
+        data: {
+          bearer: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          credential: {
+            id: "018f4f1a-77c2-7a31-8a15-55a25aaba002",
+            appName: "OpenCoven Chat",
+            installationId: "chat-install-1",
+            scopes: ["chat:read", "chat:write"],
+            createdAt: 1_755_730_812_617,
+            lastUsedAt: null,
+            revokedAt: null,
+            revocationReason: null,
+          },
+        },
+      },
+      discoveryRecord: {
+        version: 1,
+        endpoint: "http://127.0.0.1:3020",
+        pid: 4321,
+        nonce: "018f4f1a-77c2-7a31-8a15-55a25aaba003",
+        startedAt: "2026-08-20T20:20:12.617Z",
       },
     },
   };

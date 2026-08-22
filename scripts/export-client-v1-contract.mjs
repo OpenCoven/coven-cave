@@ -12,6 +12,16 @@ const fixtureModuleUrl = pathToFileURL(
   path.join(repositoryRoot, "src", "lib", "server", "client-v1", "contract.ts"),
 ).href;
 
+export const REVIEWED_CLIENT_V1_PUBLIC_ROUTES = Object.freeze([
+  Object.freeze({ method: "GET", path: "/api/client/v1/health" }),
+  Object.freeze({ method: "POST", path: "/api/client/v1/pairing/requests" }),
+  Object.freeze({ method: "GET", path: "/api/client/v1/pairing/requests/:id" }),
+  Object.freeze({
+    method: "POST",
+    path: "/api/client/v1/pairing/requests/:id/exchange",
+  }),
+]);
+
 export const CLIENT_V1_CONTRACT_FIXTURE_PATH = path.join(
   repositoryRoot,
   "src",
@@ -34,7 +44,7 @@ function buildFixture() {
     `import { renderClientV1ContractFixture } from ${JSON.stringify(fixtureModuleUrl)};`,
     "process.stdout.write(renderClientV1ContractFixture());",
   ].join("\n");
-  return execFileSync(process.execPath, [
+  const fixture = execFileSync(process.execPath, [
     "--no-warnings",
     "--experimental-strip-types",
     "--input-type=module",
@@ -44,6 +54,14 @@ function buildFixture() {
     cwd: repositoryRoot,
     encoding: "utf8",
   });
+  const parsed = JSON.parse(fixture);
+  if (
+    JSON.stringify(parsed.contract?.publicRoutes)
+      !== JSON.stringify(REVIEWED_CLIENT_V1_PUBLIC_ROUTES)
+  ) {
+    throw new Error("Client v1 contract omitted the reviewed public routes.");
+  }
+  return fixture;
 }
 
 export function renderClientV1ContractFixture() {

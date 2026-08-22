@@ -9,10 +9,13 @@ const packageVersion: string = JSON.parse(
 import {
   CLIENT_V1_API_VERSION,
   CLIENT_V1_CAPABILITIES,
+  CLIENT_V1_DISCOVERY_CONTRACT,
   CLIENT_V1_ERROR_CODES,
   CLIENT_V1_IDENTITY_KINDS,
   CLIENT_V1_LIMITS,
   CLIENT_V1_MIN_CLIENT_VERSION,
+  CLIENT_V1_PAIRING_SECRET_HEADER,
+  CLIENT_V1_PUBLIC_ROUTES,
   CLIENT_V1_SCOPES,
   createClientV1ContractFixture,
   parseClientV1Cursor,
@@ -22,6 +25,7 @@ import {
   parseClientV1Identity,
   type ClientV1Record,
   parseClientV1PairingScopes,
+  parseClientV1PairingCreateRequest,
   parseClientV1Revision,
   parseClientV1StatusRecord,
   parseClientV1SuccessEnvelope,
@@ -38,6 +42,7 @@ import {
   clientV1Error,
   clientV1ErrorResponse,
   clientV1OperationInProgressError,
+  clientV1RateLimitResponse,
   clientV1Success,
   clientV1SuccessResponse,
   httpStatusForClientV1ErrorCode,
@@ -115,6 +120,20 @@ test("publishes the locked v1 metadata, capabilities, scopes, error codes, and i
     "message",
     "event",
   ]);
+});
+
+test("publishes the reviewed public bootstrap routes and pairing secret header", () => {
+  assert.equal(CLIENT_V1_PAIRING_SECRET_HEADER, "x-coven-pairing-secret");
+  assert.deepEqual(CLIENT_V1_PUBLIC_ROUTES, [
+    { method: "GET", path: "/api/client/v1/health" },
+    { method: "POST", path: "/api/client/v1/pairing/requests" },
+    { method: "GET", path: "/api/client/v1/pairing/requests/:id" },
+    { method: "POST", path: "/api/client/v1/pairing/requests/:id/exchange" },
+  ]);
+  assert.equal(Object.isFrozen(CLIENT_V1_PUBLIC_ROUTES), true);
+  for (const route of CLIENT_V1_PUBLIC_ROUTES) {
+    assert.equal(Object.isFrozen(route), true);
+  }
 });
 
 test("publishes stable client v1 limits", () => {
@@ -272,6 +291,91 @@ test("parses stable ids, scopes, identities, revisions, cursors, and status reco
   );
   assert.throws(() => parseClientV1StatusRecord({}), /status/i);
   assert.throws(() => parseClientV1StatusRecord({ status: "   " }), /status/i);
+});
+
+test("parses the reviewed pairing creation identity and rejects unknown fields", () => {
+  assert.deepEqual(parseClientV1PairingCreateRequest({
+    appName: " OpenCoven Chat ",
+    installationId: "chat-install-1",
+    scopes: ["chat:read", "github:write"],
+  }), {
+    appName: "OpenCoven Chat",
+    installationId: "chat-install-1",
+    scopes: ["chat:read", "github:write"],
+  });
+  assert.throws(
+    () => parseClientV1PairingCreateRequest({
+      appName: "OpenCoven Chat",
+      installationId: "../chat-install",
+      scopes: ["chat:read"],
+    }),
+    /installationId/i,
+  );
+  assert.throws(
+    () => parseClientV1PairingCreateRequest({
+      appName: "OpenCoven Chat",
+      installationId: "chat-install-1",
+      scopes: ["chat:read"],
+      bearer: "not-reviewed",
+    }),
+    /unsupported field/i,
+  );
+});
+
+test("exports additive Phase 1 health, pairing, credential, and discovery examples", () => {
+  const fixture = createClientV1ContractFixture();
+  assert.deepEqual(fixture.contract.publicRoutes, CLIENT_V1_PUBLIC_ROUTES);
+  assert.equal(fixture.contract.pairingSecretHeader, CLIENT_V1_PAIRING_SECRET_HEADER);
+  assert.deepEqual(fixture.contract.discovery, {
+    fileName: "client-v1-discovery.json",
+    mode: "0600",
+    version: 1,
+  });
+  // The health envelope example must be the compatibility record the route
+  // serves, so the fixture and /api/client/v1/health cannot drift apart.
+  assert.deepEqual(fixture.examples.healthEnvelope.data, fixture.examples.health);
+  assert.deepEqual(Object.keys(fixture.examples.healthEnvelope.data).sort(), [
+    "instanceId",
+    "pairingRequired",
+    "releaseVersion",
+  ]);
+  assert.deepEqual(Object.keys(fixture.examples.pairingCreatedEnvelope.data), [
+    "requestId",
+    "secret",
+    "expiresAt",
+  ]);
+  assert.deepEqual(fixture.examples.pairingStatusEnvelope.data, {
+    id: "018f4f1a-77c2-7a31-8a15-55a25aaba001",
+    status: "approved",
+    expiresAt: 1_755_731_112_617,
+  });
+  assert.equal(
+    "bearerHash" in fixture.examples.pairingExchangeEnvelope.data.credential,
+    false,
+  );
+  assert.equal(
+    "secretHash" in fixture.examples.pairingExchangeEnvelope.data,
+    false,
+  );
+  assert.equal(fixture.examples.discoveryRecord.version, 1);
+});
+
+test("rate-limit responses carry canonical envelopes and Retry-After metadata", async () => {
+  const response = clientV1RateLimitResponse({
+    allowed: false,
+    limit: 10,
+    remaining: 0,
+    resetAt: 61_000,
+    retryAfterSeconds: 60,
+  });
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), "60");
+  assert.deepEqual((await response.json() as { error: unknown }).error, {
+    code: "rate_limited",
+    message: "Rate limit exceeded.",
+    details: { limit: "10", resetAt: "61000" },
+    retryable: true,
+  });
 });
 
 test("accepts only unambiguous public wire timestamps", () => {
@@ -592,15 +696,22 @@ test("represents in-progress operations as retryable conflicts", () => {
   });
 });
 
-test("builds a deterministic foundation-only contract fixture with shared primitives", () => {
+test("builds a deterministic additive Phase 1 contract fixture", () => {
   const fixture = createClientV1ContractFixture();
 
   assert.deepEqual(fixture.contract, {
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
+    discovery: {
+      fileName: "client-v1-discovery.json",
+      mode: "0600",
+      version: 1,
+    },
     pairingRequired: true,
     pairingScopes: [...CLIENT_V1_SCOPES],
+    pairingSecretHeader: "x-coven-pairing-secret",
+    publicRoutes: [...CLIENT_V1_PUBLIC_ROUTES],
     identityKinds: [...CLIENT_V1_IDENTITY_KINDS],
     errorCodes: [...CLIENT_V1_ERROR_CODES],
     limits: CLIENT_V1_LIMITS,
@@ -647,15 +758,27 @@ test("copies protocol defaults into fixtures and envelope metadata", () => {
   assert.notStrictEqual(fixture.contract.errorCodes, CLIENT_V1_ERROR_CODES);
   assert.notStrictEqual(fixture.contract.identityKinds, CLIENT_V1_IDENTITY_KINDS);
   assert.notStrictEqual(fixture.contract.limits, CLIENT_V1_LIMITS);
+  assert.notStrictEqual(fixture.contract.publicRoutes, CLIENT_V1_PUBLIC_ROUTES);
+  assert.notStrictEqual(fixture.contract.discovery, CLIENT_V1_DISCOVERY_CONTRACT);
 
   fixture.contract.capabilities.pop();
   fixture.contract.pairingScopes.pop();
   fixture.contract.errorCodes.pop();
   fixture.contract.identityKinds.pop();
+  fixture.contract.publicRoutes.pop();
+  (fixture.contract.discovery as { mode: string }).mode = "0644";
   (fixture.contract.limits as { maxPageSize: number }).maxPageSize = 1;
 
   assert.deepEqual(clientV1Success({ status: "ok" }).capabilities, [...CLIENT_V1_CAPABILITIES]);
   assert.deepEqual(createClientV1ContractFixture().contract.limits, CLIENT_V1_LIMITS);
+  assert.deepEqual(
+    createClientV1ContractFixture().contract.publicRoutes,
+    CLIENT_V1_PUBLIC_ROUTES,
+  );
+  assert.deepEqual(
+    createClientV1ContractFixture().contract.discovery,
+    CLIENT_V1_DISCOVERY_CONTRACT,
+  );
 
   const identity: ClientV1Identity & { extension: { labels: string[] } } = {
     kind: "conversation",
