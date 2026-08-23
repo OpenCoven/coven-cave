@@ -7,6 +7,165 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+- Remove the recurring fresh-pairing-token interruption for trusted local browser REST and terminal access.
+
+## [0.3.9] - 2026-08-21
+
+> Restores the release pipeline and ships the refreshed desktop chrome.
+
+Patch release on top of v0.3.8. v0.3.8 tagged but never produced builds: its
+platform validation failed on all three runners, which skipped the iOS
+TestFlight upload. This release repairs that path and the frontend contracts
+that went red behind it.
+
+### Changes
+- Repair red main frontend contracts (#4797)
+- docs: add Bead Quests design prompt (#4795)
+- Add chat kind filters and PR state fixes
+- Refresh desktop chrome and activity UX (#4791)
+- Restore the iOS release path by patching every canonical reading key (#4794)
+- Document AICSS chat approval and segment fix
+- Enforce local remote-tracking hygiene so Desktop's branch list stays honest (#4769)
+- test: repair the stale contracts deadlocking every PR, unit and e2e (#4768)
+- Update interactions.jsonl
+- Update .gitignore
+- Update interactions.jsonl
+- Reuse board resource and fix split pane sizing
+- Document analytics and fix split pane sizing
+- feat(chart-room): consume canonical multi-parent dependencies and import the legacy overlay (#4757)
+- Consolidate recovered platform reliability work (#4759)
+- Consolidate recovered product experience work (#4758)
+- fix: restore browser access prompt (#4761)
+- Implement Research Protocol v1 (#4760)
+- Establish signed release-candidate validation (#4753)
+- fix(desktop): mint dev sidecar auth token
+- wip(cave-atox4-marketplace-logo-colors): marketplace logo color treatment
+- wip(cave-kex69-performance-reports): Cave performance report workflow
+- wip(cave-w3hx6-empty-self-report): empty thread self-report handling
+- wip(cave-b21o1-appstore-status): App Store Connect release status wiring
+- wip(cave-w7wzu-research-video-e2e): research studio video e2e coverage
+- wip(cave-cma81-remove-ios-terminal): remove the iOS terminal surface
+- Fix Task9 stale source contract
+- feat(chat): surface released stream updates
+- fix(chat): await late quick-chat stop promises
+- fix(quick-chat): separate BFCache Stop ownership
+- fix(quick-chat): reconcile BFCache stop outcomes
+- fix(chat): coordinate Stop without stream fields
+- fix(chat): isolate run stops and terminal streams
+- fix(chat): isolate stop intent ownership
+- fix(chat): harden final streaming contracts
+- fix(chat): preserve early cancellation intent
+- fix(quick-chat): close terminal cancellation races
+- fix(quick-chat): honor late stop outcomes
+- fix(quick-chat): close final stop races
+- fix(quick-chat): harden stop and rich replies
+- fix(quick-chat): stop active server runs
+- feat(quick-chat): share calm streaming responses
+- Fix Task7 meaningful output guard
+- Fix non-prose empty-success fallback
+- fix(chat): preserve rich response chronology
+- feat(chat): use stable streaming response model
+- Fix blank citation-only markdown blocks
+- Fix streaming Markdown integrations
+- Fix Task 6 streaming response gaps
+- feat(chat): render shared streaming responses
+- Fix streaming presentation scheduling
+- Fix projected streaming source mode
+- Fix streaming buffer source modes
+- Fix exact streaming replacement detection
+- Optimize streaming boundary scans
+- Fix streaming presentation hook lifecycle
+- Fix snapshot transition boundaries
+- Fix streaming boundary detection
+- fix(chat): calm streaming presentation buffer
+- feat(chat): coalesce live response presentation
+- Fix tool activity chronology merge
+- fix(chat): suppress mirrored tool progress
+- Restrict tool activity classification
+- feat(chat): derive shared streaming turn model
+- Fail closed on test runner flags
+- fix(chat): reject raw multiline shell input
+- feat(chat): normalize trusted verification results
+- fix(chat): partition first nested list boundary
+- fix(chat): close nested list boundaries
+- fix(chat): finalize stable list items
+- fix(chat): detect nested list markers conservatively
+- fix(chat): retain list identity for nested tails
+- fix(chat): preserve streaming block identity
+- fix(chat): honor markdown block precedence
+- fix(chat): stabilize markdown block boundaries
+- feat(chat): partition stable streaming markdown
+- fix(chat): protect result marker parsing
+- feat(chat): parse streaming result markers
+
+
+## [0.3.8] - 2026-08-20
+
+> Familiar memory stats now count workspace-owned memories, plus a guided
+> diagram command, a rebuilt research PDF reader, and Dependabot cleanup.
+
+Patch release on top of v0.3.7.
+
+### Changes
+- feat: add guided diagram chat command (#4751)
+- Open markdown file refs in chat reader
+- Safely unlink disposable symlink artifacts during retirement (#4756)
+- fix(dev): disable persistent Turbopack cache (#4755)
+- Merge workspace memory into familiar stats
+- docs: cross-link the OpenCoven UI specimen browser (#4754)
+- fix: ignore generated PDF worker during retirement (#4752)
+- Fully hide the collapsed sidebar (#4747)
+- fix(familiars): clarify runtime selection (#4750)
+- Modernize document reading and Memories (#4736)
+- fix: canonicalize Windows managed CLI path (#4749)
+- fix(desktop): mint dev sidecar auth token (#4748)
+- Fix and expand the research PDF reader (#4746)
+- fix(research): make the pdf.js worker a verified build artifact (#4745)
+- Add governed agentic recommendations across Cave surfaces (#4743)
+- fix(test): stop a swallowed Escape sinking the shortcuts sheet suite (#4744)
+- fix(deps): bump nanoid to 3.3.18 (Dependabot #17) (#4739)
+- fix(deps): force postcss >=8.5.23 (Dependabot #7 #9 #10 #11) (#4741)
+- fix(deps): bump serde_with to 3.21.0 (Dependabot #19) (#4737)
+- docs(security): record glib VariantStrIter constraint (Dependabot #18) (#4738)
+- fix(deps): bump sharp to 0.35.3 (Dependabot #1 #8) (#4742)
+- build(deps): bump mermaid from 11.16.0 to 11.16.1 (#4735)
+- Harden production iOS pairing recovery (#4731)
+- Add X Article Research Desk ingestion (#4730)
+- Skip blocked worktree retirement candidates (#4734)
+- Overhaul the Review Deck workflow (#4733)
+
+
+### Fixed
+- Verify Cave’s private Coven CLI after first-run installation on Windows even
+  when the inherited environment spells `Path` with different casing.
+
+## [0.3.7] - 2026-08-19
+
+> A calmer native iOS shell, clearer Chats, and a safer cross-platform foundation.
+
+Patch release on top of v0.3.6.
+
+### Changes
+- Refine native iOS navigation, Chats chrome, Settings shelves, and accessibility
+  while retiring the native-only Terminal surface (#4729)
+- Layer native destination titles above app toolbars for clearer hierarchy
+  (#4727)
+- Require explicit Research cost approval and protect active Terminal missions
+  (#4726)
+- Publish a deterministic Client v1 contract with precise success and error
+  envelopes (#4717, #4725)
+- Preserve marketplace logos through shared transport handling (#4724)
+- Harden CI recovery, managed worktree retention, and release lifecycle guards
+  (#4719, #4720, #4721)
+- Improve Chat follow-up pills and session-toolbar alignment (#4718, #4707)
+- Add familiar execution analytics, durable local previews, direct podcast
+  rendering, and the inference-route foundation (#4710, #4714)
+- Restore compact Code-rail Terminal access and improve cross-theme Beautiful UI
+  legibility (#4713, #4702)
+- Honor `COVEN_BIN` in the desktop shell and retry transient managed Node
+  installation failures (#4703)
+
+
 ## [0.3.6] - 2026-08-17
 
 > Seamless familiar credential intake and a Chat panel that stays with you across the Cave.

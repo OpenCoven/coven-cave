@@ -3,9 +3,10 @@
 #
 # Runs the lifecycle tool directly. The tool owns the retirement guard rails:
 # cooldown, dirty-state and live-process checks, retention proof, the maintenance
-# fence, and the bounded retirement count. Do not put an unattended LLM between
-# this wrapper and that policy: lifecycle inventory contains untrusted text from
-# filenames and repository metadata.
+# fence, a bounded destructive-retirement count, and a separate bounded attempt
+# budget that can bypass blocked candidates. Do not put an unattended LLM
+# between this wrapper and that policy: lifecycle inventory contains untrusted
+# text from filenames and repository metadata.
 #
 # Machine-specific wiring — the launchd plist and, on macOS, an app bundle that
 # holds the Full Disk Access grant — stays out of the repo.
@@ -146,8 +147,12 @@ echo "[sweep] repo HEAD: $(git rev-parse --short HEAD 2>/dev/null) on $(git rev-
 echo "[sweep] registered worktrees: $before"
 echo "[sweep] --- lifecycle apply output follows ---"
 # The lifecycle command performs its own complete inventory and retires only
-# cleanup-ready units. The explicit override is audited by the command; the
-# local maintenance plane remains enforced. Keep the blast radius bounded.
+# cleanup-ready units. --max-retire limits the number of local retirements per
+# run; the command may make additional attempts that can still include
+# destructive steps (e.g. ignored-path cleanup, worktree removal) before
+# reporting a unit as partially retired or blocked. The explicit override is
+# audited by the command; the local maintenance plane remains enforced. Keep
+# the blast radius bounded.
 pnpm beads:worktrees:apply --allow-unenforced-planes --max-retire 3
 status=$?
 

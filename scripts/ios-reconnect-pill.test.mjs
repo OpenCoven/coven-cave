@@ -5,11 +5,13 @@ import { readFile } from "node:fs/promises";
 // a connection drop must NOT tear the tab tree down to the Connect screen.
 // The tabs stay mounted (cached data usable, offline compose keeps queueing)
 // with a "Reconnecting… · last seen Xm" pill narrating recovery. Full-screen
-// Connect is reserved for unconfigured / needsAuth / never-connected.
+// Connect is reserved for unconfigured / needsAuth / never-connected; an
+// initial project-context bootstrap failure gets its own retryable gate.
 
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 const root = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 const model = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift");
+const gate = await read("apps/ios/CovenCave/CovenCave/Views/ProjectSwitcherView.swift");
 
 // --- RootView: teardown only when there's nothing worth keeping -------------
 assert.match(
@@ -27,12 +29,37 @@ assert.match(
   /case \.checking where app\.connection != nil && !app\.hasLoadedSurfaces:\s*\n\s*ConnectingView\(\)/,
   "the Connecting screen is a cold-launch state, not a reconnect state",
 );
+assert.match(
+  root,
+  /case \.projectContextRequired where !app\.hasLoadedSurfaces:\s*\n[\s\S]*?ProjectContextGateView\(\)/,
+  "a first project-context failure should stay out of MainShell and show a dedicated retry gate",
+);
+assert.match(
+  gate,
+  /struct ProjectContextGateView: View[\s\S]*?Button\("Retry"\)/,
+  "the project-context gate should keep a visible retry action",
+);
+assert.match(
+  gate,
+  /struct ProjectContextGateView: View[\s\S]*?Button\("Settings"\)/,
+  "the project-context gate should expose a settings escape hatch",
+);
+assert.match(
+  gate,
+  /if app\.hasLoadedSurfaces \{\s*app\.selectedTab = \.settings\s*\} else \{\s*showingSettings = true\s*\}/,
+  "a warm gate routes into shell settings, while a cold gate opens modal recovery",
+);
+assert.match(
+  gate,
+  /\.sheet\(isPresented: \$showingSettings\) \{\s*SettingsView\(presentedModally: true\)\s*\}/,
+  "cold gate recovery opens settings without mounting the primary shell",
+);
 
 // --- The pill: shown over mounted tabs during a drop, tap = retry now --------
 assert.match(
   root,
-  /private var showsReconnectPill: Bool \{[\s\S]*?guard app\.hasLoadedSurfaces else \{ return false \}[\s\S]*?case \.unreachable, \.checking: return true/,
-  "the pill shows for unreachable/checking only once surfaces are loaded",
+  /private var showsReconnectPill: Bool \{[\s\S]*?guard app\.hasLoadedSurfaces else \{ return false \}[\s\S]*?case \.unreachable, \.degraded, \.checking: return true/,
+  "the pill shows for unreachable/degraded/checking only once surfaces are loaded",
 );
 assert.match(
   root,
@@ -55,28 +82,22 @@ assert.match(
   "the pill announces itself to VoiceOver",
 );
 
-// --- While the pill is up, something must actually retry ---------------------
-// The Connect screen's own 10s ticker no longer runs for unreachable-with-
-// surfaces (that screen isn't mounted), so RootView carries its own quiet
-// re-probe, mutually exclusive via the hasLoadedSurfaces guard.
-// Pinned as BEHAVIOUR, not control-flow spelling. This previously required a
-// literal `guard app.hasLoadedSurfaces, case .unreachable = …` block;
-// 3e54ecdbe4 ("fix(ios): sustain chat connectivity") refactored the same logic
-// into a `switch` with a `where` clause and the assertion broke on `main`
-// while the behaviour was intact. What matters is that the scene-phase task
-// re-probes ONLY when the desktop is unreachable AND surfaces are already
-// loaded (so it cannot fight the Connect screen's own ticker), and that the
-// probe is the quiet, surface-reloading one.
-const scenePhaseTask = root.slice(root.indexOf(".task(id: scenePhase)"));
-assert.match(
-  scenePhaseTask,
-  /case \.unreachable where app\.hasLoadedSurfaces|guard app\.hasLoadedSurfaces,\s*\n\s*case \.unreachable = app\.connectionState/,
-  "RootView re-probes only when unreachable AND surfaces are loaded",
+// --- While the pill is up, the shared supervisor owns recovery ---------------
+// RootView must remain presentation-only. The one AppModel worker performs the
+// quiet, surface-reloading probes for both degraded and unreachable states.
+const rootViewType = root.slice(
+  root.indexOf("struct RootView: View"),
+  root.indexOf("private struct ConnectedMomentOverlay"),
+);
+assert.doesNotMatch(
+  rootViewType,
+  /\.task\(id: scenePhase\)/,
+  "RootView must not launch a second scene-phase reconnect ticker",
 );
 assert.match(
-  scenePhaseTask,
-  /await app\.refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/,
-  "RootView quietly re-probes while the pill covers an unreachable desktop",
+  model,
+  /func runConnectionSupervisor[\s\S]*?refreshConnection\([\s\S]*?case \.checking, \.degraded, \.unreachable:\s*\n\s*failureCount \+= 1/,
+  "the shared supervisor quietly retries every recoverable reconnect-pill state",
 );
 
 // --- AppModel: honest 'last seen' + shared surfaces gate ---------------------
@@ -92,8 +113,8 @@ assert.match(
 );
 assert.match(
   model,
-  /var hasLoadedSurfaces: Bool \{\s*\n\s*!familiars\.isEmpty \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded/,
-  "hasLoadedSurfaces is the single gate for 'the tab tree holds real data'",
+  /var hasLoadedSurfaces: Bool \{\s*\n\s*familiarsLoaded \|\| sessionsLoaded \|\| tasksLoaded \|\| remindersLoaded \|\| projectsLoaded/,
+  "hasLoadedSurfaces should treat successful empty familiar loads as loaded shell state",
 );
 
 console.log("ios-reconnect-pill: OK");

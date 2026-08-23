@@ -152,7 +152,11 @@ export function ResearchMissionList({
           <span className="research-mission-row__meta">
             <span>{mission.mode}</span>
             <span>{mission.status}</span>
-            {iteration ? <span>i{iteration.number}/{mission.bounds.maxIterations}</span> : null}
+            {iteration ? (
+              <span>Iteration {iteration.number}/{mission.bounds.maxIterations}</span>
+            ) : (
+              <span>Not started</span>
+            )}
             <time dateTime={mission.updatedAt}>{relativeTime(mission.updatedAt) || "just now"}</time>
           </span>
         </button>

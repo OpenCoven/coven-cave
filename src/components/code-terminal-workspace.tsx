@@ -30,7 +30,11 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { BottomTerminal, type TerminalWriterHandle } from "@/components/bottom-terminal";
+import {
+  BottomTerminal,
+  type TerminalHealth,
+  type TerminalWriterHandle,
+} from "@/components/bottom-terminal";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -101,6 +105,32 @@ export function CodeTerminalWorkspace({
   const panes = useMemo(() => listTerminalPanes(layout), [layout]);
   const paneCount = panes.length;
   const underPaneCap = canSplitTerminalPane(layout);
+  const [focusMode, setFocusMode] = useState(false);
+  const [previewPaneId, setPreviewPaneId] = useState<string | null>(null);
+  const [healthByPane, setHealthByPane] = useState<Record<string, TerminalHealth>>({});
+  const visiblePaneId = previewPaneId ?? focusedPaneId;
+
+  useEffect(() => {
+    if (paneCount < 2) {
+      setFocusMode(false);
+      setPreviewPaneId(null);
+    }
+  }, [paneCount]);
+
+  const pinPane = useCallback((paneId: string) => {
+    setPreviewPaneId(null);
+    onFocusPane(paneId);
+    announce(`${panes.find((pane) => pane.id === paneId)?.label ?? "Terminal"} pinned.`);
+  }, [announce, onFocusPane, panes]);
+
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((current) => {
+      const next = !current;
+      setPreviewPaneId(null);
+      announce(next ? "Focused terminal view on." : "Focused terminal view off.");
+      return next;
+    });
+  }, [announce]);
 
   // Measured split capacity, per pane. The count cap alone lets a 380px Room
   // offer a split that produces two unreadable shells, so the affordance also
@@ -283,6 +313,7 @@ export function CodeTerminalWorkspace({
         // the tint.
         aria-current={isFocused ? "true" : undefined}
         data-focused={isFocused ? "true" : undefined}
+        data-focus-visible={focusMode && paneId === visiblePaneId ? "true" : undefined}
         data-testid="code-terminal-pane"
         className="code-terminal-pane"
         ref={(el) => {
@@ -343,6 +374,11 @@ export function CodeTerminalWorkspace({
               if (handle) writersRef.current.set(paneId, handle);
               else writersRef.current.delete(paneId);
             }}
+            onHealthChange={(health) => {
+              setHealthByPane((current) =>
+                current[paneId] === health ? current : { ...current, [paneId]: health },
+              );
+            }}
           />
         </div>
       </section>
@@ -380,6 +416,7 @@ export function CodeTerminalWorkspace({
     <div
       className="code-terminal-workspace"
       data-testid="code-terminal-workspace"
+      data-focus-mode={focusMode ? "true" : undefined}
       onKeyDown={handleKeyDown}
     >
       <div className="code-terminal-workspace__bar">
@@ -387,6 +424,18 @@ export function CodeTerminalWorkspace({
           {paneCount === 1 ? "1 terminal" : `${paneCount} terminals`}
         </span>
         <div className="code-terminal-workspace__actions">
+          <button
+            type="button"
+            className="focus-ring code-terminal-workspace__action"
+            aria-pressed={focusMode}
+            aria-label={focusMode ? "Exit focused terminal" : "Focus current terminal"}
+            title={focusMode ? "Show every terminal" : "Focus the current terminal"}
+            disabled={paneCount < 2}
+            onClick={toggleFocusMode}
+          >
+            <Icon name={focusMode ? "ph:arrows-in-simple" : "ph:corners-out"} width={12} height={12} />
+            {focusMode ? "All panes" : "Focus"}
+          </button>
           <button
             type="button"
             className="focus-ring code-terminal-workspace__action"
@@ -437,6 +486,46 @@ export function CodeTerminalWorkspace({
         <Group className="code-terminal-group" orientation="horizontal">
           {renderNode(layout)}
         </Group>
+        {focusMode ? (
+          <div
+            className="code-terminal-carousel"
+            role="listbox"
+            aria-label="Terminal panes"
+            onPointerLeave={() => setPreviewPaneId(null)}
+          >
+            {panes.map((pane) => {
+              const selected = pane.id === focusedPaneId;
+              const previewing = pane.id === previewPaneId;
+              const health = healthByPane[pane.id] ?? "starting";
+              return (
+                <button
+                  key={pane.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className="focus-ring code-terminal-carousel__item"
+                  data-previewing={previewing ? "true" : undefined}
+                  data-health={health}
+                  onPointerEnter={() => setPreviewPaneId(pane.id)}
+                  onFocus={() => setPreviewPaneId(pane.id)}
+                  onBlur={() => setPreviewPaneId(null)}
+                  onClick={() => pinPane(pane.id)}
+                  title={`${pane.label} · ${health}`}
+                >
+                  <span className="code-terminal-carousel__status" aria-hidden />
+                  <span className="code-terminal-carousel__index">{pane.index}</span>
+                  <Icon
+                    name={selected ? "ph:push-pin-fill" : "ph:terminal-window"}
+                    width={13}
+                    height={13}
+                    aria-hidden
+                  />
+                  <span className="sr-only">{pane.label} · {health}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
     </div>
   );

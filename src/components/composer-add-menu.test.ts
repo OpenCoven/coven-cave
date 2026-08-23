@@ -123,25 +123,27 @@ assert.match(
   /triggerRef\?: RefObject<HTMLButtonElement \| null>/,
   "the wrapper keeps the shared anchor ref for the chained options popover",
 );
-assert.match(
-  home,
-  /projects=\{\{\s*\n\s*projects: plusMenuProjects,[\s\S]*?onPick: setSelectedProjectId,[\s\S]*?onStartNewProject: plusAddProject\.beginAddProject,/,
-  "home wires the project flyout to its selection state and the shared add-project flow",
+const homePlusMenu = home.match(/<ComposerPlusMenu[\s\S]*?\/>/)?.[0] ?? "";
+assert.ok(homePlusMenu, "home renders the shared plus menu");
+assert.doesNotMatch(
+  homePlusMenu,
+  /projects=\{\{/,
+  "home does not duplicate shell-owned project selection in its plus menu",
 );
 assert.doesNotMatch(
   home,
-  /projects=\{\{[\s\S]{0,300}?noProjectId:/,
-  "home's project flyout does not offer a project-free chat launch",
+  /plusMenuProjects|setSelectedProjectId|plusAddProject/,
+  "home no longer carries retired local project-selection state or add-project wiring",
 );
 assert.match(
   home,
   /onPickSkill: \(skill\) => \{\s*\n\s*setText\(`\/skill \$\{skill\.id\} `\);\s*\n\s*textareaRef\.current\?\.focus\(\);/,
   "home inserts `/skill <id> ` and refocuses the textarea on skill pick",
 );
-assert.match(
+assert.doesNotMatch(
   home,
   /\{plusAddProject\.addProjectModal\}/,
-  "home mounts the add-project modal for Start a new project",
+  "home leaves project creation on the shell-owned project selector",
 );
 
 // ── Styles ──────────────────────────────────────────────────────────────────

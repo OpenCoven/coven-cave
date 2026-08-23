@@ -392,7 +392,7 @@ test("parseMaxRetire defaults and enforces exact bounds", () => {
   }
 });
 
-test("retireLifecycleUnits uses default batch size of three and leaves cleanupReady remainder", () => {
+test("retireLifecycleUnits stops after the default three successful retirements", () => {
   const items = [
     makeItem({ branch: "fix/d", ref: "refs/heads/fix/d", updatedAtMs: 40 }),
     makeItem({ branch: "fix/a", ref: "refs/heads/fix/a", updatedAtMs: 10 }),
@@ -420,6 +420,99 @@ test("retireLifecycleUnits uses default batch size of three and leaves cleanupRe
     calls.filter(([name]) => name === "heartbeatGate").length,
     12,
     "three worktree candidates should heartbeat before every destructive phase and after retirement",
+  );
+});
+
+test("retireLifecycleUnits bypasses blocked candidates until it reaches the successful-retirement limit", () => {
+  const items = ["a", "b", "c", "d", "e", "f"].map((branch, index) =>
+    makeItem({
+      kind: "branch-only",
+      path: null,
+      branch: `fix/${branch}`,
+      ref: `refs/heads/fix/${branch}`,
+      updatedAtMs: index,
+    }),
+  );
+  const { operations } = makeOperations({
+    reprobe(item) {
+      return item.ref === "refs/heads/fix/a" || item.ref === "refs/heads/fix/b"
+        ? { ok: false, reason: `fixture blocked ${item.ref}` }
+        : { ok: true, item };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items,
+    gateHandle: { generation: 8, token: "gate" },
+    operations,
+  });
+
+  assert.deepEqual(
+    report.attempts.map((attempt) => [attempt.ref, attempt.outcome]),
+    [
+      ["refs/heads/fix/a", "blocked"],
+      ["refs/heads/fix/b", "blocked"],
+      ["refs/heads/fix/c", "retired"],
+      ["refs/heads/fix/d", "retired"],
+      ["refs/heads/fix/e", "retired"],
+    ],
+  );
+  assert.deepEqual(
+    report.retired.map((item) => item.ref),
+    ["refs/heads/fix/c", "refs/heads/fix/d", "refs/heads/fix/e"],
+  );
+  assert.deepEqual(
+    report.blocked.map((block) => block.ref),
+    ["refs/heads/fix/a", "refs/heads/fix/b"],
+  );
+  assert.deepEqual(
+    report.cleanupReady.map((item) => item.ref),
+    ["refs/heads/fix/f"],
+    "only the eligible candidate skipped after the successful-retirement limit is cleanup-ready",
+  );
+});
+
+test("retireLifecycleUnits leaves only unattempted candidates cleanup-ready when its attempt budget is exhausted", () => {
+  const items = ["a", "b", "c", "d", "e", "f", "g"].map((branch, index) =>
+    makeItem({
+      kind: "branch-only",
+      path: null,
+      branch: `fix/${branch}`,
+      ref: `refs/heads/fix/${branch}`,
+      updatedAtMs: index,
+    }),
+  );
+  const { operations } = makeOperations({
+    reprobe(item) {
+      return { ok: false, reason: `fixture blocked ${item.ref}` };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items,
+    gateHandle: { generation: 8, token: "gate" },
+    operations,
+  });
+
+  assert.deepEqual(
+    report.attempts.map((attempt) => attempt.ref),
+    [
+      "refs/heads/fix/a",
+      "refs/heads/fix/b",
+      "refs/heads/fix/c",
+      "refs/heads/fix/d",
+      "refs/heads/fix/e",
+    ],
+  );
+  assert.deepEqual(
+    report.blocked.map((block) => block.ref),
+    report.attempts.map((attempt) => attempt.ref),
+    "each attempted failed candidate remains blocked",
+  );
+  assert.deepEqual(
+    report.cleanupReady.map((item) => item.ref),
+    ["refs/heads/fix/f", "refs/heads/fix/g"],
+    "the attempt budget leaves only untouched eligible candidates cleanup-ready",
   );
 });
 
@@ -539,10 +632,12 @@ test("branch-only retirement skips worktree removal", () => {
   ]);
 });
 
-test("initial gate heartbeat failure blocks the current and remaining selected candidates", () => {
+test("initial gate heartbeat failure blocks the current and every remaining eligible candidate", () => {
   const items = [
     makeItem({ branch: "fix/a", ref: "refs/heads/fix/a", path: null, kind: "branch-only" }),
     makeItem({ branch: "fix/b", ref: "refs/heads/fix/b", path: null, kind: "branch-only" }),
+    makeItem({ branch: "fix/c", ref: "refs/heads/fix/c", path: null, kind: "branch-only" }),
+    makeItem({ branch: "fix/d", ref: "refs/heads/fix/d", path: null, kind: "branch-only" }),
   ];
   const { operations } = makeOperations({
     heartbeatGate() {
@@ -554,7 +649,7 @@ test("initial gate heartbeat failure blocks the current and remaining selected c
     items,
     gateHandle: { generation: 2, token: "gate" },
     operations,
-    maxRetire: "10",
+    maxRetire: "1",
   });
 
   assert.equal(report.retired.length, 0);
@@ -576,8 +671,19 @@ test("initial gate heartbeat failure blocks the current and remaining selected c
         partial: false,
         reason: "maintenance gate unavailable after earlier retirement failure: maintenance gate heartbeat failed before retirement: expired",
       },
+      {
+        ref: "refs/heads/fix/c",
+        partial: false,
+        reason: "maintenance gate unavailable after earlier retirement failure: maintenance gate heartbeat failed before retirement: expired",
+      },
+      {
+        ref: "refs/heads/fix/d",
+        partial: false,
+        reason: "maintenance gate unavailable after earlier retirement failure: maintenance gate heartbeat failed before retirement: expired",
+      },
     ],
   );
+  assert.deepEqual(report.cleanupReady, []);
 });
 
 test("initial gate ownership drift blocks without mutating", () => {
@@ -1763,7 +1869,7 @@ test("real git adapter reads tag retention from the remote, peeling annotated ta
   }
 });
 
-test("createGitRetirementOperations rejects path traversal, absolute paths, and symlink cleanup", () => {
+test("createGitRetirementOperations rejects unsafe paths and unlinks terminal symlinks", () => {
   const fixture = createGitFixture();
   try {
     const gate = withPathPrefix(fixture.bin, () =>
@@ -1818,16 +1924,31 @@ test("createGitRetirementOperations rejects path traversal, absolute paths, and 
 
     assert.deepEqual(operations.removeDisposableIgnored({
       ...baseItem,
-      ignoredPaths: ["target/linked"],
+      ignoredPaths: ["target/linked/owned.txt"],
     }), {
       ok: false,
-      reason: "refused disposable ignored cleanup through a symbolic link: target/linked",
+      reason: "refused disposable ignored cleanup through a symbolic link: target/linked/owned.txt",
     });
 
+    assert.equal(existsSync(path.join(worktree, "target", "linked")), true);
+    assert.deepEqual(
+      withPathPrefix(fixture.bin, () =>
+        operations.removeDisposableIgnored({
+          ...baseItem,
+          ignoredPaths: ["target/linked"],
+        }),
+      ),
+      { ok: true },
+    );
+    assert.equal(
+      existsSync(path.join(worktree, "target", "linked")),
+      false,
+      "terminal symlink cleanup removes only the link",
+    );
     assert.equal(
       existsSync(path.join(fixture.fixtureRoot, "outside", "owned.txt")),
       true,
-      "cleanup rejection must not delete the symlink target",
+      "symlink cleanup must not delete the target",
     );
 
     const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));

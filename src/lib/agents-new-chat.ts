@@ -13,6 +13,58 @@ export type AgentsNewChatRequest = {
   origin?: SessionOrigin;
 };
 
+const SESSION_ORIGINS: ReadonlySet<SessionOrigin> = new Set([
+  "chat",
+  "mention",
+  "board",
+  "cron",
+  "heartbeat",
+  "call",
+  "canvas",
+  "journal",
+  "enhance",
+]);
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isInitialCommandControls(value: unknown): value is InitialCommandControls {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const controls = value as Record<string, unknown>;
+  return (
+    (controls.thinkingEffort === undefined
+      || controls.thinkingEffort === "low"
+      || controls.thinkingEffort === "medium"
+      || controls.thinkingEffort === "high")
+    && (controls.responseSpeed === undefined
+      || controls.responseSpeed === "fast"
+      || controls.responseSpeed === "balanced"
+      || controls.responseSpeed === "careful")
+    && (controls.runtimeHost === undefined || typeof controls.runtimeHost === "string")
+    && (controls.modelOverride === undefined || typeof controls.modelOverride === "string")
+    && (controls.modelOverrideScope === undefined
+      || controls.modelOverrideScope === "next-message"
+      || controls.modelOverrideScope === "session"
+      || controls.modelOverrideScope === "runtime-default")
+  );
+}
+
+function isAgentsNewChatRequest(value: unknown): value is AgentsNewChatRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const request = value as Record<string, unknown>;
+  return (
+    (request.familiarId === undefined || isNullableString(request.familiarId))
+    && (request.projectRoot === undefined || isNullableString(request.projectRoot))
+    && (request.initialPrompt === undefined || isNullableString(request.initialPrompt))
+    && (request.initialControls === undefined
+      || request.initialControls === null
+      || isInitialCommandControls(request.initialControls))
+    && (request.origin === undefined
+      || (typeof request.origin === "string" && SESSION_ORIGINS.has(request.origin as SessionOrigin)))
+  );
+}
+
 /**
  * Launch a new familiar chat from anywhere in the app.
  *
@@ -37,22 +89,41 @@ export function requestAgentsNewChat(detail: AgentsNewChatRequest): void {
   window.location.assign("/");
 }
 
-/** Read-and-clear the pending cross-page request. Called by Workspace on boot. */
-export function consumePendingAgentsNewChat(): AgentsNewChatRequest | null {
+/** Read a pending cross-page request without discarding a launch that must wait. */
+export function readPendingAgentsNewChat(): AgentsNewChatRequest | null {
   if (typeof window === "undefined") return null;
   let raw: string | null = null;
   try {
     raw = window.sessionStorage.getItem(PENDING_AGENTS_NEW_CHAT_KEY);
-    if (raw !== null) window.sessionStorage.removeItem(PENDING_AGENTS_NEW_CHAT_KEY);
   } catch {
     return null;
   }
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed as AgentsNewChatRequest;
+    if (!isAgentsNewChatRequest(parsed)) {
+      clearPendingAgentsNewChat();
+      return null;
+    }
+    return parsed;
   } catch {
+    clearPendingAgentsNewChat();
     return null;
   }
+}
+
+export function clearPendingAgentsNewChat(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(PENDING_AGENTS_NEW_CHAT_KEY);
+  } catch {
+    // Storage is unavailable; there is no durable request to clear.
+  }
+}
+
+/** Read-and-clear compatibility helper for consumers that can launch immediately. */
+export function consumePendingAgentsNewChat(): AgentsNewChatRequest | null {
+  const pending = readPendingAgentsNewChat();
+  if (pending) clearPendingAgentsNewChat();
+  return pending;
 }

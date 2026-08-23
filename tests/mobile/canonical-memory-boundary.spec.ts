@@ -217,7 +217,8 @@ test("paired mobile is denied canonical reads while synthetic file memory remain
   await expect(
     dialog.getByRole("button", { name: "Edit memory file" }),
   ).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Copy path" })).toBeVisible();
+  await dialog.getByRole("button", { name: "More memory actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Copy path" })).toBeVisible();
 });
 
 test("mobile canonical route trusts only the proxy-authenticated marker", async ({

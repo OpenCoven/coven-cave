@@ -744,6 +744,12 @@ export async function verifySidecarRuntime(root) {
     "node_modules/ws/package.json",
     ...SIDECAR_NEXT_RUNTIME_FILES.map((relativePath) => path.join("node_modules/next", relativePath)),
     "package.json",
+    // The paper viewer's pdf.js worker (cave-9hc). It is `.gitignore`d and
+    // generated, so a bundle assembled from a checkout where it was never
+    // staged looks complete and ships a viewer that cannot open any paper —
+    // and says only "Couldn't render this paper" when it fails. Required here
+    // for the same reason as the sandbox runtime below it.
+    "public/pdf.worker.min.mjs",
     "public/sandbox/react-runtime.js",
     "server.js",
     "server.mjs",

@@ -1,0 +1,38 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_public_url_malformed_authority_01",
+  "runId": "run_public_url_malformed_authority_01",
+  "digest": "20b140ac8b06283c3657d476de166dd3692c9b66cf19050b1c7261bb715a1b6c",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [
+    {
+      "kind": "public-evidence",
+      "id": "evidence_public_url_malformed_authority_01",
+      "contentDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "snapshotDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "canonicalUrl": "http:////www.iana.org/path",
+      "fetchedAt": "2026-08-16T20:03:00.000Z"
+    }
+  ],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "project",
+    "effectivePolicy": "project",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:04:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  }
+}

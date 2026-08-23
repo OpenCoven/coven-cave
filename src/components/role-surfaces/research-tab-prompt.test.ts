@@ -10,6 +10,10 @@ import { buildPromptEnhancement } from "../../lib/prompt-enhancer.ts";
 
 const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./research-mission-composer.tsx", import.meta.url), "utf8");
+const recommendationContext = readFileSync(
+  new URL("../../lib/research-recommendation-context.ts", import.meta.url),
+  "utf8",
+);
 // The prompt sheet rides with the mode-gated surface (bundle budget, #3264
 // pattern), so selector pins read the sheet itself, not the root globals.
 const css = readFileSync(new URL("../../styles/globals/surface-research-prompt.css", import.meta.url), "utf8");
@@ -33,26 +37,30 @@ test("intent keeps the shared min-length gate with aria-invalid wiring", () => {
 
 // ── Mode cards: inference-backed auto pick, manual override, reset ───────────
 
-test("mode cards are backed by the real routing inference", () => {
+test("compact mode selection is backed by the real routing inference", () => {
   assert.match(composer, /inferResearchMissionMode\(intent\)/);
   assert.match(composer, /mode === "auto" \? inferred\.mode : mode/);
   // Deep loop is the display name for autoresearch — no fifth fake mode.
   assert.match(composer, /autoresearch: "Deep loop"/);
   assert.match(composer, /RESEARCH_MISSION_MODES\.map/);
-  // Auto pick highlights, manual click overrides, reset returns to auto.
-  assert.match(composer, /\{manual \? "✓ selected" : "auto pick"\}/);
-  assert.match(composer, /data-selected=\{selected\}/);
-  assert.match(composer, /aria-pressed=\{manual && selected\}/);
-  assert.match(composer, /Reset to Auto/);
-  assert.match(composer, /setMode\("auto"\)/);
+  // Auto and every explicit mode live in one compact select, with the current
+  // plan summarized beside it instead of four persistent cards.
+  assert.match(composer, /<StandardSelect<"auto" \| ResearchMissionMode>/);
+  assert.match(composer, /label="Research mode"/);
+  assert.match(composer, /value=\{mode\}/);
+  assert.match(composer, /onChange=\{setMode\}/);
+  assert.match(composer, /value: "auto"/);
+  assert.match(composer, /`Auto · \$\{MODE_LABELS\[effectiveMode\]\}`/);
+  assert.match(composer, /className="research-mode-picker__summary"/);
+  assert.doesNotMatch(composer, /className="research-mode-card"/);
   // Cross-tab navigation preselects a mode as a manual choice.
   assert.match(composer, /if \(initialMode\) setMode\(initialMode\)/);
   assert.match(promptTab, /initialMode\?: ResearchMissionMode/);
   assert.match(promptTab, /initialMode=\{initialMode\}/);
-  assert.match(css, /\.research-mode-card\[data-selected="true"\]/);
+  assert.match(css, /\.research-mode-picker__select/);
 });
 
-test("mode card meta derives from the real default plans, not design copy", () => {
+test("mode metadata derives from the real default plans, not design copy", () => {
   // modeCardMeta reads defaultResearchPlan — numbers can never drift from the
   // plans the server actually applies.
   assert.match(composer, /const bounds = defaultResearchPlan\(mode\)\.bounds/);
@@ -64,7 +72,7 @@ test("mode card meta derives from the real default plans, not design copy", () =
   assert.equal(paper.sourceTarget, 8);
 });
 
-test("routing inference behaves as the cards advertise", () => {
+test("routing inference behaves as the mode picker advertises", () => {
   assert.equal(inferResearchMissionMode("write a literature review of RAG evals").mode, "paper");
   assert.equal(inferResearchMissionMode("map the landscape of agent frameworks").mode, "sweep");
   assert.equal(inferResearchMissionMode("keep researching until the loop converges").mode, "autoresearch");
@@ -118,25 +126,42 @@ test("commands run real actions and never leave the token in the intent", () => 
 
 // ── ✦ Improve: real enhance route, busy state, honest failure ────────────────
 
-test("Improve POSTs the draft to /api/prompt/enhance in research mode", () => {
-  assert.match(composer, /fetch\("\/api\/prompt\/enhance"/);
-  assert.match(composer, /method: "POST"/);
-  assert.match(composer, /JSON\.stringify\(\{ draft, mode: "research" \}\)/);
-  // Busy label per the design; the note region is a status live region.
-  assert.match(composer, /"✦ Improving…" : "✦ Improve"/);
-  assert.match(composer, /className="research-improve-note" role="status"/);
+test("Improve uses the shared agentic lifecycle in research mode", () => {
+  assert.match(composer, /usePromptEnhance\(\{/);
+  assert.match(composer, /mode: "research"/);
+  assert.match(composer, /familiarId,/);
+  assert.match(composer, /researchMode: effectiveMode/);
+  assert.match(composer, /relatedSources: attachedLinks\.map/);
+  assert.doesNotMatch(composer, /fetch\("\/api\/prompt\/enhance"/);
+  // The active button becomes a stop control, while progress and result
+  // actions stay beside a live message without announcing the full preview.
+  assert.match(composer, /improving \? "✦ Stop improving" : "✦ Improve"/);
+  assert.match(composer, /className="research-improve-status"/);
+  assert.match(
+    composer,
+    /className="research-improve-status__message"[\s\S]*?role=\{promptEnhance\.state\.phase === "error" \? "alert" : "status"\}/,
+  );
+  assert.doesNotMatch(
+    composer,
+    /className="research-improve-status"[\s\S]{0,200}?role=/,
+    "the preview must remain outside the live region",
+  );
+  assert.match(composer, /promptEnhance\.apply\(\)/);
+  assert.match(composer, /promptEnhance\.revert\(\)/);
+  assert.match(composer, /promptEnhance\.cancel\(\)/);
   // Too-short drafts disable the button (opacity via CSS, real disabled attr).
-  assert.match(composer, /disabled=\{!improveReady \|\| improving\}/);
+  assert.match(composer, /disabled=\{!improveReady && !improving\}/);
   assert.match(css, /\.research-improve:disabled \{[^}]*opacity/);
 });
 
-test("Improve failure and races stay honest — the draft is never clobbered", () => {
-  // Route failure surfaces a visible message and leaves the draft alone.
-  assert.ok(composer.includes("Improve failed (HTTP ${res.status}) — the draft is unchanged."));
-  assert.ok(composer.includes("Improve is unreachable right now — the draft is unchanged."));
-  // The settle rule: only apply the rewrite to the draft it was asked for.
-  assert.match(composer, /settleEnhance\(draft, intentRef\.current\) === "apply"/);
-  assert.match(composer, /kept your edits/);
+test("Improve exposes race-safe proposals, revert, and offline provenance", () => {
+  assert.match(composer, /promptEnhance\.state\.phase === "suggested"/);
+  assert.match(composer, /An improved version is ready/);
+  assert.match(composer, /offline fallback/);
+  assert.match(composer, /Why this\?/);
+  assert.match(composer, /recommendation\.rationale/);
+  // Slash Improve strips the command before starting the shared lifecycle.
+  assert.match(composer, /promptEnhance\.enhance\("auto", stripped\)/);
 });
 
 test("the enhance route contract matches what Improve sends", () => {
@@ -151,46 +176,105 @@ test("the enhance route contract matches what Improve sends", () => {
   assert.equal(bad.ok, false);
 });
 
-// ── Quick saves: attach state → candidate sources on the new mission ─────────
+test("runtime changes reset model and model choices come from that runtime inventory", () => {
+  assert.match(composer, /useRuntimeModelInventory\(harness, familiarId\)/);
+  assert.match(composer, /runtimeModelInventory\.models\.map/);
+  assert.match(composer, /inventoryProvenanceLabel/);
+  assert.match(
+    composer,
+    /onChange=\{\(next\) => \{\s*setHarness\(next\);\s*setModel\(""\);\s*\}\}/,
+  );
+  assert.match(composer, /<StandardSelect[\s\S]*?id="research-runtime-model"/);
+  assert.match(composer, /options=\{modelOptions\}/);
+  assert.doesNotMatch(composer, /id="research-runtime-model"\s*type="text"/);
+});
 
-test("quick saves attach as candidate sources via the ledger's mechanism", () => {
+// ── Quick saves: selected resources are part of the launch contract ──────────
+
+test("quick saves are included in mission creation before the run starts", () => {
   // Rows are real toggles; chips render with a remove affordance.
   assert.match(promptTab, /aria-pressed=\{isAttached\}/);
   assert.match(promptTab, /useResearchLinks\(\)/);
-  assert.match(composer, /Related context \(\{attachedLinks\.length\}\):/);
+  assert.match(composer, /Resources ready for first pass \(\{attachedLinks\.length\}\):/);
   assert.match(composer, /onRemoveAttached\?\.\(link\.id\)/);
-  // After start, each attached link becomes an attach-source action against
-  // the NEW mission id — the same action the evidence ledger uses.
-  assert.match(promptTab, /research\.act\(result\.mission\.id, \{\s*action: "attach-source"/);
-  assert.match(promptTab, /sourceType: "web"/);
-  assert.match(promptTab, /status: "candidate"/);
-  // Attach happens before the desk hand-off, and the hand-off follows the
-  // mission (the pre-redesign contract).
-  const attachIndex = promptTab.indexOf('action: "attach-source"');
-  const navigateIndex = promptTab.indexOf('onNavigate("desk", { missionId: result.mission.id })');
+  assert.match(promptTab, /research\.start\(\{\s*\.\.\.input,\s*savedLinkIds: attached\.map\(\(link\) => link\.id\),\s*\}\)/);
+  assert.doesNotMatch(promptTab, /action: "attach-saved-link"/);
+  assert.doesNotMatch(promptTab, /action: "attach-source"/);
+  const attachIndex = promptTab.indexOf("savedLinkIds: attached.map");
+  const navigateIndex = promptTab.indexOf(
+    'onNavigate("desk", { missionId: result.mission.id })',
+    attachIndex,
+  );
   assert.ok(attachIndex !== -1 && navigateIndex !== -1 && attachIndex < navigateIndex);
   // The panel links out to the full Resources tab.
   assert.match(promptTab, /All in Resources →/);
 });
 
-test("a failed attach never abandons a started mission", () => {
-  // Once start() succeeds the spend is committed — the desk hand-off ALWAYS
-  // happens. Attach failures are collected without aborting the loop and
-  // surface as a partial-failure announcement, never as a generic "could not
-  // start" that invites a duplicate-spend retry.
-  assert.match(promptTab, /let failedAttaches = 0/);
-  assert.match(promptTab, /\.catch\(\(\) => \(\{ ok: false as const \}\)\)/);
-  assert.match(promptTab, /if \(!attach\.ok\) failedAttaches \+= 1/);
-  assert.match(promptTab, /useAnnouncer/);
-  assert.match(
-    promptTab,
-    /Mission started — \$\{failedAttaches\} link\$\{failedAttaches === 1 \? "" : "s"\} failed to attach\./,
-  );
-  // The announcement happens before the hand-off, and the hand-off is inside
-  // the success branch but outside any per-link condition.
-  const announceIndex = promptTab.indexOf("failed to attach.");
-  const navigateIndex = promptTab.indexOf('onNavigate("desk", { missionId: result.mission.id })');
-  assert.ok(announceIndex !== -1 && navigateIndex !== -1 && announceIndex < navigateIndex);
+test("quick saves support search-scoped bulk selection without losing hidden picks", () => {
+  assert.match(promptTab, /updateVisibleQuickSaveSelection\(links\.links, current, visibleLinks\)/);
+  assert.match(promptTab, /visibleResultLabel = `\$\{visibleLinks\.length\} \$\{visibleLinks\.length === 1 \? "result" : "results"\}`/);
+  assert.match(promptTab, /`Clear \$\{visibleResultLabel\}`/);
+  assert.match(promptTab, /`Select all \$\{visibleResultLabel\}`/);
+  assert.match(promptTab, /Selected resources are included before the first research pass starts\./);
+  assert.match(promptTab, /announce\(`\$\{action\} \$\{visibleResultLabel\}\.`\)/);
+});
+
+// ── Contextual next topics: bounded GET, explicit actions, no draft refresh ─
+
+test("agentic topic recommendations keep client and server evidence freshness separate", () => {
+  // The shared lifecycle sees durable client-visible Desk state only. The
+  // composer draft remains absent, so ordinary typing never starts a request.
+  assert.match(promptTab, /caveAgenticRecommendations\(\)/);
+  assert.match(promptTab, /useAgenticRecommendations<ResearchRecommendationClientContext>/);
+  assert.match(promptTab, /buildResearchRecommendationContext/);
+  assert.match(recommendationContext, /MAX_CLIENT_RECOMMENDATION_MISSIONS = 12/);
+  assert.match(recommendationContext, /MAX_CLIENT_RECOMMENDATION_SAVED_LINKS = 12/);
+  assert.match(recommendationContext, /familiarId,/);
+  assert.match(recommendationContext, /intentRevision: textRevision\(mission\.intent\)/);
+  assert.match(recommendationContext, /mission\.sources/);
+  assert.match(recommendationContext, /mission\.artifacts/);
+  assert.match(recommendationContext, /const bounded = value\.slice\(0, MAX_REVISION_TEXT_CHARS\)/);
+  assert.doesNotMatch(recommendationContext, /intent: mission\.intent/);
+  assert.match(promptTab, /enabled: agenticRecommendationsEnabled/);
+  // The backend's fingerprint is the bounded revision for server-only X and
+  // Vault evidence. It must survive transport and gate every explicit action.
+  assert.match(promptTab, /serverContextFingerprint: body\.contextFingerprint/);
+  assert.match(promptTab, /async function revalidateResearchRecommendation/);
+  assert.match(promptTab, /contextFingerprint=\$\{encodeURIComponent\(recommendation\.contextFingerprint\)\}/);
+  assert.match(promptTab, /current\.contextFingerprint !== recommendation\.contextFingerprint/);
+  // The route remains read-only; mutation happens only after revalidation.
+  assert.match(promptTab, /fetch\(\s*`\/api\/research\/recommendations\?familiarId=/);
+  assert.match(promptTab, /method: "GET"/);
+  assert.match(promptTab, /cache: "no-store"/);
+  assert.match(promptTab, /revision=1/);
+  assert.match(promptTab, /addEventListener\("focus", onForeground\)/);
+  assert.match(promptTab, /addEventListener\("visibilitychange", onForeground\)/);
+  assert.match(promptTab, /function didFocusEnterRecommendations/);
+  assert.match(promptTab, /event\.currentTarget\.contains\(event\.relatedTarget\)/);
+  assert.match(promptTab, /revisionRequestRef/);
+});
+
+test("suggested topics use shared grounded cards and retain explicit Research actions", () => {
+  assert.match(promptTab, /AgenticRecommendationCard/);
+  assert.match(promptTab, /Suggested next topics/);
+  assert.match(promptTab, /Add to prompt/);
+  assert.match(promptTab, /Start mission/);
+  assert.match(promptTab, /Refine mission/);
+  assert.match(promptTab, /Review mission/);
+  assert.match(promptTab, /Vault context is unavailable — using Research Desk evidence\./);
+  // Applying a visible action is announced; loading, empty, and route failure
+  // states stay delegated to the shared accessible card primitives.
+  assert.match(promptTab, /Added ".+" to the prompt\./);
+  assert.match(promptTab, /Started mission ".+"\./);
+  assert.match(promptTab, /Refined mission ".+"\./);
+  assert.match(promptTab, /state=\{agenticCardState/);
+  assert.match(composer, /export function createRecommendedResearchMissionInput/);
+  assert.match(composer, /inferResearchMissionMode\(intent\)/);
+  assert.match(composer, /modeSource: "auto"/);
+  assert.doesNotMatch(promptTab, /title: payload\.topic/);
+  assert.match(promptTab, /function focusResearchDesk/);
+  assert.match(promptTab, /const draftRef = useRef\(draft\)/);
+  assert.match(promptTab, /draftRef\.current !== draftAtActivation/);
 });
 
 // ── Bounds editor: explicit submit only, dirty latch, clearable inputs ───────
@@ -262,10 +346,23 @@ test("prompt tab styles are token-driven and container-responsive", () => {
   assert.match(css, /\.research-intake \{/);
   assert.match(css, /\.research-intake__card \{[^}]*var\(--research-accent\)/);
   assert.match(css, /\.research-intake button:focus-visible/);
-  assert.match(css, /@container research-desk \(max-width: 900px\) \{\s*\.research-intake__modes-grid/);
+  assert.match(css, /@container research-desk \(max-width: 900px\) \{\s*\.research-mode-picker/);
   assert.match(css, /@container research-desk \(max-width: 560px\) \{\s*\.research-intake/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.research-intake \*/);
   // No Nocturne hexes in the prompt sheet's classes: the accent-glow card and
-  // mode cards must ride the scoped research tokens.
-  assert.match(css, /\.research-mode-card\[data-selected="true"\] \{[^}]*var\(--research-accent\)/);
+  // compact mode summary must ride the scoped research tokens.
+  assert.match(css, /\.research-mode-picker__state \{[^}]*var\(--research-accent\)/);
+  assert.match(css, /\.research-topic-recommendations \{/);
+  assert.match(css, /\.research-topic-recommendations__card \.agentic-recommendation-card__actions \{/);
+  assert.match(css, /@container research-desk \(max-width: 560px\) \{[\s\S]*\.research-topic-recommendations/);
+});
+
+test("the autosized mission prompt owns scrolling without native resize collisions", () => {
+  assert.match(css, /\.research-intake__prompt > textarea \{[^}]*resize: none/);
+  assert.match(css, /\.research-intake__prompt > textarea \{[^}]*scrollbar-gutter: stable/);
+  assert.match(css, /\.research-intake__prompt > textarea \{[^}]*padding-right: calc\(var\(--space-3\) \+ var\(--space-3\)\)/);
+  assert.match(css, /\.research-intent-count \{[^}]*right: calc\(var\(--space-3\) \+ var\(--space-2\)\)/);
+  assert.match(css, /\.research-builder__field textarea \{[^}]*resize: vertical/);
+  assert.doesNotMatch(composer, /title=\{value \|\| "not set"\}/);
+  assert.match(composer, /title=\{value \|\| undefined\}/);
 });

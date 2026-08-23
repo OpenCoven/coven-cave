@@ -142,17 +142,48 @@ export function EnhanceStrip({
   onDismiss,
   onRevert,
   onCancel,
+  onFocusComposer,
 }: {
   state: PromptEnhanceState;
   onApply: () => void;
   onDismiss: () => void;
   onRevert: () => void;
   onCancel: () => void;
+  /** User-action-only focus return after a strip control unmounts. */
+  onFocusComposer?: () => void;
 }) {
   if (state.phase === "idle") return null;
+  const recommendation =
+    state.phase === "suggested" || state.phase === "applied" ? state.recommendation : null;
 
   const pillBtn =
     "focus-ring rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-2.5 py-0.5 text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+  const focusComposerAfterAction = () => {
+    requestAnimationFrame(() => onFocusComposer?.());
+  };
+
+  if (state.phase === "error") {
+    return (
+      <div
+        role="alert"
+        className="composer-enhance-strip flex items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[length:var(--text-xs)] text-[var(--text-muted)]"
+      >
+        <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0 text-[var(--color-warning)]" />
+        <span className="min-w-0 flex-1 truncate">{state.message}</span>
+        <button
+          type="button"
+          className={pillBtn}
+          onClick={() => {
+            onDismiss();
+            focusComposerAfterAction();
+          }}
+          aria-label="Dismiss enhance error"
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -165,7 +196,15 @@ export function EnhanceStrip({
           <span className="min-w-0 flex-1 truncate">
             {state.preview ? state.preview : "Enhancing…"}
           </span>
-          <button type="button" className={pillBtn} onClick={onCancel} aria-label="Cancel enhance">
+          <button
+            type="button"
+            className={pillBtn}
+            onClick={() => {
+              onCancel();
+              focusComposerAfterAction();
+            }}
+            aria-label="Cancel enhance"
+          >
             Cancel
           </button>
         </>
@@ -175,10 +214,26 @@ export function EnhanceStrip({
           <span className="min-w-0 flex-1 truncate" title={state.enhanced}>
             Enhanced version ready{state.offline ? " (offline)" : ""}: {state.enhanced}
           </span>
-          <button type="button" className={pillBtn} onClick={onApply} aria-label="Apply enhanced prompt">
+          <button
+            type="button"
+            className={pillBtn}
+            onClick={() => {
+              onApply();
+              focusComposerAfterAction();
+            }}
+            aria-label="Apply enhanced prompt"
+          >
             Apply
           </button>
-          <button type="button" className={pillBtn} onClick={onDismiss} aria-label="Dismiss enhanced prompt">
+          <button
+            type="button"
+            className={pillBtn}
+            onClick={() => {
+              onDismiss();
+              focusComposerAfterAction();
+            }}
+            aria-label="Dismiss enhanced prompt"
+          >
             Dismiss
           </button>
         </>
@@ -188,19 +243,37 @@ export function EnhanceStrip({
           <span className="min-w-0 flex-1 truncate">
             Prompt improved{state.offline ? " (offline)" : ""}.
           </span>
-          <button type="button" className={pillBtn} onClick={onRevert} aria-label="Revert enhanced prompt">
+          <button
+            type="button"
+            className={pillBtn}
+            onClick={() => {
+              onRevert();
+              focusComposerAfterAction();
+            }}
+            aria-label="Revert enhanced prompt"
+          >
             Revert
           </button>
         </>
-      ) : (
-        <>
-          <Icon name="ph:warning-circle" width={12} aria-hidden className="shrink-0 text-[var(--color-warning)]" />
-          <span className="min-w-0 flex-1 truncate">{state.message}</span>
-          <button type="button" className={pillBtn} onClick={onDismiss} aria-label="Dismiss enhance error">
-            Dismiss
-          </button>
-        </>
-      )}
+      ) : null}
+      {recommendation ? (
+        <details className="agentic-recommendation-card__why basis-full">
+          <summary className="focus-ring">Why this?</summary>
+          <p>{recommendation.rationale}</p>
+          {recommendation.evidenceRefs.length > 0 ? (
+            <div className="agentic-recommendation-card__evidence" aria-label="Evidence">
+              <span className="agentic-recommendation-card__label">Evidence</span>
+              <div className="agentic-recommendation-card__pills">
+                {recommendation.evidenceRefs.map((evidence) => (
+                  <span className="ui-pill" key={`${evidence.kind}:${evidence.id}`}>
+                    {evidence.kind}: {evidence.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </details>
+      ) : null}
     </div>
   );
 }

@@ -84,7 +84,17 @@ assert.match(
 assert.match(modelControl, /Chat with another familiar/, "deeper agent configuration is reachable from the picker");
 assert.match(chatView, /onSwitchFamiliar: \{ showFamiliarPicker = true \}/, "the picker's agent hop opens the familiar picker");
 
-// ── Chats home: menu + compose are labelled circular controls ────────────────
-assert.match(home, /CircularIconButton\(systemImage: "square\.and\.pencil",\s*\n\s*label: "New chat"\)/, "the header compose button is a labelled circular control");
+// ── Chats home: compose is one accent action in the thumb-reachable dock ─────
+assert.match(
+  home,
+  /private var homeSearchBar[\s\S]*?square\.and\.pencil[\s\S]*?chrome\.accentGradient[\s\S]*?accessibilityLabel\("New chat"\)/,
+  "the footer compose action is prominent, labelled, and thumb-reachable",
+);
+const homeHeader = home.match(/private var header:[\s\S]*?(?=\n    private var homeSearchBar:)/)?.[0] ?? "";
+assert.doesNotMatch(
+  homeHeader,
+  /square\.and\.pencil/,
+  "the header does not duplicate the footer compose action",
+);
 
 console.log("ios-chat-restyle.test.mjs: ok");

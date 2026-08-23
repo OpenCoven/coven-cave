@@ -171,6 +171,12 @@ assert.match(
 
 assert.match(
   replay,
+  /const attachmentBlock = daemonReplayAttachmentBlockReason\(attachments\);[\s\S]*?if \(attachmentBlock\) throw new Error\(attachmentBlock\)/,
+  "travel replay must fail visibly instead of marking byte-dependent attachments synced",
+);
+
+assert.match(
+  replay,
   /queuedMetadata = record\(payload\.responseMetadata\)[\s\S]*canonicalHarnessId\(queuedHarness\) !== canonicalHarnessId\(binding\.harness\)/,
   "travel replay must not silently move a queued turn onto a newly selected harness",
 );

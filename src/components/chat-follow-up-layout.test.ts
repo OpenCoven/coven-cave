@@ -36,8 +36,23 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.cave-chat-followups \.cave-followup-card__type \{[\s\S]*?white-space: nowrap;/,
+  /\.cave-chat-followups \.cave-followup-card \{[\s\S]*?min-height: var\(--touch-target\);[\s\S]*?font-size: var\(--text-sm\);[\s\S]*?line-height: 1;/,
+  "composer follow-up pills stay touch-safe and reset oversized inherited typography",
+);
+assert.doesNotMatch(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card \{[^}]*max-height:/,
+  "composer follow-up pills can grow when zoomed text needs more height",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__type \{[\s\S]*?flex: 0 0 auto;[\s\S]*?font-size: var\(--text-sm\);[\s\S]*?white-space: nowrap;/,
   "the type label itself never wraps away from the title",
+);
+assert.match(
+  styles,
+  /\.cave-chat-followups \.cave-followup-card__recommended \{[\s\S]*?margin-left: 0;[\s\S]*?padding: var\(--space-1\) var\(--space-2\);[\s\S]*?border-radius: var\(--radius-pill\);[\s\S]*?color: var\(--color-success\);[\s\S]*?font-size: var\(--text-2xs\);/,
+  "the recommendation reads as a compact badge instead of expanding the type label",
 );
 assert.match(
   styles,

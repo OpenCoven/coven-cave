@@ -13,79 +13,72 @@ export function CanonicalMemoryOverviewPanel({
   return (
     <section
       aria-label="Canonical memory overview"
-      className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3"
+      className="fm-overview"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[length:var(--text-xs)] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-          Canonical overview
-        </h3>
+      <div className="fm-overview__head">
+        <div>
+          <span>Memory health</span>
+          <h3>Canonical recall</h3>
+        </div>
         {!overview.capabilities.mutations ? (
-          <span className="text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-            Mutations unavailable
+          <span className="fm-overview__mode">
+            Read-only
           </span>
-        ) : null}
+        ) : (
+          <span className="fm-overview__mode is-active">Managed</span>
+        )}
       </div>
-      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-[length:var(--text-xs)] @min-[560px]/memview:grid-cols-4">
+      <dl className="fm-overview__metrics">
         <div>
-          <dt className="text-[var(--text-muted)]">Entries</dt>
-          <dd className="font-semibold text-[var(--text-primary)]">
-            {overview.totals.entries}
-          </dd>
+          <dt>Entries</dt>
+          <dd>{overview.totals.entries}</dd>
         </div>
         <div>
-          <dt className="text-[var(--text-muted)]">Familiars</dt>
-          <dd className="font-semibold text-[var(--text-primary)]">
-            {overview.totals.familiars}
-          </dd>
+          <dt>Familiars</dt>
+          <dd>{overview.totals.familiars}</dd>
         </div>
         <div>
-          <dt className="text-[var(--text-muted)]">Verification</dt>
-          <dd className="font-semibold text-[var(--text-primary)]">
-            {verification}
-          </dd>
+          <dt>Verification</dt>
+          <dd>{verification}</dd>
         </div>
         <div>
-          <dt className="text-[var(--text-muted)]">Needs review</dt>
-          <dd className="font-semibold text-[var(--text-primary)]">
-            {overview.totals.needsReview}
-          </dd>
+          <dt>Needs review</dt>
+          <dd>{overview.totals.needsReview}</dd>
         </div>
       </dl>
-      <p className="mt-2 text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-        Last update{" "}
-        {overview.lastUpdatedAt ? (
-          <time dateTime={overview.lastUpdatedAt}>{overview.lastUpdatedAt}</time>
-        ) : (
-          "unavailable"
-        )}
-      </p>
-      <details className="mt-2 border-t border-[var(--border-hairline)] pt-2 text-[length:var(--text-2xs)] text-[var(--text-secondary)]">
-        <summary className="focus-ring cursor-pointer rounded-[var(--radius-control)] text-[var(--text-secondary)]">
-          Verification details
-        </summary>
-        <dl className="mt-2 grid gap-1">
-          <div>
-            <dt className="inline text-[var(--text-muted)]">Manifest: </dt>
-            <dd className="inline break-all">
-              {overview.verification.manifest ?? "Unavailable"}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline text-[var(--text-muted)]">Index: </dt>
-            <dd className="inline break-all">
-              {overview.verification.index ?? "Unavailable"}
-            </dd>
-          </div>
-          <div>
-            <dt className="inline text-[var(--text-muted)]">Issues: </dt>
-            <dd className="inline">
-              {overview.verification.issues.length > 0
-                ? overview.verification.issues.join("; ")
-                : "None"}
-            </dd>
-          </div>
-        </dl>
-      </details>
+      <div className="fm-overview__foot">
+        <p>
+          Last indexed{" "}
+          {overview.lastUpdatedAt ? (
+            <time dateTime={overview.lastUpdatedAt}>{overview.lastUpdatedAt}</time>
+          ) : (
+            "unavailable"
+          )}
+        </p>
+        <details>
+          <summary className="focus-ring">
+            Verification details
+          </summary>
+          <dl>
+            <div>
+              <dt>Manifest</dt>
+              <dd>{overview.verification.manifest ?? "Unavailable"}</dd>
+            </div>
+            <div>
+              <dt>Index</dt>
+              <dd>{overview.verification.index ?? "Unavailable"}</dd>
+            </div>
+            <div>
+              <dt>Issues</dt>
+              <dd>
+                {overview.verification.issues.length > 0
+                  ? overview.verification.issues.join("; ")
+                  : "None"}
+              </dd>
+            </div>
+          </dl>
+        </details>
+      </div>
     </section>
   );
 }

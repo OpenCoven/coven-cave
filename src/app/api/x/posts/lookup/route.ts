@@ -3,7 +3,7 @@ import { parseXPostUrl, XApiError, type XScope } from "@/lib/x-api";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { toXErrorResponse, withXAuthenticatedRead } from "@/lib/server/x-access";
 import { lookupXPost } from "@/lib/server/x-client";
-import { cacheNormalizedXPosts } from "@/lib/server/x-sources";
+import { cacheNormalizedXPosts, markXPostAvailability } from "@/lib/server/x-sources";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,9 +34,22 @@ export async function POST(req: Request) {
     const { postId } = parseXPostUrl(url);
     // withXAuthenticatedRead owns the capability check, token retrieval and
     // one refresh-and-retry on 401, so this route never touches credentials.
-    const post = await withXAuthenticatedRead(familiarId, READ_SCOPES, (accessToken) =>
-      lookupXPost(accessToken, postId),
-    );
+    let post;
+    try {
+      post = await withXAuthenticatedRead(familiarId, READ_SCOPES, (accessToken) =>
+        lookupXPost(accessToken, postId),
+      );
+    } catch (error) {
+      // A not-found is authoritative news about the post, not just about this
+      // request: purge any cached body and mark every saved record for it,
+      // rather than reporting the 404 and leaving stale content behind
+      // (cave-1tu16). Keyed by post id, so it is correct even when the post
+      // was saved from a different surface.
+      if (error instanceof XApiError && error.code === "not-found") {
+        await markXPostAvailability(postId, "deleted");
+      }
+      throw error;
+    }
     // Saving a source reads from this cache rather than re-fetching, which is
     // why saveCachedXPostAsSource fails with "Look up or search for this X
     // post before saving it". Caching here is what makes the preview → save

@@ -4,19 +4,10 @@
 // (chat revamp 1a): task icon + accent label + ellipsized task title + up to
 // three suggestion chips that insert into the composer.
 //
-// NOTE(unwired): the codebase has no task→home handoff today — board cards
-// open chats directly (pending-chat-action), never the home composer — so
-// HomeComposer currently renders this with `origin={null}` (always hidden).
-// The row is prop-driven and ready for the first surface that routes a task
-// INTO home: pass `{ title, suggestions }` and it lights up.
-
 import { Icon } from "@/lib/icon";
+import type { HomeTaskOrigin } from "@/lib/home-task-handoff";
 
-export type HomeTaskOrigin = {
-  title: string;
-  /** Task-seasoned prompt starters; capped at 3 chips (uniform-row rule). */
-  suggestions?: string[];
-};
+export type { HomeTaskOrigin } from "@/lib/home-task-handoff";
 
 type Props = {
   origin: HomeTaskOrigin | null;

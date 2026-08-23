@@ -15,7 +15,7 @@ import { type CSSProperties, type PointerEvent as ReactPointerEvent } from "reac
 import { Icon } from "@/lib/icon";
 import { ChartDot, StateTag } from "./chart-room-parts";
 import type { ChartStageId, ChartStep, FlowLayout } from "./chart-room-model";
-import { stepRecommendation } from "./chart-room-model";
+import { dependencyDepth, gateParent, stepRecommendation } from "./chart-room-model";
 
 export type FlowDrag = { from: string; x: number; y: number };
 
@@ -63,6 +63,8 @@ export function ChartRoomFlow({
 }) {
   const columnStyle = { "--cr-col-w": `${columnWidth}px` } as CSSProperties;
   const dragEdge = drag ? layout.positions[drag.from] : null;
+  // Once per render, so the per-node gate lookup stays O(1).
+  const depth = dependencyDepth(steps);
 
   return (
     <>
@@ -136,8 +138,9 @@ export function ChartRoomFlow({
               {column.steps.map((step) => {
                 const isExpanded = expanded.has(step.id);
                 const isTarget = drag != null && drag.from !== step.id;
-                const upstream = step.needs ? steps.find((other) => other.id === step.needs) : undefined;
-                const waiting = steps.filter((other) => other.needs === step.id).length;
+                const upstream = gateParent(steps, step.id, depth);
+                const upstreamCount = step.needs.length;
+                const waiting = steps.filter((other) => other.needs.includes(step.id)).length;
                 const recommendation = isExpanded ? stepRecommendation(step, steps) : null;
                 return (
                   <li key={step.id}>
@@ -184,7 +187,15 @@ export function ChartRoomFlow({
                           {upstream ? (
                             <span className="cr-node__need">
                               <Icon name="ph:arrow-bend-left-up" width={10} height={10} aria-hidden />
-                              <span>waits on {upstream.title}</span>
+                              <span>
+                                waits on {upstream.title}
+                                {upstreamCount > 1 ? ` +${upstreamCount - 1}` : ""}
+                              </span>
+                            </span>
+                          ) : step.external.length > 0 ? (
+                            <span className="cr-node__need">
+                              <Icon name="ph:link-simple" width={10} height={10} aria-hidden />
+                              <span>blocked on {step.external[0].label}</span>
                             </span>
                           ) : null}
                           <span>{waiting > 0 ? `${waiting} waiting` : ""}</span>

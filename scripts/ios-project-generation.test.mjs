@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// cave-d8ma3: on a fresh clone the three Resources bundles do not exist yet —
+// cave-d8ma3: on a fresh clone the generated Resources do not exist yet —
 // they are gitignored build artifacts. `xcodegen generate` SCANS the source
 // directory, so anything absent at generate time never enters the resource
 // build phase. project.yml's preBuildScripts generate them, but that runs at
 // BUILD time (after the scan) and is deliberately non-fatal, so the archive
-// succeeds and ships an app with a blank markdown view and a dead terminal.
+// succeeds and ships an app with a blank markdown view.
 //
 // The order therefore has to be structural, not documentary: generate the
-// bundles, prove they exist, and only then run xcodegen.
+// bundle, prove it exists, and only then run xcodegen.
 const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
 
 const wrapper = await read("scripts/ios-xcodegen.sh");
@@ -27,14 +27,18 @@ const code = (src) =>
     .join("\n");
 const wrapperCode = code(wrapper);
 const genIdx = wrapperCode.indexOf("build-ios-markdown.mjs");
-const termIdx = wrapperCode.indexOf("build-ios-terminal.mjs");
 const scanIdx = wrapperCode.indexOf("xcodegen generate");
 assert.ok(genIdx > 0, "the wrapper should build the markdown bundle");
-assert.ok(termIdx > 0, "the wrapper should build the terminal bundle");
 assert.ok(scanIdx > 0, "the wrapper should run xcodegen");
 assert.ok(
-  genIdx < scanIdx && termIdx < scanIdx,
-  "both bundles must be generated BEFORE xcodegen scans for sources",
+  genIdx < scanIdx,
+  "the markdown bundle must be generated BEFORE xcodegen scans for sources",
+);
+assert.doesNotMatch(wrapper, /build-ios-terminal\.mjs/, "the removed terminal bundle must not be generated");
+assert.match(
+  wrapperCode,
+  /rm -f "\$RESOURCES\/terminal\.html"/,
+  "the wrapper should remove a stale ignored terminal bundle before XcodeGen scans",
 );
 
 // --- and refuses to scan when a bundle is missing -----------------------------
@@ -49,7 +53,7 @@ assert.match(
 // full-text search passes even when the check loop does not mention them. This
 // is the third assertion in this file to have that shape — see the two notes
 // above. Search executable lines only.
-for (const resource of ["markdown.html", "terminal.html", "markdown.css"]) {
+for (const resource of ["markdown.html", "markdown.css"]) {
   assert.ok(
     wrapperCode.includes(resource),
     `the wrapper should assert ${resource} exists before generating the project`,

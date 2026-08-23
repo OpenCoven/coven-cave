@@ -129,22 +129,35 @@ test("stable activity slots preserve a focused repeated tool and open edit revie
   }
 });
 
-test("TurnRow gives tools stable activity and edit-card slots instead of streaming render branches", () => {
+test("TurnRow keeps live tools chronological and settles them into activity and edit-card slots", () => {
   const turnRender = turnRow.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "";
   assert.match(
     turnRender,
-    /const turnTools = turn\.tools \?\? \[\];\s*const editCards = turnTools\.filter\(isEditCard\);\s*const otherTools = turnTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
-    "edit and non-edit tools are partitioned independently of pending state",
+    /segmentTurn\(\s*presentedProjection\.visible,\s*turn\.tools,\s*\)[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+    "streaming tools retain their chronological positions in the presented response",
   );
   assert.match(
     turnRender,
-    /<ChatToolActivityLayout[\s\S]*activity=\{otherTools\.length \? <ToolGroup tools=\{otherTools\} \/> : null\}[\s\S]*content=\{[\s\S]*indicatorVisible[\s\S]*<ThinkingIndicator[\s\S]*<MessageBubble[\s\S]*editCards=\{\s*editCards\.length/,
-    "the no-text indicator/answer swap happens between stable activity and edit-card slots",
+    /const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];\s*const editCards = settledTools\.filter\(isEditCard\);\s*const otherTools = settledTools\.filter\(\(t\) => !isEditCard\(t\)\);/,
+    "settled tools partition into grouped activity and visible edit cards",
   );
-  assert.doesNotMatch(
+  assert.match(
     turnRender,
-    /segmentTurn\(|bubbleSegments|<ToolRuns/,
-    "TurnRow has no pending-only tool segmentation or duplicate ToolRuns branch",
+    /\{pending\s*\? bubbleSegments\?\.map\([\s\S]*?: null\}[\s\S]*?\{!pending && otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\} \/>/,
+    "live tool blocks give way to one settled non-edit ToolGroup",
+  );
+  assert.match(
+    turnRender,
+    /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+    "the shared response owns activity and settled edit-card presentation",
+  );
+  // Exclusivity, not just existence: the chronology assertion above pins that a
+  // <ToolRuns> renders inside the segment map, but a SECOND one anywhere else in
+  // the turn would satisfy it and render every tool twice.
+  assert.equal(
+    turnRender.match(/<ToolRuns\b/g)?.length ?? 0,
+    1,
+    "TurnRow renders <ToolRuns> exactly once — a second call site double-renders every tool",
   );
   assert.doesNotMatch(
     source,

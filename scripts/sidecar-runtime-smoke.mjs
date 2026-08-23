@@ -10,6 +10,11 @@ import sharp from "sharp";
 // The file-count ceiling is read from sidecar-runtime-budget.json through this
 // module rather than repeated here — see cave-0ia8h.
 import { SIDECAR_RUNTIME_BUDGETS } from "./sidecar-runtime-closure.mjs";
+import {
+  PDF_WORKER_URL_PATH,
+  installedPdfjsVersion,
+  resolvePdfWorkerSource,
+} from "./copy-pdf-worker.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stagedSidecarRoot = path.join(root, "src-tauri", "resources", "server");
@@ -285,6 +290,7 @@ async function main() {
     "marketplace/marketplace.json",
     "marketplace/plugins/github/plugin.json",
     "marketplace/plugins/prompt-pack-essentials/plugin.json",
+    "public/pdf.worker.min.mjs",
     "public/sandbox/react-runtime.js",
     "public/sandbox/tailwind.js",
     "node_modules/next/dist/compiled/webpack/webpack-lib.js",
@@ -539,6 +545,27 @@ async function main() {
     assert.equal(sandboxResponse.status, 200, "packaged sandbox runtime must be served from public assets");
     assert.match(await sandboxResponse.text(), /generated; do not edit/);
 
+    // The paper viewer's pdf.js worker (cave-9hc). Presence in the bundle is
+    // already required by verifySidecarRuntime; this proves the packaged
+    // server actually SERVES it at the URL the viewer sets as `workerSrc`,
+    // and that the bytes are the installed package's rather than a stale copy
+    // — pdf.js throws on an API/worker version mismatch, and the viewer has no
+    // way to tell the reader that is what went wrong.
+    const workerResponse = await fetch(`${baseUrl}${PDF_WORKER_URL_PATH}`);
+    assert.equal(workerResponse.status, 200, "packaged pdf.js worker must be served from public assets");
+    assert.match(
+      workerResponse.headers.get("content-type") ?? "",
+      /javascript/,
+      "pdf.js worker must be served as JavaScript or the module worker refuses to start",
+    );
+    const servedWorker = Buffer.from(await workerResponse.arrayBuffer());
+    const expectedWorker = await readFile(resolvePdfWorkerSource());
+    assert.equal(
+      servedWorker.length,
+      expectedWorker.length,
+      `packaged pdf.js worker must match installed pdfjs-dist ${installedPdfjsVersion()}`,
+    );
+
     // Regression for random WebView origins: write the full representative
     // preference set through one sidecar port, stop that process completely,
     // then prove a fresh sidecar on another OS-assigned port restores it.
@@ -553,6 +580,12 @@ async function main() {
         fonts: { serif: "eb-garamond", sans: "source-sans-3", mono: "source-code-pro" },
         screenScale: 125,
         reading: {
+          // Every canonical reading key must appear here: the restore assertion
+          // below is a deep-equal against the whole normalized object, so a key
+          // the patch omits comes back as its default and fails the comparison.
+          // A non-default value also proves the field actually survives the
+          // port change rather than matching by coincidence.
+          size: 3,
           leading: "relaxed",
           tracking: "wide",
           align: "justify",

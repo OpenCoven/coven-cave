@@ -176,9 +176,10 @@ pub async fn pty_start(
     run_pty_start_worker(move || pty_start_blocking(app, options)).await
 }
 
-async fn run_pty_start_worker<F>(start: F) -> Result<(), String>
+async fn run_pty_start_worker<F, T>(start: F) -> Result<T, String>
 where
-    F: FnOnce() -> Result<(), String> + Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
 {
     tauri::async_runtime::spawn_blocking(start)
         .await
@@ -434,9 +435,9 @@ pub fn pty_snapshot(webview: Webview, thread_id: String) -> Result<Vec<u8>, Stri
 /// the PTY plumbing works end-to-end without depending on the React layer
 /// or on any user shell config.
 #[tauri::command]
-pub fn pty_diagnose(webview: Webview) -> Result<DiagnoseReport, String> {
+pub async fn pty_diagnose(webview: Webview) -> Result<DiagnoseReport, String> {
     ensure_trusted_pty_caller(&webview)?;
-    run_pty_diagnose()
+    run_pty_start_worker(run_pty_diagnose).await
 }
 
 fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
@@ -670,7 +671,7 @@ mod tests {
 
     #[test]
     fn pty_start_worker_returns_dependency_panics_as_errors() {
-        let result = tauri::async_runtime::block_on(run_pty_start_worker(|| {
+        let result: Result<(), String> = tauri::async_runtime::block_on(run_pty_start_worker(|| {
             panic!("simulated ConPTY dependency panic")
         }));
 

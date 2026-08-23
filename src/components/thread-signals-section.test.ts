@@ -130,7 +130,14 @@ describe("aggregateThreadSignals", () => {
           item.kind === "capability" && item.sourceId === "calendar search" && item.title === "calendar search",
       ),
     );
-    assert.ok(review.some((item) => item.kind === "context-pressure" && item.detail.includes("critical")));
+    assert.ok(
+      review.some(
+        (item) =>
+          item.kind === "context-pressure" &&
+          item.severity === "critical" &&
+          item.detail === "Newest report: Critical",
+      ),
+    );
   });
 
   it("orders the queue severity-first — a rank-boosted warning never outranks a critical", () => {

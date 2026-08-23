@@ -80,6 +80,16 @@ function unavailable(): XApiError {
   return new XApiError("upstream-unavailable", "X is temporarily unavailable");
 }
 
+/**
+ * The one classification a write is allowed to get wrong in only one
+ * direction. Callers treat `dispatched` as "this may already have posted, do
+ * not retry", so any failure that could have happened *after* X took the
+ * request must arrive here rather than as a definite error.
+ */
+function ambiguousWrite(safeMessage = "X post delivery is uncertain"): XApiError {
+  return new XApiError("ambiguous-write", safeMessage, { dispatched: true });
+}
+
 function httpError(status: number, headers: Headers): XApiError {
   switch (status) {
     case 400:
@@ -265,15 +275,26 @@ export function createXClient(options: XClientOptions = {}): XClient {
   ): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeoutImpl(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    // Flipped the instant a write is known to have been *accepted* by X.
+    // Everything that can still fail past that point — an unreadable body, an
+    // oversized one, a stream that stalls — may have failed after the post was
+    // created, so none of it may be reported as a definite failure.
+    let accepted = false;
     try {
       const response = await fetchImpl(url, { ...init, signal: controller.signal });
-      if (!response.ok) throw httpError(response.status, response.headers);
+      if (!response.ok) {
+        // A 4xx is X saying it refused the request, so nothing was created and
+        // the caller may safely try again. A 5xx is X failing *after* the
+        // request arrived and says nothing about whether the post was made.
+        if (write && response.status >= 500) throw ambiguousWrite();
+        throw httpError(response.status, response.headers);
+      }
+      accepted = write;
       return parseJson(await readBoundedJson(response));
     } catch (error) {
+      if (accepted) throw ambiguousWrite("X accepted the post but its reply was unreadable");
       if (error instanceof XApiError) throw error;
-      throw write
-        ? new XApiError("ambiguous-write", "X post delivery is uncertain", { dispatched: true })
-        : unavailable();
+      throw write ? ambiguousWrite() : unavailable();
     } finally {
       clearTimeoutImpl(timeout);
     }
@@ -368,7 +389,12 @@ export function createXClient(options: XClientOptions = {}): XClient {
     }, true);
     if (!isRecord(response) || !exactKeys(response, ["data"]) || !isRecord(response.data)
       || !exactKeys(response.data, ["id", "text"]) || !validPostId(response.data.id)
-      || typeof response.data.text !== "string") throw invalidResponse();
+      || typeof response.data.text !== "string") {
+      // X answered 2xx, so the post very likely exists even though its id is
+      // unreadable. `invalid-response` would read as a definite failure and
+      // invite the caller to retry, which is how a duplicate post gets made.
+      throw ambiguousWrite("X accepted the post but its reply was unreadable");
+    }
     return { id: response.data.id, text: response.data.text };
   }
 

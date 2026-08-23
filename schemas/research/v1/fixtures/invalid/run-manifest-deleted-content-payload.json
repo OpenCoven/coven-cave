@@ -1,0 +1,32 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_deleted_content_payload_01",
+  "runId": "run_deleted_content_payload_01",
+  "digest": "e267701e8a514545784b1c1c63740a65065bd5ab2f29812c362eaf0a219dc405",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "active",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:05:00.000Z"
+  },
+  "deletion": {
+    "status": "not_scheduled"
+  },
+  "extensionMetadata": {
+    "deletedcontentpayload": "private material"
+  }
+}

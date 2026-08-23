@@ -443,6 +443,16 @@ assert.match(
 );
 assert.match(
   source,
+  /className="familiars-view__analytics-link[^"]*"[\s\S]{0,180}?Analytics/,
+  "roster cards present analytics as a primary, recognizable destination",
+);
+assert.match(
+  source,
+  /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/analytics`\}[\s\S]{0,220}?View analytics/,
+  "the familiar detail header keeps analytics visible beside the core actions",
+);
+assert.match(
+  source,
   /aria-label=\{`Trace \$\{s\.title \|\| s\.id\}`\}/,
   "the trace button names its session for AT",
 );

@@ -256,8 +256,12 @@ pub(super) enum OverrideRejection {
 impl OverrideRejection {
     pub(super) fn reason(self) -> &'static str {
         match self {
-            OverrideRejection::NotAbsolute => "not an absolute path",
-            OverrideRejection::RemotePath => "refers to a remote UNC share",
+            // Every arm is interpolated after the word "it" at the single call
+            // site below, and mirrors the sentence `covenOverrideRejection`
+            // returns on the TS side. This one was missing its verb, so the
+            // operator was told "it not an absolute path".
+            OverrideRejection::NotAbsolute => "is not an absolute path",
+            OverrideRejection::RemotePath => "is not on a local drive",
             OverrideRejection::Missing => "does not exist",
             OverrideRejection::NotAFile => "is not a file",
         }
@@ -277,24 +281,64 @@ pub(super) enum PathProbe {
     File { canonical: String },
 }
 
-/// Mirror of `isWindowsRemoteExecutablePath` in `src/lib/coven-bin.ts`: a
-/// Cave-owned local CLI must not be sourced from a remote UNC share. Besides
-/// crossing the local trust boundary, probing one can stall on an offline
-/// share. `\\?\` and `\\.\` device namespaces are local and stay eligible;
-/// `\\?\UNC\` is the extended spelling of a share and is not.
+/// Mirror of `isWindowsRemoteExecutablePath` in
+/// `src/lib/windows-local-path.ts`: a Cave-owned local CLI must not be sourced
+/// from another machine. Besides crossing the local trust boundary, probing one
+/// can stall on an offline share.
+///
+/// This is an allowlist, and it has to be. The denylist it replaces refused
+/// `\\host\` and `\\?\UNC\` and admitted six spellings that were measured
+/// reaching another machine on Windows 11 — `fs` read
+/// `\\localhost\C$\Windows\win.ini` through each of them:
+///
+///     \\.\UNC\host\share\coven.exe
+///     \\?\GLOBALROOT\Device\Mup\host\share\coven.exe
+///     \\?\GLOBALROOT\Device\LanmanRedirector\host\share\coven.exe
+///     \\?\GLOBALROOT\??\UNC\host\share\coven.exe
+///     \\.\C:\..\..\UNC\host\share\coven.exe
+///     \\?\C:\..\..\UNC\host\share\coven.exe
+///
+/// The last three show the set does not close by enumeration: `GLOBALROOT` re-
+/// enters the object-manager root so remote routes nest arbitrarily, and a `..`
+/// pops whichever component was allowed and lands back at the device root —
+/// under `\\?\` as well as `\\.\`, whatever the prefix does for a pipe name.
+///
+/// So: a path not rooted at `\\` cannot leave the machine by spelling alone. A
+/// path rooted at `\\` is eligible only as a drive letter behind a device
+/// prefix (`\\?\C:\`, `\\.\C:\`) with no `..` component. The pipe device is
+/// local but is not a place a launcher lives, so it is refused here even though
+/// the daemon-socket boundary admits it.
 #[cfg(desktop)]
 pub(super) fn is_windows_remote_executable_path(candidate: &str) -> bool {
+    // `str::trim` and JS `String.prototype.trim` do NOT fold the same set:
+    // Rust takes U+0085 (it is `White_Space`) and not U+FEFF, JS the reverse.
+    // A differential over 203 spellings found exactly those two disagreements,
+    // each one a `\\host\share\…` value one copy refused and the other
+    // admitted, so both copies now fold the union explicitly. See
+    // `WINDOWS_EDGE_WHITESPACE` in `src/lib/windows-local-path.ts`.
     let normalized: String = candidate
+        .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
         .chars()
         .map(|c| if c == '/' { '\\' } else { c })
         .collect();
-    if let Some(rest) = normalized.strip_prefix("\\\\") {
-        match rest.chars().next() {
-            Some('?') | Some('.') | Some('\\') | None => {}
-            Some(_) => return true,
-        }
+    let Some(rest) = normalized.strip_prefix("\\\\") else {
+        return false;
+    };
+    if normalized.split('\\').any(|segment| segment == "..") {
+        return true;
     }
-    normalized.to_ascii_lowercase().starts_with("\\\\?\\unc\\")
+    let Some(after_prefix) = rest
+        .strip_prefix('?')
+        .or_else(|| rest.strip_prefix('.'))
+        .and_then(|tail| tail.strip_prefix('\\'))
+    else {
+        return true;
+    };
+    let bytes = after_prefix.as_bytes();
+    !(bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && bytes[2] == b'\\')
 }
 
 /// Host-independent `path.isAbsolute`. `Path::is_absolute` answers for the
@@ -317,8 +361,10 @@ pub(super) fn is_absolute_binary_path(candidate: &str, windows: bool) -> bool {
 }
 
 /// Apply the same admission rules to `COVEN_BIN` that `verifiedAbsoluteBinary`
-/// applies on the TS side: absolute, existing, a file, and never a remote UNC
-/// path on Windows.
+/// applies on the TS side: absolute, existing, a file, and on Windows never a
+/// path that fails to prove it is on a local drive — see
+/// `is_windows_remote_executable_path`, which is an allowlist rather than a
+/// `UNC` denylist.
 ///
 /// One deliberate difference from the TS resolver: the *literal* path is
 /// returned, not the canonical one. The result here is not executed directly —
@@ -626,7 +672,8 @@ mod coven_binary_tests {
         assert!(is_windows_remote_executable_path(
             "\\\\?\\unc\\server\\share\\coven.exe"
         ));
-        // Local device namespaces are not shares.
+        // Only a drive letter behind a device prefix is admitted, and only
+        // without a `..`.
         assert!(!is_windows_remote_executable_path(
             "\\\\?\\C:\\bin\\coven.exe"
         ));
@@ -634,6 +681,49 @@ mod coven_binary_tests {
             "\\\\.\\C:\\bin\\coven.exe"
         ));
         assert!(!is_windows_remote_executable_path("C:\\bin\\coven.exe"));
+        assert!(!is_windows_remote_executable_path("coven.exe"));
+    }
+
+    /// Spellings the two-regex denylist admitted. Each of the first six was
+    /// measured on Windows 11 reading `\\localhost\C$\Windows\win.ini` with
+    /// the host spelled `localhost`, so each is a live redirection and not a
+    /// theoretical shape. The last two are the same routes re-spelled — with
+    /// forward slashes, and with the surrounding whitespace an environment
+    /// variable carries — which the predicate folds away before deciding.
+    #[test]
+    fn device_namespace_spellings_that_reach_another_machine_are_refused() {
+        for admitted in [
+            "\\\\.\\UNC\\server\\share\\coven.exe",
+            "\\\\?\\GLOBALROOT\\Device\\Mup\\server\\share\\coven.exe",
+            "\\\\?\\GLOBALROOT\\Device\\LanmanRedirector\\server\\share\\coven.exe",
+            "\\\\?\\GLOBALROOT\\??\\UNC\\server\\share\\coven.exe",
+            "\\\\.\\C:\\..\\..\\UNC\\server\\share\\coven.exe",
+            // `\\?\` does not make a `..` inert for a file path, whatever it
+            // does for a pipe name: this one read the remote file too.
+            "\\\\?\\C:\\..\\..\\UNC\\server\\share\\coven.exe",
+            "//./UNC/server/share/coven.exe",
+            "  \\\\server\\share\\coven.exe  ",
+        ] {
+            assert!(
+                is_windows_remote_executable_path(admitted),
+                "{admitted} reaches another machine and must not be eligible"
+            );
+        }
+        // The pipe device stays on this machine, but no launcher lives there,
+        // so the executable boundary is tighter than the daemon-socket one.
+        assert!(is_windows_remote_executable_path("\\\\.\\pipe\\coven"));
+        // The edge-whitespace fold is the union of the two languages' `trim`,
+        // not either default: `str::trim` takes U+0085 and not U+FEFF, JS the
+        // reverse. A differential over 203 spellings found exactly those two
+        // disagreements, so both are pinned on both sides.
+        for lead in ['\u{85}', '\u{feff}'] {
+            assert!(
+                is_windows_remote_executable_path(&format!(
+                    "{lead}\\\\server\\share\\coven.exe"
+                )),
+                "a leading {lead:?} must fold away here as it does in TS"
+            );
+        }
     }
 
     #[test]
@@ -685,6 +775,31 @@ mod coven_binary_tests {
             OverrideRejection::Missing.reason(),
             OverrideRejection::NotAFile.reason()
         );
+    }
+
+    /// Every reason is interpolated after the bare word `it` in the `COVEN_BIN`
+    /// warning, and mirrors the sentence `covenOverrideRejection` returns on the
+    /// TS side. `NotAbsolute` was missing its verb — the operator was told "it
+    /// not an absolute path" — and nothing failed, because no test read any of
+    /// these strings. They are pinned here so a reword has to be deliberate.
+    #[test]
+    fn every_override_reason_completes_the_sentence_it_is_spliced_into() {
+        for (rejection, expected) in [
+            (OverrideRejection::NotAbsolute, "is not an absolute path"),
+            (OverrideRejection::RemotePath, "is not on a local drive"),
+            (OverrideRejection::Missing, "does not exist"),
+            (OverrideRejection::NotAFile, "is not a file"),
+        ] {
+            let reason = rejection.reason();
+            assert_eq!(reason, expected);
+            assert!(
+                matches!(
+                    reason.split(' ').next(),
+                    Some("is") | Some("does") | Some("resolves")
+                ),
+                "`it {reason}` must read as a sentence"
+            );
+        }
     }
 
     #[test]

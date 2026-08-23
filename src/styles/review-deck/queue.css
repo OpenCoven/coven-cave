@@ -1,0 +1,208 @@
+.rd-attention-filters {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.rd-attention-filter {
+  display: inline-flex;
+  min-height: var(--space-8);
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.rd-attention-filter[aria-pressed="true"] {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.rd-attention-mark {
+  width: var(--space-2);
+  height: var(--space-2);
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+
+.rd-attention-filter[data-tone="warning"] .rd-attention-mark,
+.rd-queue-group-head[data-tone="warning"] .rd-attention-mark {
+  background: var(--color-warning);
+}
+
+.rd-attention-filter[data-tone="danger"] .rd-attention-mark,
+.rd-queue-group-head[data-tone="danger"] .rd-attention-mark {
+  background: var(--color-danger);
+}
+
+.rd-attention-filter[data-tone="success"] .rd-attention-mark,
+.rd-queue-group-head[data-tone="success"] .rd-attention-mark {
+  background: var(--color-success);
+}
+
+.rd-attention-count {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.rd-queue,
+.rd-queue-spine {
+  overflow: hidden;
+}
+
+.rd-collapsed {
+  min-width: 0;
+}
+
+.rd-queue {
+  display: flex;
+  flex-direction: column;
+}
+
+.rd-queue-head {
+  flex: none;
+  border-bottom: 1px solid var(--border-hairline);
+  padding: var(--space-3);
+}
+
+.rd-queue-head-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rd-queue-head .rd-count {
+  display: grid;
+  min-width: var(--space-6);
+  min-height: var(--space-6);
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.rd-queue-list {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.rd-queue-group + .rd-queue-group {
+  margin-top: var(--space-3);
+}
+
+.rd-queue-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.rd-queue-group-head small {
+  margin-left: auto;
+  font-size: inherit;
+}
+
+.rd-queue .role-surface-list {
+  gap: var(--space-1);
+}
+
+.rd-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  padding: var(--space-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.rd-row:hover {
+  border-color: var(--border-hairline);
+  background: var(--bg-subtle);
+}
+
+.rd-row[aria-current="true"] {
+  border-color: color-mix(
+    in oklch,
+    var(--accent-presence) 38%,
+    transparent
+  );
+  background: color-mix(
+    in oklch,
+    var(--accent-presence) 14%,
+    transparent
+  );
+}
+
+.rd-row-top,
+.rd-row-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.rd-row-ref,
+.rd-row-meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.rd-row-title {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-queue-spine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-direction: column;
+  padding: var(--space-3) var(--space-1);
+  cursor: pointer;
+}
+
+.rd-collapsed-badge {
+  display: grid;
+  width: var(--space-6);
+  height: var(--space-6);
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: color-mix(
+    in oklch,
+    var(--accent-presence) 14%,
+    transparent
+  );
+  color: var(--accent-presence);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+}
+
+.rd-collapsed-label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  writing-mode: vertical-rl;
+}

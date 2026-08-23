@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import { after, before } from "node:test";
 import test from "node:test";
 import {
-  mkdir,
   mkdtemp,
+  mkdir,
   readFile,
   rm,
   symlink,
+  unlink,
   writeFile,
 } from "node:fs/promises";
-import os from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ResearchMission } from "../research-missions.ts";
 import {
@@ -26,9 +27,11 @@ import {
   missionArtifactPath,
   readValidatedMissionFile,
   recordResearchMissionSessionOwner,
+  restoreResearchMissionSourceFile,
   researchMissionSessionOwnersRoot,
   researchMissionWorkspacePath,
   saveResearchMission,
+  writeResearchMissionSourceFile,
 } from "./research-mission-store.ts";
 
 const originalRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
@@ -37,7 +40,9 @@ let root = "";
 let ownerRoot = "";
 
 before(async () => {
-  root = await mkdtemp(path.join(os.tmpdir(), "research-store-"));
+  root = path.join(process.cwd(), `.research-store-${process.pid}`);
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
   process.env.COVEN_RESEARCH_MISSIONS_DIR = path.join(root, "missions");
   ownerRoot = path.join(root, "private", "session-owners");
   process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR = ownerRoot;
@@ -265,6 +270,54 @@ test("validated reads remain contained in the mission workspace", async () => {
   );
 });
 
+test("source-file rollback restores only its exact materialized content", async () => {
+  const created = await createResearchMissionWorkspace(mission("conditional-source-rollback"));
+  const fileName = "x-article-0123456789abcdef01234567.md";
+  const target = path.join(researchMissionWorkspacePath(created.id), "source-files", fileName);
+
+  const fresh = await writeResearchMissionSourceFile(created.id, fileName, "fresh materialization\n");
+  await restoreResearchMissionSourceFile(created.id, fileName, fresh.previous, fresh.expected);
+  await assert.rejects(() => readFile(target, "utf8"), { code: "ENOENT" });
+
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, "prior contents\n", "utf8");
+  const overwritten = await writeResearchMissionSourceFile(
+    created.id,
+    fileName,
+    "replacement materialization\n",
+  );
+  await restoreResearchMissionSourceFile(
+    created.id,
+    fileName,
+    overwritten.previous,
+    overwritten.expected,
+  );
+  assert.equal(await readFile(target, "utf8"), "prior contents\n");
+
+  const changed = await writeResearchMissionSourceFile(
+    created.id,
+    fileName,
+    "materialized before external change\n",
+  );
+  await writeFile(target, "familiar changed this file\n", "utf8");
+  await assert.rejects(
+    () => restoreResearchMissionSourceFile(created.id, fileName, changed.previous, changed.expected),
+    /changed after materialization.*rollback refused/i,
+  );
+  assert.equal(await readFile(target, "utf8"), "familiar changed this file\n");
+
+  const missing = await writeResearchMissionSourceFile(
+    created.id,
+    fileName,
+    "materialized before disappearance\n",
+  );
+  await unlink(target);
+  await assert.rejects(
+    () => restoreResearchMissionSourceFile(created.id, fileName, missing.previous, missing.expected),
+    /missing after materialization.*rollback refused/i,
+  );
+});
+
 test("containment failures throw the typed integrity error; a missing file does not (cave-v73d)", async () => {
   const created = await createResearchMissionWorkspace(mission("typed-integrity"));
   await symlink("/etc/hosts", missionArtifactPath(created.id, "primary.md"));
@@ -291,13 +344,12 @@ test("containment failures throw the typed integrity error; a missing file does 
 });
 
 test("loadResearchMission backfills standard artifact refs on legacy missions", async (t) => {
-  const legacyRoot = await mkdtemp(path.join(os.tmpdir(), "research-store-backfill-"));
+  const legacyRoot = path.join(root, "legacy-backfill");
   const previousRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
   process.env.COVEN_RESEARCH_MISSIONS_DIR = legacyRoot;
   t.after(async () => {
     if (previousRoot === undefined) delete process.env.COVEN_RESEARCH_MISSIONS_DIR;
     else process.env.COVEN_RESEARCH_MISSIONS_DIR = previousRoot;
-    await rm(legacyRoot, { recursive: true, force: true });
   });
   const legacy = {
     version: 1,
@@ -339,4 +391,41 @@ test("loadResearchMission backfills standard artifact refs on legacy missions", 
     loaded.artifacts.map((artifact) => artifact.key),
     ["primary", "findings", "source-ledger", "research-log"],
   );
+});
+
+test("loadResearchMission repairs a completed mission downgraded by the missing-cost gate", async (t) => {
+  const legacyRoot = await mkdtemp(path.join(tmpdir(), "research-store-cost-pause-"));
+  const previousRoot = process.env.COVEN_RESEARCH_MISSIONS_DIR;
+  process.env.COVEN_RESEARCH_MISSIONS_DIR = legacyRoot;
+  t.after(async () => {
+    if (previousRoot === undefined) delete process.env.COVEN_RESEARCH_MISSIONS_DIR;
+    else process.env.COVEN_RESEARCH_MISSIONS_DIR = previousRoot;
+    await rm(legacyRoot, { recursive: true, force: true });
+  });
+  const corrupted = {
+    ...mission("cost-paused-complete"),
+    status: "paused",
+    finishedAt: "2026-08-15T04:51:00.510Z",
+    lastError: "Cost unavailable; review before another iteration",
+    bounds: {
+      ...mission("cost-paused-complete").bounds,
+      stopWhenCostUnavailable: true,
+    },
+    iterations: [{
+      number: 1,
+      status: "completed",
+      finishedAt: "2026-08-15T04:51:00.510Z",
+      decision: "complete",
+      decisionReason: "Decision-ready result published",
+    }],
+  };
+  await mkdir(path.join(legacyRoot, corrupted.id), { recursive: true });
+  await writeFile(
+    path.join(legacyRoot, corrupted.id, "mission.json"),
+    JSON.stringify(corrupted),
+  );
+  const loaded = await loadResearchMission(corrupted.id);
+  assert.equal(loaded?.status, "completed");
+  assert.equal(loaded?.lastError, undefined);
+  assert.equal(loaded?.finishedAt, corrupted.finishedAt);
 });

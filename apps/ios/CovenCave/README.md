@@ -4,8 +4,9 @@ A genuinely native SwiftUI client for Coven Cave. It connects to your desktop ov
 your **Tailscale** network — **no token, no password**; tailnet membership is the
 trust boundary. This is *not* a webview wrapper around the web app.
 
-See [`docs/ios-native-rebuild.md`](../../../docs/ios-native-rebuild.md) for the full
-phased plan and architecture.
+See [`docs/ios-current-direction.md`](../../../docs/ios-current-direction.md)
+for the canonical active product direction. The older native rebuild and dated
+implementation plans are historical lineage, not active priority queues.
 
 ## Distribution
 
@@ -23,11 +24,10 @@ available contributor route.
 ## Build & run
 
 ```bash
-# from the repo root: build the web bundles the app embeds (Resources/markdown.html
-# and Resources/terminal.html — generated & gitignored, the Xcode build can't run
-# node). Run `pnpm install --frozen-lockfile` first. Skipping the terminal bundle
-# ships a blank Terminal tab.
-pnpm mobile:ios:xcodegen       # builds the bundles, verifies them, then
+# from the repo root: build the generated Markdown resources the app embeds.
+# (Resources/markdown.html — generated & gitignored, the Xcode build can't run
+# node). Run `pnpm install --frozen-lockfile` first.
+pnpm mobile:ios:xcodegen       # builds the bundle, verifies it, then
                                # runs xcodegen — in that order, which matters
                                # (alias for scripts/ios-xcodegen.sh)
 

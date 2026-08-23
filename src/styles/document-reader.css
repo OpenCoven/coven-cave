@@ -4,34 +4,36 @@
     --research-accent-soft,
     color-mix(in oklch, var(--document-reader-accent) 14%, transparent)
   );
-
-  /* Reader text scale (A−/A+). The component sets this inline from the
-     persisted preference; 1 is the shipped size, so a reader rendered without
-     the control — or before the stored value loads — is unchanged.
-
-     Applied ONLY to reading content (title, lede, headings, prose, tables,
-     code), never to chrome. The contents trigger, TOC links and kicker keep
-     their own sizes: scaling those would move the furniture around while the
-     user is trying to make the *text* bigger, and the rail has a fixed width
-     that oversized links would overflow. */
-  --reader-text-scale: 1;
-  --document-reader-column-width: 62rem;
+  --reader-text-scale: var(--cave-reading-size-scale, 1);
+  --document-reader-prose-measure: var(--cave-reading-width, 66ch);
   --document-reader-column-gutter: var(--space-8);
+  --document-reader-wide-measure: min(
+    88ch,
+    calc(
+      100cqw - var(--document-reader-column-gutter) -
+        var(--document-reader-column-gutter)
+    )
+  );
 
+  min-height: 0;
+  height: 100%;
+  color: var(--text-primary);
+  container-name: document-reader;
+  container-type: inline-size;
+}
+
+.document-reader__layout {
   display: grid;
   min-height: 0;
   height: 100%;
   grid-template-columns: minmax(0, 1fr);
-  color: var(--text-primary);
-  container-type: inline-size;
 }
 
-.document-reader--rail {
+.document-reader--rail .document-reader__layout {
   grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
 }
 
 .document-reader--compact {
-  --document-reader-column-width: 48rem;
   --document-reader-column-gutter: var(--space-4);
 }
 
@@ -53,15 +55,25 @@
 }
 
 .document-reader__toc-links {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
 
+.document-reader__toc-links::before {
+  position: absolute;
+  inset-block: var(--space-2);
+  left: var(--space-2);
+  width: 1px;
+  background: var(--border-hairline);
+  content: "";
+}
+
 .document-reader__toc-link {
-  padding: var(--space-2);
+  position: relative;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
   border: 0;
-  border-left: var(--ring-width) solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-secondary);
@@ -70,15 +82,32 @@
   cursor: pointer;
 }
 
+.document-reader__toc-link::before {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--space-2) - var(--space-1));
+  width: var(--space-2);
+  height: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  content: "";
+  transform: translateY(-50%);
+}
+
 .document-reader__toc-link:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .document-reader__toc-link[data-active="true"] {
-  border-left-color: var(--document-reader-accent);
   background: var(--document-reader-accent-soft);
   color: var(--document-reader-accent);
+}
+
+.document-reader__toc-link[data-active="true"]::before {
+  border-color: var(--document-reader-accent);
+  background: var(--document-reader-accent);
 }
 
 .document-reader__toc-meta {
@@ -94,82 +123,43 @@
 
 .document-reader__scroll {
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: var(--space-8) 0;
+  padding: var(--space-8) var(--document-reader-column-gutter);
   scroll-behavior: smooth;
 }
 
-/* Sticky control row: text size on the left, Contents (when present) on the
-   right. `pointer-events: none` lets the prose scroll under the gap between
-   them; each control re-enables its own hits. */
 .document-reader__toolbar {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  width: min(100%, var(--document-reader-column-width));
+  width: min(100%, var(--document-reader-prose-measure));
   margin: 0 auto;
-  padding: 0 var(--document-reader-column-gutter) var(--space-2);
+  padding: 0 0 var(--space-2);
   pointer-events: none;
 }
 
+.document-reader__preferences,
 .document-reader__compact-nav {
   display: flex;
-  justify-content: flex-end;
-}
-
-.document-reader__textsize {
-  display: inline-flex;
-  gap: var(--space-1);
   pointer-events: auto;
 }
 
-/* Deliberately NOT scaled by --reader-text-scale: the control must stay put
-   while the text it resizes grows, or pressing A+ walks the button out from
-   under the pointer. */
-.document-reader__textsize-btn {
-  display: inline-grid;
-  place-items: center;
-  width: var(--space-8);
-  height: var(--space-8);
-  padding: 0;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-family: var(--font-serif);
-  line-height: 1;
-  cursor: pointer;
+.document-reader--rail .document-reader__compact-nav {
+  display: none;
 }
 
-.document-reader__textsize-btn:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
-.document-reader__textsize-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* The two glyphs differ in size, which is the whole affordance — a small A and
-   a large A read as "smaller/larger" without a label in any language. */
-.document-reader__textsize-glyph--small {
-  font-size: var(--text-xs);
-}
-
-.document-reader__textsize-glyph--large {
-  font-size: var(--text-md);
-}
-
+.document-reader__preferences-trigger,
 .document-reader__contents-trigger {
   display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
   min-height: var(--space-8);
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
@@ -177,22 +167,109 @@
   color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
-  pointer-events: auto;
 }
 
+.document-reader__preferences-trigger {
+  min-width: var(--space-10);
+  font-family: var(--font-serif);
+  font-weight: 600;
+}
+
+.document-reader__preferences-trigger:hover,
 .document-reader__contents-trigger:hover {
   border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
-.document-reader__column {
-  width: min(100%, var(--document-reader-column-width));
-  margin: 0 auto;
-  padding: 0 var(--document-reader-column-gutter);
+.document-reader__size-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-secondary);
+  font: 500 var(--text-xs) var(--font-mono);
+  text-align: center;
 }
 
-.document-reader--compact .document-reader__column {
-  width: min(100%, var(--document-reader-column-width));
+.document-reader__size-step,
+.document-reader__preference-option,
+.document-reader__reset {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.document-reader__size-step {
+  min-width: var(--space-8);
+  min-height: var(--space-8);
+  padding: 0 var(--space-2);
+  font-family: var(--font-serif);
+}
+
+.document-reader__size-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.document-reader__preference-group {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+.document-reader__preference-label {
+  color: var(--text-muted);
+  font: 600 var(--text-2xs) var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.document-reader__preference-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.document-reader__preference-option {
+  min-height: var(--space-7);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.document-reader__preference-option[aria-pressed="true"] {
+  border-color: color-mix(
+    in oklch,
+    var(--document-reader-accent) 45%,
+    var(--border-hairline)
+  );
+  background: var(--document-reader-accent-soft);
+  color: var(--document-reader-accent);
+}
+
+.document-reader__reset {
+  width: calc(100% - var(--space-6));
+  min-height: var(--space-8);
+  margin: var(--space-2) var(--space-3) var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.document-reader__column {
+  width: min(100%, var(--document-reader-prose-measure));
+  margin: 0 auto;
+}
+
+.document-reader__prose {
+  max-width: var(--document-reader-prose-measure);
+  overflow-wrap: anywhere;
+  font-weight: var(--cave-reading-weight, 400);
+  letter-spacing: var(--cave-reading-tracking, 0);
+  text-align: var(--cave-reading-align, left);
+  -webkit-hyphens: var(--cave-reading-hyphens, manual);
+  hyphens: var(--cave-reading-hyphens, manual);
 }
 
 .document-reader__kicker {
@@ -204,7 +281,7 @@
 }
 
 .document-reader__title {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-4);
   color: var(--text-primary);
   font-family: var(--font-serif);
   font-size: calc(var(--text-display) * var(--reader-text-scale));
@@ -213,14 +290,14 @@
 }
 
 .document-reader__lede {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-5);
   padding-left: var(--space-4);
   border-left: var(--ring-width) solid var(--border-strong);
   color: var(--text-muted);
   font-family: var(--font-serif);
   font-size: calc(var(--text-lg) * var(--reader-text-scale));
   font-style: italic;
-  line-height: 1.5;
+  line-height: var(--cave-reading-leading, 1.6);
 }
 
 .document-reader__lede > :first-child {
@@ -235,17 +312,15 @@
   margin: var(--space-8) 0 var(--space-3);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: calc(var(--text-lg) * var(--reader-text-scale));
+  font-size: calc(var(--text-xl) * var(--reader-text-scale));
   font-weight: 600;
   line-height: 1.3;
-  scroll-margin-top: var(--space-5);
+  scroll-margin-top: var(--space-8);
 }
 
-/* Heading scale by level — the shared reader renders h2–h6, so deeper
-   headings must step down or every section reads as a sibling of the last. */
 h3.document-reader__heading {
   margin-top: var(--space-6);
-  font-size: calc(var(--text-md) * var(--reader-text-scale));
+  font-size: calc(var(--text-lg) * var(--reader-text-scale));
 }
 
 h4.document-reader__heading,
@@ -253,7 +328,7 @@ h5.document-reader__heading,
 h6.document-reader__heading {
   margin-top: var(--space-5);
   color: var(--text-secondary);
-  font-size: calc(var(--text-base) * var(--reader-text-scale));
+  font-size: calc(var(--text-md) * var(--reader-text-scale));
 }
 
 .document-reader__section-toggle {
@@ -271,9 +346,6 @@ h6.document-reader__heading {
   cursor: pointer;
 }
 
-/* The accent tick hangs into the left margin so heading TEXT sits on the
-   same edge as body copy — the inline-flex tick used to push every heading
-   ~12px right of its own paragraphs. */
 .document-reader__section-toggle::before {
   position: absolute;
   top: 50%;
@@ -299,18 +371,24 @@ h6.document-reader__heading {
 
 .document-reader__column p,
 .document-reader__column li {
+  min-width: 0;
   color: var(--text-secondary);
-  font-size: calc(var(--text-md) * var(--reader-text-scale));
-  line-height: 1.65;
+  font-size: calc(var(--text-lg) * var(--reader-text-scale));
+  line-height: var(--cave-reading-leading, 1.65);
 }
 
 .document-reader__column p {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-4);
 }
 
 .document-reader__column ul,
 .document-reader__column ol {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding-left: var(--space-6);
+}
+
+.document-reader__column :is(ul, ol) :is(ul, ol) {
+  margin-block: var(--space-2);
   padding-left: var(--space-5);
 }
 
@@ -320,49 +398,130 @@ h6.document-reader__heading {
 
 .document-reader__column a {
   color: var(--document-reader-accent);
+  overflow-wrap: anywhere;
 }
 
 .document-reader__column blockquote {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-5);
   padding-left: var(--space-4);
   border-left: var(--ring-width) solid var(--border-strong);
 }
 
-.document-reader__column pre {
-  overflow-x: auto;
-  margin: 0 0 var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  background: var(--code-surface);
-  color: var(--text-primary);
-  font-size: calc(var(--text-sm) * var(--reader-text-scale));
-}
-
 .document-reader__column code {
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
-.document-reader__column table {
-  width: 100%;
-  margin: 0 0 var(--space-4);
+.document-reader__wide-block {
+  width: var(--document-reader-wide-measure);
+  max-width: calc(
+    100cqw - var(--document-reader-column-gutter) -
+      var(--document-reader-column-gutter)
+  );
+  margin-inline: 50%;
+  transform: translateX(-50%);
+}
+
+.document-reader__table-frame {
+  overflow: auto;
+  margin-block: 0 var(--space-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+}
+
+.document-reader__table-frame table {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: calc(var(--text-base) * var(--reader-text-scale));
 }
 
-.document-reader__column th,
-.document-reader__column td {
+.document-reader__table-frame th,
+.document-reader__table-frame td {
+  max-width: 42ch;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
   color: var(--text-secondary);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
-.document-reader__column th {
+.document-reader__table-frame th + th,
+.document-reader__table-frame td + td {
+  border-left: 1px solid var(--border-hairline);
+}
+
+.document-reader__table-frame tr:last-child td {
+  border-bottom: 0;
+}
+
+.document-reader__table-frame th {
   background: var(--bg-subtle);
   color: var(--text-primary);
   font-weight: 600;
+}
+
+.document-reader__code-frame {
+  overflow: hidden;
+  margin-block: 0 var(--space-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--code-surface);
+}
+
+.document-reader__code-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+.document-reader__code-language {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-muted);
+  font: 500 var(--text-2xs) var(--font-mono);
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.document-reader__code-action {
+  min-height: var(--space-7);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.document-reader__code-action:hover,
+.document-reader__code-action[aria-pressed="true"] {
+  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.document-reader__code-frame pre {
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--text-primary);
+  font-size: calc(var(--text-sm) * var(--reader-text-scale));
+  tab-size: 2;
+}
+
+.document-reader__code-frame[data-wrap="true"] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .document-reader__column hr {
@@ -372,7 +531,7 @@ h6.document-reader__heading {
 }
 
 .document-reader__column aside[role="note"] {
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-hairline);
   border-left-color: var(--document-reader-accent);
@@ -385,17 +544,27 @@ h6.document-reader__heading {
   margin-right: var(--space-2);
 }
 
-@container (max-width: 30rem) {
+@container document-reader (max-width: 52rem) {
+  .document-reader--rail .document-reader__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .document-reader--rail .document-reader__toc {
+    display: none;
+  }
+
+  .document-reader--rail .document-reader__compact-nav {
+    display: flex;
+  }
+}
+
+@container document-reader (max-width: 30rem) {
+  .document-reader__layout {
+    --document-reader-column-gutter: var(--space-3);
+  }
+
   .document-reader__scroll {
-    padding-top: var(--space-4);
-  }
-
-  .document-reader__column {
-    padding: 0 var(--space-3);
-  }
-
-  .document-reader__toolbar {
-    padding-inline: var(--space-3);
+    padding-block: var(--space-4);
   }
 
   .document-reader__title {

@@ -96,7 +96,44 @@ test("charts derive from real model fields with honest empty state", () => {
   assert.match(src, /recentSessions\.length === 0 \?[\s\S]{0,300}?Charts appear once this familiar has run a session\./,
     "one honest empty state replaces the whole charts area");
   assert.match(src, /sessionOutcome\(session\.status\)/, "outcomes classified from real session statuses");
-  assert.match(src, /heatmapFromSessions\(recentSessions\)/, "heatmap bucketed from real created_at timestamps");
+  assert.match(
+    src,
+    /activityHeatmapWindowDays\([\s\S]{0,160}?session\.created_at/,
+    "heatmap range matures from the familiar's first real session",
+  );
+  // This used to pin the exact one-line call
+  // `heatmapFromSessions(recentSessions, Date.parse(updatedAt ?? ""))`, which
+  // is the argument-list shape docs/source-text-pins.md calls out as not fair
+  // game — and it duly broke on a fix rather than a regression. #4791 kept the
+  // same contract and closed a real hole in it: `Date.parse("")` is NaN, so a
+  // familiar with no updatedAt bucketed its whole history against NaN. The
+  // derivation now falls back to the wall clock. Pin the contract instead: the
+  // window is anchored on the model's refresh instant, the buckets come from
+  // the real session rows, and no familiar is ever measured against NaN.
+  const heatStart = src.indexOf("const heat = useMemo(");
+  const heatEnd = src.indexOf("const bars = useMemo(");
+  assert.ok(heatStart >= 0 && heatEnd > heatStart, "the heatmap is derived in AnalyticsBody");
+  const heatDerivation = src.slice(heatStart, heatEnd);
+  assert.match(
+    heatDerivation,
+    /heatmapFromSessions\(recentSessions,/,
+    "heatmap buckets real created_at timestamps from the live session rows",
+  );
+  assert.match(
+    heatDerivation,
+    /Date\.parse\(updatedAt \?\? ""\)/,
+    "…anchored on the model's own refresh instant",
+  );
+  assert.match(
+    heatDerivation,
+    /Date\.now\(\)/,
+    "…falling back to the wall clock, so an absent updatedAt never buckets against NaN",
+  );
+  assert.match(
+    src,
+    /Activity heatmap · past \$\{heat\.windowDays\} days/,
+    "the selected 90, 180 or 365-day scope is visible",
+  );
   assert.match(src, /barsByProject\(recentSessions\)/, "bars split by real project_root basenames");
   assert.match(src, /color-mix\(in oklch, var\(--accent-presence\) \$\{pct\}%, transparent\)/,
     "heat ramp mixes accent-presence per the design");

@@ -16,11 +16,16 @@ assert.doesNotMatch(chatView, /fetch\("\/api\/prompt\/enhance"/, "enhance must n
 assert.match(chatView, /mode: activeProjectRoot \? "code" : "chat"/, "enhance request is mode-aware for code/project chats");
 assert.match(chatView, /selectedFiles: \[\.\.\.mentionedFiles, \.\.\.attachments\.map\(\(attachment\) => attachment\.name\)\]/, "enhance request forwards mentioned and attached file context");
 assert.match(chatView, /recentThreadTitle: session\?\.title \?\? null/, "enhance request carries the thread title as context");
+assert.match(chatView, /recentMessages:/, "enhance uses a bounded current conversation window as context");
+assert.match(chatView, /recentToolOutcomes:/, "enhance uses bounded settled tool outcomes as context");
+assert.match(chatView, /linkedTask:/, "enhance includes the active linked task when available");
+assert.match(chatView, /modelScope:/, "enhance fingerprints the composer-local selected model scope");
 assert.match(chatView, /familiarId: familiar\.id/, "enhance streams through the thread's familiar");
 assert.match(chatView, /disabled: busy/, "enhance is blocked while a send is in flight");
 const directEnhanceBlock = chatView.match(/<EnhanceControl[\s\S]*?\/>/)?.[0] ?? "";
 assert.match(directEnhanceBlock, /onEnhance=\{promptEnhance\.enhance\}/, "the direct Enhance control uses the shared hook");
 assert.doesNotMatch(directEnhanceBlock, /send\(/, "enhancing must not send automatically");
+assert.doesNotMatch(directEnhanceBlock, /handleSelectModel|setModel/, "enhancing never changes the composer-local next-message model scope");
 assert.doesNotMatch(chatView, /ComposerPlusMenu/, "ChatView no longer reaches enhance through the legacy ComposerPlusMenu");
 assert.match(
   chatView,

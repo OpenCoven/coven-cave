@@ -65,7 +65,11 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
-import { strictGitTimeoutMs } from "./worktree-guard-timeouts.mjs";
+import {
+  createStrictRetentionDeadline,
+  strictGitTimeoutMs,
+  strictTimeoutWithinDeadline,
+} from "./worktree-guard-timeouts.mjs";
 
 const FULL_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 // Generic branch/tag retention proof has a deterministic network/work ceiling.
@@ -120,12 +124,21 @@ function strictGitEnv() {
   return env;
 }
 
-function strictGitProbe(args, cwd) {
+function strictRetentionDeadline() {
+  const testTimeout =
+    process.env.WT_GUARD_TEST_MODE === "1"
+    && /^\d+$/.test(process.env.WT_GUARD_TEST_RETENTION_TIMEOUT_MS ?? "")
+      ? Number(process.env.WT_GUARD_TEST_RETENTION_TIMEOUT_MS)
+      : undefined;
+  return createStrictRetentionDeadline({ timeoutMs: testTimeout });
+}
+
+function strictGitProbe(args, cwd, deadline) {
   const probe = spawnSync("git", args, {
     cwd,
     env: strictGitEnv(),
     encoding: "utf8",
-    timeout: strictGitTimeoutMs(args),
+    timeout: strictGitTimeoutMs(args, deadline),
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (probe.error) throw new Error(`git probe failed: ${probe.error.message}`);
@@ -136,13 +149,13 @@ function strictGitProbe(args, cwd) {
   return { status: probe.status, stdout: probe.stdout };
 }
 
-function strictGit(args, cwd) {
-  const probe = strictGitProbe(args, cwd);
+function strictGit(args, cwd, deadline) {
+  const probe = strictGitProbe(args, cwd, deadline);
   if (probe.status !== 0) throw new Error(`git probe exited ${probe.status}`);
   return probe.stdout;
 }
 
-function strictGithubApi(endpoint, cwd) {
+function strictGithubApi(endpoint, cwd, deadline) {
   const env = strictGitEnv();
   delete env.GH_HOST;
   delete env.GH_REPO;
@@ -155,7 +168,7 @@ function strictGithubApi(endpoint, cwd) {
       cwd,
       env,
       encoding: "utf8",
-      timeout: 10000,
+      timeout: strictTimeoutWithinDeadline(10000, deadline),
       maxBuffer: 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -214,8 +227,8 @@ function strictRegisteredWorktree(target) {
   if (!found) throw new Error("target is not an exactly registered worktree");
 }
 
-function strictRemoteNames(target) {
-  const output = strictGit(["-C", target, "remote"]);
+function strictRemoteNames(target, deadline) {
+  const output = strictGit(["-C", target, "remote"], target, deadline);
   if (!output.endsWith("\n")) throw new Error("git remote returned malformed output");
   const remotes = output.slice(0, -1).split("\n");
   if (remotes.length === 1 && remotes[0] === "") throw new Error("repository has no configured remotes");
@@ -228,7 +241,7 @@ function strictRemoteNames(target) {
   return remotes;
 }
 
-function strictRemoteRefs(output, remote, target, expectedOidWidth, sourceCapacity) {
+function strictRemoteRefs(output, remote, target, expectedOidWidth, sourceCapacity, deadline) {
   if (output && !output.endsWith("\n")) throw new Error(`remote ${remote} returned malformed output`);
   const refs = [];
   const seen = new Set();
@@ -258,7 +271,9 @@ function strictRemoteRefs(output, remote, target, expectedOidWidth, sourceCapaci
   if (sourceCount > sourceCapacity) {
     throw new Error(`repository exceeds strict candidate source limit ${STRICT_MAX_CANDIDATE_SOURCES}`);
   }
-  for (const entry of refs) strictGit(["-C", target, "check-ref-format", entry.baseRef]);
+  for (const entry of refs) {
+    strictGit(["-C", target, "check-ref-format", entry.baseRef], target, deadline);
+  }
   const advertised = new Set(refs.map((entry) => entry.ref));
   for (const entry of refs) {
     if (entry.peeled && !advertised.has(entry.baseRef)) {
@@ -268,7 +283,7 @@ function strictRemoteRefs(output, remote, target, expectedOidWidth, sourceCapaci
   return refs;
 }
 
-function strictFetchAdvertisedRefs(target, remote, sourceRefs) {
+function strictFetchAdvertisedRefs(target, remote, sourceRefs, deadline) {
   if (!sourceRefs.length || sourceRefs.length > STRICT_FETCH_BATCH_SIZE) {
     throw new Error(`strict fetch batch must contain 1..${STRICT_FETCH_BATCH_SIZE} sources`);
   }
@@ -276,16 +291,17 @@ function strictFetchAdvertisedRefs(target, remote, sourceRefs) {
     "-C", target,
     "fetch", "--quiet", "--refetch", "--no-auto-maintenance", "--no-write-fetch-head", "--no-tags", "--no-recurse-submodules", "--refmap=",
     "--", remote, ...sourceRefs.map((sourceRef) => `${sourceRef}:`),
-  ], target);
+  ], target, deadline);
 }
 
-function strictAdvertisementUnchanged(target, remote, expectedRefs, expectedOidWidth) {
+function strictAdvertisementUnchanged(target, remote, expectedRefs, expectedOidWidth, deadline) {
   const refreshed = strictRemoteRefs(
-    strictGit(["-C", target, "ls-remote", "--heads", "--tags", "--", remote]),
+    strictGit(["-C", target, "ls-remote", "--heads", "--tags", "--", remote], target, deadline),
     remote,
     target,
     expectedOidWidth,
     STRICT_MAX_CANDIDATE_SOURCES,
+    deadline,
   );
   const refreshedByRef = new Map(refreshed.map((entry) => [entry.ref, entry.oid]));
   const expectedByRef = new Map(expectedRefs.map((entry) => [entry.ref, entry.oid]));
@@ -301,9 +317,9 @@ function strictAdvertisementUnchanged(target, remote, expectedRefs, expectedOidW
   }
 }
 
-function strictResolveAdvertisedCommit(target, remote, entry, peeled) {
+function strictResolveAdvertisedCommit(target, remote, entry, peeled, deadline) {
   const sourceType = strictSingleLine(
-    strictGit(["-C", target, "cat-file", "-t", entry.oid]),
+    strictGit(["-C", target, "cat-file", "-t", entry.oid], target, deadline),
     `advertised source ${entry.ref}`,
   );
   if (peeled) {
@@ -311,7 +327,7 @@ function strictResolveAdvertisedCommit(target, remote, entry, peeled) {
       throw new Error(`remote ${remote} advertised an invalid peeled tag base for ${entry.ref}`);
     }
     const actualPeeledOid = strictSingleOid(
-      strictGit(["-C", target, "rev-parse", "--verify", `${entry.oid}^{}`]),
+      strictGit(["-C", target, "rev-parse", "--verify", `${entry.oid}^{}`], target, deadline),
       `fetched tag peel ${entry.ref}`,
     );
     if (actualPeeledOid !== peeled.oid) {
@@ -323,7 +339,11 @@ function strictResolveAdvertisedCommit(target, remote, entry, peeled) {
 
   const advertisedCommit = peeled?.oid ?? entry.oid;
   const resolvedCommit = strictSingleOid(
-    strictGit(["-C", target, "rev-parse", "--verify", `${advertisedCommit}^{commit}`]),
+    strictGit(
+      ["-C", target, "rev-parse", "--verify", `${advertisedCommit}^{commit}`],
+      target,
+      deadline,
+    ),
     `advertised target ${entry.ref}`,
   );
   if (resolvedCommit !== advertisedCommit) {
@@ -386,33 +406,38 @@ function strictValidateMergedGithubPr(pr, proof, head) {
 }
 
 function strictRetainedByMergedGithubPr(target, head, proof) {
-  const remotes = strictRemoteNames(target);
+  const deadline = strictRetentionDeadline();
+  const remotes = strictRemoteNames(target, deadline);
   if (!remotes.includes(proof.remote)) throw new Error("GitHub PR proof remote is not configured");
-  strictGit(["-C", target, "check-ref-format", `refs/heads/${proof.base}`]);
+  strictGit(["-C", target, "check-ref-format", `refs/heads/${proof.base}`], target, deadline);
 
   const remoteRepo = strictGithubRepoFromRemoteUrl(
-    strictGit(["-C", target, "remote", "get-url", "--", proof.remote]),
+    strictGit(["-C", target, "remote", "get-url", "--", proof.remote], target, deadline),
   );
   if (remoteRepo.toLowerCase() !== proof.repo.toLowerCase()) {
     throw new Error("configured remote URL does not match GitHub PR proof repository");
   }
 
   const endpoint = `repos/${proof.repo}/pulls/${proof.number}`;
-  const initialPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+  const initialPr = strictValidateMergedGithubPr(
+    strictGithubApi(endpoint, target, deadline),
+    proof,
+    head,
+  );
 
   const prRef = `refs/pull/${proof.number}/head`;
-  strictGit(["-C", target, "check-ref-format", prRef]);
+  strictGit(["-C", target, "check-ref-format", prRef], target, deadline);
   const advertised = strictSingleExactRef(
-    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef], target, deadline),
     proof.remote,
     prRef,
     head.length,
   );
   if (advertised.oid !== head) throw new Error("advertised GitHub PR head does not match expected HEAD");
 
-  strictFetchAdvertisedRefs(target, proof.remote, [prRef]);
+  strictFetchAdvertisedRefs(target, proof.remote, [prRef], deadline);
   const refreshed = strictSingleExactRef(
-    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef]),
+    strictGit(["-C", target, "ls-remote", "--", proof.remote, prRef], target, deadline),
     proof.remote,
     prRef,
     head.length,
@@ -420,25 +445,41 @@ function strictRetainedByMergedGithubPr(target, head, proof) {
   if (refreshed.oid !== advertised.oid) {
     throw new Error(`remote ${proof.remote} changed ${prRef} during retention proof`);
   }
-  const refreshedPr = strictValidateMergedGithubPr(strictGithubApi(endpoint, target), proof, head);
+  const refreshedPr = strictValidateMergedGithubPr(
+    strictGithubApi(endpoint, target, deadline),
+    proof,
+    head,
+  );
   if (JSON.stringify(refreshedPr) !== JSON.stringify(initialPr)) {
     throw new Error("GitHub PR changed during retention proof");
   }
-  const advertisedCommit = strictResolveAdvertisedCommit(target, proof.remote, advertised, null);
+  const advertisedCommit = strictResolveAdvertisedCommit(
+    target,
+    proof.remote,
+    advertised,
+    null,
+    deadline,
+  );
   if (advertisedCommit !== head) throw new Error("fetched GitHub PR head does not match expected HEAD");
 }
 
 function strictRetainedOnRemote(target, head) {
+  const deadline = strictRetentionDeadline();
   const advertisements = [];
   let candidateSourceCount = 0;
-  for (const remote of strictRemoteNames(target)) {
-    const output = strictGit(["-C", target, "ls-remote", "--heads", "--tags", "--", remote]);
+  for (const remote of strictRemoteNames(target, deadline)) {
+    const output = strictGit(
+      ["-C", target, "ls-remote", "--heads", "--tags", "--", remote],
+      target,
+      deadline,
+    );
     const refs = strictRemoteRefs(
       output,
       remote,
       target,
       head.length,
       STRICT_MAX_CANDIDATE_SOURCES - candidateSourceCount,
+      deadline,
     );
     candidateSourceCount += refs.filter((entry) => !entry.peeled).length;
     advertisements.push({ remote, refs });
@@ -471,11 +512,22 @@ function strictRetainedOnRemote(target, head) {
       const candidates = plan[phase];
       for (let offset = 0; offset < candidates.length; offset += STRICT_FETCH_BATCH_SIZE) {
         const batch = candidates.slice(offset, offset + STRICT_FETCH_BATCH_SIZE);
-        strictFetchAdvertisedRefs(target, plan.remote, batch.map((entry) => entry.ref));
-        strictAdvertisementUnchanged(target, plan.remote, plan.refs, head.length);
+        strictFetchAdvertisedRefs(
+          target,
+          plan.remote,
+          batch.map((entry) => entry.ref),
+          deadline,
+        );
+        strictAdvertisementUnchanged(target, plan.remote, plan.refs, head.length, deadline);
         for (const entry of batch) {
           const peeled = plan.peeledByBase.get(entry.ref);
-          const advertisedCommit = strictResolveAdvertisedCommit(target, plan.remote, entry, peeled);
+          const advertisedCommit = strictResolveAdvertisedCommit(
+            target,
+            plan.remote,
+            entry,
+            peeled,
+            deadline,
+          );
           if (phase === "exact") {
             if (advertisedCommit !== head) {
               throw new Error(`remote ${plan.remote} changed exact source ${entry.ref}`);
@@ -486,6 +538,7 @@ function strictRetainedOnRemote(target, head) {
           const ancestry = strictGitProbe(
             ["-C", target, "merge-base", "--is-ancestor", head, advertisedCommit],
             target,
+            deadline,
           );
           if (ancestry.stdout !== "") throw new Error("git ancestry probe returned unexpected output");
           if (ancestry.status === 0) return;

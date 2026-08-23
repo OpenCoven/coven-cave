@@ -67,16 +67,27 @@ test("expanded navigation renders a persistent contents rail and collapsible sec
   assert.match(markup, /First section/);
   assert.match(markup, /Second section/);
   assert.match(markup, /aria-expanded="true"/);
+  assert.match(markup, /aria-current="location"/);
   assert.match(markup, /A concise introduction\./);
   assert.match(markup, /Body 1\./);
 });
 
-test("the shared reader uses the popover scaffold and reduced-motion-aware scrolling", () => {
+test("the shared reader uses the popover scaffold, roving outline keys, and reduced-motion-aware scrolling", () => {
   const source = readFileSync(
     new URL("./document-reader.tsx", import.meta.url),
     "utf8",
   );
+  const globals = readFileSync(
+    new URL("../app/globals.css", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /import "@\/styles\/document-reader\.css"/);
+  assert.match(globals, /@import "\.\.\/styles\/document-reader\.css";/);
   assert.match(source, /from "@\/components\/ui\/popover"/);
+  assert.match(source, /ArrowDown/);
+  assert.match(source, /ArrowUp/);
+  assert.match(source, /Home/);
+  assert.match(source, /End/);
   assert.match(source, /prefers-reduced-motion: reduce/);
   assert.match(source, /className="[^"]*focus-ring/);
 });

@@ -151,10 +151,10 @@
   width: 40px;
   height: 40px;
 }
-.marketplace-logo svg {
+.marketplace-logo__brand {
   width: 55%;
   height: 55%;
-  fill: currentColor;
+  object-fit: contain;
 }
 .marketplace-logo__monogram {
   font-size: var(--text-xs);

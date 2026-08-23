@@ -2,6 +2,7 @@
 // truth for the gh field list the lane classifier depends on, and for how a
 // PR's state is mirrored into its linked beads.
 import { execFileSync } from "node:child_process";
+import { withBdLaunch } from "../src/lib/bd-bin.ts";
 import {
   prStateNote,
   type GitHubPullRequestInput,
@@ -54,7 +55,18 @@ export function planBeadUpdates(summaries: PullRequestSummary[]): BeadUpdate[] {
 }
 
 export function applyBeadUpdate(update: BeadUpdate): BeadUpdate {
-  execFileSync("bd", ["update", update.id, "--external-ref", update.url, "--append-notes", update.note], {
+  // `--append-notes` carries free-form PR-state prose. Resolve `bd` to a
+  // shell-free launch (src/lib/bd-bin.ts) instead of `shell: true`, which
+  // would hand that prose to cmd.exe to re-parse.
+  const launch = withBdLaunch("bd", [
+    "update",
+    update.id,
+    "--external-ref",
+    update.url,
+    "--append-notes",
+    update.note,
+  ]);
+  execFileSync(launch.command, launch.args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });

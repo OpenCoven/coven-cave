@@ -10,6 +10,11 @@ export type MarketplaceLogoIdentity = {
   source?: string;
 };
 
+export type MarketplaceLogoTransportIdentity = Pick<
+  MarketplaceLogoIdentity,
+  "kind" | "title" | "monogram" | "assetPath"
+>;
+
 type MarketplaceLogoRegistry = {
   schemaVersion: 1;
   catalogCount: number;
@@ -33,6 +38,17 @@ export function resolveMarketplaceLogo(id: string, displayName: string): Marketp
     kind: "monogram",
     title: displayName,
     monogram: marketplaceMonogram(displayName || id),
+  };
+}
+
+export function marketplaceLogoForTransport(
+  identity: MarketplaceLogoIdentity,
+): MarketplaceLogoTransportIdentity {
+  return {
+    kind: identity.kind,
+    title: identity.title,
+    monogram: identity.monogram,
+    ...(identity.assetPath ? { assetPath: identity.assetPath } : {}),
   };
 }
 

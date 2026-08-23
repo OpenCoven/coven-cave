@@ -26,6 +26,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
   let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
+    removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
@@ -44,6 +45,9 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     readSessionTranscript: async () => "",
     readMissionFile: async () => null,
     readSources: async () => [],
+    materializeSavedLink: async () => {
+      throw new Error("saved X Article not found");
+    },
     publishKnowledge: async (entry) => entry,
     killSession: async () => {},
     createAutomation: async (input) => ({

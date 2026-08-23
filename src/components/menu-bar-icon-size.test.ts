@@ -21,7 +21,7 @@ assert.match(css, /\.menu-bar__search-icon\s*\{[^}]*width:\s*var\(--icon-sm\)[^}
 // Action buttons + search input use the design-token body size, not ad-hoc px.
 assert.match(
   css,
-  /\.menu-bar__new,\s*\n\.menu-bar__task,\s*\n\.menu-bar__status \{[^}]*font-size:\s*var\(--text-base\)[^}]*\}/,
+  /\.menu-bar__new,\s*\n\.menu-bar__task,\s*\n\.menu-bar__status,\s*\n\.menu-bar__group--status \.notification-bell__trigger \{[^}]*font-size:\s*var\(--text-base\)[^}]*\}/,
   "menu-bar buttons use var(--text-base)",
 );
 assert.match(css, /\.menu-bar__search-input\s*\{[^}]*font-size:\s*var\(--text-base\)[^}]*\}/, "search input uses var(--text-base)");
@@ -55,6 +55,36 @@ assert.match(css, /\.menu-bar__search \{[\s\S]*?border:\s*1px solid var\(--borde
 assert.match(css, /\.shell-top-history \{/, "history Back/Forward pair has its grouping styles");
 assert.match(css, /\.menu-bar__task-label \{\s*\n\s*display:\s*none/, "task labels are CSS-demoted — the bar shows icons only");
 assert.match(css, /\.menu-bar__task-label--live \{\s*\n\s*display:\s*inline/, "…except live enrich progress, which is information, not chrome");
-assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 29px/, "the desktop bar is a slim 29px — it hugs the 28px controls instead of towering over the macOS traffic lights");
-assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \.menu-bar \{[\s\S]{0,120}?min-height: 28px/, "the inner menu-bar must not prop the slim titlebar band back open at 34px");
+// The strip was a hard-coded 30px until the desktop chrome refresh (#4791)
+// grew it to 34px so it lines up with the functional toolbar it now shares a
+// row with, and moved the number into --shell-native-titlebar-height so the
+// rail offsets, panel padding and .shell-top height all derive from one value
+// instead of repeating a literal. Pinning "30px" pinned the literal, not the
+// promise; the promise is that native macOS still reserves a dedicated strip of
+// fixed height, sized from that token.
+const nativeTitleStripRule = css.match(
+  /^:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[^}]*\}/m,
+)?.[0];
+assert.ok(nativeTitleStripRule, "native macOS has a dedicated window title strip rule");
+assert.match(
+  nativeTitleStripRule,
+  /flex: 0 0 var\(--shell-native-titlebar-height\);/,
+  "the native window title strip is a fixed band sized from --shell-native-titlebar-height",
+);
+assert.match(
+  nativeTitleStripRule,
+  /min-height: var\(--shell-native-titlebar-height\);/,
+  "…and cannot be squeezed below that height",
+);
+assert.match(
+  css,
+  /^:root\[data-tauri-titlebar\] \{[^}]*--shell-native-titlebar-height:\s*\d+px;/m,
+  "--shell-native-titlebar-height resolves to a concrete height under the native titlebar",
+);
+assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 34px/, "the functional toolbar keeps its compact 34px row below the title strip");
+assert.match(
+  css,
+  /\.menu-bar__new,\s*\n\.menu-bar__task,\s*\n\.menu-bar__status,\s*\n\.menu-bar__group--status \.notification-bell__trigger \{[^}]*width:\s*28px;[^}]*height:\s*28px;/,
+  "every desktop titlebar action uses the same 28px square hit target",
+);
 console.log("menu-bar-icon-size.test.ts passed");

@@ -17,6 +17,13 @@ import {
 
 const DEFAULT_MAX_RETIRE = 3;
 const MAX_RETIRE_LIMIT = 10;
+// A retirement attempt includes a full candidate reprobe and several gate
+// checks, so it can be much slower than the local mutation it guards. Five
+// lets the scheduled default of three retirements bypass two blocked units,
+// while bounding an all-blocked sweep. Higher explicit success limits retain
+// at least that many attempts so a requested successful-retirement limit is
+// still attainable.
+const DEFAULT_RETIREMENT_ATTEMPT_BUDGET = 5;
 const ZERO_OID_40 = "0000000000000000000000000000000000000000";
 const ZERO_OID_64 =
   "0000000000000000000000000000000000000000000000000000000000000000";
@@ -157,15 +164,22 @@ export function retireLifecycleUnits({
     attempts: [],
     remoteDeletionProposals: [],
   };
-  const batchSize = parseMaxRetire(maxRetire);
+  const maxSuccessfulRetirements = parseMaxRetire(maxRetire);
+  const attemptBudget = retirementAttemptBudget(maxSuccessfulRetirements);
   const eligible = [...items]
     .filter((item) => item.lane === "retire-after-gate")
     .sort(compareRetirementCandidates);
-  const selected = eligible.slice(0, batchSize);
-  report.cleanupReady = eligible.slice(batchSize);
 
-  for (let index = 0; index < selected.length; index += 1) {
-    const item = selected[index]!;
+  let gateFailed = false;
+  let index = 0;
+  for (
+    ;
+    index < eligible.length &&
+    report.retired.length < maxSuccessfulRetirements &&
+    report.attempts.length < attemptBudget;
+    index += 1
+  ) {
+    const item = eligible[index]!;
     const attempt = beginAttempt(item);
     const state: RetirementState = {
       destructiveMutation: false,
@@ -178,7 +192,8 @@ export function retireLifecycleUnits({
     const initialGate = heartbeatThenVerify(operations, gateHandle, "before retirement");
     if (!initialGate.ok) {
       reportFailure(report, item, attempt, state, initialGate.reason);
-      cascadeRemainingBlocked(report, selected, index + 1, initialGate.reason);
+      cascadeRemainingBlocked(report, eligible, index + 1, initialGate.reason);
+      gateFailed = true;
       break;
     }
 
@@ -257,7 +272,8 @@ export function retireLifecycleUnits({
       const preCleanupGate = heartbeatThenVerify(operations, gateHandle, "before ignored cleanup");
       if (!preCleanupGate.ok) {
         reportFailure(report, item, attempt, state, preCleanupGate.reason);
-        cascadeRemainingBlocked(report, selected, index + 1, preCleanupGate.reason);
+        cascadeRemainingBlocked(report, eligible, index + 1, preCleanupGate.reason);
+        gateFailed = true;
         break;
       }
 
@@ -300,7 +316,8 @@ export function retireLifecycleUnits({
       );
       if (!preWorktreeGate.ok) {
         reportFailure(report, item, attempt, state, preWorktreeGate.reason);
-        cascadeRemainingBlocked(report, selected, index + 1, preWorktreeGate.reason);
+        cascadeRemainingBlocked(report, eligible, index + 1, preWorktreeGate.reason);
+        gateFailed = true;
         break;
       }
 
@@ -322,7 +339,8 @@ export function retireLifecycleUnits({
         state,
         midGate.reason,
       );
-      cascadeRemainingBlocked(report, selected, index + 1, midGate.reason);
+      cascadeRemainingBlocked(report, eligible, index + 1, midGate.reason);
+      gateFailed = true;
       break;
     }
 
@@ -357,7 +375,8 @@ export function retireLifecycleUnits({
       );
       reportFailure(report, item, attempt, handled.state, handled.reason);
       if (handled.lostGate) {
-        cascadeRemainingBlocked(report, selected, index + 1, handled.reason);
+        cascadeRemainingBlocked(report, eligible, index + 1, handled.reason);
+        gateFailed = true;
         break;
       }
       continue;
@@ -382,7 +401,8 @@ export function retireLifecycleUnits({
         );
         reportFailure(report, item, attempt, handled.state, handled.reason);
         if (handled.lostGate) {
-          cascadeRemainingBlocked(report, selected, index + 1, handled.reason);
+          cascadeRemainingBlocked(report, eligible, index + 1, handled.reason);
+          gateFailed = true;
           break;
         }
         continue;
@@ -392,7 +412,8 @@ export function retireLifecycleUnits({
     const finalGate = heartbeatThenVerify(operations, gateHandle, "after local retirement");
     if (!finalGate.ok) {
       reportFailure(report, item, attempt, state, finalGate.reason);
-      cascadeRemainingBlocked(report, selected, index + 1, finalGate.reason);
+      cascadeRemainingBlocked(report, eligible, index + 1, finalGate.reason);
+      gateFailed = true;
       break;
     }
 
@@ -409,6 +430,9 @@ export function retireLifecycleUnits({
         reason: "remote-deletion-requires-separate-authorization",
       });
     }
+  }
+  if (!gateFailed) {
+    report.cleanupReady = eligible.slice(index);
   }
 
   return report;
@@ -837,14 +861,18 @@ function reportFailure(
   });
 }
 
+function retirementAttemptBudget(maxSuccessfulRetirements: number): number {
+  return Math.max(DEFAULT_RETIREMENT_ATTEMPT_BUDGET, maxSuccessfulRetirements);
+}
+
 function cascadeRemainingBlocked(
   report: RetirementReport,
-  selected: WorktreeLifecycleItem[],
+  eligible: WorktreeLifecycleItem[],
   startIndex: number,
   reason: string,
 ): void {
-  for (let index = startIndex; index < selected.length; index += 1) {
-    const item = selected[index]!;
+  for (let index = startIndex; index < eligible.length; index += 1) {
+    const item = eligible[index]!;
     report.blocked.push({
       branch: item.branch,
       ref: item.ref,
@@ -1105,7 +1133,7 @@ function resolveDisposableIgnoredTarget(
   }
 
   let current = worktreePath;
-  for (const segment of segments) {
+  for (const [index, segment] of segments.entries()) {
     current = path.join(current, segment);
     if (
       current !== worktreePath &&
@@ -1119,6 +1147,9 @@ function resolveDisposableIgnoredTarget(
     try {
       const stat = lstatSync(current);
       if (stat.isSymbolicLink()) {
+        if (index === segments.length - 1) {
+          return { ok: true, target: current };
+        }
         return {
           ok: false,
           reason: `refused disposable ignored cleanup through a symbolic link: ${rawCandidate}`,

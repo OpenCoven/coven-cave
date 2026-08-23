@@ -1,5 +1,9 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+const agenticRecommendationsEnabled = ["1", "true", "yes", "on"].includes(
+  process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS?.trim().toLowerCase() ?? "",
+);
+
 // Research Desk five-tab surface (cave-dl74) — Prompt / Desk / Library /
 // Studio / Resources inside the researcher role room (surface:researcher-desk).
 //
@@ -14,7 +18,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // effects, so the number of initial fetches is unpredictable. The one POST
 // (Studio diagram create) records its body into a variable instead.
 
-const FAMILIAR_ID = "rida";
+const FAMILIAR_ID = "researcher";
 const NOW = Date.now();
 const iso = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
 
@@ -238,13 +242,200 @@ const COMPLETED_MISSION = {
 
 const MISSIONS = [CHECKPOINT_MISSION, RUNNING_MISSION, FAILED_MISSION, COMPLETED_MISSION];
 
+const PROMPT_CREATED_MISSION = {
+  version: 1,
+  id: "m-prompt-start",
+  familiarId: FAMILIAR_ID,
+  title: "Saved-link intake coverage pass",
+  intent: "Compare how saved X Articles and ordinary links should enter a new research mission.",
+  mode: "sweep",
+  modeSource: "user",
+  deliverable: "report + source-ledger",
+  constraints: [],
+  bounds: BOUNDS,
+  harness: "copilot",
+  status: "planning",
+  createdAt: iso(0),
+  updatedAt: iso(0),
+  iterations: [],
+  artifacts: [],
+  sources: [],
+};
+
 // ── Saved links (Resources / Prompt quick saves) ─────────────────────────────
 
-const LINKS = [
+type MockXArticle = {
+  version: 1;
+  provider: "sorsa";
+  sourcePostId: string;
+  titleSource: "provider" | "derived";
+  author: { id: string; username: string; displayName?: string };
+  body: string;
+  excerpt: string;
+  publishedAt: string;
+  fetchedAt: string;
+  contentSha256: string;
+};
+
+type MockSavedLink = {
+  id: string;
+  url: string;
+  category: string;
+  title: string;
+  addedAt: string;
+  source: "chat" | "desk";
+  xArticle?: MockXArticle;
+};
+
+const X_ARTICLE_URL = "https://x.com/opencoven/status/123456789";
+const FAILED_X_ARTICLE_URL = "https://x.com/opencoven/status/987654321";
+const ORDINARY_RESOURCE_URL = "https://example.com/research-desk-sibling";
+const X_ARTICLE_BODY = "Known X Article body text stays in the saved snapshot, not the list response.";
+
+const X_ARTICLE_LINK: MockSavedLink = {
+  id: "x-article-1",
+  url: X_ARTICLE_URL,
+  category: "article",
+  title: "Durable evidence belongs with the research run",
+  addedAt: iso(20),
+  source: "desk",
+  xArticle: {
+    version: 1,
+    provider: "sorsa",
+    sourcePostId: "123456789",
+    titleSource: "provider",
+    author: {
+      id: "42",
+      username: "opencoven",
+      displayName: "Open Coven",
+    },
+    body: X_ARTICLE_BODY,
+    excerpt: "A concise evidence snapshot for the Research Desk.",
+    publishedAt: "2026-08-18T12:34:56.000Z",
+    fetchedAt: "2026-08-18T12:35:00.000Z",
+    contentSha256: "a".repeat(64),
+  },
+};
+
+const ORDINARY_RESOURCE_LINK: MockSavedLink = {
+  id: "ordinary-sibling-1",
+  url: ORDINARY_RESOURCE_URL,
+  category: "other",
+  title: "Ordinary research sibling",
+  addedAt: iso(20),
+  source: "desk",
+};
+
+const LINKS: MockSavedLink[] = [
   { id: "l-gh", url: "https://github.com/acme/vector-bench", category: "github", title: "acme/vector-bench", addedAt: iso(60), source: "chat" },
   { id: "l-docs", url: "https://docs.qdrant.tech/guide", category: "docs", title: "Qdrant guide", addedAt: iso(120), source: "chat" },
   { id: "l-paper", url: "https://arxiv.org/abs/2401.01234", category: "paper", title: "Efficient ANN search", addedAt: iso(90), source: "desk" },
 ];
+
+const AGENTIC_CONTEXT_FINGERPRINT = "ctx-v1-1234567890abcdef1234567890abcdef";
+const VAULT_REDUCED_CONTEXT_REASON = "Vault context was unavailable, so this ranking uses Research Desk evidence only.";
+
+function topicRecommendation(input: {
+  id: string;
+  topic: string;
+  recommendationKind: "start-mission" | "refine-mission" | "review-mission" | "add-to-prompt";
+  evidenceRefs: Array<{ id: string; kind: "mission" | "saved-link" | "vault"; label: string }>;
+  targetMissionId?: string;
+  rankReasons?: string[];
+  contextFingerprint?: string;
+}) {
+  return {
+    id: input.id,
+    surface: "research",
+    kind: "topic",
+    payload: {
+      recommendationKind: input.recommendationKind,
+      topic: input.topic,
+      ...(input.targetMissionId ? { targetMissionId: input.targetMissionId } : {}),
+    },
+    rationale: `This topic advances the current decision with resolved Research Desk evidence.`,
+    inferredGoal: "Reach a defensible evidence-backed recommendation.",
+    rankReasons: input.rankReasons ?? ["Advances an unresolved decision with grounded evidence."],
+    evidenceRefs: input.evidenceRefs,
+    contextFingerprint: input.contextFingerprint ?? AGENTIC_CONTEXT_FINGERPRINT,
+    verification: {
+      status: "proposal",
+      checks: [{ id: "evidence-resolved", state: "passed", detail: "Every cited record resolved." }],
+    },
+    application: {
+      mode: "review",
+      requiresApproval: true,
+      reversible: false,
+    },
+    ordinal: 1,
+  };
+}
+
+const START_TOPIC_RECOMMENDATION = topicRecommendation({
+  id: "research-topic-start",
+  topic: "Compare vector index recall against latency under our production workload",
+  recommendationKind: "start-mission",
+  evidenceRefs: [
+    { id: "mission:m-check", kind: "mission", label: CHECKPOINT_MISSION.title },
+    { id: "saved-link:l-gh", kind: "saved-link", label: "acme/vector-bench" },
+    { id: "saved-link:x-vector-1", kind: "saved-link", label: "X Article 1881" },
+    { id: "vault:research/vector-notes", kind: "vault", label: "Vector retrieval notes" },
+  ],
+});
+
+const ADD_TO_PROMPT_RECOMMENDATION = topicRecommendation({
+  id: "research-topic-add",
+  topic: "Use the Vault's vector retrieval notes to define the acceptance thresholds.",
+  recommendationKind: "add-to-prompt",
+  evidenceRefs: [{ id: "vault:research/vector-notes", kind: "vault", label: "Vector retrieval notes" }],
+});
+
+const REFINE_TOPIC_RECOMMENDATION = topicRecommendation({
+  id: "research-topic-refine",
+  topic: CHECKPOINT_MISSION.title,
+  recommendationKind: "refine-mission",
+  targetMissionId: CHECKPOINT_MISSION.id,
+  evidenceRefs: [
+    { id: "mission:m-check", kind: "mission", label: CHECKPOINT_MISSION.title },
+    { id: "saved-link:x-vector-1", kind: "saved-link", label: "X Article 1881" },
+  ],
+});
+
+const REVIEW_TOPIC_RECOMMENDATION = topicRecommendation({
+  id: "research-topic-review",
+  topic: COMPLETED_MISSION.title,
+  recommendationKind: "review-mission",
+  targetMissionId: COMPLETED_MISSION.id,
+  evidenceRefs: [{ id: "mission:m-done", kind: "mission", label: COMPLETED_MISSION.title }],
+});
+
+const LONG_PAPER_TOPIC = [
+  "Write a literature review of vector database evaluation methods for our retrieval stack.",
+  "Compare recall, latency, cost, and reproducibility from primary benchmark sources.",
+  "Document the measurement protocol and identify the evidence that would change the decision.",
+].join(" ");
+
+function toMockSavedLinkSummary(link: MockSavedLink) {
+  if (!link.xArticle) return { ...link };
+  const { body: _body, ...xArticle } = link.xArticle;
+  return { ...link, xArticle };
+}
+
+function assertBodyFreeSavedLinkResponse(response: unknown) {
+  const serialized = JSON.stringify(response);
+  expect(serialized).not.toContain('"body"');
+  expect(serialized).not.toContain(X_ARTICLE_BODY);
+}
+
+function parseMockResourceBatch(value: unknown): { urls: string[]; invalid: string[] } {
+  if (typeof value !== "string") return { urls: [], invalid: [] };
+  const urls = value.match(/https?:\/\/[^\s,]+/g) ?? [];
+  const invalid = value
+    .split(/[\s,]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && !/^https?:\/\//.test(entry));
+  return { urls, invalid };
+}
 
 // ── Studio generation (mock POST → ready diagram record) ─────────────────────
 
@@ -266,8 +457,34 @@ const DIAGRAM_GENERATION = {
 
 type BootHandles = {
   createdGenerationBodies: unknown[];
+  createdMissionBodies: Array<Record<string, unknown>>;
   directionDraftBodies: Array<Record<string, unknown>>;
+  missionActionBodies: Array<Record<string, unknown>>;
+  recommendationMethods: string[];
+  recommendationRequests: number;
+  recommendationRevisionRequests: number;
+  recommendationUrls: string[];
+  recommendationRevision?: string;
+  recommendationRevisionDelay: Promise<void> | null;
+  recommendationResponseDelay: Promise<void> | null;
+  recommendationResponse: {
+    recommendations: ReturnType<typeof topicRecommendation>[];
+    contextFingerprint?: string;
+    reducedContext: boolean;
+  };
+  linkDetailIds: string[];
+  linkListResponses: unknown[];
+  linkSaveResponses: unknown[];
+  missionRequests: Array<{ kind: "create" | "action"; missionId: string; body: unknown }>;
 };
+
+type MockResearchApiOptions = {
+  initialLinks?: MockSavedLink[];
+};
+
+function cloneForMock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
 
 function fulfillDirectionDraft(route: Route) {
   return route.fulfill({
@@ -298,14 +515,32 @@ function fulfillJournalSend(route: Route) {
   });
 }
 
-async function mockResearchApis(page: Page): Promise<BootHandles> {
+async function mockResearchApis(page: Page, options: MockResearchApiOptions = {}): Promise<BootHandles> {
   const handles: BootHandles = {
     createdGenerationBodies: [],
+    createdMissionBodies: [],
     directionDraftBodies: [],
+    missionActionBodies: [],
+    recommendationMethods: [],
+    recommendationRequests: 0,
+    recommendationRevisionRequests: 0,
+    recommendationUrls: [],
+    recommendationRevisionDelay: null,
+    recommendationResponseDelay: null,
+    recommendationResponse: {
+      recommendations: [],
+      reducedContext: false,
+    },
+    linkDetailIds: [],
+    linkListResponses: [],
+    linkSaveResponses: [],
+    missionRequests: [],
   };
+  const missions: Array<(typeof MISSIONS)[number] | typeof PROMPT_CREATED_MISSION> =
+    cloneForMock(MISSIONS);
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
-    window.localStorage.setItem("cave:active-familiar", "rida");
+    window.localStorage.setItem("cave:active-familiar", "researcher");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({
@@ -322,9 +557,85 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
   // No active role manifests — the role label alone opens the room.
   await page.route(/\/api\/roles(\?|$)/, (route) => route.fulfill({ json: { roles: [] } }));
-  await page.route(/\/api\/research\/missions\?/, (route) =>
-    route.fulfill({ json: { ok: true, missions: MISSIONS } }),
-  );
+  await page.route(/\/api\/research\/missions(?:\?.*)?$/, (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      return route.fulfill({ json: { ok: true, missions } });
+    }
+    if (request.method() === "POST") {
+      const createdMission = cloneForMock(PROMPT_CREATED_MISSION);
+      const body = request.postDataJSON() as Record<string, unknown>;
+      handles.createdMissionBodies.push(body);
+      handles.missionRequests.push({
+        kind: "create",
+        missionId: createdMission.id,
+        body,
+      });
+      missions.unshift(createdMission);
+      return route.fulfill({ json: { ok: true, mission: createdMission } });
+    }
+    return route.fulfill({ status: 405, json: { ok: false, error: "method not allowed" } });
+  });
+  await page.route(/\/api\/research\/missions\/[^/]+\/actions$/, (route) => {
+    const request = route.request();
+    const missionId = decodeURIComponent(request.url().match(/\/api\/research\/missions\/([^/]+)\/actions$/)?.[1] ?? "");
+    const body = request.postDataJSON() as Record<string, unknown>;
+    handles.missionActionBodies.push(body);
+    handles.missionRequests.push({ kind: "action", missionId, body });
+    const mission = missions.find((candidate) => candidate.id === missionId);
+    return route.fulfill(mission
+      ? {
+          json: {
+            ok: true,
+            mission: {
+              ...mission,
+              ...(typeof body.direction === "string" ? { direction: body.direction } : {}),
+            },
+          },
+        }
+      : { status: 404, json: { ok: false, error: "mission not found" } });
+  });
+  await page.route("**/api/research/recommendations**", (route) => {
+    handles.recommendationRequests += 1;
+    handles.recommendationMethods.push(route.request().method());
+    handles.recommendationUrls.push(route.request().url());
+    if (new URL(route.request().url()).searchParams.get("revision") === "1") {
+      handles.recommendationRevisionRequests += 1;
+      const fulfillRevision = () => route.fulfill({
+        json: {
+          ok: true,
+          contextFingerprint: handles.recommendationRevision
+            ?? handles.recommendationResponse.contextFingerprint
+            ?? handles.recommendationResponse.recommendations[0]?.contextFingerprint
+            ?? AGENTIC_CONTEXT_FINGERPRINT,
+        },
+      });
+      return handles.recommendationRevisionDelay
+        ? handles.recommendationRevisionDelay.then(fulfillRevision)
+        : fulfillRevision();
+    }
+    const delay = handles.recommendationResponseDelay;
+    if (delay) {
+      return delay.then(() => route.fulfill({
+        json: {
+          ok: true,
+          ...handles.recommendationResponse,
+          contextFingerprint: handles.recommendationResponse.contextFingerprint
+            ?? handles.recommendationResponse.recommendations[0]?.contextFingerprint
+            ?? AGENTIC_CONTEXT_FINGERPRINT,
+        },
+      }));
+    }
+    return route.fulfill({
+      json: {
+        ok: true,
+        ...handles.recommendationResponse,
+        contextFingerprint: handles.recommendationResponse.contextFingerprint
+          ?? handles.recommendationResponse.recommendations[0]?.contextFingerprint
+          ?? AGENTIC_CONTEXT_FINGERPRINT,
+      },
+    });
+  });
   await page.route("**/api/chat/send", (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     if (body.origin === "enhance") {
@@ -351,9 +662,73 @@ async function mockResearchApis(page: Page): Promise<BootHandles> {
       },
     }),
   );
-  await page.route("**/api/research/links", (route) =>
-    route.fulfill({ json: { ok: true, links: LINKS } }),
-  );
+  const savedLinks = cloneForMock([...LINKS, ...(options.initialLinks ?? [])]);
+  await page.route(/\/api\/research\/links(?:\?.*)?$/, (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "GET") {
+      const id = url.searchParams.get("id");
+      if (id !== null) {
+        handles.linkDetailIds.push(id);
+        const link = savedLinks.find((candidate) => candidate.id === id);
+        return route.fulfill(link
+          ? { json: { ok: true, link } }
+          : { status: 404, json: { ok: false, error: "link not found" } });
+      }
+      const response = { ok: true, links: savedLinks.map(toMockSavedLinkSummary) };
+      handles.linkListResponses.push(response);
+      assertBodyFreeSavedLinkResponse(response);
+      return route.fulfill({ json: response });
+    }
+    if (request.method() === "POST") {
+      const body = request.postDataJSON() as { text?: unknown };
+      const { urls, invalid } = parseMockResourceBatch(body.text);
+      const added: MockSavedLink[] = [];
+      const duplicates: string[] = [];
+      const failed: Array<{ url: string; code: "timeout"; message: string; retryable: boolean }> = [];
+      for (const candidate of urls) {
+        if (savedLinks.some((link) => link.url === candidate)) {
+          duplicates.push(candidate);
+        } else if (candidate === X_ARTICLE_URL) {
+          savedLinks.push({ ...X_ARTICLE_LINK, xArticle: { ...X_ARTICLE_LINK.xArticle! } });
+          added.push(X_ARTICLE_LINK);
+        } else if (candidate === ORDINARY_RESOURCE_URL) {
+          savedLinks.push({ ...ORDINARY_RESOURCE_LINK });
+          added.push(ORDINARY_RESOURCE_LINK);
+        } else if (candidate === FAILED_X_ARTICLE_URL) {
+          failed.push({
+            url: candidate,
+            code: "timeout",
+            message: "The deterministic X Article mock timed out.",
+            retryable: true,
+          });
+        } else {
+          invalid.push(candidate);
+        }
+      }
+      const response = {
+        ok: true,
+        added: added.map(toMockSavedLinkSummary),
+        duplicates,
+        invalid,
+        failed,
+      };
+      handles.linkSaveResponses.push(response);
+      assertBodyFreeSavedLinkResponse(response);
+      return route.fulfill({ json: response });
+    }
+    if (request.method() === "DELETE") {
+      const body = request.postDataJSON() as { id?: unknown };
+      const id = typeof body.id === "string" ? body.id : "";
+      const index = savedLinks.findIndex((link) => link.id === id);
+      if (index < 0) {
+        return route.fulfill({ status: 404, json: { ok: false, error: "link not found" } });
+      }
+      savedLinks.splice(index, 1);
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ status: 405, json: { ok: false, error: "method not allowed" } });
+  });
   await page.route(/\/api\/research\/generations/, async (route) => {
     if (route.request().url().includes("/readiness")) {
       await route.fulfill({
@@ -416,8 +791,8 @@ async function enterResearchDesk(page: Page) {
   }).toPass({ timeout: 90_000 });
 }
 
-async function openResearchDesk(page: Page): Promise<BootHandles> {
-  const handles = await mockResearchApis(page);
+async function openResearchDesk(page: Page, options: MockResearchApiOptions = {}): Promise<BootHandles> {
+  const handles = await mockResearchApis(page, options);
   await page.goto("/");
   await enterResearchDesk(page);
   return handles;
@@ -467,12 +842,13 @@ test.describe("research desk tabs", () => {
     await expect(desk.locator(".research-desk-stepper__track")).not.toContainText("Trigger");
 
     // Checkpoint mission is selected (first unarchived) → checkpoint action
-    // bar: Continue (i2/4) + Finish now on the left, Cancel/Archive on the right.
+    // bar: Continue to iteration 2 of 4 + Finish now on the left, Cancel/Archive
+    // on the right.
     await expect(desk.locator("#research-mission-title")).toHaveText(CHECKPOINT_MISSION.title);
     const actions = desk.locator(".research-mission-actions");
     // Continue's accessible name is its full-consequence aria-label, so match
-    // the visible i2/4 text instead of the role name.
-    const continueButton = actions.locator("button", { hasText: "Continue (i2/4)" });
+    // the visible iteration text instead of the role name.
+    const continueButton = actions.locator("button", { hasText: "Continue to iteration 2 of 4" });
     await expect(continueButton).toBeVisible();
     await expect(continueButton).toHaveAttribute("aria-label", /start iteration 2 of 4/);
     await expect(actions.getByRole("button", { name: "Finish now" })).toBeVisible();
@@ -501,7 +877,7 @@ test.describe("research desk tabs", () => {
     await expect(railTabs.getByRole("tab", { name: /^Sources/ })).toHaveAttribute("aria-selected", "true");
     const sourcesPane = desk.getByRole("tabpanel", { name: /^Sources/ });
     await expect(sourcesPane.getByRole("button", { name: /^Vendor benchmarks blog/ })).toBeVisible();
-    await expect(sourcesPane.getByRole("button", { name: "Verify next pass" })).toBeVisible();
+    await expect(sourcesPane.getByRole("button", { name: "Verify next iteration" })).toBeVisible();
 
     // Toggling shows the artifacts in the same pane — one list at a time, both
     // complete, with no second copy stacked below.
@@ -802,6 +1178,8 @@ test.describe("research desk tabs", () => {
             },
           ],
           duplicates: [],
+          invalid: [],
+          failed: [],
         },
       });
     });
@@ -823,7 +1201,105 @@ test.describe("research desk tabs", () => {
     await expect(intake).toHaveValue(nextBatch);
   });
 
-  test("Prompt shows the composer, opens the slash palette on '/', and mode cards track typed intent", async ({ page }) => {
+  test("Resources ingests, reads, and attaches an X Article", async ({ page }) => {
+    const handles = await openResearchDesk(page);
+    const appOrigin = new URL(page.url()).origin;
+    const thirdPartyRequests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if ((url.protocol === "http:" || url.protocol === "https:") && url.origin !== appOrigin) {
+        thirdPartyRequests.push(url.toString());
+      }
+    });
+
+    await deskTab(page, /^Desk/).click();
+    const rail = page.locator(".research-desk").getByRole("navigation", { name: "Research missions" });
+    await rail.getByRole("button", { name: new RegExp(CHECKPOINT_MISSION.title) }).click();
+    await deskTab(page, /^Resources/).click();
+
+    const resources = page.locator(".research-res");
+    const intake = resources.getByLabel("Add resources");
+    await intake.fill(`${X_ARTICLE_URL},\n${ORDINARY_RESOURCE_URL}`);
+    await resources.getByRole("button", { name: "Save resources", exact: true }).click();
+    await expect(resources.getByRole("status").filter({ hasText: "Saved 2 resources." })).toBeVisible();
+
+    const xArticleCard = resources.locator(".research-res-card", { hasText: X_ARTICLE_LINK.title });
+    await expect(xArticleCard).toContainText("X Article");
+    await expect(xArticleCard).toContainText("Open Coven");
+    await expect(xArticleCard).toContainText(X_ARTICLE_LINK.xArticle!.excerpt);
+    await expect(
+      resources.locator(".research-res-card", { hasText: ORDINARY_RESOURCE_LINK.title }),
+    ).toBeVisible();
+    expect(handles.linkListResponses).not.toEqual([]);
+    expect(handles.linkSaveResponses).not.toEqual([]);
+    for (const response of [...handles.linkListResponses, ...handles.linkSaveResponses]) {
+      assertBodyFreeSavedLinkResponse(response);
+    }
+
+    await xArticleCard.getByRole("button", { name: `${X_ARTICLE_LINK.title} — open details` }).click();
+    const dialog = page.getByRole("dialog", { name: X_ARTICLE_LINK.title });
+    await dialog.getByRole("button", { name: "Read article", exact: true }).click();
+    await expect.poll(() => handles.linkDetailIds).toContain("x-article-1");
+    const reader = page.getByRole("article", { name: `Reading ${X_ARTICLE_LINK.title}` });
+    await expect(reader).toContainText(X_ARTICLE_BODY);
+    await expect(reader).toBeFocused();
+    expect(await reader.evaluate((element) => getComputedStyle(element).userSelect)).not.toBe("none");
+
+    await dialog.getByRole("button", { name: "Add to run", exact: true }).click();
+    await expect.poll(() => handles.missionActionBodies).toEqual([
+      { action: "attach-saved-link", savedLinkId: "x-article-1", familiarId: "researcher" },
+    ]);
+    await expect(page.getByRole("status").filter({ hasText: "Added to “Vector DB pricing landscape”" })).toBeVisible();
+    expect(thirdPartyRequests).toEqual([]);
+  });
+
+  test("Prompt starts a mission with selected X Article and ordinary quick saves", async ({ page }) => {
+    const handles = await openResearchDesk(page, {
+      initialLinks: [X_ARTICLE_LINK, ORDINARY_RESOURCE_LINK],
+    });
+    await deskTab(page, /^Prompt/).click();
+
+    const prompt = page.locator(".research-intake");
+    await prompt.getByRole("button", { name: /^Quick saves/ }).click();
+    const saves = prompt.getByRole("region", { name: "Quick saves" });
+    await expect(saves).toBeVisible();
+    await expect(saves.getByRole("button", { name: new RegExp(X_ARTICLE_LINK.title) })).toBeVisible();
+    await expect(saves.getByRole("button", { name: new RegExp(ORDINARY_RESOURCE_LINK.title) })).toBeVisible();
+
+    const search = saves.getByRole("textbox", { name: "Search saves" });
+    await search.fill("Ordinary research sibling");
+    await saves.getByRole("button", { name: "Select all 1 result" }).click();
+    await expect(prompt.getByText("1 ready for the first pass")).toBeVisible();
+
+    await search.fill(X_ARTICLE_LINK.title);
+    await saves.getByRole("button", { name: "Select all 1 result" }).click();
+    await expect(prompt.getByText("2 ready for the first pass")).toBeVisible();
+    await prompt.getByRole("button", { name: /^Quick saves/ }).click();
+    await expect(prompt.getByRole("region", { name: "Quick saves" })).toHaveCount(0);
+
+    const missionPrompt = "Compare how saved X Articles and ordinary links should enter a new research mission.";
+    await prompt.getByLabel("What should we investigate?").fill(missionPrompt);
+    await prompt.getByRole("button", { name: "Start research" }).click();
+
+    await expect.poll(() => handles.createdMissionBodies.length).toBe(1);
+    await expect.poll(() => handles.missionRequests.length).toBe(1);
+
+    const createdBody = handles.createdMissionBodies[0] as Record<string, unknown>;
+    expect(createdBody.familiarId).toBe(FAMILIAR_ID);
+    expect(createdBody.intent).toBe(missionPrompt);
+    expect(createdBody.savedLinkIds).toEqual(["x-article-1", "ordinary-sibling-1"]);
+    expect(handles.missionActionBodies).toEqual([]);
+
+    expect(handles.missionRequests[0]?.kind).toBe("create");
+    expect(handles.missionRequests[0]?.missionId).toBe(PROMPT_CREATED_MISSION.id);
+
+    await expect(deskTab(page, /^Desk/)).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.locator(".research-desk").getByRole("heading", { name: PROMPT_CREATED_MISSION.title }),
+    ).toBeVisible();
+  });
+
+  test("Prompt shows the composer, opens the slash palette on '/', and the mode picker tracks typed intent", async ({ page }) => {
     await openResearchDesk(page);
     await deskTab(page, /^Prompt/).click();
 
@@ -846,13 +1322,15 @@ test.describe("research desk tabs", () => {
 
     // Auto mode routing reacts to the typed intent: "whitepaper" → Paper.
     await intent.fill("Write a whitepaper on vector databases for our team");
-    const selectedCard = intake.locator('.research-mode-card[data-selected="true"]');
-    await expect(selectedCard).toContainText("Paper");
-    await expect(selectedCard).toContainText("auto pick");
-    await expect(intake.getByText(/Auto picks one from your prompt — Paper for now/)).toBeVisible();
+    const modePicker = intake.getByRole("button", { name: "Research mode" });
+    await expect(modePicker).toContainText("Auto · Paper");
+    await expect(intake.locator(".research-mode-picker__summary")).toContainText("Auto pick");
+    await expect(intake.locator(".research-mode-picker__summary")).toContainText("Paper");
+    await expect(intake.getByText("Auto selected Paper from the prompt.")).toBeVisible();
 
-    // Clicking a card is a manual override, said in plain words.
-    await intake.locator(".research-mode-card", { hasText: "Deep loop" }).click();
+    // Selecting a mode is a manual override, said in plain words.
+    await modePicker.click();
+    await page.getByRole("menuitemradio", { name: /^Deep loop/ }).click();
     await expect(intake.getByText("You chose Deep loop — this run will use it.")).toBeVisible();
 
     // Quick saves is a drawer docked to the bottom edge: collapsed by default
@@ -877,6 +1355,298 @@ test.describe("research desk tabs", () => {
 
     // Attaching one reports back on the collapsed bar.
     await saves.getByRole("button", { name: /Qdrant guide/ }).click();
-    await expect(intake.getByText("1 attached to this run")).toBeVisible();
+    await expect(intake.getByText("1 ready for the first pass")).toBeVisible();
+  });
+
+  test("keeps Research recommendations hidden and idle when the capability is disabled", async ({ page }) => {
+    test.skip(agenticRecommendationsEnabled, "this behavioral gate runs in the disabled capability build");
+    const handles = await openResearchDesk(page);
+
+    await deskTab(page, /^Prompt/).click();
+    await expect(page.getByRole("heading", { name: "Suggested next topics" })).toHaveCount(0);
+    await page.waitForTimeout(1_200);
+    expect(handles.recommendationRequests).toBe(0);
+  });
+
+  test.describe("agentic topic recommendations", () => {
+    test.skip(!agenticRecommendationsEnabled, "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1");
+
+    test("grounds next topics in Desk evidence, ignores prompt typing, and only starts after activation", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      handles.recommendationResponse = {
+        recommendations: [ADD_TO_PROMPT_RECOMMENDATION, START_TOPIC_RECOMMENDATION],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const intake = page.locator(".research-intake");
+      const topics = intake.getByRole("region", { name: "Suggested next topics" });
+      await expect(topics).toBeVisible();
+      await expect(topics).toContainText("Compare vector index recall against latency");
+      await expect(topics).toContainText("mission: Vector DB pricing landscape");
+      await expect(topics).toContainText("saved-link: acme/vector-bench");
+      await expect(topics).toContainText("saved-link: X Article 1881");
+      await expect(topics).toContainText("vault: Vector retrieval notes");
+      await expect(topics.getByText("Why this recommendation?").first()).toBeVisible();
+      await expect.poll(() => handles.recommendationRequests).toBeGreaterThan(0);
+      expect(handles.recommendationMethods.every((method) => method === "GET")).toBe(true);
+
+      // The durable context key deliberately excludes composer keystrokes.
+      const requestsBeforeTyping = handles.recommendationRequests;
+      const intent = page.locator("#research-intent");
+      await intent.fill("Write a decision memo about vector indexing.");
+      await page.waitForTimeout(700);
+      expect(handles.recommendationRequests).toBe(requestsBeforeTyping);
+
+      await topics.getByRole("button", { name: "Add to prompt", exact: true }).click();
+      await expect(intent).toHaveValue(
+        "Write a decision memo about vector indexing.\n\nUse the Vault's vector retrieval notes to define the acceptance thresholds.",
+      );
+
+      // A failed Vault lookup still preserves grounded Desk candidates, clearly
+      // labeling the reduced snapshot instead of turning it into a false empty.
+      handles.recommendationResponse = {
+        recommendations: [START_TOPIC_RECOMMENDATION, ADD_TO_PROMPT_RECOMMENDATION].map((recommendation) => ({
+          ...recommendation,
+          rankReasons: [...recommendation.rankReasons, VAULT_REDUCED_CONTEXT_REASON],
+        })),
+        reducedContext: true,
+      };
+      await topics.getByRole("button", { name: "Refresh topics" }).click();
+      await expect(topics.getByText("Vault context is unavailable — using Research Desk evidence.")).toBeVisible();
+
+      // Read-only recommendation generation never creates a mission. That
+      // happens only once the person explicitly activates Start mission.
+      expect(handles.createdMissionBodies).toHaveLength(0);
+      await topics.getByRole("button", { name: "Start mission", exact: true }).click();
+      await expect.poll(() => handles.createdMissionBodies.length).toBe(1);
+      expect(handles.createdMissionBodies[0]).toMatchObject({
+        familiarId: FAMILIAR_ID,
+        intent: START_TOPIC_RECOMMENDATION.payload.topic,
+        mode: "brief",
+        modeSource: "auto",
+      });
+      expect(handles.createdMissionBodies[0]).not.toHaveProperty("title");
+      await expect(deskTab(page, /^Desk/)).toBeFocused();
+      await page.keyboard.press("ArrowRight");
+      await expect(deskTab(page, /^Library/)).toBeFocused();
+    });
+
+    test("routes duplicate topics to explicit mission refinement", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      handles.recommendationResponse = {
+        recommendations: [REFINE_TOPIC_RECOMMENDATION],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const topics = page.getByRole("region", { name: "Suggested next topics" });
+      await expect(topics.getByText(CHECKPOINT_MISSION.title).first()).toBeVisible();
+      expect(handles.missionActionBodies).toHaveLength(0);
+
+      await topics.getByRole("button", { name: "Refine mission", exact: true }).click();
+      await expect.poll(() => handles.missionActionBodies.length).toBe(1);
+      expect(handles.missionActionBodies[0]).toEqual({
+        action: "refine",
+        direction: CHECKPOINT_MISSION.title,
+      });
+      await expect(deskTab(page, /^Desk/)).toHaveAttribute("aria-selected", "true");
+      await expect(deskTab(page, /^Desk/)).toBeFocused();
+    });
+
+    test("reuses auto routing for long recommendation topics without persisting a title", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      const longPaperRecommendation = topicRecommendation({
+        id: "research-topic-long-paper",
+        topic: LONG_PAPER_TOPIC,
+        recommendationKind: "start-mission",
+        evidenceRefs: [{ id: "vault:research/vector-notes", kind: "vault", label: "Vector retrieval notes" }],
+      });
+      handles.recommendationResponse = {
+        recommendations: [longPaperRecommendation],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const topics = page.getByRole("region", { name: "Suggested next topics" });
+      await expect(topics.getByText(LONG_PAPER_TOPIC)).toBeVisible();
+      await topics.getByRole("button", { name: "Start mission", exact: true }).click();
+      await expect.poll(() => handles.createdMissionBodies.length).toBe(1);
+      expect(LONG_PAPER_TOPIC.length).toBeGreaterThan(160);
+      expect(handles.createdMissionBodies[0]).toMatchObject({
+        familiarId: FAMILIAR_ID,
+        intent: LONG_PAPER_TOPIC,
+        mode: "paper",
+        modeSource: "auto",
+      });
+      expect(handles.createdMissionBodies[0]).not.toHaveProperty("title");
+    });
+
+    test("rejects a stale server fingerprint before any recommendation action", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      const staleFingerprint = "ctx-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+      const currentFingerprint = "ctx-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+      const staleRecommendation = topicRecommendation({
+        id: "research-topic-stale",
+        topic: START_TOPIC_RECOMMENDATION.payload.topic,
+        recommendationKind: "start-mission",
+        contextFingerprint: staleFingerprint,
+        evidenceRefs: START_TOPIC_RECOMMENDATION.evidenceRefs,
+      });
+      handles.recommendationResponse = {
+        recommendations: [staleRecommendation],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const topics = page.getByRole("region", { name: "Suggested next topics" });
+      await expect(topics.getByText(START_TOPIC_RECOMMENDATION.payload.topic)).toBeVisible();
+
+      handles.recommendationResponse = {
+        recommendations: [{
+          ...staleRecommendation,
+          contextFingerprint: currentFingerprint,
+        }],
+        reducedContext: false,
+      };
+      await topics.getByRole("button", { name: "Start mission", exact: true }).click();
+      await expect(topics.getByRole("alert")).toContainText(
+        "Recommendations changed. Refresh topics before applying an action.",
+      );
+      expect(handles.createdMissionBodies).toHaveLength(0);
+      await expect.poll(() => handles.recommendationUrls.some((url) =>
+        url.includes(`contextFingerprint=${staleFingerprint}`),
+      )).toBe(true);
+    });
+
+    test("keeps typing intact while Add to prompt waits for freshness", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      handles.recommendationResponse = {
+        recommendations: [ADD_TO_PROMPT_RECOMMENDATION],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const intake = page.locator(".research-intake");
+      const topics = intake.getByRole("region", { name: "Suggested next topics" });
+      await expect(topics.getByRole("button", { name: "Add to prompt", exact: true })).toBeVisible();
+
+      let releaseRevalidation!: () => void;
+      handles.recommendationResponseDelay = new Promise<void>((resolve) => {
+        releaseRevalidation = resolve;
+      });
+      await topics.getByRole("button", { name: "Add to prompt", exact: true }).click();
+      await expect.poll(() => handles.recommendationUrls.some((url) =>
+        url.includes(`contextFingerprint=${ADD_TO_PROMPT_RECOMMENDATION.contextFingerprint}`),
+      )).toBe(true);
+
+      const intent = page.locator("#research-intent");
+      await intent.fill("Keep this newly typed draft.");
+      handles.recommendationResponseDelay = null;
+      releaseRevalidation();
+
+      await expect(topics.getByRole("alert")).toContainText(
+        "Prompt changed while checking this topic. It remains a suggestion.",
+      );
+      await expect(intent).toHaveValue("Keep this newly typed draft.");
+    });
+
+    test("refreshes cards on foreground when X or Vault evidence revision changes", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      const initialFingerprint = "ctx-v1-cccccccccccccccccccccccccccccccc";
+      const refreshedFingerprint = "ctx-v1-dddddddddddddddddddddddddddddddd";
+      const initialRecommendation = topicRecommendation({
+        id: "research-topic-evidence-revision",
+        topic: "Compare vector index recall against latency under our production workload",
+        recommendationKind: "start-mission",
+        contextFingerprint: initialFingerprint,
+        evidenceRefs: START_TOPIC_RECOMMENDATION.evidenceRefs,
+      });
+      const refreshedRecommendation = {
+        ...initialRecommendation,
+        payload: {
+          ...initialRecommendation.payload,
+          topic: "Validate X Article claims with Vault retrieval thresholds before selecting an index",
+        },
+        contextFingerprint: refreshedFingerprint,
+      };
+      handles.recommendationResponse = {
+        recommendations: [initialRecommendation],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const topics = page.getByRole("region", { name: "Suggested next topics" });
+      await expect(topics.getByText(initialRecommendation.payload.topic)).toBeVisible();
+      const generationRequests = handles.recommendationRequests;
+
+      handles.recommendationResponse = {
+        recommendations: [refreshedRecommendation],
+        reducedContext: false,
+      };
+      handles.recommendationRevision = refreshedFingerprint;
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+      await expect.poll(() => handles.recommendationRevisionRequests).toBeGreaterThan(0);
+      await expect.poll(() => handles.recommendationRequests).toBeGreaterThan(generationRequests);
+      await expect(topics.getByText(refreshedRecommendation.payload.topic)).toBeVisible();
+
+      await topics.getByRole("button", { name: "Start mission", exact: true }).click();
+      await expect.poll(() => handles.createdMissionBodies.length).toBe(1);
+      expect(handles.createdMissionBodies[0]).toMatchObject({
+        intent: refreshedRecommendation.payload.topic,
+      });
+    });
+
+    test("coalesces revision checks while keyboard focus moves inside suggested topics", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      handles.recommendationResponse = {
+        recommendations: [START_TOPIC_RECOMMENDATION],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const topics = page.getByRole("region", { name: "Suggested next topics" });
+      const refresh = topics.getByRole("button", { name: "Refresh topics" });
+      await expect(refresh).toBeVisible();
+      await expect(topics.getByText(START_TOPIC_RECOMMENDATION.payload.topic)).toBeVisible();
+
+      let releaseRevision!: () => void;
+      handles.recommendationRevisionDelay = new Promise<void>((resolve) => {
+        releaseRevision = resolve;
+      });
+      const revisionRequests = handles.recommendationRevisionRequests;
+      const totalRequests = handles.recommendationRequests;
+
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await expect.poll(() => handles.recommendationRevisionRequests).toBe(revisionRequests + 1);
+      await refresh.focus();
+      await page.keyboard.press("Tab");
+      await expect(topics.getByText("Why this recommendation?").first()).toBeFocused();
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event("focus"));
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await page.waitForTimeout(100);
+
+      expect(handles.recommendationRevisionRequests).toBe(revisionRequests + 1);
+      expect(handles.recommendationRequests).toBe(totalRequests + 1);
+      handles.recommendationRevisionDelay = null;
+      releaseRevision();
+    });
+
+    test("moves review focus into the Desk tab", async ({ page }) => {
+      const handles = await openResearchDesk(page);
+      handles.recommendationResponse = {
+        recommendations: [REVIEW_TOPIC_RECOMMENDATION],
+        reducedContext: false,
+      };
+
+      await deskTab(page, /^Prompt/).click();
+      const topics = page.getByRole("region", { name: "Suggested next topics" });
+      await topics.getByRole("button", { name: "Review mission", exact: true }).click();
+      await expect(deskTab(page, /^Desk/)).toHaveAttribute("aria-selected", "true");
+      await expect(deskTab(page, /^Desk/)).toBeFocused();
+    });
   });
 });

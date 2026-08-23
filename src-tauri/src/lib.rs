@@ -52,6 +52,8 @@ mod discord_presence;
 #[cfg(all(desktop, target_os = "macos"))]
 mod microphone;
 #[cfg(desktop)]
+mod offline_cache;
+#[cfg(desktop)]
 mod platform_lifecycle;
 #[cfg(desktop)]
 mod pty;
@@ -96,7 +98,9 @@ use reliability_metrics::*;
 #[cfg(all(test, desktop))]
 use shell_open_commands::launch_x_oauth_url_with_window;
 #[cfg(desktop)]
-use shell_open_commands::{open_x_oauth_url, shell_open, shell_open_path, shell_pick_directory};
+use shell_open_commands::{
+    open_tailscale_app, open_x_oauth_url, shell_open, shell_open_path, shell_pick_directory,
+};
 #[cfg(desktop)]
 use shell_open_helpers::{
     normalize_picked_directory, validate_shell_open_path, validate_shell_open_url,

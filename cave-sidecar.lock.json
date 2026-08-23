@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "components": {
+    "node": {
+      "kind": "host-toolchain",
+      "version": "24.18.0",
+      "match": "major-minor"
+    },
+    "piper": {
+      "kind": "release-asset",
+      "repo": "rhasspy/piper",
+      "tag": "2023.11.14-2",
+      "assets": {
+        "darwin-arm64": {
+          "name": "piper_macos_aarch64.tar.gz",
+          "sha256": "6b1eb03b3735946cb35216e063e7eebcc33a6bbf5dd96ec0217959bf1cdcb0cc"
+        },
+        "darwin-x64": {
+          "name": "piper_macos_x64.tar.gz",
+          "sha256": "ced85c0a3df13945b1e623b878a48fdc2854d5c485b4b67f62857cf551deaf8b"
+        },
+        "linux-x64": {
+          "name": "piper_linux_x86_64.tar.gz",
+          "sha256": "a50cb45f355b7af1f6d758c1b360717877ba0a398cc8cbe6d2a7a3a26e225992"
+        },
+        "win32-x64": {
+          "name": "piper_windows_amd64.zip",
+          "sha256": "f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea"
+        }
+      },
+      "extraAssets": {
+        "darwin-arm64": [
+          {
+            "name": "piper-phonemize_macos_aarch64.tar.gz",
+            "sha256": "78a9c28b3c94baf6e9526b2e386ce547909abaec4f31aadd7e16b01fbfe5f322"
+          }
+        ],
+        "darwin-x64": [
+          {
+            "name": "piper-phonemize_macos_x64.tar.gz",
+            "sha256": "9ec6e300c0d012a663758bc45a097b47ee759761a3b91c7742de042af789d84b"
+          }
+        ]
+      }
+    },
+    "kokoro": {
+      "kind": "release-asset",
+      "repo": "k2-fsa/sherpa-onnx",
+      "tag": "v1.13.4",
+      "assets": {
+        "darwin-arm64": {
+          "name": "sherpa-onnx-v1.13.4-osx-arm64-shared.tar.bz2",
+          "sha256": "809ab5d0c77bd8f358364a244e6ab17f2afecf9779eb9fd436fa469c3ff5375c"
+        },
+        "darwin-x64": {
+          "name": "sherpa-onnx-v1.13.4-osx-universal2-shared.tar.bz2",
+          "sha256": "02b9b0cf30819a18c6d5cf861aebf32336cb79958ab97a2b248227059678058b"
+        },
+        "linux-x64": {
+          "name": "sherpa-onnx-v1.13.4-linux-x64-shared.tar.bz2",
+          "sha256": "18887dc13c7d313d0e0f6c164ed31715c27c1c2c4f71acd7c0147dc84cf02514"
+        },
+        "win32-x64": {
+          "name": "sherpa-onnx-v1.13.4-win-x64-shared-MD-Release.tar.bz2",
+          "sha256": "d4dacc8be5afe03f22ade4d50cfd587c03a625eaca8c41f2d99a24d3db463eab"
+        }
+      },
+      "extraAssets": {
+        "all": [
+          {
+            "name": "espeak-ng-data.tar.bz2",
+            "tag": "tts-models",
+            "sha256": "4135ccf82e1f40613491c0874d4945ae9e9c7840933d8e25a6f9e003d9ebf533"
+          }
+        ]
+      }
+    },
+    "whisper": {
+      "kind": "release-asset",
+      "repo": "ggml-org/whisper.cpp",
+      "tag": "v1.9.1",
+      "assets": {
+        "linux-arm64": {
+          "name": "whisper-bin-ubuntu-arm64.tar.gz",
+          "sha256": "e0b66cd551ff6f2a28fabe3c6e89691eea037bb76833493abb9a71ca788994b3"
+        },
+        "linux-x64": {
+          "name": "whisper-bin-ubuntu-x64.tar.gz",
+          "sha256": "f3bf3b4369a99b54665b0f19b88483b30de27f25963b0414235dea03198515c5"
+        },
+        "win32-x64": {
+          "name": "whisper-bin-x64.zip",
+          "sha256": "7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539"
+        }
+      },
+      "sourceBuilds": {
+        "darwin": {
+          "repo": "ggml-org/whisper.cpp",
+          "commit": "f049fff95a089aa9969deb009cdd4892b3e74916"
+        }
+      }
+    },
+    "coven": {
+      "kind": "external-binary",
+      "minVersion": null,
+      "requiredFlags": ["--stream-json", "--continue"]
+    }
+  }
+}

@@ -32,6 +32,7 @@ type CanonicalMemoryReaderProps = {
   onMissing: () => void;
   onRefresh: () => void | Promise<void>;
   onBack?: () => void;
+  onExpand?: () => void;
   onStartDaemon?: () => void;
   loadDetail?: CanonicalMemoryDetailLoader;
 };
@@ -105,6 +106,7 @@ export function CanonicalMemoryReader({
   onMissing,
   onRefresh,
   onBack,
+  onExpand,
   onStartDaemon,
   loadDetail = fetchCanonicalMemoryDetail,
 }: CanonicalMemoryReaderProps) {
@@ -195,11 +197,11 @@ export function CanonicalMemoryReader({
 
   if (!memoryId) {
     return (
-      <div className="grid h-full min-h-0 place-items-center rounded-[var(--radius-card)] border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-8">
+      <div className="fm-reader-empty">
         <EmptyState
           icon="ph:book-open"
-          headline="Select a memory to read"
-          subtitle="Pick a familiar memory from the list."
+          headline="Choose a memory"
+          subtitle="Select a canonical entry to review its evidence and contents."
         />
       </div>
     );
@@ -293,8 +295,8 @@ export function CanonicalMemoryReader({
   const revealed = canReveal && revealedId === memoryId;
 
   return (
-    <article className="flex h-full min-h-0 flex-col rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
-      <header className="shrink-0 border-b border-[var(--border-hairline)] p-3">
+    <article className="fm-reader-shell flex h-full min-h-0 flex-col">
+      <header className="fm-reader-header shrink-0">
         <div className="flex items-start gap-2">
           {onBack ? (
             <button
@@ -345,39 +347,50 @@ export function CanonicalMemoryReader({
               ))}
             </div>
           ) : null}
+          {onExpand ? (
+            <button
+              type="button"
+              onClick={onExpand}
+              aria-label="Expand to fullscreen reader"
+              title="Fullscreen"
+              className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
+            </button>
+          ) : null}
         </div>
-        <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[length:var(--text-2xs)] @min-[560px]/memview:grid-cols-4">
-          <div>
+        <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[length:var(--text-2xs)]">
+          <div className="flex min-w-0 items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Source</dt>
             <dd className="truncate text-[var(--text-secondary)]">
               {detail.source.label}
             </dd>
           </div>
-          <div>
+          <div className="flex items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Privacy</dt>
             <dd className="text-[var(--text-secondary)]">
               {detail.privacy.classification ?? "unclassified"}
             </dd>
           </div>
-          <div>
+          <div className="flex items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Verification</dt>
             <dd className="text-[var(--text-secondary)]">
               {detail.verification.state}
             </dd>
           </div>
-          <div>
+          <div className="flex items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Attestation fields</dt>
             <dd className="text-[var(--text-secondary)]">
               {detail.attestationMetadata?.fieldCount ?? "Unavailable"}
             </dd>
           </div>
-          <div>
+          <div className="flex min-w-0 items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Supersedes</dt>
             <dd className="truncate text-[var(--text-secondary)]">
               {detail.supersession.supersedes ?? "None"}
             </dd>
           </div>
-          <div>
+          <div className="flex min-w-0 items-baseline gap-1">
             <dt className="text-[var(--text-muted)]">Superseded by</dt>
             <dd className="truncate text-[var(--text-secondary)]">
               {detail.supersession.supersededBy ?? "None"}
@@ -385,7 +398,7 @@ export function CanonicalMemoryReader({
           </div>
         </dl>
       </header>
-      <div className="min-h-0 flex-1">
+      <div className="fm-reader-body min-h-0 flex-1">
         {revealed ? (
           mode === "rendered" && readerDocument ? (
             <DocumentReader

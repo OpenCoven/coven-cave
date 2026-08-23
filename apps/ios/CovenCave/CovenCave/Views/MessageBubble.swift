@@ -262,14 +262,25 @@ struct MessageBubble: View {
                     .accessibilityLabel("Retry sending this message")
                 }
 
-                // Composed offline: a quiet clock chip, not an error — the
-                // message sends itself on the next reconnect.
+                // Durable online sends remain replay-eligible until every
+                // fan-out leg settles; offline sends use the quieter clock.
                 if isUser, message.isQueued {
-                    Label("Queued — sends when reconnected", systemImage: "clock")
+                    Label(
+                        message.isQueuedDispatchInFlight
+                            ? "Sending…"
+                            : "Queued — sends when reconnected",
+                        systemImage: message.isQueuedDispatchInFlight
+                            ? "arrow.up.circle"
+                            : "clock"
+                    )
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.trailing, 6)
-                        .accessibilityLabel("Queued. Sends when the desktop is reachable again.")
+                        .accessibilityLabel(
+                            message.isQueuedDispatchInFlight
+                                ? "Sending. Cave will recover this delivery if interrupted."
+                                : "Queued. Sends when the desktop is reachable again."
+                        )
                 }
 
                 if !message.streaming {
@@ -607,7 +618,7 @@ struct GrimoireHintCard: View {
         "Long-press a bubble for copy, forward, and retry.",
         "/image conjures pictures; /skill runs a ritual.",
         "Pin a chat from the list to keep it on top.",
-        "The ☰ menu holds projects, tasks, and the terminal.",
+        "The ☰ menu keeps projects, familiars, tasks, and settings close.",
         "/clear tidies the transcript; /new starts fresh.",
     ]
 

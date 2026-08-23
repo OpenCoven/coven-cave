@@ -1,0 +1,129 @@
+name: Cave Performance
+
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Conversation-list benchmark iterations (blank uses the fixture profile; a different value reports the run as swept, so the enforced budgets read unmeasured)
+        required: false
+        default: ""
+        type: string
+      profile:
+        description: Fixture profile from fixtures/phase-6/performance-fixtures.json
+        required: false
+        default: phase-6-list-10k
+        type: string
+      fail_on_regression:
+        description: Fail when a metric regresses by more than 20 percent
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: cave-performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Generate performance report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Blank on a scheduled run, so the fixture profile supplies the scale the
+      # budgets were seeded against. The benchmark rejects a malformed override
+      # rather than coercing it to zero.
+      CAVE_BENCH_ITERATIONS: ${{ inputs.iterations }}
+      CAVE_BENCH_PROFILE: ${{ inputs.profile || 'phase-6-list-10k' }}
+      REPORT_ROOT: artifacts/cave-performance
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Restore previous report
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_run_id="$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow cave-performance.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')"
+          if [ -z "$previous_run_id" ]; then
+            echo "No previous successful performance run found."
+            exit 0
+          fi
+
+          artifact_id="$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$previous_run_id/artifacts" \
+            --jq '[.artifacts[] | select(.name | startswith("cave-performance-"))] | sort_by(.created_at) | last | .id // empty')"
+          if [ -z "$artifact_id" ]; then
+            echo "Previous run $previous_run_id has no performance artifact."
+            exit 0
+          fi
+
+          mkdir -p artifacts/previous-performance
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+            > artifacts/previous-performance.zip
+          unzip -q artifacts/previous-performance.zip -d artifacts/previous-performance
+          baseline="$(find artifacts/previous-performance -type f -name report.json -print -quit)"
+          if [ -n "$baseline" ]; then
+            echo "path=$baseline" >> "$GITHUB_OUTPUT"
+            echo "Using baseline from run $previous_run_id."
+          fi
+
+      - name: Generate report
+        id: report
+        shell: bash
+        env:
+          BASELINE_PATH: ${{ steps.baseline.outputs.path }}
+          FAIL_ON_REGRESSION: ${{ inputs.fail_on_regression || 'false' }}
+          TMPDIR: ${{ github.workspace }}/artifacts/tmp
+        run: |
+          set -euo pipefail
+          mkdir -p "$TMPDIR"
+          args=(--output "$REPORT_ROOT")
+          if [ -n "$BASELINE_PATH" ]; then
+            args+=(--baseline "$BASELINE_PATH")
+          fi
+          if [ "$FAIL_ON_REGRESSION" = "true" ]; then
+            args+=(--fail-on-regression)
+          fi
+          set +e
+          pnpm performance:report "${args[@]}"
+          report_status=$?
+          set -e
+          index="$(find "$REPORT_ROOT" -type f -name index.md -print -quit)"
+          test -n "$index"
+          cat "$index" >> "$GITHUB_STEP_SUMMARY"
+          exit "$report_status"
+
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cave-performance-${{ github.sha }}-${{ github.run_id }}
+          path: artifacts/cave-performance
+          if-no-files-found: error
+          retention-days: 90

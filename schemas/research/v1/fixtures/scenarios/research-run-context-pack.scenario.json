@@ -1,0 +1,834 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "research-run-context-pack",
+  "objects": {
+    "context-pack": {
+      "fixture": "valid/context-pack.json"
+    },
+    "contextless-run": {
+      "fixture": "valid/research-run.json",
+      "mergePatch": {
+        "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        }
+      }
+    },
+    "device-local-failed-consent-false": {
+      "fixture": "scenarios/objects/research-run-device-local-failed-consent-true.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": false
+        }
+      }
+    },
+    "device-local-failed-consent-true": {
+      "fixture": "scenarios/objects/research-run-device-local-failed-consent-true.json"
+    },
+    "device-local-pending-consent-false": {
+      "fixture": "scenarios/objects/research-run-device-local-pending-consent-true.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": false
+        }
+      }
+    },
+    "device-local-pending-consent-true": {
+      "fixture": "scenarios/objects/research-run-device-local-pending-consent-true.json"
+    },
+    "device-local-synced-consent-false": {
+      "fixture": "scenarios/objects/research-run-device-local-synced-consent-true.json",
+      "mergePatch": {
+        "privacy": {
+          "artifactContentSync": false
+        }
+      }
+    },
+    "device-local-synced-consent-true": {
+      "fixture": "scenarios/objects/research-run-device-local-synced-consent-true.json"
+    },
+    "receipt-valid": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json"
+    },
+    "receipt-wrong-familiar": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json",
+      "mergePatch": {
+        "execution": {
+          "modelBinding": {
+            "familiarId": "other-familiar"
+          }
+        }
+      }
+    },
+    "receipt-wrong-model": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json",
+      "mergePatch": {
+        "execution": {
+          "modelBinding": {
+            "model": "openai/gpt-5-mini"
+          }
+        }
+      }
+    },
+    "receipt-wrong-provider": {
+      "fixture": "scenarios/objects/research-run-receipt-valid.json",
+      "mergePatch": {
+        "execution": {
+          "modelBinding": {
+            "model": "anthropic/gpt-5.6-sol"
+          }
+        }
+      }
+    },
+    "contextless-lengthened-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "context": null,
+        "acceptedTopic": {
+          "proposalId": null
+        },
+        "privacy": {
+          "retention": "run-only"
+        },
+        "artifactManifest": {
+          "context": null,
+          "sources": [],
+          "retention": {
+            "policy": "run-only"
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "embedded-retention-above-consent-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "digest": "b207c051bd22df4394f2afa81a938ea16d1ead516f3a17344e0f483f66a089cd",
+          "retention": {
+            "effectivePolicy": "project"
+          }
+        }
+      }
+    },
+    "matching-run": {
+      "fixture": "scenarios/objects/context-bound-extended-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "revision": 1,
+          "previousDigest": null
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "run-retention-above-consent": {
+      "fixture": "valid/research-run.json",
+      "mergePatch": {
+        "context": {
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118"
+        },
+        "privacy": {
+          "retention": "project"
+        }
+      }
+    },
+    "replay-run": {
+      "fixture": "scenarios/objects/replay-consent-run.json"
+    },
+    "replay-root": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-20T20:05:00.000Z",
+          "updatedAt": "2026-08-16T20:05:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
+    },
+    "replay-first-lengthening": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "revision": 2,
+        "previousDigest": "02d819908b8025038608e563ae1356e401d86fb7b3ec30888fe64cb657510998",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-21T20:05:30.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
+    },
+    "replay-unchanged": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "revision": 3,
+        "previousDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-21T20:05:30.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
+    },
+    "replay-second-lengthening": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "id": "manifest_replay_01",
+        "runId": "run_01",
+        "revision": 4,
+        "previousDigest": "0449d175c0b8c19640c597eb7693bf7e9f2178efbf16a0a426653331bee6eacb",
+        "context": {
+          "contextPackId": "ctx_01",
+          "contextPackDigest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+          "topicProposalId": "proposal_01"
+        },
+        "sources": [
+          {
+            "kind": "context-pack",
+            "id": "ctx_01",
+            "digest": "db34941f93689f6d425cf48e7e046b885f6cee80c2e9790d1ad97cb26b3cd118",
+            "availability": "device-local"
+          }
+        ],
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-22T20:07:30.000Z",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:05:00.000Z",
+          "futureExtension": null
+        }
+      },
+      "digestTargets": [""]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "research-run.valid-context-pack",
+      "description": "A research run matches its Context Pack binding and consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.missing-context-pack",
+      "description": "A context-bound research run rejects validation without its Context Pack.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "matching-run"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.context"
+      }
+    },
+    {
+      "id": "research-run.contextless-without-pack",
+      "description": "A contextless research run validates without a Context Pack.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-run"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.contextless-with-pack",
+      "description": "A contextless research run rejects an unrelated Context Pack.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.context"
+      }
+    },
+    {
+      "id": "research-run.retention-ceiling",
+      "description": "Run retention cannot exceed Context Pack consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "run-retention-above-consent",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.privacy.retention"
+      }
+    },
+    {
+      "id": "research-run.embedded-manifest-retention-ceiling",
+      "description": "A later embedded manifest above Context Pack consent must first supply its authenticated revision-1-rooted history.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "embedded-retention-above-consent-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.revision"
+      }
+    },
+    {
+      "id": "research-run.contextless-manifest-lengthening",
+      "description": "A contextless embedded manifest cannot lengthen beyond run retention.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "contextless-lengthened-run",
+        "contextPack": "context-pack"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "research-run.replay-explicit-transition-consent",
+      "description": "A multi-lengthening replay consumes independently keyed fresh consent for each lengthening successor.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.replay-missing-transition-consent",
+      "description": "Every lengthening successor requires its own explicit replay consent entry.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestHistory[3].retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "research-run.replay-duplicate-transition-consent",
+      "description": "A replay rejects duplicate options for one successor revision and digest.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:45.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[1].successorRevision"
+      }
+    },
+    {
+      "id": "research-run.replay-unknown-transition-consent",
+      "description": "A replay rejects an option keyed to no history successor.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 5,
+            "successorDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:08:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[2].successorRevision"
+      }
+    },
+    {
+      "id": "research-run.replay-extra-non-lengthening-consent",
+      "description": "A replay rejects an extra option for a non-lengthening successor.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 3,
+            "successorDigest": "0449d175c0b8c19640c597eb7693bf7e9f2178efbf16a0a426653331bee6eacb",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:06:30.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[1].successorRevision"
+      }
+    },
+    {
+      "id": "research-run.replay-stale-transition-consent",
+      "description": "Fresh replay consent must postdate prior retention and deletion authority.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:00.000Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[0].freshConsentAt"
+      }
+    },
+    {
+      "id": "research-run.replay-future-transition-consent",
+      "description": "Fresh replay consent cannot postdate its successor retention update.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:06:00.000000001Z",
+            "contextConsent": "7-days"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[0].freshConsentAt"
+      }
+    },
+    {
+      "id": "research-run.replay-misbound-transition-consent",
+      "description": "Replay consent must carry the authenticated Context Pack retention ceiling.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "replay-run",
+        "contextPack": "context-pack",
+        "manifestHistory": [
+          "replay-root",
+          "replay-first-lengthening",
+          "replay-unchanged",
+          "replay-second-lengthening"
+        ]
+      },
+      "options": {
+        "manifestRevisionOptions": [
+          {
+            "successorRevision": 2,
+            "successorDigest": "abf045c85ee6837f0f27e7afc04bb4c378bf9854801e7eb3dda607d4fbbbaa86",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:05:30.000Z",
+            "contextConsent": "project"
+          },
+          {
+            "successorRevision": 4,
+            "successorDigest": "a1c0f7f199dfa5b0d4f95b8b5f4ad9ddc4fc99a506dc6372b6dbba280e84e87e",
+            "freshConsent": true,
+            "freshConsentAt": "2026-08-16T20:07:30.000Z",
+            "contextConsent": "7-days"
+          }
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.manifestRevisionOptions[0].contextConsent"
+      }
+    },
+    {
+      "id": "research-run.device-local-pending-without-consent",
+      "description": "Device-local pending content sync requires run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-pending-consent-false"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.device-local-pending-with-consent",
+      "description": "Device-local pending content sync accepts explicit run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-pending-consent-true"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.device-local-synced-without-consent",
+      "description": "Device-local completed content sync requires run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-synced-consent-false"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.device-local-synced-with-consent",
+      "description": "Device-local completed content sync accepts explicit run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-synced-consent-true"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.device-local-failed-without-consent",
+      "description": "Device-local failed content sync still requires run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-failed-consent-false"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.artifacts[0].contentSync"
+      }
+    },
+    {
+      "id": "research-run.device-local-failed-with-consent",
+      "description": "Device-local failed content sync accepts explicit run consent.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "device-local-failed-consent-true"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.receipt-valid-binding",
+      "description": "A single-agent pinned receipt matches its selected familiar and provider/model.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-valid"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "research-run.receipt-wrong-familiar",
+      "description": "A single-agent receipt cannot attribute execution to another familiar.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-wrong-familiar"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.familiarId"
+      }
+    },
+    {
+      "id": "research-run.receipt-wrong-provider",
+      "description": "A pinned receipt cannot report a model from another provider.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-wrong-provider"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.effectiveModel"
+      }
+    },
+    {
+      "id": "research-run.receipt-wrong-model",
+      "description": "A pinned receipt cannot report another model from the selected provider.",
+      "validator": "research-run-context-pack",
+      "inputs": {
+        "run": "receipt-wrong-model"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "run",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.modelExecutions[0].receipt.effectiveModel"
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "expectedSchemaValid": true,
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_run_only_leap_overflow",
+  "runId": "run_run_only_leap_overflow",
+  "digest": "0551ff710d831e6df9fce9b3668ca668be609aae466885f2aa03a7bb6771815f",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2016-12-31T11:59:00Z",
+  "finalizedAt": "2016-12-31T12:00:00Z",
+  "sources": [],
+  "artifacts": [],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "run-only",
+    "effectivePolicy": "run-only",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": "2017-01-01T12:00:00Z",
+    "updatedAt": "2016-12-31T12:00:00Z"
+  },
+  "deletion": {
+    "status": "scheduled",
+    "requestedAt": "2016-12-31T12:00:00Z"
+  }
+}

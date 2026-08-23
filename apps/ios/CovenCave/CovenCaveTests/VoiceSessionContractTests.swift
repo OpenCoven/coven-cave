@@ -29,10 +29,18 @@ final class VoiceSessionContractTests: XCTestCase {
         super.tearDown()
     }
 
-    private func client(status: Int, body: String, contentType: String? = "application/json") -> CaveClient {
+    private func client(
+        status: Int,
+        body: String,
+        contentType: String? = "application/json",
+        expectedPath: String = "/api/voice/session",
+        expectedMethod: String = "POST",
+        assertRequest: ((URLRequest) throws -> Void)? = nil
+    ) -> CaveClient {
         VoiceSessionURLProtocol.handler = { request in
-            XCTAssertEqual(request.url?.path, "/api/voice/session")
-            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, expectedPath)
+            XCTAssertEqual(request.httpMethod, expectedMethod)
+            try assertRequest?(request)
             let response = try XCTUnwrap(
                 HTTPURLResponse(
                     url: try XCTUnwrap(request.url),
@@ -176,6 +184,92 @@ final class VoiceSessionContractTests: XCTestCase {
             XCTAssertEqual(status, 502)
         } catch {
             XCTFail("expected bad response error, got \(error)")
+        }
+    }
+
+    func testStartVoiceConversationUsesProjectRootContract() async throws {
+        let client = client(
+            status: 200,
+            body: #"{"ok":true,"sessionId":"sess-voice"}"#,
+            expectedPath: "/api/chat/conversation"
+        ) { request in
+            let data = try XCTUnwrap(request.httpBody)
+            let json = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: data) as? [String: String]
+            )
+            XCTAssertEqual(json, [
+                "familiarId": "milo",
+                "projectRoot": "/repos/cave",
+            ])
+        }
+
+        let sessionId = try await client.startVoiceConversation(
+            familiarId: "milo",
+            projectRoot: "/repos/cave"
+        )
+
+        XCTAssertEqual(sessionId, "sess-voice")
+    }
+
+    func testDiscardVoiceConversationIfEmptyUsesDeleteIfEmptyContract() async throws {
+        let client = client(
+            status: 200,
+            body: #"{"ok":true,"deleted":true}"#,
+            expectedPath: "/api/chat/conversation/sess-voice",
+            expectedMethod: "DELETE"
+        ) { request in
+            XCTAssertEqual(request.url?.query, "ifEmpty=1")
+        }
+
+        let deleted = try await client.discardVoiceConversationIfEmpty(sessionId: "sess-voice")
+
+        XCTAssertTrue(deleted)
+    }
+
+    func testDiscardVoiceConversationIfEmptyPreservesDeletedFalse() async throws {
+        let client = client(
+            status: 200,
+            body: #"{"ok":true,"deleted":false}"#,
+            expectedPath: "/api/chat/conversation/sess-voice",
+            expectedMethod: "DELETE"
+        ) { request in
+            XCTAssertEqual(request.url?.query, "ifEmpty=1")
+        }
+
+        let deleted = try await client.discardVoiceConversationIfEmpty(sessionId: "sess-voice")
+
+        XCTAssertFalse(deleted)
+    }
+
+    func testStartVoiceConversationPreservesProjectSelectionFailures() async {
+        let client = client(
+            status: 403,
+            body: """
+            {
+              "ok": false,
+              "error": "project_access_denied",
+              "code": "project_access_denied",
+              "message": "Choose a project this familiar can access before starting a voice call."
+            }
+            """,
+            expectedPath: "/api/chat/conversation"
+        )
+
+        do {
+            _ = try await client.startVoiceConversation(
+                familiarId: "milo",
+                projectRoot: "/repos/cave"
+            )
+            XCTFail("expected voice conversation start to fail")
+        } catch let CaveError.serverResponse(status, code, message) {
+            XCTAssertEqual(status, 403)
+            XCTAssertEqual(code, "project_access_denied")
+            XCTAssertEqual(
+                message,
+                "Choose a project this familiar can access before starting a voice call."
+            )
+        } catch {
+            XCTFail("expected structured server response, got \(error)")
         }
     }
 }

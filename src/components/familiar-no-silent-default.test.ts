@@ -58,8 +58,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /const nextFamiliarId = group\?\.defaultFamiliarId \?\? familiar\?\.id \?\? null;/,
-  "the project-grouped new-chat path asks rather than defaulting",
+  /<ChatProjectSidebar[\s\S]*onNewChat=\{\(\) => \{[\s\S]{0,120}if \(onRequestNewChat\) \{[\s\S]{0,80}onRequestNewChat\(\);/,
+  "the project-grouped new-chat path asks through the shell gate rather than defaulting",
 );
 assert.doesNotMatch(
   chatRouter,

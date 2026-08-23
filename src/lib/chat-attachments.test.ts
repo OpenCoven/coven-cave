@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   attachmentMediaKind,
   buildPromptWithAttachments,
+  cleanFileDataUrl,
+  cleanImageDataUrl,
+  fileToAttachment,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
@@ -75,6 +78,46 @@ assert.match(
 );
 assert.doesNotMatch(mediaPrompt, /\(content unavailable\)/);
 
+// Disposition is explicit for every non-image family: embedded text reaches
+// the prompt, while archives and unknown binary files retain their bytes for
+// materialization but never pretend those bytes were decoded as text.
+{
+  const binary = Buffer.from("opaque payload").toString("base64");
+  const dispositionAttachments = normalizeChatAttachments([
+    {
+      name: "readme.txt",
+      type: "text/plain",
+      size: 11,
+      text: "hello world",
+    },
+    {
+      name: "sources.zip",
+      type: "application/zip",
+      size: 14,
+      dataUrl: `data:application/zip;base64,${binary}`,
+    },
+    {
+      name: "artifact.bin",
+      type: "application/octet-stream",
+      size: 14,
+      dataUrl: `data:application/octet-stream;base64,${binary}`,
+    },
+  ]);
+  assert.equal(dispositionAttachments[0].text, "hello world");
+  assert.ok(dispositionAttachments[1].dataUrl, "archive bytes survive for runtime materialization");
+  assert.ok(dispositionAttachments[2].dataUrl, "unknown file bytes survive for runtime materialization");
+  const dispositionPrompt = buildPromptWithAttachments("Inspect.", dispositionAttachments);
+  assert.match(dispositionPrompt, /readme\.txt[\s\S]*```text\nhello world\n```/);
+  assert.match(
+    dispositionPrompt,
+    /sources\.zip[\s\S]*\(file attached as metadata only — text content was not available\)/,
+  );
+  assert.match(
+    dispositionPrompt,
+    /artifact\.bin[\s\S]*\(file attached as metadata only — text content was not available\)/,
+  );
+}
+
 // Audio gets its own metadata-only wording, distinct from video's.
 {
   const audioPrompt = buildPromptWithAttachments("Listen.", normalizeChatAttachments([
@@ -139,6 +182,73 @@ const [truncated] = normalizeChatAttachments([
 assert.equal(truncated.text.length, 64_000);
 assert.equal(truncated.truncated, true);
 
+{
+  const zipPayload = Buffer.from("PK fake zip source bundle");
+  const zipDataUrl = `data:application/zip;base64,${zipPayload.toString("base64")}`;
+  assert.deepEqual(cleanFileDataUrl(zipDataUrl), {
+    dataUrl: zipDataUrl,
+    mimeType: "application/zip",
+  });
+  assert.equal(
+    cleanFileDataUrl("data:image/png;base64,aGVsbG8="),
+    null,
+    "generic validation cannot bypass the tighter image path",
+  );
+  assert.equal(
+    cleanFileDataUrl("data:application/zip;base64,not-valid!!"),
+    null,
+    "malformed generic payloads are rejected",
+  );
+}
+
+{
+  const OriginalFileReader = globalThis.FileReader;
+  class TestFileReader {
+    result = null;
+    onload = null;
+    onerror = null;
+
+    readAsDataURL(file) {
+      void file.arrayBuffer().then((buffer) => {
+        const mimeType = file.type || "application/octet-stream";
+        this.result = `data:${mimeType};base64,${Buffer.from(buffer).toString("base64")}`;
+        this.onload?.();
+      }, () => this.onerror?.());
+    }
+  }
+  globalThis.FileReader = TestFileReader;
+  try {
+    for (const file of [
+      new File(["<main>Components</main>"], "Components.html", { type: "text/html" }),
+      new File(["export const icons = {};"], "composer-icons.js", { type: "text/javascript" }),
+      new File([Buffer.from("PK bundle")], "design-handoff.zip", { type: "application/zip" }),
+    ]) {
+      const attachment = await fileToAttachment(file);
+      assert.ok(attachment.dataUrl, `${file.name} keeps bytes for runtime materialization`);
+      assert.equal(attachment.size, file.size);
+    }
+
+    // Browsers report .ts source files as MPEG-2 transport stream video. Left
+    // uncanonicalized they take the media path and lose their bytes.
+    const tsFile = new File(["export const a = 1;"], "chat-attachments.ts", {
+      type: "video/mp2t",
+    });
+    const tsAttachment = await fileToAttachment(tsFile);
+    assert.equal(tsAttachment.mimeType, "text/typescript");
+    assert.equal(tsAttachment.type, "text/typescript");
+    assert.ok(tsAttachment.dataUrl?.startsWith("data:text/typescript;base64,"));
+
+    // A genuine transport stream keeps its media identity.
+    const mediaFile = new File([Buffer.from("stream")], "broadcast.m2ts", {
+      type: "video/mp2t",
+    });
+    assert.equal((await fileToAttachment(mediaFile)).mimeType, "video/mp2t");
+  } finally {
+    if (OriginalFileReader === undefined) delete globalThis.FileReader;
+    else globalThis.FileReader = OriginalFileReader;
+  }
+}
+
 assert.deepEqual(
   stripPreviewOnlyAttachmentFields([
     {
@@ -158,8 +268,8 @@ assert.deepEqual(
   ],
 );
 
-// The send-body variant keeps valid image payloads (so the server can deliver
-// them to the harness) but still strips preview fields from non-images.
+// The send-body variant keeps every validated bounded payload so the server can
+// materialize it for a local file-reading harness.
 assert.deepEqual(
   stripPreviewOnlyAttachmentFieldsKeepingImages([
     {
@@ -189,6 +299,8 @@ assert.deepEqual(
       name: "doc.pdf",
       type: "application/pdf",
       size: 64,
+      mimeType: "application/pdf",
+      dataUrl: "data:application/pdf;base64,aGVsbG8=",
     },
   ],
 );
@@ -274,9 +386,9 @@ const HEADER_CASES = [
   ["data:image/png;base64,aGVsbG9v", "image/png"],
 ];
 for (const [url, mime] of HEADER_CASES) {
-  const [ok] = normalizeChatAttachments([{ name: "a.png", type: "image/png", dataUrl: url }]);
-  assert.equal(ok.dataUrl, url, `${url} must be accepted`);
-  assert.equal(ok.mimeType, mime, `${url} must report ${mime}`);
+  const ok = cleanImageDataUrl(url);
+  assert.equal(ok?.dataUrl, url, `${url} must be accepted`);
+  assert.equal(ok?.mimeType, mime, `${url} must report ${mime}`);
 }
 
 const REJECT_CASES = [
@@ -291,8 +403,7 @@ const REJECT_CASES = [
   `data:image/${"x".repeat(61)};base64,aGVsbG8=`,
 ];
 for (const url of REJECT_CASES) {
-  const [bad] = normalizeChatAttachments([{ name: "a.png", type: "image/png", dataUrl: url }]);
-  assert.equal(bad.dataUrl, undefined, `${url} must be rejected`);
+  assert.equal(cleanImageDataUrl(url), null, `${url} must be rejected`);
 }
 
 console.log("chat-attachments: large image data URLs ok");
@@ -313,17 +424,17 @@ for (const mime of ["image/png", "image/svg+xml", "IMAGE/JPEG", "application/pdf
     }
     const url = `data:${mime};base64,${body}`;
     const old = OLD_PATTERN.exec(url);
-    const [now] = normalizeChatAttachments([{ name: "a", type: "image/png", dataUrl: url }]);
+    const now = cleanImageDataUrl(url);
     // The old pattern had no size floor of its own; `cleanImageDataUrl` rejects
     // a payload that decodes to zero bytes, then and now. Compare on that basis.
     const oldAccepts = Boolean(old) && Math.floor((old[2].length * 3) / 4)
       - (old[2].endsWith("==") ? 2 : old[2].endsWith("=") ? 1 : 0) > 0;
     assert.equal(
-      Boolean(now.dataUrl),
+      Boolean(now?.dataUrl),
       oldAccepts,
       `acceptance changed for ${JSON.stringify(url)}`,
     );
-    if (oldAccepts) assert.equal(now.mimeType, old[1].toLowerCase());
+    if (oldAccepts) assert.equal(now?.mimeType, old[1].toLowerCase());
     compared++;
   }
 }
