@@ -47,7 +47,7 @@ const POLLABLE = new Set<ResearchRunSurfaceModel["status"]>([
 function stepIcon(step: ResearchRunStep) {
   if (step.status === "completed") return "ph:check" as const;
   if (step.status === "failed") return "ph:x" as const;
-  if (step.status === "blocked") return "ph:lock" as const;
+  if (step.status === "blocked") return "ph:lock-simple" as const;
   if (step.status === "skipped") return "ph:minus" as const;
   return null;
 }
