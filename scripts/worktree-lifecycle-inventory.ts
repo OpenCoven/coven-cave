@@ -2193,6 +2193,29 @@ export function parseWindowsCwdProbeOutput(raw: string): WindowsCwdProbeOutput {
   };
 }
 
+/**
+ * Pairs every directory the probe was ASKED about with the verdict it returned,
+ * and turns each missing pairing into an error.
+ *
+ * This is the invariant that lets the caller read a missing entry as "not held":
+ * a directory with no verdict is guaranteed to leave here carrying an error
+ * instead, and that error pins its unit on its own. Without it, a probe that
+ * answered for nothing at all would read as a checkout where nothing is running
+ * — which is precisely the shape of an inventory that is safe to delete.
+ */
+export function reconcileHoldVerdicts(
+  directories: string[],
+  probe: Pick<WindowsCwdProbeOutput, "holds" | "holdErrors">,
+): { holds: Map<string, boolean>; holdErrors: Map<string, string> } {
+  const holdErrors = new Map(probe.holdErrors);
+  for (const directory of directories) {
+    if (!probe.holds.has(directory) && !holdErrors.has(directory)) {
+      holdErrors.set(directory, "no verdict returned");
+    }
+  }
+  return { holds: new Map(probe.holds), holdErrors };
+}
+
 const WINDOWS_CWD_PROBE_SCRIPT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "windows-process-cwd.ps1",
@@ -2295,15 +2318,13 @@ function fetchWindowsProcessOwners(directories: string[]): {
     return { ...empty, error: "process cwd inventory returned malformed or partial data" };
   }
 
-  // A directory the probe was asked about and did not answer for is an unknown,
-  // and an unknown must never read as "free".
-  const holdErrors = new Map(probe.holdErrors);
-  for (const directory of directories) {
-    if (!probe.holds.has(directory) && !holdErrors.has(directory)) {
-      holdErrors.set(directory, "no verdict returned");
-    }
-  }
-  return { owners: parsed.owners, holds: probe.holds, holdErrors, error: null };
+  const reconciled = reconcileHoldVerdicts(directories, probe);
+  return {
+    owners: parsed.owners,
+    holds: reconciled.holds,
+    holdErrors: reconciled.holdErrors,
+    error: null,
+  };
 }
 
 function fetchProcessOwners(directories: string[]): {
