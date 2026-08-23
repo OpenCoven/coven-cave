@@ -834,14 +834,7 @@ test("repo chat hands an exact changed file to the same Coding Desk session and 
   await capture(page, testInfo, "chat-code-workflow-returned-chat");
 });
 
-// QUARANTINED — cave-z2bvz. This test carries the cleanest proof of the
-// regression anywhere in the suite: it expects .chat-surface at x=9 with a
-// tolerance of 10 and receives 65, and 65 minus 9 is exactly the 56px width of
-// the rail PR #4758 restored. The y, width and height assertions in the same
-// call are unaffected, which is the signature of a pure horizontal offset.
-// Its theme, responsive-sheet and reduced-motion contracts are unrelated and
-// still valid, so this quarantine carries coverage debt tracked on the bead.
-test.fixme("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, and reduced-motion contracts", async ({
+test("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, and reduced-motion contracts", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "resized desktop Chromium intentionally pins responsive CSS behavior");
@@ -875,8 +868,8 @@ test.fixme("resized desktop Chromium pins theme, constrained-pane, responsive-sh
   const constrainedChat = await requiredBounds(page, ".chat-surface");
   const constrainedRail = await requiredBounds(page, ".workspace-rail");
   const shellDetail = await requiredBounds(page, ".shell-detail");
-  expectBoundsNear(constrainedChat, { x: 9, y: 47, width: 1102, height: 676 });
-  expectBoundsNear(constrainedRail, { x: 791, y: 81, width: 320, height: 642 });
+  expectBoundsNear(constrainedChat, { x: 9, y: 43, width: 1102, height: 680 });
+  expectBoundsNear(constrainedRail, { x: 791, y: 77, width: 320, height: 646 });
   const shellContract = await page.locator(".shell-detail").evaluate((element) => {
     const style = getComputedStyle(element);
     const rootStyle = getComputedStyle(document.documentElement);
