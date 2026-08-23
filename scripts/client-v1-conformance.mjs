@@ -182,6 +182,7 @@ export const EXPECTED_ASSERTION_IDS = [
   "admin.unconfigured.pairing-still-opens",
   "admin.unconfigured.exchange-stays-pending",
   "health.envelope",
+  "health.live-inventory",
   "health.instance-stable",
   "health.discovery-record",
   "ingress.escaped-path.percent",
@@ -352,6 +353,13 @@ export function checkEnvelope(body, expectation) {
   }
   if (!Array.isArray(body.capabilities) || body.capabilities.length === 0) {
     failures.push("capabilities is missing or empty");
+  }
+  // The live operation inventory rides every response too, and it is what an
+  // SDK's supports() reads. Checked on every response for the same reason the
+  // capability list is: a route that drops it publishes a Cave that appears to
+  // be able to do nothing (cave-8a0s2).
+  if (!Array.isArray(body.operations) || body.operations.length === 0) {
+    failures.push("operations is missing or empty");
   }
   if (expectation?.kind === "success") {
     if (!isRecord(body.data)) failures.push("success envelope carries no data record");
@@ -1307,6 +1315,44 @@ async function runIngressLeg(client, recorder, adminToken) {
   );
 }
 
+/**
+ * The live declaration a real listener serves, against the generated fixture.
+ *
+ * This is the only vantage point from which the DECLARATION can be checked as a
+ * thing a client actually receives: every unit test in
+ * `src/lib/server/client-v1/**` reads the same constants the route builds its
+ * envelope from, so a build that shipped a different fixture than it serves
+ * would satisfy all of them. Here the bytes come off a socket and the
+ * expectation comes off disk.
+ */
+export function checkLiveInventory(envelope, fixtureContract) {
+  const failures = [];
+  const expectedCapabilities = fixtureContract?.capabilities ?? [];
+  const expectedOperations = (fixtureContract?.operations ?? []).map((operation) => operation.id);
+  if (JSON.stringify(envelope?.capabilities) !== JSON.stringify(expectedCapabilities)) {
+    failures.push(
+      `capabilities are ${JSON.stringify(envelope?.capabilities)}, the generated fixture pins ${JSON.stringify(expectedCapabilities)}`,
+    );
+  }
+  if (JSON.stringify(envelope?.operations) !== JSON.stringify(expectedOperations)) {
+    failures.push(
+      `operations are ${JSON.stringify(envelope?.operations)}, the generated fixture pins ${JSON.stringify(expectedOperations)}`,
+    );
+  }
+  // Named individually rather than left to the comparison above, because these
+  // two are the reason the check exists (#4869) and a diff of two long arrays
+  // does not say so.
+  for (const retired of ["streaming", "revisions"]) {
+    if ((envelope?.capabilities ?? []).includes(retired)) {
+      failures.push(`capabilities still advertises ${retired}, which no route serves`);
+    }
+    if ((envelope?.operations ?? []).some((id) => String(id).startsWith(`${retired}.`))) {
+      failures.push(`operations still advertises ${retired}, which no route serves`);
+    }
+  }
+  return failures;
+}
+
 async function runHealthLeg(client, recorder, caveHomeDir) {
   const first = await client.request({ path: `${CLIENT_V1_PREFIX}/health` });
   const failures = [];
@@ -1318,6 +1364,24 @@ async function runHealthLeg(client, recorder, caveHomeDir) {
   }
   if (first.json?.data?.pairingRequired !== true) failures.push("pairingRequired is not true");
   recorder.expect("health.envelope", failures);
+
+  // The declaration a client reads before it holds any credential, compared to
+  // the byte-pinned fixture an SDK vendors. If these disagree, the SDK's
+  // supports() is answering for a build other than the one running.
+  let fixtureContract = null;
+  try {
+    fixtureContract = JSON.parse(
+      await readFile(
+        path.join(repositoryRoot, "src", "lib", "server", "client-v1", "contract-fixture.json"),
+        "utf8",
+      ),
+    ).contract;
+  } catch (error) {
+    recorder.fail("health.live-inventory", `cannot read the generated contract fixture: ${error.message}`);
+  }
+  if (fixtureContract) {
+    recorder.expect("health.live-inventory", checkLiveInventory(first.json, fixtureContract));
+  }
 
   const second = await client.request({ path: `${CLIENT_V1_PREFIX}/health` });
   recorder.expect(

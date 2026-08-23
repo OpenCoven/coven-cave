@@ -20,6 +20,9 @@ import {
   CLIENT_V1_PUBLIC_INGRESS,
   clientV1IngressKind,
 } from "../../proxy-helpers.ts";
+import { CLIENT_V1_CAPABILITIES } from "../../lib/server/client-v1/contract.ts";
+import { CLIENT_V1_OPERATION_DEFINITIONS } from "../../lib/server/client-v1/operations.ts";
+import { CLIENT_V1_READ_SCOPE } from "../../lib/server/client-v1/read-guard.ts";
 
 const root = process.cwd();
 const apiRoot = path.join(root, "src", "app", "api");
@@ -760,6 +763,158 @@ for (const { file, route } of clientV1Routes) {
     source,
     /consumeAuthenticated\s*\(/,
     `${route} calls requireScope but never charges the authenticated rate-limit budget`,
+  );
+}
+
+// --- client-v1 capability truth (cave-8a0s2, #4869) ------------------------
+//
+// THE ASSERTION THIS BLOCK EXISTS FOR: an advertised capability must have a
+// live owning route, and a live route must be advertised. Until #4869 the
+// envelope declared `streaming` and `revisions` on every response and neither
+// had a handler — nothing emitted a stream, nothing emitted or consumed a
+// revision token — so an SDK helper spelled `client.supports("streaming")`
+// would have returned a false operational claim and blocked freezing the
+// SDK 0.1.0 contract.
+//
+// A hand-pruned list would only recreate that: the list had been hand-kept all
+// along, and hand-keeping is what let it drift. So the declaration is derived
+// from `CLIENT_V1_OPERATION_DEFINITIONS`, and this is the half that binds each
+// of those records to a `route.ts` on disk. The two directions are separate
+// assertions on purpose:
+//
+//   - a record whose route or method is gone fails, so a capability cannot
+//     outlive the thing that served it;
+//   - a shipped method with no record fails, so a route cannot land outside the
+//     inventory and be invisible to a client reading it.
+//
+// Read from the App Router tree, never from a second list someone maintains —
+// `clientV1Routes` above is the same walk the ingress assertions use.
+{
+  const routeMethodsOnDisk = new Map<string, Set<string>>();
+  for (const { file, route } of clientV1Routes) {
+    // The contract spells a dynamic segment `:id` and Next spells it `[id]`.
+    // Normalize toward the contract, since that is the form a client sees.
+    const contractPath = `/api${route}`.replace(/\[(\.{3})?([^\]]+)\]/gu, ":$2");
+    routeMethodsOnDisk.set(
+      contractPath,
+      new Set(exportedMethods(readFileSync(file, "utf8"))),
+    );
+  }
+
+  const declaredKeys = new Set<string>();
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    const methods = routeMethodsOnDisk.get(operation.path);
+    assert.ok(
+      methods !== undefined,
+      `client-v1 operation ${operation.id} declares ${operation.path}, but no route.ts under src/app/api/client/v1 serves that path`,
+    );
+    assert.ok(
+      methods.has(operation.method),
+      `client-v1 operation ${operation.id} declares ${operation.method} ${operation.path}, but that route exports only [${[...methods].join(", ")}]`,
+    );
+    declaredKeys.add(`${operation.method} ${operation.path}`);
+
+    // Ingress metadata may not widen access. `admin` is the sidecar-token
+    // family, which clientV1IngressKind deliberately classifies null so it
+    // keeps the ordinary gate; `public` is the reviewed credential-free
+    // bootstrap set; `authenticated` is the demotion that trades the sidecar
+    // token for the route's own requireScope. A record that mislabels any of
+    // the three would publish an authority class the proxy does not enforce.
+    const probePath = operation.path.replace(/:[^/]+/gu, "probe-segment");
+    const expectedIngress =
+      operation.ingress === "public"
+        ? CLIENT_V1_PUBLIC_INGRESS
+        : operation.ingress === "authenticated"
+          ? "authenticated"
+          : null;
+    assert.equal(
+      clientV1IngressKind(probePath),
+      expectedIngress,
+      `client-v1 operation ${operation.id} declares ingress "${operation.ingress}" but the proxy classifies ${probePath} as ${JSON.stringify(clientV1IngressKind(probePath))}`,
+    );
+
+    // And the credential the route really checks, read from its executable
+    // source rather than its text, so a mention in a comment cannot satisfy it.
+    const file = clientV1Routes.find(
+      ({ route }) => `/api${route}`.replace(/\[(\.{3})?([^\]]+)\]/gu, ":$2") === operation.path,
+    )?.file;
+    assert.ok(file, `client-v1 operation ${operation.id} resolved no route file`);
+    const routeSource = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+    if (operation.ingress === "admin") {
+      assert.match(
+        routeSource,
+        /requireClientV1Admin\s*\(/,
+        `client-v1 operation ${operation.id} is declared admin but its route never calls requireClientV1Admin`,
+      );
+    }
+    if (operation.ingress === "authenticated") {
+      assert.ok(
+        operation.scope !== null,
+        `client-v1 operation ${operation.id} is bearer-authenticated and must declare a scope`,
+      );
+      assert.match(
+        routeSource,
+        /requireScope\s*\(/,
+        `client-v1 operation ${operation.id} is declared authenticated but its route never calls requireScope`,
+      );
+      // The DECLARED scope, not merely "some scope": a record claiming
+      // `chat:read` against a route demanding `chat:write` would send every
+      // reader of the inventory to a 403. Checked in two hops, because the
+      // route names a constant rather than the literal — the source has to
+      // name that constant, and the constant has to hold the declared value.
+      assert.equal(
+        operation.scope,
+        CLIENT_V1_READ_SCOPE,
+        `client-v1 operation ${operation.id} declares ${operation.scope}, but the canonical reads are guarded by ${CLIENT_V1_READ_SCOPE}`,
+      );
+      assert.match(
+        routeSource,
+        /scope:\s*CLIENT_V1_READ_SCOPE\b/,
+        `client-v1 operation ${operation.id} declares scope ${operation.scope} but its route does not pass CLIENT_V1_READ_SCOPE to requireScope`,
+      );
+    }
+  }
+
+  // The converse. Every method a client-v1 route.ts exports has to be claimed
+  // by exactly one operation record, so adding a route without inventory
+  // metadata fails here rather than shipping a route no declaration mentions.
+  const undeclared: string[] = [];
+  for (const [contractPath, methods] of routeMethodsOnDisk) {
+    for (const method of methods) {
+      if (!declaredKeys.has(`${method} ${contractPath}`)) {
+        undeclared.push(`${method} ${contractPath}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    undeclared,
+    [],
+    `client-v1 routes with no operation record in src/lib/server/client-v1/operations.ts: ${undeclared.join(", ")}`,
+  );
+
+  // And finally the capability list itself, checked against the routes rather
+  // than against the registry it is derived from — this is the assertion that
+  // fails when a capability with no owning route is advertised.
+  const ownedFamilies = new Set<string>();
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    if (!routeMethodsOnDisk.get(operation.path)?.has(operation.method)) continue;
+    for (const family of operation.families) ownedFamilies.add(family);
+  }
+  const unowned = (CLIENT_V1_CAPABILITIES as readonly string[]).filter(
+    (capability) => !ownedFamilies.has(capability),
+  );
+  assert.deepEqual(
+    unowned,
+    [],
+    `client-v1 advertises capabilities no live route can serve: ${unowned.join(", ")}`,
+  );
+  const undeclaredFamilies = [...ownedFamilies].filter(
+    (family) => !(CLIENT_V1_CAPABILITIES as readonly string[]).includes(family),
+  );
+  assert.deepEqual(
+    undeclaredFamilies,
+    [],
+    `client-v1 routes serve capability families the contract never advertises: ${undeclaredFamilies.join(", ")}`,
   );
 }
 

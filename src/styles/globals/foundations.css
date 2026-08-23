@@ -38,6 +38,18 @@
      color-mix, so it must be defined here — an undefined var collapses the
      whole color-mix and silently deletes the shadow (cave-8ppoa). */
   --shadow-color: oklch(0 0 0);
+  /* Elevation shadow for popovers, dropdowns and floating menus. Three
+     palettes (claymorphism, pastel-dreams, snow) tune their own inside their
+     [data-theme] blocks and always pair it with --shadow-color; everywhere
+     else the five no-fallback references shipped with box-shadow dropped
+     entirely, so those popovers floated with no shadow at all on 9 of 12
+     palettes (cave-4x1ag). Geometry follows the shipped palette values (8px
+     drop, mid blur — snow's dark 40% ink is the closest anchor); the ink is
+     --shadow-color so it tracks every palette and the light-mode retune, the
+     same way every other color-mix consumer of it does. Elevation here is
+     carried primarily by the lightness ladder (--bg-elevated); this only
+     reinforces it, per the design language. */
+  --shadow-popover: 0 8px 24px color-mix(in oklch, var(--shadow-color) 40%, transparent);
   --primary: oklch(0.92 0.004 291);
   /* Dark ink, not tied to --card — --primary-foreground also paints text on
      --brand/--accent-presence (a mid-tone violet), which needs a genuinely
@@ -217,6 +229,22 @@
   --danger-text: var(--color-danger);
   --danger-bg: color-mix(in oklch, var(--color-danger) 14%, transparent);
   --danger-border: color-mix(in oklch, var(--color-danger) 38%, transparent);
+  /* shadcn-compatibility name for the same danger role. Every other name in
+     that vocabulary (--background, --card, --popover, --primary, --ring…) has
+     a :root value and only gets retuned per palette; --destructive was the one
+     hole, so on the default Coven palette and on tide/ember/slate/contrast/
+     solstice its 19 no-fallback references across the four Research surfaces
+     resolved to nothing, the declarations were dropped, and every failed/error
+     colour inherited body text instead (cave-4x1ag).
+     Aliased rather than given its own red: the design language names
+     --color-danger the single solid error token and forbids hardcoding a state
+     colour, and the alias inherits the light-mode retune below for free — the
+     same shape as --danger-text above and --brand/--bg-base further up.
+     themes.css keeps its per-palette overrides, which are deliberate identity
+     choices, not accidents: ghosty and claude take destructive to grayscale,
+     pastel-dreams to a pale rose. */
+  --destructive: var(--color-danger);
+  --destructive-foreground: var(--color-danger-foreground);
   /* Fixed dark mixing endpoint for solid-state hover colors. Keeping the
      endpoint tokenized makes render code theme-safe without changing values. */
   --color-mix-dark: oklch(0 0 0);

@@ -14,6 +14,7 @@ import {
   resolveVisibleRoleSurfaces,
   roleSurfaceMode,
   surfaceMatchesRoles,
+  type ComboKeyEvent,
   type RoleSurface,
   type RoleSurfaceContext,
 } from "./role-surfaces.ts";
@@ -254,6 +255,60 @@ test("matchesShortcutCombo honors mod aliasing and rejects extra modifiers", () 
   assert.ok(!matchesShortcutCombo({ ...base, metaKey: true, shiftKey: true }, "mod+e")); // extra shift
   assert.ok(matchesShortcutCombo({ ...base, metaKey: true, shiftKey: true }, "mod+shift+e"));
   assert.ok(!matchesShortcutCombo({ ...base, key: "f", metaKey: true }, "mod+e")); // wrong key
+});
+
+test("matchesShortcutCombo survives a keydown event with no readable key (cave-lryhx)", () => {
+  // Of the whole unguarded `.key.toLowerCase()` family this was the ONLY site
+  // the exact reported event shape could reach: every other one tests a
+  // modifier first, so a bare `new Event("keydown")` short-circuits away before
+  // the key is read. This one compares the key BEFORE any modifier, so the
+  // event that crashed the shell reached it unimpeded.
+  //
+  // Dispatched for real rather than hand-built, because the bug lives at that
+  // boundary — the handler was written against KeyboardEvent and handed
+  // something else.
+  const seen: string[] = [];
+  let escaped: unknown = null;
+  const target = new EventTarget();
+  target.addEventListener("keydown", (e) => {
+    try {
+      // The cast IS the defect, written down: `ComboKeyEvent` promises a
+      // string `key` and every modifier, and the runtime hands the handler
+      // events that have neither. Callers in the app do this implicitly by
+      // typing their listener parameter `KeyboardEvent`.
+      if (matchesShortcutCombo(e as unknown as ComboKeyEvent, "mod+e")) seen.push("mod+e");
+    } catch (err) {
+      escaped = err;
+    }
+  });
+
+  target.dispatchEvent(new Event("keydown")); // no key at all
+  assert.equal(escaped, null, "a bare Event must not throw out of the handler");
+  assert.deepEqual(seen, [], "an unreadable event matches no combo");
+
+  // key present but not a string, and key present but empty — the two other
+  // unreadable shapes a synthetic event produces.
+  for (const bad of [null, undefined, 42, {}, ""]) {
+    target.dispatchEvent(Object.assign(new Event("keydown"), { key: bad, metaKey: true }));
+    assert.equal(escaped, null, `key=${String(bad)} must not throw`);
+  }
+  assert.deepEqual(seen, [], "none of the unreadable shapes matched");
+
+  // The handler still serves a real combo afterwards — the property that
+  // "did not throw" alone would not catch.
+  // A well-formed keydown reports every modifier as a boolean; the malformed
+  // ones above omit them, which is part of what makes them malformed.
+  target.dispatchEvent(
+    Object.assign(new Event("keydown"), {
+      key: "e",
+      metaKey: true,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+    }),
+  );
+  assert.equal(escaped, null);
+  assert.deepEqual(seen, ["mod+e"], "a real combo still matches after a bad event");
 });
 
 test("registry keeps retired types and their live role labels reachable (cave-lgcb)", () => {

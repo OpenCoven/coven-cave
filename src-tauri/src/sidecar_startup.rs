@@ -663,6 +663,10 @@ fn run_sidecar_runtime(
     })?;
     let server_js_arg = node_arg_path(&server_entry);
     let server_dir_arg = node_arg_path(server_dir);
+    // The sidecar's old-space ceiling, chosen rather than inherited from host
+    // memory. Built as a whole vector because node only honours V8 flags that
+    // appear BEFORE the entry path — see src-tauri/src/sidecar_heap.rs.
+    let node_args = sidecar_heap::sidecar_node_args(&server_js_arg);
 
     let path_sep = if cfg!(target_os = "windows") {
         ";"
@@ -731,7 +735,7 @@ fn run_sidecar_runtime(
             )
         })?;
         let launcher = launch_gate
-            .launcher(&node, [&server_js_arg])
+            .launcher(&node, &node_args)
             .map_err(|error| {
                 diagnostics.record_io_error("sidecar-spawn", "launcher-preparation-failed", &error);
                 SidecarStartError::failed(
@@ -744,7 +748,7 @@ fn run_sidecar_runtime(
     #[cfg(not(target_os = "windows"))]
     let mut command = {
         let mut command = Command::new(&node);
-        command.arg(&server_js_arg);
+        command.args(&node_args);
         command
     };
     command
