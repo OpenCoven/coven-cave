@@ -146,7 +146,7 @@ final class DrawerNavigationUITests: XCTestCase {
         editAvatar.tap()
 
         XCTAssertTrue(app.buttons["Choose photo"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Cancel"].exists)
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
     }
 
     @MainActor

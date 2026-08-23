@@ -31,10 +31,11 @@ final class NextPathsTests: XCTestCase {
             Ready.
             <coven:next-paths>
             - Continue
+            - [FYI] Review the migration note
             </coven:next-paths>
             """
         )
 
-        XCTAssertEqual(parsed.suggestions, ["Continue"])
+        XCTAssertEqual(parsed.suggestions, ["Continue", "[FYI] Review the migration note"])
     }
 }

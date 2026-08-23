@@ -26,7 +26,7 @@ enum NextPaths {
                     break
                 }
                 s = s.replacingOccurrences(
-                    of: #"^\[[^\]\n]+\]\s*"#,
+                    of: #"^\[(?:reply|task|action:open-tasks|action:save-link)(?::recommended)?\]\s*"#,
                     with: "",
                     options: .regularExpression
                 )

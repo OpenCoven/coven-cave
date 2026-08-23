@@ -207,7 +207,9 @@ assert.doesNotMatch(
   "chat configuration does not expose internal inventory provenance",
 );
 assert.ok(
-  nextPaths.includes('of: #"^\\[[^\\]\\n]+\\]\\s*"#'),
+  nextPaths.includes(
+    'of: #"^\\[(?:reply|task|action:open-tasks|action:save-link)(?::recommended)?\\]\\s*"#',
+  ),
   "typed next-path controls are removed before suggestions reach the conversation UI",
 );
 assert.match(
