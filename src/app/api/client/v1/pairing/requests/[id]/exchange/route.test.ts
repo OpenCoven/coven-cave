@@ -41,6 +41,158 @@ function request(id: string, secret: string): Request {
   );
 }
 
+/**
+ * An exchange whose loopback stamp and secret placement are chosen per call.
+ *
+ * `request` above always supplies both, because every test written before this
+ * one describes a client on the machine holding the right secret. That made
+ * all eleven of this file's mentions of the loopback stamp happy-path setup:
+ * none of them could observe the stamp check being removed.
+ */
+function probe(
+  id: string,
+  options: {
+    /**
+     * Omit the key for the valid stamp; pass it as `undefined` to send no
+     * stamp header at all.
+     *
+     * Read with `"stamp" in options` rather than a destructuring default: a
+     * default fires on an explicitly passed `undefined` too, which would have
+     * quietly restored the valid stamp on the very row meant to send none. The
+     * first draft of this helper did exactly that and reported 200.
+     */
+    stamp?: string | undefined;
+    headerSecret?: string;
+    querySecret?: string;
+  },
+): Request {
+  const stamp = "stamp" in options ? options.stamp : "loopback-secret";
+  const url = new URL(
+    `http://127.0.0.1:3020/api/client/v1/pairing/requests/${id}/exchange`,
+  );
+  if (options.querySecret) url.searchParams.set("secret", options.querySecret);
+  const headers = new Headers();
+  if (stamp !== undefined) headers.set(LOCAL_PEER_HEADER, stamp);
+  if (options.headerSecret) headers.set(secretHeader, options.headerSecret);
+  return new Request(url, { method: "POST", headers });
+}
+
+/**
+ * The exchange refuses any caller the listener did not stamp as direct
+ * loopback — the same defence its sibling poll route grew in cave-f1xki
+ * (#4854), which this route never got.
+ *
+ * It matters more here than there: the poll route discloses a status, while
+ * THIS route mints the bearer. Removing the whole `isTrustedLoopback` branch
+ * left every existing test in this file, the poll route's suite,
+ * `authenticated-route-refusal.test.ts`, `api-contracts.test.ts`,
+ * `admin/security.e2e.test.ts` and `middleware.test.ts` green.
+ *
+ * The correct secret is supplied throughout, so nothing but the missing or
+ * forged stamp can account for the refusal.
+ */
+test("exchange refuses a caller without the listener's direct-loopback stamp", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    let now = 1_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const handler = createPairingExchangePostHandler(runtime);
+    const issued = runtime.pairingStore.create(pairingInput);
+    now = 1_100;
+    assert.equal(runtime.pairingStore.decide(issued.id, "approved", now), true);
+
+    for (const stamp of [undefined, "", "wrong-loopback-secret"]) {
+      const response = await handler(
+        probe(issued.id, { stamp, headerSecret: issued.secret }),
+        context(issued.id),
+      );
+      const body = await response.json() as {
+        error: { code: string };
+        data?: unknown;
+      };
+      assert.equal(response.status, 401, `stamp ${JSON.stringify(stamp)}`);
+      assert.equal(body.error.code, "unauthorized");
+      assert.equal(body.data, undefined);
+      assert.equal(JSON.stringify(body).includes(issued.secret), false);
+      assert.equal(JSON.stringify(body).includes("loopback-secret"), false);
+    }
+
+    // No credential was minted by any of the three refusals, and the pairing
+    // was not spent: the legitimate stamped holder still exchanges exactly
+    // once. A refusal that consumed the approval would be a denial of service
+    // reachable by an unstamped caller.
+    assert.equal((await runtime.credentialStore.reload()).size, 0);
+    const stamped = await handler(
+      request(issued.id, issued.secret),
+      context(issued.id),
+    );
+    assert.equal(stamped.status, 200);
+    assert.equal((await runtime.credentialStore.reload()).size, 1);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The pairing secret is read from `X-Coven-Pairing-Secret` and from nowhere
+ * else — the plan of record's "pairing secrets travel only in
+ * X-Coven-Pairing-Secret", and the poll route's own
+ * "accepts pairing secrets only from the reviewed header".
+ *
+ * A URL-borne secret survives in shell history, referer headers, proxy logs
+ * and crash reports, so accepting one as a fallback is a disclosure even when
+ * the exchange itself succeeds. Adding that fallback to this route left every
+ * suite listed above green.
+ */
+test("exchange accepts pairing secrets only from the reviewed header", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    let now = 1_000;
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret: "loopback-secret",
+      now: () => now,
+    });
+    const handler = createPairingExchangePostHandler(runtime);
+    const issued = runtime.pairingStore.create(pairingInput);
+    now = 1_100;
+    assert.equal(runtime.pairingStore.decide(issued.id, "approved", now), true);
+
+    for (const candidate of [
+      probe(issued.id, {}),
+      probe(issued.id, { headerSecret: "wrong-secret" }),
+      probe(issued.id, { querySecret: issued.secret }),
+    ]) {
+      const response = await handler(candidate, context(issued.id));
+      const body = await response.json() as {
+        error: { code: string };
+        data?: unknown;
+      };
+      assert.equal(response.status, 401);
+      assert.equal(body.error.code, "unauthorized");
+      assert.equal(body.data, undefined);
+      assert.equal(JSON.stringify(body).includes(issued.secret), false);
+    }
+
+    // The approval is intact and still redeemable through the header, so the
+    // three refusals above rejected the request rather than the pairing.
+    assert.equal((await runtime.credentialStore.reload()).size, 0);
+    const accepted = await handler(
+      request(issued.id, issued.secret),
+      context(issued.id),
+    );
+    assert.equal(accepted.status, 200);
+  } finally {
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("exchanges an approved request once and persists only the bearer hash", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
