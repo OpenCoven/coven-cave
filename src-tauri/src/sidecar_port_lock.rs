@@ -148,7 +148,11 @@ pub(super) fn release_all_claims() {
     };
     for (port, file) in held.drain() {
         if let Err(error) = Fs2FileExt::unlock(&file) {
-            log::warn!("[cave] could not release the claim on port {port}: {error}");
+            // Dropping `file` at the end of this iteration closes the handle,
+            // which releases the lock on both platforms regardless — so this is
+            // a report, not a leak. `eprintln!` because the only caller is an
+            // exit path that runs before the log plugin exists.
+            eprintln!("[cave] could not release the claim on port {port}: {error}");
         }
     }
 }
@@ -209,6 +213,20 @@ fn read_port_owner(state_dir: &Path, port: u16) -> Option<u32> {
 mod tests {
     use super::*;
 
+    /// `release_all_claims` drains a process-global registry and `cargo test`
+    /// runs these in parallel threads, so without this a release on one thread
+    /// can quietly hand another thread's re-claim a FRESH lock — passing the
+    /// assertion while never exercising the same-process short-circuit that
+    /// test exists to protect. Delete the short-circuit and the run would still
+    /// go green, nondeterministically.
+    fn claim_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+        GUARD
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn test_dir(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "cave-port-claim-{label}-{}-{}",
@@ -221,6 +239,7 @@ mod tests {
 
     #[test]
     fn a_free_port_is_claimed_and_records_this_process() {
+        let _serialized = claim_test_guard();
         let dir = test_dir("free");
         let port = 39_001;
         assert_eq!(
@@ -241,6 +260,7 @@ mod tests {
         // sequence. Windows locks are per-handle, so without the registry
         // short-circuit the retry would find its own lock and report itself as
         // the conflicting copy.
+        let _serialized = claim_test_guard();
         let dir = test_dir("retry");
         let port = 39_002;
         assert_eq!(
@@ -260,6 +280,7 @@ mod tests {
         // COVEN_CAVE_PORT is the documented way to run a second copy beside
         // the first. Keying the lock on the app rather than the port would
         // make that instruction a lie.
+        let _serialized = claim_test_guard();
         let dir = test_dir("distinct");
         assert_eq!(
             claim_dedicated_port(&dir, 39_003).expect("claim the first port"),
@@ -276,6 +297,7 @@ mod tests {
     fn a_lock_held_by_another_handle_reports_the_recorded_owner() {
         // Stands in for a second copy: an independent handle holding the same
         // lock file is exactly what one looks like from here.
+        let _serialized = claim_test_guard();
         let dir = test_dir("contended");
         let port = 39_005;
         let lock_path = dir.join(port_lock_file_name(port));
@@ -311,9 +333,7 @@ mod tests {
         // alert would otherwise have the good copy refused, naming a process
         // that never binds anything.
         //
-        // Safe to run beside the other tests despite draining a process-global
-        // registry: every sibling asserts on a claim it has just taken, and a
-        // re-claim after an interleaved release still returns `Acquired`.
+        let _serialized = claim_test_guard();
         let dir = test_dir("release");
         let port = 39_007;
         assert_eq!(
@@ -341,6 +361,7 @@ mod tests {
 
     #[test]
     fn a_missing_owner_record_still_reports_the_conflict() {
+        let _serialized = claim_test_guard();
         let dir = test_dir("anonymous");
         let port = 39_006;
         let lock_path = dir.join(port_lock_file_name(port));

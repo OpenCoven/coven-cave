@@ -150,7 +150,14 @@ pub(super) fn report_existing_port_owner(port: u16, pid: Option<u32>) -> ! {
     // debug builds, so by itself the line above is dropped on the very path
     // that needs a trace: someone running the binary twice from a terminal
     // would see a dialog and nothing else. `fatal_exit` has the same fallback.
-    eprintln!("[cave] another CovenCave already holds port {port}; this instance is exiting");
+    match pid {
+        Some(pid) => eprintln!(
+            "[cave] another CovenCave (pid {pid}) already holds port {port}; this instance is exiting"
+        ),
+        None => eprintln!(
+            "[cave] another CovenCave already holds port {port}; this instance is exiting"
+        ),
+    }
     show_fatal_dialog(&crate::sidecar_startup::already_running_message(port, pid));
     std::process::exit(1);
 }

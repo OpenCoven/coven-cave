@@ -122,11 +122,14 @@ pub(super) enum PortOccupant {
     Stranger,
 }
 
-/// Total wall-clock a single occupant probe may spend. Startup has no
-/// cancellation checkpoint inside the probe, so this is the whole budget for
-/// talking to a program we know nothing about.
+/// Total wall-clock any single loopback read may spend.
+///
+/// Both readers on this path need one. The occupant probe talks to a program we
+/// know nothing about, and the readiness handshake runs inside a loop whose
+/// deadline is checked only BETWEEN calls — neither has a cancellation
+/// checkpoint mid-read, so this is the whole budget for each.
 #[cfg(desktop)]
-const PORT_PROBE_BUDGET: Duration = Duration::from_secs(2);
+const LOOPBACK_READ_BUDGET: Duration = Duration::from_secs(2);
 
 /// Classify whoever holds `port`.
 ///
@@ -166,7 +169,7 @@ pub(super) fn classify_port_occupant(port: u16) -> PortOccupant {
     classify_build_info_response(&read_bounded_response(stream, MAX_RESPONSE_BYTES))
 }
 
-/// Read at most `limit` bytes, and for at most `PORT_PROBE_BUDGET`.
+/// Read at most `limit` bytes, and for at most `LOOPBACK_READ_BUDGET`.
 ///
 /// `set_read_timeout` bounds each `read()`, not the total, and `Read::take`
 /// bounds bytes rather than time — so `read_to_end` against an occupant that
@@ -184,7 +187,7 @@ pub(super) fn classify_port_occupant(port: u16) -> PortOccupant {
 fn read_bounded_response(mut stream: std::net::TcpStream, limit: usize) -> Vec<u8> {
     use std::io::Read;
 
-    let deadline = Instant::now() + PORT_PROBE_BUDGET;
+    let deadline = Instant::now() + LOOPBACK_READ_BUDGET;
     let mut response = Vec::new();
     let mut chunk = [0_u8; 8192];
     while response.len() < limit && Instant::now() < deadline {
@@ -444,7 +447,7 @@ fn authenticated_readiness_handshake(
     port: u16,
     auth_token: &str,
 ) -> Result<(), SidecarReadinessRefusal> {
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::net::{SocketAddr, TcpStream};
 
     const MAX_RESPONSE_BYTES: usize = 64 * 1024;
@@ -483,16 +486,19 @@ fn authenticated_readiness_handshake(
         )
     })?;
 
-    let mut response = Vec::new();
-    stream
-        .take((MAX_RESPONSE_BYTES + 1) as u64)
-        .read_to_end(&mut response)
-        .map_err(|error| {
-            readiness_refusal(
-                ReliabilityFailureClass::Transport,
-                format!("readiness response failed: {error}"),
-            )
-        })?;
+    // Bounded in time as well as bytes, for the reason spelled out on
+    // `read_bounded_response`: `set_read_timeout` bounds each read and `take`
+    // bounds bytes, so `read_to_end` runs as long as a peer keeps trickling.
+    // It matters more here than at the probe, because the caller's deadline is
+    // an illusion — `wait_for_sidecar_ready` checks it only between calls and
+    // never polls `should_cancel` inside one. A sidecar that stalls mid-response
+    // could therefore hold the startup worker far past its 60/90 s budget, and
+    // the worker never reaching `finish()` leaves `running` pinned true, which
+    // deadens Retry for the life of the process.
+    //
+    // The +1 is kept so an oversized response is still detected rather than
+    // silently truncated to exactly the cap.
+    let response = read_bounded_response(stream, MAX_RESPONSE_BYTES + 1);
     if response.len() > MAX_RESPONSE_BYTES {
         return Err(readiness_refusal(
             ReliabilityFailureClass::Transport,

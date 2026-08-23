@@ -1505,3 +1505,75 @@ fn a_trickling_occupant_cannot_stall_startup() {
         "the probe must give up on its own budget, took {elapsed:?}"
     );
 }
+
+#[test]
+fn a_stalled_sidecar_cannot_hold_the_readiness_wait_past_its_deadline() {
+    // The readiness handshake had the same unbounded-read shape as the occupant
+    // probe, and it mattered more: `wait_for_sidecar_ready` checks its deadline
+    // only BETWEEN handshake attempts and never polls `should_cancel` inside
+    // one, so a sidecar that stalled mid-response held the startup worker past
+    // its whole 60/90s budget. The worker never reaching `finish()` pins
+    // `running` true, which deadens Retry for the life of the process.
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalled fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let output = Arc::new(Mutex::new(SidecarOutputTail::default()));
+    output
+        .lock()
+        .expect("output tail")
+        .push(format!("> Ready on http://127.0.0.1:{}\n", port).as_bytes());
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let stalling = Arc::clone(&stop);
+    // The wait makes one connection per handshake attempt, so the fixture has
+    // to keep accepting — but a blocking `accept()` after the last one would
+    // never return and `join()` below would hang forever. Poll instead.
+    listener
+        .set_nonblocking(true)
+        .expect("pollable stalled fixture");
+    let server = std::thread::spawn(move || {
+        while !stalling.load(Ordering::Relaxed) {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(Duration::from_millis(20));
+                continue;
+            };
+            // An accepted stream can inherit the listener's mode.
+            let _ = stream.set_nonblocking(false);
+            // Headers that never end, one byte at a time.
+            while !stalling.load(Ordering::Relaxed) {
+                if stream.write_all(b"H").is_err() {
+                    break;
+                }
+                let _ = stream.flush();
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    });
+
+    let started = Instant::now();
+    let result = wait_for_sidecar_ready(
+        port,
+        "test-token",
+        &output,
+        Duration::from_secs(3),
+        || false,
+        || false,
+    );
+    let elapsed = started.elapsed();
+    stop.store(true, Ordering::Relaxed);
+    let _ = server.join();
+
+    assert!(
+        matches!(
+            result,
+            PortWaitResult::Refused(_) | PortWaitResult::TimedOut
+        ),
+        "a sidecar that never completes a response is not ready"
+    );
+    assert!(
+        elapsed < Duration::from_secs(20),
+        "the wait must honour its own deadline, took {elapsed:?}"
+    );
+}
