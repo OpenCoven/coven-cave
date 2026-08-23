@@ -53,25 +53,19 @@ assert.match(
   /const secret = accessToken\(\);\s*if \(!secret \|\| !value\) return false/,
   "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
 );
-// The 401 applies when a remote/mobile credential is configured. With neither
-// token (plain local development) the loopback host+origin gate is the
-// protection. Once either credential exists, even loopback callers must prove
-// they hold it before the server will spawn or adopt a shell.
+// Remote/mobile callers need a configured credential. Direct, unforwarded
+// loopback remains the prompt-free browser path even while mobile access is
+// armed.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
 assert.match(
   src,
-  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
-  "PTY upgrade authentication closes the credential-less path whenever either token is configured",
+  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,\s*directLoopback: isDirectLoopbackRequest\(req\),/,
+  "PTY upgrade authentication preserves direct-loopback access while keeping remote credentials required",
 );
-// ...and it decides that WITHOUT consulting loopback at all. The positive
-// assertion above would still pass if someone re-introduced a direct-loopback
-// escape hatch beside it, which is exactly the bypass cave-ruw4z removed: TCP
-// loopback proves the caller is on this machine, never which OS user it is, so
-// any local account could otherwise adopt a shell as the Cave process owner.
-assert.doesNotMatch(
+assert.match(
   src,
-  /shouldRejectUnauthenticatedPtyUpgrade\([\s\S]{0,400}?isDirectLoopbackRequest/,
-  "no direct-loopback term may re-enter the PTY rejection decision",
+  /if \(tokenAuthenticated \|\| directLoopback\) return false;/,
+  "a verified direct-loopback caller must never be redirected into pairing for PTY access",
 );
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present

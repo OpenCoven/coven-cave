@@ -145,16 +145,11 @@ test("Workspace applies connection polls through the existing classifier-driven 
     /if \(result\.kind === "running"\) \{[\s\S]*setAcceptedLocalDaemonHealthy\(result\.targetMode === "local"\)[\s\S]*\} else \{[\s\S]*setAcceptedLocalDaemonHealthy\(false\)/,
     "acceptedLocalDaemonHealthy should still only latch when the active target is a healthy local daemon",
   );
-  assert.match(
-    applyPoll,
-    /if \(poll\.responseStatus !== 401\) setAuthExpired\(false\)/,
-    "any non-401 connection response should clear the auth-expired latch",
-  );
   assert.match(applyPoll, /setDaemonStatusResolved\(true\)/, "the first accepted connection poll should still resolve the unknown boot state");
   assert.match(
     applyPoll,
-    /if \(result\.kind === "auth-expired"\) \{[\s\S]*setAuthExpired\(true\)[\s\S]*setDaemonStatusUnavailable\(null\)[\s\S]*return;/,
-    "401s should remain distinct from transport availability failures",
+    /if \(result\.kind === "auth-expired"\) \{[\s\S]*daemonHealthyStreakRef\.current = 0[\s\S]*setDaemonOffline\(false\)[\s\S]*setDaemonStatusUnavailable\("access check failed"\)[\s\S]*return;/,
+    "unexpected 401s should use retryable status-unavailable recovery without reintroducing a pairing prompt",
   );
   assert.match(
     applyPoll,
@@ -206,30 +201,15 @@ test("Workspace keeps automatic recovery quiet but restores truthful banners aft
   );
   assert.match(
     workspace,
-    /if \(!daemonOffline \|\| authExpired \|\| daemonRecovery\.quiet\)/,
+    /if \(!daemonOffline \|\| daemonRecovery\.quiet\)/,
     "offline and start-error banners should stay dismissed only while bounded recovery is quiet",
   );
 });
 
-test("Workspace routes expired browser access to the existing token prompt", () => {
-  assert.match(
-    workspace,
-    /import \{ accessPromptUrl \} from "@\/proxy-helpers";/,
-    "Workspace should share the proxy's access-prompt URL contract",
-  );
-  assert.match(
-    workspace,
-    /title: "Access required — sign in with a fresh pairing token\."/,
-    "the auth banner should name the required action without promising that reload is enough",
-  );
-  assert.match(
-    workspace,
-    /label: "Sign in"[\s\S]*window\.location\.assign\(accessPromptUrl\(window\.location\.href\)\)/,
-    "the banner CTA should navigate to the explicitly marked access prompt",
-  );
+test("Workspace never renders a pairing-token access banner", () => {
   assert.doesNotMatch(
     workspace,
-    /id: "auth-expired"[\s\S]*window\.location\.reload\(\)/,
-    "auth recovery should not repeat the trusted-navigation bypass loop",
+    /Access required|fresh pairing token|accessPromptUrl|id: "auth-expired"/,
+    "trusted local recovery must not direct users into a pairing-token loop",
   );
 });
