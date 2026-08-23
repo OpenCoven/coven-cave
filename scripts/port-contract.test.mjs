@@ -83,8 +83,23 @@ assert.match(
 );
 assert.match(
   startup,
-  /port_is_occupied\(port\)/,
-  "an occupied dedicated port is reported, not silently relocated",
+  /classify_port_occupant\(port\)/,
+  "an occupied dedicated port is reported by identity, not silently relocated",
+);
+// A probe can only ever describe the instant it ran. Two copies launched
+// together queue on the runtime-cache lock and are released into the same
+// window, so the exclusion has to be a held claim rather than an observation —
+// otherwise both spawn a node and the loser dies on EADDRINUSE (cave-2s5q0).
+assert.match(
+  startup,
+  /sidecar_port_lock::claim_dedicated_port\(/,
+  "the port is claimed before the sidecar spawns, not merely probed",
+);
+const portLock = await read("src-tauri/src/sidecar_port_lock.rs");
+assert.match(
+  portLock,
+  new RegExp(`format!\\("sidecar-port-\\{port\\}`),
+  "the claim is keyed on the resolved port, so COVEN_CAVE_PORT still lets a second copy run",
 );
 
 // --- server.ts copy ----------------------------------------------------------

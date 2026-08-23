@@ -85,23 +85,203 @@ pub(super) fn sidecar_output_text(output: &Arc<Mutex<SidecarOutputTail>>) -> Str
     }
 }
 
-/// Whether anything is already listening on the dedicated loopback port.
+/// Who is already on the dedicated loopback port.
 ///
 /// Replaces `find_free_port()`, which bound `127.0.0.1:0` and let the kernel
 /// pick — that is what made the packaged app's port different on every launch.
 /// See src-tauri/src/sidecar_ports.rs and scripts/ports.mjs for why a moving
 /// port is more than an inconvenience.
 ///
-/// A busy port is NOT worked around by relocating. The desktop app already
-/// refuses to run a second GUI (the reachability owner check), so a stranger on
-/// the dedicated port is an operator-visible conflict, not something to route
-/// around silently — relocating is exactly how the address stopped being
-/// dependable in the first place.
+/// A busy port is NOT worked around by relocating: relocating is exactly how
+/// the address stopped being dependable in the first place. The conflict is
+/// resolved by identity instead — the same verdict `scripts/dev-port-owner.mjs`
+/// has been giving the dev launcher, read from the same value-free
+/// `/api/app/build-info` route.
+///
+/// This can only ever narrow the window, never close it: an answer describes
+/// the instant it was collected, and `node` binds seconds later.
+/// `sidecar_port_lock` is what actually excludes a second copy; this exists to
+/// say WHO, so the refusal names something instead of guessing.
 #[cfg(desktop)]
-pub(super) fn port_is_occupied(port: u16) -> bool {
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum PortOccupant {
+    /// Nothing accepted a connection.
+    Free,
+    /// Answered `/api/app/build-info` as CovenCave, unauthenticated. In
+    /// practice that means a tokenless `pnpm dev`: a packaged sidecar always
+    /// carries `COVEN_CAVE_AUTH_TOKEN`, and src/proxy.ts refuses an
+    /// unauthenticated `/api/` request without it — so a running packaged copy
+    /// reports as `Gated` below, never here.
+    Cave,
+    /// Answered, but refused the unauthenticated probe (401/403). Most often
+    /// another packaged CovenCave; anything else gating the same path looks
+    /// identical, which is why this is its own verdict rather than a guess in
+    /// either direction.
+    Gated,
+    /// Accepted a connection but is not a Cave this build can name.
+    Stranger,
+}
+
+/// Classify whoever holds `port`.
+///
+/// One deliberate difference from `scripts/dev-port-owner.mjs`: it downgrades a
+/// connected-but-silent port to "free" so the caller's own bind produces the
+/// real error. Here the caller's "real error" is the `node` that dies on
+/// `EADDRINUSE` and prints an error object at the operator — the outcome this
+/// exists to prevent — so a completed TCP connection is never downgraded.
+/// Something is listening; the only open question is who.
+#[cfg(desktop)]
+pub(super) fn classify_port_occupant(port: u16) -> PortOccupant {
+    use std::io::{Read, Write};
     use std::net::{SocketAddr, TcpStream};
+
+    const MAX_RESPONSE_BYTES: usize = 64 * 1024;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(250)) else {
+        return PortOccupant::Free;
+    };
+    if stream
+        .set_read_timeout(Some(Duration::from_millis(750)))
+        .is_err()
+        || stream
+            .set_write_timeout(Some(Duration::from_millis(500)))
+            .is_err()
+    {
+        return PortOccupant::Stranger;
+    }
+    if write!(
+        stream,
+        "GET /api/app/build-info HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+    )
+    .is_err()
+    {
+        return PortOccupant::Stranger;
+    }
+    let mut response = Vec::new();
+    if stream
+        .take((MAX_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut response)
+        .is_err()
+    {
+        return PortOccupant::Stranger;
+    }
+    classify_build_info_response(&response)
+}
+
+/// The verdict for a collected response. Split out from the socket work so the
+/// classification is testable without a listener.
+#[cfg(desktop)]
+pub(super) fn classify_build_info_response(response: &[u8]) -> PortOccupant {
+    let Some((status, body)) = parse_http_response(response) else {
+        return PortOccupant::Stranger;
+    };
+    if matches!(status, 401 | 403) {
+        return PortOccupant::Gated;
+    }
+    if status != 200 {
+        return PortOccupant::Stranger;
+    }
+    let Ok(payload) = serde_json::from_slice::<serde_json::Value>(body.as_slice()) else {
+        return PortOccupant::Stranger;
+    };
+    if payload.get("name").and_then(|name| name.as_str()) == Some("CovenCave") {
+        PortOccupant::Cave
+    } else {
+        PortOccupant::Stranger
+    }
+}
+
+/// Status code and decoded body of a bounded HTTP/1.x response, or `None` when
+/// the bytes are not one this can read. Deliberately narrow: the only caller is
+/// deciding who holds a port, and every parse failure means a stranger.
+#[cfg(desktop)]
+fn parse_http_response(response: &[u8]) -> Option<(u16, Vec<u8>)> {
+    let separator = b"\r\n\r\n";
+    let header_end = response
+        .windows(separator.len())
+        .position(|window| window == separator)?;
+    let headers = std::str::from_utf8(&response[..header_end]).ok()?;
+    let status = headers
+        .lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u16>()
+        .ok()?;
+    let encoded = &response[header_end + separator.len()..];
+    let chunked = headers.lines().any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.eq_ignore_ascii_case("transfer-encoding")
+                && value
+                    .split(',')
+                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
+        })
+    });
+    let body = if chunked {
+        decode_chunked_body(encoded).ok()?
+    } else {
+        encoded.to_vec()
+    };
+    Some((status, body))
+}
+
+/// What to tell an operator whose copy lost the claim in `sidecar_port_lock`.
+///
+/// Only CovenCave takes that lock, so unlike the probe above this is never a
+/// guess: a refused claim IS another copy of this app, and a live one — the OS
+/// releases the lock when its holder's handle closes.
+#[cfg(desktop)]
+pub(super) fn already_running_message(port: u16, owner_pid: Option<u32>) -> String {
+    let who = match owner_pid {
+        Some(pid) => format!("CovenCave is already running (process {pid})"),
+        None => "CovenCave is already running".to_string(),
+    };
+    format!(
+        "{who} and is using port {port}.\n\n\
+         Switch to the window that is already open, or quit it before starting another copy. {}",
+        second_copy_hint()
+    )
+}
+
+/// The operator-facing text for a port this copy cannot have.
+#[cfg(desktop)]
+pub(super) fn port_conflict_message(port: u16, occupant: &PortOccupant) -> String {
+    match occupant {
+        // Only reachable from the EADDRINUSE post-mortem in
+        // `run_sidecar_runtime`: the squatter that killed the sidecar let go
+        // again before we could ask who it was.
+        PortOccupant::Free => format!(
+            "Port {port} was taken by another program while CovenCave was starting, and is free \
+             again now.\n\nRe-launch CovenCave."
+        ),
+        PortOccupant::Cave => format!(
+            "Port {port} is already serving CovenCave, most likely a dev server started with \
+             `pnpm dev`.\n\nStop it and re-launch. {}",
+            second_copy_hint()
+        ),
+        PortOccupant::Gated => format!(
+            "Port {port} is serving something that will not identify itself to this copy — most \
+             often another CovenCave, from a different build or holding its own token.\n\nQuit \
+             that one and re-launch. {}",
+            second_copy_hint()
+        ),
+        PortOccupant::Stranger => format!(
+            "Port {port} is held by another program, so CovenCave cannot start its local \
+             server.\n\nQuit whatever is using port {port} and re-launch. {}",
+            second_copy_hint()
+        ),
+    }
+}
+
+/// Every refusal names the same escape hatch, because `COVEN_CAVE_PORT` is what
+/// makes "quit the other one" a choice rather than the only move — and the port
+/// claim is keyed on the resolved port precisely so this stays true.
+#[cfg(desktop)]
+fn second_copy_hint() -> String {
+    format!(
+        "To run a second copy alongside the first, start it with {} set to a free port.",
+        sidecar_ports::CAVE_PORT_ENV
+    )
 }
 
 /// Dev builds only: the dev-server URL from tauri.conf.json `build.devUrl`,
@@ -585,20 +765,43 @@ fn run_sidecar_runtime(
     };
 
     let port = sidecar_ports::dedicated_port();
-    if port_is_occupied(port) {
-        // Name the conflict instead of relocating. The old behaviour asked the
-        // kernel for any free port, which always "worked" and left the app on a
-        // different address every launch — including in the pairing-secret path
-        // (`mobile-tailscale-${port}`), so phones could not find it twice.
+    // Take the claim BEFORE looking at the port. The probe below can only
+    // describe the instant it ran, and two copies launched together do not race
+    // by chance — they queue on `.runtime-cache.lock` while one extracts the
+    // runtime, which releases the loser into exactly the window where the
+    // winner has finished extracting and has not yet bound. The claim is what
+    // makes that ordering harmless (sidecar_port_lock.rs).
+    match app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("could not resolve local app data: {error}"))
+        .and_then(|state_dir| crate::sidecar_port_lock::claim_dedicated_port(&state_dir, port))
+    {
+        Ok(crate::sidecar_port_lock::PortClaim::Acquired) => {}
+        Ok(crate::sidecar_port_lock::PortClaim::HeldBy { pid }) => {
+            return Err(SidecarStartError::failed(
+                ReliabilityFailureClass::Contention,
+                already_running_message(port, pid),
+            ));
+        }
+        // Fail open. A claim that cannot be evaluated is a worse reason to
+        // refuse startup than the conflict it was meant to catch, and the probe
+        // below plus the EADDRINUSE post-mortem still describe what happens
+        // next.
+        Err(error) => {
+            log::warn!("[cave] could not claim the dedicated port {port}: {error}");
+        }
+    }
+
+    // Name the conflict instead of relocating. The old behaviour asked the
+    // kernel for any free port, which always "worked" and left the app on a
+    // different address every launch — including in the pairing-secret path
+    // (`mobile-tailscale-${port}`), so phones could not find it twice.
+    let occupant = classify_port_occupant(port);
+    if occupant != PortOccupant::Free {
         return Err(SidecarStartError::failed(
             ReliabilityFailureClass::Contention,
-            format!(
-                "Port {port} is already in use, so CovenCave cannot start its local server.\n\n\
-                 This is usually another CovenCave that is still running, or a dev server \
-                 started with `pnpm dev`. Quit that one and re-launch, or start CovenCave with \
-                 {} set to a free port.",
-                sidecar_ports::CAVE_PORT_ENV,
-            ),
+            port_conflict_message(port, &occupant),
         ));
     }
     let auth_token = sidecar_auth_token();
@@ -917,6 +1120,21 @@ fn run_sidecar_runtime(
         result @ (PortWaitResult::Exited
         | PortWaitResult::Refused(_)
         | PortWaitResult::TimedOut) => {
+            let tail = sidecar_output_text(&sidecar_output);
+            // Last line of defence, and the one that would have made the
+            // original report legible. The claim above makes a lost bind
+            // unreachable between two managed copies, but nothing can claim the
+            // port on behalf of a stranger that arrives mid-startup. When that
+            // happens the evidence is already in the tail, and reading it is
+            // the difference between naming the conflict and pasting node's
+            // error object at someone whose only real problem is that the
+            // address is taken.
+            if matches!(result, PortWaitResult::Exited) && tail.contains("EADDRINUSE") {
+                return Err(SidecarStartError::failed(
+                    ReliabilityFailureClass::Contention,
+                    port_conflict_message(port, &classify_port_occupant(port)),
+                ));
+            }
             let failure_class = match &result {
                 PortWaitResult::Exited => ReliabilityFailureClass::ProcessExit,
                 PortWaitResult::TimedOut => ReliabilityFailureClass::Timeout,
@@ -944,7 +1162,7 @@ fn run_sidecar_runtime(
                     node.display(),
                     reason,
                     port,
-                    sidecar_output_text(&sidecar_output)
+                    tail
                 ),
             ));
         }
