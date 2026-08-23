@@ -1,8 +1,57 @@
 "use client";
 
+import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import type { PreviewBlock } from "@/lib/preview-blocks";
+import type {
+  ResearchRunSurfaceModel,
+  ResearchRunSurfaceStatus,
+} from "@/lib/research-run-surface";
+
+const RESEARCH_PREVIEW_PREFIX = "/__coven/research/";
+const RESEARCH_STATUSES = new Set<ResearchRunSurfaceStatus>([
+  "planning",
+  "queued",
+  "running",
+  "awaiting_input",
+  "awaiting_authority",
+  "paused",
+  "completed",
+  "partial",
+  "failed",
+  "cancelled",
+]);
+
+function researchSnapshot(preview: PreviewBlock): ResearchRunSurfaceModel | null {
+  let url: URL;
+  try {
+    url = new URL(preview.url);
+  } catch {
+    return null;
+  }
+  if (url.hostname !== "127.0.0.1" || !url.pathname.startsWith(RESEARCH_PREVIEW_PREFIX)) {
+    return null;
+  }
+  const encodedId = url.pathname.slice(RESEARCH_PREVIEW_PREFIX.length);
+  if (!encodedId || encodedId.includes("/")) return null;
+  let runId: string;
+  try {
+    runId = decodeURIComponent(encodedId).trim();
+  } catch {
+    return null;
+  }
+  const rawStatus = url.searchParams.get("status") as ResearchRunSurfaceStatus | null;
+  if (!runId || !rawStatus || !RESEARCH_STATUSES.has(rawStatus)) return null;
+  return {
+    runId,
+    title: url.searchParams.get("title")?.trim() || "Research run",
+    status: rawStatus,
+    skill: "research",
+    steps: [],
+    evidence: {},
+  };
+}
 
 export function ChatPreviewCard({
   preview,
@@ -13,6 +62,15 @@ export function ChatPreviewCard({
   onOpenPreview?: (url: string) => void;
   onOpenUrl?: (url: string) => void;
 }) {
+  const research = researchSnapshot(preview);
+  if (research) {
+    return (
+      <div className="my-3">
+        <ResearchRunInlineCard snapshot={research} />
+      </div>
+    );
+  }
+
   const open = onOpenPreview ?? onOpenUrl;
   const displayUrl = new URL(preview.url);
   return (
