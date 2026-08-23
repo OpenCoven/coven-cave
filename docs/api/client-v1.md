@@ -567,6 +567,19 @@ The cursor rides the shared envelope:
   cursor, limit); replaying never advances and never loops.
 - **A deleted record does not strand you.** The token records a position in the
   ordering, not an index, so the next page resumes at the next surviving record.
+- **Do not carry a cursor across a Cave upgrade.** A token names a position in
+  *an* ordering, and the ordering a route uses can change between versions —
+  `/conversations` changed on 2026-08-22 (see below). The encoded version tag
+  covers a change to the token's *shape*, not to the meaning of the position
+  inside it, so a token minted by an older Cave is accepted rather than refused
+  and resumes somewhere the client did not ask for. Measured on the
+  2026-08-22 change: the stale token restarts the walk near the head and
+  re-serves rows the client already had. That change costs duplicates rather
+  than losses — a conversation's `updatedAt` is never below its `createdAt`, so
+  no row can hide above a resumed position — but that is a property of those two
+  fields, not a promise about the next reordering. A client that persists
+  cursors between sessions should discard them when the Cave's version changes
+  and start the walk again.
 - `previous` is never emitted. These reads are forward-only.
 
 Orderings are total — a sort key plus the id as tiebreak — because a page
@@ -580,12 +593,13 @@ both or skip both:
 | `/conversations` | `createdAt` descending, then `id` descending. A conversation with no `createdAt` sorts **last**, ordered among its peers by `id` descending. |
 | `/conversations/:id/messages` | Transcript order, oldest first. **Not** a keyset — see that route. |
 
-**Every sort key here is immutable.** Nothing rewrites a project's or a
-conversation's `createdAt`, and a familiar's id is its identity, so the position
-a cursor names is a position the ordering still has when you resume. A walk that
-starts now serves exactly the rows that existed when it started, in the order it
-started with, however much the Cave is written to underneath it. Two things are
-worth planning for anyway:
+**Every sort key here is immutable, with one narrow exception named in the third
+bullet.** Nothing rewrites a project's `createdAt` or a conversation's, a
+familiar's id is its identity, and saving a conversation stamps only its
+`updatedAt` — so the position a cursor names is a position the ordering still
+has when you resume. A walk that starts now serves the rows that existed when it
+started, in the order it started with, however much the Cave is written to
+underneath it. Three things are worth planning for:
 
 - **A conversation created while you are paging is not served by that walk.**
   Its `createdAt` is *now*, which sorts above every cursor you already hold.
@@ -595,6 +609,15 @@ worth planning for anyway:
 - **A conversation deleted while you are paging simply stops appearing.** The
   cursor names a position in the ordering rather than an index, so the walk
   continues at the next surviving record.
+- **A conversation that has no `createdAt` at all can leave the tail block.**
+  Such a record is served last (see below), and it stays there for as long as it
+  has no `createdAt` — but the moment it acquires one it sorts above every
+  cursor you hold, so the walk in progress will not serve it. This is the one
+  row this ordering can still miss. It is rare (a transcript older than the
+  field, or one Cave could not read on the last scan) and it settles once the
+  record has a `createdAt`, but a walk cannot tell that it happened. If you must
+  not miss a conversation, re-read from the top and dedupe by `id`; that costs
+  nothing and covers this case.
 
 ⚠️ **The ordering of `/conversations` changed.** It was `updatedAt` descending —
 the order the Cave's own sessions list shows — until 2026-08-22. `updatedAt`
@@ -607,11 +630,16 @@ deduplicable by `id`; a skip is silent data loss from a read this document calls
 canonical, so the key moved to the immutable field.
 
 **What that costs you:** this route no longer matches the desktop sessions list
-row for row. `updatedAt` is still served on every conversation record, so sort a
-page by it if you want recency — what you cannot have is recency as a *resumable*
-ordering, because a keyset cursor cannot name a position in an order that moves.
-Deduplicating by `id` still costs nothing and is still worth doing across walks
-you restart.
+row for row, and the cost is more than cosmetic, so it is worth stating exactly.
+`updatedAt` is served on every conversation record, so you can *rank* by
+recency — but only over rows you already hold. Sorting a single page by
+`updatedAt` does not give you the most recently active conversations; it gives
+you one arbitrary slice of the ledger, internally sorted. **To show "most recent
+first" you have to read the ledger to exhaustion and sort client-side.** For a
+Cave with a few hundred conversations that is one walk you can cache and keep
+warm; there is no server-side shortcut, and there cannot be one, because a
+keyset cursor cannot name a position in an order that moves. Deduplicating by
+`id` still costs nothing and is still worth doing across walks you restart.
 
 `createdAt` is optional on a conversation record — a transcript written before
 the field existed has none, and neither does the row Cave substitutes for a file
@@ -706,8 +734,9 @@ registry view, so there is no familiar whose access could be applied.
 
 The conversation ledger — the same rows the Cave's own sessions list is built
 from, **in a different order**: newest-created first, not most-recently-touched
-first. See *Paging* above for why the recency ordering could not be paged
-safely, and sort a page by `updatedAt` if that is the order you want.
+first. See *Paging* above for why the recency ordering could not be paged safely
+and what it costs you — in short, a recency-ordered view has to be assembled
+client-side from a complete walk, not by sorting one page.
 
 **Request:** `Authorization: Bearer …`, the loopback stamp, optional `limit` and
 `cursor`.

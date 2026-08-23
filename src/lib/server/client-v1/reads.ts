@@ -340,8 +340,23 @@ export function clientV1ProjectPageKey(project: CaveProject): ClientV1PageKey {
  * below every ISO instant, and the ordering is descending, so every row without
  * a `createdAt` lands in one contiguous block at the TAIL of the walk, ordered
  * among themselves by id. That block is what makes an optional field safe to
- * key on: the rows that lack it are served last, not stranded — and `""` is as
- * immutable as any instant, so they cannot move under an open cursor either.
+ * key on: the rows that lack it are served last, not stranded. `optionalText`
+ * can never return `""` — it demands a non-blank string — so the sentinel
+ * cannot collide with a value a record actually carries.
+ *
+ * ⚠️ The sentinel is stable, but it is NOT unconditionally permanent, and the
+ * difference is the one thing to know before trusting this block. `POST`/`PUT
+ * /api/chat/conversation/:id` builds its record with
+ * `args.existing?.createdAt ?? now` (buildConversation), so a legacy transcript
+ * that never had a `createdAt` acquires one — `now` — on its next write through
+ * that route, and jumps from this tail block to the HEAD of the ordering. A
+ * `/conversations` walk with an open cursor then skips it, which is cave-fhjlu
+ * again on exactly the rows this sentinel exists to protect. It is much
+ * narrower than the original defect (only a row that lacks the field, only on
+ * its first write through that one route, and self-healing afterwards), it is
+ * not reachable from this surface, and closing it belongs to that write path
+ * rather than to this key — cave-wbxcu. Do not restate this block as immutable
+ * until that lands.
  */
 function conversationSortKey(summary: ConversationSummary): string {
   return optionalText(summary.createdAt) ?? "";
@@ -368,9 +383,16 @@ function conversationSortKey(summary: ConversationSummary): string {
  *
  * So the key is `createdAt`, matching {@link clientV1ProjectPageKey} and the
  * daemon's session pager (OpenCoven/coven#783), which keys `created_at, id` for
- * exactly this reason. Nothing writes `conv.createdAt` after the file is
- * created, so the key of a row that exists never changes, and a walk that
- * started before a touch serves the same set after it.
+ * exactly this reason. `saveConversation` stamps `updatedAt` on every write and
+ * never touches `createdAt`, so a turn, a branch switch, a rename and a status
+ * change all leave the key alone: the key of a row that has one never changes,
+ * and a walk that started before a touch serves the same set after it.
+ *
+ * Two writes are outside that "never", both on `POST`/`PUT
+ * /api/chat/conversation/:id` and neither reachable from this surface: a body
+ * that supplies its own `createdAt` overrides the stored one, and a record that
+ * has none is stamped with `now`. The second is the one that costs something
+ * here — see {@link conversationSortKey}.
  *
  * Two costs, both deliberate and both published in docs/api/client-v1.md:
  *
