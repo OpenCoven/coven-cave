@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -327,4 +328,50 @@ test("status reports occupancy and the classified faults", async () => {
   };
   const { dependencies } = recorder(status);
   assert.deepEqual(await readOfflineCacheStatus(dependencies), status);
+});
+
+test("conversation loading persists live history and falls back to a labelled read-only copy", () => {
+  const chatView = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
+  assert.match(
+    chatView,
+    /readOfflineCache<ConversationHistoryPayload>\("conversation", sessionId\)/,
+  );
+  assert.match(chatView, /writeOfflineCache\(\s*"conversation",\s*sessionId,\s*json,/);
+  assert.match(
+    chatView,
+    /applyConversationPayload\(durableConversation\);\s*setHistoryState\("offline"\)/,
+  );
+  assert.match(chatView, /Offline copy · Read only/);
+  assert.match(chatView, /historyState === "offline" && sessionId/);
+});
+
+test("native cache commands require the exact trusted main origin", () => {
+  const native = readFileSync(
+    new URL("../../src-tauri/src/offline_cache.rs", import.meta.url),
+    "utf8",
+  );
+  for (const command of [
+    "offline_cache_read",
+    "offline_cache_write",
+    "offline_cache_clear",
+    "offline_cache_status",
+  ]) {
+    assert.match(
+      native,
+      new RegExp(
+        String.raw`fn ${command}\([\s\S]*?webview: Webview[\s\S]*?ensure_trusted_main_caller\(&webview, "Offline cache"\)\?;`,
+      ),
+    );
+  }
+});
+
+test("Windows replacement uses replace-existing write-through semantics", () => {
+  const native = readFileSync(
+    new URL("../../src-tauri/src/offline_cache.rs", import.meta.url),
+    "utf8",
+  );
+  const manifest = readFileSync(new URL("../../src-tauri/Cargo.toml", import.meta.url), "utf8");
+  assert.match(native, /MoveFileExW/);
+  assert.match(native, /MOVEFILE_REPLACE_EXISTING \| MOVEFILE_WRITE_THROUGH/);
+  assert.match(manifest, /"Win32_Storage_FileSystem"/);
 });

@@ -65,6 +65,7 @@ import {
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
+import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
@@ -485,7 +486,7 @@ export type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
-type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
+type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline";
 
 function isFlowBackedSession(session: SessionRow | null | undefined): boolean {
   const origin = session?.origin as string | undefined;
@@ -4196,6 +4197,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     let cancelled = false;
     void (async () => {
       if (!cachedConversation) setHistoryState("loading");
+      let durableConversation: ConversationHistoryPayload | null = null;
+      if (!cachedConversation) {
+        const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
+        if (cancelled) return;
+        if (cached?.data.ok && cached.data.conversation) {
+          durableConversation = cached.data;
+          setLinkedContext(durableConversation.context ?? null);
+          applyConversationPayload(durableConversation);
+          setHistoryState("offline");
+        }
+      }
       try {
         const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
         if (!res.ok) {
@@ -4221,6 +4233,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             }
           }
           if (!cancelled) {
+            if (durableConversation && res.status >= 500) {
+              setHistoryState("offline");
+              return;
+            }
             setTurns([]);
             setActiveLeafId("");
             setFlowTranscriptFallback(null);
@@ -4237,6 +4253,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           storeConversation(sessionId, json);
+          void writeOfflineCache(
+            "conversation",
+            sessionId,
+            json,
+            res.headers.get("etag") ?? json.conversation.activeLeafId ?? "conversation",
+          );
           // Revalidation no-op guard: when the cache already painted this exact
           // conversation, skip re-applying it. applyConversationPayload maps
           // fresh turn objects every call, so an identical re-apply rebuilds the
@@ -4275,6 +4297,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (!cancelled) {
           if (keepLiveSession()) {
             setHistoryState("loaded");
+            return;
+          }
+          if (durableConversation) {
+            setHistoryState("offline");
             return;
           }
           setFlowTranscriptFallback(null);
@@ -7117,7 +7143,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ariaLabel={inlineComposer ? "New chat context" : "Session context"}
     />
   );
-  const composerNode = (
+  const composerNode = historyState === "offline" && sessionId ? (
+    <footer
+      className="cave-composer-dock"
+      style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
+    >
+      <div
+        role="status"
+        className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
+      >
+        <span>Offline copy · Read only. Reconnect before sending or changing this chat.</span>
+        <Button variant="ghost" onClick={retryHistory}>
+          Try live connection
+        </Button>
+      </div>
+    </footer>
+  ) : (
         <footer
           className="cave-composer-dock"
           style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
