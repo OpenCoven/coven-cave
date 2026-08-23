@@ -35,10 +35,12 @@ export function MobileBottomTabs({
   onSelect,
   inboxBadgeCount = 0,
 }: MobileBottomTabsProps) {
+  const hasActiveTab = TABS.some((tab) => tab.id === mode);
+
   return (
     <nav
       className="mobile-bottom-tabs"
-      role="tablist"
+      role={hasActiveTab ? "tablist" : undefined}
       aria-label="Primary"
     >
       {TABS.map((tab) => {
@@ -48,8 +50,8 @@ export function MobileBottomTabs({
           <button
             key={tab.id}
             type="button"
-            role="tab"
-            aria-selected={active}
+            role={hasActiveTab ? "tab" : undefined}
+            aria-selected={hasActiveTab ? active : undefined}
             aria-current={active ? "page" : undefined}
             aria-label={showBadge ? `${tab.ariaLabel}, ${inboxBadgeCount} unread` : tab.ariaLabel}
             className={

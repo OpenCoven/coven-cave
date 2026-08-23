@@ -415,7 +415,7 @@ impl EnvironmentCallbackTimeoutRetryState {
 }
 
 pub(super) fn ensure_browser_controller(caller: &tauri::Webview) -> Result<String, String> {
-    if !is_main_window_label(caller.label()) {
+    if !is_registered_main_window(caller.app_handle(), caller.label()) {
         return Err("native browser controls are restricted to the main webview".to_string());
     }
     Ok(caller.label().to_string())

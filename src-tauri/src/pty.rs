@@ -106,7 +106,7 @@ pub fn trust_main_origin(url: &Url) {
 }
 
 fn ensure_trusted_pty_caller(webview: &Webview) -> Result<String, String> {
-    if !crate::main_window::is_main_window_label(webview.label()) {
+    if !crate::main_window::is_registered_main_window(webview.app_handle(), webview.label()) {
         warn!("denied PTY IPC from non-main webview: {}", webview.label());
         return Err("PTY commands are only available to the main app webview".to_string());
     }

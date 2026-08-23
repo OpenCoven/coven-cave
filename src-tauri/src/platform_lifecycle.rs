@@ -26,10 +26,22 @@ pub(super) fn log_linux_tray_unavailable(reason: &str) {
 /// Linux tries zenity/kdialog. Best-effort; ignored on failure.
 #[cfg(desktop)]
 pub(super) fn show_fatal_dialog(msg: &str) {
+    show_startup_dialog("CovenCave failed to start", msg);
+}
+
+/// The same surface, under a caller-chosen heading.
+///
+/// Not every early exit is a failure. A second copy refused because the first
+/// already holds the port is the app working exactly as intended, and heading
+/// that "CovenCave failed to start" tells the user something went wrong when
+/// nothing did.
+#[cfg(desktop)]
+pub(super) fn show_startup_dialog(title: &str, msg: &str) {
     #[cfg(target_os = "macos")]
     {
         let script = format!(
-            "display alert \"CovenCave failed to start\" message \"{}\" as critical",
+            "display alert \"{}\" message \"{}\" as critical",
+            title.replace('\\', "\\\\").replace('"', "\\\""),
             msg.replace('\\', "\\\\").replace('"', "\\\"")
         );
         let _ = std::process::Command::new("/usr/bin/osascript")
@@ -42,7 +54,8 @@ pub(super) fn show_fatal_dialog(msg: &str) {
         // doesn't require any additional dependencies (e.g. winapi crate).
         let temp = std::env::var("TEMP").unwrap_or_else(|_| "C:\\Temp".into());
         let path = format!("{}\\CovenCave-error.txt", temp);
-        let _ = std::fs::write(&path, msg);
+        // Notepad shows no heading of its own, so carry it into the file.
+        let _ = std::fs::write(&path, format!("{title}\r\n\r\n{msg}"));
         let _ = std::process::Command::new("notepad.exe").arg(&path).spawn();
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -92,6 +105,11 @@ pub(super) fn check_app_translocation() {
         if !path.contains("/AppTranslocation/") && !path.contains("/Volumes/") {
             return;
         }
+        // This copy is leaving without ever binding the port, and on
+        // macOS the dialog below blocks until someone clicks. Holding the
+        // claim across that wait would have the good copy in /Applications
+        // refused, naming a process that never binds anything.
+        crate::sidecar_port_lock::release_all_claims();
         let msg = format!(
             "CovenCave is running from a read-only quarantine path:\n\n{}\n\nTo install properly, quit, then drag CovenCave.app into your /Applications folder and launch it from there.",
             path
@@ -111,12 +129,59 @@ pub(super) fn check_app_translocation() {
 /// This mirrors `check_app_translocation`: say what happened, exit cleanly.
 #[cfg(desktop)]
 pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
+    // Same reasoning as the translocation path: this copy is leaving without
+    // binding, so it must not hold a claim across a blocking alert. It may
+    // hold one on a distinct COVEN_CAVE_PORT.
+    crate::sidecar_port_lock::release_all_claims();
     log::warn!(
         "[cave] another CovenCave GUI (pid {pid}) already owns desktop reachability; this instance is exiting"
     );
-    show_fatal_dialog(&format!(
-        "CovenCave is already running (process {pid}).\n\nSwitch to the window that is already open, or quit it before starting another copy."
-    ));
+    show_startup_dialog(
+        "CovenCave is already running",
+        &format!(
+            "CovenCave is already running (process {pid}).\n\nSwitch to the window that is already open, or quit it before starting another copy."
+        ),
+    );
+    std::process::exit(1);
+}
+
+/// Report the copy that already holds the dedicated port, then leave.
+///
+/// Sibling of `report_existing_gui_owner` above, and deliberately not a
+/// replacement for it: that one is macOS's reachability lease, which knows a
+/// GUI owns this machine's Cave but nothing about ports. This one is reached on
+/// every desktop platform, so it can name the port — and therefore say how to
+/// run a second copy on purpose rather than only how to stop wanting one.
+///
+/// It exits for the same reason its sibling does: on macOS the setup hook runs
+/// inside an Objective-C callback that cannot unwind, so returning an error
+/// here would turn "you launched it twice" into a crash report.
+#[cfg(desktop)]
+pub(super) fn report_existing_port_owner(port: u16, pid: Option<u32>) -> ! {
+    match pid {
+        Some(pid) => log::warn!(
+            "[cave] another CovenCave (pid {pid}) already holds port {port}; this instance is exiting"
+        ),
+        None => log::warn!(
+            "[cave] another CovenCave already holds port {port}; this instance is exiting"
+        ),
+    }
+    // The log plugin is registered further down the setup hook and only in
+    // debug builds, so by itself the line above is dropped on the very path
+    // that needs a trace: someone running the binary twice from a terminal
+    // would see a dialog and nothing else. `fatal_exit` has the same fallback.
+    match pid {
+        Some(pid) => eprintln!(
+            "[cave] another CovenCave (pid {pid}) already holds port {port}; this instance is exiting"
+        ),
+        None => eprintln!(
+            "[cave] another CovenCave already holds port {port}; this instance is exiting"
+        ),
+    }
+    show_startup_dialog(
+        "CovenCave is already running",
+        &crate::sidecar_startup::already_running_message(port, pid),
+    );
     std::process::exit(1);
 }
 

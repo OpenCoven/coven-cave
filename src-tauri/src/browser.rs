@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 use tauri::webview::{PageLoadEvent, WebviewBuilder};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, Url, WebviewUrl};
 
-use crate::main_window::is_main_window_label;
+use crate::main_window::is_registered_main_window;
 
 const BROWSER_LABEL_PREFIX: &str = "cave-browser-";
 const OFFSCREEN_X: f64 = -10000.0;

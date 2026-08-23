@@ -1738,7 +1738,15 @@ function repairDeletedTaskReferences(
     );
     const previousNextStep = card.nextStep ?? null;
     next.primaryBlockerId = promoted?.id ?? null;
-    next.primaryBlockerPinned = false;
+    // Deletion repair is forced maintenance, not an operator re-decision: the
+    // pinned dependency did not resolve, its target card was removed out from
+    // under it. Clearing the pin here silently handed the primary pointer back
+    // to automatic promotion, so the next resolution moved a blocker the
+    // operator had explicitly frozen. Carry the pin onto the replacement.
+    // With nothing left to promote there is no blocker to pin, and a pin over a
+    // null pointer is inert everywhere it is read — so that case clears, the
+    // same way `applyExecutionBlocker` drops a pin whose target is gone.
+    next.primaryBlockerPinned = card.primaryBlockerPinned === true && promoted != null;
     next.nextStep =
       previousNextStep?.origin === "human"
         ? previousNextStep

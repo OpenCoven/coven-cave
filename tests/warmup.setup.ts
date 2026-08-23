@@ -12,6 +12,7 @@ import { expect, test, type Page } from "@playwright/test";
 //
 //   keyboard-shortcuts.spec.ts:44  — ⌘K, waiting on the `command-palette` chunk
 //   task-work-fit.spec.ts:277      — reopen strip, waiting on `workspace-rail`
+//   chat-task-chip-nav.spec.ts:119 — task inspector, waiting on `board`
 //
 // Measured in this worktree (2026-08-12, M-series laptop):
 //
@@ -71,6 +72,25 @@ const REPO_PROJECT = {
   updatedAt: ISO,
 };
 
+const WARMUP_CARD = {
+  id: "warmup-card",
+  title: "Warmup card",
+  notes: "",
+  status: "backlog",
+  priority: "medium",
+  familiarId: "nova",
+  links: [],
+  github: [],
+  labels: [],
+  createdAt: ISO,
+  updatedAt: ISO,
+  lifecycle: "queued",
+  lifecycleAt: ISO,
+  retryCount: 0,
+  maxRetries: 2,
+  steps: [],
+};
+
 // Four times the cold serial measurement above. A chunk that cannot compile in
 // two minutes is a genuine dev-server problem, and failing here says so once
 // rather than leaving every spec to time out on its own.
@@ -97,6 +117,43 @@ async function boot(page: Page) {
   await page.route("**/api/changes**", (route) =>
     route.fulfill({ json: { ok: true, repo: true, repoRoot: "/repo/alpha", files: [] } }),
   );
+  await page.route(/\/api\/journal(?:\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const date = url.searchParams.get("date");
+    if (!date) return route.fulfill({ json: { ok: true, days: [] } });
+    if (url.searchParams.has("stats")) {
+      return route.fulfill({
+        json: {
+          ok: true,
+          date,
+          stats: { covenOrigin: 0, externalRuntimes: 0, runtimeMemory: 0 },
+          context: "",
+          sources: [],
+        },
+      });
+    }
+    return route.fulfill({
+      json: {
+        ok: true,
+        date,
+        exists: false,
+        entry: { reflectedBy: null, generatedAt: null, reflection: "" },
+        modified: null,
+      },
+    });
+  });
+  await page.route(/\/api\/knowledge\/collections(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, collections: [] } }),
+  );
+  await page.route(/\/api\/knowledge(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, entries: [] } }),
+  );
+  await page.route(/\/api\/memory(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, entries: [] } }),
+  );
+  await page.route(/\/api\/grimoire\/graph(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, graph: { nodes: [], edges: [] } } }),
+  );
   await page.route("**/api/chat/conversation/**", (route) =>
     route.fulfill({
       json: {
@@ -105,6 +162,11 @@ async function boot(page: Page) {
         context: {},
       },
     }),
+  );
+  await page.route(/\/api\/board(?:\?.*)?$/, (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: { ok: true, cards: [WARMUP_CARD] } })
+      : route.continue(),
   );
 
   await page.goto("/?mode=chat");
@@ -152,4 +214,25 @@ test("warm the code-split surface chunks", async ({ page }) => {
   await expect(reopen).toBeVisible({ timeout: CHUNK_TIMEOUT });
   await reopen.click();
   await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: CHUNK_TIMEOUT });
+
+  // `settings-about` — the narrow About regression is often the first test to
+  // visit /settings on its shard. Compile that route here so it does not spend
+  // its assertion budget waiting on a cold settings surface under CI load.
+  await page.goto("/settings#about");
+  await expect(page.locator(".settings-about-update-row")).toBeVisible({
+    timeout: CHUNK_TIMEOUT,
+  });
+
+  // `board` — compile the board and its statically imported inspector before
+  // a task-chip assertion has to pay that cold Turbopack cost.
+  await page.goto(`/?mode=board#card-${WARMUP_CARD.id}`);
+  await page.waitForSelector(".board-shell", { timeout: CHUNK_TIMEOUT });
+  await expect(page.getByRole("dialog", { name: "Card inspector" })).toBeVisible({
+    timeout: CHUNK_TIMEOUT,
+  });
+
+  // `grimoire-view` — compile the Journal tab before its parallel specs open
+  // the surface so their assertions measure behavior rather than Turbopack.
+  await page.goto("/?mode=journal", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".journal-list")).toBeVisible({ timeout: CHUNK_TIMEOUT });
 });

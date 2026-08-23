@@ -168,6 +168,82 @@
   outline-offset: var(--ring-offset);
 }
 
+/* ── Continue carousel pager (cave-9oi1s) ───────────────────────────────────
+ * The strip pages through every resumable session three at a time instead of
+ * truncating at three. The controls sit under the deck, centered on the same
+ * axis as the cards, and wrap rather than push the hearth card wider — a
+ * 320px viewport is the tightest case and the row must never create window
+ * scroll there. */
+.home-continue__pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  margin-top: var(--space-3);
+}
+.home-continue__pager-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.home-continue__page {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.home-continue__page:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  color: var(--text-primary);
+}
+.home-continue__page:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: default;
+}
+/* Where the cards stack to one column the pager is a thumb target, so both
+ * buttons take the full touch box. */
+@media (max-width: 720px) {
+  .home-continue__page {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+}
+
+/* A page turn swaps three cards at once, which reads as a jump without a
+ * beat of movement to tie the old set to the new one. The deck is keyed by
+ * page index in the component, so this replays on every turn. */
+@keyframes home-continue-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-1));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.home-continue__cards {
+  animation: home-continue-page-in var(--duration-base) var(--ease-standard);
+}
+/* Reduced motion removes the animation outright rather than shortening it:
+ * a near-zero duration still runs, still animates transform, and still fires
+ * animation events. Nothing moves here. */
+@media (prefers-reduced-motion: reduce) {
+  .home-continue__cards {
+    animation: none;
+  }
+}
+
 /* Keyboard focus rings for the remaining hearth-card controls. */
 .home-from-task__chip,
 .home-continue__card {

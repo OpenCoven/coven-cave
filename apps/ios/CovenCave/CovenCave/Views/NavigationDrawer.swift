@@ -44,7 +44,6 @@ struct CaveNavigationDrawer: View {
     private func panel(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.horizontal, 20)
                 .padding(.top, 22)
                 .padding(.bottom, 14)
 
@@ -160,11 +159,13 @@ struct CaveNavigationDrawer: View {
                 .buttonStyle(.glassPress)
                 .accessibilityLabel("Search everything")
             }
+            .padding(.horizontal, 20)
 
             ProjectContextButton {
                 close()
                 openProjectSwitcher()
             }
+            .padding(.horizontal, 8)
         }
     }
 

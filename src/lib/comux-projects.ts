@@ -34,14 +34,31 @@ export function projectName(root: string): string {
  * tasteful against both the dark and light themes; callers feed it to the
  * `--tile` custom property the `.project-avatar` glass tile reads.
  */
-export function projectTint(root: string): string {
+/**
+ * The one deterministic root-path hash project identity derives from. Exported
+ * because more than one surface needs to agree with the tile's colour — the
+ * AI project-icon prompt builder derives its palette and motif from this exact
+ * hash so a generated icon lands on the same hue as the monogram tile it
+ * replaces. It used to be copied there by hand, and nothing held the two
+ * copies in sync: changing the multiplier here left every icon a different
+ * colour from its tile with no test failing (cave-72em).
+ */
+export function projectRootHash(root: string): number {
   let hash = 0;
   for (let i = 0; i < root.length; i += 1) {
     // Simple deterministic string hash (xorshift-ish, stays in uint32).
     hash = (hash * 31 + root.charCodeAt(i)) >>> 0;
   }
-  const hue = hash % 360;
-  return `oklch(0.74 0.12 ${hue})`;
+  return hash;
+}
+
+/** Hue, in degrees, that `projectTint` paints a root with. */
+export function projectRootHue(root: string): number {
+  return projectRootHash(root) % 360;
+}
+
+export function projectTint(root: string): string {
+  return `oklch(0.74 0.12 ${projectRootHue(root)})`;
 }
 
 /**

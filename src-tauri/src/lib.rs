@@ -62,6 +62,8 @@ mod pty;
 #[cfg(desktop)]
 mod reliability_metrics;
 #[cfg(desktop)]
+mod secret_path_acl;
+#[cfg(desktop)]
 mod shell_open_commands;
 #[cfg(desktop)]
 mod shell_open_helpers;
@@ -70,11 +72,15 @@ mod sidecar_archive;
 #[cfg(desktop)]
 mod sidecar_auth;
 #[cfg(desktop)]
-mod sidecar_diagnostics;
-#[cfg(desktop)]
 mod sidecar_discovery;
 #[cfg(desktop)]
+mod sidecar_heap;
+#[cfg(desktop)]
+mod sidecar_diagnostics;
+#[cfg(desktop)]
 mod sidecar_lifecycle;
+#[cfg(desktop)]
+mod sidecar_port_lock;
 #[cfg(desktop)]
 mod sidecar_ports;
 #[cfg(desktop)]

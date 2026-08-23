@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   themeTokens,
   resolveThemeColor,
+  resolveTokenValue,
   parseThemeColor,
   flattenOnto,
   contrastRatio,
@@ -126,6 +127,40 @@ assert.deepEqual(
   [],
   `WCAG contrast regressions:\n${failures.join("\n")}`,
 );
+
+// ── a skipped pair is not a passing pair (cave-4x1ag) ───────────────────────
+// The `continue` in the loop above reads "token not used by this theme", but
+// it cannot tell that apart from "token defined nowhere". --destructive was the
+// second case: defined only inside six [data-theme] blocks, referenced 19× with
+// no fallback across the four Research surfaces. On the default Coven palette
+// and on tide/ember/slate/contrast/solstice the declarations were therefore
+// dropped and every failed/error colour inherited body text — while this file
+// reported a clean audit, because the pair was skipped rather than checked.
+// --shadow-popover had the same shape (3 palettes, 5 bare references).
+// These names are referenced bare in shipped CSS, so failing to resolve is a
+// defect, not an opt-out. Add a token here when it joins that set.
+{
+  const REQUIRED_COLORS = ["--destructive", "--destructive-foreground"] as const;
+  const REQUIRED_VALUES = ["--shadow-popover"] as const;
+  const unresolved: string[] = [];
+  for (const id of THEME_IDS) {
+    for (const mode of ["dark", "light"] as const) {
+      const tokens = themeTokens(css, id, mode);
+      for (const name of REQUIRED_COLORS) {
+        if (!resolveThemeColor(tokens, name)) unresolved.push(`${id} ${mode}: ${name}`);
+      }
+      for (const name of REQUIRED_VALUES) {
+        if (!resolveTokenValue(tokens, name)?.trim()) unresolved.push(`${id} ${mode}: ${name}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    unresolved,
+    [],
+    `tokens referenced with no fallback must resolve on EVERY palette × mode — ` +
+      `an undefined one drops the whole declaration and paints nothing:\n${unresolved.join("\n")}`,
+  );
+}
 
 // The High Contrast theme holds itself to AAA body text (7:1), both modes.
 for (const mode of ["dark", "light"] as const) {

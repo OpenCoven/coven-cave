@@ -47,13 +47,17 @@ impl MainWindowRegistry {
     }
 
     pub(super) fn note_focused(&self, label: &str) {
-        if !is_main_window_label(label) {
-            return;
-        }
         if let Ok(mut inner) = self.0.lock() {
-            inner.labels.insert(label.to_string());
-            inner.focused = Some(label.to_string());
+            if inner.labels.contains(label) {
+                inner.focused = Some(label.to_string());
+            }
         }
+    }
+
+    pub(super) fn is_registered(&self, label: &str) -> bool {
+        self.0
+            .lock()
+            .is_ok_and(|inner| inner.labels.contains(label))
     }
 
     pub(super) fn remove(&self, label: &str) {
@@ -85,11 +89,16 @@ pub(super) fn register_main_window(app: &AppHandle, label: &str) -> Result<(), S
     app.state::<MainWindowRegistry>().register(label)
 }
 
+pub(super) fn is_registered_main_window(app: &AppHandle, label: &str) -> bool {
+    app.state::<MainWindowRegistry>().is_registered(label)
+}
+
 pub(super) fn main_webview_windows(app: &AppHandle) -> Vec<WebviewWindow> {
+    let registry = app.state::<MainWindowRegistry>();
     let mut windows = app
         .webview_windows()
         .into_values()
-        .filter(|window| is_main_window_label(window.label()))
+        .filter(|window| registry.is_registered(window.label()))
         .collect::<Vec<_>>();
     windows.sort_by(|left, right| left.label().cmp(right.label()));
     windows
@@ -136,8 +145,11 @@ mod tests {
     #[test]
     fn registry_prefers_last_focused_live_window_then_primary() {
         let registry = MainWindowRegistry::default();
+        registry.note_focused("main-2");
+        assert!(!registry.is_registered("main-2"));
         registry.register("main").expect("register primary");
         registry.register("main-2").expect("register secondary");
+        assert!(registry.is_registered("main-2"));
 
         let both = BTreeSet::from(["main".to_string(), "main-2".to_string()]);
         assert_eq!(registry.preferred_label(&both).as_deref(), Some("main-2"));
@@ -147,5 +159,8 @@ mod tests {
             registry.preferred_label(&primary_only).as_deref(),
             Some("main")
         );
+
+        registry.remove("main-2");
+        assert!(!registry.is_registered("main-2"));
     }
 }

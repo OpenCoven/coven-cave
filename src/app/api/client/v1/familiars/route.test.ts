@@ -138,6 +138,67 @@ test("an unreadable roster is service_unavailable, never a credential problem", 
   }
 });
 
+test("an unprojectable roster entry answers an envelope, not a Next error page", async () => {
+  // The roster is a daemon HTTP response with no schema in front of it, so a
+  // renamed or retyped field reaches projectClientV1Familiar and is refused
+  // there. Uncaught, that refusal escapes the handler and Next answers with
+  // its own error body — not a Client v1 envelope. The route's guard was
+  // covered by nothing until now: removing it left this suite green.
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1FamiliarsGetHandler(
+      runtime,
+      sources({
+        listFamiliars: async () => ({
+          ok: true,
+          config: {} as never,
+          target: {} as never,
+          roster: [
+            ...roster("adept"),
+            // The daemon renamed `display_name`; the entry parses and the field
+            // is simply absent.
+            { id: "mote", role: "Familiar" } as VisibleFamiliarRosterEntry,
+          ],
+        }),
+      }),
+    );
+    const response = await handler(request("", { authorization: `Bearer ${bearer}` }));
+    assert.equal(response.status, 500);
+    const body = await response.json() as {
+      apiVersion: string;
+      error: { code: string; message: string; retryable: boolean; details?: unknown };
+    };
+    assert.equal(body.error.code, "internal_error");
+    // Not `service_unavailable`: the daemon answered, and retrying will produce
+    // the same record. The operator has to repair it.
+    assert.equal(body.error.retryable, false);
+    assert.equal(body.apiVersion, "1.0");
+    assert.equal(body.error.details, undefined);
+    assert.equal(body.error.message.includes("display_name"), false);
+  });
+});
+
+test("a roster read that throws answers an envelope too", async () => {
+  // `loadVisibleFamiliarRoster` returns its failure rather than throwing, but
+  // the config load beneath it does not, so the guard has to cover the read as
+  // well as the projection over it.
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1FamiliarsGetHandler(
+      runtime,
+      sources({
+        listFamiliars: async () => {
+          throw new Error("EACCES: permission denied, open '/home/me/.coven/familiars.toml'");
+        },
+      }),
+    );
+    const response = await handler(request("", { authorization: `Bearer ${bearer}` }));
+    assert.equal(response.status, 500);
+    const body = await response.json() as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "internal_error");
+    // The path the store named must not reach the wire.
+    assert.equal(body.error.message.includes("/home/me"), false);
+  });
+});
+
 test("an empty roster is an empty page with no cursor rather than a 404", async () => {
   await withRuntime(["chat:read"], async (runtime, bearer) => {
     const handler = createClientV1FamiliarsGetHandler(

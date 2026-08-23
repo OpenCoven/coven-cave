@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencoven.ai/schemas/workflows/routing-decision.schema.json",
+  "title": "Coven familiar routing decision",
+  "description": "An explainable, bounded decision for routing one user turn to one or more eligible familiars.",
+  "$comment": "Semantic validators must also require unique candidate familiarIds, require primaryFamiliarId and fallbackFamiliarIds to reference eligible candidates, preserve explicit and resumed-session destinations, and keep eligible candidates in descending score order.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "decisionId",
+    "createdAt",
+    "intent",
+    "routeOrigin",
+    "candidates",
+    "primaryFamiliarId",
+    "fallbackFamiliarIds",
+    "dispatch",
+    "widenWhen"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "decisionId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "intent": {
+      "$ref": "#/$defs/intent"
+    },
+    "routeOrigin": {
+      "$ref": "#/$defs/routeOrigin"
+    },
+    "candidates": {
+      "type": "array",
+      "description": "All considered familiars. Eligible candidates appear first in descending score order, followed by ineligible candidates with hard-block evidence.",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "primaryFamiliarId": {
+      "description": "The highest-ranked eligible familiar, unless routeOrigin carries an explicit or resumed-session destination.",
+      "$ref": "#/$defs/familiarId"
+    },
+    "fallbackFamiliarIds": {
+      "type": "array",
+      "description": "Eligible fallback familiars in dispatch order. They are admitted only when widenWhen permits it.",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/familiarId"
+      }
+    },
+    "dispatch": {
+      "$ref": "#/$defs/dispatch"
+    },
+    "widenWhen": {
+      "type": "array",
+      "description": "Conditions that permit dispatch beyond the primary route. An empty array disables automatic widening.",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "failure",
+          "low-confidence",
+          "verification"
+        ]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "familiarId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,63}$"
+    },
+    "nonEmptyText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "intent": {
+      "type": "object",
+      "required": [
+        "summary",
+        "capabilities",
+        "operation",
+        "risk"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/nonEmptyText"
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+          }
+        },
+        "operation": {
+          "enum": [
+            "read",
+            "write",
+            "external"
+          ]
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "routeOrigin": {
+      "description": "Why this decision may choose its destination. Explicit user selection and resumed sessions are authoritative and must not be silently replaced by automatic routing.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "familiarIds"
+          ],
+          "properties": {
+            "type": {
+              "const": "explicit"
+            },
+            "familiarIds": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/familiarId"
+              }
+            },
+            "reason": {
+              "$ref": "#/$defs/nonEmptyText"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "sessionId",
+            "familiarId"
+          ],
+          "properties": {
+            "type": {
+              "const": "resumed-session"
+            },
+            "sessionId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "familiarId": {
+              "$ref": "#/$defs/familiarId"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "reason"
+          ],
+          "properties": {
+            "type": {
+              "const": "automatic"
+            },
+            "reason": {
+              "$ref": "#/$defs/nonEmptyText"
+            },
+            "classifier": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "hardBlock": {
+      "type": "object",
+      "required": [
+        "code",
+        "detail"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "identity-scope",
+            "modality-unsupported",
+            "project-access",
+            "runtime-unavailable",
+            "tool-unavailable",
+            "user-excluded",
+            "write-access"
+          ]
+        },
+        "detail": {
+          "$ref": "#/$defs/nonEmptyText"
+        }
+      },
+      "additionalProperties": false
+    },
+    "eligibleCandidate": {
+      "type": "object",
+      "required": [
+        "familiarId",
+        "eligible",
+        "hardBlocks",
+        "score",
+        "reasons"
+      ],
+      "properties": {
+        "familiarId": {
+          "$ref": "#/$defs/familiarId"
+        },
+        "eligible": {
+          "const": true
+        },
+        "hardBlocks": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyText"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ineligibleCandidate": {
+      "type": "object",
+      "required": [
+        "familiarId",
+        "eligible",
+        "hardBlocks",
+        "reasons"
+      ],
+      "properties": {
+        "familiarId": {
+          "$ref": "#/$defs/familiarId"
+        },
+        "eligible": {
+          "const": false
+        },
+        "hardBlocks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/hardBlock"
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonEmptyText"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "candidate": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/eligibleCandidate"
+        },
+        {
+          "$ref": "#/$defs/ineligibleCandidate"
+        }
+      ]
+    },
+    "dispatch": {
+      "type": "object",
+      "required": [
+        "mode",
+        "maxBranches",
+        "maxDelegationDepth"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "single",
+            "sequential",
+            "parallel"
+          ]
+        },
+        "maxBranches": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "maxDelegationDepth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
