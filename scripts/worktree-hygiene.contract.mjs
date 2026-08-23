@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,6 +141,11 @@ assert.equal(
   false,
   "tracked changes must refuse thinning",
 );
+assert.equal(
+  assessThin(fakeRow(), details({ ignored: { ok: false, paths: [], error: "probe failed" } })).eligible,
+  false,
+  "ignored-state probe failures must refuse thinning",
+);
 
 const retained = { ok: true, retained: true, via: "refs/heads/feat/cave-test-safe" };
 assert.equal(assessPark(fakeRow(), details(), retained).eligible, true);
@@ -200,6 +205,7 @@ for (const entry of [...DISPOSABLE_ROOTS, ...DISPOSABLE_FILES]) {
 
     result = run(dir, "thin", "--branch", "feat/cave-test-thin", "--apply");
     assert.equal(result.status, 0);
+    assert.equal(existsSync(path.join(wt, ".next", "cache", "blob")), false);
     assert.equal(run(dir, "daily", "--json").status, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });

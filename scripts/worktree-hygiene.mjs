@@ -189,6 +189,7 @@ export function assessThin(row, details) {
   if (row.verdict === "WEDGED" || details.operation) reasons.push(`unfinished git operation: ${details.operation ?? "wedged"}`);
   if (!details.tracked.ok) reasons.push(`tracked-state probe failed: ${details.tracked.error}`);
   if (details.tracked.paths.length) reasons.push(`tracked/untracked changes: ${details.tracked.paths.join(", ")}`);
+  if (!details.ignored.ok) reasons.push(`ignored-state probe failed: ${details.ignored.error}`);
   return { eligible: reasons.length === 0, reasons };
 }
 
