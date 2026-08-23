@@ -1407,6 +1407,9 @@ export const SUITES = {
     "src/app/api/client/v1/conversations/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
+    // Derived from CLIENT_V1_AUTHENTICATED_PATHS: every pre-authorized path
+    // must behaviourally refuse an uncredentialed request (cave-cm2i0).
+    "src/app/api/client/v1/authenticated-route-refusal.test.ts",
     "src/app/api/x/account-routes.test.ts",
     "src/app/api/x/connection-route-behavior.test.ts",
     "src/app/api/x/research-routes.test.ts",
@@ -1892,6 +1895,10 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/conversations/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
+  // The refusal gate imports "@/proxy-helpers" and the client-v1 runtime, and
+  // dynamically imports every pre-authorized route module — each of which
+  // resolves "@/lib/server/..." as a runtime value.
+  "src/app/api/client/v1/authenticated-route-refusal.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",
