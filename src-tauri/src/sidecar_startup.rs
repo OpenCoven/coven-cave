@@ -454,10 +454,17 @@ pub(super) fn refreshed_sidecar_window_url(startup_url: &Url, current_url: &Url)
 
 #[cfg(desktop)]
 pub(super) fn replace_main_window_url(app: &tauri::AppHandle, url: Url) -> Result<(), String> {
-    let main_window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window is unavailable".to_string())?;
-    navigate_sidecar_window(&main_window, url.clone())?;
+    let main_windows = main_webview_windows(app);
+    if main_windows.is_empty() {
+        return Err("main window is unavailable".to_string());
+    }
+    for main_window in main_windows {
+        let target = match main_window.url() {
+            Ok(current) => refreshed_sidecar_window_url(&url, &current),
+            Err(_) => url.clone(),
+        };
+        navigate_sidecar_window(&main_window, target)?;
+    }
 
     for label in [QUICK_CHAT_WINDOW_LABEL, NOTCH_WINDOW_LABEL] {
         let Some(window) = app.get_webview_window(label) else {
@@ -504,13 +511,7 @@ pub(super) fn start_sidecar_runtime(
     } else {
         "startup"
     };
-    diagnostics.record(
-        lifecycle_phase,
-        "started",
-        "dedicated-sidecar",
-        None,
-        None,
-    );
+    diagnostics.record(lifecycle_phase, "started", "dedicated-sidecar", None, None);
     let result = run_sidecar_runtime(app, &diagnostics, &mut on_step, should_cancel);
     match &result {
         Ok(_) => diagnostics.record(lifecycle_phase, "succeeded", "ready", None, None),
@@ -702,13 +703,7 @@ fn run_sidecar_runtime(
         None,
         None,
     );
-    diagnostics.record(
-        "sidecar-spawn",
-        "started",
-        "node-process",
-        None,
-        None,
-    );
+    diagnostics.record("sidecar-spawn", "started", "node-process", None, None);
     on_step(SidecarStartupStep::StartingService);
     if should_cancel() {
         return Err(SidecarStartError::Cancelled);
@@ -776,10 +771,7 @@ fn run_sidecar_runtime(
             sidecar_diagnostics::NATIVE_VERSION_ENV,
             &diagnostics.cave_version,
         )
-        .env(
-            sidecar_diagnostics::NATIVE_PROTOCOL_VERSION_ENV,
-            "1",
-        );
+        .env(sidecar_diagnostics::NATIVE_PROTOCOL_VERSION_ENV, "1");
     if let Some(path) = diagnostics.diagnostics_file.as_deref() {
         command.env(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_ENV, path);
     }
@@ -877,20 +869,8 @@ fn run_sidecar_runtime(
         }
     }
 
-    diagnostics.record(
-        "sidecar-spawn",
-        "succeeded",
-        "process-owned",
-        None,
-        None,
-    );
-    diagnostics.record(
-        "readiness",
-        "started",
-        "authenticated-loopback",
-        None,
-        None,
-    );
+    diagnostics.record("sidecar-spawn", "succeeded", "process-owned", None, None);
+    diagnostics.record("readiness", "started", "authenticated-loopback", None, None);
     on_step(SidecarStartupStep::WaitingForService);
     let sidecar_start_timeout = sidecar_start_timeout();
     let child_exited = || {

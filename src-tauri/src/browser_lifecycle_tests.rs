@@ -1,7 +1,8 @@
 use super::{
     advance_scope_barrier, browser_bounds_within_client, effective_browser_intent,
-    offscreen_browser_creation_bounds, offscreen_browser_position, record_bounds_intent,
-    record_navigation_intent, record_scope_intent, record_visibility_intent, BrowserBounds,
+    native_browser_label, native_browser_owner_prefix, offscreen_browser_creation_bounds,
+    offscreen_browser_position, record_bounds_intent, record_navigation_intent,
+    record_scope_intent, record_visibility_intent, register_browser_owner, BrowserBounds,
     BrowserBoundsIntent, BrowserEventTracker, BrowserLifecycleInner, BrowserScopeAction,
     BrowserVisibility, EnvironmentCallbackTimeoutAction, EnvironmentCallbackTimeoutRetryState, Url,
     MAX_TRACKED_BROWSER_URLS, USER_NAVIGATION_MARKER_TTL,
@@ -18,6 +19,32 @@ fn bounds(sequence: u64) -> BrowserBoundsIntent {
         w: 800.0,
         h: 600.0,
     }
+}
+
+#[test]
+fn native_browser_labels_are_isolated_by_main_window() {
+    let client_label = "cave-browser-main-tab-home";
+    let primary = native_browser_label("main", client_label);
+    let secondary = native_browser_label("main-2", client_label);
+
+    assert_ne!(primary, secondary);
+    assert!(primary.starts_with(&native_browser_owner_prefix("main")));
+    assert!(secondary.starts_with(&native_browser_owner_prefix("main-2")));
+    assert!(!secondary.starts_with(&native_browser_owner_prefix("main")));
+}
+
+#[test]
+fn browser_owner_registration_rejects_cross_window_reassignment() {
+    let mut lifecycle = BrowserLifecycleInner::default();
+    let native_label = native_browser_label("main", LABEL);
+    register_browser_owner(&mut lifecycle, &native_label, "main", LABEL)
+        .expect("initial owner registration");
+    register_browser_owner(&mut lifecycle, &native_label, "main", LABEL)
+        .expect("idempotent owner registration");
+
+    let error = register_browser_owner(&mut lifecycle, &native_label, "main-2", LABEL)
+        .expect_err("native labels cannot be reassigned across windows");
+    assert!(error.contains("already owned"));
 }
 
 fn navigate(lifecycle: &mut BrowserLifecycleInner, sequence: u64, url: &str) -> bool {

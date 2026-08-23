@@ -49,6 +49,8 @@ pub mod browser;
 mod desktop_reachability;
 #[cfg(desktop)]
 mod discord_presence;
+#[cfg(desktop)]
+mod main_window;
 #[cfg(all(desktop, target_os = "macos"))]
 mod microphone;
 #[cfg(desktop)]
@@ -68,9 +70,9 @@ mod sidecar_archive;
 #[cfg(desktop)]
 mod sidecar_auth;
 #[cfg(desktop)]
-mod sidecar_discovery;
-#[cfg(desktop)]
 mod sidecar_diagnostics;
+#[cfg(desktop)]
+mod sidecar_discovery;
 #[cfg(desktop)]
 mod sidecar_lifecycle;
 #[cfg(desktop)]
@@ -85,12 +87,14 @@ mod tauri_setup;
 #[cfg(desktop)]
 mod window_geometry;
 #[cfg(all(desktop, target_os = "windows"))]
-mod windows_process_job;
-#[cfg(all(desktop, target_os = "windows"))]
 mod windows_command;
+#[cfg(all(desktop, target_os = "windows"))]
+mod windows_process_job;
 
 #[cfg(desktop)]
 use desktop_reachability::*;
+#[cfg(desktop)]
+use main_window::*;
 #[cfg(desktop)]
 use platform_lifecycle::*;
 #[cfg(desktop)]

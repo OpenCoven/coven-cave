@@ -33,6 +33,8 @@ use std::time::{Duration, Instant};
 use tauri::webview::{PageLoadEvent, WebviewBuilder};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, Url, WebviewUrl};
 
+use crate::main_window::is_main_window_label;
+
 const BROWSER_LABEL_PREFIX: &str = "cave-browser-";
 const OFFSCREEN_X: f64 = -10000.0;
 const OFFSCREEN_Y: f64 = -10000.0;
@@ -61,10 +63,10 @@ use browser_events::BrowserEventTracker;
 use browser_native::{hide_webview, show_webview_at};
 pub use browser_state::BrowserLifecycleState;
 use browser_state::{
-    advance_scope_barrier, effective_browser_intent, record_bounds_intent,
+    advance_scope_barrier, browser_owner, effective_browser_intent, record_bounds_intent,
     record_navigation_intent, record_reload_intent, record_scope_intent, record_visibility_intent,
-    BrowserBoundsIntent, BrowserLifecycleInner, BrowserScopeAction, BrowserVisibility,
-    BrowserWorkerSignal,
+    register_browser_owner, BrowserBoundsIntent, BrowserLifecycleInner, BrowserOwner,
+    BrowserScopeAction, BrowserVisibility, BrowserWorkerSignal,
 };
 
 use browser_reconciliation::{
@@ -84,6 +86,27 @@ fn safe_browser_label(label: Option<String>) -> String {
         "{}{}",
         BROWSER_LABEL_PREFIX,
         if safe.is_empty() { "default" } else { &safe }
+    )
+}
+
+fn native_browser_owner_prefix(window_label: &str) -> String {
+    format!("{BROWSER_LABEL_PREFIX}window-{window_label}--")
+}
+
+fn native_browser_label(window_label: &str, client_label: &str) -> String {
+    let resource = client_label
+        .strip_prefix(BROWSER_LABEL_PREFIX)
+        .unwrap_or("default");
+    format!("{}{resource}", native_browser_owner_prefix(window_label))
+}
+
+fn native_browser_scope_prefix(window_label: &str, client_prefix: &str) -> String {
+    let resource_prefix = client_prefix
+        .strip_prefix(BROWSER_LABEL_PREFIX)
+        .unwrap_or_default();
+    format!(
+        "{}{resource_prefix}",
+        native_browser_owner_prefix(window_label)
     )
 }
 

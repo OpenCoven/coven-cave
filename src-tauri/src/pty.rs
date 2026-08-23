@@ -22,12 +22,12 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 use std::thread;
 
+use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Url, Webview};
-use log::{debug, info, warn};
+use tauri::{AppHandle, Emitter, Manager, Url, Webview};
 
 struct PtySession {
     /// Declare the job before the ConPTY master so any ordinary session drop
@@ -44,13 +44,30 @@ struct PtySession {
     scrollback: Arc<Mutex<Vec<u8>>>,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct PtySessionKey {
+    window_label: String,
+    thread_id: String,
+}
+
+impl PtySessionKey {
+    fn new(window_label: &str, thread_id: &str) -> Self {
+        Self {
+            window_label: window_label.to_string(),
+            thread_id: thread_id.to_string(),
+        }
+    }
+}
+
 /// Cap on replayed output per session (~enough to repaint a busy screen).
 const SCROLLBACK_LIMIT_BYTES: usize = 256 * 1024;
 
-static SESSIONS: Lazy<Mutex<HashMap<String, PtySession>>> =
+static SESSIONS: Lazy<Mutex<HashMap<PtySessionKey, PtySession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
-static STARTING_SESSIONS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
-static TRUSTED_MAIN_ORIGINS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static STARTING_SESSIONS: Lazy<Mutex<HashSet<PtySessionKey>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
+static TRUSTED_MAIN_ORIGINS: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
 
 /// Terminate every owned PTY process tree without dropping ConPTY masters on
 /// the Windows UI thread. ClosePseudoConsole could block indefinitely before
@@ -59,11 +76,11 @@ static TRUSTED_MAIN_ORIGINS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::
 #[cfg(target_os = "windows")]
 pub fn terminate_all_owned_processes() {
     if let Some(sessions) = SESSIONS.try_lock() {
-        for (thread_id, session) in sessions.iter() {
+        for (key, session) in sessions.iter() {
             if let Err(error) = session.process_job.terminate() {
                 warn!(
-                    "pty shutdown[{}]: could not terminate process job: {}",
-                    thread_id, error
+                    "pty shutdown[{}/{}]: could not terminate process job: {}",
+                    key.window_label, key.thread_id, error
                 );
             }
         }
@@ -82,26 +99,29 @@ fn url_origin(url: &Url) -> Option<String> {
 pub fn trust_main_origin(url: &Url) {
     if let Some(origin) = url_origin(url) {
         info!("trusting main webview origin for PTY IPC: {}", origin);
-        let mut trusted = TRUSTED_MAIN_ORIGINS.lock();
-        trusted.clear();
-        trusted.insert(origin);
+        TRUSTED_MAIN_ORIGINS.lock().insert(origin);
     } else {
         warn!("not trusting main webview origin for PTY IPC: {}", url);
     }
 }
 
-fn ensure_trusted_pty_caller(webview: &Webview) -> Result<(), String> {
-    if webview.label() != "main" {
+fn ensure_trusted_pty_caller(webview: &Webview) -> Result<String, String> {
+    if !crate::main_window::is_main_window_label(webview.label()) {
         warn!("denied PTY IPC from non-main webview: {}", webview.label());
         return Err("PTY commands are only available to the main app webview".to_string());
     }
 
-    let url = webview.url().map_err(|e| format!("could not resolve caller URL: {e}"))?;
+    let url = webview
+        .url()
+        .map_err(|e| format!("could not resolve caller URL: {e}"))?;
     let origin = url_origin(&url).ok_or_else(|| format!("untrusted PTY caller URL: {url}"))?;
     if TRUSTED_MAIN_ORIGINS.lock().contains(&origin) {
-        Ok(())
+        Ok(webview.label().to_string())
     } else {
-        warn!("denied PTY IPC from untrusted main webview origin: {}", origin);
+        warn!(
+            "denied PTY IPC from untrusted main webview origin: {}",
+            origin
+        );
         Err("PTY commands are not available to this origin".to_string())
     }
 }
@@ -109,26 +129,24 @@ fn ensure_trusted_pty_caller(webview: &Webview) -> Result<(), String> {
 /// RAII guard: makes sure a thread_id we reserved in STARTING_SESSIONS
 /// is always removed even if start fails partway through.
 struct PendingPtyStart {
-    thread_id: String,
+    key: PtySessionKey,
 }
 
 impl PendingPtyStart {
-    fn reserve(thread_id: &str) -> Result<Self, String> {
+    fn reserve(key: PtySessionKey) -> Result<Self, String> {
         let sessions = SESSIONS.lock();
         let mut starting = STARTING_SESSIONS.lock();
-        if sessions.contains_key(thread_id) || starting.contains(thread_id) {
-            return Err(format!("pty '{}' already running", thread_id));
+        if sessions.contains_key(&key) || starting.contains(&key) {
+            return Err(format!("pty '{}' already running", key.thread_id));
         }
-        starting.insert(thread_id.to_string());
-        Ok(Self {
-            thread_id: thread_id.to_string(),
-        })
+        starting.insert(key.clone());
+        Ok(Self { key })
     }
 }
 
 impl Drop for PendingPtyStart {
     fn drop(&mut self) {
-        STARTING_SESSIONS.lock().remove(&self.thread_id);
+        STARTING_SESSIONS.lock().remove(&self.key);
     }
 }
 
@@ -162,7 +180,7 @@ pub async fn pty_start(
     // Authenticate against the caller's current main-WebView URL before any
     // blocking work is dispatched. The worker receives no Webview handle or
     // authority-bearing renderer state.
-    ensure_trusted_pty_caller(&webview)?;
+    let owner_label = ensure_trusted_pty_caller(&webview)?;
 
     // Tauri dispatches synchronous commands inline from WebView2's
     // WebResourceRequested callback on Windows. ConPTY creation and process
@@ -173,7 +191,7 @@ pub async fn pty_start(
     // Keep all fallible/blocking PTY startup work on the runtime's dedicated
     // blocking pool. Awaiting the JoinHandle also turns a worker panic into a
     // normal command error instead of letting it escape through WebView2.
-    run_pty_start_worker(move || pty_start_blocking(app, options)).await
+    run_pty_start_worker(move || pty_start_blocking(app, owner_label, options)).await
 }
 
 async fn run_pty_start_worker<F, T>(start: F) -> Result<T, String>
@@ -186,11 +204,18 @@ where
         .map_err(|error| format!("PTY startup worker failed: {error}"))?
 }
 
-fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), String> {
+fn pty_start_blocking(
+    app: AppHandle,
+    owner_label: String,
+    options: StartOptions,
+) -> Result<(), String> {
     let thread_id = options.thread_id.clone();
-    info!("pty_start: thread_id={} project_root={:?} cols={:?} rows={:?}",
-        thread_id, options.project_root, options.cols, options.rows);
-    let pending = PendingPtyStart::reserve(&thread_id)?;
+    info!(
+        "pty_start: thread_id={} project_root={:?} cols={:?} rows={:?}",
+        thread_id, options.project_root, options.cols, options.rows
+    );
+    let session_key = PtySessionKey::new(&owner_label, &thread_id);
+    let pending = PendingPtyStart::reserve(session_key.clone())?;
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -253,7 +278,11 @@ fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), Strin
 
     let mut child = match pair.slave.spawn_command(cmd) {
         Ok(c) => {
-            info!("pty_start[{}]: child spawned, pid={:?}", thread_id, c.process_id());
+            info!(
+                "pty_start[{}]: child spawned, pid={:?}",
+                thread_id,
+                c.process_id()
+            );
             c
         }
         Err(e) => {
@@ -287,7 +316,7 @@ fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), Strin
     {
         let mut guard = SESSIONS.lock();
         guard.insert(
-            thread_id.clone(),
+            session_key.clone(),
             PtySession {
                 #[cfg(target_os = "windows")]
                 process_job,
@@ -302,6 +331,7 @@ fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), Strin
 
     // Reader thread — forwards bytes to the webview as pty:data events.
     let tid_read = thread_id.clone();
+    let owner_read = owner_label.clone();
     let app_read = app.clone();
     let ring = scrollback;
     thread::spawn(move || {
@@ -315,7 +345,10 @@ fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), Strin
                     break;
                 }
                 Err(e) => {
-                    warn!("pty_start[{}]: reader error after {} bytes: {}", tid_read, total, e);
+                    warn!(
+                        "pty_start[{}]: reader error after {} bytes: {}",
+                        tid_read, total, e
+                    );
                     break;
                 }
                 Ok(n) => {
@@ -328,14 +361,19 @@ fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), Strin
                             buffer.drain(0..len - SCROLLBACK_LIMIT_BYTES);
                         }
                     }
-                    debug!("pty_start[{}]: emit pty:data {} bytes (total {})", tid_read, n, total);
-                    let _ = app_read.emit(
-                        "pty:data",
-                        PtyDataEvent {
-                            thread_id: tid_read.clone(),
-                            bytes: buf[..n].to_vec(),
-                        },
+                    debug!(
+                        "pty_start[{}]: emit pty:data {} bytes (total {})",
+                        tid_read, n, total
                     );
+                    if let Some(owner) = app_read.get_webview_window(&owner_read) {
+                        let _ = owner.emit(
+                            "pty:data",
+                            PtyDataEvent {
+                                thread_id: tid_read.clone(),
+                                bytes: buf[..n].to_vec(),
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -344,18 +382,25 @@ fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), Strin
     // Waiter thread — emits pty:exit when the child terminates and removes
     // the session from the registry.
     let tid_wait = thread_id;
+    let owner_wait = owner_label;
+    let key_wait = session_key;
     let app_wait = app;
     thread::spawn(move || {
-        let code = child.wait().ok().and_then(|status| status.exit_code().try_into().ok());
+        let code = child
+            .wait()
+            .ok()
+            .and_then(|status| status.exit_code().try_into().ok());
         warn!("pty_start[{}]: child exited code={:?}", tid_wait, code);
-        SESSIONS.lock().remove(&tid_wait);
-        let _ = app_wait.emit(
-            "pty:exit",
-            PtyExitEvent {
-                thread_id: tid_wait.clone(),
-                code,
-            },
-        );
+        SESSIONS.lock().remove(&key_wait);
+        if let Some(owner) = app_wait.get_webview_window(&owner_wait) {
+            let _ = owner.emit(
+                "pty:exit",
+                PtyExitEvent {
+                    thread_id: tid_wait.clone(),
+                    code,
+                },
+            );
+        }
     });
 
     Ok(())
@@ -363,12 +408,13 @@ fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), Strin
 
 #[tauri::command]
 pub fn pty_write(webview: Webview, thread_id: String, bytes: Vec<u8>) -> Result<(), String> {
-    ensure_trusted_pty_caller(&webview)?;
+    let owner_label = ensure_trusted_pty_caller(&webview)?;
+    let key = PtySessionKey::new(&owner_label, &thread_id);
     debug!("pty_write[{}]: {} bytes", thread_id, bytes.len());
     let writer = {
         let sessions = SESSIONS.lock();
         sessions
-            .get(&thread_id)
+            .get(&key)
             .map(|s| s.writer.clone())
             .ok_or_else(|| {
                 warn!("pty_write[{}]: session not found", thread_id);
@@ -382,10 +428,11 @@ pub fn pty_write(webview: Webview, thread_id: String, bytes: Vec<u8>) -> Result<
 
 #[tauri::command]
 pub fn pty_resize(webview: Webview, thread_id: String, cols: u16, rows: u16) -> Result<(), String> {
-    ensure_trusted_pty_caller(&webview)?;
+    let owner_label = ensure_trusted_pty_caller(&webview)?;
+    let key = PtySessionKey::new(&owner_label, &thread_id);
     let sessions = SESSIONS.lock();
     let session = sessions
-        .get(&thread_id)
+        .get(&key)
         .ok_or_else(|| format!("pty '{}' not found", thread_id))?;
     session
         .master
@@ -395,11 +442,13 @@ pub fn pty_resize(webview: Webview, thread_id: String, cols: u16, rows: u16) -> 
 
 #[tauri::command]
 pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
-    ensure_trusted_pty_caller(&webview)?;
+    let owner_label = ensure_trusted_pty_caller(&webview)?;
     // Dropping the PtySession drops the master, which closes the slave's
     // controlling tty; the child receives SIGHUP and exits. The waiter
     // thread cleans up SESSIONS and emits pty:exit.
-    let session = SESSIONS.lock().remove(&thread_id);
+    let session = SESSIONS
+        .lock()
+        .remove(&PtySessionKey::new(&owner_label, &thread_id));
     #[cfg(target_os = "windows")]
     if let Some(session) = session {
         let _ = session.process_job.terminate();
@@ -414,18 +463,23 @@ pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn pty_list(webview: Webview) -> Result<Vec<String>, String> {
-    ensure_trusted_pty_caller(&webview)?;
-    Ok(SESSIONS.lock().keys().cloned().collect())
+    let owner_label = ensure_trusted_pty_caller(&webview)?;
+    Ok(SESSIONS
+        .lock()
+        .keys()
+        .filter(|key| key.window_label == owner_label)
+        .map(|key| key.thread_id.clone())
+        .collect())
 }
 
 /// Recent output for a running session, replayed by a terminal view that
 /// reattaches after a remount. Empty when the session is unknown.
 #[tauri::command]
 pub fn pty_snapshot(webview: Webview, thread_id: String) -> Result<Vec<u8>, String> {
-    ensure_trusted_pty_caller(&webview)?;
+    let owner_label = ensure_trusted_pty_caller(&webview)?;
     let sessions = SESSIONS.lock();
     Ok(sessions
-        .get(&thread_id)
+        .get(&PtySessionKey::new(&owner_label, &thread_id))
         .map(|session| session.scrollback.lock().clone())
         .unwrap_or_default())
 }
@@ -444,7 +498,12 @@ fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
     info!("pty_diagnose: starting");
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(|e| format!("openpty: {e}"))?;
 
     #[cfg(target_os = "windows")]
@@ -473,7 +532,10 @@ fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
     #[cfg(not(target_os = "windows"))]
     cmd.env("TERM", "xterm-256color");
 
-    let mut child = pair.slave.spawn_command(cmd).map_err(|e| format!("spawn: {e}"))?;
+    let mut child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("spawn: {e}"))?;
     #[cfg(target_os = "windows")]
     {
         let pid = match child.process_id() {
@@ -494,18 +556,34 @@ fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
         }
     }
     let pid = child.process_id();
-    let mut reader = pair.master.try_clone_reader().map_err(|e| format!("reader: {e}"))?;
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("reader: {e}"))?;
     drop(pair.master);
     drop(pair.slave);
 
     let mut buf = Vec::with_capacity(256);
     let _ = reader.read_to_end(&mut buf);
-    let exit = child.wait().ok().and_then(|s| s.exit_code().try_into().ok());
+    let exit = child
+        .wait()
+        .ok()
+        .and_then(|s| s.exit_code().try_into().ok());
 
     let output = String::from_utf8_lossy(&buf).to_string();
-    info!("pty_diagnose: pid={:?} exit={:?} bytes={} output={:?}",
-        pid, exit, buf.len(), output);
-    Ok(DiagnoseReport { pid, exit, bytes: buf.len(), output })
+    info!(
+        "pty_diagnose: pid={:?} exit={:?} bytes={} output={:?}",
+        pid,
+        exit,
+        buf.len(),
+        output
+    );
+    Ok(DiagnoseReport {
+        pid,
+        exit,
+        bytes: buf.len(),
+        output,
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -531,7 +609,10 @@ fn validated_cwd(raw: Option<&str>) -> Result<Option<String>, String> {
     let metadata = std::fs::metadata(path)
         .map_err(|e| format!("invalid project_root '{}': {}", normalized, e))?;
     if !metadata.is_dir() {
-        return Err(format!("invalid project_root '{}': not a directory", normalized));
+        return Err(format!(
+            "invalid project_root '{}': not a directory",
+            normalized
+        ));
     }
 
     Ok(Some(normalized))
@@ -548,7 +629,7 @@ fn normalize_cwd(raw: &str) -> String {
     {
         // "C:" or "c:" with nothing after → append backslash
         if raw.len() == 2 && raw.as_bytes()[1] == b':' {
-            return format!("{}\\" , raw);
+            return format!("{}\\", raw);
         }
         // Replace forward slashes with backslashes on Windows
         return raw.replace('/', "\\");
@@ -634,9 +715,16 @@ fn augmented_path() -> String {
         let sep = ';';
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut out = String::new();
-        for part in inherited.split(sep).chain(extras.iter().map(|s| s.as_str())) {
-            if part.is_empty() || !seen.insert(part.to_string()) { continue; }
-            if !out.is_empty() { out.push(sep); }
+        for part in inherited
+            .split(sep)
+            .chain(extras.iter().map(|s| s.as_str()))
+        {
+            if part.is_empty() || !seen.insert(part.to_string()) {
+                continue;
+            }
+            if !out.is_empty() {
+                out.push(sep);
+            }
             out.push_str(part);
         }
         return out;
@@ -657,8 +745,12 @@ fn augmented_path() -> String {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut out = String::new();
         for part in inherited.split(':').chain(extras.iter().copied()) {
-            if part.is_empty() || !seen.insert(part) { continue; }
-            if !out.is_empty() { out.push(':'); }
+            if part.is_empty() || !seen.insert(part) {
+                continue;
+            }
+            if !out.is_empty() {
+                out.push(':');
+            }
             out.push_str(part);
         }
         out
@@ -671,9 +763,10 @@ mod tests {
 
     #[test]
     fn pty_start_worker_returns_dependency_panics_as_errors() {
-        let result: Result<(), String> = tauri::async_runtime::block_on(run_pty_start_worker(|| {
-            panic!("simulated ConPTY dependency panic")
-        }));
+        let result: Result<(), String> =
+            tauri::async_runtime::block_on(run_pty_start_worker(|| {
+                panic!("simulated ConPTY dependency panic")
+            }));
 
         let error = result.expect_err("a blocking-worker panic must not escape the IPC task");
         assert!(
@@ -716,6 +809,16 @@ mod tests {
     }
 
     #[test]
+    fn terminal_session_keys_are_isolated_by_main_window() {
+        let primary = PtySessionKey::new("main", "cave.comux.test");
+        let secondary = PtySessionKey::new("main-2", "cave.comux.test");
+
+        assert_ne!(primary, secondary);
+        let sessions = HashSet::from([primary, secondary]);
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
     fn pty_size_from_options_rejects_zero_sized_terminal_startup() {
         let options = StartOptions {
             thread_id: "cave.comux.test".to_string(),
@@ -733,10 +836,7 @@ mod tests {
 
     #[test]
     fn validated_cwd_rejects_non_directories() {
-        let file = std::env::temp_dir().join(format!(
-            "coven-cave-pty-test-{}",
-            std::process::id()
-        ));
+        let file = std::env::temp_dir().join(format!("coven-cave-pty-test-{}", std::process::id()));
         std::fs::write(&file, b"not a directory").expect("write temp file");
 
         let err = validated_cwd(file.to_str()).expect_err("files are not valid cwd roots");
@@ -755,7 +855,10 @@ mod tests {
             "expected diagnostic marker in PTY output, got {:?}",
             report.output,
         );
-        assert!(report.bytes > 0, "diagnostic PTY should produce output bytes");
+        assert!(
+            report.bytes > 0,
+            "diagnostic PTY should produce output bytes"
+        );
     }
 
     #[cfg(target_os = "windows")]

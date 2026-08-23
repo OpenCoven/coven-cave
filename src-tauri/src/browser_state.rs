@@ -7,6 +7,41 @@ pub(super) struct BrowserNavigationIntent {
     pub(super) read_only_url: Option<String>,
 }
 
+pub(super) fn register_browser_owner(
+    inner: &mut BrowserLifecycleInner,
+    native_label: &str,
+    window_label: &str,
+    client_label: &str,
+) -> Result<(), String> {
+    let owner = BrowserOwner {
+        window_label: window_label.to_string(),
+        client_label: client_label.to_string(),
+    };
+    if inner
+        .owners
+        .get(native_label)
+        .is_some_and(|existing| existing != &owner)
+    {
+        return Err(format!(
+            "browser webview '{native_label}' is already owned by another main window"
+        ));
+    }
+    inner.owners.insert(native_label.to_string(), owner);
+    Ok(())
+}
+
+pub(super) fn browser_owner(
+    state: &BrowserLifecycleState,
+    native_label: &str,
+) -> Result<BrowserOwner, String> {
+    state
+        .lock()?
+        .owners
+        .get(native_label)
+        .cloned()
+        .ok_or_else(|| format!("browser webview '{native_label}' has no registered owner"))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct BrowserBoundsIntent {
     pub(super) sequence: u64,
@@ -71,12 +106,19 @@ pub(super) struct BrowserLifecycleInner {
     pub(super) worker_locks: HashMap<String, Arc<Mutex<()>>>,
     pub(super) worker_signals: HashMap<String, Arc<BrowserWorkerSignal>>,
     pub(super) event_trackers: HashMap<String, Arc<Mutex<BrowserEventTracker>>>,
+    pub(super) owners: HashMap<String, BrowserOwner>,
 }
 
 #[derive(Default)]
 pub(super) struct BrowserWorkerSignal {
     pub(super) running: AtomicBool,
     pub(super) dirty: AtomicBool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct BrowserOwner {
+    pub(super) window_label: String,
+    pub(super) client_label: String,
 }
 
 /// Orders native WebView lifecycle intents and rejects commands from an older
