@@ -298,19 +298,16 @@ button:active > .edge-rail-chip {
     padding-top: calc(var(--shell-native-titlebar-height) + var(--space-2));
   }
 
-  /* Destination shells provide their own visible top-level shell bar on
-     desktop, so it owns the traffic-light reserve. Their route-local headers
-     sit below it and must keep their normal content alignment rather than
-     leaving a second, empty inset. Below this breakpoint .aps-top is hidden,
-     while macOS traffic lights remain visible, so those headers retain their
-     base --titlebar-lights-inset. */
-  :root[data-tauri-titlebar] .aps-top + .aps-body .settings-shell__header {
+  /* Destination routes now render inside the same Shell as the workspace, so
+     its native title strip owns the traffic-light reserve. Route-local headers
+     keep their normal content alignment instead of adding a second inset. */
+  :root[data-tauri-titlebar] .shell-frame .settings-shell__header {
     padding-left: var(--space-3);
   }
-  :root[data-tauri-titlebar] .aps-top + .aps-body .dr-topbar {
+  :root[data-tauri-titlebar] .shell-frame .dr-topbar {
     padding-left: clamp(20px, 5vw, 64px);
   }
-  :root[data-tauri-titlebar] .aps-top + .aps-body .fa-topbar {
+  :root[data-tauri-titlebar] .shell-frame .fa-topbar {
     padding-left: var(--space-6);
   }
 
@@ -322,10 +319,6 @@ button:active > .edge-rail-chip {
     pointer-events: none;
     -webkit-app-region: drag;
     app-region: drag;
-  }
-
-  :root[data-tauri-titlebar] .aps-top {
-    display: none;
   }
 
   :root[data-tauri-titlebar] :is(
