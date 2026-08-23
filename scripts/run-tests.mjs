@@ -1383,6 +1383,7 @@ export const SUITES = {
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
+    "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
     "src/lib/server/client-v1/pairing-store.test.ts",
     "src/lib/server/client-v1/credential-store.test.ts",
