@@ -4,6 +4,7 @@ import {
   projectIconHue,
   projectIconMotif,
 } from "./project-icon-prompt.ts";
+import { projectTint } from "./comux-projects.ts";
 
 // Deterministic: same root → same hue/motif every time.
 assert.equal(projectIconHue("/Users/x/coven-cave"), projectIconHue("/Users/x/coven-cave"));
@@ -17,7 +18,28 @@ assert.equal(projectIconMotif("/Users/x/coven-cave"), projectIconMotif("/Users/x
 }
 
 // Hue agrees with projectTint()'s hash so the icon palette matches the tile.
-assert.ok(projectIconHue("/tmp/app") >= 0 && projectIconHue("/tmp/app") < 360);
+// Asserted against the colour projectTint actually paints, not merely against
+// the [0,360) range: the old range check passed for ANY hash function, so the
+// two hand-copied hashes could diverge silently and every icon could land on a
+// different hue from its own tile with nothing failing (cave-72em).
+for (const root of [
+  "/tmp/app",
+  "/Users/x/coven-cave",
+  "/Users/x/coven-github",
+  "/work/alpha",
+  "C:\\Users\\dev\\project",
+  "",
+]) {
+  const tint = projectTint(root);
+  const tintHue = Number(/ (\d{1,3})\)$/.exec(tint)?.[1]);
+  assert.ok(Number.isFinite(tintHue), `projectTint(${root}) should expose a hue`);
+  assert.equal(
+    projectIconHue(root),
+    tintHue,
+    `icon hue for ${root} must equal the tile hue projectTint paints`,
+  );
+  assert.ok(projectIconHue(root) >= 0 && projectIconHue(root) < 360);
+}
 
 // The prompt names the project, bans text, and stays icon-shaped.
 {
