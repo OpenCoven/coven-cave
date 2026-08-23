@@ -142,7 +142,13 @@ export function useResearchMissions(familiarId: string) {
 
   const start = useCallback(async (input: CreateResearchMissionInput) => {
     try {
-      const result = await createResearchMission(input);
+      // Every caller of this hook IS the Research Desk, so the desk stamps its
+      // own origin here rather than at each intake site — one place to be
+      // right, and an explicit origin still wins (#4808).
+      const result = await createResearchMission({
+        origin: { surface: "research-desk" },
+        ...input,
+      });
       if (!result.ok || !result.mission) {
         return { ok: false as const, error: result.error ?? "Research could not start" };
       }

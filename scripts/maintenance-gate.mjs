@@ -193,10 +193,17 @@ function heldBy(status, handle, nowSeconds) {
   return { ok: true };
 }
 
-function defaultRunCoven({ args, cwd }) {
+/**
+ * The only runner that actually spawns Coven. Exported so a test can prove it
+ * reports the argv it executed — every other test injects `run`, so nothing
+ * else reaches this function.
+ */
+export function defaultRunCoven({ args, cwd }) {
   const launch = covenLaunchCommand();
   if (launch.resolutionTimedOut || launch.unresolvedWindowsShim) {
-    return { ok: false, stdout: "", stderr: "", status: null };
+    // Nothing was executed, but resolution did pick something — name it, so a
+    // refusal from here is as readable as one from a spawn that ran.
+    return { ok: false, stdout: "", stderr: "", status: null, binary: launch.command };
   }
   const result = spawnSync(launch.command, [...launch.fixedArgs, ...args], {
     cwd,
@@ -212,7 +219,27 @@ function defaultRunCoven({ args, cwd }) {
     stdout: asText(result.stdout),
     stderr: asText(result.stderr),
     status: result.status,
+    // Exactly what was executed, so a version refusal can name the install it
+    // judged instead of leaving the reader to re-derive resolution by hand.
+    // Several `coven` binaries commonly coexist on one machine and only the
+    // resolver knows which one it picked (cave-6bb4m).
+    binary: [launch.command, ...launch.fixedArgs].join(" "),
   };
+}
+
+/**
+ * A version banner reduced to one bounded line, keeping ALL of it.
+ *
+ * Deliberately not "the first line": the bead that opened this asked for the
+ * raw stdout precisely because a notice printed AHEAD of the banner is a
+ * candidate explanation for a surprising parse, and a first-line-only report
+ * would hide the banner in exactly that case. Newlines are folded so the
+ * refusal stays one readable line, and the result is bounded because a broken
+ * client can emit a backtrace here.
+ */
+function condensedOutput(value) {
+  const condensed = asText(value).replace(/\s+/g, " ").trim();
+  return condensed ? condensed.slice(0, 200) : undefined;
 }
 
 /**
@@ -229,13 +256,28 @@ export function createCovenMaintenanceClient({
       cwd: repoDir,
     });
     if (!result.ok) return commandFailure("version", result);
+    // Everything a reader needs to act on a version refusal, carried on the
+    // result rather than only in the reason token. `coven-version-unsupported`
+    // alone sent a session hunting for a toolchain fault that did not exist:
+    // a supported CLI was installed the whole time and resolution had simply
+    // selected a different one (cave-6bb4m). The raw banner rides along too,
+    // because the parsed value is not the string that failed — the bead that
+    // opened this could not say what stdout actually held.
+    const output = condensedOutput(result.stdout);
+    const detail = {
+      covenMinimumVersion: COVEN_MAINTENANCE_MINIMUM_VERSION,
+      ...(result.binary ? { covenBinary: result.binary } : {}),
+      ...(output ? { covenVersionOutput: output } : {}),
+    };
     const parsed = parseCovenVersion(result.stdout);
-    if (!parsed) return { ok: false, reason: "coven-version-malformed" };
+    if (!parsed) return { ok: false, reason: "coven-version-malformed", ...detail };
     if (!supportsCovenMaintenanceVersion(result.stdout)) {
       return {
         ok: false,
         reason: "coven-version-unsupported",
         version: parsed.version,
+        covenVersion: parsed.version,
+        ...detail,
       };
     }
     return { ok: true, version: parsed.version };
@@ -449,7 +491,16 @@ export function createRepositoryMaintenanceCoordinator({
           recoveryHandle: { local: local.handle },
         };
       }
-      return { ok: false, reason: `coven-acquire-failed: ${coven.reason ?? "unknown"}` };
+      // Carry the Coven refusal's detail through, exactly as the local branch
+      // above does. Interpolating only `reason` discarded the binary, the
+      // version it reported, and the minimum required — the three facts a
+      // `coven-version-unsupported` reader has to have (cave-6bb4m).
+      const { ok: _covenOk, reason: _covenReason, handle: _covenHandle, ...covenDetail } = coven;
+      return {
+        ok: false,
+        reason: `coven-acquire-failed: ${coven.reason ?? "unknown"}`,
+        ...covenDetail,
+      };
     },
 
     heartbeat(handle) {
@@ -563,7 +614,18 @@ export function repositoryMaintenanceCapabilities({
       enforced: covenVersion.ok,
       source: covenVersion.ok
         ? `@opencoven/cli@${covenVersion.version} maintenance`
-        : `cave-wqa0b.2: ${covenVersion.reason ?? "Coven maintenance unavailable"}`,
+        // The patrol prints this verbatim as what the plane is "blocked on", so
+        // a version refusal has to name the install it judged here too — the
+        // reason token alone reads as a missing client rather than a resolved
+        // one that is simply too old (cave-6bb4m).
+        : [
+            `cave-wqa0b.2: ${covenVersion.reason ?? "Coven maintenance unavailable"}`,
+            covenVersion.covenBinary ? `binary ${covenVersion.covenBinary}` : null,
+            covenVersion.covenVersion ? `reported ${covenVersion.covenVersion}` : null,
+            covenVersion.covenMinimumVersion
+              ? `minimum ${covenVersion.covenMinimumVersion}`
+              : null,
+          ].filter(Boolean).join("; "),
     },
     beads: { enforced: false, source: "cave-wqa0b.3" },
     github: { enforced: false, source: "cave-wqa0b.4" },

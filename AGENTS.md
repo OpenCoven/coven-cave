@@ -62,8 +62,19 @@
     (`Bead cave-… worktree metadata: …`) is structural too, but since
     `cave-g9byt` it is charged only to the unit it names — so if one reaches
     you, it claims the exact branch or path you asked for. Pick another branch
-    or have its owner repair it; do not hand-edit someone else's record. Reach
-    for the fallback only after a retry failed:
+    or have its owner repair it; do not hand-edit someone else's record.
+
+    One more structural exit 1, and the one most often mistaken for a flake:
+    `maintenance fence acquisition failed: coven-acquire-failed:
+    coven-version-unsupported`. That is a resolved Coven CLI below the `0.2.5`
+    maintenance floor (prereleases are refused whatever their numbers), and it
+    is **deterministic given PATH** — retrying changes nothing. The refusal now
+    prints the binary it chose, the version that binary reported, its raw
+    `--version` banner, the floor, and the `COVEN_BIN` override; read those
+    before concluding your toolchain is broken, because a supported install is
+    often already present further along the same PATH. See `cave-6bb4m`.
+
+    Reach for the fallback only after a retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
