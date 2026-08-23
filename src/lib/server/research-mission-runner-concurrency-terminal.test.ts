@@ -65,6 +65,10 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     materializeSavedLink: async () => {
       throw new Error("saved X Article not found");
     },
+    // No mission in this suite has attached X sources; the dedicated
+    // hydration coverage lives in research-mission-x-hydration.test.ts.
+    hydrateXSources: async () => ({ files: [], unavailable: [], sources: [] }),
+    dropXRuntime: async () => {},
     publishKnowledge: async (entry) => entry,
     killSession: async () => {},
     createAutomation: async (input) => ({
