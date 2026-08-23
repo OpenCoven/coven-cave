@@ -1,0 +1,63 @@
+name: Worktree hygiene contracts
+
+on:
+  pull_request:
+    paths:
+      - "scripts/worktree-hygiene.mjs"
+      - "scripts/worktree-hygiene-schedule.mjs"
+      - "scripts/worktree-hygiene.contract.mjs"
+      - "WORKTREE_HYGIENE.md"
+      - ".github/workflows/worktree-hygiene-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/worktree-hygiene.mjs"
+      - "scripts/worktree-hygiene-schedule.mjs"
+      - "scripts/worktree-hygiene.contract.mjs"
+      - ".github/workflows/worktree-hygiene-contract.yml"
+  schedule:
+    - cron: "17 10 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worktree-hygiene-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: Worktree hygiene safety contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Run safety contract
+        run: node scripts/worktree-hygiene.contract.mjs
+      - name: Syntax-check scheduler
+        run: node --check scripts/worktree-hygiene-schedule.mjs
+      - name: Reassert generated schedule is report-only
+        run: |
+          node --input-type=module <<'NODE'
+          import { launchAgentPlist } from './scripts/worktree-hygiene-schedule.mjs';
+          const plist = launchAgentPlist({
+            node: '/node',
+            hygieneScript: '/repo/scripts/worktree-hygiene.mjs',
+            repo: '/repo',
+            logPath: '/tmp/hygiene.log',
+          });
+          if (plist.includes('--apply') || plist.includes('WT_GUARD_BYPASS')) {
+            throw new Error('scheduled worktree hygiene must remain report-only');
+          }
+          NODE
