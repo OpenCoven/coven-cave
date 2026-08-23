@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
-import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
+import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
-import { loadProjects, projectForRoot, withProjectRegistryLock } from "./cave-projects.ts";
+import { loadProjects, projectForRoot, withProjectRegistryMutex } from "./cave-projects.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
 import {
   accessLevelSatisfies,
@@ -285,26 +285,24 @@ export async function loadMobileWriteAccess(): Promise<MobileWriteAccessConfig> 
 export async function updateMobileWriteAccess(
   patch: Partial<MobileWriteAccessConfig>,
 ): Promise<MobileWriteAccessConfig> {
-  return withWriteMutex(async () => {
-    const operation = async () => {
-      const current = await loadHumanPermissionConfigUnlocked();
-      const next: HumanPermissionConfigFile = {
-        ...current,
-        allowMobileGrantMutations:
-          patch.allowMobileGrantMutations ?? current.allowMobileGrantMutations,
-        allowMobileFileWrites: patch.allowMobileFileWrites ?? current.allowMobileFileWrites,
-        allowMobileCanvasWrites: patch.allowMobileCanvasWrites ?? current.allowMobileCanvasWrites,
-      };
-      await writeJsonFile(humanPermissionConfigPath(), next);
-      return {
-        allowMobileGrantMutations: next.allowMobileGrantMutations,
-        allowMobileFileWrites: next.allowMobileFileWrites,
-        allowMobileCanvasWrites: next.allowMobileCanvasWrites,
-      };
+  const operation = async () => withWriteMutex(async () => {
+    const current = await loadHumanPermissionConfigUnlocked();
+    const next: HumanPermissionConfigFile = {
+      ...current,
+      allowMobileGrantMutations:
+        patch.allowMobileGrantMutations ?? current.allowMobileGrantMutations,
+      allowMobileFileWrites: patch.allowMobileFileWrites ?? current.allowMobileFileWrites,
+      allowMobileCanvasWrites: patch.allowMobileCanvasWrites ?? current.allowMobileCanvasWrites,
     };
-    if (process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE) return operation();
-    return withCaveHomeReconciledStore("cave-permission-config.json", operation);
+    await writeJsonFile(humanPermissionConfigPath(), next);
+    return {
+      allowMobileGrantMutations: next.allowMobileGrantMutations,
+      allowMobileFileWrites: next.allowMobileFileWrites,
+      allowMobileCanvasWrites: next.allowMobileCanvasWrites,
+    };
   });
+  if (process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE) return operation();
+  return withCaveHomeReconciledStore("cave-permission-config.json", operation);
 }
 
 function normalizeGrant(grant: Partial<ProjectGrant>): ProjectGrant | null {
@@ -872,9 +870,9 @@ export async function inspectProjectPermissionIntegrity(): Promise<ProjectPermis
  * idempotent and reviewable.
  */
 export async function repairOrphanProjectPermissions(): Promise<ProjectPermissionIntegrityReport> {
-  return withProjectRegistryLock((projects) => {
+  const operation = () => withProjectRegistryMutex((projects) => {
     const knownProjectIds = new Set(projects.map((project) => project.id));
-    return withProjectPermissionsStore(() => withWriteMutex(async () => {
+    return withWriteMutex(async () => {
       const file = await loadProjectPermissionsUnlocked();
       const report = orphanProjectIntegrity(file, knownProjectIds);
       if (report.directGrants + report.groupGrants + report.proposals === 0) return report;
@@ -886,8 +884,13 @@ export async function repairOrphanProjectPermissions(): Promise<ProjectPermissio
       file.repairAudit.push({ at: new Date().toISOString(), kind: "orphan-project-repair", ...report });
       await saveProjectPermissions(file);
       return report;
-    }));
+    });
   });
+  const legacies = [
+    ...(process.env.CAVE_PROJECTS_PATH_OVERRIDE ? [] : ["cave-projects.json"]),
+    ...(process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE ? [] : ["cave-project-permissions.json"]),
+  ];
+  return legacies.length === 0 ? operation() : withCaveHomeReconciledStores(legacies, operation);
 }
 
 export async function bootstrapSupremeProjectGrants(projects: CaveProject[]): Promise<void> {

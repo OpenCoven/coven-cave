@@ -107,6 +107,7 @@
   font-size: var(--text-base);
   cursor: pointer;
   text-align: left;
+  text-decoration: none;
   transition: background 0.1s ease, color 0.1s ease;
 }
 
