@@ -3,6 +3,7 @@ import { extractAutoStatusMarkers } from "./auto-status-blocks.ts";
 import { extractChatAttentionMarker } from "./chat-attention-marker.ts";
 import { splitReasoning } from "./chat-reasoning.ts";
 import { stripGitHubMarkers } from "./github-blocks.ts";
+import { stripApproveMarkers } from "./approve-blocks.ts";
 import { stripImageMarkers } from "./image-blocks.ts";
 import {
   stripIncompletePreviewMarker,
@@ -39,7 +40,9 @@ export function extractChatRenderedText(
   const nextPathSplit = extractNextPaths(attentionSplit.visible);
 
   return {
-    visible: stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(nextPathSplit.visible))),
+    visible: stripApproveMarkers(
+      stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(nextPathSplit.visible))),
+    ),
     cardText: stripIncompletePreviewMarker(nextPathSplit.visible),
     inlineReasoning: reasoningSplit.reasoning,
     skillUpdates: skillSplit.updates,

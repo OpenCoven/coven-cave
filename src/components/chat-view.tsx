@@ -210,6 +210,8 @@ import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
 import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
+import { ChatApproveCard } from "@/components/chat-approve-card";
+import { approveRequestKey, sliceApproveBlocks } from "@/lib/approve-blocks";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
@@ -3942,6 +3944,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   }, []);
 
+  /**
+   * Load agent-produced text into the composer WITHOUT sending it. The inline
+   * approve card (src/lib/approve-blocks.ts) submits through here, so answering
+   * a card stages a turn the human still has to read and send — the same line
+   * FollowUpCards draws between activating a card and sending its text.
+   *
+   * Deliberately not `send`: an inline card must not gain send authority just
+   * because a familiar embedded a marker in its own output.
+   */
+  const draftInComposer = useCallback((text: string) => {
+    const draft = text.trim();
+    if (!draft) return;
+    setInput(draft);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   const handleTaskCreated = useCallback((card: Card) => {
     const linked = {
       id: card.id,
@@ -6079,6 +6097,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     readerPromptFor,
     rerunWithFor,
     send,
+    draftInComposer,
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -8444,6 +8463,53 @@ function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubble
   return out;
 }
 
+/**
+ * Split prose segments on `<coven:approve …>` markers, mounting one
+ * ChatApproveCard per decision request (src/lib/approve-blocks.ts). Runs after
+ * the image split and before the artifact/GitHub splits, so a card never lands
+ * inside a deck and the later extractors only refine the prose left over.
+ *
+ * Settled turns only, like every other marker card: while the turn is still
+ * streaming the ordinary markdown path renders, and `stripApproveMarkers`
+ * keeps the half-written marker out of view until it settles.
+ */
+function splitSegmentsForApprove(
+  segments: MessageBubbleSegment[],
+  onDraft?: (text: string) => void,
+): MessageBubbleSegment[] {
+  const out: MessageBubbleSegment[] = [];
+  segments.forEach((seg, si) => {
+    if (seg.kind !== "text") {
+      out.push(seg);
+      return;
+    }
+    const pieces = sliceApproveBlocks(seg.text);
+    if (pieces.length === 1 && pieces[0].kind === "text") {
+      // sliceApproveBlocks also removes a terminal incomplete marker; keep that
+      // cleaned text when a sibling block makes this segmented path render.
+      out.push(pieces[0].text === seg.text ? seg : { ...seg, text: pieces[0].text });
+      return;
+    }
+    pieces.forEach((p, pi) => {
+      if (p.kind === "text") {
+        if (p.text.trim()) out.push({ kind: "text", text: p.text });
+      } else {
+        out.push({
+          kind: "block",
+          key: `approve-${si}-${pi}-${approveRequestKey(p.request)}`,
+          node: (
+            <ChatApproveCard
+              request={p.request}
+              onSubmit={onDraft ? ({ text }) => onDraft(text) : undefined}
+            />
+          ),
+        });
+      }
+    });
+  });
+  return out;
+}
+
 function splitSegmentsForPreviews(
   segments: MessageBubbleSegment[],
   onOpenPreview?: (url: string) => void,
@@ -8494,6 +8560,8 @@ type TranscriptHandlers = {
   readerPromptFor: (turn: Turn) => { text: string; createdAt?: string } | undefined;
   rerunWithFor: (turn: Turn) => ((prompt: string) => void) | undefined;
   send: (override?: string) => Promise<void>;
+  /** Stage text in the composer without sending it (inline approve cards). */
+  draftInComposer: (text: string) => void;
 };
 
 /**
@@ -8615,6 +8683,7 @@ const TranscriptRows = memo(function TranscriptRows({
           onOpenUrl={onOpenUrl}
           onOpenPreview={onOpenPreview}
           onRequest={(prompt) => void handlers().send(prompt)}
+          onDraft={(text) => handlers().draftInComposer(text)}
           feedbackContext={feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -8681,6 +8750,7 @@ const TranscriptRows = memo(function TranscriptRows({
               onOpenUrl={onOpenUrl}
               onOpenPreview={onOpenPreview}
               onRequest={(prompt) => void handlers().send(prompt)}
+              onDraft={(text) => handlers().draftInComposer(text)}
               feedbackContext={feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
@@ -8737,12 +8807,15 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onRequest,
+  onDraft,
   feedbackContext,
   branchNav,
 }: {
   turn: Turn;
   /** User-authored artifact feedback remains a normal chat send. */
   onRequest?: (prompt: string) => void;
+  /** Stage text in the composer without sending — inline approve cards only. */
+  onDraft?: (text: string) => void;
   familiar: Familiar;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
@@ -8924,12 +8997,15 @@ function TurnRowImpl({
   if (!turn.pending) {
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
-        splitSegmentsForImages(
-          splitSegmentsForPreviews(
-            splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
-            onOpenPreview,
-            onOpenUrl,
+        splitSegmentsForApprove(
+          splitSegmentsForImages(
+            splitSegmentsForPreviews(
+              splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+              onOpenPreview,
+              onOpenUrl,
+            ),
           ),
+          onDraft,
         ),
         artifactCtx,
       ),
@@ -9813,6 +9889,7 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
     Boolean(prev.onReply) === Boolean(next.onReply) &&
     Boolean(prev.onRequest) === Boolean(next.onRequest) &&
+    Boolean(prev.onDraft) === Boolean(next.onDraft) &&
     // Branch nav: compare by index+total (the displayed position changes when
     // branches are added); skip closure identity — callbacks are recreated on
     // every parent render and would defeat memoization.
