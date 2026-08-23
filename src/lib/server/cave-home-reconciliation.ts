@@ -73,6 +73,8 @@ declare global {
   var __caveHomeReconciliationLockTokens: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __caveHomeReconciliationTakeoverTokens: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __caveHomeReconciliationStoreGate: Promise<void> | undefined;
 }
 
 function activeLockTokens(): Set<string> {
@@ -631,15 +633,110 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
   }
 }
 
+/**
+ * In-process FIFO admission gate in front of the cross-process lock.
+ *
+ * `acquireLock` is a directory-rename protocol with a fixed 50ms retry: every
+ * contender that loses the rename runs `mkdir` + an atomic owner write +
+ * `rename` + `stat` + owner read on EVERY iteration, forever, until it wins or
+ * its deadline expires. Two contenders are fine. Cave's store readers are not
+ * two — `withCaveHomeReconciledStores` takes this lock for EVERY read of
+ * config/state/inbox/projects/permissions/preferences, so one Next server
+ * under load has dozens of requests in that retry loop at once. Each one is
+ * pure loss: it cannot make progress, and its syscalls all queue on the same
+ * four-thread libuv pool that the eventual winner, and Next's own compiler,
+ * need to finish. Throughput collapses to well under the 20 acquisitions/sec
+ * the 50ms floor already implies.
+ *
+ * Measured on an idle machine before this gate: 64 concurrent `loadConfig()`
+ * calls took 6.6s (10 ops/sec) with 56 of them emitting the slow-wait
+ * diagnostic. On CI, where the same process is also compiling routes for two
+ * Playwright workers, the same storm produced `phase: 'failed'` events with
+ * `durationMs: 81797` against a 15_000ms deadline — 5.5x the budget, which is
+ * an event loop that could not run its own timers, not a slow disk.
+ *
+ * Queueing in memory removes the loss without weakening the lock: exactly one
+ * caller per process is ever in the rename protocol, so cross-process
+ * exclusion is unchanged, and a waiter costs one pending promise instead of
+ * ~7 filesystem operations per 50ms. Handoff is a microtask rather than a
+ * sleep, so the queue drains at memory speed.
+ *
+ * The wait is still bounded, and by the same budget as before: the caller
+ * gives up after RECONCILIATION_LOCK_TIMEOUT_MS with the same ETIMEDOUT the
+ * filesystem retry loop used to raise, and whatever is left of that budget is
+ * what `acquireLock` gets. The deadline is a real timer rather than a check
+ * performed on arrival, because a queue that never advances must still fail
+ * the caller: a store operation that re-entered this gate from inside another
+ * one already deadlocked against the filesystem lock (same pid, live token,
+ * so never reclaimable) and surfaced as ETIMEDOUT — it must not become a hang
+ * now that the wait is in memory. An abandoned caller's turn is skipped
+ * rather than run late, so the queue still advances and its operation never
+ * executes after the caller has been told it failed.
+ *
+ * Deliberately NOT applied to `reconcileCaveHome`/`acquireLock` themselves:
+ * the takeover and stale-reclaim paths are exercised by same-process
+ * contention in `cave-home-migration-locks-takeover.test.ts`, and serializing
+ * those callers would stop that contention ever happening.
+ */
+function withReconciliationStoreGate<T>(
+  run: (remainingMs: number) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const startedAt = Date.now();
+  let settle!: (value: T | PromiseLike<T>) => void;
+  let fail!: (error: unknown) => void;
+  const result = new Promise<T>((resolve, reject) => {
+    settle = resolve;
+    fail = reject;
+  });
+  let abandoned = false;
+  const deadline = setTimeout(() => {
+    abandoned = true;
+    const waitedMs = Date.now() - startedAt;
+    const timeout = new Error(
+      `timed out waiting for the cave home reconciliation queue after ${waitedMs}ms`,
+    ) as NodeJS.ErrnoException;
+    timeout.code = "ETIMEDOUT";
+    console.warn("[cave-home-reconciliation] lock", {
+      phase: "failed",
+      result: "timeout",
+      durationMs: waitedMs,
+      errorCode: "ETIMEDOUT",
+    } satisfies ReconciliationLockDiagnostic);
+    fail(timeout);
+  }, timeoutMs);
+  // A queued reader must never be the reason the process stays alive.
+  deadline.unref?.();
+  const predecessor = globalThis.__caveHomeReconciliationStoreGate ?? Promise.resolve();
+  const turn = predecessor.then(async () => {
+    clearTimeout(deadline);
+    if (abandoned) return;
+    try {
+      settle(await run(Math.max(1, timeoutMs - (Date.now() - startedAt))));
+    } catch (error) {
+      fail(error);
+    }
+  });
+  // Chain on settlement, never on success: a rejected turn must still release
+  // the queue, and the stored gate must never carry a rejection of its own.
+  globalThis.__caveHomeReconciliationStoreGate = turn.then(
+    () => {},
+    () => {},
+  );
+  return result;
+}
+
 /** Serialize a Cave store operation with reconciliation in every process. */
 export async function withCaveHomeReconciliationLock<T>(operation: () => Promise<T>): Promise<T> {
-  await mkdir(caveHome(), { recursive: true });
-  const release = await acquireLock({});
-  try {
-    return await operation();
-  } finally {
-    await release();
-  }
+  return withReconciliationStoreGate(async (lockTimeoutMs) => {
+    await mkdir(caveHome(), { recursive: true });
+    const release = await acquireLock({ lockTimeoutMs });
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
+  }, RECONCILIATION_LOCK_TIMEOUT_MS);
 }
 
 async function pruneBackups(journal: MigrationJournal): Promise<void> {

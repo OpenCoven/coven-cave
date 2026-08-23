@@ -1,4 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  catalogForRuntime,
+  runtimeModelInventoryAvailability,
+  runtimeModelInventoryFreshness,
+  runtimeModelInventoryRefreshState,
+  runtimeModelInventoryScope,
+} from "../src/lib/runtime-models";
 
 // Verifies the composer runtime picker (cave-yq5l / cave-v25g / cave-bfwk,
 // split-chip grammar since cave-g21f): the chat composer footer's model chip
@@ -46,6 +53,43 @@ async function seed(page: Page): Promise<Mutable> {
     state.familiarsServed += 1;
     return route.fulfill({
       json: { ok: true, familiars: [{ ...FAMILIAR_BASE, harness: state.harness }] },
+    });
+  });
+  // Claude, Copilot, OpenClaw, Grok and Hermes are DYNAMIC-inventory runtimes:
+  // selecting one empties the Model group and refills it only when
+  // `/api/runtime-models/<runtime>` answers (see useRuntimeModelInventory).
+  // Leaving that route unmocked made the "Claude Sonnet 5" assertion below
+  // depend on a live server round-trip — one that compiles the route on first
+  // hit under `next dev` and spawns `claude --version` behind it — inside the
+  // only default (5s) expect budget in this file. That is why this test was
+  // the first thing to fail whenever CI got slow (cave-18kpz). Reproduced by
+  // delaying this route 6s locally: it fails at exactly the assertion below,
+  // on both the attempt and the retry, with the CI message verbatim.
+  //
+  // Mocked from the product's own catalog so the seed cannot drift, matching
+  // the shape a desktop without the runtime CLI installed really returns.
+  await page.route(/\/api\/runtime-models\/([^/?]+)(?:\?.*)?$/, (route) => {
+    expect(route.request().method()).toBe("GET");
+    const url = new URL(route.request().url());
+    const runtime = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+    const catalog = catalogForRuntime(runtime);
+    if (!catalog) {
+      return route.fulfill({ status: 404, json: { ok: false, error: "runtime not found" } });
+    }
+    const provenance = "fallback" as const;
+    return route.fulfill({
+      json: {
+        ok: true,
+        runtime,
+        models: catalog.models,
+        provenance,
+        freshness: runtimeModelInventoryFreshness(provenance),
+        refreshState: runtimeModelInventoryRefreshState(provenance),
+        availability: runtimeModelInventoryAvailability(provenance),
+        defaultOwner: catalog.defaultOwner,
+        allowCustom: catalog.allowCustom,
+        scope: runtimeModelInventoryScope(runtime, url.searchParams.get("familiarId")),
+      },
     });
   });
   await page.route("**/api/sessions/list**", (route) =>

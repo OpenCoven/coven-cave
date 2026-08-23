@@ -600,6 +600,65 @@ try {
     assert.equal((await json(path.join(lock, "owner.json"))).token, "released-owner");
   }
 
+  // Concurrent store reads are the hot path: every Cave-owned read takes the
+  // cross-process lock, and a Next server under an e2e run has dozens in
+  // flight. Before the in-process gate each of those ran the rename protocol
+  // itself, so every loser burned ~7 filesystem operations per 50ms retry —
+  // 64 concurrent `loadConfig()` calls measured 6.6s on an idle machine, and
+  // 256 left 204 of them rejected with ETIMEDOUT (cave-18kpz). The gate must
+  // keep the exclusion while making a waiter cost nothing, so assert both:
+  // the operations never overlap, and no contender ever reaches the retry
+  // loop that the "waiting"/"failed" diagnostics report.
+  {
+    globalThis.__caveHomeMigration = undefined;
+    const { cave } = await home("store-gate-concurrency");
+    await mkdir(cave, { recursive: true });
+    const diagnostics: Array<Record<string, unknown>> = [];
+    const warn = console.warn;
+    const info = console.info;
+    const capture = (...args: unknown[]) => {
+      if (String(args[0] ?? "").includes("[cave-home-reconciliation] lock")) {
+        diagnostics.push(args[1] as Record<string, unknown>);
+      }
+    };
+    console.warn = capture;
+    console.info = capture;
+    let active = 0;
+    let peak = 0;
+    let completed = 0;
+    try {
+      const readers = Array.from({ length: 32 }, () =>
+        withCaveHomeReconciledStore("cave-config.json", async () => {
+          active += 1;
+          peak = Math.max(peak, active);
+          // Yield so an overlapping operation would be observed rather than
+          // hidden by a synchronous body.
+          await new Promise((resolve) => setImmediate(resolve));
+          active -= 1;
+          completed += 1;
+          return completed;
+        }),
+      );
+      const settled = await Promise.allSettled(readers);
+      assert.equal(
+        settled.filter((entry) => entry.status === "rejected").length,
+        0,
+        "every queued store read completes instead of timing out against the lock",
+      );
+    } finally {
+      console.warn = warn;
+      console.info = info;
+    }
+    assert.equal(peak, 1, "the in-process gate still serializes store operations");
+    assert.equal(completed, 32);
+    assert.deepEqual(
+      diagnostics.filter((event) => event?.phase === "waiting" || event?.phase === "failed"),
+      [],
+      "no store reader enters the filesystem retry loop behind another reader",
+    );
+    globalThis.__caveHomeMigration = undefined;
+  }
+
   console.log("cave-home-migration-locks-takeover.test.ts: ok");
 } finally {
   for (const root of roots) await rm(root, { recursive: true, force: true });
