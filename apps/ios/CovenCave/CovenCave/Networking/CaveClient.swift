@@ -273,7 +273,12 @@ struct CaveClient {
         }
     }
 
-    private func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
+    private func request(
+        _ path: String,
+        method: String = "GET",
+        body: Data? = nil,
+        pathIsPercentEncoded: Bool = false
+    ) throws -> URLRequest {
         // `appendingPathComponent` percent-encodes "?" to "%3F", which turns a
         // path like "api/journal?date=…" into a bogus path segment the server
         // 404s on. Split the query off, append only the path, then reattach the
@@ -282,7 +287,19 @@ struct CaveClient {
         let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
         let pathPart = String(parts[0])
         let queryPart = parts.count > 1 ? String(parts[1]) : nil
-        var url = try base.appendingPathComponent(pathPart)
+        let baseURL = try base
+        var url: URL
+        if pathIsPercentEncoded {
+            guard var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+                throw CaveError.notConfigured
+            }
+            let separator = comps.percentEncodedPath.hasSuffix("/") ? "" : "/"
+            comps.percentEncodedPath += separator + pathPart
+            guard let composed = comps.url else { throw CaveError.notConfigured }
+            url = composed
+        } else {
+            url = baseURL.appendingPathComponent(pathPart)
+        }
         if let queryPart, !queryPart.isEmpty {
             guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
                 throw CaveError.notConfigured
@@ -375,7 +392,8 @@ struct CaveClient {
         var req = try request(
             "api/familiars/\(escaped)/avatar",
             method: "POST",
-            body: imageData
+            body: imageData,
+            pathIsPercentEncoded: true
         )
         req.setValue(contentType, forHTTPHeaderField: "Content-Type")
         return try await familiarAvatarMutation(for: req)
@@ -383,7 +401,11 @@ struct CaveClient {
 
     func deleteFamiliarAvatar(id: String) async throws -> FamiliarAvatarMutation {
         let escaped = try Self.encodedPathSegment(id)
-        let req = try request("api/familiars/\(escaped)/avatar", method: "DELETE")
+        let req = try request(
+            "api/familiars/\(escaped)/avatar",
+            method: "DELETE",
+            pathIsPercentEncoded: true
+        )
         return try await familiarAvatarMutation(for: req)
     }
 

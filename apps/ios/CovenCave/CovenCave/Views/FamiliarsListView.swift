@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 
 enum FamiliarsListCopy {
     static let cachedAccessBanner = "Showing cached familiar access"
@@ -236,6 +238,11 @@ struct FamiliarDetailView: View {
     @State private var showPermissions = false
     @State private var changingModel = false
     @State private var modelMutationQueue = ChatModelMutationQueue()
+    @State private var showAvatarActions = false
+    @State private var showAvatarPhotosPicker = false
+    @State private var showAvatarCamera = false
+    @State private var avatarPhotoItem: PhotosPickerItem?
+    @State private var changingAvatar = false
 
     private var scopedContext: ProjectContext? {
         app.projectContext
@@ -337,16 +344,72 @@ struct FamiliarDetailView: View {
         .sheet(isPresented: $showPermissions) {
             FamiliarPermissionsSheet(familiar: familiar)
         }
+        .photosPicker(
+            isPresented: $showAvatarPhotosPicker,
+            selection: $avatarPhotoItem,
+            matching: .images
+        )
+        .onChange(of: avatarPhotoItem) { _, item in
+            guard let item else { return }
+            Task { await loadAvatar(item) }
+        }
+        .fullScreenCover(isPresented: $showAvatarCamera) {
+            CameraPicker { image in
+                Task { await updateAvatar(image) }
+            }
+            .ignoresSafeArea()
+        }
+        .confirmationDialog(
+            "Familiar avatar",
+            isPresented: $showAvatarActions,
+            titleVisibility: .visible
+        ) {
+            Button("Choose photo") { showAvatarPhotosPicker = true }
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button("Take photo") { showAvatarCamera = true }
+            }
+            if currentFamiliar.avatarUrl != nil {
+                Button("Remove avatar", role: .destructive) {
+                    Task { await removeAvatar() }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose how \(familiar.displayName) appears throughout Coven Cave.")
+        }
     }
 
     private var hero: some View {
         VStack(spacing: 12) {
-            AvatarView(
-                familiar: familiar,
-                url: app.client?.avatarURL(for: familiar),
-                size: 108,
-                showStatus: true)
+            Button {
+                showAvatarActions = true
+            } label: {
+                AvatarView(
+                    familiar: currentFamiliar,
+                    url: app.client?.avatarURL(for: currentFamiliar),
+                    size: 108,
+                    showStatus: true
+                )
+                .overlay(alignment: .bottomTrailing) {
+                    ZStack {
+                        Circle().fill(chrome.bgElevated)
+                        if changingAvatar {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(chrome.textPrimary)
+                        }
+                    }
+                    .frame(width: 34, height: 34)
+                    .overlay(Circle().strokeBorder(chrome.border, lineWidth: 1))
+                }
                 .shadow(color: chrome.accent.opacity(0.2), radius: 20, y: 8)
+            }
+            .buttonStyle(.glassPress)
+            .disabled(changingAvatar || app.client == nil)
+            .accessibilityLabel("Edit \(familiar.displayName)’s avatar")
+            .accessibilityHint("Choose a photo, take a photo, or remove the current avatar.")
             Text(familiar.displayName)
                 .font(.system(size: 34, weight: .semibold, design: .serif))
             HStack(spacing: 7) {
@@ -359,6 +422,10 @@ struct FamiliarDetailView: View {
             .font(.subheadline)
         }
         .padding(.top, 18)
+    }
+
+    private var currentFamiliar: Familiar {
+        app.familiar(familiar.id) ?? familiar
     }
 
     private var stats: some View {
@@ -563,5 +630,77 @@ struct FamiliarDetailView: View {
             }
         }
         await mutation.value
+    }
+
+    private func loadAvatar(_ item: PhotosPickerItem) async {
+        defer { avatarPhotoItem = nil }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data) else {
+                app.showToast(
+                    "Couldn’t read that photo",
+                    systemImage: "exclamationmark.triangle.fill",
+                    style: .error
+                )
+                return
+            }
+            await updateAvatar(image)
+        } catch {
+            app.showToast(
+                "Couldn’t read that photo",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+        }
+    }
+
+    private func updateAvatar(_ image: UIImage) async {
+        guard let client = app.client else { return }
+        let resized = image.resizedForUpload(maxDimension: 1_024)
+        guard let data = resized.jpegData(compressionQuality: 0.84) else {
+            app.showToast(
+                "Couldn’t prepare that photo",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+            return
+        }
+
+        changingAvatar = true
+        defer { changingAvatar = false }
+        do {
+            let mutation = try await client.uploadFamiliarAvatar(
+                id: familiar.id,
+                imageData: data,
+                contentType: "image/jpeg"
+            )
+            app.applyFamiliarAvatarMutation(id: familiar.id, avatarUrl: mutation.avatarUrl)
+            app.showToast("Avatar updated", systemImage: "person.crop.circle.fill")
+            Haptics.success()
+        } catch {
+            app.showToast(
+                "Couldn’t update the avatar",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+        }
+    }
+
+    private func removeAvatar() async {
+        guard let client = app.client else { return }
+        changingAvatar = true
+        defer { changingAvatar = false }
+        do {
+            let mutation = try await client.deleteFamiliarAvatar(id: familiar.id)
+            app.applyFamiliarAvatarMutation(id: familiar.id, avatarUrl: mutation.avatarUrl)
+            app.showToast("Avatar removed", systemImage: "person.crop.circle")
+            Haptics.tap()
+        } catch {
+            app.showToast(
+                "Couldn’t remove the avatar",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+        }
     }
 }

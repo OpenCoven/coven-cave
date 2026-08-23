@@ -1,5 +1,37 @@
 import Foundation
 
+enum ChatRuntimePresentation {
+    static func harnessLabel(_ harness: String?) -> String {
+        guard let harness = normalized(harness) else { return "Unavailable" }
+        switch harness.lowercased() {
+        case "claude": return "Claude"
+        case "codex": return "Codex"
+        case "gemini": return "Gemini"
+        case "hermes": return "Hermes"
+        case "opencode": return "OpenCode"
+        default: return harness
+        }
+    }
+
+    static func runtimeLabel(_ runtime: String?) -> String {
+        guard let runtime = normalized(runtime) else { return "Default" }
+        if runtime == "local" || runtime.hasPrefix("local:") {
+            return "Local"
+        }
+        if runtime.hasPrefix("ssh:") {
+            let parts = runtime.split(separator: ":", maxSplits: 2)
+            return parts.count > 1 ? "SSH · \(parts[1])" : "SSH"
+        }
+        return runtime
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 /// Per-send response controls accepted by `/api/chat/send`. These are wire
 /// enums, so their raw values must stay aligned with `command-controls.ts`.
 enum ChatThinkingEffort: String, CaseIterable, Codable, Identifiable {
