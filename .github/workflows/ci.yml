@@ -207,6 +207,22 @@ jobs:
       # XCUIApplication — minutes per case and the flakiest thing this pipeline
       # could own — so it keeps the compile gate above and stays out of the
       # blocking path. See cave-ac372 for the placement argument.
+      #
+      # ⚠️ The execution-time allowances are load-bearing, not tuning. The very
+      # first run of this suite (32666989516, the run that proved these tests
+      # had never executed) hung inside
+      # AppModelProjectContextTests.testNewerStandaloneTasksLoadWinsOverOlderSuccessfulTaskSnapshot (cave-dwy2a)
+      # and sat there for THIRTY-SIX MINUTES until the job timeout killed it.
+      # xcodebuild left the result bundle unfinalized, so the run produced no
+      # counts, no failure names, and a `cancelled` step — a verdict indistinguishable
+      # from an infrastructure blip.
+      #
+      # XCTest's per-test allowance is NOT enforced unless timeouts are enabled,
+      # which is why a 600s default did not stop a 36-minute hang. With them on,
+      # a wedged test is failed and named and the suite CONTINUES, so one bad
+      # test costs 60 seconds and still yields a full report. The measured suite
+      # is fast — 140 cases executed in about 3 seconds — so 60s per test is
+      # orders of magnitude of headroom, not a tight budget.
       - name: Run the iOS XCTest suite
         working-directory: apps/ios/CovenCave
         run: |
@@ -216,6 +232,9 @@ jobs:
             -derivedDataPath "$IOS_DERIVED_DATA" \
             -resultBundlePath "$IOS_RESULT_BUNDLE" \
             -only-testing:CovenCaveTests \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 180 \
             CODE_SIGNING_ALLOWED=NO \
             test-without-building
 

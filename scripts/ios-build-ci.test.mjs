@@ -308,6 +308,24 @@ assert.match(
   "routine PR CI runs the unit bundle; CovenCaveUITests stays compile-only for cost and flake reasons",
 );
 
+// A hang must cost one test, not the whole job. Run 32666989516 — the first
+// run that ever executed these tests — wedged for 36 minutes inside a single
+// case and died on the job timeout, leaving an unfinalized result bundle and
+// therefore no counts and no failure names at all. Without timeouts enabled
+// XCTest does not enforce its per-test allowance, so the flags below are the
+// difference between "one test is named and failed" and "the gate reports
+// nothing distinguishable from an infrastructure blip".
+assert.match(
+  testRun,
+  /-test-timeouts-enabled\s+YES/,
+  "per-test timeouts must be enabled — a hung test otherwise wedges the job until it times out with no report",
+);
+assert.match(
+  testRun,
+  /-default-test-execution-time-allowance\s+\d+/,
+  "a default per-test allowance bounds a hang to one test instead of the whole run",
+);
+
 const verifyStep = iosSteps.find((step) => String(step.run ?? "").includes("scripts/ios-xctest-summary.mjs"));
 assert.ok(
   verifyStep,
