@@ -161,4 +161,48 @@ if (typeof document !== "undefined") {
   assert.match(drawer, /Terminal drawer (open|closed)\./, "the drawer announces both states");
 }
 
+// ── A keydown with no readable key resolves to nothing (cave-lryhx) ──────────
+//
+// The modifier tests above already turn a bare `new Event("keydown")` away, so
+// the reachable shape here is the narrower one: modifiers held, key absent —
+// what a hand-assigned synthetic from an extension or automation produces.
+// That matters more here than anywhere else in the family, because this
+// resolver runs on EVERY keystroke typed into a live shell.
+{
+  const resolved = [];
+  let escaped = null;
+  const target = new EventTarget();
+  target.addEventListener("keydown", (e) => {
+    try {
+      const shortcut = resolveCodeRoomShortcut(e);
+      if (shortcut) resolved.push(shortcut);
+    } catch (err) {
+      escaped = err;
+    }
+  });
+
+  // Meta+Shift held, no key — clears both modifier guards and reaches the read.
+  target.dispatchEvent(
+    Object.assign(new Event("keydown"), { metaKey: true, shiftKey: true }),
+  );
+  assert.equal(escaped, null, "modifiers-without-key must not throw out of the handler");
+  assert.deepEqual(resolved, [], "an unreadable event resolves to no shortcut");
+
+  for (const bad of [null, undefined, 42, {}, ""]) {
+    target.dispatchEvent(
+      Object.assign(new Event("keydown"), { key: bad, metaKey: true, shiftKey: true }),
+    );
+    assert.equal(escaped, null, `key=${String(bad)} must not throw`);
+  }
+  assert.deepEqual(resolved, [], "no unreadable shape resolved a shortcut");
+
+  // A real binding still resolves afterwards, so the guard cannot pass by
+  // disabling the shortcuts it protects.
+  target.dispatchEvent(
+    Object.assign(new Event("keydown"), { key: "D", metaKey: true, shiftKey: true }),
+  );
+  assert.equal(escaped, null);
+  assert.deepEqual(resolved, ["split-right"], "a real binding still resolves after a bad event");
+}
+
 console.log("code-room-shortcuts.test.ts ok");

@@ -963,3 +963,624 @@ fn node_arg_path_preserves_regular_windows_paths() {
 
     assert_eq!(node_arg_path(&path), path);
 }
+
+// The plaintext mobile pairing secret must be unreadable to any other
+// principal on Windows too. `write_secret_file` applied `mode(0o600)` under
+// `#[cfg(unix)]` and NOTHING here, so the shipped
+// `%APPDATA%\ai.opencoven.cave\mobile-access-token` on the author's host
+// carried `CodexSandboxUsers:(I)(M)` and two foreign user SIDs at `(I)(M,DC)`.
+// Anything holding that substitutes the gate secret the sidecar launches with.
+//
+// On the Linux CI runner this test does not exist: `cargo test --lib` never
+// compiles it. The assertions CI does run against the same change live in
+// `secret_path_acl.rs` and in the injected-refusal tests below, which is why
+// the guard is split into a pure policy layer and a Win32 layer at all.
+#[cfg(target_os = "windows")]
+#[test]
+fn mobile_access_token_is_exclusive_to_the_current_user_on_windows() {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-mobile-token-acl-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    // Reproduce the inherited exposure the real %APPDATA% has: a foreign
+    // principal with Modify, inheritable onto everything created below.
+    let system32 = std::path::PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"))
+        .join("System32");
+    let granted = Command::new(system32.join("icacls.exe"))
+        .arg(&dir)
+        .arg("/grant")
+        .arg("*S-1-5-32-545:(OI)(CI)(M)")
+        .output()
+        .expect("run icacls /grant");
+    assert!(granted.status.success(), "the fixture must start out shared");
+
+    let secret_path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let token = load_or_create_mobile_access_token(&secret_path);
+    assert!(is_valid_persisted_token(&token));
+    assert_eq!(
+        std::fs::read_to_string(&secret_path).expect("secret file written"),
+        token,
+        "the secret must still persist across launches"
+    );
+
+    let observed = Command::new(system32.join("icacls.exe"))
+        .arg(&secret_path)
+        .output()
+        .expect("run icacls");
+    let observed = String::from_utf8_lossy(&observed.stdout).to_string();
+
+    // Read the DACL back through the module's own probe rather than trusting
+    // the text: `repaired == false` is what makes this non-vacuous, because a
+    // probe that repairs on the way past would otherwise report success no
+    // matter what `load_or_create_mobile_access_token` left behind.
+    let report = crate::secret_path_acl::win::restrict_to_current_user(&secret_path)
+        .expect("read the secret's DACL back");
+    assert!(
+        !report.repaired,
+        "the secret must already be exclusive when the loader returns, not made \
+         exclusive by the check; icacls saw:\n{observed}"
+    );
+    assert!(
+        crate::secret_path_acl::exclusivity_findings(&report).is_empty(),
+        "the persisted secret must be exclusive to the current user: {:?}\nicacls saw:\n{observed}",
+        crate::secret_path_acl::exclusivity_findings(&report)
+    );
+    assert!(
+        !observed.contains("S-1-5-32-545") && !observed.contains(r"BUILTIN\Users"),
+        "an independent tool must agree the foreign principal is gone:\n{observed}"
+    );
+
+    // The directory above it matters just as much: `(M,DC)` is Delete-Child,
+    // and a principal holding that replaces the file wholesale no matter what
+    // the file's own DACL says.
+    let parent = crate::secret_path_acl::win::restrict_to_current_user(&dir)
+        .expect("read the directory's DACL back");
+    assert!(
+        !parent.repaired && crate::secret_path_acl::exclusivity_findings(&parent).is_empty(),
+        "the directory holding the secret must be exclusive too: {:?}",
+        crate::secret_path_acl::exclusivity_findings(&parent)
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
+}
+
+// -- The mobile access token's path guard, exercised on EVERY runner --------
+//
+// The real guard is a no-op off Windows, so these drive the injected seam
+// instead. That is the whole reason the seam exists: CI runs `cargo test
+// --locked --lib` on Linux, and a refusal path that only exists inside
+// `#[cfg(target_os = "windows")]` would have no assertion the runner ever
+// executes -- which is exactly how the Windows branch of the JavaScript
+// sibling stayed inert. Every assertion below runs identically on Linux,
+// macOS and Windows.
+
+#[cfg(desktop)]
+fn secret_acl_scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-token-guard-{name}-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    dir
+}
+
+#[cfg(desktop)]
+fn refusal(subject: &str) -> crate::secret_path_acl::Protection {
+    crate::secret_path_acl::Protection::Refused {
+        message: format!("{subject} refused by the test"),
+    }
+}
+
+#[cfg(desktop)]
+fn enforced() -> crate::secret_path_acl::Protection {
+    crate::secret_path_acl::Protection::Enforced { notice: None }
+}
+
+#[test]
+fn a_secret_the_guard_refuses_is_never_written_to_disk() {
+    let dir = secret_acl_scratch("refused-write");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+
+    let error = write_secret_file_with(&path, "deadbeef", &|_, subject| refusal(subject))
+        .expect_err("a refused path must not accept a plaintext secret");
+
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    assert!(
+        error.to_string().contains("refused by the test"),
+        "the refusal has to carry the guard's reason: {error}"
+    );
+    assert!(
+        !path.exists(),
+        "not even the empty file opened before the guard ran may survive a refusal"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn a_secret_the_guard_accepts_is_written_in_full() {
+    let dir = secret_acl_scratch("accepted-write");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+
+    write_secret_file_with(&path, "deadbeef", &|_, _| enforced()).expect("an accepted path writes");
+
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("secret file written"),
+        "deadbeef"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn an_unprotectable_directory_yields_a_per_launch_token_and_writes_nothing() {
+    let dir = secret_acl_scratch("refused-dir");
+    let path = dir.join("nested").join(MOBILE_ACCESS_TOKEN_FILE);
+
+    let first = load_or_create_mobile_access_token_with(&path, &|_, subject| {
+        if subject == crate::secret_path_acl::MOBILE_SECRET_DIR_SUBJECT {
+            refusal(subject)
+        } else {
+            enforced()
+        }
+    });
+    let second = load_or_create_mobile_access_token_with(&path, &|_, subject| {
+        if subject == crate::secret_path_acl::MOBILE_SECRET_DIR_SUBJECT {
+            refusal(subject)
+        } else {
+            enforced()
+        }
+    });
+
+    // Loud but NOT fatal: the shell still gets a usable gate secret, which is
+    // what keeps cave-37fxr's "a hardened host cannot boot" from recurring
+    // here. It simply does not survive a restart.
+    assert!(is_valid_persisted_token(&first));
+    assert_ne!(first, second, "a refused directory cannot persist anything");
+    assert!(
+        !path.exists(),
+        "a directory that cannot be made exclusive must not receive the secret"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn an_unprotectable_secret_file_is_neither_reused_nor_overwritten() {
+    let dir = secret_acl_scratch("refused-file");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let persisted = "a".repeat(64);
+    std::fs::write(&path, &persisted).expect("seed a persisted secret");
+
+    let token = load_or_create_mobile_access_token_with(&path, &|_, subject| {
+        if subject == crate::secret_path_acl::MOBILE_SECRET_SUBJECT {
+            refusal(subject)
+        } else {
+            enforced()
+        }
+    });
+
+    assert!(is_valid_persisted_token(&token));
+    assert_ne!(
+        token, persisted,
+        "a secret whose own path is not exclusive must not be armed as the gate secret"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("the persisted secret is still there"),
+        persisted,
+        "a refusal must not destroy the operator's pairing secret; the remedy is icacls, \
+         not deletion"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn a_waived_path_still_persists_the_secret_and_discloses_why() {
+    let dir = secret_acl_scratch("waived");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let waive = |_: &Path, _: &str| crate::secret_path_acl::Protection::Waived {
+        disclosure: "SECURITY WAIVER - test".to_string(),
+    };
+
+    let first = load_or_create_mobile_access_token_with(&path, &waive);
+    let second = load_or_create_mobile_access_token_with(&path, &waive);
+
+    assert_eq!(
+        first, second,
+        "the waiver buys persistence back; that is the whole of what it buys"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("secret file written"),
+        first
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn both_the_directory_and_the_secret_file_are_put_through_the_guard() {
+    // `(M,DC)` on the directory is Delete-Child: a principal holding it
+    // replaces the secret wholesale no matter what the file's own DACL says,
+    // so guarding only one of the two is not a partial fix, it is no fix.
+    let dir = secret_acl_scratch("subjects");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let seen = std::cell::RefCell::new(Vec::new());
+
+    let token = load_or_create_mobile_access_token_with(&path, &|guarded, subject| {
+        seen.borrow_mut()
+            .push((guarded.to_path_buf(), subject.to_string()));
+        enforced()
+    });
+
+    assert!(is_valid_persisted_token(&token));
+    let seen = seen.into_inner();
+    assert!(
+        seen.iter().any(|(guarded, subject)| guarded == &dir
+            && subject == crate::secret_path_acl::MOBILE_SECRET_DIR_SUBJECT),
+        "the directory holding the secret must be guarded: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|(guarded, subject)| guarded == &path
+            && subject == crate::secret_path_acl::MOBILE_SECRET_SUBJECT),
+        "the secret file itself must be guarded: {seen:?}"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn a_persisted_secret_is_guarded_before_it_is_trusted() {
+    // The reuse path is where an upgrading install lives: its token file was
+    // written by a version that applied no access control at all, so reading
+    // it without a check would carry the defect forward forever.
+    let dir = secret_acl_scratch("reuse");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let persisted = "b".repeat(64);
+    std::fs::write(&path, &persisted).expect("seed a persisted secret");
+    let guarded_before_read = std::cell::RefCell::new(false);
+
+    let token = load_or_create_mobile_access_token_with(&path, &|guarded, _| {
+        if guarded == path {
+            *guarded_before_read.borrow_mut() = true;
+        }
+        enforced()
+    });
+
+    assert_eq!(token, persisted, "an exclusive secret is still reused");
+    assert!(
+        guarded_before_read.into_inner(),
+        "the persisted secret's path must be guarded before its bytes are trusted"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+// ── Who holds the dedicated port (cave-2s5q0) ────────────────────────────────
+// A second copy used to reach `node`, lose the bind, and surface the raw
+// EADDRINUSE error object on the startup screen. `sidecar_port_lock` stops it
+// getting that far; these cover the half that says WHO, so the refusal names
+// something instead of listing everything it might be.
+
+fn build_info_response(status: &str, body: &str) -> Vec<u8> {
+    format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .into_bytes()
+}
+
+#[test]
+fn an_unauthenticated_cave_identifies_itself() {
+    // Both a packaged copy and a `pnpm dev` server answer this way, so it is
+    // the ordinary second-copy verdict rather than a dev-only one. A packaged
+    // copy answers despite holding a sidecar token because `server.ts` stamps
+    // the local-peer header on any direct loopback request and `src/proxy.ts`
+    // lets a trusted local peer through ordinary app APIs without one.
+    assert_eq!(
+        classify_build_info_response(&build_info_response(
+            "200 OK",
+            r#"{"name":"CovenCave","version":"0.0.0","revision":"abc","identity":"dev"}"#
+        )),
+        PortOccupant::Cave
+    );
+}
+
+#[test]
+fn a_chunked_answer_is_decoded_rather_than_read_as_a_stranger() {
+    let body = r#"{"name":"CovenCave"}"#;
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        body.len(),
+        body
+    );
+    assert_eq!(
+        classify_build_info_response(response.as_bytes()),
+        PortOccupant::Cave,
+        "framing is not identity"
+    );
+}
+
+#[test]
+fn a_gated_answer_is_its_own_verdict() {
+    // Not the ordinary second copy — that answers 200 and lands in `Cave`.
+    // This is a Cave reached without `server.ts` in front of it, or something
+    // else gating the same path, and it must not be flattened into `Stranger`:
+    // "will not identify itself" and "is another program" call for different
+    // actions.
+    for status in ["401 Unauthorized", "403 Forbidden"] {
+        assert_eq!(
+            classify_build_info_response(&build_info_response(
+                status,
+                r#"{"error":"unauthorized"}"#
+            )),
+            PortOccupant::Gated,
+            "{status} is a refusal to identify, not a stranger"
+        );
+    }
+}
+
+#[test]
+fn anything_else_on_the_port_is_a_stranger() {
+    assert_eq!(
+        classify_build_info_response(&build_info_response("200 OK", r#"{"name":"grafana"}"#)),
+        PortOccupant::Stranger,
+        "a 200 that is not ours belongs to somebody else"
+    );
+    assert_eq!(
+        classify_build_info_response(&build_info_response("200 OK", "<html>hello</html>")),
+        PortOccupant::Stranger,
+        "a 200 that is not JSON belongs to somebody else"
+    );
+    assert_eq!(
+        classify_build_info_response(&build_info_response("500 Internal Server Error", "{}")),
+        PortOccupant::Stranger
+    );
+    assert_eq!(
+        classify_build_info_response(b"not http at all"),
+        PortOccupant::Stranger,
+        "something listening that does not speak HTTP still holds the port"
+    );
+    assert_eq!(
+        classify_build_info_response(b""),
+        PortOccupant::Stranger,
+        "an accepted connection that says nothing is not a free port"
+    );
+}
+
+#[test]
+fn a_port_nobody_is_listening_on_is_free() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind to borrow a port");
+    let port = listener.local_addr().expect("borrowed address").port();
+    drop(listener);
+
+    assert_eq!(
+        classify_port_occupant(port),
+        PortOccupant::Free,
+        "a refused connection is the only thing that means free"
+    );
+}
+
+#[test]
+fn a_silent_listener_holds_the_port_even_though_it_never_answers() {
+    // The dev classifier (scripts/dev-port-owner.mjs) calls this case "free" so
+    // the caller's own bind produces the real error. Here that "real error" is
+    // the node crash this whole change exists to stop surfacing, so a
+    // completed connection is never downgraded.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind silent fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let accepted = std::thread::spawn(move || {
+        let _ = listener.accept();
+    });
+
+    assert_eq!(classify_port_occupant(port), PortOccupant::Stranger);
+    let _ = accepted.join();
+}
+
+#[test]
+fn every_refusal_offers_the_documented_way_to_run_a_second_copy() {
+    // COVEN_CAVE_PORT is why the claim is keyed on the port rather than on the
+    // app. A message that forgot to mention it would leave "quit the other
+    // one" as the only move, which is not what the port contract promises.
+    let occupied = [
+        PortOccupant::Cave,
+        PortOccupant::Gated,
+        PortOccupant::Stranger,
+    ];
+    for occupant in &occupied {
+        let message = port_conflict_message(3020, occupant);
+        assert!(
+            message.contains(sidecar_ports::CAVE_PORT_ENV),
+            "{occupant:?} refusal must name the escape hatch: {message}"
+        );
+        assert!(
+            message.contains("3020"),
+            "{occupant:?} refusal must name the port"
+        );
+    }
+
+    // The squatter let go before we could ask who it was; there is nothing to
+    // work around, so re-launching is the whole instruction.
+    let vanished = port_conflict_message(3020, &PortOccupant::Free);
+    assert!(vanished.contains("Re-launch"), "{vanished}");
+}
+
+#[test]
+fn a_lost_claim_names_the_copy_that_won_it() {
+    let named = already_running_message(3020, Some(4242));
+    assert!(named.contains("process 4242"), "{named}");
+    assert!(named.contains(sidecar_ports::CAVE_PORT_ENV), "{named}");
+
+    // The lock is what proves a live owner; the pid is a courtesy the owner
+    // record may not be able to supply.
+    let anonymous = already_running_message(3020, None);
+    assert!(anonymous.contains("already running"), "{anonymous}");
+    assert!(!anonymous.contains("process"), "{anonymous}");
+}
+
+#[test]
+fn a_hostile_chunk_header_is_an_error_rather_than_a_panic() {
+    // `decode_chunked_body` used to be reachable only after our own sidecar had
+    // logged its ready line. The build-info probe now feeds it bytes from
+    // whoever holds the port, on every launch — so an attacker-shaped chunk
+    // size must not wrap the trailer arithmetic. `FFFFFFFFFFFFFFFF` made
+    // `size + 2` wrap to 1 in a release build, which passed the length test and
+    // then panicked slicing `[usize::MAX..1]`.
+    //
+    // A panic here is worse than a wrong verdict: it unwinds the Windows
+    // startup worker, leaves SidecarStartupControl.running stuck true, and
+    // deadens the Retry button for the life of the process.
+    for size_hex in ["FFFFFFFFFFFFFFFF", "FFFFFFFFFFFFFFFE", "fffffffffffffff0"] {
+        let hostile =
+            format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{size_hex}\r\nx");
+        assert_eq!(
+            classify_build_info_response(hostile.as_bytes()),
+            PortOccupant::Stranger,
+            "chunk size {size_hex} must classify, not crash"
+        );
+    }
+
+    // The ordinary truncation case still reports itself as one.
+    let truncated = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n20\r\n{}\r\n0\r\n\r\n";
+    assert!(validate_readiness_response(truncated)
+        .expect_err("truncated chunks must fail")
+        .contains("truncated chunk"));
+}
+
+#[test]
+fn a_bind_conflict_is_recognised_by_its_line_not_by_a_stray_token() {
+    // The predicate picks the message that tells someone to go quit a program,
+    // so a loose substring would let one stray token in a dependency's log
+    // rewrite the diagnosis and discard the real evidence.
+    assert!(tail_reports_bind_conflict(
+        "Error: listen EADDRINUSE: address already in use 127.0.0.1:3020"
+    ));
+    assert!(tail_reports_bind_conflict(
+        "> Port 3020 on 127.0.0.1 is already in use (EADDRINUSE); CovenCave cannot serve here."
+    ));
+    assert!(
+        !tail_reports_bind_conflict("retrying upstream fetch after EADDRINUSE from a peer socket"),
+        "a mention is not a failure to bind"
+    );
+    assert!(!tail_reports_bind_conflict("(no output captured)"));
+}
+
+#[test]
+fn a_trickling_occupant_cannot_stall_startup() {
+    // set_read_timeout bounds each read, not the total, and Read::take bounds
+    // bytes rather than time — so a peer that emits one byte inside every
+    // timeout window used to hold the probe for as long as it liked. Startup
+    // has no cancellation checkpoint inside the probe, so that froze the
+    // Windows startup screen outright.
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind trickle fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let stop = Arc::new(AtomicBool::new(false));
+    let trickling = Arc::clone(&stop);
+    let server = std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        // Never a complete response, never a close.
+        while !trickling.load(Ordering::Relaxed) {
+            if stream.write_all(b"x").is_err() {
+                return;
+            }
+            let _ = stream.flush();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    let started = Instant::now();
+    let verdict = classify_port_occupant(port);
+    let elapsed = started.elapsed();
+    stop.store(true, Ordering::Relaxed);
+    let _ = server.join();
+
+    assert_eq!(verdict, PortOccupant::Stranger);
+    assert!(
+        // Generous on purpose: the regression this detects takes HOURS, so a
+        // wide bound costs nothing and a tight one flakes on a loaded runner.
+        elapsed < Duration::from_secs(30),
+        "the probe must give up on its own budget, took {elapsed:?}"
+    );
+}
+
+#[test]
+fn a_stalled_sidecar_cannot_hold_the_readiness_wait_past_its_deadline() {
+    // The readiness handshake had the same unbounded-read shape as the occupant
+    // probe, and it mattered more: `wait_for_sidecar_ready` checks its deadline
+    // only BETWEEN handshake attempts and never polls `should_cancel` inside
+    // one, so a sidecar that stalled mid-response held the startup worker past
+    // its whole 60/90s budget. The worker never reaching `finish()` pins
+    // `running` true, which deadens Retry for the life of the process.
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalled fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let output = Arc::new(Mutex::new(SidecarOutputTail::default()));
+    output
+        .lock()
+        .expect("output tail")
+        .push(format!("> Ready on http://127.0.0.1:{}\n", port).as_bytes());
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let stalling = Arc::clone(&stop);
+    // The wait makes one connection per handshake attempt, so the fixture has
+    // to keep accepting — but a blocking `accept()` after the last one would
+    // never return and `join()` below would hang forever. Poll instead.
+    listener
+        .set_nonblocking(true)
+        .expect("pollable stalled fixture");
+    let server = std::thread::spawn(move || {
+        while !stalling.load(Ordering::Relaxed) {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(Duration::from_millis(20));
+                continue;
+            };
+            // An accepted stream can inherit the listener's mode.
+            let _ = stream.set_nonblocking(false);
+            // Headers that never end, one byte at a time.
+            while !stalling.load(Ordering::Relaxed) {
+                if stream.write_all(b"H").is_err() {
+                    break;
+                }
+                let _ = stream.flush();
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    });
+
+    let started = Instant::now();
+    let result = wait_for_sidecar_ready(
+        port,
+        "test-token",
+        &output,
+        Duration::from_secs(3),
+        || false,
+        || false,
+    );
+    let elapsed = started.elapsed();
+    stop.store(true, Ordering::Relaxed);
+    let _ = server.join();
+
+    assert!(
+        matches!(
+            result,
+            PortWaitResult::Refused(_) | PortWaitResult::TimedOut
+        ),
+        "a sidecar that never completes a response is not ready"
+    );
+    assert!(
+        // Same reasoning as the sibling above: reverting the fix costs ~55
+        // minutes here, so 45s separates regression from load noise by ~70x.
+        elapsed < Duration::from_secs(45),
+        "the wait must honour its own deadline, took {elapsed:?}"
+    );
+}

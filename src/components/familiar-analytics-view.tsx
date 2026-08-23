@@ -77,7 +77,7 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   // and then snap it back open when the data lands.
   if (loading && !model) {
     return (
-      <main className="fa-page" aria-busy="true">
+      <div className="fa-page" aria-busy="true">
         <div className="fa-frame fa-frame--loading">
           <div className="fa-dock">
             <SkeletonRows count={6} />
@@ -86,12 +86,12 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
             <SkeletonRows count={8} />
           </div>
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="fa-page" aria-busy={loading || refreshing}>
+    <div className="fa-page" aria-busy={loading || refreshing}>
       {error ? (
         <div className="retro-callout" role="alert">
           <Icon name="ph:warning-circle" aria-hidden />
@@ -106,6 +106,6 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
           subtitle="Analytics appear once this familiar has run a session."
         />
       )}
-    </main>
+    </div>
   );
 }

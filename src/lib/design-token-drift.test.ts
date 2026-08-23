@@ -173,6 +173,57 @@ for (const rel of files) {
   );
 }
 
+// ── tier 1b: on-scale RADII, including the compressed lines tier 1 cannot see ─
+//
+// cave-uvwhh / #4350. Tier 1 above runs the codemod over the file, and the
+// codemod is line-anchored: DECL_RE is /^(\s*)([a-zA-Z-]+)(\s*:\s*)…/, so it
+// only ever sees a line whose FIRST declaration starts at column 0. This repo
+// writes a lot of CSS in the compressed `.sel { a:1; b:2; }` one-liner style,
+// and every declaration on such a line is invisible to the "zero tolerance"
+// gate — the line does not match, so the whole line is returned untouched.
+//
+// That blind spot was hiding 22 on-scale radius literals (11x 8px, 10x 999px,
+// 1x 12px) that should have been tokens: 162 of the tree's 1938 border-radius
+// declarations sit on compressed lines. Untokenized, they are frozen at their
+// literal value while every neighbouring surface rescales with the theme and
+// with the corner-radius appearance setting — which is precisely the reported
+// "inconsistencies with border radius across the application".
+//
+// Scoped deliberately to border-radius. font-size and spacing have their own
+// hidden counts on these same lines; widening this gate to them is a separate,
+// much larger change and belongs in its own PR (see the issue thread).
+//
+// The check reuses the codemod's own value logic rather than re-implementing a
+// px table: each declaration is replayed as a canonical one-per-line probe,
+// which is the shape DECL_RE does match, so multi-value radii ("8px 8px 0 0")
+// are covered on exactly the same terms as everywhere else.
+{
+  const offenders: string[] = [];
+  for (const rel of files) {
+    const source = stripComments(readFileSync(rel, "utf8"));
+    source.split("\n").forEach((line, i) => {
+      if (line.includes(EXEMPT_MARKER)) return;
+      for (const m of line.matchAll(/border-radius\s*:\s*([^;{}]+)\s*(?=[;}])/g)) {
+        const value = m[1].trim();
+        if (!value) continue;
+        const probe = `  border-radius: ${value};`;
+        if (tokenizeCss(probe) !== probe) {
+          offenders.push(`${rel}:${i + 1}  border-radius: ${value}`);
+        }
+      }
+    });
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `on-scale border-radius literals must use tokens (8px -> --radius-control, ` +
+      `12px -> --radius-card, 16px -> --radius-panel, 999px -> --radius-pill).\n` +
+      `These sit on compressed multi-declaration lines, so ` +
+      `\`node scripts/codemods/tokenize-css.mjs\` will NOT fix them — edit by hand:\n  ` +
+      offenders.join("\n  "),
+  );
+}
+
 // ── tier 2: ratchets ────────────────────────────────────────────────────────
 
 /** Strip block comments so commented-out CSS never counts as drift. */

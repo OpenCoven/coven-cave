@@ -63,8 +63,13 @@ assert.doesNotMatch(sidebar, /export type FolderMode/, "the obsolete component-l
 
 assert.match(
   standalone,
-  /import \{ VISIBLE_WORKSPACE_NAV_ITEMS \} from "@\/lib\/workspace-navigation"/,
-  "standalone pages consume the lightweight registry without importing SidebarMinimal",
+  /import \{[\s\S]*?navItemsForSection,[\s\S]*?\} from "@\/lib\/nav-section"/,
+  "standalone pages consume the lightweight section registry without importing SidebarMinimal",
+);
+assert.doesNotMatch(
+  standalone,
+  /from "@\/components\/sidebar-minimal"/,
+  "standalone pages do not import the stateful workspace sidebar",
 );
 assert.match(
   mobile,
