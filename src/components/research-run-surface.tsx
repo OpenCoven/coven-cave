@@ -79,18 +79,30 @@ function evidenceSummary(run: ResearchRunSurfaceModel): string[] {
  */
 export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
   const [run, setRun] = useState(snapshot);
+  const [canonical, setCanonical] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const canonicalRef = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
+    canonicalRef.current = false;
+    setCanonical(false);
     setRun(snapshot);
     setActionError(null);
     return () => {
       mounted.current = false;
     };
   }, [snapshot.runId]);
+
+  // Repeated markers can refine a provider-only run while it streams. Accept
+  // those snapshots until the canonical mission API has answered once; after
+  // that, server state owns the projection and stale marker text cannot regress
+  // it on unrelated parent renders.
+  useEffect(() => {
+    if (!canonicalRef.current) setRun(snapshot);
+  }, [snapshot]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -109,6 +121,8 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
           if (POLLABLE.has(snapshot.status)) timer = setTimeout(refresh, 5_000);
           return;
         }
+        canonicalRef.current = true;
+        setCanonical(true);
         const next = researchMissionToRunSurface(result.mission);
         setRun(next);
         if (POLLABLE.has(next.status)) {
@@ -131,7 +145,7 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
   }, [snapshot.runId, snapshot.status]);
 
   const act = useCallback(async (action: "pause" | "resume" | "cancel") => {
-    if (busy) return;
+    if (busy || !canonical) return;
     setBusy(true);
     setActionError(null);
     try {
@@ -147,20 +161,21 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
     } finally {
       if (mounted.current) setBusy(false);
     }
-  }, [busy, run.runId]);
+  }, [busy, canonical, run.runId]);
 
+  const canControl = canonical && !busy;
   return (
     <div>
       <ResearchRunSurface
         run={run}
         variant="inline"
         onOpenDesk={onOpenDesk}
-        onPause={busy ? undefined : () => void act("pause")}
-        onResume={busy ? undefined : () => void act("resume")}
-        onStop={busy ? undefined : () => void act("cancel")}
+        onPause={canControl ? () => void act("pause") : undefined}
+        onResume={canControl ? () => void act("resume") : undefined}
+        onStop={canControl ? () => void act("cancel") : undefined}
       />
       {actionError ? (
-        <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--fg-danger)]" role="alert">
+        <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-danger)]" role="alert">
           {actionError}
         </p>
       ) : null}
@@ -229,7 +244,7 @@ export function ResearchRunSurface({
                       : step.status === "completed"
                         ? "border-[var(--fg-primary)] bg-[var(--fg-primary)] text-[var(--bg-base)]"
                         : step.status === "failed" || step.status === "blocked"
-                          ? "border-[var(--fg-danger)] text-[var(--fg-danger)]"
+                          ? "border-[var(--text-danger)] text-[var(--text-danger)]"
                           : "border-dashed border-[var(--border-strong)] text-[var(--fg-muted)]",
                   ].join(" ")}
                   aria-hidden
