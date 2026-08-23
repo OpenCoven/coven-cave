@@ -36,8 +36,8 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)\)/,
-  "preview/image/GitHub markers strip unconditionally and LAST, after skill/auto-status/attention/next-path extraction — raw tags never flash on pending OR settled turns",
+  /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)/,
+  "preview/image/GitHub markers strip unconditionally and LAST, after all control extraction — raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(
   renderedText,
