@@ -10,6 +10,7 @@ import {
   stripPreviewMarkers,
 } from "./preview-blocks.ts";
 import { extractNextPaths } from "./next-paths.ts";
+import { extractResearchRunMarkers } from "./research-run-surface.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
 
 export type ChatRenderedTextProjection = {
@@ -17,6 +18,7 @@ export type ChatRenderedTextProjection = {
   cardText: string;
   inlineReasoning: string;
   skillUpdates: ReturnType<typeof extractSkillMarkers>["updates"];
+  researchRuns: ReturnType<typeof extractResearchRunMarkers>["runs"];
   autoStatusUpdate: ReturnType<typeof extractAutoStatusMarkers>["update"];
   authoredResults: ReturnType<typeof extractChatResultMarkers>["results"];
   attentionRequest: ReturnType<typeof extractChatAttentionMarker>["request"];
@@ -27,13 +29,16 @@ export type ChatRenderedTextProjection = {
  * Project an assistant turn through the exact control-marker pipeline used by
  * the transcript. `visible` is prose-only; `cardText` retains GitHub, image,
  * and preview markers so the renderer can replace them with rich cards.
+ * Research markers are control metadata: the projection exposes their run
+ * snapshots separately and never lets raw protocol text reach prose/card text.
  */
 export function extractChatRenderedText(
   text: string,
   options: { pending?: boolean } = {},
 ): ChatRenderedTextProjection {
   const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(text).text);
-  const skillSplit = extractSkillMarkers(reasoningSplit.visible);
+  const researchSplit = extractResearchRunMarkers(reasoningSplit.visible);
+  const skillSplit = extractSkillMarkers(researchSplit.visible);
   const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
   const resultSplit = extractChatResultMarkers(autoStatusSplit.visible, {
     pending: Boolean(options.pending),
@@ -48,6 +53,7 @@ export function extractChatRenderedText(
     cardText: stripIncompletePreviewMarker(nextPathSplit.visible),
     inlineReasoning: reasoningSplit.reasoning,
     skillUpdates: skillSplit.updates,
+    researchRuns: researchSplit.runs,
     autoStatusUpdate: autoStatusSplit.update,
     authoredResults: resultSplit.results,
     attentionRequest: attentionSplit.request,
