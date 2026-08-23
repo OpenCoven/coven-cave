@@ -1965,6 +1965,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // is what lets the first exchange branch instead of silently appending.
   const [pendingBranchParent, setPendingBranchParent] = useState<string | null | undefined>(undefined);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
+  const offlineReadOnly = historyState === "offline";
   const [flowTranscriptFallback, setFlowTranscriptFallback] = useState<string | null>(null);
   const [debugModalOpen, setDebugModalOpen] = useState(false);
   const [reflecting, setReflecting] = useState(false);
@@ -3095,10 +3096,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     clearAttachments,
     handlePaste,
     dropActive,
-    dropHandlers,
+    dropHandlers: attachmentDropHandlers,
   } = useAttachmentStaging({
     focus: () => inputRef.current?.focus(),
   });
+  const dropHandlers = offlineReadOnly ? {} : attachmentDropHandlers;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -7122,7 +7124,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
-  const offlineReadOnly = historyState === "offline";
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const chatContextControls = (
@@ -7772,7 +7773,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
-      {...(offlineReadOnly ? {} : dropHandlers)}
+      {...dropHandlers}
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
