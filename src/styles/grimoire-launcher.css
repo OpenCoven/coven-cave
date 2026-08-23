@@ -1,7 +1,83 @@
+.grimoire-view {
+  container-name: grimoire;
+  container-type: inline-size;
+}
+
 .grimoire-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
+}
+
+.grimoire-reader-header {
+  display: flex;
+  box-sizing: border-box;
+  height: var(--space-8);
+  min-height: var(--space-8);
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+}
+
+.grimoire-workspace {
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.grimoire-navigator,
+.grimoire-document-pane {
+  border-radius: var(--radius-control);
+}
+
+.grimoire-navigator {
+  display: flex;
+}
+
+.grimoire-navigator--detail,
+.grimoire-navigator--reader {
+  display: none;
+}
+
+.grimoire-mobile-back {
+  display: flex;
+}
+
+.grimoire-workspace--document {
+  gap: 0;
+  padding: 0;
+}
+
+.grimoire-workspace--document .grimoire-navigator {
+  border-width: 0 1px 0 0;
+  border-radius: 0;
+}
+
+.grimoire-workspace--document .grimoire-document-pane {
+  border: 0;
+  border-radius: 0;
+}
+
+.grimoire-workspace--reader {
+  display: block;
+}
+
+.grimoire-workspace--reader .grimoire-document-pane {
+  width: 100%;
+  background: var(--bg-base);
+}
+
+@container grimoire (min-width: 880px) {
+  .grimoire-navigator--detail {
+    display: flex;
+  }
+
+  .grimoire-navigator--reader,
+  .grimoire-mobile-back {
+    display: none;
+  }
 }
 
 .grimoire-header .surface-compact-actions {

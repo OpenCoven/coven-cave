@@ -97,7 +97,7 @@ assert.match(
 );
 assert.match(
   view,
-  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[264px\]"/,
   "collapsed navigator becomes a compact rail instead of disappearing",
 );
 assert.match(view, /aria-label="Open Stitches navigator"/, "compact rail keeps Stitches reachable");
@@ -110,7 +110,7 @@ assert.match(
 );
 assert.match(
   view,
-  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[300px\]"/,
+  /navigatorCollapsedForDisplay \? "@min-\[880px\]\/grimoire:w-\[44px\]" : "@min-\[880px\]\/grimoire:w-\[264px\]"/,
   "the rail width uses the search-aware display state",
 );
 assert.match(
@@ -211,7 +211,7 @@ assert.match(view, /@container\/grimoire/, "layout adapts via container queries"
 // hides when the graph is showing, and the graph pane gets its own back row.
 assert.match(
   view,
-  /selection \|\| view !== "docs" \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  /selection \|\| view !== "docs"[\s\S]{0,120}"grimoire-navigator--detail"/,
   "the rail yields to the graph/journal tabs on narrow widths",
 );
 assert.match(
@@ -314,6 +314,19 @@ assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: saved\.id,[\s\S]{
 assert.match(view, /const evictIndex = tabs\.findIndex/, "over-cap opens evict the oldest non-active tab");
 assert.match(view, /fromHash/, "a #grimoire: deep link merges into (and activates within) the restored tab set");
 
+// ── Reader mode: one document, no editing chrome ───────────────────────────
+assert.match(view, /const \[readerMode, setReaderMode\] = useState\(false\)/, "Reader mode is explicit surface state");
+assert.match(view, /readerEligible[\s\S]{0,260}selection\.kind !== "knowledge-new"[\s\S]{0,120}selection\.kind !== "stitch-new"/, "Reader mode is limited to readable persisted documents");
+assert.match(view, /event\.key !== "Escape"[\s\S]{0,120}setReaderMode\(false\)/, "Escape exits Reader mode");
+assert.match(view, /aria-hidden \/>[\s\S]{0,80}Reader\s*<\/button>/, "the document command band exposes Reader mode");
+assert.match(view, /className="grimoire-reader-header"/, "Reader mode replaces the surface chrome with a compact document bar");
+assert.match(view, /onClick=\{\(\) => setReaderMode\(false\)\}/, "Reader mode keeps an explicit return-to-edit action");
+assert.match(view, /<Icon name="ph:pencil-simple"[\s\S]{0,80}Edit/, "the return action is visibly labelled Edit");
+assert.match(view, /const tabReaderMode = readerMode && key === selectedKey/, "only the active mounted editor enters Reader mode");
+assert.match(view, /readerMode=\{tabReaderMode\}/, "the active document editor receives Reader mode without remounting its tab");
+assert.match(view, /readerMode \? "hidden" : "flex shrink-0 items-center/, "the open-document tab strip is suppressed while reading");
+assert.match(view, /!readerMode && selection && selection\.kind !== "knowledge-new"/, "document links stay out of the reading canvas");
+
 // ── cave-xr0 slice 2: outgoing [[wiki-link]] chips ──────────────────────────
 // The open doc's resolved wiki-links render as a chip row below the editor,
 // resolved against the loaded doc lists (no server index); resolved chips
@@ -407,7 +420,7 @@ assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is o
 // the rail is then hidden.
 assert.match(
   view,
-  /selection \|\| view !== "docs" \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  /readerMode[\s\S]{0,120}"grimoire-navigator--reader"[\s\S]{0,160}"grimoire-navigator--detail"/,
   "the rail hides on narrow when a doc is open OR a non-docs tab is up",
 );
 assert.match(
@@ -442,11 +455,7 @@ assert.match(view, /onClick=\{\(\) => void requestCloseTab\(key, tabTitle\(tab\)
 // 10px (--text-2xs) is reserved for uppercase eyebrow labels and count chips.
 // Prose hints, alerts, and rail-row meta were bumped and must not creep back
 // down: sentences read at 12px (--text-sm), secondary UI text at 11px.
-assert.match(
-  view,
-  /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*Tip: type/,
-  "the links-strip tip sentence reads at --text-sm, not 10px",
-);
+assert.doesNotMatch(view, /Tip: type/, "documents without links no longer lose reading space to a persistent syntax tip");
 assert.match(
   view,
   /text-\[length:var\(--text-sm\)\] text-\[var\(--text-muted\)\]">\s*\n\s*“\{unresolvedHint\}”/,

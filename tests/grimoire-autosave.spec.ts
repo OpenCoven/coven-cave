@@ -180,6 +180,26 @@ test.describe("grimoire autosave (desktop)", () => {
     expect(body.body).toContain("Tag the release.");
   });
 
+  test("Reader mode gives the active document the full canvas and returns with Escape", async ({ page }) => {
+    await gotoGrimoire(page);
+    await rail(page).getByRole("button", { name: /Release checklist/ }).click();
+
+    await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Reader", exact: true }).click();
+
+    await expect(page.locator(".grimoire-view")).toHaveClass(/grimoire-view--reader/);
+    await expect(page.locator(".grimoire-view aside")).toBeHidden();
+    await expect(page.locator(".md-editor__topbar")).toHaveCount(0);
+    await expect(page.locator(".md-editor__footer")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+    await expect(page.getByText("Stamp the version everywhere.")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".grimoire-view")).not.toHaveClass(/grimoire-view--reader/);
+    await expect(page.getByRole("button", { name: "Reader", exact: true })).toBeVisible();
+    await expect(page.locator(".grimoire-view .cm-editor")).toBeVisible();
+  });
+
   test("memory files never autosave — typing leaves the draft unsaved", async ({ page }) => {
     await gotoGrimoire(page);
     await rail(page).getByRole("button", { name: /notes\.md/ }).click();

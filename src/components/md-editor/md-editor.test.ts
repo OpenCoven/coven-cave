@@ -59,6 +59,16 @@ assert.match(
   "Visual edits reattach the stable hidden metadata prefix",
 );
 
+// Reader mode reuses the live editor mount so a draft and its scroll position
+// survive the round trip, while the rendering becomes visual and read-only.
+assert.match(shell, /readerMode\?: boolean/, "MdEditor exposes Reader mode");
+assert.match(shell, /const renderedMode: MdEditorMode = readerMode \? "visual" : mode/, "Reader mode forces the visual renderer without overwriting the editing preference");
+assert.match(shell, /readOnly=\{readOnly \|\| readerMode\}/, "Reader mode makes the visual document non-editable");
+assert.match(shell, /\{!readerMode \? \(\s*<div className="md-editor__topbar/, "Reader mode suppresses the editor command bar");
+assert.match(shell, /\{!readerMode \? \(\s*<div className="md-editor__footer/, "Reader mode suppresses the editor footer");
+assert.match(shell, /const \[metadataOpen, setMetadataOpen\][\s\S]{0,180}return !initial\.title && initial\.tags\.length === 0/, "metadata starts collapsed for existing documents and open for blank entries");
+assert.match(shell, /aria-expanded=\{metadataOpen\}/, "the compact metadata disclosure exposes its state");
+
 // ── Visual mode: Milkdown Crepe wiring ───────────────────────────────────────
 
 assert.match(visual, /new Crepe\(\{/, "visual mode is Milkdown Crepe");

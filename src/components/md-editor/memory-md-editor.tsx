@@ -37,6 +37,7 @@ export function MemoryMdEditor({
   onCancel,
   onSaved,
   onDirtyChange,
+  readerMode = false,
 }: {
   path: string;
   sourceLabel?: string;
@@ -45,6 +46,7 @@ export function MemoryMdEditor({
   onSaved?: (text: string) => void;
   /** Forwarded to the inner editor (unsaved-edits indicator). */
   onDirtyChange?: (dirty: boolean) => void;
+  readerMode?: boolean;
 }) {
   // Bumping the token re-fetches (and re-mounts) the editor with disk state.
   const [refreshToken, setRefreshToken] = useState(0);
@@ -198,6 +200,7 @@ export function MemoryMdEditor({
         <MdEditor
           key={`${path}:${refreshToken}`}
           value={text}
+          readerMode={readerMode}
           sourceLabel={sourceLabel}
           onSave={save}
           onCancel={onCancel}
