@@ -1997,11 +1997,12 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
  */
 export type WindowsCwdProbeOutput = {
   /**
-   * The probe's own current directory, re-derived through the same memory reads
-   * it uses for every other process. The caller knows what this must be, so a
-   * mismatch is proof the reads are wrong on this machine.
+   * The probe's OWN process id — deliberately not its directory. The caller
+   * looks that pid up among the ordinary records, which come from the same
+   * memory reads as every other process, so the answer cannot be produced any
+   * other way.
    */
-  selfCwd: string | null;
+  selfPid: number | null;
   /** The `#end` marker was present, so the output is not truncated. */
   complete: boolean;
   /** Process counts, for the report. `null` when the line is missing or malformed. */
@@ -2021,7 +2022,7 @@ export function parseWindowsCwdProbeOutput(raw: string): WindowsCwdProbeOutput {
   const lines = raw.split(/\r?\n/);
   const holds = new Map<string, boolean>();
   const holdErrors = new Map<string, string>();
-  let selfCwd: string | null = null;
+  let selfPid: number | null = null;
   let totals: WindowsCwdProbeOutput["totals"] = null;
   let complete = false;
   const ownerRecords: string[] = [];
@@ -2036,8 +2037,10 @@ export function parseWindowsCwdProbeOutput(raw: string): WindowsCwdProbeOutput {
         inRecords = true;
         continue;
       }
-      if (line.startsWith("#self ")) {
-        selfCwd = line.slice("#self ".length);
+      const selfMatch = /^#selfpid ([1-9]\d*)$/.exec(line);
+      if (selfMatch) {
+        const parsedPid = Number(selfMatch[1]);
+        selfPid = Number.isSafeInteger(parsedPid) ? parsedPid : null;
         continue;
       }
       const totalsMatch = WINDOWS_PROBE_TOTALS.exec(line);
@@ -2073,7 +2076,7 @@ export function parseWindowsCwdProbeOutput(raw: string): WindowsCwdProbeOutput {
   }
 
   return {
-    selfCwd,
+    selfPid,
     complete: complete && inRecords,
     totals,
     holds,
@@ -2175,6 +2178,35 @@ function fetchWindowsProcessOwners(directories: string[]): {
     }
   }
 
+  return evaluateWindowsCwdProbe(result, launchCwd, directories);
+}
+
+/**
+ * Turns one completed probe invocation into an answer, or into a refusal.
+ *
+ * Separated from the spawning above so every refusal below is reachable from a
+ * test without having to break a real Windows installation to get there. It
+ * takes no I/O of its own beyond resolving the launch directory.
+ *
+ * There is no path out of here that reports "nothing is running" on doubtful
+ * evidence: every branch either returns owners the probe actually read, or an
+ * error, and the caller folds an error into the unit's `probeErrors`.
+ */
+export function evaluateWindowsCwdProbe(
+  result: Pick<CommandResult, "ok" | "stdout" | "stderr">,
+  launchCwd: string,
+  directories: string[],
+): {
+  owners: Array<WorktreeProcessOwner & { cwd: string }>;
+  holds: Map<string, boolean>;
+  holdErrors: Map<string, string>;
+  error: string | null;
+} {
+  const empty = {
+    owners: [],
+    holds: new Map<string, boolean>(),
+    holdErrors: new Map<string, string>(),
+  };
   if (!result.ok) {
     return { ...empty, error: result.stderr || "process cwd inventory unavailable" };
   }
@@ -2186,25 +2218,39 @@ function fetchWindowsProcessOwners(directories: string[]): {
   if (!probe.complete) {
     return { ...empty, error: "process cwd inventory returned truncated data" };
   }
-  // The self-check. `selfCwd` was read out of this probe's own process memory
-  // through the same offsets it used for everything else, and `launchCwd` is
-  // what we told the OS that directory should be — so an equal pair proves the
-  // reads are correct on THIS Windows build and bitness, and an unequal pair
-  // proves nothing else in the output can be trusted. Without it a future
-  // structure-layout change would degrade silently into "no live process
-  // anywhere", which reads exactly like a checkout that is safe to delete.
-  const observedSelf = normalizeAbsoluteWorktreePath(probe.selfCwd);
-  const expectedSelf = normalizeAbsoluteWorktreePath(launchCwd);
-  if (observedSelf === null || expectedSelf === null || observedSelf !== expectedSelf) {
+  const parsed = parseProcessOwners(probe.ownerRecords);
+  if (parsed.partial || parsed.owners.length === 0) {
+    return { ...empty, error: "process cwd inventory returned malformed or partial data" };
+  }
+
+  // The self-check, and it is deliberately not a special code path. We launched
+  // the probe, so we know exactly which directory its process is in; it tells us
+  // only its pid, and we go looking for that pid among the SAME records every
+  // other process produced. Finding it with the right directory proves the
+  // memory reads work on this Windows build and bitness, because there is no
+  // other way for that record to exist. Not finding it means the reads are
+  // broken, and a broken read reports an empty checkout — which is
+  // indistinguishable from a checkout where nothing is running, and is exactly
+  // the answer that would authorise deleting live work.
+  //
+  // normalizePath, not normalizeAbsoluteWorktreePath: parseProcessOwners resolves
+  // every reported cwd through realpath, so the expectation has to be resolved
+  // the same way or a symlinked or short-name launch directory would never match.
+  let expectedSelf: string | null = null;
+  try {
+    expectedSelf = normalizePath(launchCwd);
+  } catch {
+    expectedSelf = null;
+  }
+  const selfOwner =
+    probe.selfPid === null
+      ? undefined
+      : parsed.owners.find((owner) => owner.pid === probe.selfPid);
+  if (expectedSelf === null || selfOwner === undefined || selfOwner.cwd !== expectedSelf) {
     return {
       ...empty,
       error: "process cwd probe self-check failed; process working directories are unreadable",
     };
-  }
-
-  const parsed = parseProcessOwners(probe.ownerRecords);
-  if (parsed.partial || parsed.owners.length === 0) {
-    return { ...empty, error: "process cwd inventory returned malformed or partial data" };
   }
 
   const reconciled = reconcileHoldVerdicts(directories, probe);
