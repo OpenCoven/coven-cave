@@ -68,13 +68,17 @@ export type SettingsClientAccessProps =
   | ManagedClientAccessProps;
 
 type PairingListResponse = {
-  ok?: boolean;
-  pairingRequests?: ClientAccessPairingRequest[];
+  apiVersion?: string;
+  data?: {
+    pairingRequests?: ClientAccessPairingRequest[];
+  };
 };
 
 type CredentialListResponse = {
-  ok?: boolean;
-  credentials?: ClientAccessCredential[];
+  apiVersion?: string;
+  data?: {
+    credentials?: ClientAccessCredential[];
+  };
 };
 
 function isControlled(
@@ -120,9 +124,9 @@ function StatusChip({
   );
 }
 
-function ScopeList({ scopes }: { scopes: string[] }) {
+function ScopeList({ scopes, label }: { scopes: string[]; label: string }) {
   return (
-    <ul className="settings-client-access__scopes" aria-label="Granted scopes">
+    <ul className="settings-client-access__scopes" aria-label={label}>
       {scopes.map((scope) => (
         <li key={scope}>{scope}</li>
       ))}
@@ -151,7 +155,7 @@ function RequestCard({
         </div>
         <StatusChip status={request.status} />
       </header>
-      <ScopeList scopes={request.scopes} />
+      <ScopeList scopes={request.scopes} label="Requested scopes" />
       <dl className="settings-client-access__metadata">
         <div>
           <dt>Created</dt>
@@ -215,7 +219,7 @@ function CredentialCard({
         </div>
         <StatusChip status={revoked ? "revoked" : "active"} />
       </header>
-      <ScopeList scopes={credential.scopes} />
+      <ScopeList scopes={credential.scopes} label="Granted scopes" />
       <dl className="settings-client-access__metadata">
         <div>
           <dt>Created</dt>
@@ -392,16 +396,16 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       if (
         !pairingResponse.ok
         || !credentialResponse.ok
-        || pairingPayload?.ok !== true
-        || credentialPayload?.ok !== true
-        || !Array.isArray(pairingPayload.pairingRequests)
-        || !Array.isArray(credentialPayload.credentials)
+        || typeof pairingPayload?.apiVersion !== "string"
+        || typeof credentialPayload?.apiVersion !== "string"
+        || !Array.isArray(pairingPayload.data?.pairingRequests)
+        || !Array.isArray(credentialPayload.data?.credentials)
       ) {
         throw new Error("client access request failed");
       }
       if (controller.signal.aborted || !mountedRef.current) return;
 
-      const nextPending = pairingPayload.pairingRequests;
+      const nextPending = pairingPayload.data.pairingRequests;
       const nextIds = new Set(nextPending.map((request) => request.id));
       const expired = pendingRef.current
         .filter(
@@ -418,7 +422,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       }
       pendingRef.current = nextPending;
       setPendingRequests(nextPending);
-      setCredentials(credentialPayload.credentials);
+      setCredentials(credentialPayload.data.credentials);
       setError(null);
     } catch {
       if (controller.signal.aborted || !mountedRef.current) return;
@@ -460,17 +464,23 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         },
       );
       const payload = await response.json().catch(() => null) as {
-        ok?: boolean;
-        pairingRequest?: ClientAccessPairingRequest;
+        apiVersion?: string;
+        data?: {
+          pairingRequest?: ClientAccessPairingRequest;
+        };
       } | null;
-      if (!response.ok || payload?.ok !== true || !payload.pairingRequest) {
+      if (
+        !response.ok
+        || typeof payload?.apiVersion !== "string"
+        || !payload.data?.pairingRequest
+      ) {
         throw new Error("pairing decision failed");
       }
       if (!mountedRef.current) return;
       pendingRef.current = pendingRef.current.filter((entry) => entry.id !== request.id);
       setPendingRequests(pendingRef.current);
       setTerminalRequests((current) =>
-        appendTerminalRequest(current, payload.pairingRequest as ClientAccessPairingRequest),
+        appendTerminalRequest(current, payload.data?.pairingRequest as ClientAccessPairingRequest),
       );
       await load(false);
       if (!mountedRef.current) return;
@@ -503,17 +513,23 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         },
       );
       const payload = await response.json().catch(() => null) as {
-        ok?: boolean;
-        credential?: ClientAccessCredential;
+        apiVersion?: string;
+        data?: {
+          credential?: ClientAccessCredential;
+        };
       } | null;
-      if (!response.ok || payload?.ok !== true || !payload.credential) {
+      if (
+        !response.ok
+        || typeof payload?.apiVersion !== "string"
+        || !payload.data?.credential
+      ) {
         throw new Error("credential revocation failed");
       }
       if (!mountedRef.current) return;
       setCredentials((current) =>
         current.map((entry) =>
           entry.id === credential.id
-            ? payload.credential as ClientAccessCredential
+            ? payload.data?.credential as ClientAccessCredential
             : entry,
         ),
       );
