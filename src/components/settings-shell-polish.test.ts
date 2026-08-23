@@ -86,6 +86,12 @@ assert.doesNotMatch(
 
 assert.match(
   source,
+  /const \[hashHydrated, setHashHydrated\] = useState\(embedded\)[\s\S]*if \(embedded \|\| typeof window === "undefined" \|\| !hashHydrated \|\| pickerView\) return;[\s\S]*applyHashSection\(\);\s*setHashHydrated\(true\)/,
+  "SettingsShell should not write the default section hash before the deep link state commits",
+);
+
+assert.match(
+  source,
   /useEffect\(\(\) => \{[\s\S]*window\.location\.hash\.replace\("#", ""\) as Section[\s\S]*setSection\(hash\)[\s\S]*setPickerView\(false\)/,
   "SettingsShell should apply hash deep-links after hydration",
 );
