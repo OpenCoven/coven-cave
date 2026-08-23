@@ -23,7 +23,27 @@ const MAX_ENTRIES = 24;
 const HOVER_DELAY_MS = 90;
 
 const cache = new Map<string, { payload: CachedConversationPayload; at: number }>();
-const inflight = new Map<string, Promise<CachedConversationPayload | null>>();
+type RequestEpoch = { clear: number; session: number };
+type InflightConversation = {
+  epoch: RequestEpoch;
+  promise: Promise<CachedConversationPayload | null>;
+};
+
+const inflight = new Map<string, InflightConversation>();
+const sessionGenerations = new Map<string, number>();
+let clearGeneration = 0;
+
+function requestEpoch(sessionId: string): RequestEpoch {
+  return {
+    clear: clearGeneration,
+    session: sessionGenerations.get(sessionId) ?? 0,
+  };
+}
+
+function requestEpochIsCurrent(sessionId: string, epoch: RequestEpoch): boolean {
+  const current = requestEpoch(sessionId);
+  return current.clear === epoch.clear && current.session === epoch.session;
+}
 
 export class ConversationLoadError extends Error {
   readonly status: number;
@@ -70,11 +90,14 @@ export function storeConversation(
 
 export function invalidateConversation(sessionId: string): void {
   cache.delete(sessionId);
+  sessionGenerations.set(sessionId, (sessionGenerations.get(sessionId) ?? 0) + 1);
 }
 
 export function clearConversationCache(): void {
   cache.clear();
   inflight.clear();
+  sessionGenerations.clear();
+  clearGeneration += 1;
   cancelHoverPrefetch();
 }
 
@@ -83,9 +106,15 @@ export function loadConversation(
   sessionId: string,
 ): Promise<CachedConversationPayload | null> {
   if (!sessionId) return Promise.resolve(null);
+  const epoch = requestEpoch(sessionId);
   const pending = inflight.get(sessionId);
-  if (pending) return pending;
-  const request = (async () => {
+  if (
+    pending
+    && pending.epoch.clear === epoch.clear
+    && pending.epoch.session === epoch.session
+  ) return pending.promise;
+  const entry = { epoch, promise: null as unknown as Promise<CachedConversationPayload | null> };
+  entry.promise = (async () => {
     try {
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
         cache: "no-store",
@@ -105,14 +134,14 @@ export function loadConversation(
           res.status,
         );
       }
-      storeConversation(sessionId, json);
+      if (requestEpochIsCurrent(sessionId, epoch)) storeConversation(sessionId, json);
       return json;
     } finally {
-      inflight.delete(sessionId);
+      if (inflight.get(sessionId) === entry) inflight.delete(sessionId);
     }
   })();
-  inflight.set(sessionId, request);
-  return request;
+  inflight.set(sessionId, entry);
+  return entry.promise;
 }
 
 /**

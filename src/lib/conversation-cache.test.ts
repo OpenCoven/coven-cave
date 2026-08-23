@@ -110,6 +110,32 @@ test("foreground loading joins an in-flight prefetch instead of fetching twice",
   assert.equal(openResult?.conversation.turns[0].text, "shared");
 });
 
+test("invalidation prevents an older in-flight load from repopulating the cache", async () => {
+  const releases = [];
+  stubFetch(async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    releases.push(release);
+    await gate;
+    return { ok: true, json: async () => payload(`response-${releases.indexOf(release) + 1}`) };
+  });
+
+  const staleLoad = loadConversation("s1");
+  await Promise.resolve();
+  invalidateConversation("s1");
+  const freshLoad = loadConversation("s1");
+  await Promise.resolve();
+
+  assert.equal(releases.length, 2, "a post-invalidation load must not join the stale request");
+  releases[0]();
+  await staleLoad;
+  assert.equal(readCachedConversation("s1"), null, "the invalidated response must not be cached");
+
+  releases[1]();
+  await freshLoad;
+  assert.equal(readCachedConversation("s1")?.conversation.turns[0].text, "response-2");
+});
+
 test("foreground loading preserves a context-only successful payload", async () => {
   const contextOnly = { ok: true, context: { task: { id: "task-1" } } };
   stubFetch(async () => ({ ok: true, json: async () => contextOnly }));
