@@ -209,6 +209,7 @@ test("a mission armed before the session existed is carried onto the new id and 
     nextSessionId: "s-new",
     held: carried,
     stored: null,
+    mintedSessionId: "s-new",
   });
   assert.equal(out.record, carried, "the running mission survives session creation");
   assert.equal(out.persistUnder, "s-new", "and is written under the id that now owns it");
@@ -221,6 +222,7 @@ test("a record already stored under the arriving id wins over the held copy", ()
     nextSessionId: "s-new",
     held: carried,
     stored,
+    mintedSessionId: "s-new",
   });
   assert.equal(out.record, stored);
   assert.equal(out.persistUnder, null, "nothing is overwritten");
@@ -232,6 +234,7 @@ test("a mission never crosses from one real session to another", () => {
     nextSessionId: "s-b",
     held: carried,
     stored: null,
+    mintedSessionId: "s-b",
   });
   assert.equal(out.record, null, "chat B must not adopt chat A's mission");
   assert.equal(out.persistUnder, null);
@@ -248,6 +251,7 @@ test("a settled mission is not carried onto a new id", () => {
     nextSessionId: "s-new",
     held: settled,
     stored: null,
+    mintedSessionId: "s-new",
   });
   assert.equal(out.record, null);
   assert.equal(out.persistUnder, null);
@@ -259,6 +263,7 @@ test("leaving a session for a fresh compose drops the mission and persists nothi
     nextSessionId: null,
     held: carried,
     stored: null,
+    mintedSessionId: null,
   });
   assert.equal(out.record, null);
   assert.equal(out.persistUnder, null);
@@ -270,13 +275,62 @@ test("re-running on the same id is idempotent once the carry has been persisted"
     nextSessionId: "s-new",
     held: carried,
     stored: null,
+    mintedSessionId: "s-new",
   });
   const second = reconcileAutoMissionOnSessionChange({
     previousSessionId: "s-new",
     nextSessionId: "s-new",
     held: first.record,
     stored: first.record,
+    mintedSessionId: null,
   });
   assert.equal(second.record, carried);
   assert.equal(second.persistUnder, null, "a second pass must not rewrite storage");
+});
+
+// ── the arriving id must be the one THIS view minted ─────────────────────────
+// A mission can be armed while the send is still in flight, or has failed
+// outright so no id is ever minted. Clicking straight into an unrelated
+// existing chat is then ALSO a null -> real transition. Reproduced in the
+// running app: keying on that edge alone wrote the mission under whichever
+// chat was opened, which then gets its transcript watched and, on the
+// watchdog, a `response-needed` inbox item for a mission it never ran.
+
+test("a mission is NOT adopted by an existing chat the human merely navigated to", () => {
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: null,
+    nextSessionId: "chat-b",
+    held: carried,
+    // The send never minted anything — no id belongs to this compose.
+    mintedSessionId: null,
+    stored: null,
+  });
+  assert.equal(out.record, null, "chat B must not inherit a mission it never started");
+  assert.equal(out.persistUnder, null, "and nothing may be written under chat B");
+});
+
+test("a mission is not adopted by a chat other than the one this view minted", () => {
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: null,
+    nextSessionId: "chat-b",
+    held: carried,
+    // This view's own send minted s-new, but the view is now showing chat B.
+    mintedSessionId: "s-new",
+    stored: null,
+  });
+  assert.equal(out.record, null);
+  assert.equal(out.persistUnder, null);
+});
+
+test("the mint is consumed: the same id is not re-adopted on a later visit", () => {
+  // Second visit to s-new with the one-shot mint already spent (null).
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: null,
+    nextSessionId: "s-new",
+    held: carried,
+    mintedSessionId: null,
+    stored: null,
+  });
+  assert.equal(out.record, null);
+  assert.equal(out.persistUnder, null);
 });

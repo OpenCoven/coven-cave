@@ -76,10 +76,24 @@ mission was in flight. Reproduced against the running app: `/auto` in a new
 chat wrote no `cave:auto-mission:*` key at all, while the same command in an
 existing chat wrote one immediately.
 
-`reconcileAutoMissionOnSessionChange` carries that one case onto the id that
-adopts it. Nothing else crosses: a real→real move is a thread switch, and
-carrying a mission across it would fire chat A's mission against chat B's
-transcript — the exact leak the per-session key exists to prevent.
+`reconcileAutoMissionOnSessionChange` carries that one case — and only onto the
+session id **this view's own generation minted**, stamped in the chat stream's
+`ownsDisplayedView` adoption branch and consumed one-shot.
+
+The identity check is the whole guard, and "we had no id and now we do" is not a
+substitute for it. A mission can be armed while the send is still in flight, or
+has failed outright so no id ever arrives; clicking straight into an existing
+chat is then *also* a `null → real` transition. Keying on that edge alone wrote
+the mission into whichever chat the human happened to open — reproduced in the
+running app, where a mission armed in a blank compose landed under an unrelated
+chat's id purely by navigating to it. The damage is worse than a mislabelled
+row: that chat's transcript then gets watched for auto-status markers, and its
+watchdog eventually posts a `response-needed` inbox item for a mission it never
+ran, which is exactly the interruption `/auto` promises not to make.
+
+Nothing else crosses either: a real→real move is a thread switch, and carrying a
+mission across it would fire chat A's mission against chat B's transcript — the
+same leak from the other direction.
 
 ## The watchdog
 

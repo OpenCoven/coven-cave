@@ -125,13 +125,26 @@ export function isAutoMissionArmed(record: AutoMissionRecord | null): boolean {
  * writes no `cave:auto-mission:*` key at all, while the same command in an
  * existing chat writes one immediately.
  *
- * So a sessionless mission is CARRIED onto the id that adopts it, and nothing
- * else is. The deliberate limits:
+ * So a sessionless mission is CARRIED onto the id its own send minted, and
+ * nothing else is. The deliberate limits:
  *
+ * - **The arriving id must be the one this view's own run minted**
+ *   (`mintedSessionId`), not merely the first id to arrive. "We had no session
+ *   id and now we do" is NOT the same question: a mission can be armed while a
+ *   send is still in flight (or has failed outright, so no id is ever minted),
+ *   and the human can then click straight into an unrelated existing chat.
+ *   That is also a `null -> real` transition, and keying on the edge alone
+ *   wrote the mission into whatever chat they happened to open. Reproduced in
+ *   the running app before this argument existed: a mission armed in a blank
+ *   compose landed under an existing chat's id purely because it was navigated
+ *   to. The damage is worse than mis-labelling — that chat's transcript then
+ *   gets watched for auto-status markers, and its watchdog eventually posts a
+ *   `response-needed` inbox item for a mission it never ran, which is exactly
+ *   the interruption `/auto` promises not to make.
  * - Only `null -> real` carries. Moving between two real sessions is a thread
  *   switch, and dragging a mission across it would fire chat A's mission
- *   against chat B's transcript — exactly the cross-chat leak the per-session
- *   key exists to prevent.
+ *   against chat B's transcript — the same cross-chat leak from the other
+ *   direction.
  * - A record already stored under the arriving id wins. It is the durable one;
  *   the held copy would be a strictly worse duplicate.
  * - Only an ARMED record carries. A finished mission has nothing left to
@@ -145,10 +158,19 @@ export function reconcileAutoMissionOnSessionChange(args: {
   held: AutoMissionRecord | null;
   /** What storage already holds for `nextSessionId`. */
   stored: AutoMissionRecord | null;
+  /**
+   * The session id this view's OWN generation just minted and adopted — the
+   * `ownsDisplayedView` branch of the chat stream's `session` event. Null when
+   * the id arrived any other way (navigating to an existing chat, a send still
+   * in flight, a send that failed). Consumed one-shot by the caller so an id
+   * can only ever be adopted on the transition immediately following its mint.
+   */
+  mintedSessionId: string | null | undefined;
 }): { record: AutoMissionRecord | null; persistUnder: string | null } {
-  const { previousSessionId, nextSessionId, held, stored } = args;
+  const { previousSessionId, nextSessionId, held, stored, mintedSessionId } = args;
   if (stored) return { record: stored, persistUnder: null };
-  const adopting = !previousSessionId && Boolean(nextSessionId);
+  const adopting =
+    !previousSessionId && Boolean(nextSessionId) && nextSessionId === mintedSessionId;
   if (adopting && isAutoMissionArmed(held) && held) {
     return { record: held, persistUnder: nextSessionId as string };
   }

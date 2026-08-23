@@ -2136,6 +2136,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const autoMissionRef = useRef<AutoMissionRecord | null>(null);
   autoMissionRef.current = autoMission;
   const autoMissionSessionRef = useRef<string | null>(sessionId ?? null);
+  // The session id this view's own generation minted (stamped in the stream's
+  // `owned` adoption branch). A sessionless mission may be carried onto THAT id
+  // and no other: a mission can be armed while the send is still in flight — or
+  // has failed, so no id ever arrives — and clicking into an unrelated existing
+  // chat is also a null -> real transition. Read one-shot below.
+  const autoMissionMintedSessionRef = useRef<string | null>(null);
 
   // Re-hydrate (or drop) the mission whenever the chat changes. Without this a
   // mission started in chat A stays armed while chat B is on screen, and any
@@ -2151,11 +2157,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const storage = typeof window === "undefined" ? null : window.localStorage;
     const previousSessionId = autoMissionSessionRef.current;
     autoMissionSessionRef.current = sessionId ?? null;
+    // One-shot: an id may be adopted only on the transition immediately after
+    // this view minted it, never on a later navigation that happens to land
+    // back on it.
+    const mintedSessionId = autoMissionMintedSessionRef.current;
+    autoMissionMintedSessionRef.current = null;
     const { record, persistUnder } = reconcileAutoMissionOnSessionChange({
       previousSessionId,
       nextSessionId: sessionId ?? null,
       held: autoMissionRef.current,
       stored: readAutoMission(sessionId, storage),
+      mintedSessionId,
     });
     if (persistUnder && record) writeAutoMission(persistUnder, record, storage);
     setAutoMission(record);
@@ -6427,6 +6439,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
+            // This id was minted BY this view's own generation, which is the
+            // only transition a sessionless /auto mission may be carried onto.
+            // See reconcileAutoMissionOnSessionChange.
+            autoMissionMintedSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
             // Clear display ownership after adoption so no late event may
             // re-adopt via the done stable-ID fallback.
@@ -6629,6 +6645,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
+            // This id was minted BY this view's own generation, which is the
+            // only transition a sessionless /auto mission may be carried onto.
+            // See reconcileAutoMissionOnSessionChange.
+            autoMissionMintedSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
             // Clear display ownership after adoption (same as session event path).
             displayedCreationRunIdRef.current = null;
