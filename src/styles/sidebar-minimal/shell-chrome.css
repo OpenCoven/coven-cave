@@ -356,6 +356,11 @@
   color: var(--text-primary);
 }
 
+.sidebar-foot-btn--active {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--text-primary);
+}
+
 .sidebar-foot-icon {
   flex-shrink: 0;
   opacity: 0.7;
@@ -363,6 +368,7 @@
 }
 
 .sidebar-foot-btn:hover .sidebar-foot-icon,
+.sidebar-foot-btn--active .sidebar-foot-icon,
 .sidebar-foot-icon-btn:hover .sidebar-foot-icon {
   opacity: 1;
 }

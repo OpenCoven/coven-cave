@@ -1087,8 +1087,8 @@
    for a phone.
 
    `.dr-page` is its own scroll container (surface-reporting.css) nested inside
-   `.aps-main`, which is another one — so the lock has to clamp the day
-   variant, not just the card, or the outer pane picks the scroll back up. */
+   the Shell detail pane, so the lock has to clamp the day variant, not just the
+   card, or the outer pane picks the scroll back up. */
 @media (min-width: 768px) {
   .dr-page--day {
     overflow: hidden;
