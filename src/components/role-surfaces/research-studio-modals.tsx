@@ -49,6 +49,15 @@ import {
   type ResearchMediaProvider,
   type ResearchPodcastStyle,
 } from "@/lib/research-generations";
+import {
+  ELEVENLABS_DELIVERY_PRESETS,
+  ELEVENLABS_MAX_SEED,
+  ELEVENLABS_PODCAST_MODEL_OPTIONS,
+  describeElevenLabsVoiceSettings,
+  elevenLabsDeliveryPreset,
+  isValidElevenLabsSeed,
+  type ElevenLabsDeliveryPresetId,
+} from "@/lib/voice/elevenlabs-shared";
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -517,6 +526,30 @@ export function GenerationReviewModal({
               <dt>Length</dt>
               <dd>{generation.renderConfig.length}</dd>
             </div>
+            {/* Delivery direction is frozen on the draft alongside the voice,
+                so the render gate shows what will actually be spoken with. */}
+            {generation.renderConfig.voiceSettings ? (
+              <div>
+                <dt>Delivery</dt>
+                <dd>
+                  {describeElevenLabsVoiceSettings(
+                    generation.renderConfig.voiceSettings,
+                  )}
+                </dd>
+              </div>
+            ) : null}
+            {generation.renderConfig.model ? (
+              <div>
+                <dt>Model</dt>
+                <dd>{generation.renderConfig.model}</dd>
+              </div>
+            ) : null}
+            {generation.renderConfig.seed !== undefined ? (
+              <div>
+                <dt>Seed</dt>
+                <dd>{generation.renderConfig.seed}</dd>
+              </div>
+            ) : null}
           </dl>
         ) : null}
         {content?.kind === "podcast" ? (
@@ -572,6 +605,12 @@ export function GenerationConfigModal({
   onMediaStyleChange,
   mediaLength,
   onMediaLengthChange,
+  mediaDelivery,
+  onMediaDeliveryChange,
+  mediaModel,
+  onMediaModelChange,
+  mediaSeed,
+  onMediaSeedChange,
   error,
   creating,
   onSubmit,
@@ -596,6 +635,15 @@ export function GenerationConfigModal({
   onMediaStyleChange: (style: ResearchPodcastStyle) => void;
   mediaLength: ResearchMediaLength;
   onMediaLengthChange: (length: ResearchMediaLength) => void;
+  /** Podcast + ElevenLabs only: named delivery direction for synthesis. */
+  mediaDelivery: ElevenLabsDeliveryPresetId;
+  onMediaDeliveryChange: (delivery: ElevenLabsDeliveryPresetId) => void;
+  /** Podcast + ElevenLabs only: model id; "" uses the offline render default. */
+  mediaModel: string;
+  onMediaModelChange: (model: string) => void;
+  /** Podcast + ElevenLabs only: raw seed field; "" leaves sampling unpinned. */
+  mediaSeed: string;
+  onMediaSeedChange: (seed: string) => void;
   /** Server-side create failure — e.g. the 409 "no markdown artifact" message. */
   error: string | null;
   creating: boolean;
@@ -643,6 +691,16 @@ export function GenerationConfigModal({
     }
     if (kind === "short-video" && mediaLength === "extended") {
       return "Short video length must be brief or standard.";
+    }
+    // A seed the contract would reject must be caught here, not silently
+    // dropped on the way to the render config.
+    if (
+      kind === "podcast" &&
+      mediaProvider === "elevenlabs" &&
+      mediaSeed.trim() !== "" &&
+      !isValidElevenLabsSeed(Number(mediaSeed.trim()))
+    ) {
+      return `Seed must be a whole number between 0 and ${ELEVENLABS_MAX_SEED}.`;
     }
     return null;
   })();
@@ -920,6 +978,104 @@ export function GenerationConfigModal({
                   A second voice makes the podcast a host/guest dialogue.
                 </span>
               </div>
+            ) : null}
+
+            {kind === "podcast" && mediaProvider === "elevenlabs" ? (
+              <>
+                <div className="research-studio-config__field">
+                  <label
+                    className="research-studio-config__label"
+                    htmlFor="research-studio-config-delivery"
+                  >
+                    Delivery
+                  </label>
+                  <select
+                    id="research-studio-config-delivery"
+                    className="research-studio__select focus-ring"
+                    value={mediaDelivery}
+                    aria-describedby="research-studio-config-delivery-help"
+                    onChange={(event) =>
+                      onMediaDeliveryChange(
+                        event.target.value as ElevenLabsDeliveryPresetId,
+                      )
+                    }
+                  >
+                    {ELEVENLABS_DELIVERY_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span
+                    id="research-studio-config-delivery-help"
+                    className="research-studio-config__hint"
+                  >
+                    {elevenLabsDeliveryPreset(mediaDelivery)?.hint ??
+                      "How the voice is directed during synthesis."}
+                  </span>
+                </div>
+
+                <div className="research-studio-config__field">
+                  <label
+                    className="research-studio-config__label"
+                    htmlFor="research-studio-config-model"
+                  >
+                    Render model
+                  </label>
+                  <select
+                    id="research-studio-config-model"
+                    className="research-studio__select focus-ring"
+                    value={mediaModel}
+                    aria-describedby="research-studio-config-model-help"
+                    onChange={(event) => onMediaModelChange(event.target.value)}
+                  >
+                    <option value="">Default for offline renders</option>
+                    {ELEVENLABS_PODCAST_MODEL_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span
+                    id="research-studio-config-model-help"
+                    className="research-studio-config__hint"
+                  >
+                    An episode render is queued and offline, so it is not tied to
+                    the live voice call&rsquo;s latency-first model.
+                  </span>
+                </div>
+
+                <div className="research-studio-config__field">
+                  <label
+                    className="research-studio-config__label"
+                    htmlFor="research-studio-config-seed"
+                  >
+                    Seed (optional)
+                  </label>
+                  <input
+                    id="research-studio-config-seed"
+                    className="research-studio-config__input focus-ring"
+                    value={mediaSeed}
+                    inputMode="numeric"
+                    placeholder="Unpinned"
+                    aria-describedby="research-studio-config-seed-help"
+                    aria-invalid={mediaConfigurationError ? true : undefined}
+                    aria-errormessage={
+                      mediaConfigurationError
+                        ? "research-studio-config-media-error"
+                        : undefined
+                    }
+                    onChange={(event) => onMediaSeedChange(event.target.value)}
+                  />
+                  <span
+                    id="research-studio-config-seed-help"
+                    className="research-studio-config__hint"
+                  >
+                    Pin the sampler so two renders of the same script are
+                    comparable when you are tuning delivery.
+                  </span>
+                </div>
+              </>
             ) : null}
 
             <div className="research-studio-config__field">
