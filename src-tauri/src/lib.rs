@@ -60,6 +60,8 @@ mod pty;
 #[cfg(desktop)]
 mod reliability_metrics;
 #[cfg(desktop)]
+mod secret_path_acl;
+#[cfg(desktop)]
 mod shell_open_commands;
 #[cfg(desktop)]
 mod shell_open_helpers;
