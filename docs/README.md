@@ -34,6 +34,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 ### Platform and runtime
 
+- [`client-v1-settings.md`](client-v1-settings.md) — approving, denying, auditing, and revoking native client access in Cave Settings
 - [`cross-environment.md`](cross-environment.md) — neutral defaults across Linux, macOS, and Windows, plus the per-OS deltas and the suite that enforces them
 - [`runtime-startup-supervision.md`](runtime-startup-supervision.md) — why a reachable socket is transport availability, not runtime readiness
 - [`first-run-setup-diagnostics.md`](first-run-setup-diagnostics.md) — server-classified failure codes for the first-run bootstrap

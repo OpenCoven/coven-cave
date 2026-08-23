@@ -40,6 +40,14 @@ const phoneCss = readFileSync(
   new URL("../styles/settings-phone.css", import.meta.url),
   "utf8",
 );
+const clientAccessUrl = new URL("./settings-client-access.tsx", import.meta.url);
+const clientAccessSource = existsSync(clientAccessUrl)
+  ? readFileSync(clientAccessUrl, "utf8")
+  : "";
+const clientAccessCssUrl = new URL("../styles/settings-client-access.css", import.meta.url);
+const clientAccessCss = existsSync(clientAccessCssUrl)
+  ? readFileSync(clientAccessCssUrl, "utf8")
+  : "";
 const generalSection = shellSource.match(/function GeneralSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
 const voiceSection = shellSource.match(/function VoiceSection\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
 
@@ -78,6 +86,12 @@ assert.doesNotMatch(
 
 assert.match(
   source,
+  /const \[hashHydrated, setHashHydrated\] = useState\(embedded\)[\s\S]*if \(embedded \|\| typeof window === "undefined" \|\| !hashHydrated \|\| pickerView\) return;[\s\S]*applyHashSection\(\);\s*setHashHydrated\(true\)/,
+  "SettingsShell should not write the default section hash before the deep link state commits",
+);
+
+assert.match(
+  source,
   /useEffect\(\(\) => \{[\s\S]*window\.location\.hash\.replace\("#", ""\) as Section[\s\S]*setSection\(hash\)[\s\S]*setPickerView\(false\)/,
   "SettingsShell should apply hash deep-links after hydration",
 );
@@ -97,6 +111,31 @@ assert.match(
   source,
   /Esc back · ↑↓ navigate sections/,
   "renders the keyboard hint footer below the content area",
+);
+assert.match(
+  sections,
+  /"client-access"/,
+  "Client access is registered in the shared Settings section catalog",
+);
+assert.match(
+  shellSource,
+  /import \{ SettingsClientAccess \} from "\.\/settings-client-access"/,
+  "SettingsShell imports the focused Client access section",
+);
+assert.match(
+  shellSource,
+  /section === "client-access" && <SettingsClientAccess \/>/,
+  "SettingsShell renders Client access inside the existing section framework",
+);
+assert.match(
+  clientAccessSource,
+  /import "@\/styles\/settings-client-access\.css";/,
+  "Client access owns a dedicated tracked stylesheet",
+);
+assert.match(
+  clientAccessCss,
+  /@media \(prefers-reduced-motion: reduce\)/,
+  "Client access preserves reduced-motion behavior",
 );
 assert.match(
   source,

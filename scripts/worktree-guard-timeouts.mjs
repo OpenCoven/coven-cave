@@ -27,9 +27,14 @@ export function strictGitTimeoutMs(args, deadline) {
   }
 
   let commandIndex = 0;
-  while (args[commandIndex] === "-C") {
-    if (typeof args[commandIndex + 1] !== "string" || !args[commandIndex + 1]) {
+  while (args[commandIndex] === "-C" || args[commandIndex] === "-c") {
+    const option = args[commandIndex];
+    const value = args[commandIndex + 1];
+    if (option === "-C" && (typeof value !== "string" || !value)) {
       throw new TypeError("strict Git -C requires a directory");
+    }
+    if (option === "-c" && (typeof value !== "string" || !/^[^=]+=.*/.test(value))) {
+      throw new TypeError("strict Git -c requires key=value");
     }
     commandIndex += 2;
   }

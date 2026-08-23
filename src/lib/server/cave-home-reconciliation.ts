@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { constants as fsConstants } from "node:fs";
 import {
   copyFile,
@@ -66,13 +67,18 @@ const BACKUP_RETENTION = 10;
 const LOCK_STALE_MS = 5 * 60_000;
 /** Hard upper bound for publishing or reclaiming the cross-process lock. */
 export const RECONCILIATION_LOCK_TIMEOUT_MS = 15_000;
+const RECONCILIATION_STORE_QUEUE_TIMEOUT_MS = 15_000;
 const LOCK_SLOW_DIAGNOSTIC_MS = 1_000;
+type StoreLockLease = { active: boolean };
+const storeLockContext = new AsyncLocalStorage<ReadonlyMap<string, StoreLockLease>>();
 
 declare global {
   // eslint-disable-next-line no-var
   var __caveHomeReconciliationLockTokens: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __caveHomeReconciliationTakeoverTokens: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __caveHomeReconciliationStoreQueues: Map<string, Promise<void>> | undefined;
 }
 
 function activeLockTokens(): Set<string> {
@@ -83,6 +89,11 @@ function activeLockTokens(): Set<string> {
 function activeTakeoverTokens(): Set<string> {
   return globalThis.__caveHomeReconciliationTakeoverTokens ??=
     new Set<string>();
+}
+
+function activeStoreQueues(): Map<string, Promise<void>> {
+  return globalThis.__caveHomeReconciliationStoreQueues ??=
+    new Map<string, Promise<void>>();
 }
 
 export const migrationJournalPath = () => path.join(caveHome(), "migration-state.json");
@@ -632,13 +643,73 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
 }
 
 /** Serialize a Cave store operation with reconciliation in every process. */
-export async function withCaveHomeReconciliationLock<T>(operation: () => Promise<T>): Promise<T> {
+export async function withCaveHomeReconciliationLock<T>(
+  operation: () => Promise<T>,
+  options: ReconciliationOptions = {},
+): Promise<T> {
   await mkdir(caveHome(), { recursive: true });
-  const release = await acquireLock({});
+  const queueKey = migrationLockPath();
+  const heldLocks = storeLockContext.getStore();
+  if (heldLocks?.get(queueKey)?.active) {
+    // Transparent reentrancy cannot distinguish an awaited nested operation
+    // from detached work that would outlive this lock generation. Fail fast
+    // instead of deadlocking or letting either form bypass serialization.
+    const deadlock = new Error("nested cave home reconciliation store lock") as NodeJS.ErrnoException;
+    deadlock.code = "EDEADLK";
+    throw deadlock;
+  }
+
+  const queues = activeStoreQueues();
+  const previous = queues.get(queueKey) ?? Promise.resolve();
+  let releaseTurn!: () => void;
+  const turn = new Promise<void>((resolve) => { releaseTurn = resolve; });
+  const tail = previous.catch(() => {}).then(() => turn);
+  queues.set(queueKey, tail);
+  const queueTimeoutMs = Math.max(1, options.storeQueueTimeoutMs ?? RECONCILIATION_STORE_QUEUE_TIMEOUT_MS);
+  let queueTimeout: NodeJS.Timeout | undefined;
   try {
-    return await operation();
+    await Promise.race([
+      previous.catch(() => {}),
+      new Promise<never>((_resolve, reject) => {
+        queueTimeout = setTimeout(() => {
+          const timeout = new Error(
+            `timed out waiting for local cave home reconciliation queue after ${queueTimeoutMs}ms`,
+          ) as NodeJS.ErrnoException;
+          timeout.code = "ETIMEDOUT";
+          reject(timeout);
+        }, queueTimeoutMs);
+      }),
+    ]);
+    clearTimeout(queueTimeout);
+    queueTimeout = undefined;
+    // Start the bounded filesystem-lock deadline only after this process owns
+    // its turn. Local request fan-out cannot otherwise make every waiter burn
+    // the same deadline while one healthy operation holds the lock.
+    const release = await acquireLock(options);
+    const lease: StoreLockLease = { active: true };
+    const operationLocks = new Map(heldLocks ?? []);
+    operationLocks.set(queueKey, lease);
+    try {
+      return await storeLockContext.run(
+        operationLocks,
+        operation,
+      );
+    } finally {
+      try {
+        await release();
+      } finally {
+        // AsyncLocalStorage also reaches detached descendants. Invalidate the
+        // inherited lease once the owning filesystem lock is gone so later
+        // callbacks cannot bypass a successor's queue turn.
+        lease.active = false;
+      }
+    }
   } finally {
-    await release();
+    if (queueTimeout) clearTimeout(queueTimeout);
+    releaseTurn();
+    void tail.then(() => {
+      if (queues.get(queueKey) === tail) queues.delete(queueKey);
+    });
   }
 }
 

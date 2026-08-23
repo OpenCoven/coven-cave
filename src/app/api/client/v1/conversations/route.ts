@@ -4,8 +4,15 @@
  * The canonical read of this Cave's conversation ledger, one page at a time.
  * Projected from `listConversations`, which reads
  * `<caveHome>/conversations/*.json` — the same source the Cave's own sessions
- * list is built from, and in the same `updatedAt`-descending order, so a paired
- * client and the desktop never present two different orderings of one ledger.
+ * list is built from.
+ *
+ * Not in the same order, though, and that is the one difference worth stating
+ * here. The sessions list sorts by `updatedAt` descending; this route pages by
+ * `createdAt` descending, because `updatedAt` rises under an open cursor and a
+ * touched row then jumps above it, silently skipping a row the walk had not
+ * reached (cave-fhjlu). `updatedAt` is served on every record, so a client that
+ * wants the desktop's ordering has the field to sort by; what it cannot have is
+ * that ordering as a resumable keyset. See clientV1ConversationPageKey.
  *
  * Transcripts are not included: a conversation's turns are served by
  * `/api/client/v1/conversations/:id/messages`, which pages them. Inlining even

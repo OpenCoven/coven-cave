@@ -749,6 +749,29 @@ to `.claude/worktree-autolock.log` (gitignored, JSON lines). Disable for a
 command with `WT_AUTOLOCK_DISABLE=1`. It never blocks a tool call and always
 exits 0 — if it cannot read a worktree, it leaves it alone.
 
+**A stale lock no longer deadlocks the scheduled sweep.** The hook re-evaluates
+and releases its own locks once the risk they name is gone, but it only fires as
+a PreToolUse hook inside a Claude Code session — and `scripts/worktree-sweep.sh`
+never runs it. So a stale `auto-locked` reason used to survive indefinitely in
+the one path meant to work without a human: `git worktree remove` failed,
+`beads:worktrees:apply` reported `retirement-blocked`, and registered worktrees
+climbed 14 → 55 until both budgets blew and `beads:worktrees:create` refused for
+every session in the checkout (cave-a245b, cave-2aahf).
+
+`removeWorktree` in `scripts/worktree-lifecycle-retirement.ts` now resolves it.
+By the time it runs, that pass has already re-proven the tree clean
+(`stillRetireReady` after a fresh reprobe) and its head retained on the remote —
+strictly stronger evidence than the hook uses to release a lock on its own — so
+an `auto-locked` reason there is a claim the pipeline has just disproven. It is
+released and the removal retried once.
+
+A **foreign** lock still stands: `active cave-1c8zf PR completion` is a claim
+the tool cannot evaluate, so it is reported, never released. What changed is
+that it is reported *usefully*. Git's own message names neither the lock nor the
+remedy and recommends `worktree remove -f -f` — the one action that destroys the
+work the lock protects. Ignore that advice; instead, confirm with the
+owner, then `git worktree unlock <path>`. Never `-f -f`.
+
 **Retention push (automatic, NON-blocking).** A PostToolUse hook —
 `scripts/worktree-retention-push.mjs`, matcher Bash — pushes any worktree
 whose HEAD holds commits reachable from no remote ref, so a local actor cannot
