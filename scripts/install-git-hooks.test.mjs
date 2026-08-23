@@ -9,14 +9,21 @@
 // duplicate-detection hook at the same time.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const installer = join(repoRoot, "scripts", "install-git-hooks.sh");
+const mergeDriver = join(repoRoot, "scripts", "beads-jsonl-merge-driver.mjs");
+const bashExecutable = execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
+const gitExecutable = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -24,20 +31,25 @@ function git(cwd, ...args) {
 
 /** A throwaway clone carrying just the files the installer touches. */
 function scaffold() {
-  const dir = mkdtempSync(join(tmpdir(), "hook-install-"));
+  const dir = mkdtempSync(join(tmpdir(), "hook install "));
   git(dir, "init", "-q", "-b", "main");
   mkdirSync(join(dir, "scripts", "git-hooks"), { recursive: true });
   mkdirSync(join(dir, ".beads", "hooks"), { recursive: true });
   cpSync(installer, join(dir, "scripts", "install-git-hooks.sh"));
+  cpSync(mergeDriver, join(dir, "scripts", "beads-jsonl-merge-driver.mjs"));
+  git(dir, "config", "user.name", "test");
+  git(dir, "config", "user.email", "test@example.com");
+  git(dir, "config", "commit.gpgsign", "false");
   for (const hook of ["pre-commit", "commit-msg"]) {
     writeFileSync(join(dir, "scripts", "git-hooks", hook), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
   }
   return dir;
 }
 
-function runInstaller(dir) {
+function runInstaller(dir, env = process.env) {
   return execFileSync("bash", [join(dir, "scripts", "install-git-hooks.sh")], {
     cwd: dir,
+    env,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -160,14 +172,91 @@ test("the merge driver is registered regardless of the hook decision", () => {
         git(dir, "config", "core.hooksPath", ".beads/hooks");
       }
       runInstaller(dir);
-      assert.equal(
+      assert.match(
         git(dir, "config", "--get", "merge.beads-jsonl.driver"),
-        'node scripts/beads-jsonl-merge-driver.mjs "%O" "%A" "%B"',
-        `driver must be registered when hooksPath is ${preset}`,
+        /^'.+' 'scripts\/beads-jsonl-merge-driver\.mjs' "%O" "%A" "%B"$/,
+        `driver must use quoted executable and script paths when hooksPath is ${preset}`,
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+});
+
+test("the installed driver runs when PATH lacks Node, including an executable path with spaces", () => {
+  const dir = scaffold();
+  try {
+    const nodeBin = join(dir, "node bin with spaces");
+    const nodeShim = join(nodeBin, "node");
+    mkdirSync(nodeBin, { recursive: true });
+    writeFileSync(
+      nodeShim,
+      `#!/bin/sh\nexec ${shellQuote(process.execPath)} "$@"\n`,
+      { mode: 0o755 },
+    );
+
+    runInstaller(dir, { ...process.env, PATH: `${nodeBin}${delimiter}${process.env.PATH ?? ""}` });
+    assert.match(
+      git(dir, "config", "--get", "merge.beads-jsonl.driver"),
+      new RegExp(`^${shellQuote(nodeShim).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} `),
+      "the executable path is resolved and shell-quoted at install time",
+    );
+
+    const log = join(dir, ".beads", "interactions.jsonl");
+    writeFileSync(log, `${JSON.stringify({ id: "base" })}\n`);
+    writeFileSync(join(dir, ".gitattributes"), ".beads/interactions.jsonl merge=beads-jsonl\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-qm", "base");
+
+    git(dir, "checkout", "-qb", "other");
+    writeFileSync(log, `${JSON.stringify({ id: "base" })}\n${JSON.stringify({ id: "theirs" })}\n`);
+    git(dir, "commit", "-qam", "theirs");
+
+    git(dir, "checkout", "-q", "main");
+    writeFileSync(log, `${JSON.stringify({ id: "base" })}\n${JSON.stringify({ id: "ours" })}\n`);
+    git(dir, "commit", "-qam", "ours");
+
+    const restrictedEnv = { ...process.env, PATH: "" };
+    assert.notEqual(
+      spawnSync("node", ["--version"], { env: restrictedEnv }).status,
+      0,
+      "the merge environment must not be able to resolve node by name",
+    );
+    execFileSync(gitExecutable, ["merge", "-q", "--no-commit", "--no-ff", "other"], {
+      cwd: dir,
+      env: restrictedEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const ids = readFileSync(log, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).id);
+    assert.deepEqual(ids, ["base", "ours", "theirs"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("installation fails explicitly when Node cannot be resolved", () => {
+  const dir = scaffold();
+  try {
+    const bin = join(dir, "git-only-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\nexec ${shellQuote(gitExecutable)} "$@"\n`,
+      { mode: 0o755 },
+    );
+
+    const result = spawnSync(bashExecutable, [join(dir, "scripts", "install-git-hooks.sh")], {
+      cwd: dir,
+      env: { ...process.env, PATH: bin },
+      encoding: "utf8",
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /could not resolve an executable Node\.js binary/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

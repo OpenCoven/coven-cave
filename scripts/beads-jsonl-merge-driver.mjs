@@ -22,8 +22,10 @@
 // silently keep a stale issue state. A loud conflict is the right outcome
 // there.
 //
-// Invoked by git as:
-//   node scripts/beads-jsonl-merge-driver.mjs "%O" "%A" "%B"
+// Installed into this clone's git config as:
+//   '<absolute node>' 'scripts/beads-jsonl-merge-driver.mjs' "%O" "%A" "%B"
+// The installer resolves Node eagerly because GUI clients may invoke Git with
+// a PATH that cannot find the developer's Node installation.
 //   %O ancestor   %A ours (also the OUTPUT path)   %B theirs
 // The placeholders are quoted in the git config as defence in depth. MEASURED
 // behaviour (2026-08-03): git substitutes RELATIVE, space-free temp names in

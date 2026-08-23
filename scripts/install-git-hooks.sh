@@ -24,6 +24,35 @@ if [ ! -d "$REPO_ROOT/$FALLBACK_HOOKS" ]; then
   exit 1
 fi
 
+# Git GUI clients may launch merge drivers with a minimal PATH that cannot
+# resolve the Node selected by the developer's shell. Persist that executable
+# now rather than relying on the future Git process to find `node` by name.
+NODE_EXECUTABLE=$(command -v node 2>/dev/null || true)
+if [ -z "$NODE_EXECUTABLE" ] || [ ! -x "$NODE_EXECUTABLE" ]; then
+  echo "could not resolve an executable Node.js binary — install Node or add it to PATH" >&2
+  exit 1
+fi
+case "$NODE_EXECUTABLE" in
+  /*) ;;
+  *)
+    node_dir=${NODE_EXECUTABLE%/*}
+    node_name=${NODE_EXECUTABLE##*/}
+    if [ "$node_dir" = "$NODE_EXECUTABLE" ]; then
+      node_dir=.
+    fi
+    NODE_EXECUTABLE="$(cd "$node_dir" && pwd -P)/$node_name"
+    ;;
+esac
+
+# Quote one argv token for the shell Git uses to execute a merge driver.
+# Single quotes preserve spaces on macOS/Linux and in Git for Windows' shell;
+# embedded apostrophes are closed, escaped, and reopened.
+shell_quote() {
+  local value=$1
+  value=${value//\'/\'\\\'\'}
+  printf "'%s'" "$value"
+}
+
 chmod +x "$REPO_ROOT/$FALLBACK_HOOKS"/* 2>/dev/null || true
 chmod +x "$REPO_ROOT/.beads/hooks"/* 2>/dev/null || true
 
@@ -83,7 +112,9 @@ git -C "$REPO_ROOT" config merge.beads-jsonl.name \
 # %O/%A/%B are quoted as defence in depth. Measured behaviour is that git
 # substitutes relative, space-free temp names, so this is not load-bearing —
 # see the note in scripts/beads-jsonl-merge-driver.mjs before "fixing" it.
+quoted_node=$(shell_quote "$NODE_EXECUTABLE")
+quoted_driver=$(shell_quote "scripts/beads-jsonl-merge-driver.mjs")
 git -C "$REPO_ROOT" config merge.beads-jsonl.driver \
-  'node scripts/beads-jsonl-merge-driver.mjs "%O" "%A" "%B"'
+  "$quoted_node $quoted_driver \"%O\" \"%A\" \"%B\""
 
-echo "OK merge.beads-jsonl -> scripts/beads-jsonl-merge-driver.mjs"
+echo "OK merge.beads-jsonl -> $NODE_EXECUTABLE scripts/beads-jsonl-merge-driver.mjs"
