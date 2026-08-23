@@ -51,6 +51,7 @@ type ClientAccessErrorState = {
   source: "load" | "mutation";
   headline: string;
   subtitle?: string;
+  terminal?: boolean;
 };
 
 type ControlledClientAccessProps = {
@@ -101,6 +102,11 @@ type ActiveLoad = {
   id: number;
   mode: ClientAccessLoadMode;
   promise: Promise<void>;
+};
+
+type ClientAccessLoadOptions = {
+  preserveMutationError?: boolean;
+  showLoading?: boolean;
 };
 
 function isControlled(
@@ -279,6 +285,7 @@ function createMutationErrorState(
   return {
     source: "mutation",
     headline,
+    terminal,
     ...(terminal ? { subtitle: "The request is no longer pending." } : {}),
   };
 }
@@ -291,6 +298,21 @@ function errorAnnouncement(errorState: ClientAccessErrorState): string {
 
 function isTerminalDecisionStatus(status: number): boolean {
   return status === 404 || status === 409;
+}
+
+function removeRecordById<T extends { id: string }>(
+  records: T[],
+  id: string,
+): T[] {
+  return records.filter((record) => record.id !== id);
+}
+
+function filterSuppressedPendingRequests(
+  requests: ClientAccessPairingRequest[],
+  suppressedIds: Set<string>,
+): ClientAccessPairingRequest[] {
+  if (suppressedIds.size === 0) return requests;
+  return requests.filter((request) => !suppressedIds.has(request.id));
 }
 
 function RequestCard({
@@ -552,7 +574,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
   const hasConfirmedSnapshotRef = useRef(false);
   const loadIdRef = useRef(0);
   const hasLocalMutationStateRef = useRef(false);
-  const suppressExpiredReconciliationRef = useRef<Set<string>>(new Set());
+  const suppressedTerminalRequestIdsRef = useRef<Set<string>>(new Set());
   const actionRef = useRef<ClientAccessAction | null>(null);
   const mountedRef = useRef(false);
 
@@ -567,7 +589,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
 
   const load = useCallback(async (
     mode: ClientAccessLoadMode,
-    options: { showLoading?: boolean } = {},
+    options: ClientAccessLoadOptions = {},
   ) => {
     if (!active) return;
     const currentLoad = loadRef.current;
@@ -585,65 +607,71 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     }
     const promise = (async () => {
       try {
-      const [pairingResponse, credentialResponse] = await Promise.all([
-        fetch("/api/client/v1/admin/pairing-requests", {
-          cache: "no-store",
-          signal: controller.signal,
-        }),
-        fetch("/api/client/v1/admin/credentials", {
-          cache: "no-store",
-          signal: controller.signal,
-        }),
-      ]);
-      const [pairingPayload, credentialPayload] = await Promise.all([
-        parseJson(pairingResponse),
-        parseJson(credentialResponse),
-      ]);
-      const nextPending = parsePairingRequests(pairingPayload);
-      const nextCredentials = parseCredentials(credentialPayload);
-      if (
-        !pairingResponse.ok
-        || !credentialResponse.ok
-        || nextPending === null
-        || nextCredentials === null
-      ) {
-        throw new Error("client access request failed");
-      }
-      if (
-        controller.signal.aborted
-        || !mountedRef.current
-        || loadRef.current?.id !== loadId
-      ) {
-        return;
-      }
+        const [pairingResponse, credentialResponse] = await Promise.all([
+          fetch("/api/client/v1/admin/pairing-requests", {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+          fetch("/api/client/v1/admin/credentials", {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+        ]);
+        const [pairingPayload, credentialPayload] = await Promise.all([
+          parseJson(pairingResponse),
+          parseJson(credentialResponse),
+        ]);
+        const parsedPending = parsePairingRequests(pairingPayload);
+        const nextCredentials = parseCredentials(credentialPayload);
+        if (
+          !pairingResponse.ok
+          || !credentialResponse.ok
+          || parsedPending === null
+          || nextCredentials === null
+        ) {
+          throw new Error("client access request failed");
+        }
+        const nextPending = filterSuppressedPendingRequests(
+          parsedPending,
+          suppressedTerminalRequestIdsRef.current,
+        );
+        if (
+          controller.signal.aborted
+          || !mountedRef.current
+          || loadRef.current?.id !== loadId
+        ) {
+          return;
+        }
 
-      const nextIds = new Set(nextPending.map((request) => request.id));
-      const expired = pendingRef.current
-        .filter(
-          (request) =>
-            request.status === "pending"
-            && !nextIds.has(request.id)
-            && !suppressExpiredReconciliationRef.current.has(request.id)
-            && request.expiresAt <= Date.now(),
-        )
-        .map((request) => ({ ...request, status: "expired" as const }));
-      if (expired.length > 0) {
-        setTerminalRequests((current) => {
-          const next = expired.reduce(appendTerminalRequest, current);
-          terminalRequestsRef.current = next;
-          return next;
-        });
-      }
-      pendingRef.current = nextPending;
-      credentialsRef.current = nextCredentials;
-      setPendingRequests(nextPending);
-      setCredentials(nextCredentials);
-      hasConfirmedSnapshotRef.current = true;
-      setHasConfirmedSnapshot(true);
-      hasLocalMutationStateRef.current = false;
-      suppressExpiredReconciliationRef.current.clear();
-      setErrorState((currentError) =>
-        currentError?.source === "load" ? null : currentError);
+        const nextIds = new Set(nextPending.map((request) => request.id));
+        const expired = pendingRef.current
+          .filter(
+            (request) =>
+              request.status === "pending"
+              && !nextIds.has(request.id)
+              && request.expiresAt <= Date.now(),
+          )
+          .map((request) => ({ ...request, status: "expired" as const }));
+        if (expired.length > 0) {
+          setTerminalRequests((current) => {
+            const next = expired.reduce(appendTerminalRequest, current);
+            terminalRequestsRef.current = next;
+            return next;
+          });
+        }
+        pendingRef.current = nextPending;
+        credentialsRef.current = nextCredentials;
+        setPendingRequests(nextPending);
+        setCredentials(nextCredentials);
+        hasConfirmedSnapshotRef.current = true;
+        setHasConfirmedSnapshot(true);
+        hasLocalMutationStateRef.current = false;
+        setErrorState((currentError) =>
+          options.preserveMutationError
+            && currentError?.source === "mutation"
+            && currentError.terminal
+            ? currentError
+            : null);
       } catch {
         if (
           controller.signal.aborted
@@ -652,11 +680,15 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         ) {
           return;
         }
-        setErrorState(
-          createLoadErrorState(
-            hasLocalMutationStateRef.current,
-            hasConfirmedSnapshotRef.current,
-          ),
+        setErrorState((currentError) =>
+          options.preserveMutationError
+            && currentError?.source === "mutation"
+            && currentError.terminal
+            ? currentError
+            : createLoadErrorState(
+                hasLocalMutationStateRef.current,
+                hasConfirmedSnapshotRef.current,
+              ),
         );
       } finally {
         if (loadRef.current?.id === loadId) loadRef.current = null;
@@ -677,6 +709,18 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     };
     return promise;
   }, [active]);
+
+  const settleTerminalRequest = useCallback((requestId: string) => {
+    suppressedTerminalRequestIdsRef.current.add(requestId);
+    pendingRef.current = removeRecordById(pendingRef.current, requestId);
+    setPendingRequests(pendingRef.current);
+    setTerminalRequests((current) => {
+      const next = removeRecordById(current, requestId);
+      terminalRequestsRef.current = next;
+      return next;
+    });
+    hasLocalMutationStateRef.current = true;
+  }, []);
 
   useEffect(() => {
     if (!active) {
@@ -739,15 +783,16 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       }
       if (!mountedRef.current) return;
       const failure = parseResponseFailure(response, payload);
+      const terminal = isTerminalDecisionStatus(failure.status);
       const error = createMutationErrorState(
         `Couldn’t ${kind} access for ${actionIdentity}.`,
-        isTerminalDecisionStatus(failure.status),
+        terminal,
       );
       setErrorState(error);
       announce(errorAnnouncement(error), "assertive");
-      if (isTerminalDecisionStatus(failure.status)) {
-        suppressExpiredReconciliationRef.current.add(request.id);
-        await load("authoritative");
+      if (terminal) {
+        settleTerminalRequest(request.id);
+        await load("authoritative", { preserveMutationError: true });
       }
     } catch {
       if (!mountedRef.current) return;
@@ -760,7 +805,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       actionRef.current = null;
       if (mountedRef.current) setAction(null);
     }
-  }, [announce, load]);
+  }, [announce, load, settleTerminalRequest]);
 
   const revoke = useCallback(async (credential: ClientAccessCredential) => {
     if (actionRef.current) return;

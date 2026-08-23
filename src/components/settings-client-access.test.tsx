@@ -100,6 +100,18 @@ function buttonByLabel(renderer: ReactTestRenderer, label: string): ReactTestIns
   );
 }
 
+function nodeText(node: ReactTestInstance): string {
+  return node.children
+    .map((child) => (typeof child === "string" ? child : nodeText(child)))
+    .join("");
+}
+
+function buttonByText(renderer: ReactTestRenderer, label: string): ReactTestInstance {
+  return renderer.root.find(
+    (node) => node.type === "button" && nodeText(node).includes(label),
+  );
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return Response.json(body, { status });
 }
@@ -519,6 +531,47 @@ describe("SettingsClientAccess", () => {
     expect(text(renderer)).not.toContain("pairing-secret-must-never-render");
   });
 
+  test("clears stale mutation errors after a successful manual retry refresh", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+        return clientV1SuccessResponse({ pairingRequests: [pendingRequest] });
+      }
+      if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+        return clientV1SuccessResponse({ credentials: [] });
+      }
+      if (url.endsWith("/request-pending/decision") && init?.method === "POST") {
+        return clientV1ErrorResponse("service_unavailable", "outage", 503);
+      }
+      throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+
+    await act(async () => {
+      await buttonByLabel(renderer, "Approve access for OpenCoven Chat").props.onClick();
+      await flush();
+    });
+    expect(text(renderer)).toContain("Couldn’t approve access for OpenCoven Chat.");
+
+    await act(async () => {
+      await buttonByText(renderer, "Retry").props.onClick();
+      await flush();
+    });
+
+    expect(text(renderer)).not.toContain("Couldn’t approve access for OpenCoven Chat.");
+    expect(buttonByLabel(renderer, "Approve access for OpenCoven Chat")).toBeDefined();
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url === "/api/client/v1/admin/pairing-requests" && !init?.method,
+      ),
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url === "/api/client/v1/admin/credentials" && !init?.method,
+      ),
+    ).toHaveLength(2);
+  });
+
   test("coalesces poll and focus refreshes while the initial ledger load is in flight", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(CREATED_AT);
@@ -658,19 +711,80 @@ describe("SettingsClientAccess", () => {
   test.each([
     [
       "not found",
-      404,
       clientV1ErrorResponse("not_found", "Pairing request not found.", 404),
     ],
     [
       "already decided elsewhere",
-      409,
       clientV1ErrorResponse("conflict", "Pairing request was already decided.", 409, {
         reason: "pairing_already_decided",
       }),
     ],
   ])(
-    "refreshes authoritative lists after terminal %s approve failures",
-    async (_label, _status, errorResponse) => {
+    "keeps terminal %s approve failures non-actionable when the follow-up refresh fails",
+    async (_label, errorResponse) => {
+      let followUpRefresh = false;
+      const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+          return followUpRefresh
+            ? clientV1ErrorResponse("service_unavailable", "outage", 503)
+            : clientV1SuccessResponse({ pairingRequests: [pendingRequest] });
+        }
+        if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+          return clientV1SuccessResponse({ credentials: [] });
+        }
+        if (url.endsWith("/request-pending/decision") && init?.method === "POST") {
+          followUpRefresh = true;
+          return errorResponse;
+        }
+        throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+      });
+      globalThis.fetch = fetchMock;
+      const renderer = await render();
+
+      await act(async () => {
+        await buttonByLabel(renderer, "Approve access for OpenCoven Chat").props.onClick();
+        await flush();
+      });
+
+      expect(announce).toHaveBeenCalledWith(
+        "Couldn’t approve access for OpenCoven Chat. The request is no longer pending.",
+        "assertive",
+      );
+      expect(text(renderer)).toContain("The request is no longer pending.");
+      expect(text(renderer)).toContain("No pending requests.");
+      expect(text(renderer)).not.toContain("Couldn’t refresh client access");
+      expect(
+        renderer.root.findAll(
+          (node) => node.type === "button" && node.props["aria-label"] === "Approve access for OpenCoven Chat",
+        ),
+      ).toHaveLength(0);
+      expect(
+        fetchMock.mock.calls.filter(
+          ([url, init]) => url === "/api/client/v1/admin/pairing-requests" && !init?.method,
+        ),
+      ).toHaveLength(2);
+      expect(
+        fetchMock.mock.calls.filter(
+          ([url, init]) => url === "/api/client/v1/admin/credentials" && !init?.method,
+        ),
+      ).toHaveLength(2);
+    },
+  );
+
+  test.each([
+    [
+      "not found",
+      clientV1ErrorResponse("not_found", "Pairing request not found.", 404),
+    ],
+    [
+      "already decided elsewhere",
+      clientV1ErrorResponse("conflict", "Pairing request was already decided.", 409, {
+        reason: "pairing_already_decided",
+      }),
+    ],
+  ])(
+    "preserves terminal %s approve failures through automatic reconciliation and clears them after an explicit retry refresh",
+    async (_label, errorResponse) => {
       let requests = [pendingRequest];
       const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
         if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
@@ -709,6 +823,25 @@ describe("SettingsClientAccess", () => {
           ([url, init]) => url === "/api/client/v1/admin/credentials" && !init?.method,
         ),
       ).toHaveLength(2);
+
+      await act(async () => {
+        await buttonByText(renderer, "Retry").props.onClick();
+        await flush();
+      });
+
+      expect(text(renderer)).not.toContain("Couldn’t approve access for OpenCoven Chat.");
+      expect(text(renderer)).not.toContain("The request is no longer pending.");
+      expect(text(renderer)).toContain("No pending requests.");
+      expect(
+        fetchMock.mock.calls.filter(
+          ([url, init]) => url === "/api/client/v1/admin/pairing-requests" && !init?.method,
+        ),
+      ).toHaveLength(3);
+      expect(
+        fetchMock.mock.calls.filter(
+          ([url, init]) => url === "/api/client/v1/admin/credentials" && !init?.method,
+        ),
+      ).toHaveLength(3);
     },
   );
 
