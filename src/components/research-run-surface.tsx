@@ -1,10 +1,16 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
-import type {
-  ResearchRunStep,
-  ResearchRunSurfaceModel,
+import {
+  actOnResearchMission,
+  getResearchMission,
+} from "@/lib/research-mission-client";
+import {
+  researchMissionToRunSurface,
+  type ResearchRunStep,
+  type ResearchRunSurfaceModel,
 } from "@/lib/research-run-surface";
 
 export type ResearchRunSurfaceVariant = "inline" | "workspace" | "completed";
@@ -18,10 +24,24 @@ type Props = {
   onStop?(): void;
 };
 
+type InlineProps = {
+  snapshot: ResearchRunSurfaceModel;
+  onOpenDesk?(): void;
+};
+
 const LIVE = new Set<ResearchRunSurfaceModel["status"]>([
   "planning",
   "queued",
   "running",
+]);
+
+const POLLABLE = new Set<ResearchRunSurfaceModel["status"]>([
+  "planning",
+  "queued",
+  "running",
+  "awaiting_input",
+  "awaiting_authority",
+  "paused",
 ]);
 
 function stepIcon(step: ResearchRunStep) {
@@ -46,6 +66,102 @@ function evidenceSummary(run: ResearchRunSurfaceModel): string[] {
   if (run.evidence.cited !== undefined) values.push(`${run.evidence.cited} cited`);
   if (run.evidence.artifacts !== undefined) values.push(`${run.evidence.artifacts} artifacts`);
   return values;
+}
+
+/**
+ * Chat projection for a durable research run. The marker embedded in the
+ * assistant turn is only an initial snapshot and a stable run identifier; this
+ * component immediately rehydrates from the canonical Research mission API and
+ * keeps polling while the run can still change. That prevents chat from owning
+ * a second research state machine and lets a card survive navigation/reload as
+ * a view of the same run the Research Desk displays.
+ */
+export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
+  const [run, setRun] = useState(snapshot);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    setRun(snapshot);
+    setActionError(null);
+    return () => {
+      mounted.current = false;
+    };
+  }, [snapshot.runId]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let controller: AbortController | null = null;
+    let stopped = false;
+
+    const refresh = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const result = await getResearchMission(snapshot.runId, controller.signal);
+        if (stopped || !result.ok || !result.mission) return;
+        const next = researchMissionToRunSurface(result.mission);
+        setRun(next);
+        if (POLLABLE.has(next.status)) {
+          timer = setTimeout(refresh, 2_000);
+        }
+      } catch (error) {
+        if (stopped || (error as Error).name === "AbortError") return;
+        // The persisted marker snapshot remains a truthful degraded view. Retry
+        // later while it still represents a live/interruptible run.
+        if (POLLABLE.has(run.status)) timer = setTimeout(refresh, 5_000);
+      }
+    };
+
+    void refresh();
+    return () => {
+      stopped = true;
+      controller?.abort();
+      if (timer) clearTimeout(timer);
+    };
+  // Rehydrate when the stable run identity changes. The recursive poll derives
+  // its next cadence from the server response rather than from render state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot.runId]);
+
+  const act = useCallback(async (action: "pause" | "resume" | "cancel") => {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await actOnResearchMission(run.runId, { action });
+      if (!mounted.current) return;
+      if (!result.ok || !result.mission) {
+        setActionError(result.error ?? "Research action failed");
+        return;
+      }
+      setRun(researchMissionToRunSurface(result.mission));
+    } catch {
+      if (mounted.current) setActionError("Research action failed");
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }, [busy, run.runId]);
+
+  return (
+    <div>
+      <ResearchRunSurface
+        run={run}
+        variant="inline"
+        onOpenDesk={onOpenDesk}
+        onPause={busy ? undefined : () => void act("pause")}
+        onResume={busy ? undefined : () => void act("resume")}
+        onStop={busy ? undefined : () => void act("cancel")}
+      />
+      {actionError ? (
+        <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--fg-danger)]" role="alert">
+          {actionError}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function ResearchRunSurface({
@@ -109,7 +225,7 @@ export function ResearchRunSurface({
                       : step.status === "completed"
                         ? "border-[var(--fg-primary)] bg-[var(--fg-primary)] text-[var(--bg-base)]"
                         : step.status === "failed" || step.status === "blocked"
-                          ? "border-[var(--danger)] text-[var(--danger)]"
+                          ? "border-[var(--fg-danger)] text-[var(--fg-danger)]"
                           : "border-dashed border-[var(--border-strong)] text-[var(--fg-muted)]",
                   ].join(" ")}
                   aria-hidden
@@ -155,8 +271,8 @@ export function ResearchRunSurface({
         </div>
 
         {live ? (
-          <div className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--bg-subtle)]" aria-hidden>
-            <div className="h-full w-1/4 animate-pulse rounded-full bg-[var(--fg-primary)]" />
+          <div className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--bg-subtle)]" aria-label="Research is active">
+            <div className="h-full w-1/4 animate-pulse rounded-full bg-[var(--fg-primary)] motion-reduce:animate-none" aria-hidden />
           </div>
         ) : null}
 
