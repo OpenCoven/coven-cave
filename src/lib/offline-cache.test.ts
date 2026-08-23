@@ -236,6 +236,7 @@ test("an unusable entry name is refused without touching the native side", async
   assert.equal(await readOfflineCache("conversation", "", dependencies), null);
   assert.equal(await readOfflineCache("conversation", "x".repeat(129), dependencies), null);
   assert.equal(await writeOfflineCache("conversation", "a\nb", {}, "r", dependencies), false);
+  assert.equal(await writeOfflineCache("conversation", "a\u0085b", {}, "r", dependencies), false);
   assert.deepEqual(calls, []);
 });
 

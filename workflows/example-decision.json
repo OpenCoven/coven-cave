@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0",
+  "decisionId": "route-2026-08-18-001",
+  "createdAt": "2026-08-18T07:15:00Z",
+  "intent": {
+    "summary": "Map branch-pressure findings onto Coven routing.",
+    "capabilities": [
+      "research",
+      "synthesis"
+    ],
+    "operation": "read",
+    "risk": "low"
+  },
+  "routeOrigin": {
+    "type": "automatic",
+    "reason": "No familiar was explicitly selected and the request requires research synthesis.",
+    "classifier": "coven-routing-v1"
+  },
+  "candidates": [
+    {
+      "familiarId": "sage",
+      "eligible": true,
+      "hardBlocks": [],
+      "score": 0.96,
+      "reasons": [
+        "Declared research and synthesis lane.",
+        "Has read access to the relevant mission and repositories."
+      ]
+    },
+    {
+      "familiarId": "kitty",
+      "eligible": true,
+      "hardBlocks": [],
+      "score": 0.55,
+      "reasons": [
+        "General-purpose fallback with repository reading capability."
+      ]
+    },
+    {
+      "familiarId": "charm",
+      "eligible": false,
+      "hardBlocks": [
+        {
+          "code": "identity-scope",
+          "detail": "The request is research synthesis rather than communications work."
+        }
+      ],
+      "reasons": []
+    }
+  ],
+  "primaryFamiliarId": "sage",
+  "fallbackFamiliarIds": [
+    "kitty"
+  ],
+  "dispatch": {
+    "mode": "single",
+    "maxBranches": 2,
+    "maxDelegationDepth": 1
+  },
+  "widenWhen": [
+    "failure",
+    "low-confidence",
+    "verification"
+  ]
+}

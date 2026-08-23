@@ -30,7 +30,7 @@ final class SessionSwitchUITests: XCTestCase {
         controls.tap()
 
         let sessionRow = app.buttons["Switch session"].firstMatch
-        XCTAssertTrue(sessionRow.waitForExistence(timeout: 10), "the details card offers Session")
+        XCTAssertTrue(sessionRow.waitForExistence(timeout: 10), "the details card offers Conversation")
         sessionRow.tap()
     }
 

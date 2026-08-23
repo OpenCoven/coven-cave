@@ -2,6 +2,31 @@ import XCTest
 @testable import CovenCave
 
 final class ChatResponseControlsTests: XCTestCase {
+    func testRuntimePresentationKeepsConfigurationContextConcise() {
+        XCTAssertEqual(ChatRuntimePresentation.harnessLabel("codex"), "Codex")
+        XCTAssertEqual(ChatRuntimePresentation.harnessLabel("opencode"), "OpenCode")
+        XCTAssertEqual(ChatRuntimePresentation.runtimeLabel("local:/Users/person/repo"), "Local")
+        XCTAssertEqual(ChatRuntimePresentation.runtimeLabel("ssh:builder:/srv/cave"), "SSH · builder")
+        XCTAssertEqual(ChatRuntimePresentation.runtimeLabel(nil), "Default")
+    }
+
+    func testInventoryProvenanceOnlySurfacesActionableNotices() {
+        XCTAssertNil(ChatModelInventoryProvenancePresentation.notice(for: "live"))
+        XCTAssertNil(ChatModelInventoryProvenancePresentation.notice(for: "runtime-managed"))
+        XCTAssertEqual(
+            ChatModelInventoryProvenancePresentation.notice(for: "cached"),
+            "Model choices may be out of date."
+        )
+        XCTAssertEqual(
+            ChatModelInventoryProvenancePresentation.notice(for: "fallback"),
+            "Showing built-in model choices."
+        )
+        XCTAssertEqual(
+            ChatModelInventoryProvenancePresentation.notice(for: "unavailable"),
+            "Couldn’t refresh model choices."
+        )
+    }
+
     private actor Gate {
         private var opened = false
         private var waiters: [CheckedContinuation<Void, Never>] = []
