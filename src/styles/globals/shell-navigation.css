@@ -1137,6 +1137,19 @@
   flex-direction: column;
 }
 
+/* Standalone destinations now use this same Shell. Keep their page roots
+   constrained to the canonical detail pane so reports, settings, and thread
+   queues do not gain a second viewport-height scrollbar beneath the chrome. */
+.shell-detail > .settings-shell,
+.shell-detail > .wv-page {
+  height: 100%;
+}
+
+.shell-detail > .dr-page {
+  min-height: 100%;
+  height: 100%;
+}
+
 /* The detail wrapper provides the shell floor around the inset content. */
 .shell-detail-panel {
   background: var(--shell-floor);
