@@ -312,7 +312,7 @@ assert.match(
 // (e.g. the Contract tab's rehabilitation button) can seed the first message.
 assert.match(
   chatSurface,
-  /onNewChat[\s\S]*initialPrompt\?: string \| null/,
+  /import type \{ AgentsNewChatRequest \} from "@\/lib\/agents-new-chat"[\s\S]*CustomEvent<AgentsNewChatRequest>/,
   "ChatSurface new-chat handler should accept an initialPrompt in the event detail",
 );
 assert.match(

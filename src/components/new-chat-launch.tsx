@@ -4,6 +4,7 @@ import "@/styles/cave-chat.css";
 
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { Button } from "@/components/ui/button";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
@@ -19,12 +20,14 @@ export function NewChatLaunch({
   familiars,
   sessions,
   onPick,
+  onRequestActor,
   onResume,
   pendingProjectRoot,
 }: {
   familiars: Familiar[];
   sessions: SessionRow[];
   onPick: (familiarId: string) => void;
+  onRequestActor?: () => void;
   onResume: (sessionId: string) => void;
   pendingProjectRoot?: string | null;
 }) {
@@ -56,27 +59,33 @@ export function NewChatLaunch({
 
         <div className="cave-launch__section" aria-label="Familiars">
           <p className="cave-launch__label">Familiars</p>
-          <div className="cave-launch__grid">
-            {resolved.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                className="cave-launch__card"
-                onClick={() => onPick(f.id)}
-              >
-                <FamiliarAvatar familiar={f} size="md" />
-                <span className="cave-launch__card-copy">
-                  <span className="cave-launch__card-name">{f.display_name}</span>
-                  {f.harness || f.model ? (
-                    <span className="cave-launch__card-meta">
-                      {[f.harness, f.model].filter(Boolean).join(" · ")}
-                    </span>
-                  ) : null}
-                </span>
-                <Icon name="ph:arrow-right-bold" width={13} className="cave-launch__card-go" aria-hidden />
-              </button>
-            ))}
-          </div>
+          {onRequestActor ? (
+            <Button variant="primary" onClick={onRequestActor}>
+              Choose familiar
+            </Button>
+          ) : (
+            <div className="cave-launch__grid">
+              {resolved.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className="cave-launch__card"
+                  onClick={() => onPick(f.id)}
+                >
+                  <FamiliarAvatar familiar={f} size="md" />
+                  <span className="cave-launch__card-copy">
+                    <span className="cave-launch__card-name">{f.display_name}</span>
+                    {f.harness || f.model ? (
+                      <span className="cave-launch__card-meta">
+                        {[f.harness, f.model].filter(Boolean).join(" · ")}
+                      </span>
+                    ) : null}
+                  </span>
+                  <Icon name="ph:arrow-right-bold" width={13} className="cave-launch__card-go" aria-hidden />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {recents.length > 0 ? (

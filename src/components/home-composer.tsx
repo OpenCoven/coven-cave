@@ -24,7 +24,6 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { Icon } from "@/lib/icon";
 import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
-import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   resolveSkillInvocation,
   buildSkillPrompt,
@@ -46,20 +45,15 @@ import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize, inlineSlashCommandPrompt } from "@/lib/slash-commands";
-import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
-import { useProjects } from "@/lib/use-projects";
-import { NO_PROJECT_ID, recentChatProjectRoot } from "@/lib/chat-projects";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
-import { useAddProjectFlow } from "@/components/project-picker";
-import { sortProjectsAlphabetically } from "@/lib/cave-projects-types";
+import type { CaveProject } from "@/lib/cave-projects-types";
 import { ComposerContextChips } from "@/components/composer-context-pill";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
-import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { HomeFromTaskRow, type HomeTaskOrigin } from "@/components/home/home-from-task";
 import { HomeContinue } from "@/components/home/home-continue";
@@ -73,20 +67,13 @@ import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
-import {
-  homeComposerProjectLaunchMessage,
-  isHomeComposerProjectLaunchReady,
-  projectsForHomeComposerScope,
-  resolveHomeComposerFamiliar,
-  resolveHomeComposerProject,
-  shouldClearHomeComposerProjectSelection,
-} from "@/lib/home-composer-context";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   cancelSystemBrowserUrlWindow,
   openSystemBrowserUrl,
   reserveSystemBrowserUrlWindow,
 } from "@/lib/open-external";
+import { isOmnigentHostOptionId } from "@/lib/omnigent/ids";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,8 +81,17 @@ export type { Destination } from "@/components/home/home-destinations";
 
 type Props = {
   familiars: ResolvedFamiliar[];
-  activeFamiliarId: string | null;
-  onSetActiveFamiliar: (familiarId: string) => void;
+  project: CaveProject | null;
+  actingFamiliarId: string | null;
+  onRequestActingFamiliar: (
+    actionLabel: string,
+    authorityId: string,
+    requiresProjectAccess: boolean,
+  ) => Promise<string | null>;
+  onValidateActingFamiliar: (
+    familiarId: string,
+    authorityId: string,
+  ) => Promise<boolean>;
   sessions: SessionRow[];
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
@@ -136,8 +132,10 @@ const HOME_COMPOSER_MAX_HEIGHT = 332;
 
 export function HomeComposer({
   familiars,
-  activeFamiliarId,
-  onSetActiveFamiliar,
+  project,
+  actingFamiliarId,
+  onRequestActingFamiliar,
+  onValidateActingFamiliar,
   sessions,
   onStartChat,
   onNavigateToBoard,
@@ -222,17 +220,24 @@ export function HomeComposer({
     focus: () => setTimeout(() => textareaRef.current?.focus(), 0),
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const archivedFamiliars = useArchivedFamiliars();
-  // Hide archived familiars from the "new session" picker. Starting a new
-  // chat against an archived agent is a footgun — the user can't tell from
-  // the dropdown that the agent is archived, and the session lands in a
-  // confusing state. Archived familiars stay reachable from Familiar Studio
-  // Lifecycle (unarchive there) but should never appear in fresh-session
-  // surfaces.
-  const { selectedFamiliarId, selectedFamiliar } = useMemo(
-    () => resolveHomeComposerFamiliar(familiars, activeFamiliarId, archivedFamiliars),
-    [familiars, activeFamiliarId, archivedFamiliars],
+  const selectedFamiliar = useMemo(
+    () => familiars.find((familiar) => familiar.id === actingFamiliarId) ?? null,
+    [actingFamiliarId, familiars],
   );
+  const selectedFamiliarId = selectedFamiliar?.id ?? "";
+  const actionAuthoritySequenceRef = useRef(0);
+  const resolveActionFamiliar = useCallback(async (
+    actionLabel: string,
+    requiresProjectAccess = true,
+  ) => {
+    const authorityId = `home-${++actionAuthoritySequenceRef.current}`;
+    const familiarId = await onRequestActingFamiliar(
+      actionLabel,
+      authorityId,
+      requiresProjectAccess,
+    );
+    return familiarId ? { familiarId, authorityId } : null;
+  }, [onRequestActingFamiliar]);
   const {
     modelState,
     pendingModelOverride,
@@ -241,26 +246,9 @@ export function HomeComposer({
     selectRuntime: handleSelectRuntime,
   } =
     useHomeModelState(selectedFamiliarId);
-  // Keep the operator registry query alive even before a familiar exists. The
-  // home add-project action can register a folder before familiar setup, and
-  // hiding the unscoped result makes a successful creation look inert. Once a
-  // familiar is selected, the same hook switches to its access-scoped view.
-  const {
-    projects: scopedProjects,
-    loading: projectsLoading,
-    error: projectsError,
-    loadedSuccessfully: projectsLoadedSuccessfully,
-    createProject,
-    createProjectOrThrow,
-  } = useProjects({
-    enabled: true,
-    familiarId: selectedFamiliarId || null,
-  });
-  const projects = useMemo(
-    () => projectsForHomeComposerScope(scopedProjects, selectedFamiliarId),
-    [scopedProjects, selectedFamiliarId],
-  );
-  const [selectedProjectId, setSelectedProjectId] = useState("");
+  useEffect(() => {
+    if (!selectedFamiliar) setOptionsOpen(false);
+  }, [selectedFamiliar]);
   // Host chip: where the opened chat should execute. Per-composer state, not a
   // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
@@ -286,32 +274,7 @@ export function HomeComposer({
             : {}),
         }
       : undefined;
-  // The project the most recent chat ran in: the default for the next chat
-  // when the user hasn't explicitly picked one (kept live as sessions load).
-  const recentProjectRoot = useMemo(
-    () => recentChatProjectRoot(sessions, projects),
-    [sessions, projects],
-  );
-  const selectedProject = useMemo(
-    () => resolveHomeComposerProject(projects, selectedProjectId, NO_PROJECT_ID, recentProjectRoot),
-    [projects, selectedProjectId, recentProjectRoot],
-  );
-  const selectedProjectRoot = selectedProject?.root ?? "";
-  const projectLaunchReady = isHomeComposerProjectLaunchReady({
-    familiarId: selectedFamiliarId,
-    projectsLoadedSuccessfully,
-    projectsLoading,
-    projectsError,
-    selectedProject,
-  });
-  const projectLaunchMessage = homeComposerProjectLaunchMessage({
-    familiarId: selectedFamiliarId,
-    projectsLoading,
-    projectsError,
-    projectsLoadedSuccessfully,
-    projectCount: projects.length,
-  });
-  const displayProjectId = selectedProject?.id ?? null;
+  const selectedProjectRoot = project?.root ?? "";
   const selectedRuntime = canonicalHarnessId(
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude",
   );
@@ -335,33 +298,16 @@ export function HomeComposer({
       })),
     [],
   );
-
-  // An unset pick stays unset — the live default (most recent chat's project,
-  // then the first project) resolves in resolveHomeComposerProject so it can
-  // upgrade as sessions land. Only clear a stale pick whose project vanished.
-  useEffect(() => {
-    if (!shouldClearHomeComposerProjectSelection(projects, selectedProjectId, projectsLoadedSuccessfully)) return;
-    setSelectedProjectId("");
-  }, [projects, projectsLoadedSuccessfully, selectedProjectId]);
-
-  // "Add to project ›" flyout data + the "Start a new project" flow (same
-  // directory-picker flow the context pill uses, so both entry points create
-  // projects identically).
-  const plusMenuProjects = useMemo(
-    () => sortProjectsAlphabetically(projects).map((p) => ({
-      id: p.id,
-      name: p.name,
-      access: p.access,
-    })),
-    [projects],
-  );
-  const plusAddProject = useAddProjectFlow({
-    familiarId: selectedFamiliarId || null,
-    createProject,
-    createProjectOrThrow,
-    projects,
-    onAdded: setSelectedProjectId,
-  });
+  const selectHomeModel = useCallback((id: string) => {
+    if (!selectedFamiliarId) {
+      onToast("Choose one familiar in the rail before changing models.");
+      return false;
+    }
+    handleSelectModel(id);
+    onToast(`Model set to ${id}.`);
+    setText("");
+    return true;
+  }, [handleSelectModel, onToast, selectedFamiliarId]);
 
   // Inline slash menus (/command listbox + Skills group, /model, /skill,
   // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
@@ -397,7 +343,7 @@ export function HomeComposer({
     onCompleteText: completeComposerText,
     modelHarness,
     modelOptionsOverride: runtimeModelOptions,
-    onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
+    onPickModel: selectHomeModel,
     onPickSkill: (s) => invokeSkill(s),
     onInsertPrompt: (p) => insertPromptTemplate(p),
     onRunCommand: (cmd) => {
@@ -417,31 +363,31 @@ export function HomeComposer({
       if (skill.argumentHint && !args && text.trim().toLowerCase() !== filled.toLowerCase()) {
         setText(`${filled} `);
         textareaRef.current?.focus();
-        return;
+        return false;
       }
-      if (!selectedFamiliarId) {
-        onToast("No familiar selected — add one in Settings.");
-        return;
+      if (!project) {
+        onToast("Choose a project before running a skill.");
+        return false;
       }
-      if (!projectLaunchReady) {
-        onToast(projectLaunchMessage);
-        return;
-      }
+      const actionFamiliar = await resolveActionFamiliar("Run skill");
+      if (!actionFamiliar) return false;
+      const { familiarId: actionFamiliarId, authorityId } = actionFamiliar;
       if (!(await waitForRuntimeWrite())) {
         onToast("Runtime selection could not be saved; chat was not started.");
-        return;
+        return false;
       }
+      if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return false;
       setText("");
-      onStartChat(buildSkillPrompt(skill, args), selectedFamiliarId, selectedProjectRoot, {
+      onStartChat(buildSkillPrompt(skill, args), actionFamiliarId, selectedProjectRoot, {
         initialControls: initialChatControls,
       });
+      return true;
     },
     [
-      selectedFamiliarId,
-      selectedProject,
+      resolveActionFamiliar,
+      onValidateActingFamiliar,
+      project,
       selectedProjectRoot,
-      projectLaunchReady,
-      projectLaunchMessage,
       runtimeHost,
       initialChatControls,
       onStartChat,
@@ -533,8 +479,8 @@ export function HomeComposer({
     familiarId: selectedFamiliarId || null,
     mode: destination === "board" ? "task" : "chat",
     context: {
-      activeProject: selectedProject
-        ? { name: selectedProject.name, root: selectedProject.root }
+      activeProject: project
+        ? { name: project.name, root: project.root }
         : null,
       selectedFiles: attachments.map((attachment) => attachment.name),
     },
@@ -588,6 +534,10 @@ export function HomeComposer({
       const command = canonicalize(rawCmd) ?? rawCmd;
       const args = rest.join(" ");
       if (command === "/model") {
+        if (!selectedFamiliarId) {
+          onToast("Choose one familiar in the rail before changing models.");
+          return;
+        }
         pushHistory(prompt);
         setText("");
         if (!args.trim()) {
@@ -618,19 +568,20 @@ export function HomeComposer({
         return;
       }
       if (command === "/skill" || command === "/skills") {
-        pushHistory(prompt);
         if (!args.trim()) {
+          pushHistory(prompt);
           setText("");
           onToast("Type /skill <name>, or pick one from the menu.");
           return;
         }
         const invocation = resolveSkillInvocation(args, skills);
         if (!invocation) {
+          pushHistory(prompt);
           setText("");
           onToast(`Unknown skill "${args.trim()}".`);
           return;
         }
-        invokeSkill(invocation.skill, invocation.args);
+        if (await invokeSkill(invocation.skill, invocation.args)) pushHistory(prompt);
         return;
       }
       if (command === "/prompt" || command === "/prompts") {
@@ -649,58 +600,92 @@ export function HomeComposer({
         insertPromptTemplate(template);
         return;
       }
+      if (command === "/new") {
+        if (!project) {
+          onToast("Choose a project before starting a chat.");
+          return;
+        }
+        const actionFamiliar = await resolveActionFamiliar("Start new chat");
+        if (!actionFamiliar) return;
+        const { familiarId: actionFamiliarId, authorityId } = actionFamiliar;
+        if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return;
+        pushHistory(prompt);
+        setText("");
+        clearDraft();
+        clearAttachments();
+        onStartChat("", actionFamiliarId, project?.root ?? null, {
+          initialControls: initialChatControls,
+        });
+        return;
+      }
       const handled = onSlash?.(command, args) ?? false;
       if (handled) {
         pushHistory(prompt);
         setText("");
         return;
       }
-      if (!selectedFamiliarId) {
-        onToast("No familiar yet — summon one to run this command. Your draft is saved.");
-        requestSummonFamiliar();
+      if (!project) {
+        onToast("Choose a project before running this command.");
         return;
       }
-      if (!projectLaunchReady) {
-        onToast(projectLaunchMessage);
-        return;
-      }
+      const actionFamiliar = await resolveActionFamiliar("Run command");
+      if (!actionFamiliar) return;
+      const { familiarId: actionFamiliarId, authorityId } = actionFamiliar;
       if (!(await waitForRuntimeWrite())) {
         onToast("Runtime selection could not be saved; chat was not started.");
         return;
       }
+      if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return;
       pushHistory(prompt);
       setText("");
       clearDraft();
       clearAttachments();
-      onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
+      onStartChat(prompt, actionFamiliarId, selectedProjectRoot, {
         initialControls: initialChatControls,
       });
       return;
     }
 
-    if (destination === "chat" && !projectLaunchReady) {
-      onToast(projectLaunchMessage);
+    if (destination === "board" && !prompt) {
+      onToast("Add a task title.");
       return;
     }
-
+    const isOmnigentRun = Boolean(
+      runtimeHost && prompt && isOmnigentHostOptionId(runtimeHost),
+    );
+    if (!isOmnigentRun && !project) {
+      onToast(
+        destination === "board"
+          ? "Choose a project before creating a task."
+          : "Choose a project before starting a chat.",
+      );
+      return;
+    }
+    const actionLabel =
+      destination === "board"
+        ? "Create task"
+        : isOmnigentRun
+          ? "Start Omnigent run"
+          : "Send message";
+    const actionFamiliar = await resolveActionFamiliar(actionLabel, !isOmnigentRun);
+    if (!actionFamiliar) return;
+    const { familiarId: actionFamiliarId, authorityId } = actionFamiliar;
+    if (destination === "chat" && !isOmnigentRun && !(await waitForRuntimeWrite())) {
+      onToast("Runtime selection could not be saved; chat was not started.");
+      return;
+    }
     // Host chip on Omnigent fleet → create session on the control plane (not Cave chat stream).
-    if (runtimeHost && prompt) {
-      const { isOmnigentHostOptionId } = await import("@/lib/omnigent/ids");
-      if (isOmnigentHostOptionId(runtimeHost)) {
-        if (!selectedFamiliarId) {
-          onToast("No familiar yet — summon one to send this. Your draft is saved.");
-          requestSummonFamiliar();
-          return;
-        }
+    if (runtimeHost && prompt && isOmnigentRun) {
         const systemBrowserReservation = reserveSystemBrowserUrlWindow();
         let systemBrowserReservationConsumed = false;
-        setSending(true);
         try {
           const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
+          if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return;
+          setSending(true);
           const result = await startOmnigentRunFromBrowser({
             prompt,
             runtimeHost,
-            familiarId: selectedFamiliarId,
+            familiarId: actionFamiliarId,
             title: prompt.slice(0, 80),
             source: "cave-home",
           });
@@ -722,29 +707,14 @@ export function HomeComposer({
           setSending(false);
         }
         return;
-      }
     }
 
-    pushHistory(prompt);
-    setSending(true);
     try {
       switch (destination) {
         case "chat": {
-          if (!selectedFamiliarId) {
-            // Walk them to the Summoning Circle instead of naming a two-hop
-            // Settings destination; the draft persists for their return (cave-3em5).
-            onToast("No familiar yet — summon one to send this. Your draft is saved.");
-            requestSummonFamiliar();
-            break;
-          }
-          if (!projectLaunchReady) {
-            onToast(projectLaunchMessage);
-            break;
-          }
-          if (!(await waitForRuntimeWrite())) {
-            onToast("Runtime selection could not be saved; chat was not started.");
-            break;
-          }
+          if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) break;
+          pushHistory(prompt);
+          setSending(true);
           // Hand the prompt to ChatView, which owns the streaming send. Doing
           // the send here and canceling on the session event aborts the
           // request server-side — the harness is killed mid-run and the
@@ -760,26 +730,25 @@ export function HomeComposer({
           clearDraft();
           clearAttachments();
           promptEnhance.reset();
-          onStartChat(prompt, selectedFamiliarId, selectedProjectRoot, {
+          onStartChat(prompt, actionFamiliarId, project?.root ?? null, {
             initialControls: initialChatControls,
             initialAttachments: outgoing,
           });
           break;
         }
         case "board": {
-          if (!prompt) { onToast("Add a task title."); break; }
+          if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) break;
+          pushHistory(prompt);
+          setSending(true);
           const res = await fetch("/api/board", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               title: prompt,
-              // Attribute the card to the familiar the selector actually shows
-              // (selectedFamiliarId falls through to the first visible familiar
-              // when the active one is unset or archived) — not the raw active
-              // id, which could be null or point at the hidden/archived one.
-              familiarId: selectedFamiliarId || null,
-              cwd: selectedProject?.root ?? null,
-              projectId: selectedProject?.id ?? null,
+              // Attribute the card to the shell-authorized acting familiar.
+              familiarId: actionFamiliarId,
+              cwd: project?.root ?? null,
+              projectId: project?.id ?? null,
               // Files staged on the composer ride onto the task card. The route
               // stores them lean (metadata + text; image data URLs stripped).
               attachments: attachments.length ? attachments : undefined,
@@ -803,12 +772,10 @@ export function HomeComposer({
   }, [
     text,
     destination,
-    activeFamiliarId,
-    selectedFamiliarId,
-    selectedProject,
+    project,
     selectedProjectRoot,
-    projectLaunchReady,
-    projectLaunchMessage,
+    resolveActionFamiliar,
+    onValidateActingFamiliar,
     modelState,
     modelHarness,
     runtimeModelOptions,
@@ -831,7 +798,6 @@ export function HomeComposer({
     prompts,
     insertPromptTemplate,
     promptEnhance.reset,
-    requestSummonFamiliar,
   ]);
 
   const handleKeyDown = useCallback(
@@ -899,10 +865,7 @@ export function HomeComposer({
             onPick={(i) => {
               const m = modelOptions[i];
               if (!m) return;
-              handleSelectModel(m.id);
-              onToast(`Model set to ${m.id}.`);
-              setText("");
-              textareaRef.current?.focus();
+              if (selectHomeModel(m.id)) textareaRef.current?.focus();
             }}
           />
         ) : skillMenuActive && skillOptions ? (
@@ -965,15 +928,6 @@ export function HomeComposer({
               }
             }}
           />
-        ) : null}
-
-        {destination === "chat" && !projectLaunchReady ? (
-          <p
-            role={projectsError ? "alert" : "status"}
-            className="mx-auto mb-2 max-w-3xl px-3 text-[length:var(--text-xs)] leading-5 text-[var(--text-muted)]"
-          >
-            {projectLaunchMessage}
-          </p>
         ) : null}
 
         {/* Composer card — reference layout: the input leads; the mode pills,
@@ -1109,12 +1063,6 @@ export function HomeComposer({
                   disabled: sending || attachments.length >= 10,
                   hint: keys.mod === "⌘" ? "⌘⇧A" : "Ctrl+Shift+A",
                 }}
-                projects={{
-                  projects: plusMenuProjects,
-                  selectedId: displayProjectId,
-                  onPick: setSelectedProjectId,
-                  onStartNewProject: plusAddProject.beginAddProject,
-                }}
                 skills={{
                   onPickSkill: (skill) => {
                     setText(`/skill ${skill.id} `);
@@ -1134,23 +1082,24 @@ export function HomeComposer({
                 call={
                   onStartVoiceCall
                     ? {
-                        onSelect: () => {
+                        onSelect: async () => {
                           if (voiceCallPending) return;
-                          if (!selectedFamiliarId) {
-                            onToast("No familiar yet — summon one to start a voice chat.");
-                            requestSummonFamiliar();
+                          if (!project) {
+                            onToast("Choose a project before starting a voice call.");
                             return;
                           }
-                          if (!projectLaunchReady) {
-                            onToast(projectLaunchMessage);
-                            return;
-                          }
+                          const actionFamiliar = await resolveActionFamiliar("Start voice call");
+                          if (!actionFamiliar) return;
+                          const { familiarId: actionFamiliarId, authorityId } = actionFamiliar;
+                          if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return;
                           setVoiceCallPending(true);
-                          void Promise.resolve(
-                            onStartVoiceCall(selectedFamiliarId, selectedProjectRoot),
-                          ).finally(() => setVoiceCallPending(false));
+                          try {
+                            await onStartVoiceCall(actionFamiliarId, project?.root ?? null);
+                          } finally {
+                            setVoiceCallPending(false);
+                          }
                         },
-                        disabled: sending || voiceCallPending || !projectLaunchReady,
+                        disabled: sending || voiceCallPending,
                       }
                     : undefined
                 }
@@ -1160,14 +1109,10 @@ export function HomeComposer({
                   loading: promptEnhance.state.phase === "loading",
                 }}
                 promptSnippets={{ onSelect: () => setSnippetsBrowserOpen(true) }}
-                onOpenModelTuning={() => setOptionsOpen(true)}
+                onOpenModelTuning={
+                  selectedFamiliar ? () => setOptionsOpen(true) : undefined
+                }
               />
-              {plusAddProject.addError ? (
-                <span className="cave-project-picker__error" role="alert">
-                  {plusAddProject.addError}
-                </span>
-              ) : null}
-              {plusAddProject.addProjectModal}
               <div
                 className="hc-dest-pills hc-dest-pills--inline"
                 role="radiogroup"
@@ -1200,8 +1145,7 @@ export function HomeComposer({
                 onClick={() => void handleSubmit()}
                 disabled={
                   (!text.trim() && attachments.length === 0) ||
-                  sending ||
-                  (destination === "chat" && !projectLaunchReady)
+                  sending
                 }
                 data-typing={text.trim() ? "true" : undefined}
                 className="cave-composer-send focus-ring transition-colors"
@@ -1228,7 +1172,7 @@ export function HomeComposer({
             anchorRef={plusAnchorRef}
             hostValue={runtimeHost ?? LOCAL_HOST_ID}
             onHostPick={setRuntimeHost}
-            disabled={sending}
+            disabled={sending || !selectedFamiliar}
             onSaveAsTemplate={() => setSaveTemplateSeed(text)}
             saveAsTemplateDisabled={!text.trim()}
             indicator={Boolean(runtimeHost)}
@@ -1267,30 +1211,18 @@ export function HomeComposer({
             above. Send hugs bottom-right, vertically aligned. */}
         <div className="cave-composer-footer-band home-composer-toolbar">
           <div className="home-composer-toolbar__left">
-            <FamiliarQuickSwitch
-              familiars={familiars}
-              activeFamiliarId={selectedFamiliarId || null}
-              sessions={sessions}
-              onSelectFamiliar={(id) => {
-                if (id) onSetActiveFamiliar(id);
-              }}
-              placement="top-start"
-              labeled
-              singleRequired
-            />
             <ComposerContextChips
-              projects={projects}
-              projectValue={displayProjectId}
-              onProjectChange={setSelectedProjectId}
+              projects={project ? [project] : []}
+              projectValue={project?.id ?? null}
+              onProjectChange={() => undefined}
+              showProject={false}
               familiarId={selectedFamiliarId || null}
-              createProject={createProject}
-              createProjectOrThrow={createProjectOrThrow}
               runtime={selectedRuntime}
               modelValue={selectedModelId}
               modelOptions={runtimeModelOptions}
               onPickRuntime={handleSelectRuntime}
               onPickModel={handleSelectModel}
-              disabled={sending}
+              disabled={sending || !selectedFamiliar}
             />
           </div>
         </div>

@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import {
   AGENTS_NEW_CHAT_EVENT,
   PENDING_AGENTS_NEW_CHAT_KEY,
+  clearPendingAgentsNewChat,
   consumePendingAgentsNewChat,
+  readPendingAgentsNewChat,
   requestAgentsNewChat,
 } from "./agents-new-chat.ts";
 
@@ -93,6 +95,20 @@ describe("consumePendingAgentsNewChat", () => {
     assert.equal(store.has(PENDING_AGENTS_NEW_CHAT_KEY), false, "consumed exactly once");
   });
 
+  describe("readPendingAgentsNewChat", () => {
+    it("retains a valid request until launch or explicit cancellation clears it", () => {
+      const { win, store } = makeWindow("/");
+      store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({ initialPrompt: "go" }));
+
+      const got = withWindow(win, () => readPendingAgentsNewChat());
+      assert.deepEqual(got, { initialPrompt: "go" });
+      assert.equal(store.has(PENDING_AGENTS_NEW_CHAT_KEY), true, "read does not discard a deferred launch");
+
+      withWindow(win, () => clearPendingAgentsNewChat());
+      assert.equal(store.has(PENDING_AGENTS_NEW_CHAT_KEY), false);
+    });
+  });
+
   it("returns null when nothing is pending", () => {
     const { win } = makeWindow("/");
     assert.equal(withWindow(win, () => consumePendingAgentsNewChat()), null);
@@ -103,5 +119,12 @@ describe("consumePendingAgentsNewChat", () => {
     store.set(PENDING_AGENTS_NEW_CHAT_KEY, "{not json");
     assert.equal(withWindow(win, () => consumePendingAgentsNewChat()), null);
     assert.equal(store.has(PENDING_AGENTS_NEW_CHAT_KEY), false, "bad payloads do not wedge future boots");
+  });
+
+  it("clears and ignores structurally invalid payloads", () => {
+    const { win, store } = makeWindow("/");
+    store.set(PENDING_AGENTS_NEW_CHAT_KEY, JSON.stringify({ projectRoot: { path: "/code/cave" } }));
+    assert.equal(withWindow(win, () => readPendingAgentsNewChat()), null);
+    assert.equal(store.has(PENDING_AGENTS_NEW_CHAT_KEY), false, "invalid field types cannot crash cold boot");
   });
 });

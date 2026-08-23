@@ -90,13 +90,13 @@ assert.match(
 
 assert.match(
   home,
-  /loading: projectsLoading[\s\S]*error: projectsError[\s\S]*loadedSuccessfully: projectsLoadedSuccessfully/,
-  "Home should consume authoritative familiar-scoped project load state",
+  /project: CaveProject \| null;[\s\S]*actingFamiliarId: string \| null;[\s\S]*onRequestActingFamiliar:[\s\S]*onValidateActingFamiliar:/,
+  "Home should consume shell-owned project and acting-familiar authority",
 );
-assert.match(
+assert.doesNotMatch(
   home,
-  /const projectLaunchReady = isHomeComposerProjectLaunchReady\(\{[\s\S]*familiarId: selectedFamiliarId[\s\S]*projectsLoadedSuccessfully[\s\S]*projectsLoading[\s\S]*projectsError[\s\S]*selectedProject,/,
-  "Home should pass the familiar and authoritative project state to its launch gate",
+  /projectsLoading|projectsError|projectsLoadedSuccessfully|projectLaunchReady/,
+  "Home should not recreate shell-owned project loading or eligibility state",
 );
 assert.doesNotMatch(home, /\ballowNoProject\b/, "Home should not offer No project for Chat launch");
 assert.doesNotMatch(
@@ -106,13 +106,13 @@ assert.doesNotMatch(
 );
 assert.match(
   home,
-  /case "chat": \{[\s\S]*if \(!projectLaunchReady\) \{[\s\S]*onToast\(projectLaunchMessage\);[\s\S]*break;[\s\S]*\}[\s\S]*setText\(""\)/,
-  "Home Chat handoff should fail before clearing the draft",
+  /if \(!isOmnigentRun && !project\) \{[\s\S]{0,300}?return;\s*\}[\s\S]{0,300}?const actionFamiliar = await resolveActionFamiliar/,
+  "Home project-bound submits should fail before requesting an actor or clearing the draft",
 );
 assert.match(
   home,
-  /if \(!projectLaunchReady\) \{[\s\S]*onToast\(projectLaunchMessage\);[\s\S]*return;[\s\S]*\}[\s\S]*setVoiceCallPending\(true\)/,
-  "Home voice should fail before setting mint state",
+  /if \(!project\) \{[\s\S]{0,160}?return;\s*\}[\s\S]{0,260}?resolveActionFamiliar\("Start voice call"\)[\s\S]{0,300}?onValidateActingFamiliar[\s\S]{0,180}?setVoiceCallPending\(true\)/,
+  "Home voice should require the shell project and validated actor before setting mint state",
 );
 
 assert.match(

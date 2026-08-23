@@ -80,6 +80,12 @@ assert.doesNotMatch(workspaceSidebar, /cave:navigate-mode/, "workspace-sidebar s
 // navigation (#2747, restored by cave-l3ay after #2750 briefly removed it as a
 // supposed duplicate).
 assert.match(workspaceSidebar, /<SidebarRailHeader[\s\S]*?familiars=\{familiars\}/, "the chat sidebar header hosts the shared familiar switcher");
+const sidebarRailHeaderBlock = workspaceSidebar.match(/<SidebarRailHeader[\s\S]*?\/>/)?.[0] ?? "";
+assert.match(
+  sidebarRailHeaderBlock,
+  /selectedFamiliarIds=\{selectedFamiliarIds\}/,
+  "the shared familiar-scope set is forwarded from WorkspaceSidebar to SidebarRailHeader without collapsing to a first member",
+);
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 // Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
@@ -123,10 +129,11 @@ assert.doesNotMatch(workspace, /activeSessionId=\{routerRef\.current\?\.currentS
 assert.match(workspace, /const openFamiliarSession = useCallback\(\(sessionId: string[\s\S]*?setActiveChatSessionId\(sessionId\);/, "opening a session sets the highlight optimistically at click time");
 assert.match(workspace, /onActiveSessionChange=\{setActiveChatSessionId\}/, "ChatRouter reconciles the mirrored state (new-chat promotion, back-to-list)");
 assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
-assert.ok((chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6, "chat sidebar actions dismiss the mobile nav drawer");
+assert.ok((chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 5, "chat sidebar actions dismiss the mobile nav drawer");
 assert.match(workspace, /onOpenSession=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a chat session dismisses the mobile nav drawer");
 assert.match(workspace, /onOpenSessionInSplit=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a split chat dismisses the mobile nav drawer");
-assert.match(workspace, /onNewChat=\{\(projectRoot\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "starting a new chat dismisses the mobile nav drawer");
+assert.match(workspace, /const startWorkspaceChat = useCallback\(\(request: AgentsNewChatRequest = \{\}\) => \{[\s\S]*?dismissNavMobile\(\);/, "starting a new chat dismisses the mobile nav drawer");
+assert.match(chatSidebarBlock, /onNewChat=\{\(\) => startWorkspaceChat\(\)\}/, "chat rail delegates new-chat launches to the shared gate");
 assert.match(workspace, /onNavigate=\{\(nextMode\) => \{[\s\S]*?setMode\(nextMode\);[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "the sidebar Home route dismisses the mobile nav drawer");
 assert.match(workspace, /onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/, "sidebar PR links dismiss the mobile nav drawer before opening");
 assert.match(workspace, /onOpenSettings=\{\(\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?nextRouter\.push\("\/settings"\);[\s\S]*?\}\}/, "chat sidebar settings dismisses the mobile nav drawer");

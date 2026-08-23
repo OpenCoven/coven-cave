@@ -122,26 +122,26 @@ test("workspace: voice chat mint errors are translated to human toast copy", () 
   assert.match(workspace, /pushToast\(voiceChatStartErrorMessage\(result\.error\)\)/);
 });
 
-test("home-composer: call item starts a voice chat, summoning when no familiar", () => {
+test("home-composer: call item requests a shell-authorized acting familiar", () => {
   // The call affordance rides the composer "+" menu (chat revamp 1d) — the
   // phone icon and "Voice call" accessible name live in the shared menu.
   assert.match(plusMenu, /icon="ph:phone"/);
   assert.match(plusMenu, /ariaLabel="Voice call"/);
   assert.match(
     homeComposer,
-    /if \(voiceCallPending\) return;[\s\S]*?if \(!selectedFamiliarId\) \{[\s\S]*?requestSummonFamiliar\(\);[\s\S]*?\}/,
+    /if \(voiceCallPending\) return;[\s\S]*?if \(!project\)[\s\S]*?await resolveActionFamiliar\("Start voice call"\);[\s\S]*?if \(!actionFamiliar\) return;[\s\S]*?onValidateActingFamiliar\(actionFamiliarId, authorityId\)/,
   );
 });
 
 test("home-composer: voice call item gates itself on an in-flight mint and always resets", () => {
   assert.match(homeComposer, /const \[voiceCallPending, setVoiceCallPending\] = useState\(false\)/);
-  assert.match(homeComposer, /disabled: sending \|\| voiceCallPending \|\| !projectLaunchReady/);
+  assert.match(homeComposer, /disabled: sending \|\| voiceCallPending/);
   // The mint must be gated start-to-finish: set pending before the call,
   // reset it in .finally so a rejected/failed mint can't leave the item
   // permanently disabled.
   assert.match(
     homeComposer,
-    /setVoiceCallPending\(true\);[\s\S]*?Promise\.resolve\([\s\S]{0,120}?onStartVoiceCall\(selectedFamiliarId, selectedProjectRoot\),?[\s\S]{0,40}?\)\.finally\(\(\) => setVoiceCallPending\(false\)/,
+    /setVoiceCallPending\(true\);[\s\S]*?try \{[\s\S]*?await onStartVoiceCall\(actionFamiliarId, project\?\.root \?\? null\);[\s\S]*?\} finally \{[\s\S]*?setVoiceCallPending\(false\)/,
   );
   // The prop type must allow returning a promise, or callers couldn't chain
   // .finally onto it to reset the pending flag.

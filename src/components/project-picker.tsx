@@ -27,6 +27,7 @@ import {
 } from "@/lib/cave-projects-types";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import { isTauri } from "@/lib/tauri-platform";
+import { resolveProjectPickerSelection } from "@/lib/project-picker-selection";
 
 export type AddProjectFlow = {
   /** Open the folder chooser — native dialog on desktop, in-app browser on web. */
@@ -112,20 +113,6 @@ export function useAddProjectFlow(args: {
   return { beginAddProject, addProjectModal, adding, addError };
 }
 
-/** Resolve the effective selection; callers may require an explicit durable id. */
-function selectedProject(
-  value: string | null,
-  sorted: CaveProject[],
-  defaultToFirst: boolean,
-): CaveProject | null {
-  return value === NO_PROJECT_ID
-    ? null
-    : (
-        value
-          ? sorted.find((project) => project.id === value)
-          : defaultToFirst ? sorted[0] : undefined
-      ) ?? null;
-}
 
 /**
  * Controlled popover half of the shared project picker — the filterable list,
@@ -149,6 +136,8 @@ export function ProjectPickerPopover({
   onRegisterCurrentRoot,
   placement = "bottom-start",
   ariaLabel,
+  allProjectsLabel,
+  onSelectAllProjects,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -169,10 +158,18 @@ export function ProjectPickerPopover({
   onRegisterCurrentRoot?: () => void;
   placement?: "bottom-start" | "bottom-end";
   ariaLabel: string;
+  /** When both are provided, renders an "All projects" row before the No project row. */
+  allProjectsLabel?: string;
+  onSelectAllProjects?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
-  const selected = selectedProject(value, sortedProjects, defaultToFirst);
+  const { selected, allProjectsEnabled, allProjectsSelected, noProjectSelected } =
+    resolveProjectPickerSelection({
+      sorted: sortedProjects, value, noProjectId: NO_PROJECT_ID,
+      allowNoProject, defaultToFirst,
+      allProjectsLabel, hasAllProjectsAction: Boolean(onSelectAllProjects),
+    });
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -269,11 +266,25 @@ export function ProjectPickerPopover({
           className="cave-project-picker__filter focus-ring-inset"
         />
         <PopoverLabel>Project</PopoverLabel>
+        {allProjectsEnabled ? (
+          <PopoverItem
+            icon="ph:squares-four"
+            // checked/active only when the all-projects scope is selected.
+            checked={allProjectsSelected}
+            active={allProjectsSelected}
+            onSelect={() => {
+              onSelectAllProjects?.();
+              close();
+            }}
+          >
+            {allProjectsLabel}
+          </PopoverItem>
+        ) : null}
         {allowNoProject ? (
           <PopoverItem
             icon="ph:folder"
-            checked={!selected}
-            active={!selected}
+            checked={noProjectSelected}
+            active={noProjectSelected}
             onSelect={() => {
               onChange(NO_PROJECT_ID);
               close();
@@ -353,6 +364,8 @@ export function ProjectPicker({
   disabled = false,
   ariaLabel,
   className,
+  allProjectsLabel,
+  onSelectAllProjects,
 }: {
   projects: CaveProject[];
   /** Project id, NO_PROJECT_ID, or null (null falls back to the first project). */
@@ -377,12 +390,27 @@ export function ProjectPicker({
   disabled?: boolean;
   ariaLabel: string;
   className?: string;
+  /** When both are provided, renders an "All projects" row before the No project row. */
+  allProjectsLabel?: string;
+  onSelectAllProjects?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // Gate the visible popover: never open while the control is disabled.
+  const popoverOpen = open && !disabled;
+
+  // Clear stored open state when the control becomes disabled so the popover
+  // does not reappear the moment the control is re-enabled.
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
   const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
-  const selected = selectedProject(value, sortedProjects, defaultToFirst);
-  const emptyLabel = allowNoProject ? "No project" : "Choose project";
+  const { selected, emptyLabel } = resolveProjectPickerSelection({
+      sorted: sortedProjects, value, noProjectId: NO_PROJECT_ID,
+      allowNoProject, defaultToFirst,
+      allProjectsLabel, hasAllProjectsAction: Boolean(onSelectAllProjects),
+    });
   const selectedAccess = selected?.access ? projectAccessLabel(selected.access) : null;
   const selectedAccessibleLabel = selected
     ? `${selected.name}${selectedAccess ? `, ${selectedAccess} access` : ""}`
@@ -403,9 +431,9 @@ export function ProjectPicker({
         ref={triggerRef}
         variant="ghost"
         className={`cave-project-picker__trigger focus-ring${className ? ` ${className}` : ""}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { if (!disabled) setOpen((v) => !v); }}
         aria-haspopup="dialog"
-        aria-expanded={open}
+        aria-expanded={popoverOpen}
         aria-label={`${ariaLabel}: ${selectedAccessibleLabel}`}
         disabled={disabled}
         title={
@@ -422,10 +450,10 @@ export function ProjectPicker({
         <span className="cave-project-picker__trigger-label">
           {selected ? `${selected.name}${selectedAccess ? ` · ${selectedAccess}` : ""}` : emptyLabel}
         </span>
-        <Icon name="ph:caret-up-down-bold" width={10} aria-hidden />
+        <Icon name="ph:caret-up-down-bold" width={10} aria-hidden className="cave-project-picker__trigger-caret" />
       </Button>
       <ProjectPickerPopover
-        open={open}
+        open={popoverOpen}
         onOpenChange={setOpen}
         anchorRef={triggerRef}
         projects={projects}
@@ -436,6 +464,8 @@ export function ProjectPicker({
         onAddProject={canAddProject ? addFlow.beginAddProject : undefined}
         addingProject={addFlow.adding}
         ariaLabel={ariaLabel}
+        allProjectsLabel={allProjectsLabel}
+        onSelectAllProjects={onSelectAllProjects}
       />
       {addFlow.addError ? (
         <span className="cave-project-picker__error" role="alert">

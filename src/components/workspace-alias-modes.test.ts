@@ -96,8 +96,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /if \(last && \(isWorkspaceMode\(last\) \|\| isRoleSurfaceMode\(last\)\)\) setMode\(last as CaveMode\)/,
-  "persisted last-surface restore validates via isWorkspaceMode and lets setMode route aliases",
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
+  "fresh workspace launches start on Home instead of restoring a familiar-owned surface",
+);
+assert.match(
+  workspace,
+  /const target = readModeParam\(\);[\s\S]{0,500}?if \(isWorkspaceMode\(target\) \|\| isRoleSurfaceMode\(target\)\) setMode\(target\)/,
+  "deep-link restoration validates through the shared mode vocabulary and lets setMode route aliases",
 );
 assert.match(
   workspace,
