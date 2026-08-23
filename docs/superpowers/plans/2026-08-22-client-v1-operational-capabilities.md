@@ -51,7 +51,7 @@ The selected model must:
 
 ## 4. Candidate models
 
-## Option A — live capabilities only
+### Option A — live capabilities only
 
 ```ts
 const CLIENT_V1_CAPABILITIES = [
@@ -65,20 +65,20 @@ const CLIENT_V1_CAPABILITIES = [
 ] as const;
 ```
 
-### Advantages
+#### Advantages
 
 - smallest compatible change;
 - easy for existing clients to understand;
 - `supports()` becomes truthful after removing unavailable entries;
 - no new envelope field.
 
-### Risks
+#### Risks
 
 - broad names can still obscure exact methods and authority classes;
 - `credentials` may be interpreted as paired-client self-management even though current credential administration is local Cave UI authority;
 - route families with multiple operations may eventually need finer granularity.
 
-## Option B — live and planned fields
+### Option B — live and planned fields
 
 ```ts
 type ClientV1Compatibility = {
@@ -87,19 +87,19 @@ type ClientV1Compatibility = {
 };
 ```
 
-### Advantages
+#### Advantages
 
 - retains roadmap signaling explicitly;
 - existing `capabilities` becomes operationally truthful;
 - planned work cannot be mistaken for current support.
 
-### Risks
+#### Risks
 
 - roadmap intent enters a compatibility envelope even though clients do not need it;
 - planned labels create compatibility/governance overhead without providing an invokable contract;
 - plans may change more frequently than protocol releases.
 
-## Option C — explicit operation inventory
+### Option C — explicit operation inventory
 
 ```ts
 const CLIENT_V1_OPERATIONS = [
@@ -121,20 +121,20 @@ const CLIENT_V1_OPERATIONS = [
 
 The envelope may retain broad capability families for display while adding exact operations for programmatic feature checks.
 
-### Advantages
+#### Advantages
 
 - directly maps to invokable behavior;
 - distinguishes bootstrap, administrator, and paired-client authority;
 - scales cleanly to send/stream/attachment/action operations;
 - supports generated route ownership tests.
 
-### Risks
+#### Risks
 
 - larger contract change;
 - requires naming and compatibility policy now;
 - one route may own multiple methods or operation variants, requiring explicit metadata rather than path inference alone.
 
-## Recommended direction
+### Recommended direction
 
 Use **Option C with a compatibility bridge**:
 
