@@ -7,6 +7,98 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+- Remove the recurring fresh-pairing-token interruption for trusted local browser REST and terminal access.
+
+## [0.3.9] - 2026-08-21
+
+> Restores the release pipeline and ships the refreshed desktop chrome.
+
+Patch release on top of v0.3.8. v0.3.8 tagged but never produced builds: its
+platform validation failed on all three runners, which skipped the iOS
+TestFlight upload. This release repairs that path and the frontend contracts
+that went red behind it.
+
+### Changes
+- Repair red main frontend contracts (#4797)
+- docs: add Bead Quests design prompt (#4795)
+- Add chat kind filters and PR state fixes
+- Refresh desktop chrome and activity UX (#4791)
+- Restore the iOS release path by patching every canonical reading key (#4794)
+- Document AICSS chat approval and segment fix
+- Enforce local remote-tracking hygiene so Desktop's branch list stays honest (#4769)
+- test: repair the stale contracts deadlocking every PR, unit and e2e (#4768)
+- Update interactions.jsonl
+- Update .gitignore
+- Update interactions.jsonl
+- Reuse board resource and fix split pane sizing
+- Document analytics and fix split pane sizing
+- feat(chart-room): consume canonical multi-parent dependencies and import the legacy overlay (#4757)
+- Consolidate recovered platform reliability work (#4759)
+- Consolidate recovered product experience work (#4758)
+- fix: restore browser access prompt (#4761)
+- Implement Research Protocol v1 (#4760)
+- Establish signed release-candidate validation (#4753)
+- fix(desktop): mint dev sidecar auth token
+- wip(cave-atox4-marketplace-logo-colors): marketplace logo color treatment
+- wip(cave-kex69-performance-reports): Cave performance report workflow
+- wip(cave-w3hx6-empty-self-report): empty thread self-report handling
+- wip(cave-b21o1-appstore-status): App Store Connect release status wiring
+- wip(cave-w7wzu-research-video-e2e): research studio video e2e coverage
+- wip(cave-cma81-remove-ios-terminal): remove the iOS terminal surface
+- Fix Task9 stale source contract
+- feat(chat): surface released stream updates
+- fix(chat): await late quick-chat stop promises
+- fix(quick-chat): separate BFCache Stop ownership
+- fix(quick-chat): reconcile BFCache stop outcomes
+- fix(chat): coordinate Stop without stream fields
+- fix(chat): isolate run stops and terminal streams
+- fix(chat): isolate stop intent ownership
+- fix(chat): harden final streaming contracts
+- fix(chat): preserve early cancellation intent
+- fix(quick-chat): close terminal cancellation races
+- fix(quick-chat): honor late stop outcomes
+- fix(quick-chat): close final stop races
+- fix(quick-chat): harden stop and rich replies
+- fix(quick-chat): stop active server runs
+- feat(quick-chat): share calm streaming responses
+- Fix Task7 meaningful output guard
+- Fix non-prose empty-success fallback
+- fix(chat): preserve rich response chronology
+- feat(chat): use stable streaming response model
+- Fix blank citation-only markdown blocks
+- Fix streaming Markdown integrations
+- Fix Task 6 streaming response gaps
+- feat(chat): render shared streaming responses
+- Fix streaming presentation scheduling
+- Fix projected streaming source mode
+- Fix streaming buffer source modes
+- Fix exact streaming replacement detection
+- Optimize streaming boundary scans
+- Fix streaming presentation hook lifecycle
+- Fix snapshot transition boundaries
+- Fix streaming boundary detection
+- fix(chat): calm streaming presentation buffer
+- feat(chat): coalesce live response presentation
+- Fix tool activity chronology merge
+- fix(chat): suppress mirrored tool progress
+- Restrict tool activity classification
+- feat(chat): derive shared streaming turn model
+- Fail closed on test runner flags
+- fix(chat): reject raw multiline shell input
+- feat(chat): normalize trusted verification results
+- fix(chat): partition first nested list boundary
+- fix(chat): close nested list boundaries
+- fix(chat): finalize stable list items
+- fix(chat): detect nested list markers conservatively
+- fix(chat): retain list identity for nested tails
+- fix(chat): preserve streaming block identity
+- fix(chat): honor markdown block precedence
+- fix(chat): stabilize markdown block boundaries
+- feat(chat): partition stable streaming markdown
+- fix(chat): protect result marker parsing
+- feat(chat): parse streaming result markers
+
+
 ## [0.3.8] - 2026-08-20
 
 > Familiar memory stats now count workspace-owned memories, plus a guided

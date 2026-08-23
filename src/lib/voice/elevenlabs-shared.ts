@@ -94,6 +94,33 @@ export function isValidElevenLabsModelId(id: unknown): id is string {
   return typeof id === "string" && /^[a-z0-9_]{1,64}$/.test(id);
 }
 
+/**
+ * Request stitching (`previous_text` / `next_text`) is not accepted by the v3
+ * model family — the provider rejects the whole request with HTTP 400
+ * `invalid_parameters`, so sending it unconditionally fails every render on
+ * those models rather than degrading. Capability is derived from the model id
+ * prefix so `eleven_v3` and its dated/preview variants are all covered.
+ */
+export function modelSupportsRequestStitching(modelId: string): boolean {
+  return !modelId.startsWith("eleven_v3");
+}
+
+/** ElevenLabs accepts an unsigned 32-bit integer seed for reproducible renders. */
+export const ELEVENLABS_MAX_SEED = 4_294_967_295;
+
+/**
+ * A pinned seed is what makes two renders comparable; without it every
+ * before/after delivery measurement is confounded by provider run variance.
+ */
+export function isValidElevenLabsSeed(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= ELEVENLABS_MAX_SEED
+  );
+}
+
 // ── Account catalog (saved voices + available models) ────────────────────────
 
 export type ElevenLabsVoiceOption = { id: string; name: string; category?: string };

@@ -614,7 +614,7 @@ struct ChatView: View {
         if thread.isStreaming { return (Color.orange, "responding") }
         switch app.connectionState {
         case .connected: return (Color.green, "ready")
-        case .checking: return (Color.orange, "reconnecting")
+        case .checking, .degraded: return (Color.orange, "reconnecting")
         case .projectContextRequired: return (Color.orange, "setup required")
         case .unreachable: return (chrome.textSecondary, "offline")
         case .unconfigured, .needsAuth: return (chrome.textSecondary, "offline")
@@ -1530,10 +1530,20 @@ struct ChatView: View {
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
             }
+            let dispatchLease = app.captureConnectionDispatchLease()
             thread.send(outgoing, attachments: attachments,
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
+                        onConnectionFailure: { app.noteConnectionFailure($0) },
+                        liveDispatchLeaseIsCurrent: {
+                            app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        },
+                        persistBeforeDispatch: {
+                            await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                        },
+                        persistAfterRollback: { await app.flushThreadsAndWait() },
+                        onDeliverySettled: { app.flushQueuedMessages() },
                         client: client) { app.touch(thread) }
         }
     }
@@ -1558,9 +1568,19 @@ struct ChatView: View {
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(text, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -1587,7 +1607,11 @@ struct ChatView: View {
             return
         }
         Haptics.tap()
-        thread.retry(assistant.id, client: client) { app.touch(thread) }
+        thread.retry(
+            assistant.id,
+            client: client,
+            onConnectionFailure: { app.noteConnectionFailure($0) }
+        ) { app.touch(thread) }
     }
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get
@@ -1680,11 +1704,21 @@ struct ChatView: View {
         }
         let brief = args.trimmingCharacters(in: .whitespacesAndNewlines)
         let modelBinding = turnModelBinding
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(DiagramCommandPrompt.build(brief),
                     displayText: brief.isEmpty ? DiagramCommandPrompt.start : brief,
                     modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -2038,9 +2072,19 @@ struct ChatView: View {
             return
         }
         let modelBinding = turnModelBinding
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(trimmed, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -2085,8 +2129,27 @@ struct ChatView: View {
     }
 
     private func deleteMessage(_ message: DisplayMessage) {
-        thread.deleteMessage(message.id)
-        app.touch(thread)
+        // `app.client` may be nil (not connected yet). The thread refuses the
+        // delete in that case if the message has a server copy, rather than
+        // removing it here and telling nobody.
+        // The closure IS the persist: `deleteMessage` calls it on the optimistic
+        // removal, on the refusal, and again on a rollback that lands after the
+        // request. Touching again here only re-wrote the threads file a second
+        // time for the same change.
+        // The names are only read if a group delete lands in some of its
+        // familiars' sessions and not others: that report names the chats the
+        // message survived in, and it is read by a person, so it says "Nyx"
+        // rather than the familiar id the thread stores.
+        // `uniquingKeysWith:` rather than `uniqueKeysWithValues:` — the latter
+        // traps on a repeated key, and a duplicated familiar id in a thread
+        // must not turn a swipe into a crash.
+        let familiarNames = Dictionary(
+            thread.familiarIds.compactMap { id in
+                app.familiar(id).map { (id, $0.displayName) }
+            },
+            uniquingKeysWith: { first, _ in first })
+        thread.deleteMessage(message.id, client: app.client,
+                             familiarNames: familiarNames) { app.touch(thread) }
     }
 
     private func openReader(text: String, familiar: Familiar?) {
@@ -2155,6 +2218,7 @@ struct ChatView: View {
             return
         }
         guard let client = app.client else { return }
+        let dispatchLease = app.captureConnectionDispatchLease()
         let activeContext = visibleThreadContext
         let needsDeferredHistoryHydration =
             app.landingDirectThread(for: familiar.id, in: activeContext) == nil
@@ -2211,6 +2275,15 @@ struct ChatView: View {
                         )
                     }
                     : nil,
+                onConnectionFailure: { app.noteConnectionFailure($0) },
+                liveDispatchLeaseIsCurrent: {
+                    app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                },
+                persistBeforeDispatch: {
+                    await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                },
+                persistAfterRollback: { await app.flushThreadsAndWait() },
+                onDeliverySettled: { app.flushQueuedMessages() },
                 client: client
             ) {
                 app.touch(destination)

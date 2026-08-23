@@ -11,6 +11,10 @@ const settings = `${settingsShell}\n${settingsPhone}`;
 const stepsList = await readFile(new URL("./pairing-steps-list.tsx", import.meta.url), "utf8");
 const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+const desktopReachability = await readFile(
+  new URL("../lib/desktop-reachability.ts", import.meta.url),
+  "utf8",
+);
 const tailscaleFailure = await readFile(new URL("../lib/tailscale-failure.ts", import.meta.url), "utf8");
 const tailscaleRecovery = await readFile(new URL("../lib/tailscale-recovery.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
@@ -25,6 +29,10 @@ const shellResponsiveCss = await readFile(
 const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
 const tauriConfig = await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8");
 const tauriLib = await readFile(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
+const desktopReachabilityRust = await readFile(
+  new URL("../../src-tauri/src/desktop_reachability.rs", import.meta.url),
+  "utf8",
+);
 
 assert.match(topBar, /onOpenMobileHandoff/, "TopBar should accept a mobile handoff opener");
 assert.match(topBar, /ph:device-mobile/, "TopBar should render a mobile-phone icon");
@@ -34,10 +42,19 @@ assert.match(topBar, /top-bar__mobile-handoff/, "TopBar handoff button should ha
 assert.doesNotMatch(sidebar, /onOpenMobileHandoff/, "Sidebar should not carry a mobile handoff button");
 assert.doesNotMatch(sidebar, /Open on phone/, "Sidebar should not expose an Open-on-phone control");
 assert.match(workspace, /MobileHandoffModal/, "Workspace should mount the mobile handoff modal");
-assert.match(workspace, /readMobileModeEnabled, writeMobileModeEnabled/, "Workspace should use the shared canonical mobile preference adapter");
-assert.match(workspace, /useState\(readMobileModeEnabled\)/, "Workspace should default mobile mode from persisted state");
+assert.match(workspace, /subscribeMobileModeEnabled/, "Workspace should subscribe to the shared canonical mobile preference adapter");
+assert.match(
+  workspace,
+  /useSyncExternalStore\(\s*subscribeMobileModeEnabled,\s*readMobileModeEnabled,\s*readMobileModeEnabled,?\s*\)/,
+  "Workspace should follow canonical mobile-mode changes made by Settings",
+);
 assert.match(workspace, /writeMobileModeEnabled\(enabled\)/, "Workspace should persist mobile-mode changes through the canonical adapter");
-assert.match(settings, /readMobileModeEnabled, writeMobileModeEnabled/, "Settings should share the same canonical mobile preference adapter");
+assert.match(settings, /subscribeMobileModeEnabled/, "Settings should subscribe to the same canonical mobile preference adapter");
+assert.match(
+  settingsPhone,
+  /useSyncExternalStore\(\s*subscribeMobileModeEnabled,\s*readMobileModeEnabled,\s*readMobileModeEnabled,?\s*\)/,
+  "Settings and Workspace should render the same mobile-mode snapshot",
+);
 assert.match(
   mobileModePref,
   /return readAppPreferences\(\)\.phone\.mobileMode/,
@@ -47,6 +64,11 @@ assert.match(
   mobileModePref,
   /updateAppPreferences\(\{ phone: \{ mobileMode: enabled \} \}\)/,
   "mobile mode writes a typed patch to the canonical preference store",
+);
+assert.match(
+  mobileModePref,
+  /export function subscribeMobileModeEnabled[\s\S]{0,180}subscribeAppPreferences\(listener\)/,
+  "mobile mode should expose the canonical preference event to every mounted surface",
 );
 assert.doesNotMatch(
   mobileModePref,
@@ -80,6 +102,17 @@ assert.match(
   /controller\.signal\.aborted \|\| \(err instanceof Error && err\.name === "AbortError"\)/,
   "Modal must ignore AbortError instead of clobbering state with a failure",
 );
+assert.match(
+  modal,
+  /const closeModal[\s\S]{0,220}availabilityGenerationRef\.current \+= 1;[\s\S]{0,180}onClose\(\)/,
+  "closing the modal should synchronously invalidate pending native availability work",
+);
+assert.match(modal, /onClose=\{closeModal\}/, "every modal dismissal should use the race-fenced close path");
+assert.match(
+  modal,
+  /useLayoutEffect\([\s\S]{0,260}availabilityGenerationRef\.current \+= 1;[\s\S]{0,180}startAbortRef\.current\?\.abort\(\)/,
+  "an external unmount should synchronously invalidate native availability work too",
+);
 assert.match(modal, /dangerouslySetInnerHTML/, "Modal should render the QR SVG returned by the API");
 assert.match(modal, /expiresAtIso/, "Modal should display the invite expiry");
 assert.match(modal, /copyText\(/, "Modal should support copying the authenticated URL");
@@ -93,6 +126,162 @@ assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should pr
 assert.match(modal, /mobile-handoff__link[\s\S]*href=\{handoff\.inviteUrl \|\| handoff\.url\}/, "Modal should display the invite link as a clickable link");
 assert.match(desktopChromeCss, /\.mobile-handoff__link/, "Invite link should have stable styling");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
+
+// ── Durable desktop availability gate ────────────────────────────────────────
+// A pairing code is useful remotely only if the packaged macOS sidecar survives
+// the GUI window. Resolve that native reachability state before app-start can
+// publish a QR, while preserving an explicit, accurately-labelled session-only
+// escape hatch for people who do not want a LaunchAgent.
+assert.match(
+  desktopReachability,
+  /export function backgroundAvailabilityReadiness[\s\S]*"not-applicable"[\s\S]*"ready"[\s\S]*"needs-consent"/,
+  "desktop reachability should classify whether pairing needs native availability consent",
+);
+assert.match(
+  desktopReachability,
+  /export function subscribeDesktopReachability[\s\S]{0,260}desktopReachabilityListeners\.add\(listener\)/,
+  "desktop reachability should publish one canonical native status to every surface",
+);
+assert.match(
+  desktopReachability,
+  /writeDesktopReachability[\s\S]{0,500}publishDesktopReachability\(result\)/,
+  "native reachability writes should notify every mounted surface",
+);
+const reachabilityRead = modal.indexOf("readDesktopReachability()");
+const automaticAppStart = modal.indexOf("start(autoCopyRequest)");
+assert.ok(
+  reachabilityRead !== -1 && automaticAppStart !== -1 && reachabilityRead < automaticAppStart,
+  "the modal must read desktop reachability before its automatic app-start",
+);
+assert.match(
+  modal,
+  /availabilityGate[\s\S]*backgroundAvailabilityReadiness/,
+  "the modal should gate pairing on the classified desktop availability state",
+);
+assert.match(
+  desktopReachability,
+  /write:[\s\S]{0,180}= writeDesktopReachability[\s\S]{0,400}await write\(\{ \.\.\.status\.config, daemonMode: true \}\)/,
+  "explicit availability consent should preserve the existing sleep policy while enabling daemon mode",
+);
+assert.match(
+  desktopReachability,
+  /backgroundAvailabilityReadiness\(next\) !== "ready"[\s\S]{0,240}Background availability could not be verified\. Keep Cave open and try again\./,
+  "the enable helper must verify the installed LaunchAgent before pairing continues",
+);
+assert.match(
+  modal,
+  /enableBackgroundAvailability[\s\S]{0,500}enableDesktopBackgroundAvailability\(reachability\)[\s\S]{0,500}start\(/,
+  "the explicit enable path should verify background availability before app-start",
+);
+assert.match(
+  modal,
+  /const generation = availabilityGenerationRef\.current;[\s\S]{0,260}await enableDesktopBackgroundAvailability\(reachability\);[\s\S]{0,180}availabilityGenerationRef\.current !== generation\) return;[\s\S]{0,220}start\(autoCopyRequest\)/,
+  "a native enable that finishes after dismissal must not publish a pairing route",
+);
+assert.match(
+  modal,
+  /continueForThisSession[\s\S]{0,300}setSessionOnly\(true\)/,
+  "the gate should retain an explicit session-only choice",
+);
+assert.match(modal, /Pair for this session/, "the fallback action should be labelled as session-only pairing");
+assert.match(
+  modal,
+  /This session ends when Cave closes\./,
+  "session-only pairing must not imply that the phone remains reachable after the GUI closes",
+);
+assert.match(
+  modal,
+  /Keep Cave available after this window closes\?/,
+  "the durable pairing choice should disclose the LaunchAgent outcome before consent",
+);
+assert.match(
+  modal,
+  /Stay awake while paired/,
+  "background consent should keep the separate power-cost sleep setting explicit",
+);
+assert.match(
+  settingsPhone,
+  /Your paired phone disconnects when this window closes\./,
+  "legacy paired phones without daemon mode should receive an actionable availability warning",
+);
+assert.match(settingsPhone, /Keep available/, "the legacy warning should offer a one-click availability CTA");
+assert.match(
+  settingsPhone,
+  /enableDesktopBackgroundAvailability/,
+  "the legacy CTA should use the same verified native availability helper as new pairing",
+);
+const phoneSection = settingsPhone.slice(settingsPhone.indexOf("export function PhoneSection"));
+const reachabilityCard = settingsPhone.slice(
+  settingsPhone.indexOf("function DesktopReachabilityCard"),
+  settingsPhone.indexOf("function MobileWriteAccessCard"),
+);
+assert.match(
+  reachabilityCard,
+  /subscribeDesktopReachability/,
+  "the legacy reachability card should follow canonical availability writes",
+);
+assert.match(
+  phoneSection,
+  /subscribeDesktopReachability/,
+  "the Settings pairing gate should follow canonical availability writes",
+);
+assert.match(
+  phoneSection,
+  /const \[mobileModeEnablePending,[\s\S]{0,240}const mobileModeRequested = mobileModeEnabled \|\| mobileModeEnablePending/,
+  "an enable request should remain local until the user chooses durable or session-only availability",
+);
+const mobileModeChange = phoneSection.slice(
+  phoneSection.indexOf("const onMobileModeChange"),
+  phoneSection.indexOf("const enablePairingAvailability"),
+);
+assert.ok(
+  mobileModeChange.indexOf('pairingAvailabilityGate !== "ready"')
+    < mobileModeChange.indexOf("writeMobileModeEnabled(enabled)"),
+  "Settings must not publish Mobile Mode=true before its availability consent gate passes",
+);
+assert.match(
+  phoneSection,
+  /enablePairingAvailability[\s\S]{0,700}writeMobileModeEnabled\(true\)[\s\S]{0,180}reconcileMobileMode\(true/,
+  "verified background availability should publish the shared preference before starting the route",
+);
+const settingsReachabilityRead = phoneSection.indexOf("readDesktopReachability()");
+const settingsAutomaticStart = phoneSection.indexOf("void reconcileMobileMode(mobileModeEnabled)");
+assert.ok(
+  settingsReachabilityRead !== -1
+    && settingsAutomaticStart !== -1
+    && settingsReachabilityRead < settingsAutomaticStart,
+  "Settings must resolve desktop reachability before its automatic pairing start",
+);
+assert.match(
+  phoneSection,
+  /if \(pairingAvailabilityGate !== "ready"\) return;[\s\S]{0,180}void reconcileMobileMode\(mobileModeEnabled\)/,
+  "Settings must not mint its first QR while the availability choice is unresolved",
+);
+assert.match(
+  phoneSection,
+  /enablePairingAvailability[\s\S]{0,500}enableDesktopBackgroundAvailability\(pairingReachability\)[\s\S]{0,500}reconcileMobileMode\(true/,
+  "Settings should verify the helper before requesting a durable pairing code",
+);
+assert.match(
+  phoneSection,
+  /continuePairingForSession[\s\S]{0,320}setPairingSessionOnly\(true\)[\s\S]{0,320}reconcileMobileMode\(true/,
+  "Settings should require an explicit, accurately-labelled session-only fallback",
+);
+assert.match(
+  desktopReachabilityRust,
+  /fn launch_agent_reconciliation_required\(\s*previous: &DesktopReachabilityConfig,\s*next: &DesktopReachabilityConfig,\s*launch_agent_is_ready: bool,\s*launch_agent_is_present: bool,\s*\)[\s\S]{0,420}next\.daemon_mode && !launch_agent_is_ready[\s\S]{0,220}!next\.daemon_mode && launch_agent_is_present/,
+  "native reconciliation must repair missing, stale, unloaded, and stray LaunchAgents",
+);
+assert.match(
+  desktopReachabilityRust,
+  /fn launch_agent_installed\(\) -> bool \{\s*launch_agent_configuration_is_current\(\) && launch_agent_loaded\(\)/,
+  "LaunchAgent readiness must verify both the current plist and the loaded job",
+);
+assert.match(
+  desktopReachabilityRust,
+  /fn launch_agent_loaded\(\)[\s\S]{0,260}run_launchctl\(&\["print", &service\]\)\.is_ok\(\)/,
+  "LaunchAgent readiness must query launchd instead of trusting a plist file",
+);
 
 // ── Handoff modal renders the ladder too (pairing overhaul W6) ───────────────
 // The route already reported PairingStep[] on success and failure; the modal
@@ -181,10 +370,15 @@ assert.doesNotMatch(
   "API must not use the request URL Host port as the backend Serve target",
 );
 assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscale/, "API should give an actionable dev hint when the access token is missing");
+// `await` since cave-fawvh: provisioning restricts the state directory and the
+// token file to this user before handing back a plaintext secret, and on
+// Windows that means reading a DACL out of a subprocess. The `await` is part of
+// what this pin protects — dropping it would resolve the guard to a Promise,
+// which is truthy, so `if (!access)` would sail past a refusal.
 assert.match(
   handoffRoute,
-  /async function ensureNativeAppServe[\s\S]*?const access = resolveMobileAccessSecret\(\);[\s\S]*?if \(!access\) \{[\s\S]*?return mobileAccessUnavailableResponse\(\)/,
-  "native app mobile-mode start must resolve (or self-provision) the mobile access secret before starting Tailscale Serve",
+  /async function ensureNativeAppServe[\s\S]*?const access = await resolveMobileAccessSecret\(\);[\s\S]*?if \(!access\) \{[\s\S]*?return mobileAccessUnavailableResponse\(\)/,
+  "native app mobile-mode start must await resolving (or self-provisioning) the mobile access secret before starting Tailscale Serve",
 );
 assert.match(settingsShell, /<PhoneSection onUseAsHub=/, "Settings should render the focused Phone section");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
@@ -193,7 +387,7 @@ assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle ca
 // TTL breaker rate-limits real probes, and the card self-heals once Tailscale
 // comes up (a gated poll shipped a stale "Tailscale isn't running" over a
 // live connection).
-assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/, "Settings keeps polling; the shared TTL breaker owns retry pacing");
+assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled && pairingAvailabilityGate === "ready",?\s*\}\)/, "Settings polls only after availability consent; the shared TTL breaker owns retry pacing");
 assert.doesNotMatch(settings, /autoRetryBlocked/, "the poll-stopping latch is gone from Settings");
 {
   const workspaceSrc = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");

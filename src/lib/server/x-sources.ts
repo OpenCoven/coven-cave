@@ -1045,6 +1045,18 @@ export async function sweepExpiredXCache(now: Date = new Date()): Promise<number
   if (!Number.isFinite(now.getTime())) {
     throw new XApiError("invalid-request", "X cache time is invalid");
   }
+  // No cache directory means nothing to sweep AND nothing to serialize against,
+  // so answer before taking the lock. Not a micro-optimization: this runs from
+  // instrumentation.ts on EVERY server boot, and acquireProcessIntentLock
+  // mkdirs its intents directory and probes this process's start identity to
+  // get there — which on Windows spawns a PowerShell Get-CimInstance. Taking
+  // the lock first therefore created <caveHome>/x-cache.locks/ and paid ~600ms
+  // on every boot of every install that has never connected an X account,
+  // purely to discover there was no cache. Measured 744ms cold / 559ms warm.
+  //
+  // Only "missing" short-circuits. A symlinked cache root still falls through
+  // to the locked body below, which rejects it — the guard is not weakened.
+  if (await pathKind(cacheRoot()) === "missing") return 0;
   return withCacheLock(async () => {
     let entries;
     try {

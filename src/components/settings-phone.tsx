@@ -2,7 +2,7 @@
 
 import "@/styles/settings-phone.css";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { PairingStepsList } from "@/components/pairing-steps-list";
 import { TailscaleRecoveryActions } from "@/components/tailscale-recovery-actions";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,21 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { settingsGroupId } from "@/components/ui/settings-group";
 import { copyText } from "@/lib/clipboard";
 import {
+  backgroundAvailabilityReadiness,
+  enableDesktopBackgroundAvailability,
   readDesktopReachability,
+  subscribeDesktopReachability,
   writeDesktopReachability,
   type DesktopReachabilityConfig,
   type DesktopReachabilityStatus,
 } from "@/lib/desktop-reachability";
 import { Icon } from "@/lib/icon";
 import type { PairingStep } from "@/lib/mobile-handoff";
-import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import {
+  readMobileModeEnabled,
+  subscribeMobileModeEnabled,
+  writeMobileModeEnabled,
+} from "@/lib/mobile-mode-pref";
 import {
   reconcileMobileModeRequest,
   type MobileModeResponse,
@@ -49,6 +56,7 @@ type MobileHandoffCardState = {
 type ReachabilitySettingKey = keyof DesktopReachabilityConfig;
 type MobileWriteFlagKey = "grantMutations" | "fileWrites" | "canvasWrites";
 type ChipTone = "success" | "warning" | "muted";
+type PairingAvailabilityGate = "checking" | "needs-consent" | "ready";
 
 const PAUSED_PAIRING_STEPS: PairingStep[] = [
   { id: "access", label: "Pairing service ready", state: "skipped", detail: "Mobile mode off" },
@@ -275,16 +283,19 @@ function DesktopReachabilityCard() {
 
   useEffect(() => {
     let cancelled = false;
+    const unsubscribe = subscribeDesktopReachability((next) => {
+      if (cancelled) return;
+      setStatus(next);
+      setError(null);
+    });
     setError(null);
     void readDesktopReachability()
-      .then((next) => {
-        if (!cancelled) setStatus(next);
-      })
       .catch(() => {
         if (!cancelled) setError("Couldn’t load Mac reachability settings.");
       });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [reloadKey]);
 
@@ -294,7 +305,9 @@ function DesktopReachabilityCard() {
     setBusyKey(key);
     setError(null);
     try {
-      const next = await writeDesktopReachability(config);
+      const next = key === "daemonMode" && enabled
+        ? await enableDesktopBackgroundAvailability(status)
+        : await writeDesktopReachability(config);
       setStatus(next);
       const labels: Record<ReachabilitySettingKey, string> = {
         preventSleep: "Stay awake while paired",
@@ -358,6 +371,24 @@ function DesktopReachabilityCard() {
         </p>
       ) : (
         <>
+          {status.pairedPhoneSeen && (!status.config.daemonMode || !status.launchAgentInstalled) ? (
+            <div className="settings-phone-reachability__warning" role="status">
+              <div>
+                <strong>Your paired phone disconnects when this window closes.</strong>
+                <span>
+                  Enable the loopback-only background helper so the iOS app can reconnect
+                  without reopening Cave on this Mac.
+                </span>
+              </div>
+              <Button
+                size="xs"
+                onClick={() => void update("daemonMode", true)}
+                loading={busyKey === "daemonMode"}
+              >
+                Keep available
+              </Button>
+            </div>
+          ) : null}
           <div className="settings-phone-reachability__primary">
             <div>
               <h3>Stay awake while paired</h3>
@@ -674,13 +705,30 @@ function PasskeyCard() {
 }
 
 export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void }) {
-  const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
+  const mobileModeEnabled = useSyncExternalStore(
+    subscribeMobileModeEnabled,
+    readMobileModeEnabled,
+    readMobileModeEnabled,
+  );
+  // Consent is a local setup intent, not the canonical enabled preference.
+  // Publishing `true` before the user chooses durable vs session-only would
+  // make Workspace start the route and bypass this gate.
+  const [mobileModeEnablePending, setMobileModeEnablePending] = useState(false);
+  const mobileModeRequested = mobileModeEnabled || mobileModeEnablePending;
+  const [pairingAvailabilityGate, setPairingAvailabilityGate] =
+    useState<PairingAvailabilityGate>("checking");
+  const [pairingReachability, setPairingReachability] =
+    useState<DesktopReachabilityStatus | null>(null);
+  const [pairingSessionOnly, setPairingSessionOnly] = useState(false);
+  const [pairingAvailabilityError, setPairingAvailabilityError] =
+    useState<string | null>(null);
   const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
   const [steps, setSteps] = useState<PairingStep[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<"link" | "app" | "host" | null>(null);
   const initialReconcileDoneRef = useRef(false);
+  const pairingSessionOnlyRef = useRef(false);
   const copyResetRef = useRef<number | null>(null);
   const { announce } = useAnnouncer();
 
@@ -734,26 +782,136 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
     [],
   );
 
-  const onMobileModeChange = async (enabled: boolean) => {
-    writeMobileModeEnabled(enabled);
-    setMobileModeEnabled(enabled);
-    const result = await reconcileMobileMode(enabled, { busy: true, force: true });
+  // Settings has its own pairing surface, so it must resolve the same durable
+  // availability choice as the top-bar modal before it can request or display
+  // a QR. Plain web/development shells remain explicitly session-only.
+  useEffect(() => {
+    let cancelled = false;
+    let receivedStatus = false;
+    const applyReachability = (status: DesktopReachabilityStatus) => {
+      if (cancelled) return;
+      receivedStatus = true;
+      setPairingReachability(status);
+      setPairingAvailabilityError(null);
+      const readiness = backgroundAvailabilityReadiness(status);
+      if (readiness === "needs-consent") {
+        // An unrelated sleep-policy write must not revoke an explicit
+        // session-only choice. A real background disable still reopens the
+        // gate because durable mode keeps this ref false.
+        if (!pairingSessionOnlyRef.current) {
+          setPairingAvailabilityGate("needs-consent");
+        }
+        return;
+      }
+      const sessionOnly = readiness === "not-applicable";
+      pairingSessionOnlyRef.current = sessionOnly;
+      setPairingSessionOnly(sessionOnly);
+      setPairingAvailabilityGate("ready");
+    };
+    const unsubscribe = subscribeDesktopReachability(applyReachability);
+    void readDesktopReachability()
+      .catch((cause) => {
+        if (cancelled) return;
+        if (!receivedStatus) setPairingAvailabilityGate("needs-consent");
+        setPairingAvailabilityError(
+          cause instanceof Error
+            ? cause.message
+            : "Couldn’t check background availability.",
+        );
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const onMobileModeChange = useCallback(
+    async (enabled: boolean) => {
+      if (enabled && pairingAvailabilityGate !== "ready") {
+        setMobileModeEnablePending(true);
+        announce("Choose how Cave stays available before showing a pairing code.", "polite");
+        return;
+      }
+      setMobileModeEnablePending(false);
+      writeMobileModeEnabled(enabled);
+      const result = await reconcileMobileMode(enabled, { busy: true, force: true });
+      announce(
+        enabled
+          ? result.ok
+            ? "Mobile mode on."
+            : "Mobile mode on; pairing needs attention."
+          : "Mobile mode off.",
+        result.ok ? "polite" : "assertive",
+      );
+    },
+    [pairingAvailabilityGate, reconcileMobileMode],
+  );
+
+  useEffect(() => {
+    if (!mobileModeEnablePending || pairingAvailabilityGate !== "ready" || mobileModeEnabled) return;
+    void onMobileModeChange(true);
+  }, [
+    mobileModeEnablePending,
+    mobileModeEnabled,
+    onMobileModeChange,
+    pairingAvailabilityGate,
+  ]);
+
+  const enablePairingAvailability = async () => {
+    if (!pairingReachability || busy) return;
+    setBusy(true);
+    setPairingAvailabilityError(null);
+    try {
+      const next = await enableDesktopBackgroundAvailability(pairingReachability);
+      setPairingReachability(next);
+      pairingSessionOnlyRef.current = false;
+      setPairingSessionOnly(false);
+      setPairingAvailabilityGate("ready");
+      setMobileModeEnablePending(false);
+      writeMobileModeEnabled(true);
+      const result = await reconcileMobileMode(true, { force: true });
+      announce(
+        result.ok
+          ? "Background availability enabled. Pairing code ready."
+          : "Background availability enabled; pairing still needs attention.",
+        result.ok ? "polite" : "assertive",
+      );
+    } catch (cause) {
+      const message = cause instanceof Error
+        ? cause.message
+        : "Couldn’t enable background availability.";
+      setPairingAvailabilityError(message);
+      announce(message, "assertive");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continuePairingForSession = async () => {
+    if (busy) return;
+    pairingSessionOnlyRef.current = true;
+    setPairingSessionOnly(true);
+    setPairingAvailabilityGate("ready");
+    setPairingAvailabilityError(null);
+    setMobileModeEnablePending(false);
+    writeMobileModeEnabled(true);
+    const result = await reconcileMobileMode(true, { busy: true, force: true });
     announce(
-      enabled
-        ? result.ok
-          ? "Mobile mode on."
-          : "Mobile mode on; pairing needs attention."
-        : "Mobile mode off.",
+      result.ok ? "Session-only pairing code ready." : "Pairing still needs attention.",
       result.ok ? "polite" : "assertive",
     );
   };
 
   useEffect(() => {
     if (initialReconcileDoneRef.current) return;
+    if (!mobileModeEnabled) {
+      initialReconcileDoneRef.current = true;
+      return;
+    }
+    if (pairingAvailabilityGate !== "ready") return;
     initialReconcileDoneRef.current = true;
-    if (!mobileModeEnabled) return;
     void reconcileMobileMode(mobileModeEnabled);
-  }, [mobileModeEnabled, reconcileMobileMode]);
+  }, [mobileModeEnabled, pairingAvailabilityGate, reconcileMobileMode]);
 
   useEffect(
     () => () => {
@@ -765,7 +923,7 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
   );
 
   usePausablePoll(() => void reconcileMobileMode(true), 60_000, {
-    enabled: mobileModeEnabled,
+    enabled: mobileModeEnabled && pairingAvailabilityGate === "ready",
   });
 
   const copy = (kind: "link" | "app" | "host", value: string) => {
@@ -794,19 +952,32 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
   };
 
   const friendly = error ? classifyTailscaleFailure(error) : null;
-  const pairingReady = mobileModeEnabled && !friendly && Boolean(handoff?.qrSvg);
+  const pairingAvailabilityPending =
+    mobileModeRequested && pairingAvailabilityGate !== "ready";
+  const pairingReady = mobileModeEnabled
+    && pairingAvailabilityGate === "ready"
+    && !friendly
+    && Boolean(handoff?.qrSvg);
   const paired = mobileModeEnabled && Boolean(handoff?.lastSeenAt);
   const statusLine = busy
     ? "Updating…"
-    : !mobileModeEnabled
+    : !mobileModeRequested
       ? "Turn on to let a phone pair over the tailnet."
+      : pairingAvailabilityGate === "checking"
+        ? "Checking background availability…"
+        : pairingAvailabilityGate === "needs-consent"
+          ? "Choose background or session-only availability before pairing."
       : friendly
         ? friendly.headline
         : pairingReady
           ? "Ready — scan the code with your iPhone camera."
           : "Starting the tailnet route…";
-  const pairState = !mobileModeEnabled
+  const pairState = !mobileModeRequested
     ? "not accepting scans"
+    : pairingAvailabilityGate === "checking"
+      ? "checking availability"
+      : pairingAvailabilityGate === "needs-consent"
+        ? "availability choice needed"
     : friendly
       ? "needs attention"
       : paired && handoff?.lastSeenAt
@@ -814,13 +985,13 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
         : pairingReady
           ? "ready to scan"
           : "checking route";
-  const pairTone: ChipTone = friendly
+  const pairTone: ChipTone = pairingAvailabilityGate === "needs-consent" || friendly
     ? "warning"
     : pairingReady
       ? "success"
       : "muted";
   const displaySteps =
-    steps ?? (mobileModeEnabled ? CHECKING_PAIRING_STEPS : PAUSED_PAIRING_STEPS);
+    steps ?? (mobileModeRequested ? CHECKING_PAIRING_STEPS : PAUSED_PAIRING_STEPS);
 
   return (
     <section className="settings-phone" aria-labelledby="settings-phone-title">
@@ -840,7 +1011,9 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
             {mobileModeEnabled ? "mobile mode on" : "mobile mode off"}
           </StatusChip>
           <StatusChip tone={pairTone}>
-            {friendly
+            {pairingAvailabilityPending
+              ? "availability choice needed"
+              : friendly
               ? "pairing needs attention"
               : pairingReady
                 ? "pairing ready"
@@ -869,7 +1042,9 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
           <span>{pairState}</span>
           <small>
             {mobileModeEnabled
-              ? "The pairing path refreshes automatically."
+              ? pairingSessionOnly
+                ? "Session-only pairing ends when Cave closes."
+                : "The pairing path refreshes automatically."
               : "Pairing stays private until mobile mode is on."}
           </small>
         </div>
@@ -895,10 +1070,10 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
             </Button>
           ) : null}
           <SettingsSwitch
-            checked={mobileModeEnabled}
+            checked={mobileModeRequested}
             label="Mobile mode"
-            disabled={busy}
-            onChange={() => void onMobileModeChange(!mobileModeEnabled)}
+            disabled={busy || pairingAvailabilityGate === "checking"}
+            onChange={() => void onMobileModeChange(!mobileModeRequested)}
           />
         </div>
       </div>
@@ -936,8 +1111,12 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
                       aria-hidden
                     />
                     <span>
-                      {!mobileModeEnabled
+                      {!mobileModeRequested
                         ? "Mobile mode is off"
+                        : pairingAvailabilityGate === "checking"
+                          ? "Checking availability…"
+                          : pairingAvailabilityGate === "needs-consent"
+                            ? "Choose availability below"
                         : friendly
                           ? "Pairing needs attention"
                           : "Preparing pairing code…"}
@@ -945,12 +1124,20 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
                   </div>
                 )}
               </div>
-              <p>Scan with your iPhone camera — Cave opens already paired.</p>
+              <p>
+                {pairingSessionOnly
+                  ? "Scan with your iPhone camera. This connection ends when Cave closes."
+                  : "Scan with your iPhone camera — Cave opens already paired."}
+              </p>
               <Button
                 size="xs"
                 variant="secondary"
                 leadingIcon="ph:arrows-clockwise"
-                disabled={!mobileModeEnabled || busy}
+                disabled={
+                  !mobileModeEnabled
+                  || busy
+                  || pairingAvailabilityGate !== "ready"
+                }
                 onClick={() =>
                   void reconcileMobileMode(true, { busy: true, force: true })
                 }
@@ -960,6 +1147,43 @@ export function PhoneSection({ onUseAsHub }: { onUseAsHub: (url: string) => void
             </div>
 
             <div className="settings-phone-pair__details">
+              {mobileModeRequested && pairingAvailabilityGate === "needs-consent" ? (
+                <div className="settings-phone-pair__warning" role="status">
+                  <strong>Keep Cave available after this window closes?</strong>
+                  <p>
+                    Remote reconnect needs a per-user background helper. It stays
+                    loopback-only, still requires Tailscale and your paired token, and
+                    does not prevent Mac sleep.
+                  </p>
+                  <div className="settings-phone-pair__availability-actions">
+                    <Button
+                      size="xs"
+                      onClick={() => void enablePairingAvailability()}
+                      loading={busy}
+                      disabled={!pairingReachability}
+                    >
+                      Enable &amp; show pairing code
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="secondary"
+                      onClick={() => void continuePairingForSession()}
+                      disabled={busy}
+                    >
+                      Pair for this session
+                    </Button>
+                  </div>
+                  <p>
+                    To stay reachable while idle, separately enable “Stay awake while
+                    paired” below. Battery sleep remains unchanged by default.
+                  </p>
+                  {pairingAvailabilityError ? (
+                    <p className="settings-phone-inline-error" role="alert">
+                      {pairingAvailabilityError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <PairingStepsList
                 steps={displaySteps}
                 showAllDetails

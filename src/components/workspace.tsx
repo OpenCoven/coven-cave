@@ -7,7 +7,6 @@ import { ActingFamiliarGate } from "@/components/acting-familiar-gate";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl } from "@/lib/github-item-url";
-import { accessPromptUrl } from "@/proxy-helpers";
 import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
@@ -54,7 +53,11 @@ import type { PaletteIntent } from "@/components/command-palette";
 // a new in-shell surface from main.
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
-import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import {
+  readMobileModeEnabled,
+  subscribeMobileModeEnabled,
+  writeMobileModeEnabled,
+} from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
@@ -1090,10 +1093,6 @@ export function Workspace() {
   // "running" doesn't flicker it away — it shows on the first definitive local-
   // offline poll and only clears after the daemon is *consistently* healthy.
   const [daemonOffline, setDaemonOffline] = useState(false);
-  // The access-token gate rejected our credential (401 on the status poll).
-  // Distinct from daemonOffline: the daemon may be fine — WE can't see it, and
-  // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
-  const [authExpired, setAuthExpired] = useState(false);
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const [daemonRecovery, setDaemonRecovery] = useState(initialDaemonRecoveryPresentation);
   const daemonHealthyStreakRef = useRef(0);
@@ -1229,7 +1228,11 @@ export function Workspace() {
   });
   // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
   const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
-  const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
+  const mobileModeEnabled = useSyncExternalStore(
+    subscribeMobileModeEnabled,
+    readMobileModeEnabled,
+    readMobileModeEnabled,
+  );
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
   const responseNeededRef = useRef(responseNeeded);
@@ -1272,7 +1275,6 @@ export function Workspace() {
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
-    setMobileModeEnabledState(enabled);
   }, []);
 
   const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean; suppressError?: boolean }) => {
@@ -1341,13 +1343,11 @@ export function Workspace() {
     } else {
       setAcceptedLocalDaemonHealthy(false);
     }
-    // A real non-401 response proves the Cave credential is accepted again.
-    if (poll.responseStatus !== 401) setAuthExpired(false);
-
     setDaemonStatusResolved(true);
     if (result.kind === "auth-expired") {
-      setAuthExpired(true);
-      setDaemonStatusUnavailable(null);
+      daemonHealthyStreakRef.current = 0;
+      setDaemonOffline(false);
+      setDaemonStatusUnavailable("access check failed");
       return;
     }
     if (result.kind === "unavailable") {
@@ -1673,10 +1673,10 @@ export function Workspace() {
 
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat. While the access
-  // token is rejected the daemon state is unknowable — suppress this banner
-  // in favour of the re-auth one (cave-wkp5).
+  // token is rejected the daemon state is unknowable, so the status-unavailable
+  // path below owns recovery instead of offering Start daemon.
   useEffect(() => {
-    if (!daemonOffline || authExpired || daemonRecovery.quiet) {
+    if (!daemonOffline || daemonRecovery.quiet) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
@@ -1694,13 +1694,13 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, authExpired, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
 
   // A status-service failure, timeout, malformed response, or non-local target
   // problem does not prove the local daemon is stopped. Keep that uncertainty
   // accurate and retryable instead of offering the misleading Start daemon CTA.
   useEffect(() => {
-    if (!daemonStatusUnavailable || authExpired || daemonOffline) {
+    if (!daemonStatusUnavailable || daemonOffline) {
       dismissBanner("daemon-status-unavailable");
       return;
     }
@@ -1715,28 +1715,7 @@ export function Workspace() {
         },
       },
     });
-  }, [daemonStatusUnavailable, authExpired, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
-
-  // Re-auth banner: the access-token gate is rejecting every request, so all
-  // surfaces are degrading at once. Explicitly request the existing gate page;
-  // an ordinary trusted local reload intentionally bypasses it.
-  useEffect(() => {
-    if (!authExpired) {
-      dismissBanner("auth-expired");
-      return;
-    }
-    pushBanner({
-      id: "auth-expired",
-      severity: "error",
-      title: "Access required — sign in with a fresh pairing token.",
-      cta: {
-        label: "Sign in",
-        onClick: () => {
-          window.location.assign(accessPromptUrl(window.location.href));
-        },
-      },
-    });
-  }, [authExpired, pushBanner, dismissBanner]);
+  }, [daemonStatusUnavailable, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
 
   const loadFamiliars = useCallback(async () => {
     const requestGeneration = ++loadFamiliarsReqRef.current;
@@ -4102,11 +4081,6 @@ export function Workspace() {
     [setMode],
   );
 
-  const workspaceContextNotice =
-    mode === "home" || mode === "chat"
-      ? null
-      : "Applies to new chats. This view is not filtered by project yet.";
-
   const sidebar = (
     <SidebarMinimal
       mode={mode}
@@ -4168,7 +4142,7 @@ export function Workspace() {
       projectCrewLoading={effectiveProjectCrewLoading}
       projectCrewError={projectCrewError}
       reloadProjectCrew={reloadProjectCrew}
-      contextNotice={workspaceContextNotice}
+      contextNotice={null}
     />
   );
 
@@ -4229,7 +4203,7 @@ export function Workspace() {
       projectCrewLoading={effectiveProjectCrewLoading}
       projectCrewError={projectCrewError}
       reloadProjectCrew={reloadProjectCrew}
-      contextNotice={workspaceContextNotice}
+      contextNotice={null}
       selectedFamiliarIds={scopeIds}
     />
   );

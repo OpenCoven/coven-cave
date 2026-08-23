@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.8"
+version = "0.3.9"
 description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
 authors = ["OpenCoven contributors"]
 license = "MIT OR AGPL-3.0-only"
@@ -61,10 +61,14 @@ tauri-plugin-process = "2"
 discord-rich-presence = "1.1.0"
 # Offline read cache (offline_cache.rs): AES-256-GCM over an HKDF-SHA256 key
 # derived from a keychain-held root secret. Desktop-only because the module is
-# — mobile has no sidecar cache to fall back on. sha2 lives here rather than in
-# the Windows block it started in, because both the sidecar archive digests and
-# the cache's derivation need it.
-aes-gcm = "0.10"
+# — `keyring` has no iOS or Android backend, and there is nowhere on mobile to
+# hold a root secret this cache would trust. sha2 lives here rather than in the
+# Windows block it started in, because both the sidecar archive digests and the
+# cache's derivation need it.
+# `zeroize` is not on by default, and without it the expanded AES round-key
+# schedule outlives the cipher in freed heap — which would undo the Zeroizing
+# this module wraps every other piece of key material in.
+aes-gcm = { version = "0.10", features = ["zeroize"] }
 hkdf = "0.12"
 sha2 = "0.10"
 zeroize = "1"

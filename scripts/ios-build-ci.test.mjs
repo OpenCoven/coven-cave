@@ -15,6 +15,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+const project = readFileSync(
+  new URL("../apps/ios/CovenCave/project.yml", import.meta.url),
+  "utf8",
+);
 const iosJobStart = workflow.indexOf("  release-ios-build:");
 const iosJobEnd = workflow.indexOf("\n  build:", iosJobStart);
 assert.notEqual(iosJobStart, -1, "release.yml defines the iOS build job delimiter");
@@ -136,5 +140,84 @@ assert.doesNotMatch(
   /build:[\s\S]{0,300}needs:[\s\S]{0,300}- release-ios-build/,
   "TestFlight publication failures must not block unrelated desktop artifacts",
 );
+
+// ── The archive can actually resolve signing ────────────────────────────────
+// Release run 32496765932 failed the archive with "No profiles for
+// 'ai.opencoven.cave' were found ... Automatic signing is disabled", and run
+// 32501746425 — after adding -allowProvisioningUpdates — failed with
+// "Communication with Apple failed: ... (401) ... listTeams.action". The App
+// Store Connect key here is user-scoped (vars.APPLE_API_KEY_SUBJECT=user) and
+// cannot perform team operations, so automatic signing is unavailable no matter
+// how it is invoked. The archive must therefore sign manually against the
+// profiles the preceding step installs and validates.
+//
+// None of this was caught earlier because every recent release resolved
+// `resume-confirmed` and skipped the archive, the export and the upload
+// outright — the job reported success without ever building.
+assert.match(
+  iosJob,
+  /CODE_SIGN_STYLE=Manual/,
+  "the iOS archive must sign manually; the user-scoped App Store Connect key cannot drive automatic signing",
+);
+assert.doesNotMatch(
+  iosJob,
+  /-allowProvisioningUpdates/,
+  "automatic provisioning is unavailable with a user-scoped key and must not be reintroduced",
+);
+// The app and the widget need DIFFERENT profiles, and a build setting passed on
+// the xcodebuild command line applies to every target. The specifier is
+// therefore a nested expansion keyed by each target's own bundle id, with one
+// setting supplied per bundle id.
+//
+// It has to live HERE and not in project.yml: the iOS job checks out the
+// release tag's commit, so a project.yml setting only applies to a release that
+// already carried it. Run 32508544547 proved that — the specifier was declared
+// on main, the archive ran from the v0.3.9 tree, it resolved empty, and
+// xcodebuild reported "requires a provisioning profile with the App Groups
+// feature" instead of a missing profile.
+assert.ok(
+  iosJob.includes(
+    "'PROVISIONING_PROFILE_SPECIFIER=$(CAVE_IOS_PROFILE_$(PRODUCT_BUNDLE_IDENTIFIER:identifier))'",
+  ),
+  "the iOS archive must key the provisioning profile off each target's bundle id, not the checked-out project.yml",
+);
+assert.doesNotMatch(
+  project,
+  /PROVISIONING_PROFILE_SPECIFIER/,
+  "project.yml must not carry the profile specifier; a tag-pinned checkout makes it silently empty",
+);
+for (const [setting, envVar] of [
+  ["CAVE_IOS_PROFILE_ai_opencoven_cave", "IOS_PROFILE_UUID_APP"],
+  ["CAVE_IOS_PROFILE_ai_opencoven_cave_widgets", "IOS_PROFILE_UUID_WIDGET"],
+]) {
+  assert.ok(
+    iosJob.includes(`${setting}="$${envVar}"`),
+    `the iOS archive must pass ${setting} from ${envVar} so each target signs with its own profile`,
+  );
+  assert.match(
+    iosJob,
+    new RegExp(`${envVar}_?`),
+    `the signing-asset step must export ${envVar}`,
+  );
+}
+// Resolution is verified before the archive, so a specifier that goes empty
+// again fails in seconds naming the target instead of ~20 minutes later naming
+// a capability.
+assert.match(
+  iosJob,
+  /resolved provisioning profile/,
+  "the iOS archive must verify each target resolves to its expected profile before archiving",
+);
+assert.match(
+  iosJob,
+  /<string>manual<\/string>/,
+  "the export options must use manual signing to match the archive",
+);
+for (const bundleId of ["ai.opencoven.cave", "ai.opencoven.cave.widgets"]) {
+  assert.ok(
+    iosJob.includes(`<key>${bundleId}</key>`),
+    `the export options must map ${bundleId} to its provisioning profile`,
+  );
+}
 
 console.log("ios-build-ci.test.mjs: ok");

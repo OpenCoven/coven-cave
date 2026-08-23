@@ -556,6 +556,14 @@ export async function createResearchMissionWorkspace(
   });
 }
 
+export async function removeResearchMissionWorkspace(id: string): Promise<void> {
+  assertMissionId(id);
+  await withResearchMissionLock(id, async () => {
+    const directory = await assertRealMissionDirectory(id);
+    await rm(/* turbopackIgnore: true */ directory, { recursive: true, force: false });
+  });
+}
+
 export async function saveResearchMission(mission: ResearchMission): Promise<void> {
   assertMissionId(mission.id);
   await withResearchMissionLock(mission.id, async () => {

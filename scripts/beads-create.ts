@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { withBdLaunch } from "../src/lib/bd-bin.ts";
 import { PLATFORM_SURFACE_LABELS, type PlatformSurface } from "../src/lib/beads-delivery.ts";
 
 const PLATFORM_LABELS = new Set<string>(PLATFORM_SURFACE_LABELS);
@@ -96,7 +97,11 @@ function buildCreateArgs(argv: string[]): string[] {
 
 try {
   const args = buildCreateArgs(process.argv.slice(2));
-  const result = spawnSync("bd", args, {
+  // Never `shell: true`: --title/--labels/-- payloads are arbitrary prose and
+  // cmd.exe would re-parse their metacharacters. withBdLaunch resolves the
+  // Windows npm shim into a direct `node <entry>` spawn instead (src/lib/bd-bin.ts).
+  const launch = withBdLaunch("bd", args);
+  const result = spawnSync(launch.command, launch.args, {
     stdio: "inherit",
     env: process.env,
   });

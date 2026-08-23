@@ -5,7 +5,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
+import {
+  probeWindowsAcl,
+  resetClientV1PathOwnershipCache,
+  type ClientV1PathOwnershipOptions,
+  type ClientV1WindowsAclReport,
+} from "./client-v1/path-ownership.ts";
 import {
   armMobileAccessSecret,
   loadPersistedMobileAccessSecret,
@@ -23,47 +29,281 @@ function devEnv(overrides: Record<string, string | undefined> = {}): Record<stri
   };
 }
 
+// ── Windows seams (cave-fawvh) ───────────────────────────────────────────────
+// This file holds the RAW pairing secret, and `writeFileSync(…, { mode: 0o600 })`
+// plus `chmodSync(0o600)` set nothing on win32 — #4852's measured table has
+// `mode & 0o777 === 0o666` afterwards, not even the read-only bit. The fix is
+// the DACL guard that module already owns, and, exactly as there, every Windows
+// assertion below is injected so the Linux runners exercise the same branch.
+const WINDOWS_SELF = "S-1-5-21-77-88-99-1001";
+const WINDOWS_USERS = "S-1-5-32-545";
+const WAIVER_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP";
+const WAIVER_REASON_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON";
+const WAIVER_TOKEN = "i-accept-unverified-path-ownership";
+
+function exclusiveReport(): ClientV1WindowsAclReport {
+  return {
+    self: WINDOWS_SELF,
+    owner: WINDOWS_SELF,
+    protected: true,
+    repaired: false,
+    removed: [],
+    aces: [{ sid: WINDOWS_SELF, type: "Allow" }],
+  };
+}
+
+/** A Windows host as the guard sees one, with a recorder for the probed paths. */
+function windowsOwnership(
+  probed: string[],
+  probe: (target: string) => Promise<ClientV1WindowsAclReport> = async () => exclusiveReport(),
+): ClientV1PathOwnershipOptions {
+  return {
+    platform: "win32",
+    getuid: null,
+    warn: () => {},
+    env: {},
+    probeWindowsAcl: async (target) => {
+      probed.push(target);
+      return probe(target);
+    },
+  };
+}
+
+/**
+ * Assert an owner-only POSIX mode where the platform actually enforces one.
+ *
+ * These two assertions have failed on win32 since this file was written, and
+ * that standing red is the signal nobody acted on (cave-fawvh). They are not
+ * deleted and not loosened: on POSIX they still assert 0o600/0o700 exactly. On
+ * win32 they were measuring the platform rather than the code — `stat` reports
+ * 0o666/0o777 there whatever mode was passed — so the real Windows contract is
+ * asserted instead, by reading the DACL. Same treatment discovery.test.ts
+ * already gives its mode assertions.
+ */
+function assertRestricted(
+  t: TestContext,
+  target: string,
+  expectedMode: number,
+  what: string,
+): Promise<void> | void {
+  if (process.platform !== "win32") {
+    assert.equal(statSync(target).mode & 0o777, expectedMode, what);
+    return;
+  }
+  t.diagnostic(`${what}: POSIX mode bits are inert on win32; asserting the DACL instead`);
+  return probeWindowsAcl(target).then((report) => {
+    // `repaired` is what makes this non-vacuous. The probe REPAIRS as it reads,
+    // so asserting only the state it returns would pass whether or not the code
+    // under test had ever restricted anything — the probe would simply have
+    // done it here. `repaired: false` says the path was ALREADY exclusive when
+    // this assertion arrived, which is the only claim worth making.
+    assert.equal(
+      report.repaired,
+      false,
+      `${what} was still inheriting when the test looked; the provisioner did not restrict it`,
+    );
+    assert.equal(report.owner, report.self, `${what} must be owned by this process`);
+    assert.equal(report.protected, true, `${what} DACL must not inherit`);
+    for (const ace of report.aces) {
+      assert.equal(ace.type, "Allow", `${what} must carry no Deny entry`);
+      assert.ok(
+        [report.self, "S-1-5-18", "S-1-5-32-544"].includes(ace.sid),
+        `${what} grants ${ace.sid}, which is neither this user, SYSTEM, nor Administrators`,
+      );
+    }
+  });
+}
+
 test("state file mirrors scripts/mobile-tailscale.sh layout (root/port scoped)", () => {
+  // Built with path.join rather than a POSIX literal: the contract is the
+  // root/port layout the shell script uses, not the separator, and a literal
+  // made this assertion fail on win32 for a reason unrelated to what it tests.
   const file = mobileAccessSecretFile({
-    COVEN_CAVE_MOBILE_STATE_ROOT: "/tmp/state-root",
+    COVEN_CAVE_MOBILE_STATE_ROOT: path.join(path.sep, "tmp", "state-root"),
     PORT: "3007",
   });
-  assert.equal(file, "/tmp/state-root/mobile-tailscale-3007/access-token");
+  assert.equal(file, path.join(path.sep, "tmp", "state-root", "mobile-tailscale-3007", "access-token"));
 
   const explicitDir = mobileAccessSecretFile({
-    COVEN_CAVE_MOBILE_STATE_DIR: "/tmp/custom-dir",
+    COVEN_CAVE_MOBILE_STATE_DIR: path.join(path.sep, "tmp", "custom-dir"),
   });
-  assert.equal(explicitDir, "/tmp/custom-dir/access-token");
+  assert.equal(explicitDir, path.join(path.sep, "tmp", "custom-dir", "access-token"));
 
-  const xdg = mobileAccessSecretFile({ XDG_STATE_HOME: "/tmp/xdg-state" });
-  assert.equal(xdg, "/tmp/xdg-state/coven-cave/mobile-tailscale-3000/access-token");
+  const xdg = mobileAccessSecretFile({ XDG_STATE_HOME: path.join(path.sep, "tmp", "xdg-state") });
+  assert.equal(
+    xdg,
+    path.join(path.sep, "tmp", "xdg-state", "coven-cave", "mobile-tailscale-3000", "access-token"),
+  );
 });
 
-test("provision mints, persists (0600), and is idempotent", () => {
+test("provision mints, persists (0600), and is idempotent", async (t: TestContext) => {
   const env = devEnv();
-  const first = provisionMobileAccessSecret(env);
+  const first = await provisionMobileAccessSecret(env);
   assert.ok(first && first.length >= 32, "mints a strong secret");
 
   const file = mobileAccessSecretFile(env);
   assert.equal(readFileSync(file, "utf8").trim(), first);
-  assert.equal(statSync(file).mode & 0o777, 0o600, "secret file is 0600");
-  assert.equal(statSync(path.dirname(file)).mode & 0o777, 0o700, "state dir is 0700");
+  await assertRestricted(t, file, 0o600, "secret file");
+  await assertRestricted(t, path.dirname(file), 0o700, "state dir");
 
-  assert.equal(provisionMobileAccessSecret(env), first, "reuses the persisted secret");
+  assert.equal(await provisionMobileAccessSecret(env), first, "reuses the persisted secret");
   assert.equal(loadPersistedMobileAccessSecret(env), first);
 });
 
-test("provision reuses a secret the mobile:tailscale script already persisted", () => {
+test("provision reuses a secret the mobile:tailscale script already persisted", async () => {
   const env = devEnv();
   const file = mobileAccessSecretFile(env);
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, "script-minted-secret\n", "utf8");
-  assert.equal(provisionMobileAccessSecret(env), "script-minted-secret");
+  assert.equal(await provisionMobileAccessSecret(env), "script-minted-secret");
 });
 
-test("provision refuses the packaged bundle and e2e runs", () => {
-  assert.equal(provisionMobileAccessSecret(devEnv({ COVEN_CAVE_BUNDLE: "1" })), null);
-  assert.equal(provisionMobileAccessSecret(devEnv({ COVEN_CAVE_E2E: "1" })), null);
+test("provision refuses the packaged bundle and e2e runs", async () => {
+  assert.equal(await provisionMobileAccessSecret(devEnv({ COVEN_CAVE_BUNDLE: "1" })), null);
+  assert.equal(await provisionMobileAccessSecret(devEnv({ COVEN_CAVE_E2E: "1" })), null);
+});
+
+test("restricts the state directory and the token file on Windows, where chmod does nothing", async () => {
+  const env = devEnv();
+  const probed: string[] = [];
+  const secret = await provisionMobileAccessSecret(env, {
+    ownership: windowsOwnership(probed),
+  });
+  assert.ok(secret, "an exclusive Windows path still provisions");
+
+  const file = mobileAccessSecretFile(env);
+  assert.deepEqual(
+    probed,
+    [path.dirname(file), file],
+    "the directory is restricted BEFORE the secret is written into it, then the file is verified",
+  );
+
+  // And the reuse path re-verifies rather than trusting a file because it is
+  // already there — that is the upgrade path for every install that ran the
+  // version whose chmod did nothing. Reset the per-process verification cache
+  // first, since the upgrade this covers happens in a NEW process.
+  resetClientV1PathOwnershipCache();
+  const again: string[] = [];
+  assert.equal(
+    await provisionMobileAccessSecret(env, { ownership: windowsOwnership(again) }),
+    secret,
+  );
+  assert.deepEqual(again, [path.dirname(file), file]);
+});
+
+test("a token file that cannot be restricted is never left on disk", async () => {
+  // A shared directory is refused before anything is written.
+  const shared = devEnv();
+  const sharedProbes: string[] = [];
+  assert.equal(
+    await provisionMobileAccessSecret(shared, {
+      warn: () => {},
+      ownership: windowsOwnership(sharedProbes, async () => ({
+        ...exclusiveReport(),
+        aces: [
+          { sid: WINDOWS_SELF, type: "Allow" },
+          { sid: WINDOWS_USERS, type: "Allow" },
+        ],
+      })),
+    }),
+    null,
+    "a state directory another principal can write must not receive a plaintext secret",
+  );
+  assert.deepEqual(sharedProbes, [path.dirname(mobileAccessSecretFile(shared))]);
+  assert.equal(existsSync(mobileAccessSecretFile(shared)), false);
+
+  // And when only the file itself fails the check, the secret written a moment
+  // earlier is removed rather than left readable.
+  const late = devEnv();
+  const lateFile = mobileAccessSecretFile(late);
+  assert.equal(
+    await provisionMobileAccessSecret(late, {
+      warn: () => {},
+      ownership: windowsOwnership([], async (target) => {
+        if (target === lateFile) throw new Error("spawn powershell.exe ENOENT");
+        return exclusiveReport();
+      }),
+    }),
+    null,
+  );
+  assert.equal(
+    existsSync(lateFile),
+    false,
+    "a plaintext secret must not survive on a path whose ACL could not be verified",
+  );
+});
+
+test("a refusal to restrict the token path is announced, not swallowed", async () => {
+  // The route answers a null with a terse "couldn't set up pairing", so without
+  // this the operator sees a broken Settings pane and no reason for it.
+  const env = devEnv();
+  const warnings: string[] = [];
+  assert.equal(
+    await provisionMobileAccessSecret(env, {
+      warn: (message) => warnings.push(message),
+      ownership: windowsOwnership([], async () => {
+        throw new Error("Method invocation is supported only on core types in this language mode.");
+      }),
+    }),
+    null,
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /mobile access token/i);
+  assert.match(warnings[0]!, /core types in this language mode/);
+});
+
+test("the unverified-ownership waiver reaches the mobile token too", async () => {
+  // Same hatch, same terms, same disclosure as client v1 (cave-37fxr): a host
+  // that cannot read a DACL at all should not lose phone pairing silently, and
+  // the operator who accepts that has to say so and be named.
+  const env = devEnv();
+  const warnings: string[] = [];
+  const secret = await provisionMobileAccessSecret(env, {
+    ownership: {
+      platform: "win32",
+      getuid: null,
+      warn: (message) => warnings.push(message),
+      env: {
+        [WAIVER_ENV]: WAIVER_TOKEN,
+        [WAIVER_REASON_ENV]: "opsdesk@example.com: WDAC host, PowerShell blocked",
+      },
+      probeWindowsAcl: async () => {
+        throw new Error("spawn powershell.exe ENOENT");
+      },
+    },
+  });
+  assert.ok(secret, "the waiver provisions rather than dead-ending pairing");
+  assert.equal(readFileSync(mobileAccessSecretFile(env), "utf8").trim(), secret);
+  assert.ok(
+    warnings.some((message) => /SECURITY WAIVER/.test(message) && /opsdesk@example\.com/.test(message)),
+    "the waiver must disclose itself and name the operator",
+  );
+
+  // A waiver never covers a DACL that WAS read and found shared, here either.
+  const readAndShared = devEnv();
+  assert.equal(
+    await provisionMobileAccessSecret(readAndShared, {
+      warn: () => {},
+      ownership: {
+        platform: "win32",
+        getuid: null,
+        warn: () => {},
+        env: {
+          [WAIVER_ENV]: WAIVER_TOKEN,
+          [WAIVER_REASON_ENV]: "opsdesk@example.com: WDAC host, PowerShell blocked",
+        },
+        probeWindowsAcl: async () => ({
+          ...exclusiveReport(),
+          aces: [
+            { sid: WINDOWS_SELF, type: "Allow" },
+            { sid: WINDOWS_USERS, type: "Allow" },
+          ],
+        }),
+      },
+    }),
+    null,
+  );
+  assert.equal(existsSync(mobileAccessSecretFile(readAndShared)), false);
 });
 
 test("arm sets the request-time gate env", () => {
@@ -72,9 +312,9 @@ test("arm sets the request-time gate env", () => {
   assert.equal(env.COVEN_CAVE_ACCESS_TOKEN, "s3cret");
 });
 
-test("rearm arms from disk only when tokenless outside the bundle", () => {
+test("rearm arms from disk only when tokenless outside the bundle", async () => {
   const env = devEnv();
-  const secret = provisionMobileAccessSecret(env);
+  const secret = await provisionMobileAccessSecret(env);
   assert.ok(secret);
 
   assert.equal(rearmPersistedMobileAccessSecret(env), secret, "boot re-arm loads the persisted secret");
@@ -90,9 +330,9 @@ test("rearm arms from disk only when tokenless outside the bundle", () => {
   assert.equal(rearmPersistedMobileAccessSecret(bundle), null, "bundle never re-arms from dev state");
 });
 
-test("retire disarms and removes the persisted secret", () => {
+test("retire disarms and removes the persisted secret", async () => {
   const env = devEnv();
-  const secret = provisionMobileAccessSecret(env);
+  const secret = await provisionMobileAccessSecret(env);
   assert.ok(secret);
   armMobileAccessSecret(secret, env);
 

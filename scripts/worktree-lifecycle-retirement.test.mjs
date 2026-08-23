@@ -2084,6 +2084,148 @@ process.stdout.write(JSON.stringify(output) + "\\n");
   }
 });
 
+// Two files hold the same lock-reason prefix and neither imports the other: the
+// hook must stay import-free (its symlink test copies it alone into a temp
+// directory), so the retirement path duplicates the constant. Silent drift
+// between them would not fail anything visibly — retirement would simply stop
+// recognising its own locks and go back to blocking forever, which is the
+// deadlock this pair exists to end. Read the hook's value and compare.
+test("the retirement path's auto-lock prefix matches the hook that writes it", () => {
+  const hookSource = readFileSync(path.join(scriptDir, "worktree-autolock.mjs"), "utf8");
+  const hookPrefix = /const REASON_PREFIX = "([^"]+)"/.exec(hookSource);
+  assert.ok(hookPrefix, "worktree-autolock.mjs must declare REASON_PREFIX as a string literal");
+
+  const retirementPrefix = /const AUTOLOCK_REASON_PREFIX = "([^"]+)"/.exec(retirementSource);
+  assert.ok(
+    retirementPrefix,
+    "worktree-lifecycle-retirement.ts must declare AUTOLOCK_REASON_PREFIX as a string literal",
+  );
+
+  assert.equal(
+    retirementPrefix[1],
+    hookPrefix[1],
+    "the duplicated auto-lock reason prefix has drifted; retirement can no longer recognise its own locks",
+  );
+});
+
+// A locked worktree used to end the sweep with git's own message, which names
+// neither the lock nor `git worktree unlock`, and recommends `-f -f` — the one
+// action that destroys live work. These two pin the split: our own stale lock
+// is released and the removal retried, a foreign lock stands and is reported.
+function createLockedWorktreeFixture(branch, lockReason) {
+  const fixture = createGitFixture();
+  const worktreePath = path.join(fixture.repo, ".worktrees", branch.replace(/\//g, "-"));
+  run(realGit, ["worktree", "add", "-q", "-b", branch, worktreePath, "HEAD"], fixture.repo);
+  const head = run(realGit, ["rev-parse", "HEAD"], fixture.repo).stdout.trim();
+  const locked = run(
+    realGit,
+    ["worktree", "lock", "--reason", lockReason, worktreePath],
+    fixture.repo,
+  );
+  assert.equal(locked.status, 0, "fixture must start from a genuinely locked worktree");
+  // Prove the precondition rather than assume it: without a lock these tests
+  // would pass on a plain removal and assert nothing about lock handling.
+  const refused = run(realGit, ["worktree", "remove", worktreePath], fixture.repo);
+  assert.notEqual(refused.status, 0, "git must refuse to remove a locked worktree");
+  return { fixture, worktreePath, head };
+}
+
+test("removeWorktree releases a stale auto-lock and retires the unit", () => {
+  const branch = "fix/stale-autolock";
+  const { fixture, worktreePath, head } = createLockedWorktreeFixture(
+    branch,
+    "auto-locked 2026-08-14: 1 commit not on any remote — a removal would lose this. " +
+      "Unlock when you are done: git worktree unlock <path>",
+  );
+  try {
+    const gate = withPathPrefix(fixture.bin, () =>
+      acquireMaintenanceGate({
+        ownerId: "retirement-test",
+        purpose: "stale auto-lock",
+        repoDir: fixture.repo,
+      }),
+    );
+    assert.equal(gate.ok, true);
+    const operations = createGitRetirementOperations({
+      root: fixture.repo,
+      repo: "OpenCoven/coven-cave",
+      gateHandle: gate.handle,
+      nowMs: 1_754_000_000_000,
+    });
+
+    // By the time removeWorktree runs, this pass has already re-proven the tree
+    // clean and its head retained on the remote — strictly stronger evidence
+    // than the hook uses to release a lock on its own. So the lock's claim is
+    // disproven and the unit must retire, not block.
+    const removed = withPathPrefix(fixture.bin, () =>
+      operations.removeWorktree(
+        makeItem({ path: worktreePath, branch, ref: `refs/heads/${branch}`, head }),
+      ),
+    );
+    assert.deepEqual(removed, { ok: true });
+    assert.equal(existsSync(worktreePath), false, "the worktree must actually be gone");
+
+    const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));
+    assert.equal(released.ok, true);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
+test("removeWorktree leaves a foreign lock in place and reports it actionably", () => {
+  const branch = "fix/foreign-lock";
+  const lockReason = "active cave-1c8zf PR completion";
+  const { fixture, worktreePath, head } = createLockedWorktreeFixture(branch, lockReason);
+  try {
+    const gate = withPathPrefix(fixture.bin, () =>
+      acquireMaintenanceGate({
+        ownerId: "retirement-test",
+        purpose: "foreign lock",
+        repoDir: fixture.repo,
+      }),
+    );
+    assert.equal(gate.ok, true);
+    const operations = createGitRetirementOperations({
+      root: fixture.repo,
+      repo: "OpenCoven/coven-cave",
+      gateHandle: gate.handle,
+      nowMs: 1_754_000_000_000,
+    });
+
+    const removed = withPathPrefix(fixture.bin, () =>
+      operations.removeWorktree(
+        makeItem({ path: worktreePath, branch, ref: `refs/heads/${branch}`, head }),
+      ),
+    );
+    assert.equal(removed.ok, false);
+    // Someone else's claim is not ours to evaluate, so the tree must survive
+    // intact AND still be locked — a report that silently unlocked would be the
+    // destructive inversion.
+    assert.equal(existsSync(worktreePath), true, "a foreign lock must not lose the worktree");
+    assert.match(
+      run(realGit, ["worktree", "list", "--porcelain"], fixture.repo).stdout,
+      /\nlocked /,
+      "a foreign lock must still be held after the refusal",
+    );
+    assert.match(removed.reason, /cannot evaluate/);
+    assert.ok(
+      removed.reason.includes(lockReason),
+      `the refusal must quote the lock's own reason; got: ${removed.reason}`,
+    );
+    assert.ok(
+      removed.reason.includes(`git worktree unlock ${worktreePath}`),
+      `the refusal must name the remedy with the real path; got: ${removed.reason}`,
+    );
+    // The whole point: never repeat git's `-f -f` advice as our own.
+    assert.match(removed.reason, /do NOT use\s+"git worktree remove -f -f"/);
+
+    const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));
+    assert.equal(released.ok, true);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
 let failures = 0;
 for (const { name, fn } of tests) {
   try {

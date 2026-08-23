@@ -21,9 +21,10 @@
 // Advisory only: this never blocks a tool call and always exits 0.
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+
+import { isDirectRun as isDirectRunOf } from "./direct-run.mjs";
 
 const THROTTLE_MS = 60_000;
 // Bounds worst-case latency added to one tool call. Pushed worktrees drop out
@@ -478,17 +479,11 @@ function main() {
   }
 }
 
-// Real-path comparison, matching worktree-autolock.mjs: a naive URL/argv
-// comparison breaks on paths with spaces and on macOS symlinked /tmp, and a
-// guard that silently never runs is the worst outcome.
+// Real-path comparison — see scripts/direct-run.mjs for the three ways a naive
+// URL/argv comparison breaks. A guard that silently never runs is the worst
+// outcome here: worktrees would look retained while nothing pushed them.
 function isDirectRun() {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  try {
-    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    return false;
-  }
+  return isDirectRunOf(import.meta.url);
 }
 
 if (isDirectRun()) {

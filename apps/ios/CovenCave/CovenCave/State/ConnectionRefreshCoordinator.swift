@@ -14,6 +14,35 @@ enum ConnectionRefreshResult: Equatable, Sendable {
     case cancelled
 }
 
+/// Retry cadence for the single app-wide connection supervisor. The caller
+/// supplies a jitter sample so the policy stays deterministic in unit tests;
+/// production uses 0.8...1.2 to keep many returning phones from probing their
+/// desktops in lockstep. Failure one waits 1s, then doubles to a 60s cap.
+struct ConnectionRetryPolicy: Equatable, Sendable {
+    nonisolated static let heartbeatSeconds: Double = 60
+
+    nonisolated static func delaySeconds(
+        afterFailureCount failureCount: Int,
+        jitter: Double
+    ) -> Double {
+        let boundedFailure = min(max(failureCount, 1), 7)
+        let base = min(pow(2, Double(boundedFailure - 1)), 60)
+        let boundedJitter = min(max(jitter, 0.8), 1.2)
+        return min(base * boundedJitter, 60)
+    }
+}
+
+/// Every automatic recovery source feeds this one supervisor. Views no longer
+/// own retry timers of their own; they may still request a manual one-shot
+/// refresh when the user taps a button.
+enum ConnectionRecoveryTrigger: Sendable {
+    case launch
+    case foreground
+    case networkAvailable
+    case surfaceFailure
+    case streamFailure
+}
+
 /// Collapses overlapping connection refreshes into one probe. The reconnect
 /// signals all fire at once around a drop — foreground revalidation, the
 /// NWPath monitor, the reconnect-pill ticker, a pill tap — and each used to
@@ -66,6 +95,18 @@ actor ConnectionRefreshCoordinator {
     /// refresh launches fresh — required when the endpoint is reconfigured,
     /// so the new configuration can't join a probe of the old one.
     func cancelActiveRefresh() {
+        inFlight?.cancel()
+        inFlight = nil
+        activeNonce = nil
+    }
+
+    /// Synchronous `AppModel.disconnect()` reaches this actor through a Task.
+    /// A replacement configure cancels that bridge first; checking its status
+    /// on actor entry prevents a late disconnect task from cancelling the new
+    /// endpoint's probe. Once this guard passes there is no suspension before
+    /// the slot is cleared, so a successor cannot slip between the check/cancel.
+    func cancelActiveRefreshIfCallerCurrent() {
+        guard !Task.isCancelled else { return }
         inFlight?.cancel()
         inFlight = nil
         activeNonce = nil

@@ -84,14 +84,14 @@ assert.doesNotMatch(
 );
 // The Scheduled/Plugins icon chips and the band that carried them are retired:
 // both destinations live in the Home rail's list, and dropping the band gives
-// Chat the same tabs → switcher → New chat rhythm as Home. Sidebar options
-// (the only entry point for "Show archived") moves onto the grouping-tabs row.
+// Chat the same switcher → New chat rhythm as Home. Sidebar options remains
+// beside search after the redundant grouping tabs leave.
 assert.doesNotMatch(chatSidebar, /cnav__utilities|cnav__mini/, "the Scheduled/Plugins utilities band is retired");
 assert.doesNotMatch(chatChrome, /\.cnav__utilities|\.cnav__mini/, "the utilities band styles are retired with it");
 assert.match(
   chatSidebar,
-  /<SidebarRailHeader[\s\S]*?<div className="cnav__tabs-row">[\s\S]*?<Tabs<ChatSidebarView>[\s\S]*?Sidebar options/,
-  "Sidebar options rides at the end of the grouping-tabs row, below the primary action",
+  /<SidebarRailHeader[\s\S]*?<div className="cnav__search-wrap">[\s\S]*?Search chats[\s\S]*?Sidebar options/,
+  "Sidebar options rides beside the single chat search control",
 );
 assert.match(
   workspaceContextSwitcherCss,

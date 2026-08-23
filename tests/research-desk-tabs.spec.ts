@@ -1266,9 +1266,14 @@ test.describe("research desk tabs", () => {
     await expect(saves.getByRole("button", { name: new RegExp(X_ARTICLE_LINK.title) })).toBeVisible();
     await expect(saves.getByRole("button", { name: new RegExp(ORDINARY_RESOURCE_LINK.title) })).toBeVisible();
 
-    await saves.getByRole("button", { name: new RegExp(X_ARTICLE_LINK.title) }).click();
-    await saves.getByRole("button", { name: new RegExp(ORDINARY_RESOURCE_LINK.title) }).click();
-    await expect(prompt.getByText("2 attached to this run")).toBeVisible();
+    const search = saves.getByRole("textbox", { name: "Search saves" });
+    await search.fill("Ordinary research sibling");
+    await saves.getByRole("button", { name: "Select all 1 result" }).click();
+    await expect(prompt.getByText("1 ready for the first pass")).toBeVisible();
+
+    await search.fill(X_ARTICLE_LINK.title);
+    await saves.getByRole("button", { name: "Select all 1 result" }).click();
+    await expect(prompt.getByText("2 ready for the first pass")).toBeVisible();
     await prompt.getByRole("button", { name: /^Quick saves/ }).click();
     await expect(prompt.getByRole("region", { name: "Quick saves" })).toHaveCount(0);
 
@@ -1277,37 +1282,16 @@ test.describe("research desk tabs", () => {
     await prompt.getByRole("button", { name: "Start research" }).click();
 
     await expect.poll(() => handles.createdMissionBodies.length).toBe(1);
-    await expect.poll(() => handles.missionActionBodies.length).toBe(2);
-    await expect.poll(() => handles.missionRequests.length).toBe(3);
+    await expect.poll(() => handles.missionRequests.length).toBe(1);
 
     const createdBody = handles.createdMissionBodies[0] as Record<string, unknown>;
     expect(createdBody.familiarId).toBe(FAMILIAR_ID);
     expect(createdBody.intent).toBe(missionPrompt);
-
-    const expectedXAction = {
-      action: "attach-saved-link",
-      savedLinkId: "x-article-1",
-      familiarId: "researcher",
-    };
-    const expectedOrdinaryAction = {
-      action: "attach-source",
-      source: {
-        id: "link-ordinary-sibling-1",
-        title: "Ordinary research sibling",
-        url: ORDINARY_RESOURCE_URL,
-        sourceType: "web",
-        status: "candidate",
-      },
-    };
-    expect(handles.missionActionBodies).toContainEqual(expectedXAction);
-    expect(handles.missionActionBodies).toContainEqual(expectedOrdinaryAction);
+    expect(createdBody.savedLinkIds).toEqual(["x-article-1", "ordinary-sibling-1"]);
+    expect(handles.missionActionBodies).toEqual([]);
 
     expect(handles.missionRequests[0]?.kind).toBe("create");
     expect(handles.missionRequests[0]?.missionId).toBe(PROMPT_CREATED_MISSION.id);
-    for (const request of handles.missionRequests.slice(1)) {
-      expect(request.kind).toBe("action");
-      expect(request.missionId).toBe(PROMPT_CREATED_MISSION.id);
-    }
 
     await expect(deskTab(page, /^Desk/)).toHaveAttribute("aria-selected", "true");
     await expect(
@@ -1315,7 +1299,7 @@ test.describe("research desk tabs", () => {
     ).toBeVisible();
   });
 
-  test("Prompt shows the composer, opens the slash palette on '/', and mode cards track typed intent", async ({ page }) => {
+  test("Prompt shows the composer, opens the slash palette on '/', and the mode picker tracks typed intent", async ({ page }) => {
     await openResearchDesk(page);
     await deskTab(page, /^Prompt/).click();
 
@@ -1338,13 +1322,15 @@ test.describe("research desk tabs", () => {
 
     // Auto mode routing reacts to the typed intent: "whitepaper" → Paper.
     await intent.fill("Write a whitepaper on vector databases for our team");
-    const selectedCard = intake.locator('.research-mode-card[data-selected="true"]');
-    await expect(selectedCard).toContainText("Paper");
-    await expect(selectedCard).toContainText("auto pick");
-    await expect(intake.getByText(/Auto picks one from your prompt — Paper for now/)).toBeVisible();
+    const modePicker = intake.getByRole("button", { name: "Research mode" });
+    await expect(modePicker).toContainText("Auto · Paper");
+    await expect(intake.locator(".research-mode-picker__summary")).toContainText("Auto pick");
+    await expect(intake.locator(".research-mode-picker__summary")).toContainText("Paper");
+    await expect(intake.getByText("Auto selected Paper from the prompt.")).toBeVisible();
 
-    // Clicking a card is a manual override, said in plain words.
-    await intake.locator(".research-mode-card", { hasText: "Deep loop" }).click();
+    // Selecting a mode is a manual override, said in plain words.
+    await modePicker.click();
+    await page.getByRole("menuitemradio", { name: /^Deep loop/ }).click();
     await expect(intake.getByText("You chose Deep loop — this run will use it.")).toBeVisible();
 
     // Quick saves is a drawer docked to the bottom edge: collapsed by default
@@ -1369,7 +1355,7 @@ test.describe("research desk tabs", () => {
 
     // Attaching one reports back on the collapsed bar.
     await saves.getByRole("button", { name: /Qdrant guide/ }).click();
-    await expect(intake.getByText("1 attached to this run")).toBeVisible();
+    await expect(intake.getByText("1 ready for the first pass")).toBeVisible();
   });
 
   test("keeps Research recommendations hidden and idle when the capability is disabled", async ({ page }) => {

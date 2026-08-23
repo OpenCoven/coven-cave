@@ -152,6 +152,38 @@ test("a write sanitizes before it invokes and forwards the entry identity", asyn
   assert.ok(!calls[0].args.payload.includes("sk-live-abc"), "the secret must not be serialized");
 });
 
+test("a write says what the sanitizer removed instead of dropping it silently", async () => {
+  const warnings = [];
+  const { calls, dependencies } = recorder(null);
+  dependencies.warn = (message) => warnings.push(message);
+
+  const stored = await writeOfflineCache(
+    "conversation",
+    "session-4775",
+    { title: "Standup", token: "sk-live-abc", attachment: { bytes: "iVBORw0KGgo=" } },
+    "rev-9",
+    dependencies,
+  );
+
+  // The write still succeeds — a dropped field is not a failure — but it is
+  // no longer invisible.
+  assert.equal(stored, true);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /dropped 2 field\(s\)/);
+  assert.match(warnings[0], /token/);
+  assert.match(warnings[0], /attachment\.bytes/);
+  assert.ok(!warnings[0].includes("sk-live-abc"), "a diagnostic must name keys, never values");
+  assert.equal(calls[0].args.payload, '{"title":"Standup","attachment":{}}');
+});
+
+test("a write that drops nothing says nothing", async () => {
+  const warnings = [];
+  const { dependencies } = recorder(null);
+  dependencies.warn = (message) => warnings.push(message);
+  await writeOfflineCache("conversation", "abc", { title: "Standup" }, "r", dependencies);
+  assert.deepEqual(warnings, []);
+});
+
 test("an over-budget payload is refused without touching the native side", async () => {
   const { calls, dependencies } = recorder(null);
   // Prose rather than a filler run of one character: the sanitizer would drop
@@ -169,11 +201,42 @@ test("an over-budget payload is refused without touching the native side", async
   assert.deepEqual(calls, []);
 });
 
+test("the budgets are measured in UTF-8 bytes, as the native side measures them", async () => {
+  const { calls, dependencies } = recorder(null);
+
+  // Half the UTF-16 budget of three-byte characters is already 1.5x the byte
+  // ceiling the native side enforces.
+  const text = "日".repeat(OFFLINE_CACHE_MAX_ENTRY_BYTES / 2);
+  assert.equal(
+    await writeOfflineCache("conversation", "session", { text }, "rev", dependencies),
+    false,
+  );
+
+  // 128 characters is an admissible key only while every character is one
+  // byte; these are three each, and the native side refuses at 128 bytes.
+  assert.equal(await writeOfflineCache("conversation", "日".repeat(128), {}, "r", dependencies), false);
+  assert.equal(await readOfflineCache("conversation", "日".repeat(128), dependencies), null);
+  assert.equal(
+    await writeOfflineCache("conversation", "abc", {}, "é".repeat(200), dependencies),
+    false,
+  );
+
+  assert.deepEqual(calls, [], "nothing over budget may reach the native side");
+
+  // The same names and revisions are still admissible one byte per character.
+  assert.equal(await writeOfflineCache("conversation", "a".repeat(128), {}, "r", dependencies), true);
+  assert.equal(
+    await writeOfflineCache("conversation", "abc", {}, "r".repeat(256), dependencies),
+    true,
+  );
+});
+
 test("an unusable entry name is refused without touching the native side", async () => {
   const { calls, dependencies } = recorder(hit("{}"));
   assert.equal(await readOfflineCache("conversation", "", dependencies), null);
   assert.equal(await readOfflineCache("conversation", "x".repeat(129), dependencies), null);
   assert.equal(await writeOfflineCache("conversation", "a\nb", {}, "r", dependencies), false);
+  assert.equal(await writeOfflineCache("conversation", "a\u0085b", {}, "r", dependencies), false);
   assert.deepEqual(calls, []);
 });
 
@@ -255,8 +318,7 @@ test("clearing targets one scope or the whole instance", async () => {
 
 test("status reports occupancy and the classified faults", async () => {
   const status = {
-    schemaVersion: 1,
-    instanceId: "0123456789abcdef0123456789abcdef",
+    schemaVersion: 2,
     entries: 2,
     bytes: 4096,
     maxEntries: 256,

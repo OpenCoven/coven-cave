@@ -20,6 +20,7 @@ import {
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
   RESEARCH_HARNESS_IDS,
+  RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT,
   RESEARCH_MODEL_MAX_LENGTH,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
   RESEARCH_TITLE_MAX_LENGTH,
@@ -80,6 +81,13 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
     ...validMission(),
     constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
   }), null);
+});
+
+test("mission parser preserves valid title provenance and rejects unknown values", () => {
+  const explicit = { ...validMission(), titleSource: "explicit" } as const;
+  assert.deepEqual(parseResearchMission(explicit), explicit);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: "inferred" }), null);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: new String("explicit") }), null);
 });
 
 test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
@@ -402,10 +410,50 @@ test("mission input rejects lossful and NUL-bearing prompt fields", () => {
     audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH),
     constraints: ["c".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH)],
   });
+
   assert.equal(boundary.ok, true);
   if (boundary.ok) {
     assert.equal(boundary.value.title?.length, RESEARCH_TITLE_MAX_LENGTH);
     assert.equal(boundary.value.constraints?.[0]?.length, RESEARCH_CONSTRAINT_MAX_LENGTH);
+  }
+});
+
+test("mission creation validates, deduplicates, and bounds initial saved links", () => {
+  const valid = {
+    familiarId: "sage",
+    intent: "Compare two databases",
+    mode: "brief",
+    modeSource: "auto",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+  const accepted = validateCreateResearchMissionInput({
+    ...valid,
+    savedLinkIds: ["link-a", " link-b ", "link-a"],
+  });
+  assert.equal(accepted.ok, true);
+  if (accepted.ok) {
+    assert.deepEqual(accepted.value.savedLinkIds, ["link-a", "link-b"]);
+  }
+
+  for (const savedLinkIds of [
+    "link-a",
+    ["ok", 42],
+    [""],
+    ["x".repeat(129)],
+    Array.from({ length: RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT + 1 }, (_, index) => `link-${index}`),
+  ]) {
+    assert.equal(
+      validateCreateResearchMissionInput({ ...valid, savedLinkIds }).ok,
+      false,
+    );
   }
 });
 

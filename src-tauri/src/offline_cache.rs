@@ -13,8 +13,13 @@
 //!  - **Encrypted.** AES-256-GCM. The key is derived (HKDF-SHA256) from a
 //!    32-byte root secret that lives in the OS keychain and never on disk, so
 //!    the cache is unreadable to anything that only has the filesystem. Scope
-//!    and entry names are hashed into the file path and bound into the key's
-//!    HKDF info, so a file reveals neither what it holds nor what it is for.
+//!    and entry names never reach the filesystem: the path components are
+//!    *keyed* derivations of them under that same root secret, so a file
+//!    reveals neither what it holds nor what it is for. A plain digest would
+//!    not have done — the scope vocabulary is a short closed list and entry
+//!    keys are frequently ids an observer already holds, so an unkeyed
+//!    `sha256(scope || key)` is a value anyone can recompute and match
+//!    against the directory listing.
 //!  - **Instance-scoped.** Entries live under the instance id and carry it in
 //!    the authenticated header, and the id is the HKDF salt. Another Cave
 //!    instance's cache therefore fails the header check *and* cannot be
@@ -46,7 +51,7 @@
 //!
 //! The header is plaintext because staleness and ownership have to be decided
 //! before a key is derived; it carries no payload text and no entry names,
-//! only the hashed entry id, the caller's opaque revision string, a timestamp,
+//! only the keyed entry id, the caller's opaque revision string, a timestamp,
 //! the plaintext length, and the nonce.
 //!
 //! **Platform note.** On Linux the keychain backend is the kernel session
@@ -59,7 +64,7 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,7 +75,7 @@ use zeroize::Zeroizing;
 /// another generation are purged rather than migrated in place: the payload is
 /// a cache of daemon state, so refetching is cheaper and safer than teaching
 /// every future reader every past layout.
-pub(super) const OFFLINE_CACHE_SCHEMA_VERSION: u16 = 1;
+pub(super) const OFFLINE_CACHE_SCHEMA_VERSION: u16 = 2;
 
 const OFFLINE_CACHE_DIR: &str = "offline-cache";
 const INSTANCE_FILE: &str = "instance-id";
@@ -84,10 +89,21 @@ const INSTANCE_ID_BYTES: usize = 16;
 /// Per-entry plaintext ceiling. A conversation payload is tens of kilobytes;
 /// anything at this size is carrying something it should have stripped.
 pub(super) const MAX_ENTRY_BYTES: usize = 1024 * 1024;
+/// The largest a well-formed envelope can be: the payload ceiling, plus room
+/// for the plaintext header and the GCM tag. It is what lets an entry be
+/// refused from its metadata rather than after it is in memory, and what tells
+/// eviction that a larger file is unservable rather than merely expensive.
+const MAX_ENVELOPE_BYTES: u64 = MAX_ENTRY_BYTES as u64 + 4096;
 pub(super) const MAX_ENTRIES: usize = 256;
 pub(super) const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
-/// Scope and key are hashed before they touch the filesystem, so this bound is
-/// about keeping derivation inputs sane rather than about path safety.
+/// A single entry must always fit the total budget. If it did not, one write
+/// could evict the entire cache to make room for itself and then be evicted in
+/// turn. Asserted rather than left for a reader to multiply out, because the
+/// two constants are edited independently.
+const _: () = assert!(MAX_ENVELOPE_BYTES <= MAX_TOTAL_BYTES);
+/// Scope and key are replaced by keyed derivations before they touch the
+/// filesystem, so this bound is about keeping derivation inputs sane rather
+/// than about path safety.
 const MAX_NAME_LEN: usize = 128;
 const MAX_REVISION_LEN: usize = 256;
 /// Foreign instance directories are another install's business, so they are
@@ -167,11 +183,17 @@ pub(super) struct OfflineCacheReadResult {
     pub(super) purged: bool,
 }
 
+/// Occupancy and recent faults, for diagnostics.
+///
+/// Deliberately no instance id. It is a stable per-install identifier and
+/// nothing in the UI needs one — a diagnostic answers "how full, and what has
+/// gone wrong", neither of which requires naming the install. Handing the
+/// webview a durable fingerprint it never asked for is a cost with no
+/// corresponding use.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct OfflineCacheStatus {
     pub(super) schema_version: u16,
-    pub(super) instance_id: String,
     pub(super) entries: usize,
     pub(super) bytes: u64,
     pub(super) max_entries: usize,
@@ -234,14 +256,6 @@ fn hex_decode(value: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn sha256_hex(parts: &[&[u8]]) -> String {
-    let mut hasher = Sha256::new();
-    for part in parts {
-        hasher.update(part);
-    }
-    hex_encode(&hasher.finalize())
-}
-
 /// Scope and key are opaque caller strings, so they are bounded and screened
 /// for control characters before they reach derivation. They never reach the
 /// filesystem in any form: both are hashed.
@@ -271,12 +285,52 @@ impl OfflineCacheContext {
     }
 
     fn scope_dir(&self, scope: &str) -> PathBuf {
-        self.instance_dir().join(scope_id(scope))
+        self.instance_dir().join(self.scope_id(scope))
     }
 
     fn entry_path(&self, scope: &str, key: &str) -> PathBuf {
         self.scope_dir(scope)
-            .join(format!("{}.{ENTRY_EXTENSION}", entry_id(scope, key)))
+            .join(format!("{}.{ENTRY_EXTENSION}", self.entry_id(scope, key)))
+    }
+
+    /// Domain-separated, unambiguous HKDF info. The generation and the domain
+    /// lead, and `0x1f` separates every caller-supplied part, so no pair of
+    /// distinct inputs can produce the same info string.
+    fn derivation_info(&self, domain: &str, parts: &[&[u8]]) -> Vec<u8> {
+        let mut info = format!("coven-cave/offline-cache/v{OFFLINE_CACHE_SCHEMA_VERSION}/{domain}")
+            .into_bytes();
+        for part in parts {
+            info.push(0x1f);
+            info.extend_from_slice(part);
+        }
+        info
+    }
+
+    /// HKDF-Expand is HMAC-SHA256, so this is a keyed PRF over the caller's
+    /// names rather than a digest of them. That is the whole point: the scope
+    /// vocabulary is short and entry keys are ids an observer may already
+    /// hold, so an unkeyed digest would let anyone with the directory listing
+    /// confirm exactly which conversations this install has cached.
+    fn derive_id(&self, domain: &str, parts: &[&[u8]]) -> String {
+        let hkdf = Hkdf::<Sha256>::new(Some(self.instance_id.as_bytes()), self.secret.as_slice());
+        let mut derived = Zeroizing::new([0u8; KEY_BYTES]);
+        hkdf.expand(
+            &self.derivation_info(domain, parts),
+            derived.as_mut_slice(),
+        )
+        .expect("32 bytes is a valid HKDF-SHA256 output length");
+        hex_encode(derived.as_slice())
+    }
+
+    /// The directory an entry is filed under. Truncated because it only has to
+    /// separate scopes within one instance, not resist collision search.
+    fn scope_id(&self, scope: &str) -> String {
+        self.derive_id("scope", &[scope.as_bytes()])[..32].to_string()
+    }
+
+    /// The entry's file stem and the id recorded in its plaintext header.
+    fn entry_id(&self, scope: &str, key: &str) -> String {
+        self.derive_id("entry", &[scope.as_bytes(), key.as_bytes()])
     }
 
     /// One key per entry, salted by the instance and bound to the exact scope
@@ -286,23 +340,13 @@ impl OfflineCacheContext {
     fn entry_key(&self, scope: &str, key: &str) -> Zeroizing<[u8; KEY_BYTES]> {
         let hkdf = Hkdf::<Sha256>::new(Some(self.instance_id.as_bytes()), self.secret.as_slice());
         let mut derived = Zeroizing::new([0u8; KEY_BYTES]);
-        let info = format!(
-            "coven-cave/offline-cache/v{OFFLINE_CACHE_SCHEMA_VERSION}/{}/{}",
-            scope_id(scope),
-            entry_id(scope, key)
-        );
-        hkdf.expand(info.as_bytes(), derived.as_mut_slice())
-            .expect("32 bytes is a valid HKDF-SHA256 output length");
+        hkdf.expand(
+            &self.derivation_info("entry-key", &[scope.as_bytes(), key.as_bytes()]),
+            derived.as_mut_slice(),
+        )
+        .expect("32 bytes is a valid HKDF-SHA256 output length");
         derived
     }
-}
-
-fn scope_id(scope: &str) -> String {
-    sha256_hex(&[b"scope", &[0x1f], scope.as_bytes()])[..32].to_string()
-}
-
-fn entry_id(scope: &str, key: &str) -> String {
-    sha256_hex(&[scope.as_bytes(), &[0x1f], key.as_bytes()])
 }
 
 fn envelope_aad(header_len: u32, header: &[u8]) -> Vec<u8> {
@@ -329,7 +373,7 @@ fn encode_envelope(
     let header = OfflineCacheHeader {
         schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
         instance_id: context.instance_id.clone(),
-        entry_id: entry_id(scope, key),
+        entry_id: context.entry_id(scope, key),
         revision: revision.to_string(),
         updated_at_unix_ms,
         payload_bytes: u32::try_from(payload.len())
@@ -410,7 +454,7 @@ fn decode_envelope(
             "entry belongs to a different Cave instance",
         ));
     }
-    if header.entry_id != entry_id(scope, key) {
+    if header.entry_id != context.entry_id(scope, key) {
         return Err(OfflineCacheFault::new(
             OfflineCacheFaultKind::EntryMismatch,
             "entry header names a different cache entry",
@@ -588,21 +632,48 @@ fn collect_entries(context: &OfflineCacheContext) -> Result<Vec<EntryFile>, Stri
 
 /// Which entries have to go for the cache to fit its caps, oldest first.
 /// Separated from the removal so the policy is testable without a filesystem.
-fn entries_over_budget(files: &[EntryFile]) -> Vec<&Path> {
+/// Keep `protected`, keep every servable entry that still fits, evict the rest.
+///
+/// `protected` is the entry the caller has just written. Without it the write
+/// could be undone by its own cap enforcement: filesystem mtime is coarse, so
+/// entries written in the same tick tie, and the tiebreak is path order — a
+/// keyed derivation, which is to say arbitrary. At the cap that is a coin flip
+/// on whether the new entry survives the call that created it. It still counts
+/// against the budget; it just cannot be the thing that goes.
+///
+/// A file past [`MAX_ENVELOPE_BYTES`] is evicted ahead of the budget rather
+/// than counted into it. `read_entry` already refuses one from its metadata, so
+/// it can never be served — letting it consume the budget would push out
+/// entries that can.
+fn entries_over_budget<'a>(files: &'a [EntryFile], protected: Option<&Path>) -> Vec<&'a Path> {
     let mut running = 0u64;
+    let mut retained = 0usize;
     let mut evict = Vec::new();
-    for (index, file) in files.iter().enumerate() {
-        running = running.saturating_add(file.bytes);
-        if index >= MAX_ENTRIES || running > MAX_TOTAL_BYTES {
+    // The protected entry takes its slot before anything competes for one, so
+    // it neither loses its place nor lets the cache run one entry over.
+    if let Some(file) = protected.and_then(|path| files.iter().find(|file| file.path == path)) {
+        running = file.bytes;
+        retained = 1;
+    }
+    for file in files {
+        if protected == Some(file.path.as_path()) {
+            continue;
+        }
+        let servable = file.bytes <= MAX_ENVELOPE_BYTES;
+        let fits = retained < MAX_ENTRIES && running.saturating_add(file.bytes) <= MAX_TOTAL_BYTES;
+        if servable && fits {
+            running = running.saturating_add(file.bytes);
+            retained += 1;
+        } else {
             evict.push(file.path.as_path());
         }
     }
     evict
 }
 
-fn enforce_caps(context: &OfflineCacheContext) -> Result<(), String> {
+fn enforce_caps(context: &OfflineCacheContext, protected: Option<&Path>) -> Result<(), String> {
     let files = collect_entries(context)?;
-    for path in entries_over_budget(&files) {
+    for path in entries_over_budget(&files, protected) {
         match std::fs::remove_file(path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -630,6 +701,43 @@ fn sweep_staging_files(context: &OfflineCacheContext) {
             }
         }
     }
+}
+
+fn modified_unix_ms(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or(UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
+}
+
+/// How recently anything under an instance's tree changed.
+///
+/// A directory's own mtime moves only when a child is created or removed, and
+/// an established cache does neither: it renames a replacement over an entry
+/// that already exists, which touches the *scope* directory and the entry
+/// file. So a live install's instance directory carries the timestamp of the
+/// last time it gained a scope, which can be arbitrarily long ago. Reading
+/// that stamp alone would eventually reclaim a running install's cache out
+/// from under it. The tree is two levels deep by construction
+/// (`instance/scope/entry.bin`), so this walk is bounded.
+fn newest_activity_unix_ms(instance_dir: &Path) -> u64 {
+    let mut newest = modified_unix_ms(instance_dir);
+    let Ok(scopes) = std::fs::read_dir(instance_dir) else {
+        return newest;
+    };
+    for scope in scopes.flatten() {
+        newest = newest.max(modified_unix_ms(&scope.path()));
+        let Ok(entries) = std::fs::read_dir(scope.path()) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            newest = newest.max(modified_unix_ms(&entry.path()));
+        }
+    }
+    newest
 }
 
 /// Drop generations this build no longer reads, and instance directories that
@@ -661,25 +769,61 @@ fn purge_incompatible_generations(context: &OfflineCacheContext, now_unix_ms: u6
             if instance.file_name().to_str() == Some(context.instance_id.as_str()) {
                 continue;
             }
-            let Ok(metadata) = instance.metadata() else {
-                continue;
-            };
-            let modified = metadata
-                .modified()
-                .unwrap_or(UNIX_EPOCH)
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-                .min(u128::from(u64::MAX)) as u64;
-            if now_unix_ms.saturating_sub(modified) > FOREIGN_INSTANCE_MAX_AGE_MS {
+            let newest = newest_activity_unix_ms(&instance.path());
+            if now_unix_ms.saturating_sub(newest) > FOREIGN_INSTANCE_MAX_AGE_MS {
                 let _ = std::fs::remove_dir_all(instance.path());
             }
         }
     }
 }
 
+/// An entry we cannot serve is never left behind to be re-read on every
+/// launch: the purge is the migration path for a schema bump, a rotated key,
+/// and a corrupted file alike.
+fn purge_unusable(path: &Path, fault: OfflineCacheFault) -> OfflineCacheReadResult {
+    let purged = match std::fs::remove_file(path) {
+        Ok(()) => true,
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    };
+    OfflineCacheReadResult {
+        entry: None,
+        fault: Some(fault),
+        purged,
+    }
+}
+
 fn read_entry(context: &OfflineCacheContext, scope: &str, key: &str) -> OfflineCacheReadResult {
     let path = context.entry_path(scope, key);
+    // Size is checked from the directory entry, before a single byte is read.
+    // The per-entry cap otherwise only binds what this build *writes*: a file
+    // that grew by any other means — a corrupt filesystem, a build with a
+    // larger ceiling, anything with write access to the cache — would be
+    // loaded into memory in full and only then measured.
+    match std::fs::metadata(&path) {
+        Ok(metadata) if metadata.len() > MAX_ENVELOPE_BYTES => {
+            return purge_unusable(
+                &path,
+                OfflineCacheFault::new(
+                    OfflineCacheFaultKind::Oversized,
+                    "entry is larger than any envelope this cache writes",
+                ),
+            );
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return OfflineCacheReadResult::default();
+        }
+        Err(_) => {
+            return OfflineCacheReadResult {
+                entry: None,
+                fault: Some(OfflineCacheFault::new(
+                    OfflineCacheFaultKind::Io,
+                    "entry could not be read from disk",
+                )),
+                purged: false,
+            };
+        }
+    }
     let envelope = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -702,20 +846,7 @@ fn read_entry(context: &OfflineCacheContext, scope: &str, key: &str) -> OfflineC
             fault: None,
             purged: false,
         },
-        Err(fault) => {
-            // An entry we cannot serve is never left behind to be re-read on
-            // every launch: the purge is the migration path for a schema bump,
-            // a rotated key, and a corrupted file alike.
-            let purged = match std::fs::remove_file(&path) {
-                Ok(()) => true,
-                Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-            };
-            OfflineCacheReadResult {
-                entry: None,
-                fault: Some(fault),
-                purged,
-            }
-        }
+        Err(fault) => purge_unusable(&path, fault),
     }
 }
 
@@ -728,8 +859,9 @@ fn write_entry(
     updated_at_unix_ms: u64,
 ) -> Result<(), String> {
     let envelope = encode_envelope(context, scope, key, payload, revision, updated_at_unix_ms)?;
-    write_entry_file(&context.entry_path(scope, key), &envelope)?;
-    enforce_caps(context)
+    let path = context.entry_path(scope, key);
+    write_entry_file(&path, &envelope)?;
+    enforce_caps(context, Some(&path))
 }
 
 fn clear_entries(context: &OfflineCacheContext, scope: Option<&str>) -> Result<(), String> {
@@ -775,28 +907,44 @@ fn load_or_create_instance_id(root: &Path) -> Result<String, String> {
 fn keychain_secret() -> Result<(Zeroizing<[u8; KEY_BYTES]>, bool), String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
         .map_err(|_| "the offline cache keychain entry is unavailable".to_string())?;
-    match entry.get_password() {
-        Ok(stored) => {
-            if let Some(bytes) = hex_decode(&stored).filter(|bytes| bytes.len() == KEY_BYTES) {
-                let mut secret = Zeroizing::new([0u8; KEY_BYTES]);
-                secret.copy_from_slice(&bytes);
-                return Ok((secret, false));
-            }
-            let secret = new_secret();
-            entry
-                .set_password(&hex_encode(secret.as_slice()))
-                .map_err(|_| "the offline cache key could not be rotated".to_string())?;
-            Ok((secret, true))
-        }
-        Err(keyring::Error::NoEntry) => {
-            let secret = new_secret();
-            entry
-                .set_password(&hex_encode(secret.as_slice()))
-                .map_err(|_| "the offline cache key could not be stored".to_string())?;
-            Ok((secret, true))
-        }
-        Err(_) => Err("the offline cache key could not be read from the keychain".to_string()),
+    // Both hex forms of the root secret are held in `Zeroizing`: the one the
+    // keychain hands back and the one written to it. They are the plaintext
+    // key, and a `String` dropped normally leaves it in freed heap.
+    let stored = match entry.get_password() {
+        Ok(stored) => Some(Zeroizing::new(stored)),
+        Err(keyring::Error::NoEntry) => None,
+        // A keychain that is present but unreadable — locked, or denied — is
+        // not a rotation. Failing here costs a cache miss; minting a new key
+        // would cost the whole cache.
+        Err(_) => return Err("the offline cache key could not be read from the keychain".to_string()),
+    };
+    let (secret, rotated) = secret_from_stored(stored.as_ref().map(|stored| stored.as_str()));
+    if rotated {
+        let encoded = Zeroizing::new(hex_encode(secret.as_slice()));
+        entry
+            .set_password(&encoded)
+            .map_err(|_| "the offline cache key could not be stored".to_string())?;
     }
+    Ok((secret, rotated))
+}
+
+/// Decide which root secret to use from whatever the keychain held.
+///
+/// Split out from the keychain call because it is the only branch that can
+/// wipe the cache: `true` means the stored value was unusable, every existing
+/// entry is now encrypted under a key nothing holds, and the caller clears the
+/// tree. A test can therefore pin the one property that matters — that a
+/// readable 32-byte value never takes that branch — without a real keychain.
+fn secret_from_stored(stored: Option<&str>) -> (Zeroizing<[u8; KEY_BYTES]>, bool) {
+    if let Some(bytes) = stored
+        .and_then(hex_decode)
+        .filter(|bytes| bytes.len() == KEY_BYTES)
+    {
+        let mut secret = Zeroizing::new([0u8; KEY_BYTES]);
+        secret.copy_from_slice(&bytes);
+        return (secret, false);
+    }
+    (new_secret(), true)
 }
 
 fn new_secret() -> Zeroizing<[u8; KEY_BYTES]> {
@@ -932,17 +1080,12 @@ pub(super) fn offline_cache_clear(
 pub(super) fn offline_cache_status(
     state: tauri::State<'_, Arc<OfflineCacheState>>,
 ) -> Result<OfflineCacheStatus, String> {
-    let (instance_id, entries, bytes) = state.with_context(|context| {
+    let (entries, bytes) = state.with_context(|context| {
         let files = collect_entries(context)?;
-        Ok((
-            context.instance_id.clone(),
-            files.len(),
-            files.iter().map(|file| file.bytes).sum::<u64>(),
-        ))
+        Ok((files.len(), files.iter().map(|file| file.bytes).sum::<u64>()))
     })?;
     Ok(OfflineCacheStatus {
         schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
-        instance_id,
         entries,
         bytes,
         max_entries: MAX_ENTRIES,
@@ -955,6 +1098,7 @@ pub(super) fn offline_cache_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
 
     static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(1);
 
@@ -977,8 +1121,87 @@ mod tests {
         context_at(test_root(name), "0123456789abcdef0123456789abcdef", 7)
     }
 
+    fn entry_file(name: &str, bytes: u64, modified_unix_ms: u64) -> EntryFile {
+        EntryFile {
+            path: PathBuf::from(name),
+            bytes,
+            modified_unix_ms,
+        }
+    }
+
     fn cleanup(context: &OfflineCacheContext) {
         let _ = std::fs::remove_dir_all(&context.root);
+    }
+
+    /// Where the ciphertext starts: past the magic, the length, and the header.
+    fn envelope_body_start(envelope: &[u8]) -> usize {
+        let preamble = ENVELOPE_MAGIC.len() + HEADER_LEN_BYTES;
+        let header_len = u32::from_le_bytes(
+            envelope[ENVELOPE_MAGIC.len()..preamble]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        preamble + header_len
+    }
+
+    fn header_of(envelope: &[u8]) -> OfflineCacheHeader {
+        let preamble = ENVELOPE_MAGIC.len() + HEADER_LEN_BYTES;
+        serde_json::from_slice(&envelope[preamble..envelope_body_start(envelope)]).unwrap()
+    }
+
+    fn header_for(context: &OfflineCacheContext, scope: &str, key: &str) -> OfflineCacheHeader {
+        let mut nonce = [0u8; NONCE_BYTES];
+        OsRng.fill_bytes(&mut nonce);
+        OfflineCacheHeader {
+            schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
+            instance_id: context.instance_id.clone(),
+            entry_id: context.entry_id(scope, key),
+            revision: "r".to_string(),
+            updated_at_unix_ms: 1,
+            payload_bytes: 0,
+            nonce: hex_encode(&nonce),
+        }
+    }
+
+    /// Encrypt under the real entry key with a caller-chosen header, so a test
+    /// can produce an envelope that authenticates and still lies. Tampering
+    /// cannot do this: the header is the AAD.
+    fn seal(
+        context: &OfflineCacheContext,
+        scope: &str,
+        key: &str,
+        header: &OfflineCacheHeader,
+        plaintext: &[u8],
+    ) -> Vec<u8> {
+        let header_json = serde_json::to_vec(header).unwrap();
+        let aad = envelope_aad(header_json.len() as u32, &header_json);
+        let derived = context.entry_key(scope, key);
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(derived.as_slice()));
+        let nonce = hex_decode(&header.nonce).unwrap();
+        let ciphertext = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: &aad,
+                },
+            )
+            .unwrap();
+        let mut envelope = aad;
+        envelope.extend_from_slice(&ciphertext);
+        envelope
+    }
+
+    /// Regular files only — opening a directory for write is not portable, and
+    /// the point of the tests that use this is precisely that entry files move
+    /// while their parent directories do not.
+    fn set_modified(path: &Path, unix_ms: u64) {
+        let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_times(
+            std::fs::FileTimes::new()
+                .set_modified(UNIX_EPOCH + std::time::Duration::from_millis(unix_ms)),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1079,17 +1302,31 @@ mod tests {
     }
 
     #[test]
-    fn a_rotated_key_makes_entries_undecryptable_rather_than_wrong() {
+    fn a_rotated_key_leaves_no_entry_this_build_can_serve() {
         let root = test_root("rotate");
         let before = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 7);
         write_entry(&before, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
 
+        // The path is keyed too, so a rotated secret does not even name the
+        // old file: the read is a plain miss. `with_context` clears the tree
+        // when the keychain rotates for precisely this reason — nothing else
+        // would ever revisit those bytes.
         let after = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 9);
+        assert_eq!(
+            read_entry(&after, "conversation", "abc"),
+            OfflineCacheReadResult::default(),
+        );
+
+        // And putting the old bytes exactly where the rotated secret looks
+        // does not resurrect them: the header's entry id was derived under the
+        // retired key, so the entry is refused and removed.
+        let stale = std::fs::read(before.entry_path("conversation", "abc")).unwrap();
+        write_entry_file(&after.entry_path("conversation", "abc"), &stale).unwrap();
         let result = read_entry(&after, "conversation", "abc");
         assert_eq!(result.entry, None);
         assert_eq!(
             result.fault.map(|fault| fault.kind),
-            Some(OfflineCacheFaultKind::Undecryptable)
+            Some(OfflineCacheFaultKind::EntryMismatch)
         );
         assert!(result.purged);
         let _ = std::fs::remove_dir_all(&root);
@@ -1114,21 +1351,80 @@ mod tests {
 
         // Rewriting the header's timestamp keeps the JSON valid, so only the
         // AAD binding catches it.
-        let header_start = ENVELOPE_MAGIC.len() + HEADER_LEN_BYTES;
-        let header_len =
-            u32::from_le_bytes(original[ENVELOPE_MAGIC.len()..header_start].try_into().unwrap())
-                as usize;
-        let mut header: OfflineCacheHeader =
-            serde_json::from_slice(&original[header_start..header_start + header_len]).unwrap();
+        let mut header = header_of(&original);
         header.updated_at_unix_ms = 999;
         let rewritten = serde_json::to_vec(&header).unwrap();
         let mut forged = envelope_aad(rewritten.len() as u32, &rewritten);
-        forged.extend_from_slice(&original[header_start + header_len..]);
+        forged.extend_from_slice(&original[envelope_body_start(&original)..]);
         assert_eq!(
             decode_envelope(&context, "conversation", "abc", &forged)
                 .unwrap_err()
                 .kind,
             OfflineCacheFaultKind::Undecryptable,
+        );
+        cleanup(&context);
+    }
+
+    #[test]
+    fn a_header_that_lies_about_its_payload_length_is_refused_after_decryption() {
+        // Tampering cannot reach `LengthMismatch` — `payload_bytes` is inside
+        // the AAD, so editing it breaks authentication first. Only a writer
+        // holding the entry key can produce an envelope that authenticates and
+        // still disagrees with itself, which is what a future bug in
+        // `encode_envelope` would look like. Hold the check to that.
+        let context = context("length-lie");
+        let mut header = header_for(&context, "conversation", "abc");
+        header.payload_bytes = 999;
+        let envelope = seal(&context, "conversation", "abc", &header, b"{\"a\":1}");
+        assert_eq!(
+            decode_envelope(&context, "conversation", "abc", &envelope)
+                .unwrap_err()
+                .kind,
+            OfflineCacheFaultKind::LengthMismatch,
+        );
+        cleanup(&context);
+    }
+
+    #[test]
+    fn a_payload_that_is_not_utf8_is_classified_rather_than_lossily_decoded() {
+        let context = context("payload-malformed");
+        let plaintext = [0xffu8, 0xfe, 0xfd];
+        let mut header = header_for(&context, "conversation", "abc");
+        header.payload_bytes = plaintext.len() as u32;
+        let envelope = seal(&context, "conversation", "abc", &header, &plaintext);
+        assert_eq!(
+            decode_envelope(&context, "conversation", "abc", &envelope)
+                .unwrap_err()
+                .kind,
+            OfflineCacheFaultKind::PayloadMalformed,
+        );
+        cleanup(&context);
+    }
+
+    #[test]
+    fn rewriting_one_entry_never_repeats_a_nonce_or_a_ciphertext() {
+        // The entry key is deterministic in the scope and the name, so every
+        // rewrite of one entry reuses it. Nonce reuse under a reused AES-GCM
+        // key is the failure that loses the plaintext outright, and no other
+        // test here would notice a fixed nonce: a round trip still succeeds
+        // and the payload is still absent from the file.
+        let context = context("nonce");
+        let path = context.entry_path("conversation", "abc");
+        let mut nonces = Vec::new();
+        let mut ciphertexts = Vec::new();
+        for _ in 0..8 {
+            write_entry(&context, "conversation", "abc", "{\"same\":true}", "r", 1).unwrap();
+            let envelope = std::fs::read(&path).unwrap();
+            nonces.push(header_of(&envelope).nonce);
+            ciphertexts.push(envelope[envelope_body_start(&envelope)..].to_vec());
+        }
+        let unique_nonces: std::collections::BTreeSet<_> = nonces.iter().collect();
+        assert_eq!(unique_nonces.len(), nonces.len(), "a nonce was reused");
+        let unique_ciphertexts: std::collections::BTreeSet<_> = ciphertexts.iter().collect();
+        assert_eq!(
+            unique_ciphertexts.len(),
+            ciphertexts.len(),
+            "identical plaintext produced identical bytes, so it is not encrypted with a fresh nonce",
         );
         cleanup(&context);
     }
@@ -1181,7 +1477,7 @@ mod tests {
         let header = OfflineCacheHeader {
             schema_version: OFFLINE_CACHE_SCHEMA_VERSION + 1,
             instance_id: context.instance_id.clone(),
-            entry_id: entry_id("conversation", "abc"),
+            entry_id: context.entry_id("conversation", "abc"),
             revision: "r".to_string(),
             updated_at_unix_ms: 1,
             payload_bytes: 2,
@@ -1212,26 +1508,81 @@ mod tests {
     }
 
     #[test]
+    fn an_oversized_file_is_refused_from_its_metadata_rather_than_read() {
+        let context = context("oversized-read");
+        write_entry(&context, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
+        let path = context.entry_path("conversation", "abc");
+        // A well-formed envelope's own preamble is intact; only its length is
+        // impossible, so nothing but the size check can reject it early.
+        let mut bloated = std::fs::read(&path).unwrap();
+        bloated.resize(MAX_ENVELOPE_BYTES as usize + 1, 0);
+        std::fs::write(&path, &bloated).unwrap();
+
+        let result = read_entry(&context, "conversation", "abc");
+        assert_eq!(result.entry, None);
+        assert_eq!(
+            result.fault.map(|fault| fault.kind),
+            Some(OfflineCacheFaultKind::Oversized)
+        );
+        assert!(result.purged);
+        assert!(!path.exists());
+        cleanup(&context);
+    }
+
+    #[test]
     fn cap_eviction_drops_the_oldest_entries_first() {
-        let file = |name: &str, bytes: u64, modified_unix_ms: u64| EntryFile {
-            path: PathBuf::from(name),
-            bytes,
-            modified_unix_ms,
-        };
         let by_count: Vec<EntryFile> = (0..MAX_ENTRIES + 2)
-            .map(|index| file(&format!("entry-{index}"), 1, (MAX_ENTRIES + 2 - index) as u64))
+            .map(|index| entry_file(&format!("entry-{index}"), 1, (MAX_ENTRIES + 2 - index) as u64))
             .collect();
-        let evicted = entries_over_budget(&by_count);
+        let evicted = entries_over_budget(&by_count, None);
         assert_eq!(evicted.len(), 2);
         assert_eq!(evicted[0], Path::new(&format!("entry-{MAX_ENTRIES}")));
 
-        let by_bytes = vec![
-            file("newest", MAX_TOTAL_BYTES, 3),
-            file("older", 1, 2),
-            file("oldest", 1, 1),
+        // Entries sized so the total budget takes all but the last of them.
+        let one_mib = 1024 * 1024;
+        let fitting = (MAX_TOTAL_BYTES / one_mib) as usize;
+        let by_bytes: Vec<EntryFile> = (0..fitting + 1)
+            .map(|index| {
+                entry_file(&format!("entry-{index}"), one_mib, (fitting + 1 - index) as u64)
+            })
+            .collect();
+        assert_eq!(
+            entries_over_budget(&by_bytes, None),
+            vec![Path::new(&format!("entry-{fitting}"))],
+        );
+    }
+
+    #[test]
+    fn eviction_never_removes_the_entry_the_write_just_created() {
+        // Every entry claims the same mtime, so the sort falls through to path
+        // order and a new write has nothing of its own to survive on.
+        let tied: Vec<EntryFile> = (0..MAX_ENTRIES + 1)
+            .map(|index| entry_file(&format!("entry-{index}"), 1, 7))
+            .collect();
+        let just_written = PathBuf::from(format!("entry-{MAX_ENTRIES}"));
+
+        assert!(
+            entries_over_budget(&tied, None).contains(&just_written.as_path()),
+            "unprotected, the tiebreak is free to evict the newest write",
+        );
+
+        let evicted = entries_over_budget(&tied, Some(&just_written));
+        assert!(!evicted.contains(&just_written.as_path()));
+        assert_eq!(evicted.len(), 1, "protection must not put the cache over its cap");
+    }
+
+    #[test]
+    fn an_unservable_file_is_reclaimed_before_it_can_crowd_out_a_servable_one() {
+        // read_entry refuses anything this large from its metadata, so keeping
+        // it would spend the budget on bytes that can never be served.
+        let files = vec![
+            entry_file("oversized", MAX_ENVELOPE_BYTES + 1, 3),
+            entry_file("servable", 1, 2),
         ];
-        let evicted = entries_over_budget(&by_bytes);
-        assert_eq!(evicted, vec![Path::new("older"), Path::new("oldest")]);
+        assert_eq!(
+            entries_over_budget(&files, None),
+            vec![Path::new("oversized")],
+        );
     }
 
     #[test]
@@ -1299,7 +1650,7 @@ mod tests {
         write_entry(&context, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
         let debris = context
             .scope_dir("conversation")
-            .join(format!("{}.bin.tmp-1-1", entry_id("conversation", "abc")));
+            .join(format!("{}.bin.tmp-1-1", context.entry_id("conversation", "abc")));
         std::fs::write(&debris, b"half written").unwrap();
 
         assert_eq!(collect_entries(&context).unwrap().len(), 1);
@@ -1326,6 +1677,28 @@ mod tests {
     }
 
     #[test]
+    fn a_live_foreign_instance_survives_a_stale_directory_stamp() {
+        let root = test_root("foreign-activity");
+        let mine = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 7);
+        let theirs = context_at(root.clone(), "fedcba9876543210fedcba9876543210", 7);
+        write_entry(&theirs, "conversation", "abc", "{\"b\":2}", "r", 1).unwrap();
+
+        // Their directory tree was created now and never gains another scope,
+        // so its own mtime stops moving here. Rewriting the same entry a month
+        // on is exactly what a live install does — and the only thing it
+        // touches is the entry file.
+        let later = now_unix_ms() + FOREIGN_INSTANCE_MAX_AGE_MS + 60_000;
+        set_modified(&theirs.entry_path("conversation", "abc"), later);
+
+        purge_incompatible_generations(&mine, later);
+        assert!(
+            theirs.instance_dir().exists(),
+            "an install still writing entries must not be reclaimed for a stale directory stamp",
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn instance_ids_persist_and_a_malformed_one_is_reminted() {
         let root = test_root("instance-id");
         std::fs::create_dir_all(&root).unwrap();
@@ -1337,6 +1710,40 @@ mod tests {
         let second = load_or_create_instance_id(&root).unwrap();
         assert_ne!(second, first);
         assert_eq!(second.len(), INSTANCE_ID_BYTES * 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_path_cannot_be_recomputed_from_the_scope_and_key_alone() {
+        let root = test_root("keyed-names");
+        let mine = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 7);
+        // Same install, different keychain secret; and same secret, different
+        // install. Neither may reproduce the other's path for a scope and key
+        // an observer already knows.
+        let other_secret = context_at(root.clone(), "0123456789abcdef0123456789abcdef", 9);
+        let other_instance = context_at(root.clone(), "fedcba9876543210fedcba9876543210", 7);
+        for other in [&other_secret, &other_instance] {
+            assert_ne!(mine.scope_id("conversation"), other.scope_id("conversation"));
+            assert_ne!(
+                mine.entry_id("conversation", "abc"),
+                other.entry_id("conversation", "abc"),
+            );
+        }
+
+        // The unkeyed digest an observer *can* compute from the source appears
+        // nowhere: not as the directory, not as the file stem, not in the
+        // plaintext header.
+        write_entry(&mine, "conversation", "abc", "{\"a\":1}", "r", 1).unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(b"conversation");
+        hasher.update([0x1f]);
+        hasher.update(b"abc");
+        let unkeyed = hex_encode(&hasher.finalize());
+        let path = mine.entry_path("conversation", "abc");
+        assert!(!path.to_string_lossy().contains(&unkeyed));
+        assert!(!path.to_string_lossy().contains(&unkeyed[..32]));
+        let raw = std::fs::read(&path).unwrap();
+        assert!(!String::from_utf8_lossy(&raw).contains(&unkeyed));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1356,11 +1763,62 @@ mod tests {
     }
 
     #[test]
+    fn only_an_unusable_keychain_value_rotates_the_key_and_clears_the_cache() {
+        // The branch under test is the one that silently empties the cache on
+        // launch, so the case that must never take it is pinned first.
+        let stored = hex_encode(&[3u8; KEY_BYTES]);
+        let (secret, rotated) = secret_from_stored(Some(&stored));
+        assert_eq!(secret.as_slice(), [3u8; KEY_BYTES]);
+        assert!(
+            !rotated,
+            "a readable 32-byte key must be adopted as-is, never rotated",
+        );
+        // Case, too: the value we wrote is lowercase, but nothing should hinge
+        // on a keychain round-tripping it byte for byte.
+        assert!(!secret_from_stored(Some(&stored.to_uppercase())).1);
+
+        for unusable in [
+            None,
+            Some(String::new()),
+            Some("not hexadecimal at all".to_string()),
+            Some(hex_encode(&[3u8; KEY_BYTES - 1])),
+            Some(hex_encode(&[3u8; KEY_BYTES + 1])),
+            Some(format!("{stored} ")),
+        ] {
+            let (fresh, rotated) = secret_from_stored(unusable.as_deref());
+            assert!(rotated, "an unusable keychain value must mint a new key");
+            assert_ne!(
+                fresh.as_slice(),
+                [0u8; KEY_BYTES],
+                "a minted key must be random, not a zeroed buffer",
+            );
+        }
+    }
+
+    #[test]
     fn hex_round_trips_and_rejects_malformed_input() {
         assert_eq!(hex_encode(&[0x00, 0x0f, 0xff]), "000fff");
         assert_eq!(hex_decode("000fff"), Some(vec![0x00, 0x0f, 0xff]));
         assert_eq!(hex_decode("abc"), None);
         assert_eq!(hex_decode("zz"), None);
+    }
+
+    #[test]
+    fn the_status_payload_names_no_install() {
+        let status = OfflineCacheStatus {
+            schema_version: OFFLINE_CACHE_SCHEMA_VERSION,
+            entries: 2,
+            bytes: 4096,
+            max_entries: MAX_ENTRIES,
+            max_entry_bytes: MAX_ENTRY_BYTES,
+            max_total_bytes: MAX_TOTAL_BYTES,
+            faults: Vec::new(),
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(
+            !json.contains("instance"),
+            "the webview must not be handed a stable per-install identifier: {json}",
+        );
     }
 
     #[test]

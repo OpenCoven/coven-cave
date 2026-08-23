@@ -29,7 +29,7 @@
 import { isTauri } from "./tauri-platform.ts";
 
 /** Mirrors `OFFLINE_CACHE_SCHEMA_VERSION` in `offline_cache.rs`. */
-export const OFFLINE_CACHE_SCHEMA_VERSION = 1;
+export const OFFLINE_CACHE_SCHEMA_VERSION = 2;
 
 /** Mirrors `MAX_ENTRY_BYTES` in `offline_cache.rs`. */
 export const OFFLINE_CACHE_MAX_ENTRY_BYTES = 1024 * 1024;
@@ -79,9 +79,14 @@ type NativeOfflineCacheReadResult = {
   purged: boolean;
 };
 
+/**
+ * Occupancy and the recent classified faults. Mirrors `OfflineCacheStatus` in
+ * `offline_cache.rs`, which deliberately withholds the instance id: it is a
+ * stable per-install identifier and a diagnostic needs neither to say how full
+ * the cache is nor what has gone wrong in it.
+ */
 export type OfflineCacheStatus = {
   schemaVersion: number;
-  instanceId: string;
   entries: number;
   bytes: number;
   maxEntries: number;
@@ -112,6 +117,11 @@ type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unkno
 export type OfflineCacheDependencies = {
   invoke?: Invoke;
   supported?: () => boolean;
+  /**
+   * Where a write reports what it could not do: a native call that failed,
+   * and the fields the sanitizer removed. Both are otherwise silent — the
+   * write still resolves — so a caller that wants to know has to ask.
+   */
   warn?: (message: string) => void;
 };
 
@@ -132,6 +142,21 @@ const ATTACHMENT_KEY_PATTERN =
 
 /** Anything at or beyond this length is a payload, not a caption. */
 const MAX_INLINE_STRING_LENGTH = 8 * 1024;
+
+const utf8 = new TextEncoder();
+
+/**
+ * Every bound the native side enforces is a UTF-8 byte count (`str::len` in
+ * Rust); `String.length` is UTF-16 code units, which is smaller for anything
+ * outside Latin-1 and three times smaller for CJK. Measuring in the wrong
+ * unit does not make the cache accept oversized data — the native side
+ * refuses it — but it makes this module's own checks wrong in the permissive
+ * direction, so an over-budget write is discovered by a failed IPC round trip
+ * instead of here.
+ */
+function utf8Length(value: string): number {
+  return utf8.encode(value).length;
+}
 
 function normalizeKey(key: string): string {
   return key.replace(/[-_.\s]/g, "").toLowerCase();
@@ -202,7 +227,11 @@ export function sanitizeForOfflineCache(value: unknown): OfflineCacheSanitizeRes
 }
 
 function isValidName(value: string): boolean {
-  return value.length > 0 && value.length <= MAX_NAME_LENGTH && !/[\p{Cc}]/u.test(value);
+  return (
+    value.length > 0 &&
+    utf8Length(value) <= MAX_NAME_LENGTH &&
+    !/[\p{Cc}]/u.test(value)
+  );
 }
 
 function defaultSupported(): boolean {
@@ -274,17 +303,29 @@ export async function writeOfflineCache(
   dependencies: OfflineCacheDependencies = {},
 ): Promise<boolean> {
   if (!isOfflineCacheSupported(dependencies) || !isValidName(key)) return false;
-  if (revision.length > MAX_REVISION_LENGTH) return false;
-  const { value: sanitized } = sanitizeForOfflineCache(value);
+  if (utf8Length(revision) > MAX_REVISION_LENGTH) return false;
+  const { value: sanitized, dropped } = sanitizeForOfflineCache(value);
   if (sanitized === undefined) return false;
+  if (dropped.length > 0) {
+    // The sanitizer's rules are conservative on purpose, and two of them are
+    // heuristics: `looksLikeEmbeddedBytes` will drop any string of 8 KiB or
+    // more that happens to be entirely base64 alphabet. Without this the
+    // removal is invisible — the write still returns `true`, and the cached
+    // copy is quietly not what the caller passed. Paths are key names from
+    // the caller's own object graph and carry no values.
+    dependencies.warn?.(
+      `[cave] offline cache dropped ${dropped.length} field(s) before storing: ${dropped.join(", ")}`,
+    );
+  }
   let payload: string;
   try {
     payload = JSON.stringify(sanitized);
   } catch {
     return false;
   }
-  const payloadBytes = typeof TextEncoder !== "undefined" ? new TextEncoder().encode(payload).length : payload.length;
-  if (payloadBytes > OFFLINE_CACHE_MAX_ENTRY_BYTES) return false;
+  if (typeof payload !== "string" || utf8Length(payload) > OFFLINE_CACHE_MAX_ENTRY_BYTES) {
+    return false;
+  }
   const invoke = await resolveInvoke(dependencies);
   if (!invoke) return false;
   try {

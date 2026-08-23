@@ -549,6 +549,26 @@ describe("aggregateThreadSignals stale signal clearing", () => {
       assert.equal(queue.some((item) => item.kind === "low-score"), false);
     }
   });
+
+  it("keeps valid zero scores visible in the current review queue", () => {
+    const current = reportAt("session-zero", "2026-08-20T14:00:00.000Z", {
+      overallConfidence: 0,
+      toolReliability: { score: 0, failedTools: ["harness"], unreliableTools: [] },
+      contextPressure: "adequate",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 0,
+      fileLocatabilityScore: 0,
+      persistentBlockers: [],
+    });
+
+    const lowScores = buildThreadSignalReviewQueue(aggregateThreadSignals([current]))
+      .filter((item) => item.kind === "low-score");
+    assert.equal(lowScores.length, 4);
+    assert.ok(lowScores.every((item) => item.severity === "critical"));
+  });
 });
 
 describe("in-chat Thread Signal card builders", () => {

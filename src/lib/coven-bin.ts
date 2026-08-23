@@ -33,8 +33,10 @@ import {
 } from "./child-spawn-env.ts";
 import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
 import { loadVaultMap } from "./vault.ts";
+import { isWindowsRemoteExecutablePath } from "./windows-local-path.ts";
 
 export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
+export { isWindowsRemoteExecutablePath } from "./windows-local-path.ts";
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
@@ -356,12 +358,6 @@ function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
 export const COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC =
   "Coven CLI was not found in Cave's launch environment. Install or repair @opencoven/cli, restart Cave, and try again.";
 
-/** UNC and extended-UNC paths cross Cave's owner-local executable boundary. */
-export function isWindowsRemoteExecutablePath(candidate: string): boolean {
-  const normalized = candidate.replaceAll("/", "\\");
-  return /^\\\\[^?.\\]/.test(normalized) || /^\\\\\?\\UNC\\/i.test(normalized);
-}
-
 function verifiedAbsoluteBinary(
   candidate: string,
   platform: NodeJS.Platform = process.platform,
@@ -369,7 +365,7 @@ function verifiedAbsoluteBinary(
   const pathApi = platform === "win32" ? path.win32 : path;
   const crossHostAbsolute = platform !== process.platform && path.isAbsolute(candidate);
   if (!pathApi.isAbsolute(candidate) && !crossHostAbsolute) return null;
-  // A Cave-owned local daemon/CLI must not be sourced from a remote UNC share.
+  // A Cave-owned local daemon/CLI must not be sourced from another machine.
   // Besides crossing the local trust boundary, probing one synchronously can
   // defeat the bounded onboarding/status request when the share is offline.
   if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) {
@@ -405,7 +401,9 @@ function environmentValue(
  * onboarding operate inside user-controlled project/workspace directories,
  * so a bare `where coven` or `spawn("coven")` can select a planted launcher.
  * Only an existing absolute override or a launcher inside an absolute PATH
- * entry is eligible here. Relative entries and remote UNC paths fail closed.
+ * entry is eligible here. Relative entries fail closed, and so does anything
+ * rooted at `\\` that is not a drive letter behind a device prefix — the
+ * boundary is every spelling that can leave this machine, not only `UNC`.
  */
 export function covenBinaryFromEnvironment(
   env: NodeJS.ProcessEnv,
@@ -458,12 +456,12 @@ export function covenOverrideRejection(
     return "it is not an absolute path";
   }
   if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) {
-    return "it refers to a remote UNC share";
+    return "it is not on a local drive";
   }
   try {
     const canonical = realpathSync(/* turbopackIgnore: true */ candidate);
     if (platform === "win32" && isWindowsRemoteExecutablePath(canonical)) {
-      return "it resolves onto a remote UNC share";
+      return "it resolves off this machine";
     }
     return statSync(/* turbopackIgnore: true */ canonical).isFile()
       ? "it could not be verified"

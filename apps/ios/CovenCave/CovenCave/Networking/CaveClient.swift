@@ -387,9 +387,12 @@ struct CaveClient {
         return try await familiarAvatarMutation(for: req)
     }
 
-    private static func encodedPathSegment(_ value: String) throws -> String {
+    private static func encodedPathSegment(
+        _ value: String,
+        describing subject: String = "familiar identifier"
+    ) throws -> String {
         guard let encoded = value.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) else {
-            throw CaveError.transport("Could not encode the familiar identifier.")
+            throw CaveError.transport("Could not encode the \(subject).")
         }
         return encoded
     }
@@ -770,6 +773,42 @@ struct CaveClient {
         throw CaveError.transport(decoded.error ?? "Task update did not return a card.")
     }
 
+    /// `DELETE /api/chat/conversation/{sessionId}/turns/{turnId}` — remove one
+    /// message from a chat, durably.
+    ///
+    /// A per-turn route rather than a re-PUT of the transcript: a client that
+    /// deletes by writing back the list it happens to be holding erases any
+    /// reply that streamed in while the user was deciding. Naming the single
+    /// turn is what lets two clients delete without losing each other's turns.
+    ///
+    /// Idempotent, so it retries like the other DELETEs here: a turn that is
+    /// already gone answers 200 with `deleted: false`, and a conversation the
+    /// server does not have answers 404 — neither is a failure to report, both
+    /// mean the message is not there any more. Returns whether this call was
+    /// the one that removed it (a retry of a call that already landed answers
+    /// `deleted: false`, so a false return is not evidence of failure).
+    @discardableResult
+    func deleteConversationTurn(sessionId: String, turnId: String) async throws -> Bool {
+        let session = try Self.encodedPathSegment(sessionId, describing: "chat identifier")
+        let turn = try Self.encodedPathSegment(turnId, describing: "message identifier")
+        let req = try request("api/chat/conversation/\(session)/turns/\(turn)", method: "DELETE")
+        let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try Self.checkDelete(resp)
+        struct TurnDeleteResponse: Decodable { var ok: Bool?; var deleted: Bool? }
+        let decoded = try? JSONDecoder().decode(TurnDeleteResponse.self, from: data)
+        // A 404 from THIS route means the chat is not there, so neither is the
+        // message. A 404 from no route at all — a desktop too old to have
+        // shipped it — means the delete never happened, and swallowing that
+        // one would hand back the silent local-only delete this route exists
+        // to end. The route always answers in an `ok` envelope; an unrouted
+        // 404 answers with a page. Said in words rather than as a status code,
+        // because this one is read back to the user in a chat bubble.
+        if (resp as? HTTPURLResponse)?.statusCode == 404, decoded?.ok == nil {
+            throw CaveError.transport("This Cave is too old to delete a single message.")
+        }
+        return decoded?.deleted ?? false
+    }
+
     func conversation(sessionId: String) async throws -> Conversation? {
         let req = try request("api/chat/conversation/\(sessionId)")
         let (data, resp) = try await data(for: req)
@@ -929,17 +968,39 @@ struct CaveClient {
         return body
     }
 
+    /// Raised only when a caller-owned authority lease is revoked before the
+    /// POST is constructed. The caller can therefore roll its durable attempted
+    /// marker back without risking a duplicate server turn.
+    struct SendPreflightRevoked: Error {}
+
     /// Open the SSE stream for a chat send. Yields decoded frames — keep the
     /// last applied frame's `id` to resume mid-turn via `resumeStream`.
+    ///
+    /// Request creation is deferred into this stream task, so a model-layer
+    /// check before calling `sendStream` is not sufficient. Run the supplied
+    /// authority preflight on MainActor in the same uninterrupted actor turn as
+    /// request construction and the call that starts URLSession. Configure and
+    /// disconnect mutate their epoch on that actor, closing the deferred-task
+    /// window without cancelling requests that already began legitimately.
     func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamFrame, Error> {
+        sendStream(body, preflight: { true }, onRequestStarted: {})
+    }
+
+    func sendStream(
+        _ body: SendBody,
+        preflight: @escaping @MainActor () -> Bool,
+        onRequestStarted: @escaping @MainActor () -> Void
+    ) -> AsyncThrowingStream<StreamFrame, Error> {
         AsyncThrowingStream { continuation in
-            let task = Task {
+            let task = Task { @MainActor in
                 do {
+                    guard preflight() else { throw SendPreflightRevoked() }
                     let payload = try JSONEncoder().encode(body)
                     var req = try request("api/chat/send", method: "POST", body: payload)
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
+                    onRequestStarted()
                     let (bytes, resp) = try await Self.streamSession.bytes(for: req)
                     if let http = resp as? HTTPURLResponse,
                        !(200..<300).contains(http.statusCode) {
