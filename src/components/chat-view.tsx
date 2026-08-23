@@ -6975,7 +6975,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // chatContextControls and placed adaptively — footer cluster for new chats
   // (inlineComposer) and session header for active chats (!inlineComposer)
   // so picker state is never duplicated.
-  const inlineComposer = sessionId === null;
+  // Tool-only commands such as /image and /auto can produce transcript turns
+  // before the daemon assigns a session id. The new-chat dashboard disappears
+  // as soon as that happens, so move the same composer into the reply dock.
+  const inlineComposer = sessionId === null && turns.length === 0;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const chatContextControls = (
