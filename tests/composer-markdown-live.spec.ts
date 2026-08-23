@@ -254,10 +254,22 @@ test.describe("composer live markdown", () => {
     });
     expect(selected).toBe(USER_MARKDOWN);
 
-    // And the caret stays visible against the invisible text.
-    const caretColor = await input.evaluate((el) => getComputedStyle(el).caretColor);
-    expect(caretColor).not.toBe("transparent");
-    expect(caretColor).not.toBe("rgba(0, 0, 0, 0)");
+    // The textarea's glyphs really are blanked. Worth asserting rather than
+    // assuming: the textarea also carries a Tailwind `text-[var(--text-primary)]`
+    // utility, which is the same specificity as the modifier class, so if the
+    // cascade went the other way the composer would paint its own text ON TOP
+    // of the layer's and every message would read doubled.
+    const ink = await input.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        fill: style.webkitTextFillColor,
+        caret: style.caretColor,
+      };
+    });
+    expect(ink.fill).toBe("rgba(0, 0, 0, 0)");
+    // And the caret stays visible against that invisible text.
+    expect(ink.caret).not.toBe("transparent");
+    expect(ink.caret).not.toBe("rgba(0, 0, 0, 0)");
   });
 
   test("the layer never intercepts pointer input meant for the textarea", async ({ page }) => {
