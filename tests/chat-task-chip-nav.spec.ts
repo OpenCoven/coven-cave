@@ -97,6 +97,7 @@ async function setup(page: Page) {
 }
 
 test("task chip navigates to the board card inspector, not the chat list", async ({ page }) => {
+  test.setTimeout(120_000);
   await setup(page);
 
   // Open the task chat from the chat-mode sidebar (session navigator).
@@ -116,6 +117,10 @@ test("task chip navigates to the board card inspector, not the chat list", async
   // the user on the list instead of the task.
   await chip.click();
 
-  await expect(page.getByRole("dialog", { name: "Card inspector" })).toBeVisible({ timeout: 10_000 });
+  // Prove the surface switch independently from the card-data/inspector load.
+  // Hosted next-dev runners can take longer than 10s to settle this route even
+  // after the serial chunk warmup; the ordinary CI surface budget is 30s.
+  await expect(page.locator(".board-shell")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("dialog", { name: "Card inspector" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".chat-surface")).toHaveCount(0);
 });

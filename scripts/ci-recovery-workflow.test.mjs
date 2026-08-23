@@ -38,8 +38,17 @@ const ciSource = await readFile(new URL("../.github/workflows/ci.yml", import.me
 const ciWorkflow = parse(ciSource);
 assert.deepEqual(
   Object.keys(ciWorkflow.jobs).sort(),
-  ["build", "frontend-bundle", "frontend-validation", "ios", "paths", "pr-checks"],
-  "Phase 1 retains routine fanout while establishing the replacement PR context",
+  [
+    "build",
+    "frontend-bundle",
+    "frontend-e2e",
+    "frontend-e2e-agentic",
+    "frontend-validation",
+    "ios",
+    "paths",
+    "pr-checks",
+  ],
+  "the required context aggregates bounded frontend validation lanes",
 );
 const prChecks = ciWorkflow.jobs["pr-checks"];
 const frontendBuild = ciWorkflow.jobs.build;
@@ -50,6 +59,8 @@ assert.deepEqual(ciWorkflow.jobs.build.needs, [
   "ios",
   "frontend-validation",
   "frontend-bundle",
+  "frontend-e2e",
+  "frontend-e2e-agentic",
 ]);
 assert.equal(ciWorkflow.jobs.ios.name, "iOS build");
 assert.deepEqual(ciWorkflow.jobs["frontend-validation"].strategy.matrix.validation, [
@@ -67,20 +78,28 @@ assert.equal(
   "pnpm ${{ matrix.validation.command }}",
   "each frontend validation matrix lane runs its declared command",
 );
-const defaultE2e = ciWorkflow.jobs.build.steps.find(
+const defaultE2e = ciWorkflow.jobs["frontend-e2e"].steps.find(
   (step) => step.name === "Validate end-to-end behavior",
 );
 assert.ok(defaultE2e, "CI keeps default-off end-to-end coverage");
-assert.equal(defaultE2e.run, "pnpm exec playwright test");
+assert.deepEqual(ciWorkflow.jobs["frontend-e2e"].strategy.matrix.shard, [1, 2, 3, 4]);
+assert.equal(ciWorkflow.jobs["frontend-e2e"].strategy["fail-fast"], false);
+assert.equal(
+  defaultE2e.run,
+  "pnpm exec playwright test --shard=${{ matrix.shard }}/4",
+  "default end-to-end coverage is distributed across independently retryable runners",
+);
 assert.equal(defaultE2e.env, undefined, "default end-to-end coverage does not enable agentic recommendations");
 
-const agenticE2e = ciWorkflow.jobs.build.steps.find(
+const agenticE2e = ciWorkflow.jobs["frontend-e2e-agentic"].steps.find(
   (step) => step.name === "Validate flag-enabled agentic journeys",
 );
 assert.ok(agenticE2e, "CI runs explicitly enabled Board and Research recommendation journeys");
-assert.deepEqual(agenticE2e.env, {
-  NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1",
-});
+assert.equal(agenticE2e.env, undefined);
+assert.equal(
+  ciWorkflow.jobs["frontend-e2e-agentic"].env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS,
+  "1",
+);
 assert.equal(
   agenticE2e.run,
   "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
@@ -139,6 +158,10 @@ const expectedSubordinateJobGuards = {
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
   "frontend-bundle":
     "needs.paths.outputs.frontend == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+  "frontend-e2e":
+    "needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
+  "frontend-e2e-agentic":
+    "needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)",
 };
 for (const [jobName, guard] of Object.entries(expectedSubordinateJobGuards)) {
   assert.equal(
@@ -213,6 +236,13 @@ assert.ok(prerequisite, "the required Frontend build aggregates prerequisite job
 assert.match(prerequisite.run, /test "\$IOS_RESULT" = "success"/);
 assert.match(prerequisite.run, /test "\$FRONTEND_VALIDATION_RESULT" = "success"/);
 assert.match(prerequisite.run, /test "\$FRONTEND_BUNDLE_RESULT" = "success"/);
+assert.match(prerequisite.run, /test "\$FRONTEND_E2E_RESULT" = "success"/);
+assert.match(prerequisite.run, /test "\$FRONTEND_E2E_AGENTIC_RESULT" = "success"/);
+assert.equal(
+  ciWorkflow.jobs.build.steps.some((step) => step.run?.includes("playwright test")),
+  false,
+  "the protected aggregator does not repeat Playwright work on one monolithic runner",
+);
 
 const releaseSource = await readFile(
   new URL("../.github/workflows/release.yml", import.meta.url),
