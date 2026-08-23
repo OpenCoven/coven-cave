@@ -66,6 +66,26 @@ export type WorktreeLifecycleObservation = {
   nonDisposableIgnoredPaths: string[];
   indexFlags: string[];
   processOwners: WorktreeProcessOwner[];
+  /**
+   * The worktree's own root directory is held open by a live process in a way
+   * that would make removing it fail.
+   *
+   * This is a SECOND, independent liveness signal, and it exists because the
+   * first one has a blind spot that matters. `processOwners` is read out of each
+   * process's own memory, so it covers only processes this one is allowed to
+   * open — never a process at a higher integrity level, such as an elevated
+   * shell sitting in the worktree. This field asks the filesystem instead of the
+   * process, so it sees a holder no matter who owns it.
+   *
+   * Its own limit is depth: it describes the root directory only, so a process
+   * whose current directory is a SUBDIRECTORY of the worktree does not set it.
+   * Neither signal subsumes the other; both are reported.
+   *
+   * Optional, and absent reads as "no such evidence" rather than "proven free":
+   * a platform with no such probe, or a probe that could not answer, records the
+   * failure in `probeErrors` instead, which fails the unit closed on its own.
+   */
+  directoryHeldOpen?: boolean;
   claimOwners: string[];
   /**
    * Non-closed beads that OWN this unit — a structured lifecycle record naming
@@ -160,6 +180,9 @@ type WorktreeObservationCompatibilityFields = Partial<
     | "metadataGlobalErrors"
     | "remoteRef"
     | "sessionIds"
+    // Optional because only a platform with a directory-hold probe can answer
+    // it; absent reads as "no such evidence", never as "proven free".
+    | "directoryHeldOpen"
   >
 >;
 
@@ -423,6 +446,13 @@ function activeReasons(observation: WorktreeLifecycleObservation): string[] {
       .map((owner) => `pid ${owner.pid} (${owner.command || "unknown"})`)
       .join(", ");
     reasons.push(`live process cwd: ${owners}`);
+  }
+  if (observation.directoryHeldOpen === true) {
+    // Deliberately not suppressed when processOwners already named someone. The
+    // two probes answer through different mechanisms and either can be the only
+    // one that fires, so making one conditional on the other would add a branch
+    // whose failure mode is silence in the gate that authorises deletion.
+    reasons.push("worktree root is held open by a live process; removal would fail");
   }
   if (observation.claimOwners.length > 0) {
     reasons.push(`active claim: ${observation.claimOwners.join(", ")}`);
@@ -754,6 +784,7 @@ function normalizeWorktreeObservation(
       nonDisposableIgnoredPaths: observation.nonDisposableIgnoredPaths,
       indexFlags: observation.indexFlags,
       processOwners: observation.processOwners,
+      directoryHeldOpen: observation.directoryHeldOpen ?? false,
       claimOwners: observation.claimOwners,
       taskIds: observation.taskIds,
       mentionTaskIds: observation.mentionTaskIds ?? [],

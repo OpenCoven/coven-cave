@@ -1,7 +1,16 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
-import { devNull } from "node:os";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+  type Stats,
+} from "node:fs";
+import { devNull, tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import path from "node:path";
 import {
@@ -1978,31 +1987,250 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
   }
 }
 
-function fetchProcessOwners(): {
+/**
+ * What the Windows probe script said, with no judgement applied yet.
+ *
+ * Pure and total: every malformed, truncated, or missing part of the output
+ * comes back as an absence rather than a throw, so the caller decides what each
+ * absence means. Every absence it can produce means "cannot prove", never
+ * "proven free" — see {@link fetchWindowsProcessOwners}.
+ */
+export type WindowsCwdProbeOutput = {
+  /**
+   * The probe's own current directory, re-derived through the same memory reads
+   * it uses for every other process. The caller knows what this must be, so a
+   * mismatch is proof the reads are wrong on this machine.
+   */
+  selfCwd: string | null;
+  /** The `#end` marker was present, so the output is not truncated. */
+  complete: boolean;
+  /** Process counts, for the report. `null` when the line is missing or malformed. */
+  totals: { total: number; read: number; unreadable: number } | null;
+  /** Per requested directory: whether a live process holds it open. */
+  holds: Map<string, boolean>;
+  /** Per requested directory that could NOT be answered, why. */
+  holdErrors: Map<string, string>;
+  /** The `lsof -F pcn` section, verbatim, for {@link parseProcessOwners}. */
+  ownerRecords: string;
+};
+
+const WINDOWS_PROBE_HOLD = /^#hold (HELD|FREE|ERROR:(-?\d+)) (.+)$/;
+const WINDOWS_PROBE_TOTALS = /^#processes total=(\d+) read=(\d+) unreadable=(\d+)$/;
+
+export function parseWindowsCwdProbeOutput(raw: string): WindowsCwdProbeOutput {
+  const lines = raw.split(/\r?\n/);
+  const holds = new Map<string, boolean>();
+  const holdErrors = new Map<string, string>();
+  let selfCwd: string | null = null;
+  let totals: WindowsCwdProbeOutput["totals"] = null;
+  let complete = false;
+  const ownerRecords: string[] = [];
+  // Directives are emitted before `#records` and the owner records after it, so
+  // the split is positional rather than by prefix. A command name is free to
+  // start with "#" without being mistaken for a directive.
+  let inRecords = false;
+
+  for (const line of lines) {
+    if (!inRecords) {
+      if (line === "#records") {
+        inRecords = true;
+        continue;
+      }
+      if (line.startsWith("#self ")) {
+        selfCwd = line.slice("#self ".length);
+        continue;
+      }
+      const totalsMatch = WINDOWS_PROBE_TOTALS.exec(line);
+      if (totalsMatch) {
+        totals = {
+          total: Number(totalsMatch[1]),
+          read: Number(totalsMatch[2]),
+          unreadable: Number(totalsMatch[3]),
+        };
+        continue;
+      }
+      const holdMatch = WINDOWS_PROBE_HOLD.exec(line);
+      if (holdMatch) {
+        const verdict = holdMatch[1];
+        const directory = holdMatch[3];
+        if (verdict === "HELD") holds.set(directory, true);
+        else if (verdict === "FREE") holds.set(directory, false);
+        else holdErrors.set(directory, `win32 error ${holdMatch[2]}`);
+      }
+      continue;
+    }
+    if (line === "#end") {
+      complete = true;
+      continue;
+    }
+    // Anything after `#end` is unexpected trailing output; keeping `complete`
+    // true would be wrong, so treat the marker as final.
+    if (complete) {
+      if (line.length > 0) complete = false;
+      continue;
+    }
+    if (line.length > 0) ownerRecords.push(line);
+  }
+
+  return {
+    selfCwd,
+    complete: complete && inRecords,
+    totals,
+    holds,
+    holdErrors,
+    ownerRecords: ownerRecords.length === 0 ? "" : `${ownerRecords.join("\n")}\n`,
+  };
+}
+
+const WINDOWS_CWD_PROBE_SCRIPT = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "windows-process-cwd.ps1",
+);
+
+/**
+ * The Windows stand-in for `lsof -d cwd`, plus the directory-hold probe that
+ * covers what reading process memory cannot see.
+ *
+ * Windows has no lsof and no built-in CLI that reports a process's working
+ * directory at all, so this drives `scripts/windows-process-cwd.ps1`. See that
+ * file for the mechanism and its limits.
+ *
+ * EVERY failure path here returns an error, which the caller folds into each
+ * unit's `probeErrors` exactly as an `lsof` failure is folded in, pinning the
+ * unit to `uncertain`. That is the whole point: the cheap repair for this bug —
+ * dropping the error so units stop being pinned — would let a worktree be
+ * retired while the patrol cannot see whether anyone is working in it, trading a
+ * false positive for a false negative inside the gate that deletes work.
+ */
+function fetchWindowsProcessOwners(directories: string[]): {
   owners: Array<WorktreeProcessOwner & { cwd: string }>;
+  holds: Map<string, boolean>;
+  holdErrors: Map<string, string>;
   error: string | null;
 } {
+  const empty = { owners: [], holds: new Map<string, boolean>(), holdErrors: new Map<string, string>() };
+  if (!existsSync(WINDOWS_CWD_PROBE_SCRIPT)) {
+    return { ...empty, error: "process cwd probe script is missing" };
+  }
+  // Launched from the filesystem root, matching the POSIX call, so the probe's
+  // own process never counts as an occupant of any worktree.
+  const launchCwd = path.parse(process.cwd()).root;
+  const pathsFile = path.join(
+    tmpdir(),
+    `coven-cwd-probe-${process.pid}-${randomUUID()}.txt`,
+  );
+  let result: CommandResult;
+  try {
+    writeFileSync(pathsFile, directories.length === 0 ? "" : `${directories.join("\n")}\n`, "utf8");
+  } catch (error) {
+    return {
+      ...empty,
+      error: `process cwd probe could not stage its input: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    };
+  }
+  try {
+    result = command(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        WINDOWS_CWD_PROBE_SCRIPT,
+        pathsFile,
+      ],
+      launchCwd,
+    );
+  } finally {
+    try {
+      rmSync(pathsFile, { force: true });
+    } catch {
+      // A stranded temp file is inert; losing the probe result would not be.
+    }
+  }
+
+  if (!result.ok) {
+    return { ...empty, error: result.stderr || "process cwd inventory unavailable" };
+  }
+  if (result.stderr) {
+    return { ...empty, error: "process cwd inventory reported incomplete data" };
+  }
+
+  const probe = parseWindowsCwdProbeOutput(result.stdout);
+  if (!probe.complete) {
+    return { ...empty, error: "process cwd inventory returned truncated data" };
+  }
+  // The self-check. `selfCwd` was read out of this probe's own process memory
+  // through the same offsets it used for everything else, and `launchCwd` is
+  // what we told the OS that directory should be — so an equal pair proves the
+  // reads are correct on THIS Windows build and bitness, and an unequal pair
+  // proves nothing else in the output can be trusted. Without it a future
+  // structure-layout change would degrade silently into "no live process
+  // anywhere", which reads exactly like a checkout that is safe to delete.
+  const observedSelf = normalizeAbsoluteWorktreePath(probe.selfCwd);
+  const expectedSelf = normalizeAbsoluteWorktreePath(launchCwd);
+  if (observedSelf === null || expectedSelf === null || observedSelf !== expectedSelf) {
+    return {
+      ...empty,
+      error: "process cwd probe self-check failed; process working directories are unreadable",
+    };
+  }
+
+  const parsed = parseProcessOwners(probe.ownerRecords);
+  if (parsed.partial || parsed.owners.length === 0) {
+    return { ...empty, error: "process cwd inventory returned malformed or partial data" };
+  }
+
+  // A directory the probe was asked about and did not answer for is an unknown,
+  // and an unknown must never read as "free".
+  const holdErrors = new Map(probe.holdErrors);
+  for (const directory of directories) {
+    if (!probe.holds.has(directory) && !holdErrors.has(directory)) {
+      holdErrors.set(directory, "no verdict returned");
+    }
+  }
+  return { owners: parsed.owners, holds: probe.holds, holdErrors, error: null };
+}
+
+function fetchProcessOwners(directories: string[]): {
+  owners: Array<WorktreeProcessOwner & { cwd: string }>;
+  holds: Map<string, boolean>;
+  holdErrors: Map<string, string>;
+  error: string | null;
+} {
+  if (process.platform === "win32") return fetchWindowsProcessOwners(directories);
+  const holds = new Map<string, boolean>();
+  const holdErrors = new Map<string, string>();
   const result = command("lsof", ["-d", "cwd", "-F", "pcn"], path.parse(process.cwd()).root);
   const parsed = parseProcessOwners(result.stdout);
   if (!result.ok) {
     return {
       owners: parsed.owners,
+      holds,
+      holdErrors,
       error: result.stderr || "process cwd inventory unavailable",
     };
   }
   if (result.stderr) {
     return {
       owners: parsed.owners,
+      holds,
+      holdErrors,
       error: "process cwd inventory reported incomplete data",
     };
   }
   if (!result.stdout.trim() || parsed.partial) {
     return {
       owners: parsed.owners,
+      holds,
+      holdErrors,
       error: "process cwd inventory returned malformed or partial data",
     };
   }
-  return { owners: parsed.owners, error: null };
+  return { owners: parsed.owners, holds, holdErrors, error: null };
 }
 
 function refsContaining(root: string, head: string): {
@@ -3123,7 +3351,12 @@ function collectInventory(
   const sessions = fetchSessions(root);
   const tasks = fetchTasks(root);
   const orphanedMetadata = collectOrphanedMetadata(tasks.tasks, localRefs, entries);
-  const processes = fetchProcessOwners();
+  // Normalized once, here, because the probe answers by exact path string and
+  // every later lookup has to use the same spelling the probe was asked for.
+  const unitPaths = [
+    ...new Set(units.flatMap((unit) => (unit.path === null ? [] : [normalizePath(unit.path)]))),
+  ];
+  const processes = fetchProcessOwners(unitPaths);
   const sessionOwnership =
     sessions.error === null
       ? assignActiveSessions(
@@ -3257,7 +3490,24 @@ function collectInventory(
           (unit.branch !== null && run.head_branch === unit.branch),
       )
       .map((run) => run.html_url);
-    const pathErrors = unit.path ? [state.error, flags.error, processes.error, sessions.error] : [];
+    // A directory-hold verdict this run could not obtain is charged to the one
+    // unit it names, not to the checkout: it says nothing about any other path,
+    // and stamping it everywhere is the per-unit warning storm this probe exists
+    // to end. It still fails ITS unit closed.
+    const holdError = unit.path
+      ? (processes.holdErrors.get(normalizePath(unit.path)) ?? null)
+      : null;
+    const pathErrors = unit.path
+      ? [
+          state.error,
+          flags.error,
+          processes.error,
+          sessions.error,
+          holdError === null
+            ? null
+            : `worktree root occupancy is unprovable: ${holdError}`,
+        ]
+      : [];
     const probeErrors = [
       ...new Set(
         [
@@ -3295,6 +3545,12 @@ function collectInventory(
       nonDisposableIgnoredPaths: state.nonDisposableIgnoredPaths,
       indexFlags: flags.flags,
       processOwners: unit.path ? processOwnersFor(unit.path, processes.owners) : [],
+      // `?? false` is safe only because an unanswered path is guaranteed to have
+      // produced a `holdError` above, which pins the unit on its own — so
+      // "absent" here never reaches the classifier as an unchallenged "free".
+      directoryHeldOpen: unit.path
+        ? (processes.holds.get(normalizePath(unit.path)) ?? false)
+        : false,
       claimOwners: [
         ...new Set(
           claims.claims
