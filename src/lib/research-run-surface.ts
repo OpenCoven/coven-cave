@@ -39,6 +39,9 @@ export type ResearchRunSurfaceModel = {
   activityDetail?: string;
   steps: ResearchRunStep[];
   evidence: {
+    /** Sources recorded by the canonical run; this does not imply review. */
+    sources?: number;
+    /** Explicit executor-reported review count, when available. */
     reviewed?: number;
     retained?: number;
     rejected?: number;
@@ -105,7 +108,7 @@ export function researchMissionToRunSurface(mission: ResearchMission): ResearchR
     activity: active?.detail ?? iteration?.summary,
     steps,
     evidence: {
-      reviewed: mission.sources.length,
+      sources: mission.sources.length,
       retained: sourceCounts.used,
       rejected: sourceCounts.rejected,
       artifacts: mission.artifacts.filter((artifact) => artifact.state !== "rejected").length,
@@ -206,6 +209,7 @@ export function extractResearchRunMarkers(
       activity: value.activity?.trim() || undefined,
       steps,
       evidence: {
+        sources: nonNegativeInt(value.sources),
         reviewed: nonNegativeInt(value.reviewed),
         retained: nonNegativeInt(value.retained),
         rejected: nonNegativeInt(value.rejected),
