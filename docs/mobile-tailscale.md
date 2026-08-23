@@ -86,6 +86,11 @@ The packaged macOS app has two explicit, default-off controls under **Settings
   awake while paired** separately when the Mac must remain reachable while
   idle.
 
+If macOS cannot load the LaunchAgent, Cave preserves the native launchd reason
+and rolls the setting back instead of claiming background availability. Quit
+other Cave copies, reopen `/Applications/CovenCave.app`, and retry; the app also
+repairs a transient launchd unload/reload race automatically.
+
 Both the GUI server and the LaunchAgent server remain bound to
 `127.0.0.1`. Whenever either server chooses a different port, it repoints
 Tailscale Serve at that exact loopback backend. Existing signed phone tokens
