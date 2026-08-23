@@ -119,11 +119,13 @@ the route's own suite, the sibling poll route's suite,
 `poll accepts pairing secrets only from the reviewed header`, and
 `poll checks the loopback stamp before it reads the rate-limit budget`.
 
-The **exchange** route got none of them. It mentions `LOCAL_PEER_HEADER` eleven
-times, and all eleven are happy-path setup: every request the file builds
-supplies the valid stamp, because every scenario it describes is a legitimate
-client. Deleting the route's entire `isTrustedLoopback` branch left the file
-green, and so did adding a URL-query fallback for the pairing secret.
+The **exchange** route got none of them. The loopback stamp appears on eleven
+lines of its suite — two `LOCAL_PEER_HEADER` references and nine
+`loopbackSecret: "loopback-secret"` runtime wirings — and every one of them is
+happy-path setup: each request the file builds supplies the valid stamp,
+because every scenario it describes is a legitimate client. Deleting the
+route's entire `isTrustedLoopback` branch left the file green, and so did
+adding a URL-query fallback for the pairing secret.
 
 This is the more consequential of the two routes. The poll route discloses a
 status; the exchange route **mints the bearer**.

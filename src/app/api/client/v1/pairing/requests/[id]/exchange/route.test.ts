@@ -46,7 +46,7 @@ function request(id: string, secret: string): Request {
  *
  * `request` above always supplies both, because every test written before this
  * one describes a client on the machine holding the right secret. That made
- * all eleven of this file's mentions of the loopback stamp happy-path setup:
+ * every one of this file's references to the loopback stamp happy-path setup:
  * none of them could observe the stamp check being removed.
  */
 function probe(
