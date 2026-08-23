@@ -1106,11 +1106,52 @@ before it prints `Ready on …`:
 The file is 0600 inside a 0700 directory verified not to be a symlink, written
 temp-file → `fsync` → rename, and deleted on shutdown — but only if the record
 still carries *this* process's `nonce` and the same inode, so a Cave that has
-been restarted underneath never deletes its successor's record. **A publish
-failure is fatal**: the listener closes and the process exits 1 rather than
-serving on an endpoint nothing can discover. Both the directory and the file are
-also checked to be owned by the current user, but only where `process.getuid`
-exists — that check is a no-op on Windows.
+been restarted underneath never deletes its successor's record.
+
+Both the directory and the file are also checked to be owned by the current
+user, and to be writable by nobody else. On POSIX that is a `uid` comparison.
+On Windows it is a DACL read: `process.getuid` is undefined there and `lstat`
+reports uid 0 for every path, so the uid comparison alone passed unconditionally
+on the platform — the defect GitHub #4842 was filed for. `server.ts` now shells
+out to PowerShell, refuses a path any other principal can write, and repairs a
+DACL that merely inherited one (`icacls <path> /reset` undoes the repair as the
+ordinary user; no elevation is needed).
+
+**A publish failure disables client v1; it does not stop Cave.** The record is
+withheld, `clientV1DiscoveryPublished` stays false, and a banner naming the
+failure goes to stderr, but the server finishes starting and serves everything
+else. That is not a relaxation of the check: no path the guard refused is used,
+and the request-side guard keeps refusing every client v1 call that presents a
+credential — the credential store re-asserts ownership on every read and write,
+so `findByBearer` cannot answer on a path the guard refused. Measured on a host
+with no reachable `powershell.exe`: the server answers `Ready on …`, the record
+is absent, `GET /api/client/v1/health` still answers (it is unauthenticated by
+design and carries no user data), and a bearer-carrying request is refused. The
+one case that survives is narrow and deliberate: if the discovery *file* alone
+is unverifiable while the store's root is exclusive, a client that already
+holds a credential and a cached endpoint keeps working against the real server
+— it is the record, not the server, that could have been redirected. It is a
+correction of blast radius — this used to close the listener and exit 1, which
+on a host that cannot read a DACL at all (PowerShell in Constrained Language
+Mode, or no `powershell.exe` under `%SystemRoot%`, both measured on Windows 11
+under WDAC/AppLocker-shaped configurations) meant Cave would not start and there
+was no remedy reachable from inside it.
+
+An operator on such a host can opt back in, explicitly:
+
+```
+COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP=i-accept-unverified-path-ownership
+COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON="<who accepted this, and why>"
+```
+
+Both are required; the reason must be at least 12 characters. The value is that
+exact sentence, so `1`, `true` and `yes` do nothing and say so. It waives **one**
+condition — a DACL that could not be *read* — and never a DACL that was read and
+found shared, a POSIX uid mismatch, or a platform with neither a uid nor an ACL.
+Every waived path logs a `SECURITY WAIVER` line naming the path and the reason
+given. The same waiver covers the mobile pairing secret
+(`src/lib/server/mobile-access-provision.ts`), which is restricted by the same
+guard because its `chmod(0o600)` is equally inert on Windows.
 
 `endpoint` is validated before it is written: `http:`, a loopback host, an
 explicit port, no credentials, no path, query, or fragment. Treat `pid` and
