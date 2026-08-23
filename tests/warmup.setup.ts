@@ -12,6 +12,7 @@ import { expect, test, type Page } from "@playwright/test";
 //
 //   keyboard-shortcuts.spec.ts:44  — ⌘K, waiting on the `command-palette` chunk
 //   task-work-fit.spec.ts:277      — reopen strip, waiting on `workspace-rail`
+//   chat-task-chip-nav.spec.ts:119 — the task chip, waiting on `board`
 //
 // Measured in this worktree (2026-08-12, M-series laptop):
 //
@@ -71,6 +72,27 @@ const REPO_PROJECT = {
   updatedAt: ISO,
 };
 
+// One card, so the board warm-up below can open the inspector drawer rather
+// than only rendering an empty board shell.
+const WARMUP_CARD = {
+  id: "warmup-card",
+  title: "Warmup card",
+  notes: "",
+  status: "backlog",
+  priority: "medium",
+  familiarId: "nova",
+  links: [],
+  github: [],
+  labels: [],
+  createdAt: ISO,
+  updatedAt: ISO,
+  lifecycle: "queued",
+  lifecycleAt: ISO,
+  retryCount: 0,
+  maxRetries: 2,
+  steps: [],
+};
+
 // Four times the cold serial measurement above. A chunk that cannot compile in
 // two minutes is a genuine dev-server problem, and failing here says so once
 // rather than leaving every spec to time out on its own.
@@ -105,6 +127,11 @@ async function boot(page: Page) {
         context: {},
       },
     }),
+  );
+  await page.route("**/api/board**", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: { ok: true, cards: [WARMUP_CARD] } })
+      : route.continue(),
   );
 
   await page.goto("/?mode=chat");
@@ -152,4 +179,15 @@ test("warm the code-split surface chunks", async ({ page }) => {
   await expect(reopen).toBeVisible({ timeout: CHUNK_TIMEOUT });
   await reopen.click();
   await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: CHUNK_TIMEOUT });
+
+  // `board` — the last heavy surface this file did not warm, and the one two
+  // specs rotate on (cave-18kpz). `BoardInspector` is a static import of
+  // `board-view`, so the "Card inspector" dialog ships inside the same lazy
+  // chunk: chat-task-chip-nav clicks the task chip and gives that dialog 10s,
+  // against a cold compile the header above measured at 28.3s. Deep-link to
+  // the card so the drawer itself renders, not just the empty board shell.
+  await page.goto(`/?mode=board#card-${WARMUP_CARD.id}`);
+  await page.waitForSelector(".board-shell", { timeout: CHUNK_TIMEOUT });
+  await expect(page.getByRole("dialog", { name: "Card inspector" }))
+    .toBeVisible({ timeout: CHUNK_TIMEOUT });
 });
