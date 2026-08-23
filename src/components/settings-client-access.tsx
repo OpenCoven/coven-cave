@@ -109,6 +109,18 @@ type ClientAccessLoadOptions = {
   showLoading?: boolean;
 };
 
+type ClientAccessIdentityRecord = {
+  id: string;
+  appName: string;
+  installationId: string;
+};
+
+type ClientAccessIdentityKind = "request" | "credential";
+
+const CLIENT_ACCESS_IDENTITY_KEY_SEPARATOR = "\u0000";
+const CLIENT_ACCESS_STABLE_ID_SUFFIX_MIN = 4;
+const CLIENT_ACCESS_STABLE_ID_TOKEN_MAX = 8;
+
 function isControlled(
   props: SettingsClientAccessProps,
 ): props is ControlledClientAccessProps {
@@ -223,17 +235,19 @@ function parseResponseFailure(
   };
 }
 
-function duplicateAppNames(
-  records: Array<{ appName: string }>,
+function duplicateKeys<T>(
+  records: T[],
+  keyFor: (record: T) => string,
 ): Set<string> {
   const counts = new Map<string, number>();
   for (const record of records) {
-    counts.set(record.appName, (counts.get(record.appName) ?? 0) + 1);
+    const key = keyFor(record);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return new Set(
     Array.from(counts.entries())
       .filter(([, count]) => count > 1)
-      .map(([appName]) => appName),
+      .map(([key]) => key),
   );
 }
 
@@ -247,15 +261,86 @@ function describeAppIdentity(
     : appName;
 }
 
-function describeActionIdentity(
-  record: { appName: string; installationId: string },
-  records: Array<{ appName: string }>,
+function recordIdentityKey(record: ClientAccessIdentityRecord): string {
+  return `${record.appName}${CLIENT_ACCESS_IDENTITY_KEY_SEPARATOR}${record.installationId}`;
+}
+
+function recordDescriptorKey(record: ClientAccessIdentityRecord): string {
+  return `${recordIdentityKey(record)}${CLIENT_ACCESS_IDENTITY_KEY_SEPARATOR}${record.id}`;
+}
+
+function isUniqueSuffix(
+  value: string,
+  recordId: string,
+  ids: string[],
+): boolean {
+  return ids.every((candidateId) => candidateId === recordId || !candidateId.endsWith(value));
+}
+
+function describeStableRecordDistinguisher(
+  kind: ClientAccessIdentityKind,
+  recordId: string,
+  ids: string[],
 ): string {
-  return describeAppIdentity(
-    record.appName,
-    record.installationId,
-    duplicateAppNames(records).has(record.appName),
-  );
+  const tailToken = recordId.match(/([A-Za-z0-9]+)$/u)?.[1] ?? null;
+  if (
+    tailToken
+    && tailToken.length >= CLIENT_ACCESS_STABLE_ID_SUFFIX_MIN
+    && tailToken.length <= CLIENT_ACCESS_STABLE_ID_TOKEN_MAX
+    && isUniqueSuffix(tailToken, recordId, ids)
+  ) {
+    return `${kind} ID ending ${tailToken}`;
+  }
+  for (
+    let length = Math.min(recordId.length, CLIENT_ACCESS_STABLE_ID_SUFFIX_MIN);
+    length <= recordId.length;
+    length += 1
+  ) {
+    const suffix = recordId.slice(-length);
+    if (isUniqueSuffix(suffix, recordId, ids)) {
+      return `${kind} ID ending ${suffix}`;
+    }
+  }
+  return `${kind} ID ${recordId}`;
+}
+
+function createActionIdentityResolver(
+  records: ClientAccessIdentityRecord[],
+  kind: ClientAccessIdentityKind,
+): (record: ClientAccessIdentityRecord) => string {
+  const duplicateAppNames = duplicateKeys(records, (record) => record.appName);
+  const duplicateAppIdentities = duplicateKeys(records, recordIdentityKey);
+  const recordDistinguishers = new Map<string, string>();
+  if (duplicateAppIdentities.size > 0) {
+    const recordsByIdentity = new Map<string, ClientAccessIdentityRecord[]>();
+    for (const record of records) {
+      const key = recordIdentityKey(record);
+      if (!duplicateAppIdentities.has(key)) continue;
+      const group = recordsByIdentity.get(key);
+      if (group) {
+        group.push(record);
+      } else {
+        recordsByIdentity.set(key, [record]);
+      }
+    }
+    for (const group of recordsByIdentity.values()) {
+      const ids = group.map((record) => record.id);
+      for (const record of group) {
+        recordDistinguishers.set(
+          recordDescriptorKey(record),
+          describeStableRecordDistinguisher(kind, record.id, ids),
+        );
+      }
+    }
+  }
+  return (record) => {
+    if (!duplicateAppNames.has(record.appName)) {
+      return record.appName;
+    }
+    const identity = describeAppIdentity(record.appName, record.installationId, true);
+    const distinguisher = recordDistinguishers.get(recordDescriptorKey(record));
+    return distinguisher ? `${identity}, ${distinguisher}` : identity;
+  };
 }
 
 function createLoadErrorState(
@@ -466,8 +551,14 @@ function SettingsClientAccessContent({
       || (!loading && error === null && errorHeadline === null)
     );
   const showInitialLoading = loading && !confirmedSnapshot;
-  const duplicatePendingAppNames = duplicateAppNames(pendingRequests);
-  const duplicateCredentialAppNames = duplicateAppNames(credentials);
+  const describePendingActionIdentity = createActionIdentityResolver(
+    pendingRequests,
+    "request",
+  );
+  const describeCredentialActionIdentity = createActionIdentityResolver(
+    credentials,
+    "credential",
+  );
   return (
     <div className="settings-client-access">
       <SettingsOverview section="client-access" />
@@ -504,11 +595,7 @@ function SettingsClientAccessContent({
                     key={request.id}
                     request={request}
                     action={action}
-                    actionIdentity={describeAppIdentity(
-                      request.appName,
-                      request.installationId,
-                      duplicatePendingAppNames.has(request.appName),
-                    )}
+                    actionIdentity={describePendingActionIdentity(request)}
                     onApprove={onApprove}
                     onDeny={onDeny}
                   />
@@ -532,11 +619,7 @@ function SettingsClientAccessContent({
                     key={credential.id}
                     credential={credential}
                     action={action}
-                    actionIdentity={describeAppIdentity(
-                      credential.appName,
-                      credential.installationId,
-                      duplicateCredentialAppNames.has(credential.appName),
-                    )}
+                    actionIdentity={describeCredentialActionIdentity(credential)}
                     onRevoke={onRevoke}
                   />
                 ))}
@@ -747,10 +830,10 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     const kind = decision === "approved" ? "approve" : "deny";
     if (actionRef.current) return;
     const nextAction: ClientAccessAction = { kind, id: request.id };
-    const actionIdentity = describeActionIdentity(request, [
-      ...terminalRequestsRef.current,
-      ...pendingRef.current,
-    ]);
+    const actionIdentity = createActionIdentityResolver(
+      [...terminalRequestsRef.current, ...pendingRef.current],
+      "request",
+    )(request);
     actionRef.current = nextAction;
     setAction(nextAction);
     setErrorState(null);
@@ -810,7 +893,10 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
   const revoke = useCallback(async (credential: ClientAccessCredential) => {
     if (actionRef.current) return;
     const nextAction: ClientAccessAction = { kind: "revoke", id: credential.id };
-    const actionIdentity = describeActionIdentity(credential, credentialsRef.current);
+    const actionIdentity = createActionIdentityResolver(
+      credentialsRef.current,
+      "credential",
+    )(credential);
     actionRef.current = nextAction;
     setAction(nextAction);
     setErrorState(null);

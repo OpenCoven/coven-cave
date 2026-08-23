@@ -86,6 +86,26 @@ const revokedCredential = {
   revocationReason: "Device was retired",
 };
 
+const sameInstallRequestA = {
+  ...pendingRequest,
+  id: "11111111-1111-4111-8111-11111111a1a1",
+};
+
+const sameInstallRequestB = {
+  ...pendingRequest,
+  id: "22222222-2222-4222-8222-22222222b2b2",
+};
+
+const sameInstallCredentialA = {
+  ...activeCredential,
+  id: "33333333-3333-4333-8333-33333333c3c3",
+};
+
+const sameInstallCredentialB = {
+  ...activeCredential,
+  id: "44444444-4444-4444-8444-44444444d4d4",
+};
+
 function displayTime(value: number): string {
   return new Date(value).toISOString().replace("T", " ").replace(".000Z", " UTC");
 }
@@ -380,6 +400,35 @@ describe("SettingsClientAccess", () => {
     ).toBeDefined();
   });
 
+  test("adds stable record distinguishers when app and installation ids both collide", async () => {
+    const renderer = await render({
+      pendingRequests: [sameInstallRequestA, sameInstallRequestB],
+      credentials: [sameInstallCredentialA, sameInstallCredentialB],
+      onApprove: vi.fn(),
+      onDeny: vi.fn(),
+      onRevoke: vi.fn(),
+    });
+
+    expect(
+      buttonByLabel(
+        renderer,
+        "Approve access for OpenCoven Chat, installation chat-install-4f92, request ID ending a1a1",
+      ),
+    ).toBeDefined();
+    expect(
+      buttonByLabel(
+        renderer,
+        "Deny access for OpenCoven Chat, installation chat-install-4f92, request ID ending b2b2",
+      ),
+    ).toBeDefined();
+    expect(
+      buttonByLabel(
+        renderer,
+        "Revoke access for OpenCoven Chat, installation chat-install-4f92, credential ID ending c3c3",
+      ),
+    ).toBeDefined();
+  });
+
   test("calls Task 3 admin APIs and announces duplicate app mutations with installation ids", async () => {
     let requests = [
       pendingRequest,
@@ -480,7 +529,85 @@ describe("SettingsClientAccess", () => {
         ([url, init]) => url === "/api/client/v1/admin/credentials/credential-active"
           && init?.method === "DELETE",
       ),
-    ).toBe(true);
+    ).toBe(true    );
+  });
+
+  test("announces exact duplicate app-install mutations with stable record distinguishers", async () => {
+    let requests = [sameInstallRequestA, sameInstallRequestB];
+    let credentials = [sameInstallCredentialA, sameInstallCredentialB];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+        return clientV1SuccessResponse({ pairingRequests: requests });
+      }
+      if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+        return clientV1SuccessResponse({ credentials });
+      }
+      if (url.endsWith(`/${sameInstallRequestA.id}/decision`) && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ decision: "approved" });
+        requests = requests.filter((request) => request.id !== sameInstallRequestA.id);
+        return clientV1SuccessResponse({
+          pairingRequest: { ...sameInstallRequestA, status: "approved", decidedAt: CREATED_AT + 1_000 },
+        });
+      }
+      if (url.endsWith(`/${sameInstallRequestB.id}/decision`) && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ decision: "denied" });
+        requests = requests.filter((request) => request.id !== sameInstallRequestB.id);
+        return clientV1SuccessResponse({
+          pairingRequest: { ...sameInstallRequestB, status: "denied", decidedAt: CREATED_AT + 2_000 },
+        });
+      }
+      if (url.endsWith(`/${sameInstallCredentialA.id}`) && init?.method === "DELETE") {
+        expect(JSON.parse(String(init.body))).toEqual({ reason: "Revoked in Cave settings" });
+        credentials = [
+          {
+            ...sameInstallCredentialA,
+            revokedAt: REVOKED_AT,
+            revocationReason: "Revoked in Cave settings",
+          },
+          sameInstallCredentialB,
+        ];
+        return clientV1SuccessResponse({ credential: credentials[0] });
+      }
+      throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+
+    await act(async () => {
+      await buttonByLabel(
+        renderer,
+        "Approve access for OpenCoven Chat, installation chat-install-4f92, request ID ending a1a1",
+      ).props.onClick();
+      await flush();
+    });
+    expect(announce).toHaveBeenCalledWith(
+      "Approved access for OpenCoven Chat, installation chat-install-4f92, request ID ending a1a1.",
+      "polite",
+    );
+
+    await act(async () => {
+      await buttonByLabel(
+        renderer,
+        "Deny access for OpenCoven Chat, installation chat-install-4f92, request ID ending b2b2",
+      ).props.onClick();
+      await flush();
+    });
+    expect(announce).toHaveBeenCalledWith(
+      "Denied access for OpenCoven Chat, installation chat-install-4f92, request ID ending b2b2.",
+      "polite",
+    );
+
+    await act(async () => {
+      await buttonByLabel(
+        renderer,
+        "Revoke access for OpenCoven Chat, installation chat-install-4f92, credential ID ending c3c3",
+      ).props.onClick();
+      await flush();
+    });
+    expect(announce).toHaveBeenCalledWith(
+      "Revoked access for OpenCoven Chat, installation chat-install-4f92, credential ID ending c3c3.",
+      "polite",
+    );
   });
 
   test("blocks duplicate action submissions and announces sanitized failures", async () => {
@@ -529,6 +656,57 @@ describe("SettingsClientAccess", () => {
     );
     expect(text(renderer)).toContain("Couldn’t approve access for OpenCoven Chat.");
     expect(text(renderer)).not.toContain("pairing-secret-must-never-render");
+  });
+
+  test("announces exact duplicate app-install failures with stable record distinguishers", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+        return clientV1SuccessResponse({ pairingRequests: [sameInstallRequestA, sameInstallRequestB] });
+      }
+      if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+        return clientV1SuccessResponse({ credentials: [sameInstallCredentialA, sameInstallCredentialB] });
+      }
+      if (url.endsWith(`/${sameInstallRequestA.id}/decision`) && init?.method === "POST") {
+        return clientV1ErrorResponse("service_unavailable", "outage", 503);
+      }
+      if (url.endsWith(`/${sameInstallCredentialA.id}`) && init?.method === "DELETE") {
+        return jsonResponse({ ok: false, error: "bearer-value-must-never-render" }, 500);
+      }
+      throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+
+    await act(async () => {
+      await buttonByLabel(
+        renderer,
+        "Approve access for OpenCoven Chat, installation chat-install-4f92, request ID ending a1a1",
+      ).props.onClick();
+      await flush();
+    });
+    expect(announce).toHaveBeenCalledWith(
+      "Couldn’t approve access for OpenCoven Chat, installation chat-install-4f92, request ID ending a1a1.",
+      "assertive",
+    );
+    expect(text(renderer)).toContain(
+      "Couldn’t approve access for OpenCoven Chat, installation chat-install-4f92, request ID ending a1a1.",
+    );
+
+    await act(async () => {
+      await buttonByLabel(
+        renderer,
+        "Revoke access for OpenCoven Chat, installation chat-install-4f92, credential ID ending c3c3",
+      ).props.onClick();
+      await flush();
+    });
+    expect(announce).toHaveBeenCalledWith(
+      "Couldn’t revoke access for OpenCoven Chat, installation chat-install-4f92, credential ID ending c3c3.",
+      "assertive",
+    );
+    expect(text(renderer)).toContain(
+      "Couldn’t revoke access for OpenCoven Chat, installation chat-install-4f92, credential ID ending c3c3.",
+    );
+    expect(text(renderer)).not.toContain("bearer-value-must-never-render");
   });
 
   test("clears stale mutation errors after a successful manual retry refresh", async () => {
