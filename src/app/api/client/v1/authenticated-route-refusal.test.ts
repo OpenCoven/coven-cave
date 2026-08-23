@@ -253,6 +253,35 @@ function assertRefused(outcome: Outcome, label: string, probe: string, situation
   );
 }
 
+/**
+ * Nothing may be read before the credential is settled.
+ *
+ * Checked BEFORE the refusal assertion on the same probe, and deliberately so:
+ * a dependency reached this early usually makes the handler throw, and "it
+ * THREW" is a true but useless answer next to "it consulted listConversations
+ * while refusing".
+ */
+function consultations(deps: { touched: string[] }[]): string[] {
+  return deps.flatMap((dep) => dep.touched);
+}
+
+function assertNothingConsulted(
+  deps: { touched: string[] }[],
+  before: string[],
+  label: string,
+  probe: string,
+  situation: string,
+): void {
+  const consulted = consultations(deps).slice(before.length);
+  assert.deepEqual(
+    consulted,
+    [],
+    `${probe} (${label}) consulted ${consulted.join(", ")} while handling ${situation}.`
+      + ` Settle the credential first: an injected dependency reached before requireScope is a`
+      + ` side effect an unauthenticated caller can drive, and a timing signal it can read.`,
+  );
+}
+
 /** The three refusals that are safe to prove against real dependencies: none of
  *  them can reach a data source on a route that refuses. */
 async function assertUncredentialedRequestsAreRefused(
@@ -261,35 +290,27 @@ async function assertUncredentialedRequestsAreRefused(
   probe: string,
   context: unknown,
   fullyScopedBearer: string,
+  deps: { touched: string[] }[] = [],
 ): Promise<void> {
-  assertRefused(
-    await drive(handler, stampedRequest(probe), context),
-    label,
-    probe,
-    "a request carrying no Authorization header at all",
-  );
-  assertRefused(
-    await drive(
-      handler,
+  const probes: [string, Request][] = [
+    ["a request carrying no Authorization header at all", stampedRequest(probe)],
+    [
+      "a bearer this Cave never issued",
       stampedRequest(probe, { authorization: "Bearer not-a-credential-this-cave-issued" }),
-      context,
-    ),
-    label,
-    probe,
-    "a bearer this Cave never issued",
-  );
-  assertRefused(
-    await drive(
-      handler,
+    ],
+    [
+      "a valid bearer presented without the listener's loopback stamp (a percent-encoded"
+        + " path segment escaped the proxy's client-v1 classification once already, #4854,"
+        + " so the route may not assume that branch ran)",
       unstampedRequest(probe, { authorization: `Bearer ${fullyScopedBearer}` }),
-      context,
-    ),
-    label,
-    probe,
-    "a valid bearer presented without the listener's loopback stamp (a percent-encoded"
-      + " path segment escaped the proxy's client-v1 classification once already, #4854,"
-      + " so the route may not assume that branch ran)",
-  );
+    ],
+  ];
+  for (const [situation, request] of probes) {
+    const before = consultations(deps);
+    const outcome = await drive(handler, request, context);
+    assertNothingConsulted(deps, before, label, probe, situation);
+    assertRefused(outcome, label, probe, situation);
+  }
 }
 
 function httpMethodHandlers(module: RouteModule, probe: string, file: string): [string, Handler][] {
@@ -446,26 +467,17 @@ for (const pattern of CLIENT_V1_AUTHENTICATED_PATHS) {
         for (const [name, factory] of handlerFactories(module, probe, file)) {
           const { handlers, deps } = builtHandlers(factory, name, runtime, probe);
           for (const [label, handler] of handlers) {
+            // On these routes a data source is a live daemon request or a
+            // transcript read, so the tripwires are passed in: a read that
+            // happens before the credential is settled is both a side effect an
+            // unauthenticated caller can trigger and a timing signal.
             await assertUncredentialedRequestsAreRefused(
               handler,
               label,
               probe,
               context,
               fullyScoped,
-            );
-
-            // Nothing may be read before the credential is settled. On these
-            // routes a data source is a live daemon request or a transcript
-            // read, so a read that happens first is both a side effect an
-            // unauthenticated caller can trigger and a timing signal.
-            const readEarly = deps.flatMap((dep) => dep.touched);
-            assert.deepEqual(
-              readEarly,
-              [],
-              `${probe} (${label}) consulted ${readEarly.join(", ")} while refusing an`
-                + ` uncredentialed request. Settle the credential first: an injected dependency`
-                + ` reached before requireScope is a side effect an unauthenticated caller can`
-                + ` drive, and a timing signal it can read.`,
+              deps,
             );
 
             // Scope enforcement, derived rather than named. At least one
@@ -476,11 +488,26 @@ for (const pattern of CLIENT_V1_AUTHENTICATED_PATHS) {
             const denials: string[] = [];
             for (const scope of CLIENT_V1_SCOPES) {
               const bearer = await issueBearer(runtime, `refusal-gate-${scope}`, [scope]);
+              const before = consultations(deps);
               const outcome = await drive(
                 handler,
                 stampedRequest(probe, { authorization: `Bearer ${bearer}` }),
                 context,
               );
+              // A refused credential must not have read anything either — a
+              // scope denial that already touched the store leaked the work it
+              // then declined to hand over. Only checked when the answer WAS a
+              // refusal: the credential holding the required scope is supposed
+              // to get through, and tripping a tripwire is how it proves it.
+              if (outcome.kind === "response" && REFUSAL_CODES.has(outcome.code ?? "")) {
+                assertNothingConsulted(
+                  deps,
+                  before,
+                  label,
+                  probe,
+                  `a bearer scoped only for ${scope}`,
+                );
+              }
               if (outcome.kind === "response" && outcome.status === 403 && outcome.code === "scope_denied") {
                 denials.push(scope);
               }
