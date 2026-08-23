@@ -343,6 +343,11 @@ test("conversation loading persists live history and falls back to a labelled re
   );
   assert.match(chatView, /Offline copy · Read only/);
   assert.match(chatView, /historyState === "offline" && sessionId/);
+  assert.match(chatView, /const offlineReadOnly = historyState === "offline"/);
+  assert.match(chatView, /readOnly=\{offlineReadOnly\}/);
+  assert.match(chatView, /feedbackContext=\{readOnly \? undefined : feedbackContext\}/);
+  assert.match(chatView, /taskSuggestion && sessionId && !offlineReadOnly/);
+  assert.match(chatView, /voiceCallOpen && sessionId && !offlineReadOnly/);
 });
 
 test("native cache commands require the exact trusted main origin", () => {
