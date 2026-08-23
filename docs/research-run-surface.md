@@ -78,7 +78,7 @@ This makes a card resilient to navigation and reload while preventing chat from 
 
 Research progress must not imply precision that the executor does not have.
 
-- Stage progress is expressed as `N of M stages complete`.
+- Stage progress is expressed as `N of M stages resolved` so skipped stages do not read as completed work.
 - The activity bar is indeterminate unless measured work exists.
 - A percentage must only be introduced when the executor can supply a real denominator.
 - ETA must come from execution telemetry, not model intuition.
