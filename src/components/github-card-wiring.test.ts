@@ -35,13 +35,13 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]*const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]*const resultSplit = extractChatResultMarkers\(autoStatusSplit\.visible,[\s\S]*const attentionSplit = extractChatAttentionMarker\(resultSplit\.visible,[\s\S]*const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);/,
-  "the shared projection resolves skill, auto-status, results, attention, then next paths before card markers",
+  /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);[\s\S]*const autoStatusSplit = extractAutoStatusMarkers\(skillSplit\.visible\);[\s\S]*const resultSplit = extractChatResultMarkers\(autoStatusSplit\.visible,[\s\S]*const attentionSplit = extractChatAttentionMarker\(resultSplit\.visible,[\s\S]*const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);/,
+  "the shared projection resolves skill, auto-status, results, attention, next paths, then research before display cleanup",
 );
 assert.match(
   renderedText,
-  /visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)\)/,
-  "preview/GitHub/image markers strip unconditionally and LAST — after skill, auto-status, attention, and next-path extraction have all seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
+  /visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)/,
+  "preview/GitHub/image markers strip unconditionally and LAST — after every control extractor has seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(
   renderedText,

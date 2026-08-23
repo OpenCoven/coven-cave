@@ -1,8 +1,17 @@
 "use client";
 
+import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import type { PreviewBlock } from "@/lib/preview-blocks";
+import type {
+  ResearchRunSurfaceModel,
+} from "@/lib/research-run-surface";
+import { parseResearchRunPreviewUrl } from "@/lib/research-run-surface";
+
+function researchSnapshot(preview: PreviewBlock): ResearchRunSurfaceModel | null {
+  return parseResearchRunPreviewUrl(preview.url);
+}
 
 export function ChatPreviewCard({
   preview,
@@ -13,6 +22,15 @@ export function ChatPreviewCard({
   onOpenPreview?: (url: string) => void;
   onOpenUrl?: (url: string) => void;
 }) {
+  const research = researchSnapshot(preview);
+  if (research) {
+    return (
+      <div className="my-3">
+        <ResearchRunInlineCard snapshot={research} />
+      </div>
+    );
+  }
+
   const open = onOpenPreview ?? onOpenUrl;
   const displayUrl = new URL(preview.url);
   return (
