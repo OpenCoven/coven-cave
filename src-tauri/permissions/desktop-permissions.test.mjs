@@ -395,6 +395,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
   assert.match(ptyRust, /is_registered_main_window\(webview\.app_handle\(\), webview\.label\(\)\)/);
   assert.match(mainWindowRust, /pub\(super\) fn is_registered_main_window/);
   assert.match(mainWindowRust, /inner\.labels\.contains\(label\)/);
+  assert.match(ptyRust, /let mut trusted = TRUSTED_MAIN_ORIGINS\.lock\(\);\s*trusted\.clear\(\);/);
   assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
 
   for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {

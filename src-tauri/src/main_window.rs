@@ -22,11 +22,18 @@ pub(super) fn is_main_window_label(label: &str) -> bool {
     let Some(identity) = label.strip_prefix(SECONDARY_MAIN_WINDOW_PREFIX) else {
         return false;
     };
-    !identity.is_empty()
-        && identity.len() <= 64
+    let boundary_is_alphanumeric = identity
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_ascii_alphanumeric())
         && identity
             .chars()
-            .any(|character| character.is_ascii_alphanumeric())
+            .next_back()
+            .is_some_and(|character| character.is_ascii_alphanumeric());
+    !identity.is_empty()
+        && identity.len() <= 64
+        && boundary_is_alphanumeric
+        && !identity.contains("--")
         && identity
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
@@ -138,6 +145,9 @@ mod tests {
         assert!(is_main_window_label("main-project_alpha"));
         assert!(!is_main_window_label("quick-chat"));
         assert!(!is_main_window_label("main-"));
+        assert!(!is_main_window_label("main--alpha"));
+        assert!(!is_main_window_label("main-alpha--beta"));
+        assert!(!is_main_window_label("main-alpha-"));
         assert!(!is_main_window_label("main-project.alpha"));
         assert!(!is_main_window_label("main-project/alpha"));
     }

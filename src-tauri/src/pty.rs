@@ -97,9 +97,11 @@ fn url_origin(url: &Url) -> Option<String> {
 }
 
 pub fn trust_main_origin(url: &Url) {
+    let mut trusted = TRUSTED_MAIN_ORIGINS.lock();
+    trusted.clear();
     if let Some(origin) = url_origin(url) {
         info!("trusting main webview origin for PTY IPC: {}", origin);
-        TRUSTED_MAIN_ORIGINS.lock().insert(origin);
+        trusted.insert(origin);
     } else {
         warn!("not trusting main webview origin for PTY IPC: {}", url);
     }
@@ -816,6 +818,24 @@ mod tests {
         assert_ne!(primary, secondary);
         let sessions = HashSet::from([primary, secondary]);
         assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn trusting_a_new_main_origin_revokes_every_previous_origin() {
+        TRUSTED_MAIN_ORIGINS.lock().clear();
+        let first = Url::parse("http://127.0.0.1:3100/chat").expect("first loopback URL");
+        let second = Url::parse("http://127.0.0.1:3200/chat").expect("second loopback URL");
+
+        trust_main_origin(&first);
+        trust_main_origin(&second);
+        assert_eq!(
+            *TRUSTED_MAIN_ORIGINS.lock(),
+            HashSet::from(["http://127.0.0.1:3200".to_string()]),
+        );
+
+        let invalid = Url::parse("file:///tmp/coven-cave.html").expect("file URL");
+        trust_main_origin(&invalid);
+        assert!(TRUSTED_MAIN_ORIGINS.lock().is_empty());
     }
 
     #[test]
