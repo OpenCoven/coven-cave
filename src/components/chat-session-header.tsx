@@ -422,6 +422,10 @@ export function ChatTitleEditable({
   }, [baseTitle, editing]);
 
   useEffect(() => {
+    if (readOnly) setEditing(false);
+  }, [readOnly]);
+
+  useEffect(() => {
     if (!editing) return;
     submittedRef.current = false;
     inputRef.current?.focus();

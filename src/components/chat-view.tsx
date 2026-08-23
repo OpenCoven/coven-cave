@@ -6023,6 +6023,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const send = async (override?: string) => {
+    if (historyState === "offline") {
+      announce("Offline copies are read only. Reconnect before sending.", "assertive");
+      return;
+    }
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
