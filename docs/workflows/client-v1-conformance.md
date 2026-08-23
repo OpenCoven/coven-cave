@@ -250,6 +250,46 @@ Two fixture properties make that family able to fail, and both are pinned by
 - two conversations **share** a `createdAt`, so the id tiebreak that makes the
   ordering total is exercised rather than merely present.
 
+### The residual that family then found — the tail block was not immutable
+
+The seven assertions above prove a row with no `createdAt` is *served*, at the
+tail. They did not prove it *stays* there, and it did not: `buildConversation`
+composed `args.existing?.createdAt ?? now`, so writing a turn to a transcript
+older than the field stamped it with `now` and moved the row from the tail to
+the head of the ordering, past every open cursor — `cave-fhjlu` again, on
+exactly the rows the sentinel exists to protect (`cave-wbxcu`). A second trigger
+needed no writer at all: the row Cave substitutes for a file it cannot read
+carried no `createdAt` either, so a file flipping between readable and
+unreadable moved a row into and out of the tail block under an open cursor.
+
+Five more assertions close the family, and three of them **reproduced the loss
+on the wire** against the build before the fix:
+
+| Assertion | On the unfixed build |
+|---|---|
+| `reads.conversations-keyless-row-written-mid-walk-is-still-served` | **failed** — the row was stamped `2026-08-23T03:30:29.860Z` mid-walk and the whole walk served 7 of 8 rows, losing `conversation-keyless-written` |
+| `reads.conversations-recovering-row-keeps-its-position-mid-walk` | **failed** — a file that became readable again mid-walk rose above the open cursor and was never served |
+| `reads.conversations-unreadable-row-keeps-its-position-mid-walk` | **failed** — a file that became unreadable mid-walk fell to the tail, reordering the walk |
+| `reads.conversations-keyless-rows-tie-on-the-id-tiebreak` | passed — an invariant that already held, kept so a sentinel tie is covered as the `createdAt` tie is |
+| `reads.conversations-keyless-row-keyed-between-walks-moves-once` | passed — the promise is scoped to one walk; the next walk must still see a consistent ledger |
+
+Two things about how they are written are worth copying rather than
+re-deriving:
+
+- **The write is driven through `POST /api/chat/conversation/:id`, over the
+  socket.** That route is where the defect lived. A case that simulated the
+  stamp by rewriting the transcript file would have kept passing after the write
+  path was fixed and kept failing after it was broken again — it would be
+  asserting the fixture, not Cave.
+- **The two readability directions need rows in different places.** A walk at
+  limit 2 opens its cursor after the two newest rows, so a recovering row is
+  only *skipped* if its real `createdAt` is above that cursor. The first version
+  of the recovering case used a row whose `createdAt` was the oldest in the
+  ledger: it rose to a position the walk had not reached yet, was served
+  normally, and **passed against the unfixed build**. That is the vacuous
+  assertion this harness exists to refuse, caught by running the new cases
+  against the broken build before trusting them.
+
 ## Harness mutation results
 
 A conformance run that passes against a broken server is worse than none, so the
