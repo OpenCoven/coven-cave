@@ -8,6 +8,7 @@ import {
   isAutoMissionTimedOut,
   pendingAutoMissionPings,
   readAutoMission,
+  reconcileAutoMissionOnSessionChange,
   touchAutoMission,
   writeAutoMission,
   type AutoMissionRecord,
@@ -187,4 +188,95 @@ test("failed pings and ends the mission", () => {
   ];
   const pings = pendingAutoMissionPings(armed, turns);
   assert.deepEqual(pings.map((p) => p.state), ["failed"], "nothing after a failure still pings");
+});
+
+// ── carrying a mission onto the session id that adopts it ────────────────────
+// `/auto` in a BRAND-NEW chat arms before any session id exists, so
+// writeAutoMission no-ops and a plain re-hydrate would disarm the mission the
+// instant the first send mints an id. Reproduced against the running app.
+
+const carried: AutoMissionRecord = {
+  mission: "tidy the failing token tests",
+  startedAt: "2026-01-01T00:00:00.000Z",
+  notified: [],
+  completedAt: null,
+  outcome: null,
+};
+
+test("a mission armed before the session existed is carried onto the new id and persisted", () => {
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: null,
+    nextSessionId: "s-new",
+    held: carried,
+    stored: null,
+  });
+  assert.equal(out.record, carried, "the running mission survives session creation");
+  assert.equal(out.persistUnder, "s-new", "and is written under the id that now owns it");
+});
+
+test("a record already stored under the arriving id wins over the held copy", () => {
+  const stored: AutoMissionRecord = { ...carried, mission: "the durable one" };
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: null,
+    nextSessionId: "s-new",
+    held: carried,
+    stored,
+  });
+  assert.equal(out.record, stored);
+  assert.equal(out.persistUnder, null, "nothing is overwritten");
+});
+
+test("a mission never crosses from one real session to another", () => {
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: "s-a",
+    nextSessionId: "s-b",
+    held: carried,
+    stored: null,
+  });
+  assert.equal(out.record, null, "chat B must not adopt chat A's mission");
+  assert.equal(out.persistUnder, null);
+});
+
+test("a settled mission is not carried onto a new id", () => {
+  const settled: AutoMissionRecord = {
+    ...carried,
+    completedAt: "2026-01-01T00:10:00.000Z",
+    outcome: "done",
+  };
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: null,
+    nextSessionId: "s-new",
+    held: settled,
+    stored: null,
+  });
+  assert.equal(out.record, null);
+  assert.equal(out.persistUnder, null);
+});
+
+test("leaving a session for a fresh compose drops the mission and persists nothing", () => {
+  const out = reconcileAutoMissionOnSessionChange({
+    previousSessionId: "s-a",
+    nextSessionId: null,
+    held: carried,
+    stored: null,
+  });
+  assert.equal(out.record, null);
+  assert.equal(out.persistUnder, null);
+});
+
+test("re-running on the same id is idempotent once the carry has been persisted", () => {
+  const first = reconcileAutoMissionOnSessionChange({
+    previousSessionId: null,
+    nextSessionId: "s-new",
+    held: carried,
+    stored: null,
+  });
+  const second = reconcileAutoMissionOnSessionChange({
+    previousSessionId: "s-new",
+    nextSessionId: "s-new",
+    held: first.record,
+    stored: first.record,
+  });
+  assert.equal(second.record, carried);
+  assert.equal(second.persistUnder, null, "a second pass must not rewrite storage");
 });

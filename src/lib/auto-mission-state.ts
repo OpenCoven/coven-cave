@@ -111,6 +111,50 @@ export function isAutoMissionArmed(record: AutoMissionRecord | null): boolean {
   return Boolean(record && !record.completedAt);
 }
 
+/**
+ * What a view holding a mission should do when its session id changes.
+ *
+ * The case this exists for: `/auto <mission>` typed into a BRAND-NEW chat. A
+ * new chat has no session id until the first send mints one, and
+ * `writeAutoMission` is a no-op without one — so the record is armed in memory
+ * and persisted nowhere. Moments later the send announces the real id, the
+ * view re-reads storage for it, finds nothing, and the mission is silently
+ * disarmed. The familiar keeps working; nothing is left that could notify on
+ * the terminal marker, run the watchdog, or tell any other surface a mission
+ * is in flight. Verified against the running app: `/auto` in a fresh chat
+ * writes no `cave:auto-mission:*` key at all, while the same command in an
+ * existing chat writes one immediately.
+ *
+ * So a sessionless mission is CARRIED onto the id that adopts it, and nothing
+ * else is. The deliberate limits:
+ *
+ * - Only `null -> real` carries. Moving between two real sessions is a thread
+ *   switch, and dragging a mission across it would fire chat A's mission
+ *   against chat B's transcript — exactly the cross-chat leak the per-session
+ *   key exists to prevent.
+ * - A record already stored under the arriving id wins. It is the durable one;
+ *   the held copy would be a strictly worse duplicate.
+ * - Only an ARMED record carries. A finished mission has nothing left to
+ *   watch, and re-persisting it under a new id would resurrect a settled
+ *   record as if the session owned it.
+ */
+export function reconcileAutoMissionOnSessionChange(args: {
+  previousSessionId: string | null | undefined;
+  nextSessionId: string | null | undefined;
+  /** The record the view currently holds in memory (may be unpersisted). */
+  held: AutoMissionRecord | null;
+  /** What storage already holds for `nextSessionId`. */
+  stored: AutoMissionRecord | null;
+}): { record: AutoMissionRecord | null; persistUnder: string | null } {
+  const { previousSessionId, nextSessionId, held, stored } = args;
+  if (stored) return { record: stored, persistUnder: null };
+  const adopting = !previousSessionId && Boolean(nextSessionId);
+  if (adopting && isAutoMissionArmed(held) && held) {
+    return { record: held, persistUnder: nextSessionId as string };
+  }
+  return { record: null, persistUnder: null };
+}
+
 /** The shape the watcher needs from a chat turn (structural, not the Turn type). */
 export type AutoTurnLike = {
   id: string;

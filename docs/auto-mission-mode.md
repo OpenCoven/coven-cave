@@ -66,6 +66,21 @@ contains a terminal marker cannot double-ping.
 Scoping is per session, so a mission started in one chat cannot fire against
 markers appearing in another.
 
+**One mission crosses a session id: the one armed before there was an id.** A
+brand-new chat has no session id until the first send mints one, and
+`writeAutoMission` is a no-op without one — so `/auto <mission>` typed into a
+fresh chat armed a record that was persisted nowhere, and the re-hydrate on the
+new id then dropped it. The familiar kept working while nothing was left to
+notify on the terminal marker, run the watchdog, or tell any other surface a
+mission was in flight. Reproduced against the running app: `/auto` in a new
+chat wrote no `cave:auto-mission:*` key at all, while the same command in an
+existing chat wrote one immediately.
+
+`reconcileAutoMissionOnSessionChange` carries that one case onto the id that
+adopts it. Nothing else crosses: a real→real move is a thread switch, and
+carrying a mission across it would fire chat A's mission against chat B's
+transcript — the exact leak the per-session key exists to prevent.
+
 ## The watchdog
 
 Everything above depends on the familiar volunteering a terminal marker.
@@ -95,6 +110,45 @@ Terminal states post to `/api/inbox`:
 | watchdog | `response-needed` | Auto mission went quiet |
 
 Each carries `auto: "auto-mission"` for dedup and links back to the session.
+
+## Seeing a mission you have walked away from
+
+An in-flight mission is reported in the menu bar's **running-processes
+popover** — the app's one globally-visible, ambient readout of what is running.
+A session with an armed mission renders as a `MISSION` row naming the work and
+how long it has been going, and a click opens the chat.
+
+Two deliberate choices:
+
+**Not the inbox.** `/api/inbox` is an attention surface, and an item created
+there with no `fireAt` lands `status: "fired"` — which workspace's SSE
+subscriber answers with a toast plus `nativeNotify(...)` and a sound, while
+`unreadInboxCount` badges the bell and `groupInboxFeed` files it under "Needs
+you". That is precisely the interruption `/auto` promises not to make, so an
+ACTIVE mission is never posted there. Terminal states still are; they have
+earned the interruption.
+
+**The row's liveness comes from the server, not from the record.** The stored
+record cannot say whether a mission is still running: its terminal detection
+and its watchdog both live in the mounted ChatView for that session, so
+navigating away leaves an armed record nobody will ever clear. A surface built
+on the record alone would therefore keep reporting "in progress" for work that
+finished — wrong precisely when it is being relied on. So the popover only
+decorates sessions the server already reports as running (`hasActiveChatRun`,
+projected as `status: "running"` through `/api/sessions/list`), and when the run
+ends the row stops existing rather than going stale.
+
+The row also replaces the session title, because an `/auto` chat's title is
+derived from its first message — the generated directive — so the untouched row
+read "Run this as an autonomous /auto mission: …", leaking a system prompt into
+the menu bar instead of naming the work.
+
+There is no cancel on the row. `POST /api/chat/stop { sessionId }` would stop
+the run, but the armed record is owned by ChatView's React state: ending the
+mission from the menu bar would leave a mounted ChatView holding a stale copy
+that re-persists it as armed on its next liveness stamp, so the mission would
+read as still running with no outcome and no questionnaire — worse than no
+cancel. Opening the row lands in the chat, where `/auto stop` is one command.
 
 ## Preference learning
 
@@ -132,8 +186,20 @@ skips the form and takes the whole signal with them.
 - The preference digest is a bounded list, not a synthesized profile. A
   periodic summarization pass would resolve contradictions and generalize
   mission-specific notes into principles.
-- Active missions are only visible inside their own chat. An inbox or sidebar
-  entry for in-flight missions would keep them visible after navigating away.
+- **The notification does not actually survive walking away.** Terminal-marker
+  detection and the watchdog are both effects inside the ChatView mounted on
+  that exact session: switch chats and the view re-hydrates for the new
+  session, leave chat and it unmounts, and in either case nothing is watching
+  the mission any more. The `done` ping then fires only when you next open that
+  chat — which is the one moment you no longer need telling. The stream itself
+  survives (it accumulates in the module-scope live registry), so the work is
+  not lost; only the promise to come and get you is. Closing this needs
+  supervision to move out of ChatView — a workspace-level watcher over armed
+  missions, reading their transcripts without the chat being open — which is a
+  bigger change than the visibility work above and is why the running-processes
+  row takes its liveness from the server instead of from the record.
+- A mission row has no cancel; see the section above for why, and `/auto stop`
+  inside the chat for the sanctioned end.
 - `blocked` still covers both "waiting for your go-ahead" and "cannot proceed
   at all". Splitting out `needs-approval` would let the UI ask for a yes rather
   than merely reporting a wall.
