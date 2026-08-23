@@ -1267,6 +1267,7 @@ export const SUITES = {
     "src/lib/clipboard.test.ts",
     "src/lib/icon-subset.test.ts",
     "src/lib/panel-shortcuts.test.ts",
+    "src/lib/keyboard-event-key.test.ts",
     "src/lib/settings-familiar-picker.test.ts",
     "src/components/familiar-studio-inline.test.ts",
     "src/lib/session-rail-title.test.ts",

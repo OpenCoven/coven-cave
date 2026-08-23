@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import type { Familiar, SessionRow } from "./types";
 import type { IconName } from "./icon";
 import { familiarTypeRoleIds } from "./familiar-types.ts";
+import { eventKey } from "./keyboard-event-key.ts";
 
 export type RoleSurfaceId = string;
 
@@ -289,7 +290,13 @@ export type ComboKeyEvent = {
 export function matchesShortcutCombo(event: ComboKeyEvent, combo: string): boolean {
   const parts = combo.toLowerCase().split("+").map((part) => part.trim()).filter(Boolean);
   const key = parts.find((part) => !["mod", "meta", "ctrl", "shift", "alt"].includes(part));
-  if (!key || event.key.toLowerCase() !== key) return false;
+  // Read the key through the shared guard: an event with no readable key
+  // matches no combo. This site is the one in the cave-lryhx family that the
+  // exact reported event shape — a bare `new Event("keydown")` — reaches,
+  // because it tests the key BEFORE any modifier, so no `metaKey` check
+  // short-circuits ahead of it.
+  const pressed = eventKey(event);
+  if (!key || pressed === null || pressed !== key) return false;
   const wantMod = parts.includes("mod");
   const wantMeta = parts.includes("meta");
   const wantCtrl = parts.includes("ctrl");
