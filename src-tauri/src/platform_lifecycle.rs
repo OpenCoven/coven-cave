@@ -61,14 +61,17 @@ pub(super) fn show_startup_dialog(title: &str, msg: &str) {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         // Try zenity (GNOME) then kdialog (KDE); fall back to stderr only.
+        // Both accept --title. Without it the caller's heading was dropped
+        // on this platform only, which is also why `title` read as unused
+        // here - and Linux is the platform CI actually compiles.
         let shown = std::process::Command::new("zenity")
-            .args(["--error", "--text", msg])
+            .args(["--error", "--title", title, "--text", msg])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
         if !shown {
             let _ = std::process::Command::new("kdialog")
-                .args(["--error", msg])
+                .args(["--title", title, "--error", msg])
                 .output();
         }
     }
@@ -105,11 +108,11 @@ pub(super) fn check_app_translocation() {
         if !path.contains("/AppTranslocation/") && !path.contains("/Volumes/") {
             return;
         }
-        // This copy is leaving without ever binding the port, and on
-        // macOS the dialog below blocks until someone clicks. Holding the
-        // claim across that wait would have the good copy in /Applications
-        // refused, naming a process that never binds anything.
-        crate::sidecar_port_lock::release_all_claims();
+        // No claim to release here: this runs before the port is claimed,
+        // and scripts/port-contract.test.mjs pins that ordering. The paths
+        // that DO need a release are the ones that hold a claim and then
+        // block on a dialog - report_existing_gui_owner below, and the two
+        // reaped-child fatal_exit arms in tauri_setup.rs.
         let msg = format!(
             "CovenCave is running from a read-only quarantine path:\n\n{}\n\nTo install properly, quit, then drag CovenCave.app into your /Applications folder and launch it from there.",
             path

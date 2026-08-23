@@ -106,10 +106,17 @@ pub(super) enum PortOccupant {
     Cave,
     /// Answered, but refused the unauthenticated probe (401/403).
     ///
-    /// Not the ordinary second-copy case — that answers 200 and lands in
-    /// `Cave` above. This is a Cave reached without `server.ts` in front of it,
-    /// or something else entirely that gates the same path, so it stays its own
-    /// verdict rather than being guessed in either direction.
+    /// Most often ANOTHER PACKAGED COVENCAVE — specifically one built before
+    /// `trustedLocalBrowserApi` landed (#4874, 2026-08-22). v0.3.9 was stamped
+    /// 2026-08-21, so no build in the field carries that bypass: every shipped
+    /// copy answers 401 here rather than 200. Those builds also predate the
+    /// port claim, so they take no lock and this is the verdict a second copy
+    /// actually reaches during the whole upgrade window.
+    ///
+    /// Once the field has rolled forward it becomes the residual case instead:
+    /// a Cave reached without `server.ts` in front of it, or something else
+    /// gating the same path. Either way it stays its own verdict rather than
+    /// being guessed in either direction.
     Gated,
     /// Accepted a connection but is not a Cave this build can name.
     Stranger,
@@ -303,8 +310,9 @@ pub(super) fn port_conflict_message(port: u16, occupant: &PortOccupant) -> Strin
             second_copy_hint()
         ),
         PortOccupant::Gated => format!(
-            "Port {port} is serving something that will not identify itself to this copy.\n\n\
-             Quit whatever is using port {port} and re-launch. {}",
+            "Port {port} is serving something that will not identify itself to this copy — most \
+             often another CovenCave from an older build.\n\nSwitch to it, or quit it and \
+             re-launch. {}",
             second_copy_hint()
         ),
         PortOccupant::Stranger => format!(

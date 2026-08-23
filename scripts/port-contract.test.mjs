@@ -131,8 +131,14 @@ for (const [label, needle] of [
 // The translocation check is the one thing allowed above it: it shows a
 // blocking dialog, and holding the port across that wait would refuse the good
 // copy while naming a process that never binds anything.
+const translocationAt = setup.indexOf("check_app_translocation()");
+assert.notEqual(
+  translocationAt,
+  -1,
+  "the translocation check must still be in the setup hook",
+);
 assert.ok(
-  setup.indexOf("check_app_translocation()") < claimAt,
+  translocationAt < claimAt,
   "the translocation check must run before the claim, so a leaving copy never holds the port",
 );
 
@@ -153,6 +159,27 @@ assert.doesNotMatch(
   /process\.env\.PORT \?\? "3000"/,
   "server.ts resolves through cavePort(), not an inline default",
 );
+
+// --- a reaped-child exit must not hold the port across its dialog -----------
+// `fatal_exit` blocks on osascript/zenity until a human clicks. The two
+// SidecarStartError arms reap the child first, so nothing is on the port — and
+// holding the claim through that wait refused the user's own retry, naming a
+// process that never bound anything. Source-level because the wiring is what
+// regressed: `release_all_claims` itself was unit-tested the whole time.
+const reapedThenExit = [
+  ...setup.matchAll(/stop_after_startup_error\([\s\S]{0,800}?fatal_exit\(/g),
+].map((m) => m[0]);
+assert.equal(
+  reapedThenExit.length,
+  2,
+  "expected exactly two reaped-child fatal_exit arms; re-check this contract if that changed",
+);
+for (const arm of reapedThenExit) {
+  assert.ok(
+    arm.includes("release_all_claims()"),
+    "a fatal_exit that has already reaped the child must release the port claim first, or the user's retry is refused by a copy holding a port nothing is on",
+  );
+}
 
 // --- the EADDRINUSE tail contract lives in two files --------------------------
 // The Rust post-mortem recognises a failed bind by matching the sidecar's own

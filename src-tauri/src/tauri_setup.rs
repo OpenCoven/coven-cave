@@ -420,10 +420,12 @@ pub fn run() {
                         // matter most — failing open means cross-copy exclusion
                         // is silently OFF, and the next launch gets node's raw
                         // EADDRINUSE with nothing anywhere naming the cause.
-                        log::warn!("[cave] could not claim the dedicated port {port}: {error}");
-                        eprintln!(
-                            "[cave] could not claim the dedicated port {port}: {error};                              a second copy will not be refused"
+                        let warning = format!(
+                            "[cave] could not claim the dedicated port {port}: {error}; \
+                             a second copy will not be refused"
                         );
+                        log::warn!("{warning}");
+                        eprintln!("{warning}");
                     }
                 }
             }
@@ -555,6 +557,12 @@ pub fn run() {
                                 .stop_after_startup_error(
                                     "sidecar startup was cancelled".to_string(),
                                 );
+                            // The child is reaped, so nothing is on the port —
+                            // and `fatal_exit` blocks on a modal until someone
+                            // clicks. Holding the claim across that wait
+                            // refuses the user's retry while naming a process
+                            // that never bound anything.
+                            crate::sidecar_port_lock::release_all_claims();
                             fatal_exit(&error)
                         }
                         Err(SidecarStartError::Failed {
@@ -569,6 +577,9 @@ pub fn run() {
                             let error = app
                                 .state::<SidecarState>()
                                 .stop_after_startup_error(message);
+                            // Same as the cancelled arm above: reaped child,
+                            // free port, blocking dialog.
+                            crate::sidecar_port_lock::release_all_claims();
                             fatal_exit(&error)
                         }
                     };

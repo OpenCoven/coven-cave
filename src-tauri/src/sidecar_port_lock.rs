@@ -145,11 +145,15 @@ pub(super) fn claim_dedicated_port(state_dir: &Path, port: u16) -> Result<PortCl
 
 /// Drop every claim this process holds.
 ///
-/// For an exit path where this process is leaving WITHOUT ever binding the
-/// port. On macOS/Linux `show_fatal_dialog` waits on `osascript`/`zenity` until
-/// someone clicks, so holding the claim across that wait would refuse the next
-/// copy while naming a process that never binds anything - a translocated DMG
-/// copy sitting on the "drag me to /Applications" alert is the concrete case.
+/// For an exit path that holds a claim, will never bind the port, and then
+/// blocks. On macOS/Linux `show_fatal_dialog` waits on `osascript`/`zenity`
+/// until someone clicks, so holding the claim across that wait would refuse
+/// the next copy while naming a process that never binds anything.
+///
+/// The live cases are `report_existing_gui_owner`, and the two `fatal_exit`
+/// arms in `tauri_setup.rs` that reap the child before showing their dialog.
+/// NOT `check_app_translocation`: that runs before the claim is taken, and
+/// scripts/port-contract.test.mjs pins that ordering.
 ///
 /// Deliberately NOT called from `show_fatal_dialog` itself. `fatal_exit` also
 /// goes through that dialog, and one of its call sites fires after the sidecar
