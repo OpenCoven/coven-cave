@@ -11,8 +11,10 @@ const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const githubTaskContext = readFileSync(new URL("../lib/workspace-github-task-context.ts", import.meta.url), "utf8");
+// The session-list computation moved to @/lib/server/sessions-list (cave-9rwd.1);
+// the route now owns only query parsing and the cache. Read the compute source.
 const listRoute = readFileSync(
-  new URL("../app/api/sessions/list/route.ts", import.meta.url),
+  new URL("../lib/server/sessions-list.ts", import.meta.url),
   "utf8",
 );
 // #3576 decomposed globals.css into @imported sheets under src/styles —
@@ -99,7 +101,7 @@ assert.match(
 );
 assert.match(
   listRoute,
-  /applyMergedPrAutoArchive\(\s*await enrichSessionsWithGitContext\(visible\),/,
+  /applyMergedPrAutoArchive\(\s*await withGitContext\(visible\),/,
   "the merged-PR sweep runs over the (async) enriched rows before the payload returns",
 );
 const sweepModule = readFileSync(
