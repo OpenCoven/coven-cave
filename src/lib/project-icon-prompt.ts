@@ -10,6 +10,8 @@
  * project's palette identity.
  */
 
+import { projectRootHash, projectRootHue } from "./comux-projects.ts";
+
 const MOTIFS = [
   "a faceted geometric crystal",
   "an abstract origami fold",
@@ -29,17 +31,19 @@ const MOTIFS = [
   "an interlocking gear pair",
 ] as const;
 
-/** Same deterministic uint32 string hash projectTint() uses. */
+/**
+ * The deterministic uint32 root hash projectTint() uses — imported, not
+ * re-implemented, so the icon palette cannot drift away from the tile colour.
+ * Relative import, not "@/": this is a value import, and the tests that reach
+ * this file run without the alias loader (see comux-projects.ts).
+ */
 export function projectIconHash(root: string): number {
-  let hash = 0;
-  for (let i = 0; i < root.length; i += 1) {
-    hash = (hash * 31 + root.charCodeAt(i)) >>> 0;
-  }
-  return hash;
+  return projectRootHash(root);
 }
 
+/** Identical to the hue projectTint() paints, by construction. */
 export function projectIconHue(root: string): number {
-  return projectIconHash(root) % 360;
+  return projectRootHue(root);
 }
 
 export function projectIconMotif(root: string): string {

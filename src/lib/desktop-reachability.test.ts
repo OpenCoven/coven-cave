@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   backgroundAvailabilityReadiness,
+  desktopReachabilityError,
   enableDesktopBackgroundAvailability,
   subscribeDesktopReachability,
   type DesktopReachabilityStatus,
@@ -24,6 +25,34 @@ function status(
     ...overrides,
   };
 }
+
+test("native string rejections preserve their actionable launchd detail", () => {
+  const error = desktopReachabilityError(
+    "could not load background availability: Bootstrap failed: 5",
+    "Couldn’t update Mac reachability.",
+  );
+  assert.equal(
+    error.message,
+    "could not load background availability: Bootstrap failed: 5",
+  );
+});
+
+test("structured native failures use safe text without rendering objects", () => {
+  assert.equal(
+    desktopReachabilityError(
+      { stderr: "LaunchAgent file is not writable" },
+      "Couldn’t update Mac reachability.",
+    ).message,
+    "LaunchAgent file is not writable",
+  );
+  assert.equal(
+    desktopReachabilityError(
+      { code: 5 },
+      "Couldn’t update Mac reachability.",
+    ).message,
+    "Couldn’t update Mac reachability.",
+  );
+});
 
 test("plain web pairing stays session-only without invoking a desktop writer", async () => {
   const unsupported = status({ supported: false });

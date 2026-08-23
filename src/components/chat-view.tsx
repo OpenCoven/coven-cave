@@ -10,6 +10,11 @@ import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
 import { extractLinks } from "@/lib/link-extractor";
+import { createResearchMission } from "@/lib/research-mission-client";
+import {
+  buildResearchChatRunInput,
+  formatResearchRunStarted,
+} from "@/lib/research-chat-command";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
 import {
@@ -37,6 +42,7 @@ import {
   writeCodeReadingPin,
 } from "@/lib/code-reading-pref";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
+import { ComposerMarkdownLayer } from "@/components/composer-markdown-layer";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
@@ -233,6 +239,7 @@ import {
   isAutoMissionTimedOut,
   pendingAutoMissionPings,
   readAutoMission,
+  reconcileAutoMissionOnSessionChange,
   touchAutoMission,
   writeAutoMission,
   type AutoMissionRecord,
@@ -2129,12 +2136,47 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [autoMission, setAutoMission] = useState<AutoMissionRecord | null>(null);
   const [autoFeedbackOpen, setAutoFeedbackOpen] = useState(false);
 
+  // Always-current mirror of the mission, so the re-hydrate effect below can
+  // read what this view is holding without taking `autoMission` as a dep —
+  // which would re-run it on our own writes.
+  const autoMissionRef = useRef<AutoMissionRecord | null>(null);
+  autoMissionRef.current = autoMission;
+  const autoMissionSessionRef = useRef<string | null>(sessionId ?? null);
+  // The session id this view's own generation minted (stamped in the stream's
+  // `owned` adoption branch). A sessionless mission may be carried onto THAT id
+  // and no other: a mission can be armed while the send is still in flight — or
+  // has failed, so no id ever arrives — and clicking into an unrelated existing
+  // chat is also a null -> real transition. Read one-shot below.
+  const autoMissionMintedSessionRef = useRef<string | null>(null);
+
   // Re-hydrate (or drop) the mission whenever the chat changes. Without this a
   // mission started in chat A stays armed while chat B is on screen, and any
   // auto-status marker over there pings against A's mission.
+  //
+  // The one carry-over is a mission armed before this chat had a session id at
+  // all: a plain re-hydrate would drop it the instant the first send mints one,
+  // silently disarming a mission that is already running. The rule lives in
+  // reconcileAutoMissionOnSessionChange, which also says why nothing else
+  // crosses a session change.
   useEffect(() => {
     setAutoFeedbackOpen(false);
-    setAutoMission(readAutoMission(sessionId, typeof window === "undefined" ? null : window.localStorage));
+    const storage = typeof window === "undefined" ? null : window.localStorage;
+    const previousSessionId = autoMissionSessionRef.current;
+    autoMissionSessionRef.current = sessionId ?? null;
+    // One-shot: an id may be adopted only on the transition immediately after
+    // this view minted it, never on a later navigation that happens to land
+    // back on it.
+    const mintedSessionId = autoMissionMintedSessionRef.current;
+    autoMissionMintedSessionRef.current = null;
+    const { record, persistUnder } = reconcileAutoMissionOnSessionChange({
+      previousSessionId,
+      nextSessionId: sessionId ?? null,
+      held: autoMissionRef.current,
+      stored: readAutoMission(sessionId, storage),
+      mintedSessionId,
+    });
+    if (persistUnder && record) writeAutoMission(persistUnder, record, storage);
+    setAutoMission(record);
   }, [sessionId]);
 
   // Watch settled assistant turns for a terminal `<coven:auto-status>` marker
@@ -4479,6 +4521,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Auto-grow the composer with its content (shared with the home composer).
   useAutogrowTextarea(inputRef, input, { fallbackMaxHeight: COMPOSER_MAX_HEIGHT });
+  // cave-7ncq: the markdown decoration layer reports when it is both showing
+  // something and measurably aligned with the textarea. Only then are the
+  // textarea's own glyphs hidden, so every path that leaves this false — a
+  // plain-prose draft, an unmeasured first paint, a platform whose text
+  // metrics we could not match — lands on an ordinary readable composer.
+  const [composerDecorated, setComposerDecorated] = useState(false);
 
   const appendSystem = (text: string) => {
     const newTurn = {
@@ -4933,6 +4981,33 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           );
         })
         .catch(() => appendSystem("Couldn't save — is the desktop reachable?"));
+      return true;
+    }
+    if (command === "/research") {
+      // Chat-invoked research (#4808): this does NOT create a chat-local
+      // research widget. It creates the same ResearchMission the Research Desk
+      // creates, stamped with a chat origin naming this conversation, so the
+      // run is one object the desk can work on and project back to here.
+      const built = buildResearchChatRunInput({
+        familiarId: familiar.id,
+        sessionId: sessionId ?? "",
+        intent: args,
+      });
+      if (!built.ok) {
+        appendSystem(built.message);
+        setInput("");
+        return true;
+      }
+      setInput("");
+      void createResearchMission(built.input)
+        .then((result) => {
+          if (!result.ok || !result.mission) {
+            appendSystem(`Research couldn't start: ${result.error ?? "the run was refused"}`);
+            return;
+          }
+          appendSystem(formatResearchRunStarted(result.mission));
+        })
+        .catch(() => appendSystem("Research couldn't start — is the desktop reachable?"));
       return true;
     }
     if (command === "/doctor" || command === "/daemon") {
@@ -6403,6 +6478,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
+            // This id was minted BY this view's own generation, which is the
+            // only transition a sessionless /auto mission may be carried onto.
+            // See reconcileAutoMissionOnSessionChange.
+            autoMissionMintedSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
             // Clear display ownership after adoption so no late event may
             // re-adopt via the done stable-ID fallback.
@@ -6605,6 +6684,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (owned) {
             liveSessionIdRef.current = ev.sessionId;
             currentSessionRef.current = ev.sessionId;
+            // This id was minted BY this view's own generation, which is the
+            // only transition a sessionless /auto mission may be carried onto.
+            // See reconcileAutoMissionOnSessionChange.
+            autoMissionMintedSessionRef.current = ev.sessionId;
             setHistoryState("loaded");
             // Clear display ownership after adoption (same as session event path).
             displayedCreationRunIdRef.current = null;
@@ -7545,6 +7628,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </div>
               ) : null}
               <div className="cave-composer-input-wrap">
+              <ComposerMarkdownLayer
+                value={input}
+                textareaRef={inputRef}
+                onDecoratedChange={setComposerDecorated}
+              />
               <textarea
                 ref={inputRef}
                 value={input}
@@ -7567,7 +7655,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 rows={1}
                 inputMode="text"
                 enterKeyHint="send"
-                className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
+                className={`cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm${composerDecorated ? " cave-composer-input--md" : ""}`}
                 aria-label="Message"
                 aria-autocomplete="list"
                 aria-haspopup="listbox"

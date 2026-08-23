@@ -344,19 +344,24 @@ export function clientV1ProjectPageKey(project: CaveProject): ClientV1PageKey {
  * can never return `""` — it demands a non-blank string — so the sentinel
  * cannot collide with a value a record actually carries.
  *
- * ⚠️ The sentinel is stable, but it is NOT unconditionally permanent, and the
- * difference is the one thing to know before trusting this block. `POST`/`PUT
- * /api/chat/conversation/:id` builds its record with
- * `args.existing?.createdAt ?? now` (buildConversation), so a legacy transcript
- * that never had a `createdAt` acquires one — `now` — on its next write through
- * that route, and jumps from this tail block to the HEAD of the ordering. A
- * `/conversations` walk with an open cursor then skips it, which is cave-fhjlu
- * again on exactly the rows this sentinel exists to protect. It is much
- * narrower than the original defect (only a row that lacks the field, only on
- * its first write through that one route, and self-healing afterwards), it is
- * not reachable from this surface, and closing it belongs to that write path
- * rather than to this key — cave-wbxcu. Do not restate this block as immutable
- * until that lands.
+ * The sentinel is as permanent as an instant, because absence is: no writer in
+ * Cave adds a `createdAt` to a record that has none. It was not always so.
+ * `buildConversation` (`POST`/`PUT /api/chat/conversation/:id`) composed
+ * `args.existing?.createdAt ?? now`, so a legacy transcript acquired one — `now`
+ * — on its next turn and jumped from this tail block to the HEAD of the
+ * ordering, where a walk with an open cursor skipped it: cave-fhjlu again, on
+ * exactly the rows this sentinel exists to protect. Closed in the write path,
+ * where it belonged, rather than by making this key cleverer (cave-wbxcu). That
+ * route now decides `createdAt` once, when it creates the record, and treats it
+ * as read-only afterwards — so a legacy row keeps no `createdAt` and keeps this
+ * position.
+ *
+ * The other producer of a row without one is `fallbackConversationSummary`, the
+ * row `listConversations` substitutes for a transcript it cannot read. It now
+ * carries over the `createdAt` the last readable scan saw — immutable, so still
+ * true — and only a file this process has never read successfully lands here.
+ * That row has nothing derivable behind it, and it sorts to this block in one
+ * stable position for as long as the file stays unreadable.
  */
 function conversationSortKey(summary: ConversationSummary): string {
   return optionalText(summary.createdAt) ?? "";
@@ -388,11 +393,13 @@ function conversationSortKey(summary: ConversationSummary): string {
  * change all leave the key alone: the key of a row that has one never changes,
  * and a walk that started before a touch serves the same set after it.
  *
- * Two writes are outside that "never", both on `POST`/`PUT
- * /api/chat/conversation/:id` and neither reachable from this surface: a body
- * that supplies its own `createdAt` overrides the stored one, and a record that
- * has none is stamped with `now`. The second is the one that costs something
- * here — see {@link conversationSortKey}.
+ * Two writes used to be outside that "never", both on `POST`/`PUT
+ * /api/chat/conversation/:id`: a body that supplied its own `createdAt`
+ * overrode the stored one, and a record that had none was stamped with `now`.
+ * Neither was reachable from this surface and both are closed (cave-wbxcu) —
+ * that route decides `createdAt` at creation and treats it as read-only after,
+ * so nothing in Cave now moves a conversation's key. See
+ * {@link conversationSortKey} for the rows that have no key at all.
  *
  * Two costs, both deliberate and both published in docs/api/client-v1.md:
  *

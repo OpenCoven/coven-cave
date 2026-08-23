@@ -1258,3 +1258,329 @@ fn a_persisted_secret_is_guarded_before_it_is_trusted() {
 
     std::fs::remove_dir_all(&dir).expect("cleanup");
 }
+
+// ── Who holds the dedicated port (cave-2s5q0) ────────────────────────────────
+// A second copy used to reach `node`, lose the bind, and surface the raw
+// EADDRINUSE error object on the startup screen. `sidecar_port_lock` stops it
+// getting that far; these cover the half that says WHO, so the refusal names
+// something instead of listing everything it might be.
+
+fn build_info_response(status: &str, body: &str) -> Vec<u8> {
+    format!(
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .into_bytes()
+}
+
+#[test]
+fn an_unauthenticated_cave_identifies_itself() {
+    // Both a packaged copy and a `pnpm dev` server answer this way, so it is
+    // the ordinary second-copy verdict rather than a dev-only one. A packaged
+    // copy answers despite holding a sidecar token because `server.ts` stamps
+    // the local-peer header on any direct loopback request and `src/proxy.ts`
+    // lets a trusted local peer through ordinary app APIs without one.
+    assert_eq!(
+        classify_build_info_response(&build_info_response(
+            "200 OK",
+            r#"{"name":"CovenCave","version":"0.0.0","revision":"abc","identity":"dev"}"#
+        )),
+        PortOccupant::Cave
+    );
+}
+
+#[test]
+fn a_chunked_answer_is_decoded_rather_than_read_as_a_stranger() {
+    let body = r#"{"name":"CovenCave"}"#;
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        body.len(),
+        body
+    );
+    assert_eq!(
+        classify_build_info_response(response.as_bytes()),
+        PortOccupant::Cave,
+        "framing is not identity"
+    );
+}
+
+#[test]
+fn a_gated_answer_is_its_own_verdict() {
+    // Not the ordinary second copy — that answers 200 and lands in `Cave`.
+    // This is a Cave reached without `server.ts` in front of it, or something
+    // else gating the same path, and it must not be flattened into `Stranger`:
+    // "will not identify itself" and "is another program" call for different
+    // actions.
+    for status in ["401 Unauthorized", "403 Forbidden"] {
+        assert_eq!(
+            classify_build_info_response(&build_info_response(
+                status,
+                r#"{"error":"unauthorized"}"#
+            )),
+            PortOccupant::Gated,
+            "{status} is a refusal to identify, not a stranger"
+        );
+    }
+}
+
+#[test]
+fn anything_else_on_the_port_is_a_stranger() {
+    assert_eq!(
+        classify_build_info_response(&build_info_response("200 OK", r#"{"name":"grafana"}"#)),
+        PortOccupant::Stranger,
+        "a 200 that is not ours belongs to somebody else"
+    );
+    assert_eq!(
+        classify_build_info_response(&build_info_response("200 OK", "<html>hello</html>")),
+        PortOccupant::Stranger,
+        "a 200 that is not JSON belongs to somebody else"
+    );
+    assert_eq!(
+        classify_build_info_response(&build_info_response("500 Internal Server Error", "{}")),
+        PortOccupant::Stranger
+    );
+    assert_eq!(
+        classify_build_info_response(b"not http at all"),
+        PortOccupant::Stranger,
+        "something listening that does not speak HTTP still holds the port"
+    );
+    assert_eq!(
+        classify_build_info_response(b""),
+        PortOccupant::Stranger,
+        "an accepted connection that says nothing is not a free port"
+    );
+}
+
+#[test]
+fn a_port_nobody_is_listening_on_is_free() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind to borrow a port");
+    let port = listener.local_addr().expect("borrowed address").port();
+    drop(listener);
+
+    assert_eq!(
+        classify_port_occupant(port),
+        PortOccupant::Free,
+        "a refused connection is the only thing that means free"
+    );
+}
+
+#[test]
+fn a_silent_listener_holds_the_port_even_though_it_never_answers() {
+    // The dev classifier (scripts/dev-port-owner.mjs) calls this case "free" so
+    // the caller's own bind produces the real error. Here that "real error" is
+    // the node crash this whole change exists to stop surfacing, so a
+    // completed connection is never downgraded.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind silent fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let accepted = std::thread::spawn(move || {
+        let _ = listener.accept();
+    });
+
+    assert_eq!(classify_port_occupant(port), PortOccupant::Stranger);
+    let _ = accepted.join();
+}
+
+#[test]
+fn every_refusal_offers_the_documented_way_to_run_a_second_copy() {
+    // COVEN_CAVE_PORT is why the claim is keyed on the port rather than on the
+    // app. A message that forgot to mention it would leave "quit the other
+    // one" as the only move, which is not what the port contract promises.
+    let occupied = [
+        PortOccupant::Cave,
+        PortOccupant::Gated,
+        PortOccupant::Stranger,
+    ];
+    for occupant in &occupied {
+        let message = port_conflict_message(3020, occupant);
+        assert!(
+            message.contains(sidecar_ports::CAVE_PORT_ENV),
+            "{occupant:?} refusal must name the escape hatch: {message}"
+        );
+        assert!(
+            message.contains("3020"),
+            "{occupant:?} refusal must name the port"
+        );
+    }
+
+    // The squatter let go before we could ask who it was; there is nothing to
+    // work around, so re-launching is the whole instruction.
+    let vanished = port_conflict_message(3020, &PortOccupant::Free);
+    assert!(vanished.contains("Re-launch"), "{vanished}");
+}
+
+#[test]
+fn a_lost_claim_names_the_copy_that_won_it() {
+    let named = already_running_message(3020, Some(4242));
+    assert!(named.contains("process 4242"), "{named}");
+    assert!(named.contains(sidecar_ports::CAVE_PORT_ENV), "{named}");
+
+    // The lock is what proves a live owner; the pid is a courtesy the owner
+    // record may not be able to supply.
+    let anonymous = already_running_message(3020, None);
+    assert!(anonymous.contains("already running"), "{anonymous}");
+    assert!(!anonymous.contains("process"), "{anonymous}");
+}
+
+#[test]
+fn a_hostile_chunk_header_is_an_error_rather_than_a_panic() {
+    // `decode_chunked_body` used to be reachable only after our own sidecar had
+    // logged its ready line. The build-info probe now feeds it bytes from
+    // whoever holds the port, on every launch — so an attacker-shaped chunk
+    // size must not wrap the trailer arithmetic. `FFFFFFFFFFFFFFFF` made
+    // `size + 2` wrap to 1 in a release build, which passed the length test and
+    // then panicked slicing `[usize::MAX..1]`.
+    //
+    // A panic here is worse than a wrong verdict: it unwinds the Windows
+    // startup worker, leaves SidecarStartupControl.running stuck true, and
+    // deadens the Retry button for the life of the process.
+    for size_hex in ["FFFFFFFFFFFFFFFF", "FFFFFFFFFFFFFFFE", "fffffffffffffff0"] {
+        let hostile =
+            format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{size_hex}\r\nx");
+        assert_eq!(
+            classify_build_info_response(hostile.as_bytes()),
+            PortOccupant::Stranger,
+            "chunk size {size_hex} must classify, not crash"
+        );
+    }
+
+    // The ordinary truncation case still reports itself as one.
+    let truncated = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n20\r\n{}\r\n0\r\n\r\n";
+    assert!(validate_readiness_response(truncated)
+        .expect_err("truncated chunks must fail")
+        .contains("truncated chunk"));
+}
+
+#[test]
+fn a_bind_conflict_is_recognised_by_its_line_not_by_a_stray_token() {
+    // The predicate picks the message that tells someone to go quit a program,
+    // so a loose substring would let one stray token in a dependency's log
+    // rewrite the diagnosis and discard the real evidence.
+    assert!(tail_reports_bind_conflict(
+        "Error: listen EADDRINUSE: address already in use 127.0.0.1:3020"
+    ));
+    assert!(tail_reports_bind_conflict(
+        "> Port 3020 on 127.0.0.1 is already in use (EADDRINUSE); CovenCave cannot serve here."
+    ));
+    assert!(
+        !tail_reports_bind_conflict("retrying upstream fetch after EADDRINUSE from a peer socket"),
+        "a mention is not a failure to bind"
+    );
+    assert!(!tail_reports_bind_conflict("(no output captured)"));
+}
+
+#[test]
+fn a_trickling_occupant_cannot_stall_startup() {
+    // set_read_timeout bounds each read, not the total, and Read::take bounds
+    // bytes rather than time — so a peer that emits one byte inside every
+    // timeout window used to hold the probe for as long as it liked. Startup
+    // has no cancellation checkpoint inside the probe, so that froze the
+    // Windows startup screen outright.
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind trickle fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let stop = Arc::new(AtomicBool::new(false));
+    let trickling = Arc::clone(&stop);
+    let server = std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        // Never a complete response, never a close.
+        while !trickling.load(Ordering::Relaxed) {
+            if stream.write_all(b"x").is_err() {
+                return;
+            }
+            let _ = stream.flush();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    let started = Instant::now();
+    let verdict = classify_port_occupant(port);
+    let elapsed = started.elapsed();
+    stop.store(true, Ordering::Relaxed);
+    let _ = server.join();
+
+    assert_eq!(verdict, PortOccupant::Stranger);
+    assert!(
+        // Generous on purpose: the regression this detects takes HOURS, so a
+        // wide bound costs nothing and a tight one flakes on a loaded runner.
+        elapsed < Duration::from_secs(30),
+        "the probe must give up on its own budget, took {elapsed:?}"
+    );
+}
+
+#[test]
+fn a_stalled_sidecar_cannot_hold_the_readiness_wait_past_its_deadline() {
+    // The readiness handshake had the same unbounded-read shape as the occupant
+    // probe, and it mattered more: `wait_for_sidecar_ready` checks its deadline
+    // only BETWEEN handshake attempts and never polls `should_cancel` inside
+    // one, so a sidecar that stalled mid-response held the startup worker past
+    // its whole 60/90s budget. The worker never reaching `finish()` pins
+    // `running` true, which deadens Retry for the life of the process.
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalled fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let output = Arc::new(Mutex::new(SidecarOutputTail::default()));
+    output
+        .lock()
+        .expect("output tail")
+        .push(format!("> Ready on http://127.0.0.1:{}\n", port).as_bytes());
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let stalling = Arc::clone(&stop);
+    // The wait makes one connection per handshake attempt, so the fixture has
+    // to keep accepting — but a blocking `accept()` after the last one would
+    // never return and `join()` below would hang forever. Poll instead.
+    listener
+        .set_nonblocking(true)
+        .expect("pollable stalled fixture");
+    let server = std::thread::spawn(move || {
+        while !stalling.load(Ordering::Relaxed) {
+            let Ok((mut stream, _)) = listener.accept() else {
+                std::thread::sleep(Duration::from_millis(20));
+                continue;
+            };
+            // An accepted stream can inherit the listener's mode.
+            let _ = stream.set_nonblocking(false);
+            // Headers that never end, one byte at a time.
+            while !stalling.load(Ordering::Relaxed) {
+                if stream.write_all(b"H").is_err() {
+                    break;
+                }
+                let _ = stream.flush();
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    });
+
+    let started = Instant::now();
+    let result = wait_for_sidecar_ready(
+        port,
+        "test-token",
+        &output,
+        Duration::from_secs(3),
+        || false,
+        || false,
+    );
+    let elapsed = started.elapsed();
+    stop.store(true, Ordering::Relaxed);
+    let _ = server.join();
+
+    assert!(
+        matches!(
+            result,
+            PortWaitResult::Refused(_) | PortWaitResult::TimedOut
+        ),
+        "a sidecar that never completes a response is not ready"
+    );
+    assert!(
+        // Same reasoning as the sibling above: reverting the fix costs ~55
+        // minutes here, so 45s separates regression from load noise by ~70x.
+        elapsed < Duration::from_secs(45),
+        "the wait must honour its own deadline, took {elapsed:?}"
+    );
+}

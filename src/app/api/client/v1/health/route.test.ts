@@ -8,8 +8,10 @@ import {
   CLIENT_V1_API_VERSION,
   CLIENT_V1_CAPABILITIES,
   CLIENT_V1_MIN_CLIENT_VERSION,
+  CLIENT_V1_OPERATIONS,
   parseClientV1Health,
 } from "@/lib/server/client-v1/contract";
+import { clientV1Operation } from "@/lib/server/client-v1/operations";
 import { APP_VERSION } from "@/lib/app-version";
 
 import { GET } from "./route.ts";
@@ -44,7 +46,7 @@ function withTemporaryCaveHome<T>(run: () => Promise<T>): Promise<T> {
   );
 }
 
-test("serves the six compatibility fields a client needs before pairing", async () => {
+test("serves the seven compatibility fields a client needs before pairing", async () => {
   await withTemporaryCaveHome(async () => {
     const response = await GET();
     assert.equal(response.status, 200);
@@ -53,6 +55,7 @@ test("serves the six compatibility fields a client needs before pairing", async 
     assert.equal(envelope.apiVersion, CLIENT_V1_API_VERSION);
     assert.equal(envelope.minimumClientVersion, CLIENT_V1_MIN_CLIENT_VERSION);
     assert.deepEqual(envelope.capabilities, [...CLIENT_V1_CAPABILITIES]);
+    assert.deepEqual(envelope.operations, [...CLIENT_V1_OPERATIONS]);
     assert.equal(envelope.error, undefined);
 
     const health = parseClientV1Health(envelope.data);
@@ -106,5 +109,49 @@ test("advertises the pairing and credential capabilities a client pairs against"
     // would make the pairing authority undiscoverable.
     assert.equal(envelope.capabilities.includes("pairing"), true);
     assert.equal(envelope.capabilities.includes("credentials"), true);
+  });
+});
+
+test("declares only what this build can actually be asked to perform", async () => {
+  await withTemporaryCaveHome(async () => {
+    const envelope = await (await GET()).json();
+    // #4869: the envelope used to advertise `streaming` and `revisions` on
+    // every response, and no route served either — so an SDK helper spelled
+    // `client.supports("streaming")` returned a false operational claim. Health
+    // is where a client reads the declaration before it has any credential, so
+    // this is the response where the claim has to be true.
+    for (const retired of ["streaming", "revisions"]) {
+      assert.equal(envelope.capabilities.includes(retired), false, retired);
+      assert.equal(
+        envelope.operations.some((id: string) => id.startsWith(`${retired}.`)),
+        false,
+        retired,
+      );
+    }
+    // Every advertised operation resolves to a reviewed record naming the
+    // method and path that serve it — that record is what api-contracts.test.ts
+    // binds to a route.ts on disk, so an id here can be resolved to a request
+    // without probing arbitrary paths.
+    for (const id of envelope.operations as string[]) {
+      const operation = clientV1Operation(id);
+      assert.ok(operation, `advertised operation ${id} has no reviewed record`);
+      assert.ok(operation.path.startsWith("/api/client/v1/"), operation.path);
+    }
+    // Health advertises its own operation. It is the only one a client can
+    // invoke before pairing, so omitting it would leave the entry point out of
+    // the inventory a client reads at exactly that moment.
+    assert.equal(envelope.operations.includes("health.read"), true);
+    // The `.admin.` infix is the wire-visible authority marker: those
+    // operations need the Cave's own sidecar token and a paired bearer will
+    // never satisfy them, whatever scopes it holds.
+    assert.deepEqual(
+      (envelope.operations as string[]).filter((id) => id.includes(".admin.")),
+      [
+        "pairing.admin.list",
+        "pairing.admin.decide",
+        "credentials.admin.list",
+        "credentials.admin.revoke",
+      ],
+    );
   });
 });

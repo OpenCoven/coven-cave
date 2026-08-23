@@ -88,6 +88,7 @@ test("project scope, aggregate crew, and explicit actor reach one launch", async
   });
 
   await page.goto("/?mode=home");
+  await page.getByRole("button", { name: "Expand navigation" }).click();
   const projectTrigger = page.getByRole("button", { name: /Switch project/ }).first();
   await expect(projectTrigger).toBeVisible({ timeout: 45_000 });
   await projectTrigger.click();

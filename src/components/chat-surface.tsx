@@ -580,6 +580,7 @@ export function ChatSurface({
           type="button"
           aria-label="Show code rail"
           title="Show code rail"
+          data-change-count={changeCount ?? "unknown"}
           className="workspace-rail-reopen focus-ring"
           onClick={rail.reopen}
         >

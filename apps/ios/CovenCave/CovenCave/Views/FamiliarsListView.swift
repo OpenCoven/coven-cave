@@ -129,7 +129,11 @@ struct FamiliarsListView: View {
                 case .list:
                     List(presentation.visibleFamiliars) { familiar in
                         NavigationLink {
-                            FamiliarDetailView(familiar: familiar) {
+                            // The roster opens the unified hub (cave-9rwd.2).
+                            // The Chats hand-off is unchanged: the hub's Chat
+                            // action runs the exact same closure the detail
+                            // page's button used to.
+                            FamiliarHubView(familiar: familiar) {
                                 dismiss()
                                 openFamiliar(familiar)
                             }
@@ -220,11 +224,22 @@ private struct FamiliarRosterRow: View {
     }
 }
 
+/// The Familiar hub's **Profile** tab body (`cave-9rwd.2` shell).
+///
+/// This was the roster's standalone detail page until the hub landed. It kept
+/// its identity, defaults and access surfaces and lost the parts the hub now
+/// owns — the avatar hero, the navigation title, the scroll container and the
+/// primary Chat action — so nothing is drawn twice.
+///
+/// It is still driven by the paths that OWN these mutations (the chat model
+/// inventory, `FamiliarPermissionsSheet`) rather than by the dashboard read.
+/// `cave-9rwd.4` replaces it with the comprehensive dashboard-driven profile;
+/// rendering nothing here in the meantime would be a regression from what the
+/// roster used to open.
 struct FamiliarDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     let familiar: Familiar
-    let openChat: () -> Void
 
     @State private var modelState: ChatModelState?
     @State private var modelOptions: [ChatModelOption] = []
@@ -295,32 +310,13 @@ struct FamiliarDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 22) {
-                hero
-                stats
-                identitySection
-                defaultsSection
-                accessSection
-            }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 24)
+        VStack(spacing: 22) {
+            stats
+            identitySection
+            defaultsSection
+            accessSection
         }
-        .background(chrome.bgBase)
-        .navigationTitle(familiar.displayName)
-        .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
-            Button(action: openChat) {
-                Label("Chat with \(familiar.displayName)", systemImage: "bubble.left.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 50)
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .glassChrome(.bottom)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: modelLoadTarget) {
             if !app.tasksLoaded { await app.loadTasks() }
             await loadModel()
@@ -339,27 +335,9 @@ struct FamiliarDetailView: View {
         }
     }
 
-    private var hero: some View {
-        VStack(spacing: 12) {
-            AvatarView(
-                familiar: familiar,
-                url: app.client?.avatarURL(for: familiar),
-                size: 108,
-                showStatus: true)
-                .shadow(color: chrome.accent.opacity(0.2), radius: 20, y: 8)
-            Text(familiar.displayName)
-                .font(.system(size: 34, weight: .semibold, design: .serif))
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(Presence.isActive(familiar.status) ? Color.green : chrome.textSecondary)
-                    .frame(width: 7, height: 7)
-                Text(familiar.role ?? familiar.status?.capitalized ?? "Familiar")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.subheadline)
-        }
-        .padding(.top, 18)
-    }
+    // The avatar/name/presence hero that used to sit here is gone: the hub's
+    // persistent identity header carries it, and drawing it twice on one
+    // screen would read as a rendering bug rather than emphasis.
 
     private var stats: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {

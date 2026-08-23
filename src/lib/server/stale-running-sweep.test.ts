@@ -189,8 +189,10 @@ const row = (over = {}) => ({
 // every downstream surface (Running popover, badges, archive sweeps) sees the
 // presented status; the probe must stay read-only.
 {
+  // The session-list computation moved to @/lib/server/sessions-list (cave-9rwd.1);
+  // the route now owns only query parsing and the cache. Read the compute source.
   const route = readFileSync(
-    new URL("../../app/api/sessions/list/route.ts", import.meta.url),
+    new URL("./sessions-list.ts", import.meta.url),
     "utf8",
   );
   assert.match(

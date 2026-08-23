@@ -1,3 +1,9 @@
+// The reviewed operation registry. A value import, but a cheap one: operations.ts
+// is frozen data whose own imports are all `import type` and therefore erased,
+// so contract.ts keeps the property proxy-helpers.ts depends on — pulling it in
+// costs the proxy no runtime dependency.
+import { clientV1OperationRecords } from "./operations.ts";
+
 export const CLIENT_V1_API_VERSION = "1.0";
 export const CLIENT_V1_MIN_CLIENT_VERSION = "0.1.0";
 export const CLIENT_V1_PAIRING_SECRET_HEADER = "x-coven-pairing-secret";
@@ -24,16 +30,71 @@ export const CLIENT_V1_SCOPES = freezeReadonlyArray([
   "github:write",
 ] as const);
 
+/**
+ * The live capability families this build serves.
+ *
+ * A REVIEWED LITERAL, deliberately not derived. `operations.ts` derives the
+ * same list from operation membership and `operations.test.ts` asserts the two
+ * agree, so this array is the compatibility ratchet: a family cannot appear
+ * without an operation claiming it and a route owning that operation, and a
+ * family cannot *disappear* as a side effect of deleting a route — the deletion
+ * has to be spelled out here, in review. See operations.ts for why deriving
+ * both sides from one source would make the pair assert nothing.
+ *
+ * A family names what the surface can do, never what a given caller may do:
+ * `credentials` is administrator-authority only (see the operation ids ending
+ * in `.admin.…`), and a paired bearer can never invoke it.
+ */
 export const CLIENT_V1_CAPABILITIES = freezeReadonlyArray([
+  "health",
   "pairing",
   "credentials",
   "familiars",
   "projects",
   "conversations",
   "conversation-messages",
-  "streaming",
   "cursors",
-  "revisions",
+] as const);
+
+/**
+ * Every operation this build can actually be asked to perform.
+ *
+ * The authoritative programmatic support inventory, and the thing an SDK's
+ * `supports()` should read. Capability families above are the coarse summary
+ * for display; these are the invokable units, so a client can tell
+ * `conversations.list` from `conversations.read` rather than guessing from one
+ * `conversations` label.
+ *
+ * NAMING IS PART OF THE CONTRACT. An id containing `.admin.` requires the
+ * Cave's own per-launch sidecar token over direct loopback and is NEVER
+ * reachable with a paired bearer, whatever scopes that bearer holds. The
+ * infix is asserted against each operation's reviewed ingress class in
+ * `operations.test.ts`, so the wire string is self-describing and a client does
+ * not have to consult a table to avoid calling something it can never reach.
+ *
+ * An id also names a FIXED method and path for the life of `apiVersion` 1.x.
+ * Moving a route is therefore a rename, and a rename is a compatibility
+ * decision rather than an edit — which is what lets a client resolve an id to a
+ * request without probing arbitrary paths.
+ *
+ * Like the capability list, a reviewed literal cross-checked against the
+ * registry in `operations.ts` and against the routes on disk in
+ * `src/app/api/api-contracts.test.ts`.
+ */
+export const CLIENT_V1_OPERATIONS = freezeReadonlyArray([
+  "health.read",
+  "pairing.create",
+  "pairing.poll",
+  "pairing.exchange",
+  "pairing.admin.list",
+  "pairing.admin.decide",
+  "credentials.admin.list",
+  "credentials.admin.revoke",
+  "familiars.list",
+  "projects.list",
+  "conversations.list",
+  "conversations.read",
+  "messages.list",
 ] as const);
 
 export const CLIENT_V1_ERROR_CODES = freezeReadonlyArray([
@@ -74,6 +135,13 @@ export const CLIENT_V1_LIMITS = freezeReadonlyObject({
   maxPageSize: 100,
   instanceIdCharacters: 64,
   releaseVersionCharacters: 64,
+  /**
+   * The ceiling a consumer parser applies to one advertised capability or
+   * operation id. Consumers must tolerate ids they do not know (see
+   * parseClientV1AdvertisedCapabilities), so "unknown" cannot mean "unbounded"
+   * — without a limit, tolerance is an invitation to allocate.
+   */
+  declarationIdCharacters: 64,
 } as const);
 
 export type ClientV1PublicRoute = {
@@ -99,6 +167,7 @@ export const CLIENT_V1_DISCOVERY_CONTRACT = freezeReadonlyObject({
 
 export type ClientV1Scope = (typeof CLIENT_V1_SCOPES)[number];
 export type ClientV1Capability = (typeof CLIENT_V1_CAPABILITIES)[number];
+export type ClientV1Operation = (typeof CLIENT_V1_OPERATIONS)[number];
 export type ClientV1ErrorCode = (typeof CLIENT_V1_ERROR_CODES)[number];
 export type ClientV1IdentityKind = (typeof CLIENT_V1_IDENTITY_KINDS)[number];
 
@@ -155,6 +224,18 @@ export type ClientV1EnvelopeBase = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
   capabilities: ClientV1Capability[];
+  /**
+   * The live operation inventory, on every response.
+   *
+   * Required rather than optional: it is what an SDK's `supports()` reads, and
+   * a field a client has to test for presence of is a field it cannot rely on.
+   * Ids only, deliberately — the envelope rides every response including error
+   * responses, so the id→(method, path, authority) mapping lives in the
+   * generated contract fixture, which a client vendors once. The mapping is
+   * fixed for the life of `apiVersion` 1.x (see CLIENT_V1_OPERATIONS), so ids
+   * plus the vendored fixture answer route availability with no probing.
+   */
+  operations: ClientV1Operation[];
   requestId?: string;
   identity?: ClientV1Identity;
   revision?: ClientV1Revision;
@@ -181,10 +262,28 @@ export type ClientV1ErrorEnvelope = ClientV1EnvelopeBase & {
   data?: never;
 };
 
+/**
+ * One operation as the generated fixture publishes it.
+ *
+ * This is the record that lets a client resolve an advertised id to a request
+ * without probing arbitrary paths — the second hard constraint #4869 sets. It
+ * is published in the fixture rather than in the envelope because the envelope
+ * rides every response and this does not need to.
+ */
+export type ClientV1OperationManifestEntry = {
+  id: string;
+  method: string;
+  path: string;
+  ingress: string;
+  scope: string | null;
+  families: string[];
+};
+
 export type ClientV1ContractManifest = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
   capabilities: ClientV1Capability[];
+  operations: ClientV1OperationManifestEntry[];
   discovery: typeof CLIENT_V1_DISCOVERY_CONTRACT;
   pairingRequired: typeof CLIENT_V1_PAIRING_REQUIRED;
   pairingScopes: ClientV1Scope[];
@@ -245,6 +344,7 @@ const ISO_8601_TIMESTAMP_RE =
 const ARRAY_INDEX_RE = /^(?:0|[1-9]\d*)$/;
 const CLIENT_V1_SCOPE_SET = new Set<string>(CLIENT_V1_SCOPES);
 const CLIENT_V1_CAPABILITY_SET = new Set<string>(CLIENT_V1_CAPABILITIES);
+const CLIENT_V1_OPERATION_SET = new Set<string>(CLIENT_V1_OPERATIONS);
 const CLIENT_V1_ERROR_CODE_SET = new Set<string>(CLIENT_V1_ERROR_CODES);
 const CLIENT_V1_IDENTITY_KIND_SET = new Set<string>(CLIENT_V1_IDENTITY_KINDS);
 
@@ -354,10 +454,15 @@ function parseUniqueStringEnumList<T extends string>(
   name: string,
   supported: ReadonlySet<string>,
 ): T[] {
-  parseClientV1JsonValue(value);
+  // Shape before JSON-safety, so an ABSENT list is reported as the field it is.
+  // The other order answered a missing `operations` with "values must be
+  // JSON-safe plain values", which names neither the field nor the problem —
+  // and `operations` is required, so absence is the failure a client is most
+  // likely to hit.
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error(`Client v1 ${name} must be a non-empty array.`);
   }
+  parseClientV1JsonValue(value);
   const items: T[] = [];
   for (const candidate of value) {
     if (typeof candidate !== "string" || !supported.has(candidate)) {
@@ -425,6 +530,67 @@ export function parseClientV1PairingSecret(value: unknown): string {
 
 export function parseClientV1Capabilities(value: unknown): ClientV1Capability[] {
   return parseUniqueStringEnumList<ClientV1Capability>(value, "capabilities", CLIENT_V1_CAPABILITY_SET);
+}
+
+export function parseClientV1Operations(value: unknown): ClientV1Operation[] {
+  return parseUniqueStringEnumList<ClientV1Operation>(value, "operations", CLIENT_V1_OPERATION_SET);
+}
+
+/**
+ * A declaration id as it appears on the wire, with no membership test.
+ *
+ * THE PRODUCER AND CONSUMER RULES ARE DELIBERATELY DIFFERENT, and this is the
+ * consumer half.
+ *
+ * Cave is the producer: `parseClientV1Capabilities` and
+ * `parseClientV1Operations` above are registry-closed, so this build cannot
+ * export an id that no reviewed record backs, and the generated fixture pins
+ * what it does export.
+ *
+ * A CONSUMER — Chat, an SDK, anything vendoring an older fixture — must not
+ * refuse an envelope merely because a newer compatible Cave advertises
+ * something it has not heard of. Adding an operation or family is additive by
+ * contract: a new id never becomes *required* just by appearing, so an older
+ * consumer that ignores it keeps working. A strict consumer would invert that,
+ * turning every additive minor release into a breaking one.
+ *
+ * So the consumer parsers below validate SHAPE — a non-empty array of unique,
+ * well-formed, bounded id strings — and preserve unknown ids for diagnostics
+ * rather than rejecting them. What a consumer must never do is the opposite
+ * error: treating an id it does not understand as behaviour it supports.
+ */
+const CLIENT_V1_DECLARATION_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
+
+function parseAdvertisedIds(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`Client v1 ${name} must be a non-empty array.`);
+  }
+  parseClientV1JsonValue(value);
+  const ids: string[] = [];
+  for (const candidate of value) {
+    if (
+      typeof candidate !== "string"
+      || candidate.length > CLIENT_V1_LIMITS.declarationIdCharacters
+      || !CLIENT_V1_DECLARATION_ID.test(candidate)
+    ) {
+      throw new Error(`Client v1 ${name} entry is malformed.`);
+    }
+    if (ids.includes(candidate)) {
+      throw new Error(`Client v1 ${name} must not contain duplicates.`);
+    }
+    ids.push(candidate);
+  }
+  return ids;
+}
+
+/** Consumer-side: advertised capability families, unknown ids preserved. */
+export function parseClientV1AdvertisedCapabilities(value: unknown): string[] {
+  return parseAdvertisedIds(value, "capabilities");
+}
+
+/** Consumer-side: the advertised operation inventory, unknown ids preserved. */
+export function parseClientV1AdvertisedOperations(value: unknown): string[] {
+  return parseAdvertisedIds(value, "operations");
 }
 
 export function parseClientV1RequestId(value: unknown): string {
@@ -514,6 +680,7 @@ function parseClientV1EnvelopeBase(value: unknown): ClientV1EnvelopeBase {
     );
   }
   parseClientV1Capabilities(envelope.capabilities);
+  parseClientV1Operations(envelope.operations);
   if (envelope.requestId !== undefined) parseClientV1RequestId(envelope.requestId);
   if (envelope.identity !== undefined) parseClientV1Identity(envelope.identity);
   if (envelope.revision !== undefined) parseClientV1Revision(envelope.revision);
@@ -594,13 +761,23 @@ function defaultCapabilities(): ClientV1Capability[] {
   return [...CLIENT_V1_CAPABILITIES];
 }
 
+function defaultOperations(): ClientV1Operation[] {
+  return [...CLIENT_V1_OPERATIONS];
+}
+
 function envelopeBase(
-  overrides: Partial<Pick<ClientV1EnvelopeBase, "requestId" | "identity" | "revision" | "cursor" | "capabilities">> = {},
+  overrides: Partial<
+    Pick<
+      ClientV1EnvelopeBase,
+      "requestId" | "identity" | "revision" | "cursor" | "capabilities" | "operations"
+    >
+  > = {},
 ): ClientV1EnvelopeBase {
   return {
     apiVersion: CLIENT_V1_API_VERSION,
     minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
     capabilities: overrides.capabilities ? [...overrides.capabilities] : defaultCapabilities(),
+    operations: overrides.operations ? [...overrides.operations] : defaultOperations(),
     ...(overrides.requestId ? { requestId: overrides.requestId } : {}),
     ...(overrides.identity ? { identity: cloneClientV1Record(overrides.identity) } : {}),
     ...(overrides.revision ? { revision: cloneClientV1Record(overrides.revision) } : {}),
@@ -640,6 +817,7 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
       apiVersion: CLIENT_V1_API_VERSION,
       minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
       capabilities: defaultCapabilities(),
+      operations: clientV1OperationRecords(),
       discovery: cloneClientV1Record(CLIENT_V1_DISCOVERY_CONTRACT),
       pairingRequired: CLIENT_V1_PAIRING_REQUIRED,
       pairingScopes: [...CLIENT_V1_SCOPES],
