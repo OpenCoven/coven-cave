@@ -54,6 +54,9 @@ test("the phantom record is recognised, carrying its path and index oid", () => 
 test("records a missing executable bit cannot explain are never candidates", () => {
   for (const [label, entry] of [
     ["staged mode change", `1 M. N... 100755 100644 100644 ${OID_A} ${OID_A} a.sh`],
+    // Isolates the "anything staged is a change on its own terms" guard: every
+    // other field here is the phantom's, so only the XY code can reject it.
+    ["staged, otherwise identical to the phantom", `1 M. N... 100755 100755 100644 ${OID_A} ${OID_A} a.sh`],
     ["staged and unstaged", `1 MM N... 100755 100755 100644 ${OID_A} ${OID_B} a.sh`],
     ["index differs from HEAD", `1 .M N... 100755 100755 100644 ${OID_A} ${OID_B} a.sh`],
     ["deleted in worktree", `1 .D N... 100755 100755 100644 ${OID_A} ${OID_A} a.sh`],
