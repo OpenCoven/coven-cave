@@ -264,6 +264,7 @@ function subject(mission: ResearchMission): string {
   const intent = mission.intent.replace(/\s+/g, " ").trim();
   const generatedTitle = intent.length <= 80 ? intent : `${intent.slice(0, 77)}…`;
   const title = mission.title.replace(/\s+/g, " ").trim();
+  if (mission.titleSource === "explicit") return title;
   if (title !== generatedTitle) return title;
 
   let value = intent;

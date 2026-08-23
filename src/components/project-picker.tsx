@@ -324,12 +324,15 @@ export function ProjectPickerPopover({
           </>
         ) : null}
         {displayedProjects.map((entry) => renderProjectRow(entry, entry.id))}
-        {!query.trim() && hiddenProjectCount > 0 ? (
+        {!query.trim() && (showAllProjects || hiddenProjectCount > 0) ? (
           <PopoverItem
-            icon="ph:caret-down"
-            onSelect={() => setShowAllProjects(true)}
+            key="project-list-toggle"
+            icon={showAllProjects ? "ph:caret-up" : "ph:caret-down"}
+            onSelect={() => setShowAllProjects((current) => !current)}
           >
-            Show {hiddenProjectCount} more project{hiddenProjectCount === 1 ? "" : "s"}
+            {showAllProjects
+              ? "Show fewer projects"
+              : `Show ${hiddenProjectCount} more project${hiddenProjectCount === 1 ? "" : "s"}`}
           </PopoverItem>
         ) : null}
         {query.trim() && visible.length === 0 ? (

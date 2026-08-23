@@ -53,6 +53,9 @@ function windows(
     platform: "win32",
     getuid: null,
     warn: () => {},
+    // Hermetic by default: the waiver below is read from this env, never the
+    // runner's, so one exported variable cannot quietly disarm the suite.
+    env: {},
     probeWindowsAcl: async () => report(),
     ...overrides,
   };
@@ -341,6 +344,223 @@ test("a malformed probe report is refused rather than read as an empty DACL", ()
     { sid: "", type: "" },
     { sid: USERS_SID, type: "" },
   ]);
+});
+
+// ── The unverified-ownership waiver (cave-37fxr) ─────────────────────────────
+// A DACL the host cannot read at all is a different condition from a DACL that
+// was read and found shared, and only the first one has no remedy from inside
+// the app. Measured on Windows 11: PowerShell in Constrained Language Mode
+// answers the probe with `MethodInvocationNotSupportedInConstrainedLanguage`
+// and exit 1, and a `powershell.exe` absent from %SystemRoot% answers with
+// ENOENT — on either host the pre-waiver guard threw at boot and server.ts
+// turned that into `process.exit(1)`.
+//
+// Every assertion below is injectable (`env`, `platform`, `getuid`,
+// `probeWindowsAcl`), so the Linux runners exercise the same branch. A
+// Windows-only assertion here would be vacuous in CI, which is how the bug
+// this file exists for survived in the first place.
+const WAIVER_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP";
+const WAIVER_REASON_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON";
+const WAIVER_TOKEN = "i-accept-unverified-path-ownership";
+const WAIVER_REASON = "opsdesk@example.com: WDAC host, PowerShell is blocked";
+
+/** The measured Constrained Language Mode failure, as execFile reports it. */
+function constrainedLanguageProbe(): () => Promise<ClientV1WindowsAclReport> {
+  return async () => {
+    throw new Error(
+      "Command failed: powershell.exe\nCannot invoke method. Method invocation is "
+      + "supported only on core types in this language mode.\n"
+      + "FullyQualifiedErrorId : MethodInvocationNotSupportedInConstrainedLanguage",
+    );
+  };
+}
+
+test("an unreadable DACL is refused by default, and the refusal names the waiver", async () => {
+  await assert.rejects(
+    assertClientV1PathOwnership(
+      uniquePath(),
+      { uid: 0 },
+      "credential store root",
+      windows({ env: {}, probeWindowsAcl: constrainedLanguageProbe() }),
+    ),
+    (error: Error) => {
+      assert.match(error.message, /ownership could not be verified on Windows/);
+      assert.match(error.message, /MethodInvocationNotSupportedInConstrainedLanguage/);
+      assert.match(error.message, new RegExp(`${WAIVER_ENV}=${WAIVER_TOKEN}`));
+      assert.match(error.message, new RegExp(WAIVER_REASON_ENV));
+      return true;
+    },
+  );
+});
+
+test("the waiver admits an unreadable DACL, loudly and with the operator's reason", async () => {
+  const warnings: string[] = [];
+  const path = uniquePath();
+  await assertClientV1PathOwnership(
+    path,
+    { uid: 0 },
+    "credential store root",
+    windows({
+      env: { [WAIVER_ENV]: WAIVER_TOKEN, [WAIVER_REASON_ENV]: WAIVER_REASON },
+      warn: (message) => warnings.push(message),
+      probeWindowsAcl: constrainedLanguageProbe(),
+    }),
+  );
+
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /UNVERIFIED/);
+  assert.match(warnings[0]!, new RegExp(WAIVER_REASON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.ok(warnings[0]!.includes(path), "the disclosure must name the path it waived");
+  assert.match(warnings[0]!, new RegExp(WAIVER_ENV), "the disclosure must name how to undo it");
+});
+
+test("the waiver never covers a DACL that was read and found shared", async () => {
+  // The whole point of #4842: a guard that reads as protection and provides
+  // none. A shared DACL has a remedy the operator can run (`icacls /reset`),
+  // so no amount of opting out may admit it.
+  await assert.rejects(
+    assertClientV1PathOwnership(
+      uniquePath(),
+      { uid: 0 },
+      "credential store root",
+      windows({
+        env: { [WAIVER_ENV]: WAIVER_TOKEN, [WAIVER_REASON_ENV]: WAIVER_REASON },
+        probeWindowsAcl: async () =>
+          report({
+            aces: [
+              { sid: SELF_SID, type: "Allow" },
+              { sid: USERS_SID, type: "Allow" },
+            ],
+          }),
+      }),
+    ),
+    (error: Error) => {
+      assert.match(error.message, /is not exclusive to the current user/);
+      assert.match(error.message, new RegExp(`Allow:${USERS_SID}`));
+      assert.match(
+        error.message,
+        /does not cover a DACL that was read/,
+        "the refusal must say the waiver is set and still does not apply",
+      );
+      return true;
+    },
+  );
+
+  // Nor does it cover a platform that has neither a uid nor a Windows ACL:
+  // there the question was never asked of a Windows host at all.
+  await assert.rejects(
+    assertClientV1PathOwnership(uniquePath(), { uid: 0 }, "credential store root", {
+      platform: "sunos",
+      getuid: null,
+      env: { [WAIVER_ENV]: WAIVER_TOKEN, [WAIVER_REASON_ENV]: WAIVER_REASON },
+    }),
+    /ownership cannot be verified on sunos/,
+  );
+
+  // Nor a uid mismatch on a POSIX host, where the waiver has no business.
+  await assert.rejects(
+    assertClientV1PathOwnership(uniquePath(), { uid: 1001 }, "credential store root", {
+      getuid: () => 1000,
+      env: { [WAIVER_ENV]: WAIVER_TOKEN, [WAIVER_REASON_ENV]: WAIVER_REASON },
+    }),
+    /must be owned by the current user\./,
+  );
+});
+
+test("a boolean-shaped value never waives the check", async () => {
+  // The failure mode this guards is muscle memory: every other switch in this
+  // codebase is `=1`, so an operator who half-remembers the hatch reaches for
+  // that. It has to do nothing, and say so.
+  for (const value of ["1", "true", "TRUE", "yes", "on", WAIVER_TOKEN.toUpperCase()]) {
+    await assert.rejects(
+      assertClientV1PathOwnership(
+        uniquePath(),
+        { uid: 0 },
+        "credential store root",
+        windows({
+          env: { [WAIVER_ENV]: value, [WAIVER_REASON_ENV]: WAIVER_REASON },
+          probeWindowsAcl: constrainedLanguageProbe(),
+        }),
+      ),
+      (error: Error) => {
+        assert.match(
+          error.message,
+          new RegExp(`only accepted value is the exact string ${WAIVER_TOKEN}`),
+          `${JSON.stringify(value)} must not waive the check`,
+        );
+        return true;
+      },
+    );
+  }
+
+  // A blank value is "not set", so it earns the how-to note rather than the
+  // wrong-value one — but it must still refuse.
+  await assert.rejects(
+    assertClientV1PathOwnership(
+      uniquePath(),
+      { uid: 0 },
+      "credential store root",
+      windows({
+        env: { [WAIVER_ENV]: "   ", [WAIVER_REASON_ENV]: WAIVER_REASON },
+        probeWindowsAcl: constrainedLanguageProbe(),
+      }),
+    ),
+    /ownership could not be verified on Windows/,
+  );
+});
+
+test("the waiver stays closed without an attributable reason", async () => {
+  for (const reason of [undefined, "", "   ", "because"]) {
+    await assert.rejects(
+      assertClientV1PathOwnership(
+        uniquePath(),
+        { uid: 0 },
+        "credential store root",
+        windows({
+          env: { [WAIVER_ENV]: WAIVER_TOKEN, ...(reason === undefined ? {} : { [WAIVER_REASON_ENV]: reason }) },
+          probeWindowsAcl: constrainedLanguageProbe(),
+        }),
+      ),
+      (error: Error) => {
+        assert.match(
+          error.message,
+          new RegExp(`${WAIVER_REASON_ENV} must carry`),
+          `reason ${JSON.stringify(reason)} must not satisfy the attribution requirement`,
+        );
+        return true;
+      },
+    );
+  }
+});
+
+test("a waived path is disclosed once and never re-probed per request", async () => {
+  // The probe is ~290ms and runs per authenticated request. On a host where it
+  // can never succeed, re-driving it every time would be strictly worse than
+  // the crash it replaces (cave-okfb2 R6), and a disclosure repeated on every
+  // request is one nobody reads.
+  const path = uniquePath();
+  const warnings: string[] = [];
+  let probes = 0;
+  const options = windows({
+    env: { [WAIVER_ENV]: WAIVER_TOKEN, [WAIVER_REASON_ENV]: WAIVER_REASON },
+    warn: (message) => warnings.push(message),
+    probeWindowsAcl: async () => {
+      probes += 1;
+      throw new Error("spawn powershell.exe ENOENT");
+    },
+  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assertClientV1PathOwnership(path, { uid: 0 }, "credential store root", options);
+  }
+  assert.equal(probes, 1, "a waived path must not re-spawn the probe per request");
+  assert.equal(warnings.length, 1, "the disclosure is once per path, not once per request");
+
+  // Installing PowerShell is an out-of-band repair, so the waiver — like the
+  // success cache — is dropped by the same reset seam and re-driven.
+  resetClientV1PathOwnershipCache();
+  await assertClientV1PathOwnership(path, { uid: 0 }, "credential store root", options);
+  assert.equal(probes, 2, "resetting the cache must re-drive a waived path");
+  assert.equal(warnings.length, 2);
 });
 
 test("the ACL probe is spawned without this process's environment", async () => {
