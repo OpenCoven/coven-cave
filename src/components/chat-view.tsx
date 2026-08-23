@@ -235,11 +235,15 @@ import { copyText } from "@/lib/clipboard";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
+  autoMissionStatusDraft,
   clearAutoMission,
   isAutoMissionTimedOut,
+  isAutoMissionArmed,
+  isAutoModeDraft,
   pendingAutoMissionPings,
   readAutoMission,
   reconcileAutoMissionOnSessionChange,
+  toggleAutoModeDraft,
   touchAutoMission,
   writeAutoMission,
   type AutoMissionRecord,
@@ -1855,20 +1859,26 @@ function MobileChatContextMenu({
 }
 
 function MobileChatActionStrip({
+  autoSelected,
+  autoRunning,
   busy,
   canRetry,
   canAttach,
   hasSession,
+  onAuto,
   onRetry,
   onStop,
   onSummarize,
   onAttach,
   onVoice,
 }: {
+  autoSelected: boolean;
+  autoRunning: boolean;
   busy: boolean;
   canRetry: boolean;
   canAttach: boolean;
   hasSession: boolean;
+  onAuto: () => void;
   onRetry: () => void;
   onStop: () => void;
   onSummarize: () => void;
@@ -1877,6 +1887,19 @@ function MobileChatActionStrip({
 }) {
   return (
     <div className="cave-mobile-action-strip" aria-label="Chat actions">
+      <button
+        type="button"
+        onClick={onAuto}
+        disabled={busy && !autoRunning}
+        className="cave-mobile-action-chip cave-mobile-action-chip--auto focus-ring"
+        aria-label={autoRunning ? "Check Auto mission status" : autoSelected ? "Leave Auto mode" : "Select Auto mode"}
+        aria-pressed={autoSelected}
+        data-auto-mode={autoSelected ? "true" : undefined}
+        data-auto-running={autoRunning ? "true" : undefined}
+      >
+        <Icon name="ph:magic-wand-fill" width={13} aria-hidden />
+        Auto
+      </button>
       <button type="button" onClick={onRetry} disabled={!canRetry || busy} className="cave-mobile-action-chip">
         <Icon name="ph:arrow-clockwise" width={13} aria-hidden />
         Retry
@@ -2355,6 +2378,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
   const [input, setInput] = useState(() => readComposerDraft(composerDraftKey));
+  const autoMissionActive = isAutoMissionArmed(autoMission);
+  const autoModeSelected = autoMissionActive || isAutoModeDraft(input);
   // Persist the composer draft so a reload restores a half-written message.
   // Cleared (key removed) when the input empties — e.g. after a send. Shared
   // hook — debounce + remove-on-empty semantics live in use-composer-draft.
@@ -3123,6 +3148,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const toggleMobileAutoMode = useCallback(() => {
+    if (autoMissionActive) {
+      const statusDraft = autoMissionStatusDraft(input);
+      if (statusDraft) {
+        setInput(statusDraft);
+        announce("Auto mission is active. The status command is ready.");
+      } else {
+        announce("Auto mission is active. Your existing draft is unchanged.");
+      }
+    } else {
+      const next = toggleAutoModeDraft(input);
+      setInput(next);
+      announce(
+        isAutoModeDraft(next)
+          ? "Auto mode selected. Your next message will run as an autonomous mission."
+          : "Auto mode cleared.",
+      );
+    }
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [announce, autoMissionActive, input]);
   // Attachments staged in the composer (cap 10) with drag-and-drop
   // (CHAT-D1-03: enter/leave-counted so child transitions don't flicker the
   // overlay; only file drags arm it) and paste-to-attach (CHAT-D1-02).
@@ -7488,10 +7533,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             ) : null}
 
             <MobileChatActionStrip
+              autoSelected={autoModeSelected}
+              autoRunning={autoMissionActive}
               busy={busy}
               canRetry={Boolean(lastFailedSend)}
               canAttach={attachments.length < 10}
               hasSession={Boolean(sessionId)}
+              onAuto={toggleMobileAutoMode}
               onRetry={retryLastSend}
               onStop={cancelSend}
               onSummarize={() => {
@@ -7838,6 +7886,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
       {...dropHandlers}
+      data-auto-mode={autoMissionActive ? "running" : autoModeSelected ? "selected" : undefined}
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
