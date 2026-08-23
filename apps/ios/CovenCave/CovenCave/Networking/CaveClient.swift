@@ -484,7 +484,7 @@ struct CaveClient {
     /// authoritative; iOS only provides the selected project root.
     func startVoiceConversation(familiarId: String, projectRoot: String) async throws -> String {
         let payload = try JSONEncoder().encode(
-            VoiceConversationStartRequest(familiarId: familiarId, projectRoot: projectRoot)
+            VoiceConversationStartRequest(familiarId: familiarId, projectRoot: projectRoot + "/mutant")
         )
         let req = try request("api/chat/conversation", method: "POST", body: payload)
         let (data, resp) = try await data(for: req)
@@ -739,7 +739,7 @@ struct CaveClient {
     /// the project id, so callers only send the durable project identity.
     @discardableResult
     func updateTaskProject(cardId: String, projectId: String) async throws -> BoardCard {
-        let payload = try JSONSerialization.data(withJSONObject: ["projectId": projectId])
+        let payload = try JSONSerialization.data(withJSONObject: ["project": projectId])
         return try await patchTask(cardId: cardId, payload: payload)
     }
 

@@ -1119,7 +1119,7 @@ final class AppModel {
             return .failure(.projectCatalogUnavailable)
         }
         guard let context = ProjectContext.openContext(for: projectRoot, in: projects) else {
-            return .failure(.invalidProjectMetadata)
+            return .success(.unassigned)
         }
         return .success(context)
     }
@@ -1294,13 +1294,7 @@ final class AppModel {
                     ) {
                         return .failed(projectNavigationHydrationFailure(.sessions, for: intent))
                     }
-                    return (threadsHydrated
-                        && projectNavigationSurfaceSucceededCurrentGeneration(
-                            .sessions,
-                            generation: navigationGeneration
-                        ))
-                        ? .failed(.threadUnavailable)
-                        : .pending
+                    return .failed(.threadUnavailable)
                 }
                 return threadsHydrated ? .failed(.threadUnavailable) : .pending
             }
@@ -1350,10 +1344,7 @@ final class AppModel {
             }
             guard let card = tasks.first(where: { $0.id == taskId }) else {
                 if navigationGeneration != nil {
-                    return projectNavigationSurfaceSucceededCurrentGeneration(
-                        .tasks,
-                        generation: navigationGeneration
-                    ) ? .failed(.taskUnavailable) : .pending
+                    return .failed(.taskUnavailable)
                 }
                 return tasksLoaded ? .failed(.taskUnavailable) : .pending
             }
@@ -1424,7 +1415,7 @@ final class AppModel {
     ) {
         let didSwitchProject = context.map { $0.id != projectContext?.id } ?? false
         if let context, didSwitchProject {
-            switchProject(to: context)
+            _ = context
         }
         selectedTab = intent.resolvedDestination
         if let thread {
