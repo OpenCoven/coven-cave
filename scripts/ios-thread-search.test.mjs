@@ -52,8 +52,8 @@ assert.match(search, /if q\.isEmpty \{ return true \}/, "an empty query should r
 // Server-only sessions have no on-device transcript, so they match on title.
 assert.match(
   search,
-  /serverOnlySessions\(for: familiar\.id\)[\s\S]{0,200}?q\.isEmpty \|\| \$0\.title\.lowercased\(\)\.contains\(q\)/,
-  "server-only sessions should be searched by title",
+  /serverOnlySessions\(for: familiar\.id,\s*in: projectContext\)[\s\S]{0,200}?q\.isEmpty \|\| \$0\.title\.lowercased\(\)\.contains\(q\)/,
+  "server-only sessions should be searched by title inside the explicit project context",
 );
 
 // Tapping a result opens that conversation.

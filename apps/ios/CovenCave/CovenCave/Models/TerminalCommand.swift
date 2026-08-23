@@ -7,7 +7,6 @@ import Foundation
 enum TerminalCommand: Equatable {
     case help
     case clear
-    case chooseWorkingDirectory
 
     struct Suggestion: Identifiable, Equatable {
         let command: TerminalCommand
@@ -26,7 +25,6 @@ enum TerminalCommand: Equatable {
     static let suggestions = [
         Suggestion(command: .help, name: "/help", description: "Show terminal commands"),
         Suggestion(command: .clear, name: "/clear", description: "Clear the shell screen"),
-        Suggestion(command: .chooseWorkingDirectory, name: "/cwd", description: "Choose a working directory"),
     ]
 
     /// Recognise only the terminal vocabulary. Everything else, including
@@ -40,8 +38,6 @@ enum TerminalCommand: Equatable {
             return .local(.help)
         case "/clear", "/cls":
             return .local(.clear)
-        case "/cwd":
-            return .local(.chooseWorkingDirectory)
         default:
             return .send(trimmed)
         }

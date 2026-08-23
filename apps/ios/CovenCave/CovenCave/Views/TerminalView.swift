@@ -1,10 +1,59 @@
 import SwiftUI
 
+/// The terminal owns one persistent shell per registered project/root pair.
+/// The shell context comes from the active project switcher; Unassigned stays
+/// recovery-only and never mounts xterm or the PTY transport.
+enum TerminalSessionContext: Equatable {
+    struct ProjectSession: Equatable {
+        let projectId: String
+        let projectName: String
+        let projectRoot: String
+
+        var threadId: String {
+            PtyTerminalProjectIdentity.threadID(
+                projectID: projectId,
+                projectRoot: projectRoot
+            )
+        }
+    }
+
+    case unresolved
+    case unassigned
+    case project(ProjectSession)
+
+    init(projectContext: ProjectContext?, registeredProjects: [ProjectInfo]) {
+        switch projectContext {
+        case .project(let selected)?:
+            let project = registeredProjects.first(where: { $0.id == selected.id }) ?? selected
+            self = .project(
+                ProjectSession(
+                    projectId: project.id,
+                    projectName: project.name,
+                    projectRoot: project.root
+                )
+            )
+        case .unassigned?:
+            self = .unassigned
+        case nil:
+            self = .unresolved
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .project(let session):
+            return "project:\(session.projectId)"
+        case .unassigned:
+            return ProjectContext.unassigned.id
+        case .unresolved:
+            return "terminal-unresolved"
+        }
+    }
+}
+
 /// A live shell on the desktop, over `/api/pty-ws`, rendered by a real xterm.js
 /// emulator (`XtermWebView`) — colours, cursor addressing, and full-screen TUIs
-/// (vim/htop/less) match the desktop. The working directory can be any
-/// configured project (or Home); each keeps its own persistent shell (the
-/// server adopts the session and replays scrollback on reconnect).
+/// (vim/htop/less) match the desktop.
 struct TerminalView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
@@ -12,112 +61,46 @@ struct TerminalView: View {
     @AppStorage("cave.terminal.shorthands") private var storedShorthands = "git status|pnpm test:mobile"
 
     @Bindable var terminal: PtyTerminal
-    @Binding var cwd: String?      // nil = Home
     @State private var cols = 80
     @State private var rows = 24
     @State private var showingNewShorthand = false
-    @State private var showingProjectPicker = false
+    @State private var showingProjectSwitcher = false
     @State private var newShorthand = ""
     @State private var draft = ""
     @State private var showingTerminalHelp = false
 
-    /// Per-cwd thread id → one durable shell per working directory.
-    private var threadId: String { "ios-terminal::" + (cwd ?? "home") }
-
-    private var cwdLabel: String {
-        guard let cwd else { return "Home" }
-        if let name = app.projects.first(where: { $0.root == cwd })?.name { return name }
-        let last = cwd.split(separator: "/").last
-        return last.map(String.init) ?? cwd
+    private var terminalContext: TerminalSessionContext {
+        TerminalSessionContext(
+            projectContext: app.projectContext,
+            registeredProjects: app.projects
+        )
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                CircularIconButton(systemImage: "line.3.horizontal",
-                                   label: "Open navigation") {
-                    app.navigationDrawerOpen = true
-                }
-                Text("Terminal")
-                    .font(.largeTitle.weight(.bold))
-                cwdMenu
-                Spacer()
-                CircularIconButton(systemImage: "plus", label: "New terminal") {
-                    // PtyTerminal supports one durable session per project root;
-                    // selecting a root creates/adopts that real server session.
-                    showingProjectPicker = true
-                }
+            header
+            switch terminalContext {
+            case .project(let session):
+                projectTerminal(session)
+            case .unassigned:
+                recoveryOnlyState
+            case .unresolved:
+                ProjectContextGateView()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(chrome.bgBase)
-            // The xterm webview renders even when the PTY socket is down, so a
-            // failed connection otherwise looks like a frozen shell. Surface it —
-            // and give an exited shell (typed `exit`, crashed job) a restart
-            // affordance instead of leaving a dead pane behind.
-            if terminal.exited {
-                statusBanner(
-                    icon: "flag.checkered", tint: .secondary,
-                    message: exitMessage, button: "Restart"
-                ) { connect() }
-            } else if !terminal.connected, let err = terminal.error {
-                statusBanner(
-                    icon: "exclamationmark.triangle.fill", tint: .orange,
-                    message: err, button: "Reconnect"
-                ) { connect() }
-            }
-            XtermWebView(
-                terminal: terminal,
-                onInput: { terminal.sendInput($0) },
-                onResize: { c, r in
-                    cols = c
-                    rows = r
-                    terminal.sendResize(cols: c, rows: r)
-                }
-            )
-            .ignoresSafeArea(.container, edges: .bottom)
-            Divider()
-            TerminalComposer(
-                draft: $draft,
-                connected: terminal.connected,
-                exited: terminal.exited,
-                onSend: { terminal.sendInput($0) },
-                onCommand: dispatchTerminalCommand,
-                onAskFamiliar: {
-                    app.requestTerminalFamiliarHandoff(draft: draft, cwd: cwd)
-                }
-            )
-            keyRow
         }
         .task { if !app.projectsLoaded { await app.loadProjects() } }
         .onAppear {
-            if terminal.connected {
-                // The renderer was remounted after drawer navigation. Reattach
-                // the one retained transport so server scrollback repaints it.
-                terminal.reattach()
-            } else if !terminal.exited {
-                connect()
-            }
+            handleTerminalContextChange(terminalContext, reattachIfBound: true)
+        }
+        .onChange(of: terminalContext) { _, context in
+            handleTerminalContextChange(context, reattachIfBound: false)
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            if !terminal.connected && !terminal.exited {
-                connect()
-            } else {
-                // iOS kills sockets during suspension without flipping
-                // `connected`; probe the link so a stale session reconnects
-                // instead of eating the first keystrokes.
-                terminal.verifyLiveness()
-            }
+            resumeTerminalSession()
         }
-        .confirmationDialog("New terminal", isPresented: $showingProjectPicker) {
-            Button("Home") { switchCwd(nil) }
-            ForEach(app.projects) { project in
-                Button(project.name) { switchCwd(project.root) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Choose a project for the terminal session.")
+        .fullScreenCover(isPresented: $showingProjectSwitcher) {
+            ProjectSwitcherView()
         }
         .alert("New shorthand", isPresented: $showingNewShorthand) {
             TextField("Command", text: $newShorthand)
@@ -131,8 +114,84 @@ struct TerminalView: View {
         .alert("Terminal commands", isPresented: $showingTerminalHelp) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("/clear clears the shell screen. /cwd chooses a working directory. Unknown slash input is sent to your shell.")
+            Text("/clear clears the shell screen. Switch projects from the header to change shell context. Unknown slash input is sent to your shell.")
         }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                CircularIconButton(systemImage: "line.3.horizontal",
+                                   label: "Open navigation") {
+                    app.navigationDrawerOpen = true
+                }
+                Text("Terminal")
+                    .font(.largeTitle.weight(.bold))
+                Spacer()
+            }
+
+            ProjectContextButton {
+                showingProjectSwitcher = true
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(chrome.bgBase)
+    }
+
+    @ViewBuilder
+    private func projectTerminal(_ session: TerminalSessionContext.ProjectSession) -> some View {
+        if terminal.exited {
+            statusBanner(
+                icon: "flag.checkered", tint: .secondary,
+                message: exitMessage, button: "Restart"
+            ) { connect() }
+        } else if !terminal.connected, let err = terminal.error {
+            statusBanner(
+                icon: "exclamationmark.triangle.fill", tint: .orange,
+                message: err, button: "Reconnect"
+            ) { connect() }
+        }
+        XtermWebView(
+            terminal: terminal,
+            onInput: { terminal.sendInput($0) },
+            onResize: { c, r in
+                cols = c
+                rows = r
+                terminal.sendResize(cols: c, rows: r)
+            }
+        )
+        .ignoresSafeArea(.container, edges: .bottom)
+        Divider()
+        TerminalComposer(
+            draft: $draft,
+            connected: terminal.connected,
+            exited: terminal.exited,
+            onSend: { terminal.sendInput($0) },
+            onCommand: dispatchTerminalCommand,
+            onAskFamiliar: {
+                app.requestTerminalFamiliarHandoff(
+                    draft: draft,
+                    projectRoot: session.projectRoot
+                )
+            }
+        )
+        keyRow
+    }
+
+    private var recoveryOnlyState: some View {
+        ContentUnavailableView {
+            Label("Terminal unavailable", systemImage: "terminal")
+        } description: {
+            Text("Unassigned is recovery-only. Switch to a registered project to open that project’s persistent shell.")
+        } actions: {
+            Button("Switch project") {
+                showingProjectSwitcher = true
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(minWidth: 44, minHeight: 44)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Status banner (connection lost / shell exited)
@@ -163,7 +222,6 @@ struct TerminalView: View {
     private var keyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                cwdMenu
                 keyButton("esc", "Escape") { terminal.sendInput("\u{1B}") }
                 ForEach(["git status", "pwd"], id: \.self) { command in
                     keyButton(command, command) { terminal.sendInput(command + "\n") }
@@ -211,37 +269,80 @@ struct TerminalView: View {
         .accessibilityLabel(accessibility)
     }
 
-    // MARK: - Working directory
-
-    private var cwdMenu: some View {
-        Menu {
-            Button { switchCwd(nil) } label: {
-                Label("Home", systemImage: cwd == nil ? "checkmark" : "house")
-            }
-            if !app.projects.isEmpty {
-                Divider()
-                ForEach(app.projects) { project in
-                    Button { switchCwd(project.root) } label: {
-                        Label(project.name, systemImage: cwd == project.root ? "checkmark" : "folder")
-                    }
-                }
-            }
-        } label: {
-            Label(cwdLabel, systemImage: "folder")
-                .font(.system(.footnote, design: .monospaced))
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .glassFill(.control, in: RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Working directory")
-    }
-
     // MARK: - Lifecycle
 
     private func connect() {
-        guard let wsBase = app.connection?.wsBaseURL else { return }
-        terminal.connect(wsBase: wsBase, threadId: threadId,
-                         projectRoot: cwd, cols: cols, rows: rows)
+        guard case .project(let session) = terminalContext,
+              let wsBase = app.connection?.wsBaseURL else { return }
+        terminal.connect(
+            wsBase: wsBase,
+            threadId: session.threadId,
+            projectRoot: session.projectRoot,
+            cols: cols,
+            rows: rows
+        )
+    }
+
+    private func handleTerminalContextChange(
+        _ context: TerminalSessionContext,
+        reattachIfBound: Bool
+    ) {
+        switch context {
+        case .project(let session):
+            syncTerminalSession(for: session, reattachIfBound: reattachIfBound)
+        case .unassigned, .unresolved:
+            terminal.disconnect()
+        }
+    }
+
+    private func syncTerminalSession(
+        for session: TerminalSessionContext.ProjectSession,
+        reattachIfBound: Bool
+    ) {
+        guard let wsBase = app.connection?.wsBaseURL else {
+            terminal.disconnect()
+            return
+        }
+        if terminal.isBound(
+            to: wsBase,
+            threadId: session.threadId,
+            projectRoot: session.projectRoot
+        ) {
+            if reattachIfBound, terminal.connected {
+                terminal.reattach()
+            } else if !terminal.connected && !terminal.exited {
+                connect()
+            }
+            return
+        }
+        terminal.disconnect()
+        connect()
+    }
+
+    private func resumeTerminalSession() {
+        switch terminalContext {
+        case .project(let session):
+            guard let wsBase = app.connection?.wsBaseURL else {
+                terminal.disconnect()
+                return
+            }
+            if terminal.isBound(
+                to: wsBase,
+                threadId: session.threadId,
+                projectRoot: session.projectRoot
+            ) {
+                if !terminal.connected && !terminal.exited {
+                    connect()
+                } else {
+                    terminal.verifyLiveness()
+                }
+                return
+            }
+            terminal.disconnect()
+            connect()
+        case .unassigned, .unresolved:
+            terminal.disconnect()
+        }
     }
 
     private func dispatchTerminalCommand(_ command: TerminalCommand) {
@@ -250,15 +351,7 @@ struct TerminalView: View {
             showingTerminalHelp = true
         case .clear:
             terminal.sendInput("clear\n")
-        case .chooseWorkingDirectory:
-            showingProjectPicker = true
         }
-    }
-
-    private func switchCwd(_ root: String?) {
-        guard root != cwd else { return }
-        cwd = root
-        connect()   // threadId is derived from cwd → fresh/persistent per directory
     }
 
     private var shorthands: [String] {

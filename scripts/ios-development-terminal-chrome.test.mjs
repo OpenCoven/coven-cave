@@ -25,31 +25,46 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   terminalView,
-  /ToolbarItem\(placement: \.topBarLeading\)\s*\{\s*cwdMenu\s*\}/,
-  "TerminalView should not keep folder selection in the top toolbar",
-);
-
-assert.doesNotMatch(
-  terminalView,
   /statusButton/,
   "TerminalView should not render the top-right connection status button",
 );
 
 assert.match(
   terminalView,
-  /HStack\(spacing: 8\)\s*\{\s*cwdMenu\s*keyButton\("esc", "Escape"\)/,
-  "TerminalView should place the folder selector in the bottom key row before esc",
+  /ProjectContextButton \{\s*showingProjectSwitcher = true\s*\}/,
+  "TerminalView should use the shared project context control in its header",
+);
+
+assert.doesNotMatch(
+  terminalView,
+  /cwdMenu|showingProjectPicker|confirmationDialog\("New terminal"\)|Button\("Home"\)|\/cwd chooses a working directory/,
+  "TerminalView should not own a Home/cwd picker or a new-terminal project chooser",
 );
 
 assert.match(
   rootView,
-  /@State private var terminal = PtyTerminal\(\)[\s\S]*@State private var terminalCwd: String\?[\s\S]*TerminalView\(terminal: terminal, cwd: \$terminalCwd\)/,
-  "the one-view shell should retain exactly one terminal transport and cwd across destination changes",
+  /@State private var terminal = PtyTerminal\(\)[\s\S]*TerminalView\(terminal: terminal\)/,
+  "the one-view shell should retain exactly one terminal transport across destination changes",
 );
 assert.match(
   terminalView,
-  /if terminal\.connected \{[\s\S]{0,240}terminal\.reattach\(\)\s*\} else if !terminal\.exited \{\s*connect\(\)\s*\}/,
-  "returning to Terminal should replay server scrollback into the remounted renderer",
+  /struct ProjectSession:[\s\S]*var threadId: String \{[\s\S]*PtyTerminalProjectIdentity\.threadID\([\s\S]*projectID: projectId[\s\S]*projectRoot: projectRoot[\s\S]*\}[\s\S]*registeredProjects\.first\(where: \{ \$0\.id == selected\.id \}\) \?\? selected/,
+  "the terminal session should derive project root from the active project and fingerprint that root into the persistent PTY id",
+);
+assert.match(
+  terminalView,
+  /switch terminalContext \{[\s\S]*case \.project\(let session\):[\s\S]*projectTerminal\(session\)[\s\S]*case \.unassigned:[\s\S]*recoveryOnlyState[\s\S]*case \.unresolved:[\s\S]*ProjectContextGateView\(\)/,
+  "TerminalView should gate registered, unassigned, and unresolved contexts explicitly",
+);
+assert.match(
+  terminalView,
+  /private var recoveryOnlyState: some View \{[\s\S]*ContentUnavailableView[\s\S]*Button\("Switch project"\)/,
+  "Unassigned terminal context should stay recovery-only and offer only a Switch project action",
+);
+assert.match(
+  terminalView,
+  /private func syncTerminalSession\([\s\S]*if terminal\.isBound\([\s\S]*if reattachIfBound, terminal\.connected \{[\s\S]*terminal\.reattach\(\)[\s\S]*terminal\.disconnect\(\)\s*connect\(\)/,
+  "same-project remounts should reattach, while context switches disconnect before reconnecting",
 );
 assert.doesNotMatch(
   terminalView,

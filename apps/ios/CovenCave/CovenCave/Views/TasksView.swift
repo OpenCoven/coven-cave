@@ -48,7 +48,7 @@ struct TasksView: View {
 
     /// How the task list is partitioned into sections.
     enum GroupBy: String, CaseIterable, Identifiable {
-        case status = "Status", project = "Project", familiar = "Familiar", priority = "Priority"
+        case status = "Status", familiar = "Familiar", priority = "Priority"
         var id: String { rawValue }
     }
 
@@ -73,11 +73,33 @@ struct TasksView: View {
         var systemImage: String { self == .list ? "list.bullet" : "rectangle.split.3x1" }
     }
 
-    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .familiar }
+    static func normalizedGroupByRaw(_ rawValue: String) -> String {
+        GroupBy(rawValue: rawValue)?.rawValue ?? GroupBy.familiar.rawValue
+    }
+
+    static func requestedCardToOpen(_ requested: BoardCard?, in visibleCards: [BoardCard]) -> BoardCard? {
+        guard let requested else { return nil }
+        return visibleCards.first { $0.id == requested.id }
+    }
+
+    private var groupBy: GroupBy {
+        GroupBy(rawValue: Self.normalizedGroupByRaw(groupByRaw)) ?? .familiar
+    }
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .priority }
     private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .list }
     private var anyFilterActive: Bool {
         !statusFilter.isEmpty || !priorityFilter.isEmpty || !familiarFilter.isEmpty
+    }
+
+    private var groupBySelection: Binding<String> {
+        Binding(
+            get: { Self.normalizedGroupByRaw(groupByRaw) },
+            set: { groupByRaw = Self.normalizedGroupByRaw($0) }
+        )
+    }
+
+    private var visibleTaskIds: [String] {
+        app.projectTasks.map(\.id)
     }
 
     var body: some View {
@@ -85,7 +107,7 @@ struct TasksView: View {
             content
                 .navigationTitle("Tasks")
                 .navigationBarTitleDisplayMode(.inline)
-                .searchable(text: $query, prompt: "Search tasks")
+                .searchable(text: $query, prompt: "Search tasks…")
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { app.navigationDrawerOpen = true } label: {
@@ -113,13 +135,18 @@ struct TasksView: View {
                 }
                 .refreshable { await app.loadTasks() }
                 .task {
+                    migrateLegacyGroupByIfNeeded()
                     if !app.tasksLoaded { await app.loadTasks() }
                     if !app.projectsLoaded { await app.loadProjects() }
                 }
                 .safeAreaInset(edge: .top) { groupBar }
                 .onAppear(perform: openRequestedCard)
                 // A chat asked to open one of its linked tasks.
-                .onChange(of: app.cardToOpen) { _, card in openRequestedCard() }
+                .onChange(of: app.cardToOpen) { _, _ in openRequestedCard() }
+                .onChange(of: visibleTaskIds) { _, _ in
+                    openRequestedCard()
+                    reconcileScopedSelection()
+                }
                 .confirmationDialog("Delete this task?",
                                     isPresented: deleteDialogBinding,
                                     titleVisibility: .visible,
@@ -167,7 +194,7 @@ struct TasksView: View {
         Menu {
             ForEach(CardPriority.allCases, id: \.self) { priority in
                 Button {
-                    Task { await app.setTaskPriority(card, priority) }
+                    app.requestTaskPriority(card, priority)
                 } label: {
                     Label(priority.label, systemImage: card.priority == priority ? "checkmark" : "flag")
                 }
@@ -203,9 +230,9 @@ struct TasksView: View {
                     }
                 }
             } label: { Label(priorityFilter.isEmpty ? "Priority" : "Priority (\(priorityFilter.count))", systemImage: "flag") }
-            if !app.familiars.isEmpty {
+            if !app.projectFamiliars.isEmpty {
                 Menu {
-                    ForEach(app.familiars) { f in
+                    ForEach(app.projectFamiliars) { f in
                         Button { toggleFamiliar(f.id) } label: {
                             Label(f.displayName, systemImage: familiarFilter.contains(f.id) ? "checkmark" : "person")
                         }
@@ -230,9 +257,30 @@ struct TasksView: View {
         statusFilter = []; priorityFilter = []; familiarFilter = []
     }
 
+    private func migrateLegacyGroupByIfNeeded() {
+        let normalized = Self.normalizedGroupByRaw(groupByRaw)
+        if groupByRaw != normalized {
+            groupByRaw = normalized
+        }
+    }
+
+    private func reconcileScopedSelection() {
+        let visibleIds = Set(app.projectTasks.map(\.id))
+        if let selection, !visibleIds.contains(selection.id) {
+            self.selection = nil
+        }
+        if let boardDetail, !visibleIds.contains(boardDetail.id) {
+            self.boardDetail = nil
+        }
+    }
+
     /// Consume a cross-destination "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
-        guard let card = app.cardToOpen else { return }
+        guard app.tasksLoaded else { return }
+        guard let card = Self.requestedCardToOpen(app.cardToOpen, in: app.projectTasks) else {
+            app.cardToOpen = nil
+            return
+        }
         if horizontalSizeClass == .regular {
             if selection?.id != card.id { selection = card }
         } else {
@@ -243,7 +291,7 @@ struct TasksView: View {
 
 
     private var groupBar: some View {
-        Picker("Group by", selection: $groupByRaw) {
+        Picker("Group by", selection: groupBySelection) {
             ForEach(GroupBy.allCases) { g in Text(g.rawValue).tag(g.rawValue) }
         }
         .pickerStyle(.segmented)
@@ -256,7 +304,7 @@ struct TasksView: View {
         if !app.tasksLoaded {
             ProgressView().controlSize(.large)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = app.tasksError, app.tasks.isEmpty {
+        } else if let error = app.tasksError, app.projectTasks.isEmpty {
             ContentUnavailableView {
                 Label("Couldn’t load tasks", systemImage: "exclamationmark.triangle")
             } description: { Text(error) } actions: {
@@ -403,10 +451,23 @@ struct TasksView: View {
 
     private var emptyState: some View {
         let unfiltered = query.isEmpty && !anyFilterActive
+        let emptyCopy: (title: String, message: String) = {
+            switch app.projectContext {
+            case .project:
+                return ("No tasks", "Tasks from this project appear here.")
+            case .unassigned:
+                return (
+                    "No recovery tasks",
+                    "Projectless or unregistered tasks appear here until you move them to a project."
+                )
+            case nil:
+                return ("No tasks", "Choose a project to load its tasks.")
+            }
+        }()
         return ContentUnavailableView {
-            Label(unfiltered ? "No tasks" : "No matches", systemImage: "checkmark.circle")
+            Label(unfiltered ? emptyCopy.title : "No matches", systemImage: "checkmark.circle")
         } description: {
-            Text(unfiltered ? "Tasks from your board appear here." : "Try different search or filters.")
+            Text(unfiltered ? emptyCopy.message : "Try different search or filters.")
         } actions: {
             if !unfiltered && anyFilterActive {
                 Button("Clear filters") { clearFilters() }
@@ -428,7 +489,7 @@ struct TasksView: View {
     }
 
     private var filtered: [BoardCard] {
-        var cards = app.tasks
+        var cards = app.projectTasks
         if !statusFilter.isEmpty { cards = cards.filter { statusFilter.contains($0.status) } }
         if !priorityFilter.isEmpty { cards = cards.filter { priorityFilter.contains($0.priority) } }
         if !familiarFilter.isEmpty { cards = cards.filter { familiarFilter.contains($0.familiarId ?? "") } }
@@ -445,7 +506,6 @@ struct TasksView: View {
     private var sections: [TaskSection] {
         switch groupBy {
         case .status: return statusSections
-        case .project: return projectSections
         case .familiar: return familiarSections
         case .priority: return prioritySections
         }
@@ -467,21 +527,6 @@ struct TasksView: View {
                         order: priority.rank, cards: sortCards(cards))
         }
         .sorted { $0.order < $1.order }
-    }
-
-    private var projectSections: [TaskSection] {
-        // Keyed by projectId; unassigned cards collect under a trailing bucket.
-        Dictionary(grouping: filtered, by: { $0.projectId ?? "" }).map { id, cards in
-            let unassigned = id.isEmpty
-            let name = unassigned ? "No project" : (app.project(id)?.name ?? "No project")
-            return TaskSection(id: "project:\(unassigned ? "__none__" : id)", title: name,
-                               systemImage: "folder", tint: .secondary,
-                               order: unassigned ? 1 : 0, cards: sortCards(cards))
-        }
-        .sorted { a, b in
-            if a.order != b.order { return a.order < b.order }
-            return a.title.lowercased() < b.title.lowercased()
-        }
     }
 
     private var familiarSections: [TaskSection] {

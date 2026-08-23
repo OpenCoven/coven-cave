@@ -78,7 +78,7 @@ struct TerminalComposer: View {
                 .buttonStyle(.borderless)
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("Ask Familiar")
-                .accessibilityHint("Opens chat with this draft and working directory for review. Nothing runs automatically.")
+                .accessibilityHint("Opens chat with this draft and active project root for review. Nothing runs automatically.")
             }
         }
         .padding(.horizontal, 12)

@@ -114,7 +114,11 @@ struct CaveConnection: Codable, Equatable {
     static let tokenOriginKey = "cave.access-token-origin"
 
     static func load() -> CaveConnection? {
-        guard let host = UserDefaults.standard.string(forKey: storageKey),
+        load(defaults: .standard)
+    }
+
+    static func load(defaults: UserDefaults) -> CaveConnection? {
+        guard let host = defaults.string(forKey: storageKey),
               !host.isEmpty else { return nil }
         let connection = CaveConnection(host: host)
         if accessToken != nil, accessTokenOrigin == nil,
@@ -126,12 +130,23 @@ struct CaveConnection: Codable, Equatable {
     }
 
     func save() {
-        UserDefaults.standard.set(host, forKey: Self.storageKey)
+        save(defaults: .standard)
+    }
+
+    func save(defaults: UserDefaults) {
+        defaults.set(host, forKey: Self.storageKey)
     }
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: storageKey)
         UserDefaults.standard.removeObject(forKey: lastGoodKey)
+        KeychainStore.remove(tokenKey)
+        KeychainStore.remove(tokenOriginKey)
+    }
+
+    static func clear(defaults: UserDefaults) {
+        defaults.removeObject(forKey: storageKey)
+        defaults.removeObject(forKey: lastGoodKey)
         KeychainStore.remove(tokenKey)
         KeychainStore.remove(tokenOriginKey)
     }
@@ -147,21 +162,33 @@ struct CaveConnection: Codable, Equatable {
     static let lastGoodKey = "cave.connection.last-good"
 
     private static func lastGoodMap() -> [String: String] {
-        UserDefaults.standard.dictionary(forKey: lastGoodKey) as? [String: String] ?? [:]
+        lastGoodMap(defaults: .standard)
+    }
+
+    private static func lastGoodMap(defaults: UserDefaults) -> [String: String] {
+        defaults.dictionary(forKey: lastGoodKey) as? [String: String] ?? [:]
     }
 
     static func lastGoodBaseURL(forHost host: String) -> URL? {
+        lastGoodBaseURL(forHost: host, defaults: .standard)
+    }
+
+    static func lastGoodBaseURL(forHost host: String, defaults: UserDefaults) -> URL? {
         let key = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !key.isEmpty, let raw = lastGoodMap()[key] else { return nil }
+        guard !key.isEmpty, let raw = lastGoodMap(defaults: defaults)[key] else { return nil }
         return URL(string: raw)
     }
 
     static func saveLastGoodBaseURL(_ url: URL, forHost host: String) {
+        saveLastGoodBaseURL(url, forHost: host, defaults: .standard)
+    }
+
+    static func saveLastGoodBaseURL(_ url: URL, forHost host: String, defaults: UserDefaults) {
         let key = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !key.isEmpty else { return }
-        var map = lastGoodMap()
+        var map = lastGoodMap(defaults: defaults)
         map[key] = url.absoluteString
-        UserDefaults.standard.set(map, forKey: lastGoodKey)
+        defaults.set(map, forKey: lastGoodKey)
     }
 
     /// Candidates with the last-good URL hoisted to the front. Kept separate
@@ -170,6 +197,15 @@ struct CaveConnection: Codable, Equatable {
     var prioritizedCandidateBaseURLs: [URL] {
         let candidates = candidateBaseURLs
         guard let remembered = Self.lastGoodBaseURL(forHost: host),
+              candidates.contains(remembered),
+              candidates.first != remembered
+        else { return candidates }
+        return [remembered] + candidates.filter { $0 != remembered }
+    }
+
+    func prioritizedCandidateBaseURLs(defaults: UserDefaults) -> [URL] {
+        let candidates = candidateBaseURLs
+        guard let remembered = Self.lastGoodBaseURL(forHost: host, defaults: defaults),
               candidates.contains(remembered),
               candidates.first != remembered
         else { return candidates }

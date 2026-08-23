@@ -193,8 +193,8 @@ assert.match(
 );
 assert.match(
   terminal,
-  /guard let ws = self\?\.task else \{ return \}[\s\S]*?self\.task === ws/,
-  "the receive loop must pin its socket — a replaced socket's stale error must not clobber the live connection",
+  /guard let ws = self\?\.task else \{ return \}[\s\S]*?let message = try await ws\.receive\(\)[\s\S]*?shouldHandleInboundEvent\(from: ws\)[\s\S]*?catch \{[\s\S]*?shouldHandleInboundEvent\(from: ws\)/,
+  "the receive loop must re-check socket identity after each await so stale frames or errors cannot mutate a replacement session",
 );
 
 // --- Host discovery: one probe on the common path, and the paired sweep stays
@@ -238,7 +238,7 @@ assert.match(
 // Persisting the winner is what makes the fast path available next launch.
 assert.match(
   model,
-  /CaveConnection\.saveLastGoodBaseURL\(working, forHost: host\)/,
+  /CaveConnection\.saveLastGoodBaseURL\(\s*working,\s*forHost: host(?:,\s*defaults: projectContextDefaults)?\s*\)/,
   "a successful probe must record the working URL for the next reconnect",
 );
 assert.match(

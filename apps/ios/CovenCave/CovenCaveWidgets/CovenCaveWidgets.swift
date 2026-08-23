@@ -27,6 +27,7 @@ struct TaskLiveActivity: Widget {
             .padding()
             .activityBackgroundTint(Color.black.opacity(0.35))
             .activitySystemActionForegroundColor(.primary)
+            .widgetURL(URL(string: "covencave://task/\(context.attributes.taskId)"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -54,6 +55,7 @@ struct TaskLiveActivity: Widget {
             } minimal: {
                 Image(systemName: "play.fill").foregroundStyle(.tint)
             }
+            .widgetURL(URL(string: "covencave://task/\(context.attributes.taskId)"))
         }
     }
 }

@@ -1844,6 +1844,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/chat-send-models.test.ts",
   "src/app/api/chat/send/chat-send-capabilities.test.ts",
   "src/app/api/chat/send/chat-send-runtime.test.ts",
+  "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
   "src/app/api/chat/send/route-opencode.integration.test.ts",
   "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
   "src/app/api/chat/send/route-opencode-preflight.integration.test.ts",

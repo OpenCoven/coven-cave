@@ -15,6 +15,7 @@ const home = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift"
 const root = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 const drawer = await read("apps/ios/CovenCave/CovenCave/Views/NavigationDrawer.swift");
 const projects = await read("apps/ios/CovenCave/CovenCave/Views/ProjectsPanel.swift");
+const projectSwitcher = await read("apps/ios/CovenCave/CovenCave/Views/ProjectSwitcherView.swift");
 const familiars = await read("apps/ios/CovenCave/CovenCave/Views/FamiliarsListView.swift");
 const plugins = await read("apps/ios/CovenCave/CovenCave/Views/PluginsPanel.swift");
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
@@ -93,11 +94,15 @@ assert.match(
   /--ui-preview-empty-chat/,
   "the canonical empty-session surface has a deterministic simulator preview",
 );
-assert.match(appModel, /var launchThreadId: String\?/, "the launch thread intent belongs to AppModel");
 assert.match(
   appModel,
-  /func consumeLaunchThreadIntent\(\) -> ChatThread\?/,
-  "the launch thread intent waits for a matching thread before consuming",
+  /var pendingProjectNavigationIntent: ProjectNavigationIntent\?/,
+  "the project-aware navigation intent belongs to AppModel",
+);
+assert.match(
+  appModel,
+  /func resolvePendingProjectNavigationIntent\([\s\S]{0,80}\) -> Bool/,
+  "pending navigation resolves only after the needed project or entity hydrates",
 );
 assert.match(
   appModel,
@@ -106,8 +111,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /if let threadId = ChatNotifications\.threadId\(fromDeepLink: url\) \{[\s\S]{0,140}launchThreadId = threadId[\s\S]{0,140}selectedTab = \.chats/,
-  "runtime chat links retain their thread id until hydration",
+  /guard let intent = ProjectNavigationIntent\(url: url\) else \{ return \}[\s\S]*pendingProjectNavigationIntent = intent[\s\S]*resolvePendingProjectNavigationIntent\([^)]*\)/,
+  "runtime links queue one project-aware navigation intent until hydration can resolve it",
 );
 assert.match(
   appModel,
@@ -121,18 +126,18 @@ assert.doesNotMatch(
 );
 assert.match(
   home,
-  /\.onAppear \{\s*consumeLaunchThreadIntent\(\)\s*consumeGlobalRequests\(\)\s*selectMostRecentThreadIfNeeded\(\)\s*\}/,
-  "Chats selects the most recent thread after honoring explicit launch requests",
+  /\.onAppear \{\s*_\s*=\s*app\.resolvePendingProjectNavigationIntent\(\)\s*consumeGlobalRequests\(\)\s*selectMostRecentThreadIfNeeded\(\)\s*\}/,
+  "Chats selects the most recent thread only after retrying any pending project-aware navigation",
 );
 assert.match(
   home,
-  /onChange\(of: app\.threads\.map\(\\\.id\)\)[\s\S]{0,160}consumeLaunchThreadIntent\(\)[\s\S]{0,160}selectMostRecentThreadIfNeeded\(\)/,
-  "Chats retries explicit and default selection when hydration adds threads",
+  /onChange\(of: app\.threads\.map\(\\\.id\)\)[\s\S]{0,160}resolvePendingProjectNavigationIntent\(\)[\s\S]{0,160}selectMostRecentThreadIfNeeded\(\)/,
+  "Chats retries pending navigation and only then re-evaluates the default selection when hydration adds threads",
 );
 assert.match(
   home,
-  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,500}guard selection == nil,[\s\S]{0,500}!showNewChat,[\s\S]{0,500}app\.threadToOpen == nil,[\s\S]{0,500}app\.launchThreadId == nil,[\s\S]{0,500}!app\.newChatRequested,[\s\S]{0,500}let thread = app\.mostRecentThread[\s\S]{0,180}open\(\.thread\(thread\)\)/,
-  "the default never overrides an explicit destination or New Chat intent",
+  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,500}guard selection == nil,[\s\S]{0,500}!showNewChat,[\s\S]{0,500}app\.threadToOpen == nil,[\s\S]{0,500}app\.pendingProjectNavigationIntent == nil,[\s\S]{0,500}!app\.newChatRequested,[\s\S]{0,700}projectThreads[\s\S]{0,220}projectLastActivity[\s\S]{0,220}open\(\.familiar\(familiar\)\)|open\(\.thread\(mostRecentGroupThread\)\)/,
+  "the default never overrides a pending explicit navigation and only picks active-project familiar or group activity",
 );
 
 // Authored navigation and discovery surfaces.
@@ -148,8 +153,13 @@ assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutr
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(terminal: terminal, cwd: \$terminalCwd\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
+  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(terminal: terminal\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
   "the shell mounts exactly the selected primary destination",
+);
+assert.match(
+  root,
+  /if app\.selectedTab == \.settings \{\s*SettingsView\(\)\s*\} else \{[\s\S]*switch app\.projectContextGateState/s,
+  "settings stays reachable even when the project context is gated",
 );
 for (const label of ["Chats", "Tasks", "Terminal", "Settings"]) {
   const matches = drawer.match(new RegExp(`DrawerNavRow\\([\\s\\S]*?label: "${label}"`, "g")) ?? [];
@@ -203,16 +213,34 @@ assert.match(
 );
 assert.match(
   root,
-  /case \.projects\(let project\):\s*ProjectsPanel\(initialProject: project\)/,
-  "Projects carries its selected project atomically into the drawer destination",
+  /case \.projectSwitcher:\s*ProjectSwitcherView\(\)/,
+  "the project switcher is a real shell overlay destination",
 );
 assert.match(root, /case \.familiars: FamiliarsListView/, "Familiars is a real drawer destination");
-assert.match(drawer, /openProjects\(project\)/, "drawer project shortcuts preserve the selected project");
-assert.match(projects, /NavigationLink\(value: project\)/, "project rows navigate instead of rendering inertly");
 assert.match(
-  projects,
-  /if let initialProject \{[\s\S]{0,120}path\.append\(initialProject\)/,
-  "a drawer project shortcut opens that project directly",
+  drawer,
+  /ProjectContextButton \{[\s\S]{0,120}close\(\)[\s\S]{0,120}openProjectSwitcher\(\)/,
+  "the drawer header opens the project switcher from the current shell context",
+);
+assert.match(
+  drawer,
+  /private var recentThreads: \[ChatThread\] \{\s*app\.projectRecentThreads\(limit: 5\)\s*\}/,
+  "drawer recents come from the active project only",
+);
+assert.match(
+  projectSwitcher,
+  /navigationTitle\("Switch project"\)/,
+  "the switcher presents as a first-class destination",
+);
+assert.match(
+  projectSwitcher,
+  /Button \{[\s\S]{0,180}app\.switchProject\(to: row\.context\)/,
+  "choosing a project row switches the app context in place",
+);
+assert.match(
+  projectSwitcher,
+  /struct ProjectContextGateView: View[\s\S]{0,2200}Button\("Settings"\)/,
+  "the project-context gate exposes settings recovery",
 );
 assert.match(familiars, /struct FamiliarDetailView: View/, "familiar rows open a real detail surface");
 assert.match(
@@ -347,8 +375,8 @@ assert.match(
 );
 assert.match(
   familiars,
-  /familiar\.activeSessions\.map\(String\.init\) \?\? "Unknown"/,
-  "missing live activity is labelled unknown rather than fabricated as zero",
+  /static func activityValue\(for lastActivity: Date\?\) -> String \{[\s\S]*return "No activity yet"[\s\S]*lastActivity\.formatted\(date: \.abbreviated, time: \.shortened\)/,
+  "missing familiar activity falls back cleanly while real activity stays explicit and scoped",
 );
 for (const section of ["Identity", "Defaults", "Access"]) {
   assert.match(familiars, new RegExp(`Text\\("${section}"\\)`), `familiar detail includes ${section}`);
@@ -522,7 +550,7 @@ assert.match(
 );
 assert.match(
   home,
-  /if app\.familiars\.isEmpty && app\.threads\.isEmpty \{[\s\S]{0,180}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
+  /if app\.projectFamiliars\.isEmpty[\s\S]{0,80}app\.projectThreads\.isEmpty[\s\S]{0,80}app\.projectServerSessions\.isEmpty[\s\S]{0,220}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
   "Chats renders first-load failure before the no-familiars empty state",
 );
 assert.match(
@@ -547,12 +575,12 @@ assert.match(
 );
 assert.match(
   familiars,
-  /if let error = app\.familiarsError, app\.familiars\.isEmpty/,
+  /guard app\.projectMembershipLoaded else \{[\s\S]{0,200}if let error = app\.familiarsError \{[\s\S]{0,120}mode = \.firstLoadError\(error\)/,
   "the familiar roster renders first-load failure before empty state",
 );
 assert.match(
   familiars,
-  /app\.tasksError == nil\s*\?\s*"\\\(assignedTasks\.count\)"\s*:\s*app\.tasks\.isEmpty \? "Unknown" : "\\\(assignedTasks\.count\) cached"/,
+  /let taskValue = app\.tasksError == nil[\s\S]{0,120}\? "\\\(assignedTasks\.count\)"[\s\S]{0,160}app\.tasks\.isEmpty \? "Unknown" : "\\\(assignedTasks\.count\) cached"/,
   "familiar task stats distinguish live, unavailable, and cached counts",
 );
 for (const [name, source] of [["projects", projects], ["familiars", familiars]]) {
@@ -680,6 +708,16 @@ assert.match(
 );
 assert.match(
   globalSearch,
+  /Picker\("Search scope", selection: \$scope\)[\s\S]*Text\(projectScopeLabel\)\.tag\(SearchScope\.project\)[\s\S]*Text\("Everywhere"\)\.tag\(SearchScope\.everywhere\)/,
+  "global search exposes project and everywhere scope options",
+);
+assert.match(
+  globalSearch,
+  /app\.projectThreads[\s\S]*app\.projectServerSessions[\s\S]*app\.projectFamiliars[\s\S]*app\.projectTasks/,
+  "project-scoped global search uses the active project collections",
+);
+assert.match(
+  globalSearch,
   /if let trailing \{[\s\S]*?Text\(trailing\)[\s\S]*?\.foregroundStyle\(chrome\.textSecondary\)/,
   "global search recency metadata remains legible in dark mode",
 );
@@ -692,13 +730,18 @@ for (const label of ["Chats", "Projects", "Familiars", "Tasks"]) {
 }
 assert.match(
   globalSearch,
-  /app\.serverOnlySessions\(for:/,
-  "global search includes conversations that only exist on the server",
+  /boundSessionIDs[\s\S]*!boundSessionIDs\.contains\(\$0\.id\)/,
+  "global search deduplicates local-bound server sessions",
 );
 assert.match(
   globalSearch,
+  /openServerSession: \(SessionRow, String\?\) -> Void/,
+  "global search routes server-only chat opens through a central callback",
+);
+assert.doesNotMatch(
+  globalSearch,
   /app\.openServerSession\(/,
-  "selecting a server-only search result materializes and opens it",
+  "global search itself must not materialize server sessions",
 );
 assert.match(
   projects,
@@ -780,8 +823,38 @@ assert.match(
 );
 assert.match(
   appModel,
-  /configureDesignCloseoutPreview[\s\S]{0,2200}cardThreadLinks\["cold-launch"\] = "ui-preview-empty-chat"/,
+  /configureDesignCloseoutPreview[\s\S]*cardThreadLinks\["cold-launch"\] = "ui-preview-empty-chat"/,
   "the design closeout fixture exposes linked task and GitHub context",
+);
+assert.match(
+  tasks,
+  /private var filtered: \[BoardCard\] \{[\s\S]{0,120}var cards = app\.projectTasks/,
+  "the task list starts from the active project's tasks",
+);
+assert.match(
+  tasks,
+  /if !app\.projectFamiliars\.isEmpty \{[\s\S]{0,260}ForEach\(app\.projectFamiliars\)/,
+  "task familiar filters use the active project's familiars",
+);
+assert.match(
+  home,
+  /private var filteredFamiliars: \[Familiar\] \{[\s\S]{0,220}app\.projectFamiliars/,
+  "Chats uses the active project's familiar roster",
+);
+assert.match(
+  home,
+  /private func familiarChat[\s\S]{0,260}app\.projectLandingDirectThread\(for: familiar\.id\)/,
+  "Chats resolves the visible conversation through the active project's landing thread",
+);
+assert.match(
+  familiars,
+  /statCard\("Chats", value: statsModel\.chats, icon: "bubble\.left"\)/,
+  "familiar detail chat counts are scoped through the active project stats model",
+);
+assert.match(
+  familiars,
+  /let assignedTasks = context\.map \{ scopedContext in[\s\S]*scopedContext\.matches\(task: \$0, registeredProjects: app\.projects\)[\s\S]*&& \$0\.familiarId == familiar\.id/,
+  "familiar detail task counts are scoped to the explicit active project context",
 );
 assert.match(root, /--ui-open-search/, "simulator validation can launch directly into global search");
 assert.match(root, /--ui-open-projects/, "simulator validation can launch directly into projects");

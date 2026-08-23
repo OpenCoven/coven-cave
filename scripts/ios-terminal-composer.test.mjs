@@ -10,8 +10,13 @@ const chats = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift
 
 assert.match(
   parser,
-  /switch trimmed\.lowercased\(\) \{[\s\S]*?case "\/help", "\/\?":[\s\S]*?case "\/clear", "\/cls":[\s\S]*?case "\/cwd":/,
+  /switch trimmed\.lowercased\(\) \{[\s\S]*?case "\/help", "\/\?":[\s\S]*?case "\/clear", "\/cls":/,
   "the parser should locally handle only exact terminal command strings",
+);
+assert.doesNotMatch(
+  parser,
+  /\/cwd/,
+  "the terminal parser should no longer own a cwd-changing command",
 );
 assert.match(
   parser,
@@ -40,13 +45,18 @@ assert.match(
 );
 assert.match(
   model,
-  /struct TerminalFamiliarHandoff[\s\S]*?func requestTerminalFamiliarHandoff[\s\S]*?selectedTab = \.chats[\s\S]*?newChatRequested = true/,
-  "Ask Familiar should hand off draft and cwd through the native chat flow",
+  /struct TerminalFamiliarHandoff[\s\S]*?let projectRoot: String\?[\s\S]*?func requestTerminalFamiliarHandoff\(draft: String, projectRoot: String\?\)[\s\S]*?selectedTab = \.chats[\s\S]*?newChatRequested = true/,
+  "Ask Familiar should hand off draft and active project root through the native chat flow",
 );
 assert.match(
   chats,
-  /initialProjectRoot: app\.terminalFamiliarHandoff\?\.cwd[\s\S]*?app\.applyTerminalFamiliarHandoff\(to: thread\)/,
-  "the chat handoff should retain cwd and prefill the new chat",
+  /NewChatView\([\s\S]*?fixedFamiliarId: fixedNewChatFamiliarId[\s\S]*?app\.applyTerminalFamiliarHandoff\(to: thread\)/,
+  "the chat handoff should prefill the active-project new chat without injecting an independent project root",
+);
+assert.match(
+  model,
+  /func switchProject\(to context: ProjectContext\) \{[\s\S]*terminalFamiliarHandoff = nil[\s\S]*newChatRequested = false/,
+  "switching project context should clear any pending terminal handoff or new-chat launch",
 );
 assert.doesNotMatch(
   model,

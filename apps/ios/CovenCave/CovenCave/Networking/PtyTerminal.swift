@@ -1,5 +1,95 @@
+import CryptoKit
 import Foundation
 import Observation
+
+/// Deterministic terminal identity for one effective project root. The digest
+/// is non-secret and keeps full filesystem paths out of the server thread id.
+enum PtyTerminalProjectIdentity {
+    private static let missingRootFingerprint = "missing-root"
+
+    static func normalizedProjectRoot(_ projectRoot: String?) -> String? {
+        ProjectContext.normalizedProjectRoot(projectRoot)
+    }
+
+    static func rootFingerprint(_ projectRoot: String?) -> String {
+        guard let normalizedRoot = normalizedProjectRoot(projectRoot) else {
+            return missingRootFingerprint
+        }
+        let digest = SHA256.hash(data: Data(normalizedRoot.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func threadID(projectID: String, projectRoot: String?) -> String {
+        "ios-terminal::project::\(projectID)::\(rootFingerprint(projectRoot))"
+    }
+}
+
+/// Thin socket wrapper so tests can drive stale-receive races without a live
+/// WebSocket server.
+final class PtyTerminalSocket: @unchecked Sendable {
+    typealias Message = URLSessionWebSocketTask.Message
+    typealias CloseCode = URLSessionWebSocketTask.CloseCode
+
+    private let receiveImpl: () async throws -> Message
+    private let sendImpl: (Message, @escaping (Error?) -> Void) -> Void
+    private let sendPingImpl: (@escaping (Error?) -> Void) -> Void
+    private let cancelImpl: (CloseCode, Data?) -> Void
+    private let resumeImpl: () -> Void
+
+    init(task: URLSessionWebSocketTask) {
+        self.receiveImpl = { try await task.receive() }
+        self.sendImpl = { message, completion in
+            task.send(message, completionHandler: completion)
+        }
+        self.sendPingImpl = { completion in
+            task.sendPing(pongReceiveHandler: completion)
+        }
+        self.cancelImpl = { closeCode, reason in
+            task.cancel(with: closeCode, reason: reason)
+        }
+        self.resumeImpl = {
+            task.resume()
+        }
+    }
+
+    init(
+        receive: @escaping () async throws -> Message,
+        send: @escaping (Message, @escaping (Error?) -> Void) -> Void = { _, completion in
+            completion(nil)
+        },
+        sendPing: @escaping (@escaping (Error?) -> Void) -> Void = { completion in
+            completion(nil)
+        },
+        cancel: @escaping (CloseCode, Data?) -> Void = { _, _ in },
+        resume: @escaping () -> Void = {}
+    ) {
+        self.receiveImpl = receive
+        self.sendImpl = send
+        self.sendPingImpl = sendPing
+        self.cancelImpl = cancel
+        self.resumeImpl = resume
+    }
+
+    func receive() async throws -> Message {
+        try await receiveImpl()
+    }
+
+    func send(_ message: Message, completionHandler: @escaping (Error?) -> Void) {
+        sendImpl(message, completionHandler)
+    }
+
+    func sendPing(_ pongReceiveHandler: @escaping (Error?) -> Void) {
+        sendPingImpl(pongReceiveHandler)
+    }
+
+    func cancel(with closeCode: CloseCode, reason: Data?) {
+        cancelImpl(closeCode, reason)
+    }
+
+    func resume() {
+        resumeImpl()
+    }
+}
 
 /// A live terminal session bridged over `/api/pty-ws`.
 ///
@@ -30,8 +120,9 @@ final class PtyTerminal {
     /// Fired at the start of each connect so the renderer can clear.
     var onReset: (() -> Void)?
 
-    private var task: URLSessionWebSocketTask?
+    private var task: PtyTerminalSocket?
     private var receiveLoop: Task<Void, Never>?
+    @ObservationIgnored private let socketFactory: (URLRequest) -> PtyTerminalSocket
 
     /// One shared session for WebSocket tasks — a `URLSession` is never
     /// deallocated once created, so building one per (re)connect leaked them.
@@ -61,10 +152,23 @@ final class PtyTerminal {
     /// looking alive for a minute when the desktop is unreachable.
     private static let handshakeTimeout: TimeInterval = 15
 
+    init(socketFactory: ((URLRequest) -> PtyTerminalSocket)? = nil) {
+        self.socketFactory = socketFactory ?? { request in
+            PtyTerminalSocket(task: Self.wsSession.webSocketTask(with: request))
+        }
+    }
+
+    func isBound(to wsBase: URL, threadId: String, projectRoot: String?) -> Bool {
+        lastWsBase == wsBase
+            && lastThreadId == threadId
+            && PtyTerminalProjectIdentity.normalizedProjectRoot(lastProjectRoot)
+                == PtyTerminalProjectIdentity.normalizedProjectRoot(projectRoot)
+    }
+
     func connect(wsBase: URL, threadId: String, projectRoot: String?, cols: Int, rows: Int) {
         lastWsBase = wsBase
         lastThreadId = threadId
-        lastProjectRoot = projectRoot
+        lastProjectRoot = PtyTerminalProjectIdentity.normalizedProjectRoot(projectRoot)
         lastCols = cols
         lastRows = rows
         reconnectAttempt = 0
@@ -105,7 +209,7 @@ final class PtyTerminal {
         if let token = credential {
             wsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let ws = Self.wsSession.webSocketTask(with: wsRequest)
+        let ws = socketFactory(wsRequest)
         task = ws
         ws.resume()
         connected = true
@@ -137,7 +241,7 @@ final class PtyTerminal {
         ws.sendPing { [weak self] error in
             guard let error else { return }
             Task { @MainActor [weak self] in
-                guard let self, self.task === ws else { return }
+                guard let self, self.isCurrentSocket(ws) else { return }
                 self.reconnectAttempt = 0
                 self.fail(error)
             }
@@ -178,11 +282,11 @@ final class PtyTerminal {
     /// hasn't noticed yet (half-open link after a network handoff). Swallowing
     /// the error — the old behaviour — let keystrokes vanish forever; routing
     /// it into `fail` triggers the same auto-reconnect as a receive error.
-    private func send(_ frame: Data, over ws: URLSessionWebSocketTask) {
+    private func send(_ frame: Data, over ws: PtyTerminalSocket) {
         ws.send(.data(frame)) { [weak self] error in
             guard let error else { return }
             Task { @MainActor [weak self] in
-                guard let self, self.task === ws else { return }
+                guard let self, self.isCurrentSocket(ws) else { return }
                 self.fail(error)
             }
         }
@@ -195,16 +299,16 @@ final class PtyTerminal {
     /// Wi-Fi → LTE handoff, desktop sleep — would otherwise go unnoticed until
     /// the next keystroke was eaten. The loop is pinned to one socket and
     /// stands down once it's replaced.
-    private func startPinging(_ ws: URLSessionWebSocketTask) {
+    private func startPinging(_ ws: PtyTerminalSocket) {
         pingTask?.cancel()
         pingTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.pingInterval)
-                guard let self, !Task.isCancelled, self.task === ws else { return }
+                guard let self, !Task.isCancelled, self.isCurrentSocket(ws) else { return }
                 ws.sendPing { [weak self] error in
                     guard let error else { return }
                     Task { @MainActor [weak self] in
-                        guard let self, self.task === ws else { return }
+                        guard let self, self.isCurrentSocket(ws) else { return }
                         self.fail(error)
                     }
                 }
@@ -223,16 +327,27 @@ final class PtyTerminal {
         receiveLoop = Task { [weak self] in
             guard let ws = self?.task else { return }
             while !Task.isCancelled {
-                guard let self, self.task === ws else { break }
+                guard let self, self.isCurrentSocket(ws) else { break }
                 do {
                     let message = try await ws.receive()
+                    guard self.shouldHandleInboundEvent(from: ws) else { break }
                     self.handle(message)
                 } catch {
-                    if !Task.isCancelled, self.task === ws { self.fail(error) }
+                    guard self.shouldHandleInboundEvent(from: ws) else { break }
+                    self.fail(error)
                     break
                 }
             }
         }
+    }
+
+    private func shouldHandleInboundEvent(from socket: PtyTerminalSocket) -> Bool {
+        !Task.isCancelled && isCurrentSocket(socket)
+    }
+
+    private func isCurrentSocket(_ socket: PtyTerminalSocket) -> Bool {
+        guard let task else { return false }
+        return task === socket
     }
 
     private func handle(_ message: URLSessionWebSocketTask.Message) {
@@ -301,4 +416,5 @@ final class PtyTerminal {
         }
         self.error = error.localizedDescription
     }
+
 }
