@@ -398,6 +398,44 @@ function conversationTitle(id: string, body: ConversationWriteBody, existing: Co
   return defaultChatTitleForSession(id);
 }
 
+/**
+ * The record's creation time, which is the one field on it that must never move.
+ *
+ * `GET /api/client/v1/conversations` pages on `createdAt` descending, so it is a
+ * keyset cursor's coordinate: a record whose `createdAt` changes moves under
+ * every open cursor, and if it moves upward the rest of that walk never serves
+ * it — a silent skip in a read that surface calls canonical (cave-fhjlu).
+ *
+ * This function used to be the one place in Cave that could do that. It composed
+ * the field as `body.createdAt || existing?.createdAt || now`, which is two
+ * different mistakes wearing one expression:
+ *
+ *   - a stored record with NO `createdAt` — a transcript older than the field —
+ *     was stamped with `now` on its next turn. That is a wrong fact (the
+ *     conversation was not created today) and it moved the row from the tail of
+ *     the client-v1 ordering to the head, past every open cursor (cave-wbxcu).
+ *   - a client body could rewrite a stored `createdAt` to anything at all, on a
+ *     record it did not create. Same movement, fewer excuses.
+ *
+ * Both are closed the same way: `createdAt` is decided once, when the record is
+ * created, and is read-only afterwards. A body may still supply one — an import
+ * or a replay creating a transcript knows its real creation time better than the
+ * clock does — but only while there is no stored record to contradict it. A
+ * legacy record with none keeps none: absence is a stable position in the
+ * ordering (the empty-string sentinel), and inventing a value to fill it is
+ * exactly the move that loses the row.
+ */
+function conversationCreatedAt(args: {
+  body: ConversationWriteBody;
+  existing: ConversationFile | null;
+  now: string;
+}): string | undefined {
+  if (args.existing) return args.existing.createdAt;
+  return typeof args.body.createdAt === "string" && args.body.createdAt.trim()
+    ? args.body.createdAt
+    : args.now;
+}
+
 function buildConversation(args: {
   id: string;
   body: ConversationWriteBody;
@@ -414,6 +452,7 @@ function buildConversation(args: {
       : args.existing?.harness;
   if (!familiarId || !harness) return null;
   const now = new Date().toISOString();
+  const createdAt = conversationCreatedAt({ body: args.body, existing: args.existing, now });
   return {
     sessionId: args.id,
     ...(args.existing?.harnessSessionId ? { harnessSessionId: args.existing.harnessSessionId } : {}),
@@ -426,10 +465,7 @@ function buildConversation(args: {
     ...(args.existing?.modelIntent ? { modelIntent: args.existing.modelIntent } : {}),
     ...(args.existing?.runtime ? { runtime: args.existing.runtime } : {}),
     title: conversationTitle(args.id, args.body, args.existing),
-    createdAt:
-      typeof args.body.createdAt === "string" && args.body.createdAt.trim()
-        ? args.body.createdAt
-        : args.existing?.createdAt ?? now,
+    ...(createdAt ? { createdAt } : {}),
     updatedAt:
       typeof args.body.updatedAt === "string" && args.body.updatedAt.trim()
         ? args.body.updatedAt

@@ -134,7 +134,24 @@ export type ConversationFile = {
    * never feeds the merged-PR auto-archive sweep.
    */
   prUrl?: string;
-  createdAt: string;
+  /**
+   * When this conversation was created — and the ONLY timestamp on the record
+   * that never moves. `/api/client/v1/conversations` pages on it, so a keyset
+   * cursor names a position built from this field (cave-fhjlu).
+   *
+   * Optional because the store really does hold records without it: transcripts
+   * written before the field existed. The type claimed `string` and the files
+   * disagreed, which is how `buildConversation` came to stamp `now` onto one of
+   * them — recording a wrong creation time, and moving the row from the tail of
+   * the client-v1 ordering to its head under an open cursor, where the rest of
+   * the walk skipped it (cave-wbxcu).
+   *
+   * So: a record that has one keeps it, and a record that has none never
+   * acquires one. Absence is stable, and every writer here treats it that way —
+   * `saveConversation` passes the record through untouched, and the creation
+   * paths stamp `now` only when they are genuinely creating the record.
+   */
+  createdAt?: string;
   updatedAt: string;
   turns: ChatTurn[];
   /** Branching: id of the turn at the tip of the currently selected path. The
@@ -200,6 +217,17 @@ type ConversationSummaryCacheEntry = {
   summary: ConversationSummary | null;
 };
 const conversationSummaryCache = new Map<string, ConversationSummaryCacheEntry>();
+/**
+ * The last `createdAt` a successful read saw on each transcript, kept for the
+ * rows a FAILED read has to substitute (see fallbackConversationSummary).
+ *
+ * Separate from the summary cache above on purpose. That cache is keyed on the
+ * file's stat triple and is dropped the moment the file changes — which is
+ * precisely when the fallback row is needed — whereas this survives every
+ * change to the file, because `createdAt` does not change with them. It is
+ * dropped only when the transcript itself goes away.
+ */
+const conversationCreatedAtByFile = new Map<string, string>();
 let conversationListScanCount = 0;
 let conversationListMetrics: ConversationListMetrics = {
   scanCount: 0,
@@ -219,6 +247,7 @@ export function getConversationListMetrics(): ConversationListMetrics {
 
 export function clearConversationListMetadataCache(): void {
   conversationSummaryCache.clear();
+  conversationCreatedAtByFile.clear();
 }
 
 function hasDuplicateTurnIds(turns: Pick<ChatTurn, "id">[]): boolean {
@@ -778,6 +807,7 @@ export async function deleteConversation(sessionId: string): Promise<boolean> {
     const file = pathFor(sessionId);
     await unlink(file);
     conversationSummaryCache.delete(file);
+    conversationCreatedAtByFile.delete(file);
     invalidateSessionsListCache();
     return true;
   } catch {
@@ -785,8 +815,35 @@ export async function deleteConversation(sessionId: string): Promise<boolean> {
   }
 }
 
-function fallbackConversationSummary(sessionId: string, mtimeMs: number): ConversationSummary {
-  return { sessionId, familiarId: "", updatedAt: new Date(mtimeMs).toISOString() };
+/**
+ * The row substituted for a transcript this scan could not read or parse.
+ *
+ * `createdAt` is carried over from the last scan that COULD read the file,
+ * because it is the one field on the record that never changes: the last value
+ * read is still the true one, however unreadable the file is now. Serving it is
+ * not a guess, and dropping it is not free — `/api/client/v1/conversations`
+ * pages on `createdAt`, and a row that loses it falls to the tail of that
+ * ordering while a client's cursor is open, so a file that flips between
+ * readable and unreadable moves a row past the cursor in one direction or the
+ * other every time it flips (cave-wbxcu).
+ *
+ * A file this process has NEVER read has no such value, and there is nothing to
+ * derive one from — the contents are exactly what cannot be reached. Those rows
+ * carry no `createdAt` and sort to the tail, which is the same place they have
+ * always sorted; a walk that starts and ends while the file is unreadable sees
+ * them in one stable position.
+ */
+function fallbackConversationSummary(
+  sessionId: string,
+  mtimeMs: number,
+  lastKnownCreatedAt: string | undefined,
+): ConversationSummary {
+  return {
+    sessionId,
+    familiarId: "",
+    ...(lastKnownCreatedAt ? { createdAt: lastKnownCreatedAt } : {}),
+    updatedAt: new Date(mtimeMs).toISOString(),
+  };
 }
 
 async function readConversationSummary(
@@ -795,6 +852,7 @@ async function readConversationSummary(
   mtimeMs: number,
   fileSize: number,
 ): Promise<{ summary: ConversationSummary | null; bytesRead: number; cacheable: boolean }> {
+  const lastKnownCreatedAt = conversationCreatedAtByFile.get(file);
   let raw: string;
   try {
     raw = await readFile(file, "utf8");
@@ -802,7 +860,7 @@ async function readConversationSummary(
     // A sharing violation or other transient read failure must be retried on
     // the next scan even when the file's stat key did not change.
     return {
-      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs, lastKnownCreatedAt),
       bytesRead: 0,
       cacheable: false,
     };
@@ -813,7 +871,7 @@ async function readConversationSummary(
     conv = JSON.parse(raw) as ConversationFile;
   } catch {
     return {
-      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs, lastKnownCreatedAt),
       bytesRead: fileSize,
       cacheable: true,
     };
@@ -824,6 +882,14 @@ async function readConversationSummary(
     // truly-linear transcripts still project a synthetic path, while corrupt or
     // ambiguous branch state fails quiet instead of picking a branch implicitly.
     const signals = deriveConversationSignals(conv);
+    // Remember it for the scans that cannot read this file. Recorded only from a
+    // read that actually parsed, and only for a value the record really carries,
+    // so a fallback row never serves a `createdAt` no transcript ever had.
+    if (typeof conv.createdAt === "string" && conv.createdAt.trim()) {
+      conversationCreatedAtByFile.set(file, conv.createdAt);
+    } else {
+      conversationCreatedAtByFile.delete(file);
+    }
     return {
       summary: {
         sessionId: conv.sessionId,
@@ -852,7 +918,7 @@ async function readConversationSummary(
     // loadConversation() treats any invalid conversation shape like a parse
     // failure, so preserve listConversations()'s filename/mtime fallback row.
     return {
-      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs, lastKnownCreatedAt),
       bytesRead: fileSize,
       cacheable: true,
     };
@@ -888,6 +954,12 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   const liveFiles = new Set(files);
   for (const file of conversationSummaryCache.keys()) {
     if (!liveFiles.has(file)) conversationSummaryCache.delete(file);
+  }
+  // The remembered createdAt outlives every change to a file, but not the file:
+  // a transcript that is gone has no row to substitute, and a later transcript
+  // reusing the id is a different conversation.
+  for (const file of conversationCreatedAtByFile.keys()) {
+    if (!liveFiles.has(file)) conversationCreatedAtByFile.delete(file);
   }
 
   const results: Array<ConversationSummary | null | undefined> = new Array(names.length);

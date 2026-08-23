@@ -180,6 +180,88 @@ test("documents every scope, capability, and error code in the contract", () => 
   );
 });
 
+test("pins every advertised operation to the method, path and authority it names", () => {
+  // Name coverage is not enough for the operation inventory, and this is the
+  // one place a stale PROSE claim can be caught structurally. `streaming` was
+  // named in this document for months — accurately, as a known gap — while the
+  // contract advertised it as live; a test that only asked whether the string
+  // appears would have been satisfied by either state.
+  //
+  // So the doc has to carry a row per operation, and the row's method, path and
+  // authority class are compared against the generated fixture. A record that
+  // moves, changes authority, or disappears fails here rather than leaving a
+  // client author reading a table that describes a previous build.
+  const wrong = [];
+  for (const operation of fixture.contract.operations) {
+    const row = new RegExp(
+      `^\\|\\s*\`${operation.id.replaceAll(".", "\\.")}\`\\s*\\|\\s*\`([A-Z]+)\\s+([^\`]+)\`\\s*\\|\\s*([a-z]+)\\s*\\|`,
+      "mu",
+    );
+    const match = row.exec(doc);
+    if (!match) {
+      wrong.push(`${operation.id}: no \`| \`${operation.id}\` | \`METHOD /path\` | <authority> |\` table row`);
+      continue;
+    }
+    if (match[1] !== operation.method || match[2] !== operation.path) {
+      wrong.push(
+        `${operation.id}: documented \`${match[1]} ${match[2]}\`, the contract serves \`${operation.method} ${operation.path}\``,
+      );
+    }
+    if (match[3] !== operation.ingress) {
+      wrong.push(
+        `${operation.id}: documented authority ${match[3]}, the contract declares ${operation.ingress}`,
+      );
+    }
+  }
+  assert.deepEqual(
+    wrong,
+    [],
+    `${DOC_REPO_PATH} operation table disagrees with the contract fixture: ${wrong.join("; ")}`,
+  );
+
+  // Invention is the worse direction here too: a documented operation with no
+  // record sends a client author to an id no server will ever advertise.
+  const advertised = new Set(fixture.contract.operations.map((operation) => operation.id));
+  const invented = [...doc.matchAll(/^\|\s*`([a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+)`\s*\|\s*`[A-Z]+ \//gmu)]
+    .map((match) => match[1])
+    .filter((id) => !advertised.has(id));
+  assert.deepEqual(
+    invented,
+    [],
+    `${DOC_REPO_PATH} documents operations the contract does not advertise: ${invented.join(", ")}`,
+  );
+});
+
+test("never describes a retired declaration as a live capability", () => {
+  // `streaming` and `revisions` may still be DISCUSSED — the document explains
+  // why they are absent, and deleting that explanation would leave an SDK
+  // author guessing. What they may not do is reappear inside the capability or
+  // operation lists the document publishes as live.
+  for (const retired of ["streaming", "revisions"]) {
+    assert.equal(
+      fixture.contract.capabilities.includes(retired),
+      false,
+      `${retired} must not be advertised as a live capability`,
+    );
+    assert.equal(
+      fixture.contract.operations.some((operation) => operation.id.startsWith(`${retired}.`)),
+      false,
+      `${retired} must not be advertised as a live operation`,
+    );
+    // The document's own envelope example is JSON a client author copies. It
+    // was the first thing to go stale last time.
+    const envelopeExamples = [...doc.matchAll(/"capabilities"\s*:\s*\[([^\]]*)\]/gu)];
+    assert.ok(envelopeExamples.length > 0, `${DOC_REPO_PATH} must show a capabilities example`);
+    for (const [, body] of envelopeExamples) {
+      assert.equal(
+        body.includes(`"${retired}"`),
+        false,
+        `${DOC_REPO_PATH} still lists "${retired}" inside an example capabilities array`,
+      );
+    }
+  }
+});
+
 test("documents the contract's versions and pairing secret header", () => {
   // Version numbers are matched as whole tokens: "1.0" is a substring of
   // "0.1.0", so a bare `includes` let the apiVersion vanish from the document

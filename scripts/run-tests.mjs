@@ -93,6 +93,7 @@ export const SUITES = {
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
+    "scripts/worktree-lifecycle-filemode.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
     "scripts/remote-hygiene.test.mjs",
@@ -134,6 +135,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-quick-saves.test.ts",
     "src/components/role-surfaces/research-library-view.test.ts",
     "src/components/role-surfaces/research-studio-providers.test.ts",
+    "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
     "src/components/role-surfaces/research-tab-desk.test.ts",
     "src/components/ui/clamped-text.test.ts",
     "src/components/role-surfaces/research-tab-library.test.ts",
@@ -378,6 +380,7 @@ export const SUITES = {
     "src/lib/rss.test.ts",
     "src/lib/home-feed.test.ts",
     "src/lib/home-greeting.test.ts",
+    "src/lib/home-continue-paging.test.ts",
     "src/lib/secret-validators.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/components/chat-project-sidebar-empty.test.ts",
@@ -443,6 +446,7 @@ export const SUITES = {
     "src/lib/server/research-mission-runner-reconciliation-evidence.test.ts",
     "src/lib/server/research-mission-runner-automation-scheduling.test.ts",
     "src/lib/server/research-mission-runner-concurrency-terminal.test.ts",
+    "src/lib/server/research-mission-x-hydration.test.ts",
     "src/lib/flow/flow-execution-data.test.ts",
     "src/lib/required-inputs.test.ts",
     "src/lib/server/flow-store.test.ts",
@@ -559,6 +563,7 @@ export const SUITES = {
     "src/components/marketplace/marketplace-detail.test.ts",
     "src/lib/knowledge-pack-ui.test.ts",
     "src/components/home-hearth.test.ts",
+    "src/components/home-continue-carousel.behavior.test.tsx",
     "src/lib/home-task-handoff.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
@@ -1265,6 +1270,7 @@ export const SUITES = {
     "src/lib/clipboard.test.ts",
     "src/lib/icon-subset.test.ts",
     "src/lib/panel-shortcuts.test.ts",
+    "src/lib/keyboard-event-key.test.ts",
     "src/lib/settings-familiar-picker.test.ts",
     "src/components/familiar-studio-inline.test.ts",
     "src/lib/session-rail-title.test.ts",
@@ -1321,6 +1327,7 @@ export const SUITES = {
     "scripts/dev-app-teardown.test.mjs",
     "scripts/dev-port-owner.test.mjs",
     "scripts/port-contract.test.mjs",
+    "scripts/heap-limits.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
@@ -1382,6 +1389,7 @@ export const SUITES = {
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
+    "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
     "src/lib/server/client-v1/pairing-store.test.ts",
     "src/lib/server/client-v1/credential-store.test.ts",
@@ -1863,6 +1871,8 @@ const STRIP_TYPES_MJS = new Set([
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
+  // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
+  "scripts/worktree-lifecycle-filemode.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
@@ -2200,6 +2210,8 @@ const VITEST_TESTS = new Set([
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
+  // drives the Studio config + review dialogs through react-test-renderer
+  "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
   "src/components/role-surfaces/use-research-missions.test.tsx",
   "src/components/voice-provider-settings.test.tsx",
   "src/components/voice-provider-settings.integration.test.tsx",
@@ -2213,6 +2225,9 @@ const VITEST_TESTS = new Set([
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
   "src/components/mobile-drawer-nav-list-focus.test.tsx",
+  // drives Home's Continue carousel — paging, arrow-key traversal and the
+  // focus handoff across a page turn — through the real component (JSX)
+  "src/components/home-continue-carousel.behavior.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",

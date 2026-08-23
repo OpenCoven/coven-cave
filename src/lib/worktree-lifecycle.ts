@@ -398,6 +398,112 @@ export function isDisposableIgnoredPath(candidate: string): boolean {
   );
 }
 
+/**
+ * An "ordinary changed entry" from `git status --porcelain=v2`:
+ *
+ *   1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
+ *
+ * The path is everything after the eighth field. Under `-z` it is emitted raw,
+ * so it may contain spaces, a trailing space, or a newline, and must never be
+ * trimmed.
+ */
+const PORCELAIN_V2_ORDINARY_ENTRY =
+  /^1 (\S\S) (\S+) (\d{6}) (\d{6}) (\d{6}) ([0-9a-f]+) ([0-9a-f]+) ([\s\S]+)$/;
+
+export interface UnrepresentableExecutableBitCandidate {
+  /** Repository-root-relative path, exactly as git emitted it. */
+  path: string;
+  /** The object id git has recorded in the index for that path. */
+  indexOid: string;
+}
+
+/**
+ * Recognises the ONE status entry shape a filesystem without a POSIX executable
+ * bit can manufacture out of nothing: git has 100755 in both HEAD and the index,
+ * and the filesystem can only ever report 100644 back.
+ *
+ * This is a *candidate*, not a verdict. Matching proves only that the entry's
+ * mode delta is explainable by the missing executable bit — it does NOT prove
+ * the worktree file is unchanged, and callers must establish that separately by
+ * comparing the worktree content against `indexOid`.
+ *
+ * ⚠️ That second step is not optional, and the reason is easy to get wrong. A
+ * porcelain-v2 ordinary entry carries only TWO object ids: the HEAD blob (`hH`)
+ * and the INDEX blob (`hI`). There is no worktree object id — `git status` never
+ * hashes the worktree file. So `hH === hI` says only that the index matches
+ * HEAD, which `X === "."` already said; it says nothing whatsoever about the
+ * bytes on disk. Measured on a Windows checkout of this repository, an untouched
+ * executable and the same executable with an unstaged content edit produce
+ * status records of identical shape, both with equal object ids:
+ *
+ *   1 .M N... 100755 100755 100644 cab8485719a6… cab8485719a6… scripts/dev-app.sh
+ *
+ * Discounting on equal object ids alone would therefore hide real uncommitted
+ * edits from the check that authorises deleting a worktree.
+ */
+export function parseUnrepresentableExecutableBitCandidate(
+  entry: string,
+): UnrepresentableExecutableBitCandidate | null {
+  const match = PORCELAIN_V2_ORDINARY_ENTRY.exec(entry);
+  if (!match) return null;
+  const [, xy, submodule, headMode, indexMode, worktreeMode, headOid, indexOid, entryPath] =
+    match;
+  // Anything staged is a change on its own terms, whatever the modes say.
+  if (xy !== ".M") return null;
+  // A submodule's state is never a file mode.
+  if (submodule !== "N...") return null;
+  // The only delta a missing executable bit can produce. Notably this excludes
+  // 100644 -> 100755: a filesystem that cannot store the bit cannot invent one.
+  if (headMode !== "100755" || indexMode !== "100755" || worktreeMode !== "100644") {
+    return null;
+  }
+  if (headOid !== indexOid) return null;
+  return { path: entryPath, indexOid };
+}
+
+/**
+ * Drops the status entries that a filesystem without a POSIX executable bit
+ * fabricated, and keeps everything else.
+ *
+ * Two independent facts must BOTH hold before an entry is discounted, and each
+ * one alone would be a hole:
+ *
+ *  1. `executableBitIsRepresentable === false` — the worktree's filesystem
+ *     cannot store the bit, so its mode report carries no information. On a
+ *     POSIX filesystem this is `true` and nothing is ever discounted, which is
+ *     what keeps a genuine `chmod -x` counting as dirty.
+ *  2. The worktree content hashes to the object id already in the index, so the
+ *     entry carries no content difference at all.
+ *
+ * Every failure path keeps the entry. `resolveWorktreeOids` returning `null`, a
+ * path missing from its result, or an unparsed entry all mean "cannot prove this
+ * is an artifact", and an unproven entry stays a change.
+ */
+export function retainedStatusChanges(
+  changes: string[],
+  executableBitIsRepresentable: boolean,
+  resolveWorktreeOids: (paths: string[]) => Map<string, string> | null,
+): string[] {
+  if (executableBitIsRepresentable) return changes;
+  const candidates = new Map<string, UnrepresentableExecutableBitCandidate>();
+  for (const entry of changes) {
+    const candidate = parseUnrepresentableExecutableBitCandidate(entry);
+    if (candidate) candidates.set(entry, candidate);
+  }
+  if (candidates.size === 0) return changes;
+  const oids = resolveWorktreeOids([
+    ...new Set([...candidates.values()].map((candidate) => candidate.path)),
+  ]);
+  if (oids === null) return changes;
+  return changes.filter((entry) => {
+    const candidate = candidates.get(entry);
+    if (!candidate) return true;
+    const worktreeOid = oids.get(candidate.path);
+    if (worktreeOid === undefined) return true;
+    return worktreeOid !== candidate.indexOid;
+  });
+}
+
 function activeReasons(observation: WorktreeLifecycleObservation): string[] {
   const reasons: string[] = [];
   if (observation.changes.length > 0) {
