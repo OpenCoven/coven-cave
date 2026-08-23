@@ -12,6 +12,11 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
+import {
+  STRICT_GIT_LOCAL_TIMEOUT_MS,
+  STRICT_GIT_NETWORK_TIMEOUT_MS,
+  strictGitTimeoutMs,
+} from "./worktree-guard-timeouts.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "scripts", "worktree-guard.mjs");
@@ -42,6 +47,21 @@ const STRICT_GIT_ENV_KEYS = [
   "GIT_NOGLOB_PATHSPECS",
   "GIT_ICASE_PATHSPECS",
 ];
+
+await test("strict Git network probes have release-safe bounded timeouts", () => {
+  assert.equal(STRICT_GIT_LOCAL_TIMEOUT_MS, 10_000);
+  assert.equal(STRICT_GIT_NETWORK_TIMEOUT_MS, 60_000);
+  assert.equal(strictGitTimeoutMs(["status", "--porcelain"]), STRICT_GIT_LOCAL_TIMEOUT_MS);
+  assert.equal(
+    strictGitTimeoutMs(["-C", "/tmp/example", "fetch", "--quiet", "origin"]),
+    STRICT_GIT_NETWORK_TIMEOUT_MS,
+  );
+  assert.equal(
+    strictGitTimeoutMs(["-C", "/tmp/example", "ls-remote", "origin", "HEAD"]),
+    STRICT_GIT_NETWORK_TIMEOUT_MS,
+  );
+  assert.throws(() => strictGitTimeoutMs(["-C"]), /requires a directory/);
+});
 
 function runHook(command, cwd, extraEnv = {}) {
   const payload = JSON.stringify({ session_id: "test", cwd, tool_name: "Bash", tool_input: { command } });
