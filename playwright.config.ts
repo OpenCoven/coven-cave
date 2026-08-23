@@ -39,7 +39,12 @@ const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the a
 const SETUP_FOCUS_VISIBILITY_TEST =
   /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
-const MOBILE_SURFACE_SPECS = /(?:mobile\/.*|right-chat-panel)\.spec\.ts/;
+// inbox-toast-chrome-clearance lives at the root rather than in tests/mobile/
+// on purpose: the toast-over-chrome collision it guards exists at desktop
+// widths too (cave-lcxc6), so it has to run on all three viewport projects —
+// tests/mobile/ is excluded from the desktop project.
+const MOBILE_SURFACE_SPECS =
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 

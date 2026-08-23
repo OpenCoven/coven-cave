@@ -82,16 +82,88 @@ test("invalid bearer attempts use a separate bounded bucket and never spend vali
   assert.equal(limiter.consumeAuthenticated("credential-a").allowed, false);
 });
 
-test("pairing, invalid bearer, and authenticated categories are isolated even for the same key", () => {
-  const limiter = createClientV1RateLimiter({ now: () => 0 });
+/**
+ * Every category must bound only itself, proved by exhausting each one in turn
+ * under a SHARED key and demanding the other three still answer.
+ *
+ * The earlier version of this test exhausted `pairing-create` alone and then
+ * checked that `invalid-bearer` and `authenticated` still allowed the same key.
+ * That cannot fail for a merge between the two categories it checks: pointing
+ * `consumeInvalidBearer` at the `authenticated` bucket leaves both of those
+ * final assertions passing, because neither of those categories was ever
+ * spent — only `pairing-create` was. Its sibling above ("invalid bearer
+ * attempts … never spend valid credential budget") misses the same merge for
+ * the opposite reason: it varies the key and the category together
+ * (`"loopback"` versus `"credential-a"`), so a category collision is hidden
+ * behind a key collision that never happens.
+ *
+ * Both names promise category isolation; neither assertion could observe its
+ * loss. Holding the key fixed and rotating which category is exhausted is what
+ * makes the promise load-bearing — a merge of ANY two categories now shows up
+ * as the merged-into category refusing a key it has never charged.
+ */
+test("every rate-limit category bounds only itself when the key is held fixed", () => {
   const key = "same-identity";
+  const categories = [
+    {
+      name: "pairing-create",
+      limit: CLIENT_V1_PAIRING_CREATE_LIMIT,
+      consume: (limiter: ReturnType<typeof createClientV1RateLimiter>) =>
+        limiter.consumePairingCreate(key),
+    },
+    {
+      name: "invalid-bearer",
+      limit: CLIENT_V1_INVALID_BEARER_LIMIT,
+      consume: (limiter: ReturnType<typeof createClientV1RateLimiter>) =>
+        limiter.consumeInvalidBearer(key),
+    },
+    {
+      name: "authenticated",
+      limit: CLIENT_V1_AUTHENTICATED_LIMIT,
+      consume: (limiter: ReturnType<typeof createClientV1RateLimiter>) =>
+        limiter.consumeAuthenticated(key),
+    },
+    {
+      name: "pairing-exchange-failure",
+      limit: CLIENT_V1_PAIRING_EXCHANGE_FAILURE_LIMIT,
+      consume: (limiter: ReturnType<typeof createClientV1RateLimiter>) =>
+        limiter.consumePairingExchangeFailure(key),
+    },
+  ];
 
-  for (let index = 0; index < CLIENT_V1_PAIRING_CREATE_LIMIT; index += 1) {
-    assert.equal(limiter.consumePairingCreate(key).allowed, true);
+  for (const exhausted of categories) {
+    // A fresh limiter per row, so each row measures one exhausted category
+    // rather than the accumulation of the rows before it.
+    const limiter = createClientV1RateLimiter({ now: () => 0 });
+
+    for (let index = 0; index < exhausted.limit; index += 1) {
+      assert.equal(
+        exhausted.consume(limiter).allowed,
+        true,
+        `${exhausted.name} request ${index + 1} of ${exhausted.limit}`,
+      );
+    }
+    assert.equal(
+      exhausted.consume(limiter).allowed,
+      false,
+      `${exhausted.name} must refuse once its own limit is spent`,
+    );
+
+    for (const other of categories) {
+      if (other.name === exhausted.name) continue;
+      const result = other.consume(limiter);
+      assert.equal(
+        result.allowed,
+        true,
+        `${other.name} must not be spent by exhausting ${exhausted.name}`,
+      );
+      assert.equal(
+        result.remaining,
+        other.limit - 1,
+        `${other.name} must be charged only its own single request after ${exhausted.name} was exhausted`,
+      );
+    }
   }
-  assert.equal(limiter.consumePairingCreate(key).allowed, false);
-  assert.equal(limiter.consumeInvalidBearer(key).allowed, true);
-  assert.equal(limiter.consumeAuthenticated(key).allowed, true);
 });
 
 test("pairing exchange failures allow exactly 10 wrong secrets per pairing id per window", () => {

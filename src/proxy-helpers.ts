@@ -5,8 +5,10 @@
 // The proxy() function in proxy.ts re-exports these so consumers still
 // have one canonical import path.
 
-// Data only — contract.ts declares the client-v1 surface and imports nothing,
-// so pulling it in here costs the proxy no runtime dependency.
+// Data only — contract.ts declares the client-v1 surface and imports nothing at
+// runtime but the equally pure operation registry (operations.ts, whose own
+// imports are type-only and therefore erased), so pulling it in here costs the
+// proxy no runtime dependency.
 import { CLIENT_V1_PUBLIC_ROUTES } from "./lib/server/client-v1/contract.ts";
 
 export function timingSafeEqualString(a: string, b: string) {

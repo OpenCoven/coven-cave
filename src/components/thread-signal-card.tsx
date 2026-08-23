@@ -90,6 +90,9 @@ export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignal
     const timer = setTimeout(() => onDismissRef.current(), DISMISS_UNDO_MS);
     return () => clearTimeout(timer);
   }, [dismissed]);
+  useEffect(() => {
+    announce(`Thread Signal available for ${name}.`);
+  }, [announce, name, report.id]);
 
   const selected = tiles.find((tile) => tile.id === selectedTile) ?? null;
   const criticals = rows.filter((row) => row.severity === "critical");

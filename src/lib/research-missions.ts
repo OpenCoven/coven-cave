@@ -21,6 +21,35 @@ export type ResearchMissionStatus =
   | "cancelled"
   | "archived";
 
+/**
+ * Where a run was invoked from. A research run is ONE object with several
+ * projections (#4808): the Research Desk workspace and the chat surface both
+ * address the same mission, so the mission itself has to say which surface
+ * started it and how to get back there. Without this a chat-invoked run and a
+ * desk-invoked run are indistinguishable once persisted, and the desk has no
+ * way to project a run back into the conversation that asked for it.
+ */
+export const RESEARCH_RUN_ORIGIN_SURFACES = ["chat", "research-desk"] as const;
+
+export type ResearchRunOriginSurface = (typeof RESEARCH_RUN_ORIGIN_SURFACES)[number];
+
+export type ResearchRunOrigin = {
+  surface: ResearchRunOriginSurface;
+  /**
+   * The conversation the run was invoked from — the chat the user was in, NOT
+   * `iterations[].sessionId`, which is the executor session the run itself
+   * spawned. Only a `chat` origin can carry one.
+   */
+  sessionId?: string;
+};
+
+/** Human label for a run's origin surface; shared so chat and the desk cannot
+ *  drift into describing the same run two different ways. */
+export const RESEARCH_RUN_ORIGIN_LABELS: Record<ResearchRunOriginSurface, string> = {
+  chat: "Started from chat",
+  "research-desk": "Started from the Research Desk",
+};
+
 export type ResearchMissionAction =
   | "retry"
   | "continue"
@@ -141,6 +170,8 @@ export function ensureStandardArtifactRefs(mission: ResearchMission): ResearchMi
   };
 }
 
+export type ResearchSourceAvailability = "available" | "unavailable" | "deleted";
+
 export type ResearchSourceRef = {
   id: string;
   title: string;
@@ -153,6 +184,20 @@ export type ResearchSourceRef = {
   note?: string;
   confidence?: number;
   status: "candidate" | "used" | "conflicting" | "rejected";
+  /**
+   * External-provider identity for a source Cave rehydrates rather than
+   * archives. `provider`/`externalId` are what let a stored ref resolve back
+   * to the familiar-scoped record it came from (an attached X post resolves by
+   * `externalId` = post id), and `availability` records whether that upstream
+   * item can still be retrieved.
+   *
+   * These are identity only, deliberately: the ledger never gains a field that
+   * could hold the external item's body. See
+   * docs/superpowers/specs/2026-07-27-x-api-research-and-publishing-design.md.
+   */
+  provider?: "x";
+  externalId?: string;
+  availability?: ResearchSourceAvailability;
 };
 
 export type ResearchSourceDraft = Partial<ResearchSourceRef> & {
@@ -185,6 +230,9 @@ export type ResearchMission = {
   titleSource?: "explicit" | "generated";
   intent: string;
   direction?: string;
+  /** Which surface invoked this run, and the conversation to project it back
+   *  into. Absent on missions created before the field existed. */
+  origin?: ResearchRunOrigin;
   mode: ResearchMissionMode;
   modeSource: "auto" | "user";
   deliverable: string;
@@ -358,6 +406,9 @@ export type CreateResearchMissionInput = {
   model?: string;
   /** Saved Research resources made available before iteration one launches. */
   savedLinkIds?: string[];
+  /** Which surface is invoking the run. Callers that omit it create a run with
+   *  no recorded origin rather than a guessed one. */
+  origin?: ResearchRunOrigin;
 };
 
 export type ResearchMissionActionInput =
@@ -410,6 +461,12 @@ const RESEARCH_SOURCE_STATUSES: ReadonlySet<ResearchSourceRef["status"]> = new S
   "conflicting",
   "rejected",
 ]);
+const RESEARCH_SOURCE_PROVIDERS: ReadonlySet<string> = new Set(["x"]);
+const RESEARCH_SOURCE_AVAILABILITIES: ReadonlySet<string> = new Set([
+  "available",
+  "unavailable",
+  "deleted",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -442,6 +499,47 @@ function optionalTimestamp(
   const candidate = value[key];
   if (candidate === undefined) return undefined;
   return validTimestamp(candidate) ? candidate : null;
+}
+
+/** Upper bound on an origin session id — matches the conversation store's own
+ *  ceiling (isSafeConversationSessionId). */
+export const RESEARCH_ORIGIN_SESSION_ID_MAX_LENGTH = 240;
+
+/**
+ * A stored origin session id has to be safe to hand straight back to the
+ * conversation store, which resolves it as a file name. Reject anything that
+ * could traverse — the same predicate as `isSafeConversationSessionId`, spelled
+ * without `node:path` so this module stays free of runtime imports.
+ */
+function isSafeOriginSessionId(value: string): boolean {
+  if (!value || value.length > RESEARCH_ORIGIN_SESSION_ID_MAX_LENGTH) return false;
+  if (value === "." || value === "..") return false;
+  return !/[/\\\0]/.test(value);
+}
+
+/**
+ * Parse a run origin. Returns `undefined` when absent and `null` when present
+ * but malformed — a malformed origin is refused rather than dropped, because a
+ * run that silently forgets where it came from is exactly the "two surfaces,
+ * two models" failure this field exists to close.
+ */
+export function parseResearchRunOrigin(
+  value: unknown,
+): ResearchRunOrigin | null | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const surface = value.surface;
+  if (typeof surface !== "string"
+    || !(RESEARCH_RUN_ORIGIN_SURFACES as readonly string[]).includes(surface)) {
+    return null;
+  }
+  const sessionId = value.sessionId;
+  if (sessionId === undefined) return { surface: surface as ResearchRunOriginSurface };
+  if (typeof sessionId !== "string" || !isSafeOriginSessionId(sessionId)) return null;
+  // Only chat can name a conversation. A desk-invoked run carrying a session id
+  // would make the desk offer a "back to the chat" jump that never existed.
+  if (surface !== "chat") return null;
+  return { surface, sessionId };
 }
 
 function parseResearchIteration(value: unknown): ResearchIteration | null {
@@ -575,6 +673,23 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
       || value.confidence > 1)) {
     return null;
   }
+  // External-provider identity. Strict like `status`: a ledger written by an
+  // agent that claims an unknown provider or a bogus availability is refused
+  // outright rather than silently downgraded, so a rehydrated source can never
+  // be resolved against a value Cave does not understand.
+  const externalId = optionalString(value, "externalId");
+  if (externalId === null) return null;
+  // Membership is tested on the RAW value, exactly as `status` is above.
+  // Coercing with String() first would admit `["x"]` and `["deleted"]` — JSON
+  // an agent can write — as the provider and availability they stringify to,
+  // storing an array behind a type that promises a string literal.
+  if (value.provider !== undefined && !RESEARCH_SOURCE_PROVIDERS.has(value.provider as string)) {
+    return null;
+  }
+  if (value.availability !== undefined
+    && !RESEARCH_SOURCE_AVAILABILITIES.has(value.availability as string)) {
+    return null;
+  }
   return {
     id: value.id,
     title: value.title,
@@ -587,6 +702,11 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
     ...(note !== undefined ? { note } : {}),
     ...(typeof value.confidence === "number" ? { confidence: value.confidence } : {}),
     status: value.status as ResearchSourceRef["status"],
+    ...(value.provider !== undefined ? { provider: value.provider as "x" } : {}),
+    ...(externalId !== undefined ? { externalId } : {}),
+    ...(value.availability !== undefined
+      ? { availability: value.availability as ResearchSourceAvailability }
+      : {}),
   };
 }
 
@@ -672,6 +792,11 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   // creation, then erased the first time the mission was re-read and saved.
   const harness = optionalString(value, "harness");
   const model = optionalString(value, "model");
+  // Same trap as `harness` above: a field this parser does not name is dropped
+  // on the next read/write round trip, and the mission would quietly forget the
+  // surface that started it.
+  const origin = parseResearchRunOrigin(value.origin);
+  if (origin === null) return null;
   if (direction === null
     || audience === null
     || projectRoot === null
@@ -718,6 +843,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
       : {}),
     intent: value.intent,
     ...(direction !== undefined ? { direction } : {}),
+    ...(origin !== undefined ? { origin } : {}),
     mode: value.mode as ResearchMissionMode,
     modeSource: value.modeSource as ResearchMission["modeSource"],
     deliverable: value.deliverable,
@@ -939,6 +1065,16 @@ export function validateCreateResearchMissionInput(
     }
     model = rawModel.trim();
   }
+  // A malformed origin is refused, never coerced: a run whose recorded origin
+  // is a guess would send the desk's "open the chat that started this" jump to
+  // a conversation that never asked for it.
+  const origin = parseResearchRunOrigin(value.origin);
+  if (origin === null) {
+    return {
+      ok: false,
+      error: `origin.surface must be one of: ${RESEARCH_RUN_ORIGIN_SURFACES.join(", ")}, with origin.sessionId only on a chat origin`,
+    };
+  }
   return {
     ok: true,
     value: {
@@ -955,6 +1091,7 @@ export function validateCreateResearchMissionInput(
       ...(harness ? { harness } : {}),
       ...(model ? { model } : {}),
       ...(savedLinkIds.length > 0 ? { savedLinkIds } : {}),
+      ...(origin !== undefined ? { origin } : {}),
     },
   };
 }

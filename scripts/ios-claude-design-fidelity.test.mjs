@@ -22,6 +22,7 @@ const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.sw
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const responseControls = await read("apps/ios/CovenCave/CovenCave/Models/ChatResponseControls.swift");
+const nextPaths = await read("apps/ios/CovenCave/CovenCave/Models/NextPaths.swift");
 const models = await read("apps/ios/CovenCave/CovenCave/Models/Models.swift");
 const messageBubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
 const caveClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
@@ -184,6 +185,32 @@ assert.match(
   drawer,
   /geo\.size\.width \* 0\.70/,
   "the drawer keeps enough of the active destination visible to preserve spatial context",
+);
+assert.match(
+  drawer,
+  /ProjectContextButton[\s\S]{0,160}\.padding\(\.horizontal, 8\)/,
+  "the project selector aligns to the primary navigation row gutter",
+);
+assert.match(
+  projectSwitcher,
+  /PillSelector\([\s\S]{0,180}fillsWidth: true/,
+  "the global project selector fills the available drawer width",
+);
+assert.match(
+  chat,
+  /sessionDetailRow\(\s*"Harness"[\s\S]*?sessionDetailRow\(\s*"Runtime"[\s\S]*?sessionDetailRow\("Model"[\s\S]*?sessionDetailRow\(\s*"Project"[\s\S]*?sessionDetailRow\(\s*"Conversation"/,
+  "chat configuration leads with runtime identity, then model, project, and conversation",
+);
+assert.doesNotMatch(
+  chat,
+  /sessionDetailRow\(\s*"Inventory"/,
+  "chat configuration does not expose internal inventory provenance",
+);
+assert.ok(
+  nextPaths.includes(
+    'of: #"^\\[(?:reply|task|action:open-tasks|action:save-link)(?::recommended)?\\]\\s*"#',
+  ),
+  "typed next-path controls are removed before suggestions reach the conversation UI",
 );
 assert.match(
   drawer,
@@ -370,8 +397,13 @@ assert.match(
 );
 assert.match(
   modelControl,
-  /Section\("Inventory"\)[\s\S]{0,260}ChatModelInventoryProvenancePresentation\.label\(for: provenance\)/,
-  "the model picker visibly names every inventory provenance state",
+  /ChatModelInventoryProvenancePresentation\.notice\(for: provenance\)/,
+  "the model picker surfaces only actionable model-list freshness notices",
+);
+assert.doesNotMatch(
+  modelControl,
+  /Section\("Inventory"\)/,
+  "the model picker does not expose inventory implementation terminology",
 );
 assert.match(
   modelControl,
@@ -400,11 +432,6 @@ assert.match(
 );
 assert.match(
   chat,
-  /sessionDetailRow\(\s*"Inventory",[\s\S]{0,180}ChatModelInventoryProvenancePresentation\.label\(for: presentedModelPickerProvenance\)/,
-  "chat session details expose inventory provenance before the picker opens",
-);
-assert.match(
-  chat,
   /prepareModelStateLoad\(for target:[\s\S]{0,320}modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,320}modelPickerOptions = \[\][\s\S]{0,220}modelControlCapabilities = \[\]/,
   "a changed familiar/session masks prior inventory and selected-model controls",
 );
@@ -417,6 +444,21 @@ assert.match(
   familiars,
   /ModelPickerSheet\([\s\S]{0,320}provenance: presentedModelProvenance/,
   "familiar defaults pass inventory provenance to the model picker",
+);
+assert.match(
+  familiars,
+  /photosPicker\([\s\S]{0,260}selection: \$avatarPhotoItem/,
+  "familiar details can choose a new avatar from the photo library",
+);
+assert.match(
+  familiars,
+  /uploadFamiliarAvatar\([\s\S]{0,220}applyFamiliarAvatarMutation/,
+  "avatar uploads update the visible familiar immediately",
+);
+assert.match(
+  familiars,
+  /deleteFamiliarAvatar\([\s\S]{0,220}applyFamiliarAvatarMutation/,
+  "familiar details can remove an existing avatar",
 );
 assert.match(
   familiars,
@@ -465,7 +507,7 @@ assert.match(
 );
 assert.match(
   familiars,
-  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,12000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,18000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
   "familiar-default model PATCHes are serialized in selection order",
 );
 assert.match(

@@ -24,6 +24,7 @@ import {
   RESEARCH_GENERATION_MEDIA_KINDS,
   cancelResearchGeneration,
   createResearchGeneration,
+  elevenLabsPodcastDirection,
   getResearchGenerationReadiness,
   isResearchGenerationKind,
   listResearchGenerations,
@@ -36,6 +37,7 @@ import {
   type ResearchMediaProvider,
   type ResearchPodcastStyle,
 } from "@/lib/research-generations";
+import type { ElevenLabsDeliveryPresetId } from "@/lib/voice/elevenlabs-shared";
 import type { ResearchTabProps } from "./researcher-surface";
 import { describeProviderChips, researchProviderChips } from "./research-studio-providers";
 import {
@@ -75,6 +77,12 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
   const [mediaStyle, setMediaStyle] = useState<ResearchPodcastStyle>("breakdown");
   const [mediaLength, setMediaLength] =
     useState<ResearchMediaLength>("standard");
+  // ElevenLabs podcast delivery direction. Defaults reproduce the previous
+  // undirected render exactly: neutral preset, pipeline default model, no seed.
+  const [mediaDelivery, setMediaDelivery] =
+    useState<ElevenLabsDeliveryPresetId>("neutral");
+  const [mediaModel, setMediaModel] = useState("");
+  const [mediaSeed, setMediaSeed] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [reviewGeneration, setReviewGeneration] = useState<ResearchGeneration | null>(null);
@@ -326,6 +334,13 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
                   }
                 : {}),
               ...(configKind === "podcast" ? { style: mediaStyle } : {}),
+              ...elevenLabsPodcastDirection({
+                kind: configKind,
+                provider: mediaProvider,
+                delivery: mediaDelivery,
+                model: mediaModel,
+                seed: mediaSeed,
+              }),
             },
           }
         : {}),
@@ -358,9 +373,12 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
     directions,
     effectiveSourceId,
     familiarId,
+    mediaDelivery,
     mediaGuestVoice,
     mediaLength,
+    mediaModel,
     mediaProvider,
+    mediaSeed,
     mediaStyle,
     mediaVoice,
   ]);
@@ -835,6 +853,12 @@ export function ResearchTabStudio({ research, context, onNavigate }: ResearchTab
           onMediaStyleChange={setMediaStyle}
           mediaLength={mediaLength}
           onMediaLengthChange={setMediaLength}
+          mediaDelivery={mediaDelivery}
+          onMediaDeliveryChange={setMediaDelivery}
+          mediaModel={mediaModel}
+          onMediaModelChange={setMediaModel}
+          mediaSeed={mediaSeed}
+          onMediaSeedChange={setMediaSeed}
           error={createError}
           creating={creating}
           onSubmit={submitCreate}

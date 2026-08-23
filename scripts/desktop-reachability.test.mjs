@@ -77,6 +77,16 @@ assert.match(
 );
 assert.match(
   reachability,
+  /fn bootstrap_launch_agent[\s\S]*run_launchctl\(&\["bootstrap"[\s\S]*bootout_launch_agent\(\)[\s\S]*Duration::from_millis\(200\)[\s\S]*run_launchctl\(&\["bootstrap"/,
+  "LaunchAgent installation must repair a transient launchd unload/reload race with one bounded retry",
+);
+assert.match(
+  reachability,
+  /Background availability couldn’t start: \{error\}\. Quit other Cave copies, reopen \/Applications\/CovenCave\.app, and try again\./,
+  "native Background availability failures must preserve their reason and provide a concrete recovery action",
+);
+assert.match(
+  reachability,
   /install_daemon_shutdown_handler[\s\S]*DAEMON_SHUTDOWN_REQUESTED[\s\S]*stop_daemon_children/,
   "a launchd SIGTERM must make the daemon synchronously reap its sidecar and assertion",
 );
@@ -280,6 +290,16 @@ assert.match(
 );
 assert.match(
   bridge,
+  /typeof cause === "string" && cause\.trim\(\)[\s\S]*new Error\(cause\.trim\(\)\)/,
+  "Tauri string rejections must remain visible instead of collapsing to a generic Settings error",
+);
+assert.match(
+  bridge,
+  /for \(const key of \["message", "error", "stderr"\]/,
+  "safe structured native errors must preserve useful text without rendering arbitrary objects",
+);
+assert.match(
+  bridge,
   /!\("__TAURI_INTERNALS__" in window\)/,
   "the Tauri runtime guard must remain type-safe in browser builds",
 );
@@ -311,6 +331,11 @@ assert.match(
   docs,
   /Tailscale cannot wake a sleeping Mac[\s\S]*Bonjour\s+sleep proxy is limited to local-network mDNS/,
   "mobile documentation must state the wake-on-LAN limitation honestly",
+);
+assert.match(
+  docs,
+  /preserves the native launchd reason[\s\S]*reopen `\/Applications\/CovenCave\.app`[\s\S]*repairs a transient launchd unload\/reload race automatically/,
+  "mobile troubleshooting must explain the recoverable LaunchAgent failure path",
 );
 
 console.log("desktop-reachability.test.mjs: ok");

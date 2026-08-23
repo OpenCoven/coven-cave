@@ -462,6 +462,18 @@ struct ChatView: View {
 
     private var sessionDetailsCard: some View {
         VStack(spacing: 0) {
+            sessionDetailRow(
+                "Harness",
+                value: sessionHarnessLabel,
+                systemImage: "terminal"
+            )
+            Divider()
+            sessionDetailRow(
+                "Runtime",
+                value: sessionRuntimeLabel,
+                systemImage: "desktopcomputer"
+            )
+            Divider()
             Button {
                 showSessionDetails = false
                 Task { await switchModel("") }
@@ -472,24 +484,10 @@ struct ChatView: View {
             .disabled(thread.isGroup)
 
             Divider()
-            HStack(spacing: 10) {
-                Image(systemName: "desktopcomputer")
-                    .foregroundStyle(chrome.accent)
-                    .frame(width: 22)
-                Text("Runtime")
-                Spacer()
-                Text(sessionRuntimeLabel)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .font(.callout)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            Divider()
             sessionDetailRow(
-                "Inventory",
-                value: ChatModelInventoryProvenancePresentation.label(for: presentedModelPickerProvenance),
-                systemImage: "info.circle"
+                "Project",
+                value: sessionProjectLabel,
+                systemImage: "folder"
             )
             Divider()
             Button {
@@ -497,7 +495,7 @@ struct ChatView: View {
                 showSessionPicker = true
             } label: {
                 sessionDetailRow(
-                    "Session",
+                    "Conversation",
                     value: thread.title,
                     systemImage: "bubble.left.and.bubble.right",
                     showsChevron: true
@@ -505,7 +503,7 @@ struct ChatView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("Switch session")
-            .accessibilityLabel("Session")
+            .accessibilityLabel("Conversation")
             .accessibilityValue(thread.title)
             .disabled(thread.isGroup)
             ForEach(presentedModelControlCapabilities) { capability in
@@ -623,8 +621,16 @@ struct ChatView: View {
 
     private var sessionRuntimeLabel: String {
         if thread.isGroup { return "Per familiar" }
-        guard let state = presentedSessionModelState else { return "Unavailable" }
-        return state.runtime?.isEmpty == false ? state.runtime! : state.harness
+        return ChatRuntimePresentation.runtimeLabel(presentedSessionModelState?.runtime)
+    }
+
+    private var sessionHarnessLabel: String {
+        if thread.isGroup { return "Per familiar" }
+        return ChatRuntimePresentation.harnessLabel(presentedSessionModelState?.harness)
+    }
+
+    private var sessionProjectLabel: String {
+        app.projectContext(for: thread).displayName
     }
 
     private var modelStateLoadKey: ChatModelRequestTarget? { currentModelLoadTarget }
@@ -837,23 +843,52 @@ struct ChatView: View {
     private func sessionDetailRow(
         _ label: String, value: String, systemImage: String, showsChevron: Bool = false
     ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .foregroundStyle(chrome.accent)
-                .frame(width: 22)
-            Text(label).foregroundStyle(.primary)
-            Spacer()
-            Text(value).foregroundStyle(.secondary)
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                sessionDetailIcon(systemImage)
+                Text(label).foregroundStyle(.primary)
+                Spacer(minLength: 12)
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                sessionDetailChevron(showsChevron)
+            }
+
+            HStack(alignment: .top, spacing: 10) {
+                sessionDetailIcon(systemImage)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label).foregroundStyle(.primary)
+                    Text(value)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                sessionDetailChevron(showsChevron)
             }
         }
         .font(.callout)
         .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
+    }
+
+    private func sessionDetailIcon(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .foregroundStyle(chrome.accent)
+            .frame(width: 22)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func sessionDetailChevron(_ visible: Bool) -> some View {
+        if visible {
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
     }
 
     private var messageScroll: some View {

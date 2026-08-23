@@ -483,6 +483,116 @@ assert.equal(
 );
 assert.equal(repairedDependent.orchestrationAudit?.at(-1)?.resolvedDependencyId, taskDependency.id);
 assert.equal(repairedDependent.orchestrationAudit?.at(-1)?.actor, "cody");
+assert.equal(
+  repairedDependent.primaryBlockerPinned,
+  false,
+  "an unpinned card stays unpinned through deletion repair",
+);
+
+// Deletion repair must not quietly revoke an operator pin. The pinned
+// dependency did not resolve — the card it pointed at was deleted — so the pin
+// carries onto whatever replaces it, and it keeps *working*: a later resolution
+// of that replacement is still refused instead of auto-promoting past it.
+const pinnedUpstream = await board.createCard({ title: "Upstream under a pinned blocker" });
+const pinnedTaskDependency = {
+  ...taskDependency,
+  id: "pinned-deletion-primary",
+  taskId: pinnedUpstream.id,
+};
+const pinnedReplacement = {
+  ...deletionSecondary,
+  id: "pinned-deletion-replacement",
+  label: "Ask the maintainer for the pinned fallback",
+};
+const pinnedTertiary = {
+  ...deletionSecondary,
+  id: "pinned-deletion-tertiary",
+  label: "Never promote past the pin",
+};
+const pinnedDependent = await board.createCard({
+  title: "Preserve the pin through deletion repair",
+  status: "blocked",
+  dependencies: [pinnedTaskDependency, pinnedReplacement, pinnedTertiary],
+  primaryBlockerId: pinnedTaskDependency.id,
+  primaryBlockerPinned: true,
+  nextStep: {
+    summary: pinnedTaskDependency.label,
+    requiresApproval: false,
+    origin: "system",
+    updatedAt: now,
+  },
+});
+assert.equal(pinnedDependent.primaryBlockerPinned, true, "the pin is stored before deletion");
+assert.equal(await board.deleteCard(pinnedUpstream.id, { actor: "cody" }), "deleted");
+const repairedPinned = (await board.loadBoard()).cards.find((card) => card.id === pinnedDependent.id);
+assert.ok(repairedPinned);
+assert.equal(
+  repairedPinned.primaryBlockerId,
+  pinnedReplacement.id,
+  "deletion repair repoints the primary blocker at the next unresolved dependency",
+);
+assert.equal(
+  repairedPinned.primaryBlockerPinned,
+  true,
+  "the operator pin survives deletion repair onto the replacement blocker",
+);
+// The pin is only real if promotion still skips this card. Resolving the
+// replacement leaves a blocked card with a settled primary, which is exactly
+// what an unpinned card would promote away from.
+await assert.rejects(
+  board.updateCard(pinnedDependent.id, {
+    dependencies: [
+      repairedPinned.dependencies![0],
+      {
+        ...pinnedReplacement,
+        state: "resolved",
+        resolvedAt: new Date().toISOString(),
+        evidence: "Maintainer approved the fallback",
+      },
+      pinnedTertiary,
+    ],
+  }),
+  (error) => {
+    assert.ok(errorCodes(error).includes("blocked_requires_primary"));
+    return true;
+  },
+  "a preserved pin still freezes promotion after deletion repair",
+);
+const pinnedAfterResolve = (await board.loadBoard()).cards.find((card) => card.id === pinnedDependent.id);
+assert.equal(pinnedAfterResolve?.primaryBlockerId, pinnedReplacement.id);
+assert.equal(pinnedAfterResolve?.primaryBlockerPinned, true);
+assert.equal(
+  pinnedAfterResolve?.dependencies?.find((dependency) => dependency.id === pinnedReplacement.id)?.state,
+  "unresolved",
+  "the refused resolution is not saved",
+);
+
+// Nothing left to point at means nothing left to pin: the pin clears rather
+// than dangling over a null primary blocker.
+const pinnedSoleUpstream = await board.createCard({ title: "Only upstream under a pin" });
+const pinnedSoleDependent = await board.createCard({
+  title: "Clear the pin when no blocker replaces it",
+  status: "blocked",
+  dependencies: [{ ...taskDependency, id: "pinned-sole-dependency", taskId: pinnedSoleUpstream.id }],
+  primaryBlockerId: "pinned-sole-dependency",
+  primaryBlockerPinned: true,
+  nextStep: {
+    summary: taskDependency.label,
+    requiresApproval: false,
+    origin: "system",
+    updatedAt: now,
+  },
+});
+assert.equal(await board.deleteCard(pinnedSoleUpstream.id, { actor: "cody" }), "deleted");
+const repairedPinnedSole = (await board.loadBoard()).cards.find(
+  (card) => card.id === pinnedSoleDependent.id,
+);
+assert.equal(repairedPinnedSole?.primaryBlockerId, null);
+assert.equal(
+  repairedPinnedSole?.primaryBlockerPinned,
+  false,
+  "a pin over no remaining blocker clears instead of dangling",
+);
 
 const soleUpstream = await board.createCard({ title: "Only upstream task" });
 const soleDependency = {

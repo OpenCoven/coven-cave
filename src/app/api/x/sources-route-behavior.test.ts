@@ -57,6 +57,10 @@ const {
   listSavedXSources,
   upsertSavedXSource,
 } = await import("@/lib/server/x-sources");
+const {
+  createResearchMissionWorkspace,
+  loadResearchMission,
+} = await import("@/lib/server/research-mission-store");
 
 const realFetch = globalThis.fetch;
 after(async () => {
@@ -152,4 +156,76 @@ test("an upstream not-found purges the cached body and marks the source deleted"
   // Coven-owned data is retained even when the X post is gone.
   assert.equal(durable!.note, "keep this note");
   assert.equal(durable!.postId, "300");
+});
+
+// cave-v3ajh: attaching has to reach the MISSION, not only the X-side record.
+// `setXSourceMissionAttached` writes `x-sources/<familiar>.json`; before this,
+// the mission's own ledger was never touched and no `x-post` entry existed
+// anywhere, so the user was told "X source attached to the mission" about a
+// mission that had no idea.
+test("attaching a saved X post records an identity-only x-post source on the mission", async () => {
+  await createResearchMissionWorkspace({
+    version: 1,
+    id: "mission-attach",
+    familiarId: "nova",
+    title: "Attach target",
+    intent: "Check the attach path",
+    mode: "autoresearch",
+    modeSource: "user",
+    deliverable: "findings",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 120,
+      maxIterations: 3,
+      sourceTarget: 5,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+    status: "checkpoint",
+    createdAt: "2026-08-22T10:00:00.000Z",
+    updatedAt: "2026-08-22T10:00:00.000Z",
+    iterations: [],
+    artifacts: [],
+    sources: [],
+  });
+
+  await cacheNormalizedXPosts([post("400")]);
+  const saved = await upsertSavedXSource({
+    familiarId: "nova",
+    postId: "400",
+    canonicalUrl: "https://x.com/opencoven/status/400",
+    originalUrl: "https://x.com/opencoven/status/400",
+    note: "the claim to verify",
+    tags: [],
+  });
+
+  const response = await POST(actionRequest({
+    action: "attach",
+    familiarId: "nova",
+    sourceId: saved.source.id,
+    missionId: "mission-attach",
+  }));
+  assert.equal(response.status, 200);
+
+  const stored = await loadResearchMission("mission-attach");
+  const ref = stored!.sources.find((source) => source.externalId === "400");
+  assert.ok(ref, "the mission ledger must gain an entry for the attached post");
+  assert.equal(ref!.sourceType, "x-post");
+  assert.equal(ref!.provider, "x");
+  assert.equal(ref!.availability, "available");
+  assert.equal(ref!.url, "https://x.com/opencoven/status/400");
+  assert.equal(ref!.note, "the claim to verify");
+  // The exclusion the design is explicit about: identity and the user's own
+  // note, never an archival copy of the post body.
+  assert.ok(
+    !JSON.stringify(stored!.sources).includes("post 400"),
+    "the durable mission ledger must not embed the cached post text",
+  );
+
+  const body = await response.json() as { mission?: { sources?: unknown[] } };
+  assert.equal(
+    body.mission?.sources?.length,
+    1,
+    "the response must show the caller the mission it just changed, not the pre-attach copy",
+  );
 });

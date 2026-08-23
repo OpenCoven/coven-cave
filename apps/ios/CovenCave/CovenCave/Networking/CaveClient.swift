@@ -18,7 +18,11 @@ struct CaveClient {
     var connection: CaveConnection
     private let injectedSession: URLSession?
     private let idempotentMutationRetryBudget: Duration
-    private static let pathSegmentAllowed = CharacterSet(
+    // Internal rather than private so sibling client extensions in other files
+    // (e.g. the Familiar dashboard read) encode a familiar id EXACTLY the way
+    // the avatar routes already do. A second copy of this rule is how
+    // `nova/familiar` ends up escaped one way here and another way there.
+    static let pathSegmentAllowed = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
     )
 
@@ -273,7 +277,15 @@ struct CaveClient {
         }
     }
 
-    private func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
+    // Internal so sibling client extensions in other files build requests the
+    // same way this one does — including callers whose opaque path segment is
+    // already percent-encoded — and use the injected URLSession in tests.
+    func request(
+        _ path: String,
+        method: String = "GET",
+        body: Data? = nil,
+        pathIsPercentEncoded: Bool = false
+    ) throws -> URLRequest {
         // `appendingPathComponent` percent-encodes "?" to "%3F", which turns a
         // path like "api/journal?date=…" into a bogus path segment the server
         // 404s on. Split the query off, append only the path, then reattach the
@@ -282,7 +294,19 @@ struct CaveClient {
         let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
         let pathPart = String(parts[0])
         let queryPart = parts.count > 1 ? String(parts[1]) : nil
-        var url = try base.appendingPathComponent(pathPart)
+        let baseURL = try base
+        var url: URL
+        if pathIsPercentEncoded {
+            guard var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+                throw CaveError.notConfigured
+            }
+            let separator = comps.percentEncodedPath.hasSuffix("/") ? "" : "/"
+            comps.percentEncodedPath += separator + pathPart
+            guard let composed = comps.url else { throw CaveError.notConfigured }
+            url = composed
+        } else {
+            url = baseURL.appendingPathComponent(pathPart)
+        }
         if let queryPart, !queryPart.isEmpty {
             guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
                 throw CaveError.notConfigured
@@ -375,7 +399,8 @@ struct CaveClient {
         var req = try request(
             "api/familiars/\(escaped)/avatar",
             method: "POST",
-            body: imageData
+            body: imageData,
+            pathIsPercentEncoded: true
         )
         req.setValue(contentType, forHTTPHeaderField: "Content-Type")
         return try await familiarAvatarMutation(for: req)
@@ -383,11 +408,15 @@ struct CaveClient {
 
     func deleteFamiliarAvatar(id: String) async throws -> FamiliarAvatarMutation {
         let escaped = try Self.encodedPathSegment(id)
-        let req = try request("api/familiars/\(escaped)/avatar", method: "DELETE")
+        let req = try request(
+            "api/familiars/\(escaped)/avatar",
+            method: "DELETE",
+            pathIsPercentEncoded: true
+        )
         return try await familiarAvatarMutation(for: req)
     }
 
-    private static func encodedPathSegment(
+    static func encodedPathSegment(
         _ value: String,
         describing subject: String = "familiar identifier"
     ) throws -> String {

@@ -114,6 +114,7 @@ describe("thread-signal-card module wiring", () => {
 
   it("keeps every interactive element keyboard-reachable and announced", () => {
     assert.match(source, /useAnnouncer\(\)/);
+    assert.match(source, /announce\(`Thread Signal available for \$\{name\}\.`\)/);
     assert.match(source, /className="tsc-row-btn focus-ring-inset"/);
     assert.match(source, /tsc-tile focus-ring/);
     assert.match(source, /aria-expanded=\{open\}/);
@@ -149,6 +150,18 @@ describe("thread-signal-card module wiring", () => {
     // An inline expansion would push the transcript; the overlay must not be
     // converted back to one.
     assert.doesNotMatch(styles, /\.tsc-pop\s*\{[\s\S]*?position:\s*static;/);
+  });
+
+  it("floats the complete card above chat content without changing transcript height", () => {
+    assert.match(
+      styles,
+      /\.cave-thread-signal-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:[\s\S]*?z-index:\s*6;[\s\S]*?pointer-events:\s*none;/,
+    );
+    assert.match(
+      styles,
+      /\.cave-thread-signal-overlay\s*>\s*\*\s*\{[\s\S]*?pointer-events:\s*auto;/,
+      "the non-flow host stays transparent while the card remains interactive",
+    );
   });
 
   it("carries severity on shared tone utilities rather than per-element colors", () => {
