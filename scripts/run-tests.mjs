@@ -378,6 +378,7 @@ export const SUITES = {
     "src/lib/rss.test.ts",
     "src/lib/home-feed.test.ts",
     "src/lib/home-greeting.test.ts",
+    "src/lib/home-continue-paging.test.ts",
     "src/lib/secret-validators.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/components/chat-project-sidebar-empty.test.ts",
@@ -559,6 +560,7 @@ export const SUITES = {
     "src/components/marketplace/marketplace-detail.test.ts",
     "src/lib/knowledge-pack-ui.test.ts",
     "src/components/home-hearth.test.ts",
+    "src/components/home-continue-carousel.behavior.test.tsx",
     "src/lib/home-task-handoff.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
@@ -2213,6 +2215,9 @@ const VITEST_TESTS = new Set([
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
   "src/components/mobile-drawer-nav-list-focus.test.tsx",
+  // drives Home's Continue carousel — paging, arrow-key traversal and the
+  // focus handoff across a page turn — through the real component (JSX)
+  "src/components/home-continue-carousel.behavior.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
