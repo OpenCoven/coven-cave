@@ -4,9 +4,9 @@ Use this page when you operate **Settings → Client access** in Cave. For the
 full route contract, envelope shapes, and error/status tables, see
 [Client v1 HTTP API](api/client-v1.md).
 
-This guide covers the eight shipped Client v1 routes that support the current
-approval workflow: `GET /api/client/v1/health`, the three pairing routes, and
-the four administrator routes behind the Settings surface.
+This guide covers the 8 shipped Client v1 routes that support the current
+approval workflow: `GET /api/client/v1/health`, the 3 pairing routes, and the
+4 administrator routes behind the Settings surface.
 
 ## Open the section
 
@@ -184,8 +184,10 @@ If the failure persists:
   tab, then refresh again.
 - **503** with the desktop-app message means Cave is running without
   `COVEN_CAVE_AUTH_TOKEN`. In that tokenless local mode, clients can create
-  pairing requests but nobody can list, approve, deny, or revoke them until
-  Cave runs through the desktop app.
+  pairing requests and the 4 public client routes still work (`GET /api/client/v1/health`
+  plus the 3 pairing routes), but the 4 admin routes stay unavailable until
+  Cave runs through the desktop app, so Settings cannot list, approve, deny,
+  or revoke.
 - If only one list fails to refresh, that section keeps its last empty or
   confirmed state visible and shows an inline error. The header keeps the last
   fully confirmed counts.
