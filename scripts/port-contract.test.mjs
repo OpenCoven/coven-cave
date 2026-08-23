@@ -83,8 +83,57 @@ assert.match(
 );
 assert.match(
   startup,
-  /port_is_occupied\(port\)/,
-  "an occupied dedicated port is reported, not silently relocated",
+  /classify_port_occupant\(port\)/,
+  "an occupied dedicated port is reported by identity, not silently relocated",
+);
+// A probe can only ever describe the instant it ran. Two copies launched
+// together queue on the runtime-cache lock and are released into the same
+// window, so the exclusion has to be a held claim rather than an observation —
+// otherwise both spawn a node and the loser dies on EADDRINUSE (cave-2s5q0).
+assert.match(
+  startup,
+  /sidecar_port_lock::claim_dedicated_port\(/,
+  "the port is claimed before the sidecar spawns, not merely probed",
+);
+const portLock = await read("src-tauri/src/sidecar_port_lock.rs");
+assert.match(
+  portLock,
+  new RegExp(`format!\\("sidecar-port-\\{port\\}`),
+  "the claim is keyed on the resolved port, so COVEN_CAVE_PORT still lets a second copy run",
+);
+
+// --- the claim runs before anything a refused copy must not touch -------------
+// This is a source-ORDER contract, and it exists because the ordering broke
+// twice. The claim was hoisted into the setup hook precisely so a copy that is
+// about to be refused does not first truncate the running copy's diagnostics,
+// prune its reliability store, start a second Discord presence worker, or build
+// a second tray icon. A later "move it below the translocation check" moved it
+// below the whole prologue instead, silently restoring the harm; no test
+// noticed, because every existing test checks behaviour of functions rather
+// than the order they are called in.
+const setup = await read("src-tauri/src/tauri_setup.rs");
+const claimAt = setup.indexOf("sidecar_port_lock::claim_dedicated_port(");
+assert.notEqual(claimAt, -1, "the setup hook must take the dedicated-port claim");
+for (const [label, needle] of [
+  ["the native diagnostics reset", "reset_native_diagnostics_file("],
+  ["the reliability store", "app.state::<Arc<ReliabilityRecorder>>()"],
+  ["the offline cache", "offline_cache::OfflineCacheState>>()"],
+  ["Discord presence", "discord_presence::start()"],
+  ["the tray icon", 'TrayIconBuilder::with_id("cave-tray")'],
+]) {
+  const at = setup.indexOf(needle);
+  assert.notEqual(at, -1, `${label} must still be in the setup hook`);
+  assert.ok(
+    claimAt < at,
+    `the port claim must run BEFORE ${label} — a copy that is about to be refused must not touch shared state`,
+  );
+}
+// The translocation check is the one thing allowed above it: it shows a
+// blocking dialog, and holding the port across that wait would refuse the good
+// copy while naming a process that never binds anything.
+assert.ok(
+  setup.indexOf("check_app_translocation()") < claimAt,
+  "the translocation check must run before the claim, so a leaving copy never holds the port",
 );
 
 // --- server.ts copy ----------------------------------------------------------
@@ -104,6 +153,26 @@ assert.doesNotMatch(
   /process\.env\.PORT \?\? "3000"/,
   "server.ts resolves through cavePort(), not an inline default",
 );
+
+// --- the EADDRINUSE tail contract lives in two files --------------------------
+// The Rust post-mortem recognises a failed bind by matching the sidecar's own
+// output. Reword the server line without the matcher and the raw error object
+// comes back with a green suite.
+const bindConflictLiterals = [...startup.matchAll(/tail\.contains\("([^"]+)"\)/g)].map((m) => m[1]);
+assert.ok(
+  bindConflictLiterals.length >= 2,
+  "tail_reports_bind_conflict must match on explicit literals",
+);
+const serverBindLine = bindConflictLiterals.find((literal) => server.includes(literal));
+assert.ok(
+  serverBindLine,
+  `server.ts must still print a line the launcher recognises; it matches on ${JSON.stringify(bindConflictLiterals)}`,
+);
+assert.ok(
+  bindConflictLiterals.includes("listen EADDRINUSE"),
+  "Node's own listen error must stay recognised, not just our added line",
+);
+
 
 // --- Swift copy (never compiled by CI) ---------------------------------------
 const swiftPorts = await read("apps/ios/CovenCave/CovenCave/Networking/CavePorts.swift");
