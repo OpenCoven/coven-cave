@@ -39,6 +39,7 @@ const reliabilityPermissions = readFileSync(new URL("./reliability.toml", import
 const offlineCachePermissions = readFileSync(new URL("./offline-cache.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
+const mainWindowRust = readFileSync(new URL("../src/main_window.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const tauriSetupRust = readFileSync(new URL("../src/tauri_setup.rs", import.meta.url), "utf8");
 const microphoneRust = readFileSync(new URL("../src/microphone.rs", import.meta.url), "utf8");
@@ -350,6 +351,11 @@ test("native browser children can report metadata but cannot control browser lay
     "allow-desktop-reachability-status",
     "allow-desktop-reachability-configure",
   ]);
+  assert.match(
+    browserCommandsRust,
+    /fn browser_identity\([\s\S]{0,260}caller: &tauri::Webview[\s\S]{0,300}ensure_browser_controller\(caller\)\?;/,
+    "the shared browser identity helper must authorize the caller before assigning ownership",
+  );
 
   for (const command of [
     "browser_navigate",
@@ -363,7 +369,7 @@ test("native browser children can report metadata but cannot control browser lay
   ]) {
     assert.match(
       browserCommandsRust,
-      new RegExp(String.raw`pub (?:async )?fn ${command}\([\s\S]{0,260}caller: tauri::Webview[\s\S]{0,500}ensure_browser_controller\(&caller\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${command}\([\s\S]{0,260}caller: tauri::Webview[\s\S]{0,500}(?:browser_identity|ensure_browser_controller)\([^;]*&caller[^;]*\)\?;`),
       `${command} must reject browser-child callers even if a capability is misconfigured`,
     );
   }
@@ -372,7 +378,7 @@ test("native browser children can report metadata but cannot control browser lay
   assert.match(browserCommandsRust, /pub fn browser_report_scroll\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}scroll_y\.is_finite\(\)/);
   assert.match(
     browserCommandsRust,
-    /pub fn browser_report_user_navigation\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)[\s\S]{0,500}event_tracker_for_label\(lifecycle\.inner\(\), &label\)/,
+    /pub fn browser_report_user_navigation\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)[\s\S]{0,1000}event_tracker_for_label\(lifecycle\.inner\(\), &native_label\)/,
     "navigation attribution must validate and use the actual child caller label",
   );
   assert.match(
@@ -386,43 +392,9 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
   assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
   assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
   assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
-  assert.match(ptyRust, /if webview\.label\(\) != "main"/);
-  assert.match(ptyRust, /trusted\.clear\(\);/);
-  assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
-
-  for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
-    const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    assert.match(
-      ptyRust,
-      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
-      `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
-    );
-  }
-});
-
-test("privileged PTY commands require the trusted main webview at runtime", () => {
-  assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
-  assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
-  assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
-  assert.match(ptyRust, /if webview\.label\(\) != "main"/);
-  assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
-
-  for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
-    const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    assert.match(
-      ptyRust,
-      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
-      `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
-    );
-  }
-});
-
-test("privileged PTY commands require the trusted main webview at runtime", () => {
-  assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
-  assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
-  assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
-  assert.match(ptyRust, /if webview\.label\(\) != "main"/);
-  assert.match(ptyRust, /trusted\.clear\(\);/);
+  assert.match(ptyRust, /is_registered_main_window\(webview\.app_handle\(\), webview\.label\(\)\)/);
+  assert.match(mainWindowRust, /pub\(super\) fn is_registered_main_window/);
+  assert.match(mainWindowRust, /inner\.labels\.contains\(label\)/);
   assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
 
   for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
