@@ -271,6 +271,24 @@ test("a conversation with no createdAt sorts to the tail rather than being stran
     ]).map((row) => row.sessionId),
     ["conversation-b", "conversation-a"],
   );
+  // The tail block is for rows with no createdAt, NOT for the fallback row a
+  // file Cave could not read. Those are the same shape — familiarId "" — and
+  // fallbackConversationSummary now carries over the createdAt the last
+  // readable scan saw, because the field is immutable and the last value read
+  // is still the true one. A key that read the fallback shape rather than the
+  // field would drop such a row to the tail every time the file flickered, and
+  // lift it back out mid-walk when the file recovered (cave-wbxcu).
+  const unreadable: ConversationSummary = {
+    sessionId: "conversation-8",
+    familiarId: "",
+    createdAt: "2026-08-02T00:00:00.000Z",
+    updatedAt: "2026-08-02T00:00:00.000Z",
+  };
+  assert.deepEqual(
+    sortClientV1Conversations([keyless, SUMMARY, unreadable]).map((row) => row.sessionId),
+    ["conversation-8", "conversation-1", "conversation-9"],
+    "a row Cave could not read this scan keeps the position its createdAt names",
+  );
 });
 
 test("the page key reads createdAt exactly as the projection serves it", () => {

@@ -419,6 +419,32 @@ Failures that really are structural name the repository identity instead —
 `canonical repository identity mismatch`, `canonical repository identity
 changed between pages` — and a retry will not help those.
 
+**A version refusal is structural too, and it used to read like a flake.**
+
+```text
+worktree-lifecycle-create: maintenance fence acquisition failed:
+coven-acquire-failed: coven-version-unsupported
+```
+
+That refusal names a resolved-but-too-old Coven CLI, and it is **deterministic
+given PATH**, not intermittent — retrying it changes nothing. It now prints the
+binary it chose, the version that binary reported, its raw `--version` banner,
+the `0.2.5` floor (prereleases are refused whatever their numbers), and the
+`COVEN_BIN` override. Read those four lines before doing anything else; a
+supported install is often already present further along the same PATH.
+
+The reason it was ever filed as "not reproducible" (`cave-6bb4m`, issue #4897)
+is worth knowing, because the shape recurs: `covenBin()` composed its
+priority-ordered search path with `{ ...env, PATH: value }`, which on Windows
+**adds a second key** whenever the process inherited the variable spelled
+`Path` — PowerShell, cmd, Explorer, the Tauri shell — leaving the original
+ahead of it for every case-insensitive reader. So the same command picked the
+npm-global CLI from Git Bash and a stale `~/.cargo/bin` one from PowerShell, on
+one machine, one minute apart. Every environment Cave builds now goes through
+`withSearchPath()` in `src/lib/coven-bin.ts`, which collapses the spellings to
+one key. **CI cannot catch a regression here** — it is Linux, and the whole
+defect is a Windows environment-variable spelling.
+
 One more structural cause, and the one that reads most like someone else's
 problem: **a malformed worktree record on a bead that claims your branch or
 your path** — `Bead cave-… worktree metadata: disposition is invalid`, or any
@@ -634,6 +660,57 @@ Shorter outages — a Turbopack rebuild, a manual dev-server restart — are han
 in-app instead. A dev-only recovery overlay replaces the raw `ChunkLoadError` /
 `ERR_CONNECTION_REFUSED` page, polls the origin, and hard-reloads the window as
 soon as the server answers so no stale chunk ids survive the restart.
+
+### A long dev session will OOM. Restart it — a bigger heap only defers it.
+
+`bash scripts/dev-app.sh` sessions die with `FATAL ERROR: Ineffective
+mark-compacts near heap limit`, taking the Tauri window with them through a
+non-zero `beforeDevCommand`. Four episodes are on record on one machine at 9.1h,
+5.75h, ~37.2h and "a few hours" (`cave-ksjt`), so the clock runs on **edit
+churn, not uptime** — an agent-driven session recompiling constantly gets there
+much faster than an idle one.
+
+**It is not Cave code, and it is not a bug you can fix here.** `cave-r13x`
+streamed two in-the-wild 5.3 GB / 5.8 GB captures through
+`scripts/analyze-heapsnapshot.mjs`: the retention is Turbopack HMR rebuild
+generations, React 19's dev debug capture (hundreds of thousands of retained
+`Error`s carrying ~10M `CallSiteInfo` frames) and Flight dev registries. No Cave
+constructor appeared in either top-40. Findings on issue #3803.
+
+**The remedy is to restart the dev server**, which costs nothing but a recompile.
+`server.ts`'s heap monitor gives the loss-free signal — it logs at 85% of the
+V8 limit and writes ONE snapshot per episode at 95%:
+
+```text
+[heap-monitor] heapUsed=3648MB heapLimit=4288MB (85%) rss=… uptimeMin=…
+```
+
+Grep the wrapper's own output for `[heap-monitor]`; when it appears, `Ctrl-C`
+and relaunch. Snapshots land in `~/.coven/cave/diagnostics/`; read one with
+`node scripts/analyze-heapsnapshot.mjs <file>` rather than Chrome DevTools,
+which cannot open a 5 GB snapshot. `COVEN_CAVE_HEAP_MONITOR=0` disables the
+monitor.
+
+**Verify on a production build, not a long dev server.** The packaged sidecar
+runs the same `server.mjs` and does *not* show this growth: measured flat at a
+39-42 MB heap over 12,360 requests (`cave-ksjt`) and 183.0 MB -> 182.4 MB RSS
+over 4,570 polls (`cave-wgbk`). The `run-cave-app` skill already builds
+production for this reason.
+
+**The ceiling is now chosen rather than inherited.** Both the dev server and the
+packaged sidecar run with `--max-old-space-size` pinned by
+`scripts/heap-limits.mjs` (Rust copy in `src-tauri/src/sidecar_heap.rs`).
+Before that, V8 derived it from host memory, so how long a dev session survived
+and what `[heap-monitor]`'s percentages meant both varied by machine. Raise or
+lower it for one run with
+
+```bash
+COVEN_CAVE_HEAP_LIMIT_MB=8192 bash scripts/dev-app.sh
+```
+
+but understand what that buys: the retention above is unbounded, so a bigger
+ceiling defers the same death while holding more of the machine. It is a
+guardrail, not a fix.
 
 ## Local remote hygiene — keep the Desktop branch list honest
 

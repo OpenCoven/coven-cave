@@ -11,7 +11,15 @@ import {
   withXAuthenticatedRead,
 } from "@/lib/server/x-access";
 import { lookupXPost } from "@/lib/server/x-client";
-import { loadResearchMission } from "@/lib/server/research-mission-store";
+import {
+  loadResearchMission,
+  updateResearchMissionSources,
+} from "@/lib/server/research-mission-store";
+import {
+  mergeXSourceRefs,
+  xSourceLedgerRef,
+} from "@/lib/server/research-mission-x-runtime";
+import { withResearchMissionActionLock } from "@/lib/server/research-mission-lock";
 import {
   listSavedXSources,
   markXPostAvailability,
@@ -111,25 +119,45 @@ export async function POST(req: Request) {
       case "attach": {
         const sourceId = requireString(body.sourceId, "sourceId");
         const missionId = requireString(body.missionId, "missionId");
-        // AUTHORIZE BEFORE MUTATING OR DISCLOSING. Neither layer below does
-        // it: setXSourceMissionAttached only validates the mission id's
-        // FORMAT, and loadResearchMission looks a mission up globally with no
-        // familiar scoping. Without this check a caller holding the research
-        // capability on one familiar could pass another familiar's missionId
-        // and both receive that mission in full and record a foreign id on
-        // their own source.
-        //
-        // `not-found` rather than a forbidden code on purpose: a distinct
-        // error would let a caller probe which mission ids exist.
-        const mission = await loadResearchMission(missionId);
-        if (!mission || mission.familiarId !== familiarId) {
-          throw new XApiError("not-found", "Research mission was not found");
-        }
-        // Only now is the attachment safe to write; doing it first left the
-        // source mutated even when the mission turned out to be missing or
-        // to belong to someone else.
-        await setXSourceMissionAttached(familiarId, sourceId, missionId);
-        return NextResponse.json({ ok: true, mission });
+        // Under the SAME per-mission action lock the runner holds for every
+        // read-modify-write of mission.json. Without it an attach landing
+        // mid-launch is loaded-then-overwritten by the runner's own save and
+        // the ledger entry vanishes. (The attachment itself survives on the
+        // X-side record, so the next launch would re-derive it — but a
+        // disappearing entry is not something to leave to self-healing.)
+        return withResearchMissionActionLock(missionId, async () => {
+          // AUTHORIZE BEFORE MUTATING OR DISCLOSING. Neither layer below does
+          // it: setXSourceMissionAttached only validates the mission id's
+          // FORMAT, and loadResearchMission looks a mission up globally with no
+          // familiar scoping. Without this check a caller holding the research
+          // capability on one familiar could pass another familiar's missionId
+          // and both receive that mission in full and record a foreign id on
+          // their own source.
+          //
+          // `not-found` rather than a forbidden code on purpose: a distinct
+          // error would let a caller probe which mission ids exist.
+          const mission = await loadResearchMission(missionId);
+          if (!mission || mission.familiarId !== familiarId) {
+            throw new XApiError("not-found", "Research mission was not found");
+          }
+          // Only now is the attachment safe to write; doing it first left the
+          // source mutated even when the mission turned out to be missing or
+          // to belong to someone else.
+          await setXSourceMissionAttached(familiarId, sourceId, missionId);
+          // The attachment has to be visible on the MISSION as well, not only as
+          // a bookmark on the X-side record. Without this the user is told "X
+          // source attached to the mission" while the mission's own ledger never
+          // mentions it and nothing but a launch would ever reveal the gap
+          // (cave-v3ajh). Identity only — the post body is never written here.
+          const attached = (await listSavedXSources(familiarId))
+            .find((candidate) => candidate.id === sourceId);
+          if (!attached) throw new XApiError("not-found", "Saved X source was not found");
+          const updated = await updateResearchMissionSources(
+            missionId,
+            (sources) => mergeXSourceRefs(sources, [xSourceLedgerRef(attached)]),
+          );
+            return NextResponse.json({ ok: true, mission: updated ?? mission });
+        });
       }
 
       case "refresh": {

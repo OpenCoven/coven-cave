@@ -56,10 +56,27 @@ const root = path.resolve(import.meta.dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8");
 
 test("the sessions/list route scopes by familiar grants", () => {
+  // The scoping moved into the shared compute (cave-9rwd.1); the route still
+  // parses the parameter that drives it, so each half is read where it lives.
   const route = read("src/app/api/sessions/list/route.ts");
-  assert.match(route, /filterProjectsForFamiliar/, "imports the grant filter");
-  assert.match(route, /scopeSessionsToFamiliarProjects/, "applies the session scope helper");
+  const compute = read("src/lib/server/sessions-list.ts");
+  assert.match(compute, /filterProjectsForFamiliar/, "imports the grant filter");
+  assert.match(compute, /scopeSessionsToFamiliarProjects/, "applies the session scope helper");
+  // Naming the helper is not the same as reaching it. Before cave-9rwd.1 this
+  // assertion read the route, where `scopeForFamiliar`'s own body mentions the
+  // helper — so deleting the CALL left the string in place and the test green.
+  // Pin the call site too.
+  assert.match(
+    compute,
+    /const scoped = await scopeForFamiliar\(sessions, projects, familiarId\)/,
+    "the compute actually applies the familiar scope to the merged rows",
+  );
   assert.match(route, /searchParams\.get\("familiarId"\)/, "reads the familiarId param");
+  assert.match(
+    route,
+    /computeSessionsList\(includeArchived, familiarId, collapseFamiliarWorkspace\)/,
+    "threads the parsed familiar id into the scoped compute",
+  );
 });
 
 test("useProjects scopes the project list by familiarId", () => {

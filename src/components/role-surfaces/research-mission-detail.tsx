@@ -33,6 +33,7 @@ import {
   allowedResearchActions,
   describeResearchSchedule,
   RESEARCH_DIRECTION_MAX_LENGTH,
+  RESEARCH_RUN_ORIGIN_LABELS,
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
@@ -241,6 +242,13 @@ export function ResearchMissionDetail({
 
   const iteration = mission.iterations.at(-1);
   const sessionId = iteration?.sessionId;
+  // The conversation this run was invoked FROM — distinct from sessionId above,
+  // which is the executor session the run itself spawned. Only a chat-invoked
+  // run has one, and it is what lets the desk project the run back into the
+  // context that asked for it (#4808).
+  const originSessionId = mission.origin?.surface === "chat"
+    ? mission.origin.sessionId
+    : undefined;
   const actions = allowedResearchActions(mission);
   const mainActions = actions.filter((action) => action !== "refine" && !END_ACTIONS.has(action));
   const endActions = actions.filter((action) => END_ACTIONS.has(action));
@@ -546,19 +554,39 @@ export function ResearchMissionDetail({
                 {iteration ? ` · iteration ${iteration.number} of ${mission.bounds.maxIterations}` : " · not started"}
                 {" · "}
                 <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
+                {mission.origin ? (
+                  <>
+                    {" · "}
+                    {RESEARCH_RUN_ORIGIN_LABELS[mission.origin.surface]}
+                  </>
+                ) : null}
               </span>
               <h2 id="research-mission-title">{mission.title}</h2>
               {researchIntentAddsContext(mission) ? <ClampedText lines={4} text={mission.intent} /> : null}
             </div>
-            {sessionId ? (
-              <Button
-                size="xs"
-                variant="secondary"
-                leadingIcon="ph:chat-circle-dots"
-                onClick={() => onOpenSession(sessionId)}
-              >
-                Open session
-              </Button>
+            {originSessionId || sessionId ? (
+              <div className="research-mission-detail__header-actions">
+                {originSessionId ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    leadingIcon="ph:arrow-u-up-left"
+                    onClick={() => onOpenSession(originSessionId)}
+                  >
+                    Open the chat that started this
+                  </Button>
+                ) : null}
+                {sessionId ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    leadingIcon="ph:chat-circle-dots"
+                    onClick={() => onOpenSession(sessionId)}
+                  >
+                    Open session
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </header>
 

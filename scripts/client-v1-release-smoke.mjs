@@ -190,6 +190,14 @@ export function checkHealthEnvelope(envelope, expected) {
     Array.isArray(envelope.capabilities) && envelope.capabilities.length > 0,
     "capabilities is missing or empty",
   );
+  // The live operation inventory an SDK's supports() reads. Shape only here —
+  // the exact set is pinned against the generated fixture by the conformance
+  // run — but a release that serves no inventory at all describes a Cave that
+  // can do nothing, and a smoke that could not see that is not a smoke.
+  record(
+    Array.isArray(envelope.operations) && envelope.operations.length > 0,
+    "operations is missing or empty",
+  );
 
   const data = envelope.data;
   if (typeof data !== "object" || data === null || Array.isArray(data)) {

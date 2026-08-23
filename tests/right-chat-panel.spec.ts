@@ -136,11 +136,10 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   expect(Math.abs((after?.width ?? 0) - before.width)).toBeGreaterThan(10);
 
   const chatTab = page.getByRole("tablist", { name: "Workspace sections" }).getByRole("tab", { name: "Chat" });
-  // The keyboard resize above can leave react-resizable-panels' separator
-  // hit-slop handling armed, so the first pointerdown here is swallowed as a
-  // phantom zero-delta drag (see its `je`/`we` handlers). A harmless first
-  // click (still on "Home", a no-op) clears that state so the real navigation
-  // click below lands normally.
+  // The keyboard resize above can leave the separator's expanded pointer
+  // target armed, so the first pointerdown here is swallowed as a zero-delta
+  // drag. A harmless first click (still on "Home", a no-op) clears that state
+  // so the real navigation click below lands normally.
   await chatTab.click();
   await chatTab.click();
   await expect(page.locator(".chat-surface")).toBeVisible();

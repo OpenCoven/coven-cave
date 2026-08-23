@@ -13,6 +13,7 @@ import {
   checkAssertionCoverage,
   checkEmptyFirstPage,
   checkEnvelope,
+  checkLiveInventory,
   checkPageWalk,
   checkRecordShape,
   checkRecordValues,
@@ -68,6 +69,7 @@ const successEnvelope = {
   apiVersion: "1.0",
   minimumClientVersion: "0.1.0",
   capabilities: ["pairing"],
+  operations: ["pairing.create"],
   data: { ok: true },
 };
 
@@ -76,7 +78,7 @@ test("checkEnvelope accepts a well-formed success envelope", () => {
 });
 
 test("checkEnvelope catches a route that dropped the shared envelope fields", () => {
-  for (const field of ["apiVersion", "minimumClientVersion", "capabilities"]) {
+  for (const field of ["apiVersion", "minimumClientVersion", "capabilities", "operations"]) {
     const broken = { ...successEnvelope };
     delete broken[field];
     const failures = checkEnvelope(broken, { kind: "success" });
@@ -91,6 +93,71 @@ test("checkEnvelope catches an empty capability list", () => {
   assert.deepEqual(checkEnvelope({ ...successEnvelope, capabilities: [] }, { kind: "success" }), [
     "capabilities is missing or empty",
   ]);
+  assert.deepEqual(checkEnvelope({ ...successEnvelope, operations: [] }, { kind: "success" }), [
+    "operations is missing or empty",
+  ]);
+});
+
+// ── the live declaration (cave-8a0s2, #4869) ────────────────────────────────
+
+const FIXTURE_CONTRACT = {
+  capabilities: ["health", "pairing", "cursors"],
+  operations: [
+    { id: "health.read", method: "GET", path: "/api/client/v1/health", ingress: "public", scope: null, families: ["health"] },
+    { id: "pairing.create", method: "POST", path: "/api/client/v1/pairing/requests", ingress: "public", scope: null, families: ["pairing"] },
+  ],
+};
+
+const LIVE_ENVELOPE = {
+  ...successEnvelope,
+  capabilities: ["health", "pairing", "cursors"],
+  operations: ["health.read", "pairing.create"],
+};
+
+test("checkLiveInventory accepts a build that serves what the fixture pins", () => {
+  assert.deepEqual(checkLiveInventory(LIVE_ENVELOPE, FIXTURE_CONTRACT), []);
+});
+
+test("checkLiveInventory catches a declaration no route can serve", () => {
+  // The exact defect #4869 was filed for: `streaming` advertised over a real
+  // socket with no route behind it. Named individually rather than left to the
+  // array diff, because the diff does not say why it matters.
+  const streaming = checkLiveInventory(
+    { ...LIVE_ENVELOPE, capabilities: [...LIVE_ENVELOPE.capabilities, "streaming"] },
+    FIXTURE_CONTRACT,
+  );
+  assert.equal(streaming.length, 2);
+  assert.match(streaming.join("|"), /capabilities still advertises streaming/);
+  const revisions = checkLiveInventory(
+    { ...LIVE_ENVELOPE, operations: [...LIVE_ENVELOPE.operations, "revisions.read"] },
+    FIXTURE_CONTRACT,
+  );
+  assert.equal(revisions.length, 2);
+  assert.match(revisions.join("|"), /operations still advertises revisions/);
+});
+
+test("checkLiveInventory catches a running build that disagrees with the vendored fixture", () => {
+  // A build serving one inventory while shipping another is the failure no unit
+  // test can see: those read the same constants the route builds from, so they
+  // agree with themselves. Here the bytes come off a socket and the expectation
+  // off disk.
+  assert.match(
+    checkLiveInventory({ ...LIVE_ENVELOPE, operations: ["health.read"] }, FIXTURE_CONTRACT).join("|"),
+    /operations are \["health\.read"\], the generated fixture pins/,
+  );
+  assert.match(
+    checkLiveInventory({ ...LIVE_ENVELOPE, capabilities: ["health"] }, FIXTURE_CONTRACT).join("|"),
+    /capabilities are \["health"\], the generated fixture pins/,
+  );
+  // Order is part of the pin: the fixture is byte-compared, so a reshuffle is a
+  // different artifact and a client diffing two runs would see a change.
+  assert.equal(
+    checkLiveInventory(
+      { ...LIVE_ENVELOPE, operations: ["pairing.create", "health.read"] },
+      FIXTURE_CONTRACT,
+    ).length,
+    1,
+  );
 });
 
 test("checkEnvelope catches a success that carries an error, and vice versa", () => {
@@ -108,6 +175,7 @@ test("checkEnvelope catches the wrong error code, a lying retryable, and a missi
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: ["pairing"],
+    operations: ["pairing.create"],
     error: { code: "conflict", message: "nope", retryable: true, details: { reason: "something_else" } },
   };
   const failures = checkEnvelope(envelope, {

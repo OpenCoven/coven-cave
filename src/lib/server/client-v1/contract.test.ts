@@ -14,10 +14,15 @@ import {
   CLIENT_V1_IDENTITY_KINDS,
   CLIENT_V1_LIMITS,
   CLIENT_V1_MIN_CLIENT_VERSION,
+  CLIENT_V1_OPERATIONS,
   CLIENT_V1_PAIRING_SECRET_HEADER,
   CLIENT_V1_PUBLIC_ROUTES,
   CLIENT_V1_SCOPES,
   createClientV1ContractFixture,
+  parseClientV1AdvertisedCapabilities,
+  parseClientV1AdvertisedOperations,
+  parseClientV1Capabilities,
+  parseClientV1Operations,
   parseClientV1Cursor,
   parseClientV1ErrorEnvelope,
   parseClientV1Health,
@@ -38,6 +43,7 @@ import {
   type ClientV1StatusRecord,
   type ClientV1SuccessEnvelope,
 } from "./contract.ts";
+import { clientV1OperationRecords } from "./operations.ts";
 import {
   clientV1Error,
   clientV1ErrorResponse,
@@ -77,17 +83,50 @@ function parseJson<T>(value: string): T {
 test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");
   assert.equal(CLIENT_V1_MIN_CLIENT_VERSION, "0.1.0");
+  // Every entry here is a family some live operation claims, and every
+  // operation is bound to a route on disk by api-contracts.test.ts. `streaming`
+  // and `revisions` were removed by #4869: both were advertised for months with
+  // no route that could serve either, so `supports("streaming")` was a false
+  // operational claim. Neither was ever live, so removing them withdraws
+  // nothing a client could have invoked — see the migration note in
+  // docs/api/client-v1.md.
   assert.deepEqual(CLIENT_V1_CAPABILITIES, [
+    "health",
     "pairing",
     "credentials",
     "familiars",
     "projects",
     "conversations",
     "conversation-messages",
-    "streaming",
     "cursors",
-    "revisions",
   ]);
+  assert.deepEqual(CLIENT_V1_OPERATIONS, [
+    "health.read",
+    "pairing.create",
+    "pairing.poll",
+    "pairing.exchange",
+    "pairing.admin.list",
+    "pairing.admin.decide",
+    "credentials.admin.list",
+    "credentials.admin.revoke",
+    "familiars.list",
+    "projects.list",
+    "conversations.list",
+    "conversations.read",
+    "messages.list",
+  ]);
+  for (const retired of ["streaming", "revisions"]) {
+    assert.equal(
+      (CLIENT_V1_CAPABILITIES as readonly string[]).includes(retired),
+      false,
+      `${retired} has no owning route and must not be declared live`,
+    );
+    assert.equal(
+      (CLIENT_V1_OPERATIONS as readonly string[]).some((id) => id.startsWith(`${retired}.`)),
+      false,
+      `${retired} has no owning route and must not appear as an operation`,
+    );
+  }
   assert.deepEqual(CLIENT_V1_SCOPES, [
     "chat:read",
     "chat:write",
@@ -136,6 +175,90 @@ test("publishes the reviewed public bootstrap routes and pairing secret header",
   }
 });
 
+test("keeps the manifest's operation records in step with the wire ids", () => {
+  // Two artifacts describe the same inventory at two levels of detail: the
+  // envelope carries ids (it rides every response) and the fixture manifest
+  // carries whole records (a client vendors it once). If they could disagree,
+  // an SDK resolving an advertised id against the vendored manifest would find
+  // nothing — the exact "probe an arbitrary path to find out" failure the
+  // inventory exists to remove.
+  const records = createClientV1ContractFixture().contract.operations;
+  assert.deepEqual(records.map((record) => record.id), [...CLIENT_V1_OPERATIONS]);
+  for (const record of records) {
+    assert.equal(typeof record.method, "string");
+    assert.ok(record.path.startsWith("/api/client/v1/"), record.path);
+    assert.ok(["public", "admin", "authenticated"].includes(record.ingress), record.ingress);
+    assert.ok(record.families.length > 0, `${record.id} names no capability family`);
+    for (const family of record.families) {
+      assert.ok(
+        (CLIENT_V1_CAPABILITIES as readonly string[]).includes(family),
+        `${record.id} claims family ${family}, which is not advertised`,
+      );
+    }
+    // The authority class is legible from the id alone, so a client that only
+    // ever sees the envelope can still tell that a `.admin.` operation is not
+    // something its bearer will ever satisfy.
+    assert.equal(record.id.includes(".admin."), record.ingress === "admin", record.id);
+    assert.equal(record.scope === null, record.ingress !== "authenticated", record.id);
+  }
+  // Every advertised family is claimed by at least one record. The converse of
+  // the per-record check above, and the one that catches a family surviving in
+  // the list after the operation that justified it is gone.
+  const claimed = new Set(records.flatMap((record) => record.families));
+  assert.deepEqual(
+    (CLIENT_V1_CAPABILITIES as readonly string[]).filter((family) => !claimed.has(family)),
+    [],
+  );
+});
+
+test("validates the operation inventory strictly on the producer side", () => {
+  assert.deepEqual(parseClientV1Operations([...CLIENT_V1_OPERATIONS]), [...CLIENT_V1_OPERATIONS]);
+  assert.deepEqual(parseClientV1Operations(["health.read"]), ["health.read"]);
+  // Cave is the producer: it must refuse to export an id no reviewed record
+  // backs, which is the whole reason `streaming` could be advertised for months.
+  assert.throws(() => parseClientV1Operations(["streaming.subscribe"]), /operations entry is not supported/);
+  assert.throws(() => parseClientV1Operations(["health.read", "health.read"]), /duplicates/);
+  assert.throws(() => parseClientV1Operations([]), /non-empty/);
+  assert.throws(() => parseClientV1Operations("health.read"), /non-empty array/);
+  assert.throws(() => parseClientV1Capabilities(["streaming"]), /capabilities entry is not supported/);
+});
+
+test("keeps consumers additive-tolerant where the producer is strict", () => {
+  // The producer and consumer rules are deliberately different. A newer
+  // compatible Cave may advertise ids an older SDK has never heard of; if that
+  // SDK refused the envelope, every additive minor release would become a
+  // breaking one. So the consumer parsers validate shape and PRESERVE unknown
+  // ids rather than rejecting them.
+  assert.deepEqual(
+    parseClientV1AdvertisedOperations(["conversations.list", "messages.stream", "runs.cancel"]),
+    ["conversations.list", "messages.stream", "runs.cancel"],
+  );
+  assert.deepEqual(
+    parseClientV1AdvertisedCapabilities(["conversations", "attachments", "conversation-messages"]),
+    ["conversations", "attachments", "conversation-messages"],
+  );
+  // Tolerant is not credulous. Shape is still enforced, and "unknown" may not
+  // mean "unbounded" — a consumer that accepts anything is a consumer an
+  // untrusted producer can allocate against.
+  assert.throws(() => parseClientV1AdvertisedOperations([]), /non-empty/);
+  assert.throws(() => parseClientV1AdvertisedOperations(["Conversations.List"]), /malformed/);
+  assert.throws(() => parseClientV1AdvertisedOperations(["conversations list"]), /malformed/);
+  assert.throws(() => parseClientV1AdvertisedOperations([""]), /malformed/);
+  assert.throws(() => parseClientV1AdvertisedOperations([42]), /malformed/);
+  assert.throws(() => parseClientV1AdvertisedCapabilities(["a".repeat(65)]), /malformed/);
+  assert.throws(
+    () => parseClientV1AdvertisedCapabilities(["conversations", "conversations"]),
+    /duplicates/,
+  );
+  // And the rule the tolerance must not be read as: a consumer preserves an id
+  // it does not understand, it never claims support for it. Asserted here on
+  // the only thing this module can assert it against — the closed producer set,
+  // which is what a `supports()` implementation narrows against.
+  const advertised = parseClientV1AdvertisedOperations(["conversations.list", "messages.stream"]);
+  const understood = advertised.filter((id) => (CLIENT_V1_OPERATIONS as readonly string[]).includes(id));
+  assert.deepEqual(understood, ["conversations.list"]);
+});
+
 test("publishes stable client v1 limits", () => {
   assert.deepEqual(CLIENT_V1_LIMITS, {
     idempotencyKeyCharacters: 36,
@@ -149,6 +272,7 @@ test("publishes stable client v1 limits", () => {
     maxPageSize: 100,
     instanceIdCharacters: 64,
     releaseVersionCharacters: 64,
+    declarationIdCharacters: 64,
   });
 });
 
@@ -210,6 +334,7 @@ test("keeps the release version out of the contract fixture", () => {
 test("freezes exported protocol collections at runtime", () => {
   assert.equal(Object.isFrozen(CLIENT_V1_SCOPES), true);
   assert.equal(Object.isFrozen(CLIENT_V1_CAPABILITIES), true);
+  assert.equal(Object.isFrozen(CLIENT_V1_OPERATIONS), true);
   assert.equal(Object.isFrozen(CLIENT_V1_ERROR_CODES), true);
   assert.equal(Object.isFrozen(CLIENT_V1_IDENTITY_KINDS), true);
   assert.equal(Object.isFrozen(CLIENT_V1_LIMITS), true);
@@ -571,7 +696,8 @@ test("builds explicit generic success envelopes with stable contract metadata", 
     clientV1Success(
       { status: "ok", label: "foundation" },
       {
-        capabilities: ["conversations", "streaming"],
+        capabilities: ["conversations", "cursors"],
+        operations: ["conversations.list", "conversations.read"],
         requestId: "request-1",
         identity: { kind: "conversation", id: "conversation-1" },
         revision: { token: "revision-1", updatedAt: "2026-08-15T00:00:00.000Z" },
@@ -581,7 +707,8 @@ test("builds explicit generic success envelopes with stable contract metadata", 
     {
       apiVersion: "1.0",
       minimumClientVersion: "0.1.0",
-      capabilities: ["conversations", "streaming"],
+      capabilities: ["conversations", "cursors"],
+      operations: ["conversations.list", "conversations.read"],
       requestId: "request-1",
       identity: { kind: "conversation", id: "conversation-1" },
       revision: { token: "revision-1", updatedAt: "2026-08-15T00:00:00.000Z" },
@@ -606,6 +733,7 @@ test("maps explicit client v1 errors without coupling success to route guesses",
       apiVersion: "1.0",
       minimumClientVersion: "0.1.0",
       capabilities: [...CLIENT_V1_CAPABILITIES],
+    operations: [...CLIENT_V1_OPERATIONS],
       error: {
         code: "rate_limited",
         message: "Please retry later.",
@@ -617,13 +745,14 @@ test("maps explicit client v1 errors without coupling success to route guesses",
 
   const accepted = clientV1SuccessResponse(
     { contract: "foundation-only" },
-    { capabilities: ["pairing"], status: 202 },
+    { capabilities: ["pairing"], operations: ["pairing.create"], status: 202 },
   );
   assert.equal(accepted.status, 202);
   assert.deepEqual(await accepted.json(), {
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: ["pairing"],
+    operations: ["pairing.create"],
     data: { contract: "foundation-only" },
   });
 
@@ -636,6 +765,7 @@ test("maps explicit client v1 errors without coupling success to route guesses",
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
+    operations: [...CLIENT_V1_OPERATIONS],
     error: {
       code: "rate_limited",
       message: "Please retry later.",
@@ -684,6 +814,7 @@ test("represents in-progress operations as retryable conflicts", () => {
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
+    operations: [...CLIENT_V1_OPERATIONS],
     error: {
       code: "conflict",
       message: "The operation is already in progress.",
@@ -703,6 +834,11 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
+    // The MANIFEST publishes whole operation records, not bare ids — that is
+    // what lets a client resolve an advertised id to a request without probing
+    // arbitrary paths. The envelope carries ids alone because it rides every
+    // response; the two are checked against each other below.
+    operations: clientV1OperationRecords(),
     discovery: {
       fileName: "client-v1-discovery.json",
       mode: "0600",
@@ -766,10 +902,14 @@ test("copies protocol defaults into fixtures and envelope metadata", () => {
   fixture.contract.errorCodes.pop();
   fixture.contract.identityKinds.pop();
   fixture.contract.publicRoutes.pop();
+  fixture.contract.operations.pop();
+  fixture.contract.operations[0].families.pop();
   (fixture.contract.discovery as { mode: string }).mode = "0644";
   (fixture.contract.limits as { maxPageSize: number }).maxPageSize = 1;
 
   assert.deepEqual(clientV1Success({ status: "ok" }).capabilities, [...CLIENT_V1_CAPABILITIES]);
+  assert.deepEqual(clientV1Success({ status: "ok" }).operations, [...CLIENT_V1_OPERATIONS]);
+  assert.deepEqual(createClientV1ContractFixture().contract.operations, clientV1OperationRecords());
   assert.deepEqual(createClientV1ContractFixture().contract.limits, CLIENT_V1_LIMITS);
   assert.deepEqual(
     createClientV1ContractFixture().contract.publicRoutes,
@@ -862,6 +1002,24 @@ test("parses complete public envelopes while preserving additive fields", () => 
     () => parseClientV1ErrorEnvelope({ ...fixture.examples.errorEnvelope, data: fixture.examples.successEnvelope.data }),
     /must not contain data/i,
   );
+
+  // `operations` is required, not optional. It is what an SDK's `supports()`
+  // reads, and a field a client has to test for the presence of is a field it
+  // cannot rely on — which is how the surface ended up with a declaration
+  // nobody could trust in the first place.
+  const withoutOperations = { ...fixture.examples.successEnvelope } as Record<string, unknown>;
+  delete withoutOperations.operations;
+  assert.throws(() => parseClientV1SuccessEnvelope(withoutOperations), /operations/i);
+  const errorWithoutOperations = { ...fixture.examples.errorEnvelope } as Record<string, unknown>;
+  delete errorWithoutOperations.operations;
+  assert.throws(() => parseClientV1ErrorEnvelope(errorWithoutOperations), /operations/i);
+  assert.throws(
+    () => parseClientV1SuccessEnvelope({
+      ...fixture.examples.successEnvelope,
+      operations: ["streaming.subscribe"],
+    }),
+    /operations entry is not supported/,
+  );
 });
 
 test("validates foundation primitives independently of future routes", () => {
@@ -903,6 +1061,7 @@ test("uses explicit generic success envelopes instead of guessing future route p
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
+    operations: [...CLIENT_V1_OPERATIONS],
     data: futureRouteLike,
   });
 
@@ -913,6 +1072,7 @@ test("uses explicit generic success envelopes instead of guessing future route p
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: [...CLIENT_V1_CAPABILITIES],
+    operations: [...CLIENT_V1_OPERATIONS],
     data: {},
   });
 });

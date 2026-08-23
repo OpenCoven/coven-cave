@@ -334,6 +334,18 @@ stays reachable in ≤2 interactions.
    down-only ratchets in `src/lib/design-token-drift.test.ts`; `pnpm lint`
    rejects raw pixel text classes, fully static JSX style objects, and
    hexadecimal render colors in components.
+
+   **And the token you name has to exist.** An undefined custom property
+   resolves to nothing, so `color: var(--fg-primary)` where nothing defines
+   `--fg-primary` drops the declaration and the element silently inherits —
+   invisible to every other gate and to a reviewer reading the diff.
+   `pnpm check:tokens:defined` (also run by `pnpm lint`, and gated in the app
+   suite by `src/lib/undefined-token-reference.test.ts`) resolves every
+   `var(--x)` in CSS, in Tailwind arbitrary values and in inline styles
+   against the defined set, and fails a token defined only inside a
+   `[data-theme]`/`[data-mode]` block — the default Coven palette has no
+   `[data-theme]` block, so such a token is undefined on the palette a fresh
+   profile gets.
 2. Reuse the primitives (`src/components/ui/`: Button, EmptyState, Skeleton,
    Popover, Modal, ViewHeader, SearchInput…) before writing new ones.
 3. Chrome within budget (§8): ≤3 always-visible actions + one `OverflowMenu`;

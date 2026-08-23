@@ -8,6 +8,8 @@ import test from "node:test";
 import {
   CLIENT_V1_CONTRACT_FIXTURE_PATH,
   CLIENT_V1_CONTRACT_FIXTURE_SHA256_PATH,
+  REVIEWED_CLIENT_V1_CAPABILITIES,
+  REVIEWED_CLIENT_V1_OPERATIONS,
   REVIEWED_CLIENT_V1_PUBLIC_ROUTES,
   clientV1ContractFixtureSha256,
   renderClientV1ContractFixture,
@@ -170,4 +172,72 @@ test("ratchets the exported fixture to the reviewed Phase 1 public routes", () =
   ]);
   assert.equal(typeof fixture.examples.pairingCreatedEnvelope.data.secret, "string");
   assert.equal(typeof fixture.examples.pairingExchangeEnvelope.data.bearer, "string");
+});
+
+test("ratchets the exported fixture to the reviewed live capability inventory", () => {
+  // The exporter is the refusal gate, so it holds its own copy of the reviewed
+  // declaration rather than reading contract.ts and comparing it to itself. A
+  // self-comparison passes for any value at all, which is exactly how
+  // `streaming` and `revisions` stayed advertised with no owning route (#4869).
+  const fixture = JSON.parse(renderClientV1ContractFixture());
+  assert.deepEqual(fixture.contract.capabilities, REVIEWED_CLIENT_V1_CAPABILITIES);
+  assert.deepEqual(
+    fixture.contract.operations.map((operation) => operation.id),
+    REVIEWED_CLIENT_V1_OPERATIONS,
+  );
+  for (const retired of ["streaming", "revisions"]) {
+    assert.equal(fixture.contract.capabilities.includes(retired), false, retired);
+    assert.equal(
+      REVIEWED_CLIENT_V1_OPERATIONS.some((id) => id.startsWith(`${retired}.`)),
+      false,
+      retired,
+    );
+  }
+
+  // Every exported record is complete and internally consistent: an id with no
+  // method, path or authority class is an entry a client can read and not act
+  // on, which is the "advertised but unusable" failure this replaced.
+  const families = new Set();
+  for (const operation of fixture.contract.operations) {
+    assert.match(operation.method, /^(GET|POST|PATCH|DELETE)$/u, operation.id);
+    assert.ok(operation.path.startsWith("/api/client/v1/"), operation.path);
+    assert.ok(["public", "admin", "authenticated"].includes(operation.ingress), operation.id);
+    assert.equal(operation.id.includes(".admin."), operation.ingress === "admin", operation.id);
+    assert.equal(operation.scope === null, operation.ingress !== "authenticated", operation.id);
+    assert.ok(operation.families.length > 0, operation.id);
+    for (const family of operation.families) {
+      assert.ok(REVIEWED_CLIENT_V1_CAPABILITIES.includes(family), `${operation.id}: ${family}`);
+      families.add(family);
+    }
+  }
+  // No advertised family without a live operation claiming it.
+  assert.deepEqual(
+    REVIEWED_CLIENT_V1_CAPABILITIES.filter((family) => !families.has(family)),
+    [],
+  );
+
+  // The public operations and the reviewed public routes are one set. A public
+  // operation the contract does not publish would be a route the proxy answers
+  // 403 for; a published route with no public operation would leave a client's
+  // only entry point out of the inventory it reads before pairing.
+  assert.deepEqual(
+    fixture.contract.operations
+      .filter((operation) => operation.ingress === "public")
+      .map(({ method, path: routePath }) => ({ method, path: routePath })),
+    REVIEWED_CLIENT_V1_PUBLIC_ROUTES.map(({ method, path: routePath }) => ({
+      method,
+      path: routePath,
+    })),
+  );
+
+  // And the envelope examples carry the id list, so a vendoring consumer sees
+  // both halves of the split — ids on the wire, records in the manifest.
+  for (const example of [
+    fixture.examples.successEnvelope,
+    fixture.examples.errorEnvelope,
+    fixture.examples.healthEnvelope,
+  ]) {
+    assert.deepEqual(example.operations, REVIEWED_CLIENT_V1_OPERATIONS);
+    assert.deepEqual(example.capabilities, REVIEWED_CLIENT_V1_CAPABILITIES);
+  }
 });
