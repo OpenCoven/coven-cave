@@ -129,7 +129,11 @@ jobs:
     needs: paths
     if: needs.paths.outputs.ios == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
     runs-on: macos-15
-    timeout-minutes: 30
+    # Raised from 30 when the suite started actually executing (cave-ac372).
+    # A booted simulator plus ~684 unit tests is the added cost; the ceiling is
+    # deliberately well above the observed runtime so a slow runner does not
+    # read as a test failure.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -150,18 +154,102 @@ jobs:
         working-directory: apps/ios/CovenCave
         run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 
-      # `build` compiles the APP target only — the scheme's test targets are
-      # built by the test action, which routine PR CI does not run. So until
-      # now a Swift file under CovenCaveTests/ could be syntactically broken,
-      # or assert against a symbol that no longer exists, and every PR stayed
-      # green: the suite that guards the native store was itself unguarded.
-      # `build-for-testing` compiles the unit and UI test bundles without
-      # booting a simulator, which is the compile gate those files were
-      # missing. It reuses this job's warm derived data, so it is a short step
-      # rather than a second full build.
+      # The device name and iOS version on a hosted image change without
+      # notice, so the destination is resolved rather than spelled. A hardcoded
+      # `name=iPhone 16 Pro` turns an image bump into a red iOS job that reads
+      # like a code failure. Selection is a tested JS function rather than a jq
+      # filter because runtime versions must be compared NUMERICALLY — any
+      # lexicographic sort ranks iOS-9-0 above iOS-26-0 (see
+      # scripts/ios-select-simulator.test.mjs).
+      - name: Boot an iOS Simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! udid="$(xcrun simctl list devices available -j | node scripts/ios-select-simulator.mjs)"; then
+            echo "::error::No available iPhone simulator on this runner image; the XCTest suite cannot run."
+            xcrun simctl list devices available
+            exit 1
+          fi
+          # Named here rather than in a job-level `env:` because the `runner`
+          # context is unavailable there (actionlint catches it). Sharing an
+          # explicit derived-data path makes the compile and run steps
+          # provably agree on which products they mean, instead of relying on
+          # both landing in the same default DerivedData.
+          {
+            echo "IOS_SIMULATOR_UDID=$udid"
+            echo "IOS_DERIVED_DATA=$RUNNER_TEMP/ios-derived-data"
+            echo "IOS_RESULT_BUNDLE=$RUNNER_TEMP/CovenCaveTests.xcresult"
+          } >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl list devices booted
+
+      # `build-for-testing` compiles the unit and UI test bundles. It was added
+      # on its own first (#4946) because it needs no booted simulator: before
+      # it, a Swift file under CovenCaveTests/ could be syntactically broken, or
+      # assert against a symbol that no longer exists, and every PR stayed green.
+      #
+      # But compiling is where the gate USED to stop, and a suite that compiles
+      # and never runs is a check that certifies its tests parse rather than
+      # pass (cave-ac372). Building for the concrete destination the test action
+      # will use keeps the two steps in agreement about architecture and SDK.
       - name: Compile the iOS test bundles
         working-directory: apps/ios/CovenCave
-        run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build-for-testing
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme CovenCave \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            -derivedDataPath "$IOS_DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing
+
+      # Only the unit bundle runs here. CovenCaveUITests drives the app through
+      # XCUIApplication — minutes per case and the flakiest thing this pipeline
+      # could own — so it keeps the compile gate above and stays out of the
+      # blocking path. See cave-ac372 for the placement argument.
+      #
+      # ⚠️ The execution-time allowances are load-bearing, not tuning. The very
+      # first run of this suite (32666989516, the run that proved these tests
+      # had never executed) hung inside
+      # AppModelProjectContextTests.testNewerStandaloneTasksLoadWinsOverOlderSuccessfulTaskSnapshot (cave-dwy2a)
+      # and sat there for THIRTY-SIX MINUTES until the job timeout killed it.
+      # xcodebuild left the result bundle unfinalized, so the run produced no
+      # counts, no failure names, and a `cancelled` step — a verdict indistinguishable
+      # from an infrastructure blip.
+      #
+      # XCTest's per-test allowance is NOT enforced unless timeouts are enabled,
+      # which is why a 600s default did not stop a 36-minute hang. With them on,
+      # a wedged test is failed and named and the suite CONTINUES, so one bad
+      # test costs 60 seconds and still yields a full report. The measured suite
+      # is fast — 140 cases executed in about 3 seconds — so 60s per test is
+      # orders of magnitude of headroom, not a tight budget.
+      - name: Run the iOS XCTest suite
+        working-directory: apps/ios/CovenCave
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme CovenCave \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            -derivedDataPath "$IOS_DERIVED_DATA" \
+            -resultBundlePath "$IOS_RESULT_BUNDLE" \
+            -only-testing:CovenCaveTests \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 \
+            -maximum-test-execution-time-allowance 180 \
+            CODE_SIGNING_ALLOWED=NO \
+            test-without-building
+
+      # xcodebuild's exit status covers "did every executed test pass". It does
+      # NOT cover "did anything execute": a selector that matches no target
+      # exits 0, which is the same green this bead was filed over, moved one
+      # layer up. So the result bundle is read and the executed count is
+      # compared against the number of XCTest methods in the source tree.
+      # `always()` so a failing run still prints its counts and failures.
+      - name: Verify the iOS XCTest suite executed
+        if: always()
+        run: |
+          node scripts/ios-xctest-summary.mjs \
+            --result-bundle "$IOS_RESULT_BUNDLE" \
+            --tests-dir apps/ios/CovenCave/CovenCaveTests
 
   frontend-validation:
     name: Frontend validation (${{ matrix.validation.name }})
