@@ -47,7 +47,8 @@ function failure(message: string, status = 500): Response {
       minimumClientVersion: "0.1.0",
       capabilities: ["pairing", "credentials"],
       error: {
-        code: status === 409 ? "conflict" : "service_unavailable",
+        code:
+          status === 404 ? "not_found" : status === 409 ? "conflict" : "service_unavailable",
         message,
         retryable: status >= 500,
       },
@@ -985,29 +986,36 @@ test("keeps toolbar totals on the last confirmed snapshot after a partial refres
   await act(async () => renderer.unmount());
 });
 
-test("blocks duplicate mutations and announces failures accessibly", async () => {
+test("blocks duplicate terminal mutations, refreshes, and preserves the failure announcement", async () => {
   const pendingDecision = deferred<Response>();
   let decisionCalls = 0;
+  let pairingLoads = 0;
+  let credentialLoads = 0;
 
   globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url === PAIRING_REQUESTS_URL) {
-      return Promise.resolve(success({
-        pairingRequests: [
-          {
-            id: "pair-client",
-            appName: "Pair Client",
-            installationId: "pair-install",
-            scopes: ["chat:read"],
-            status: "pending",
-            createdAt: Date.now() - 60_000,
-            expiresAt: Date.now() + 4 * 60_000,
-            decidedAt: null,
-          },
-        ],
-      }));
+      pairingLoads += 1;
+      if (pairingLoads === 1) {
+        return Promise.resolve(success({
+          pairingRequests: [
+            {
+              id: "pair-client",
+              appName: "Pair Client",
+              installationId: "pair-install",
+              scopes: ["chat:read"],
+              status: "pending",
+              createdAt: Date.now() - 60_000,
+              expiresAt: Date.now() + 4 * 60_000,
+              decidedAt: null,
+            },
+          ],
+        }));
+      }
+      return Promise.resolve(success({ pairingRequests: [] }));
     }
     if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
       return Promise.resolve(success({ credentials: [] }));
     }
     if (url === "/api/client/v1/admin/pairing-requests/pair-client/decision") {
@@ -1035,12 +1043,124 @@ test("blocks duplicate mutations and announces failures accessibly", async () =>
     await flushMicrotasks();
   });
 
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(rootText(renderer)).not.toContain("pair-install");
   expect(rootText(renderer)).toContain("Couldn't approve pairing request.");
   expect(rootText(renderer)).toContain("Pairing request was already decided.");
-  expect(announce).toHaveBeenCalledWith(
-    "Couldn't approve Pair Client pairing request: Pairing request was already decided.",
-    "assertive",
-  );
+  expect(pairingLoads).toBe(2);
+  expect(credentialLoads).toBe(2);
+  expect(announce.mock.calls).toEqual([
+    ["Couldn't approve Pair Client pairing request: Pairing request was already decided.", "assertive"],
+  ]);
+
+  await act(async () => renderer.unmount());
+});
+
+test("refreshes terminal not-found pairing failures without dropping the failure message", async () => {
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      if (pairingLoads === 1) {
+        return Promise.resolve(success({
+          pairingRequests: [
+            {
+              id: "pair-client",
+              appName: "Pair Client",
+              installationId: "pair-install",
+              scopes: ["chat:read"],
+              status: "pending",
+              createdAt: Date.now() - 60_000,
+              expiresAt: Date.now() + 4 * 60_000,
+              decidedAt: null,
+            },
+          ],
+        }));
+      }
+      return Promise.resolve(success({ pairingRequests: [] }));
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      return Promise.resolve(success({ credentials: [] }));
+    }
+    if (url === "/api/client/v1/admin/pairing-requests/pair-client/decision") {
+      return Promise.resolve(failure("Pairing request expired before it could be denied.", 404));
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+
+  await act(async () => {
+    findButton(renderer, "Deny Pair Client pairing request").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(rootText(renderer)).not.toContain("pair-install");
+  expect(rootText(renderer)).toContain("Couldn't deny pairing request.");
+  expect(rootText(renderer)).toContain("Pairing request expired before it could be denied.");
+  expect(pairingLoads).toBe(2);
+  expect(credentialLoads).toBe(2);
+  expect(announce.mock.calls).toEqual([
+    ["Couldn't deny Pair Client pairing request: Pairing request expired before it could be denied.", "assertive"],
+  ]);
+
+  await act(async () => renderer.unmount());
+});
+
+test("keeps nonterminal pairing failures actionable without forcing a refresh", async () => {
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      return Promise.resolve(success({
+        pairingRequests: [
+          {
+            id: "pair-client",
+            appName: "Pair Client",
+            installationId: "pair-install",
+            scopes: ["chat:read"],
+            status: "pending",
+            createdAt: Date.now() - 60_000,
+            expiresAt: Date.now() + 4 * 60_000,
+            decidedAt: null,
+          },
+        ],
+      }));
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      return Promise.resolve(success({ credentials: [] }));
+    }
+    if (url === "/api/client/v1/admin/pairing-requests/pair-client/decision") {
+      return Promise.resolve(failure("Pairing service timed out.", 503));
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+
+  await act(async () => {
+    findButton(renderer, "Approve Pair Client pairing request").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("pair-install");
+  expect(rootText(renderer)).toContain("Couldn't approve pairing request.");
+  expect(rootText(renderer)).toContain("Pairing service timed out.");
+  expect(pairingLoads).toBe(1);
+  expect(credentialLoads).toBe(1);
+  expect(findButton(renderer, "Approve Pair Client pairing request").props.disabled).toBe(false);
+  expect(announce.mock.calls).toEqual([
+    ["Couldn't approve Pair Client pairing request: Pairing service timed out.", "assertive"],
+  ]);
 
   await act(async () => renderer.unmount());
 });

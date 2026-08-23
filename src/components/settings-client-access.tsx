@@ -44,6 +44,16 @@ type AlertState = {
   message: string;
 };
 
+class ClientAccessResponseError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ClientAccessResponseError";
+    this.status = status;
+  }
+}
+
 type LedgerLoadOutcome = "succeeded" | "failed" | "superseded" | "aborted";
 
 type LedgerSummary = {
@@ -208,13 +218,18 @@ async function readEnvelopeData(response: Response): Promise<Record<string, unkn
       payload?.error && typeof payload.error.message === "string"
         ? payload.error.message
         : `Request failed (${response.status})`;
-    throw new Error(message);
+    throw new ClientAccessResponseError(message, response.status);
   }
 
   if (!payload?.data || typeof payload.data !== "object" || Array.isArray(payload.data)) {
     throw new Error("Invalid client access response.");
   }
   return payload.data;
+}
+
+function isTerminalPairingDecisionError(error: unknown): error is ClientAccessResponseError {
+  return error instanceof ClientAccessResponseError
+    && (error.status === 404 || error.status === 409);
 }
 
 async function loadPairingRequests(signal: AbortSignal): Promise<PairingRequestRecord[]> {
@@ -274,10 +289,10 @@ async function revokeCredential(
   return credential;
 }
 
-function markRefreshing<T>(state: ListState<T>): ListState<T> {
+function markRefreshing<T>(state: ListState<T>, alert: AlertState | null = null): ListState<T> {
   return state.status === "ready"
-    ? { ...state, alert: null }
-    : { ...state, status: "loading", alert: null };
+    ? { ...state, alert }
+    : { ...state, status: "loading", alert };
 }
 
 function settleList<T>(
@@ -647,7 +662,11 @@ export function ClientAccessSection() {
   }, []);
 
   const loadLedger = useCallback((
-    options: { announceResult?: boolean } = {},
+    options: {
+      announceResult?: boolean;
+      pairingsAlert?: AlertState | null;
+      credentialsAlert?: AlertState | null;
+    } = {},
   ): Promise<LedgerLoadOutcome> => {
     const loadPromise = (async (): Promise<LedgerLoadOutcome> => {
       const requestId = loadRequestIdRef.current + 1;
@@ -657,8 +676,8 @@ export function ClientAccessSection() {
       loadControllerRef.current = controller;
 
       setRefreshing(true);
-      setPairings((current) => markRefreshing(current));
-      setCredentials((current) => markRefreshing(current));
+      setPairings((current) => markRefreshing(current, options.pairingsAlert ?? null));
+      setCredentials((current) => markRefreshing(current, options.credentialsAlert ?? null));
 
       try {
         const [pairingsResult, credentialsResult] = await Promise.allSettled([
@@ -789,15 +808,25 @@ export function ClientAccessSection() {
       if (controller.signal.aborted || !mountedRef.current) return;
       const verb = decision === "approved" ? "approve" : "deny";
       const message = error instanceof Error ? error.message : "Request failed.";
+      const alert = {
+        title: `Couldn't ${verb} pairing request.`,
+        message,
+      };
       setPairings((current) => ({
         ...current,
         status: current.status === "ready" ? "ready" : "error",
-        alert: {
-          title: `Couldn't ${verb} pairing request.`,
-          message,
-        },
+        alert,
       }));
       announce(`Couldn't ${verb} ${item.appName} pairing request: ${message}`, "assertive");
+      if (isTerminalPairingDecisionError(error)) {
+        const refreshOutcome = await awaitAuthoritativeRefresh(loadLedger({ pairingsAlert: alert }));
+        if (controller.signal.aborted || !mountedRef.current || refreshOutcome === "aborted") return;
+        setPairings((current) => ({
+          ...current,
+          status: current.status === "ready" ? "ready" : "error",
+          alert,
+        }));
+      }
     } finally {
       finishAction(key);
     }
