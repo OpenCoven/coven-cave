@@ -64,7 +64,7 @@ test("mission adapter produces one canonical surface model", () => {
   assert.equal(run.runtime, "codex · gpt-5");
   assert.deepEqual(run.steps.map((step) => step.status), ["completed", "active", "pending"]);
   assert.deepEqual(run.evidence, {
-    reviewed: 2,
+    sources: 2,
     retained: 1,
     rejected: 1,
     artifacts: 1,
@@ -74,7 +74,7 @@ test("mission adapter produces one canonical surface model", () => {
 test("chat research markers are removed from prose and projected as snapshots", () => {
   const parsed = extractResearchRunMarkers([
     "I started the research.",
-    '<coven:research run-id="run-1" title="Dependency risk" status="running" familiar="sage" skill="research:paper" activity="Reviewing incidents" step="2" total="5" reviewed="12" retained="7" cited="3" artifacts="1" />',
+    '<coven:research run-id="run-1" title="Dependency risk" status="running" familiar="sage" skill="research:paper" activity="Reviewing incidents" step="2" total="5" sources="18" reviewed="12" retained="7" cited="3" artifacts="1" />',
   ].join("\n"));
 
   assert.equal(parsed.visible.trim(), "I started the research.");
@@ -83,6 +83,7 @@ test("chat research markers are removed from prose and projected as snapshots", 
   assert.equal(parsed.runs[0]?.steps.length, 5);
   assert.equal(parsed.runs[0]?.steps[0]?.status, "completed");
   assert.equal(parsed.runs[0]?.steps[1]?.status, "active");
+  assert.equal(parsed.runs[0]?.evidence.sources, 18);
   assert.equal(parsed.runs[0]?.evidence.reviewed, 12);
   assert.equal(parsed.runs[0]?.evidence.cited, 3);
 });
@@ -100,4 +101,20 @@ test("the final marker for a run wins and fenced examples stay literal", () => {
   assert.equal(parsed.runs[0]?.status, "running");
   assert.equal(parsed.runs[0]?.activity, "Gathering");
   assert.match(parsed.visible, /run-id="example"/);
+});
+
+test("partial streamed research markers never leak into visible prose", () => {
+  const parsed = extractResearchRunMarkers(
+    'Working on it.\n<coven:research run-id="run-1" title="Dependency',
+  );
+
+  assert.equal(parsed.visible.trim(), "Working on it.");
+  assert.deepEqual(parsed.runs, []);
+
+  const fenced = extractResearchRunMarkers([
+    "```xml",
+    '<coven:research run-id="run-1" title="Dependency',
+    "```",
+  ].join("\n"));
+  assert.match(fenced.visible, /<coven:research/);
 });
