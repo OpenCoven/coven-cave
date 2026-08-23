@@ -280,3 +280,21 @@ export function touchAutoMission(record: AutoMissionRecord, nowMs: number): Auto
  * property of the feature, not of a chat.
  */
 export const AUTO_BRIEFED_KEY = "cave:auto-mission:briefed";
+
+const AUTO_DRAFT_PREFIX = /^\/(?:auto|autopilot)(?=\s|$)/i;
+
+export function autoMissionStatusDraft(value: string): string | null {
+  return value.trim() ? null : "/auto status";
+}
+
+export function isAutoModeDraft(value: string): boolean {
+  return AUTO_DRAFT_PREFIX.test(value.trimStart());
+}
+
+export function toggleAutoModeDraft(value: string): string {
+  const draft = value.trimStart();
+  if (isAutoModeDraft(draft)) {
+    return draft.replace(AUTO_DRAFT_PREFIX, "").trimStart();
+  }
+  return draft ? `/auto ${draft}` : "/auto ";
+}
