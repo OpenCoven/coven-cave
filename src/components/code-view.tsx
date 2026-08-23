@@ -65,6 +65,13 @@ const LazyGitHubView = dynamic(
   { ssr: false },
 );
 
+// The Work scheduler carries its own stylesheet and polls three endpoints, so
+// it stays out of the Sessions chunk the room opens on (cave-7c329).
+const LazyWorkScheduler = dynamic(
+  () => import("@/components/code-work-scheduler").then((m) => m.CodeWorkScheduler),
+  { ssr: false },
+);
+
 // The GitHub content tabs and the GitHubView filter each one drives.
 const GITHUB_TAB_FILTER: Record<CodeGithubTab, GitHubFilter> = {
   activity: "all",
@@ -296,6 +303,20 @@ export function CodeView({
             <Icon name="ph:code" width={14} height={14} />
             Sessions
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={topTab === "work"}
+            onClick={() => setTopTab("work")}
+            className={`focus-ring-inset inline-flex items-center gap-1.5 rounded px-2 py-1 text-[length:var(--text-xs)] ${
+              topTab === "work"
+                ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <Icon name="ph:list-checks" width={14} height={14} />
+            Work
+          </button>
           {CODE_GITHUB_TABS.map((id) => (
             <button
               key={id}
@@ -318,7 +339,11 @@ export function CodeView({
           <GithubOrganizationSettings />
         </div>
       </div>
-      {githubTab ? (
+      {topTab === "work" ? (
+        <div className="min-h-0 flex-1">
+          <LazyWorkScheduler onJumpToSession={onJumpToSession} />
+        </div>
+      ) : githubTab ? (
         <div className="min-h-0 flex-1">
           <LazyGitHubView
             key={githubNavigationKey}

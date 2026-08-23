@@ -8,7 +8,10 @@ import { expect, test, type Page } from "@playwright/test";
 // Daemon-less — onboarding dismissed, all endpoints mocked via page.route.
 
 const ISO = "2026-06-12T10:00:00.000Z";
-const RAIL_MOUNT_TIMEOUT = 30_000;
+// WorkspaceRail is a client-only chunk. A cold next-dev compile can cross the
+// ordinary assertion budget after adjacent Code-surface modules grow, so only
+// the lazy mount gets the larger allowance; settled rail assertions stay fast.
+const RAIL_MOUNT_TIMEOUT = 60_000;
 
 const mkSession = (over: Record<string, unknown>) => ({
   status: "running",
@@ -99,6 +102,8 @@ async function openSession(page: Page, title: string) {
 }
 
 test.describe("code rail beside chat", () => {
+  test.describe.configure({ timeout: 90_000 });
+
   test("(a) plain chat with no project_root → no code rail", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);

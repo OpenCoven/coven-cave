@@ -311,6 +311,7 @@ export const SUITES = {
     "src/lib/beads-delivery.test.ts",
     "src/lib/worktree-lifecycle.test.ts",
     "src/lib/beads-work-queue.test.ts",
+    "src/lib/work-scheduler.test.ts",
     "src/components/familiar-work-queue-view.test.ts",
     "src/components/gh-review-actions.test.ts",
     "src/components/github-filter-caret.test.ts",
@@ -1901,6 +1902,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // work-scheduler.ts imports "@/lib/presence" as a runtime value, and
+  // presence.ts in turn resolves "@/lib/types".
+  "src/lib/work-scheduler.test.ts",
   // Renders RunningSessionList, which resolves "@/lib/icon", "@/lib/types"
   // and friends, and the spec itself imports "@/lib/auto-mission-state".
   "src/components/running-sessions-mission-row.test.ts",
