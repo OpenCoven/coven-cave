@@ -564,28 +564,30 @@ export function ResearchMissionDetail({
               <h2 id="research-mission-title">{mission.title}</h2>
               {researchIntentAddsContext(mission) ? <ClampedText lines={4} text={mission.intent} /> : null}
             </div>
-            <div className="research-mission-detail__header-actions">
-              {originSessionId ? (
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  leadingIcon="ph:arrow-u-up-left"
-                  onClick={() => onOpenSession(originSessionId)}
-                >
-                  Open the chat that started this
-                </Button>
-              ) : null}
-              {sessionId ? (
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  leadingIcon="ph:chat-circle-dots"
-                  onClick={() => onOpenSession(sessionId)}
-                >
-                  Open session
-                </Button>
-              ) : null}
-            </div>
+            {originSessionId || sessionId ? (
+              <div className="research-mission-detail__header-actions">
+                {originSessionId ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    leadingIcon="ph:arrow-u-up-left"
+                    onClick={() => onOpenSession(originSessionId)}
+                  >
+                    Open the chat that started this
+                  </Button>
+                ) : null}
+                {sessionId ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    leadingIcon="ph:chat-circle-dots"
+                    onClick={() => onOpenSession(sessionId)}
+                  >
+                    Open session
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </header>
 
           {/* ── Stepper card: 6 reconciled phases + bounds row ──
