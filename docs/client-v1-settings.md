@@ -75,11 +75,24 @@ a second approval.
 refresh, and issues no credential. A client that tries to exchange a denied
 request receives `pairing_denied`.
 
-If another actor already decided the request or it expired before your click
-landed, Settings keeps the failure message, refreshes the pending queue, and
-shows the current ledger. If the failure is non-terminal, such as a timeout or
-`service_unavailable`, Settings leaves the row in place so you can retry after
-the underlying problem is fixed.
+Decision races reconcile in three distinct ways:
+
+- Repeating the **same** decision is idempotent success. If the request was
+  already approved and you approve again, or already denied and you deny again,
+  the admin decision route still answers **200** and Settings follows the usual
+  success path: remove the row, then refresh both sections.
+- A **different** prior decision is a true conflict. The route answers **409**
+  (`pairing_already_decided`), Settings keeps the failure message visible, and
+  then performs an authoritative refresh so the pending queue and issued
+  credentials match the real ledger.
+- An **expired, already exchanged, or otherwise missing** request answers
+  **404** (`not_found`). Settings treats that as terminal reconciliation too:
+  keep the failure message, refresh authoritatively, and trust the refreshed
+  ledger rather than retrying the click.
+
+If the failure is non-terminal, such as a timeout or `service_unavailable`,
+Settings leaves the row in place so you can retry after the underlying problem
+is fixed.
 
 ## Issued credentials
 
@@ -177,14 +190,20 @@ If the failure persists:
   confirmed state visible and shows an inline error. The header keeps the last
   fully confirmed counts.
 
-### A request expired or was already decided
+### A request expired, was exchanged, or another actor already acted
 
-If approve or deny returns an expired/not-found or already-decided failure,
-Settings refreshes the pending queue automatically and keeps the failure
-message visible.
+If approve or deny fails terminally, Settings keeps the failure message visible
+and refreshes both sections to authoritative state.
 
-- **Expired** means the client must create a new pairing request.
-- **Already decided** means another actor already resolved it. Use the refreshed ledger rather than retrying blindly.
+- Repeating the **same** approve/deny choice is **not** a failure case. The
+  route answers **200**, and Settings behaves like any other successful
+  decision.
+- **409 / already decided** means another actor already recorded the opposite
+  decision. Use the refreshed ledger rather than retrying blindly.
+- **404 / not found** here means the request expired, was already exchanged, or
+  otherwise disappeared from the live pending store. If it expired, the client
+  must create a new pairing request. If it was already exchanged, look for the
+  credential in **Issued credentials** after the refresh.
 
 ### The client reports a denied request
 
