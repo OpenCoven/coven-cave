@@ -139,7 +139,7 @@ for (const property of [
   "--font-serif", "--font-sans", "--font-mono",
   "--cave-reading-leading", "--cave-reading-tracking", "--cave-reading-align",
   "--cave-reading-width", "--cave-reading-weight", "--cave-reading-hyphens",
-  "--radius", "--radius-control", "--radius-card", "--radius-pill",
+  "--radius", "--radius-control", "--radius-card", "--radius-panel", "--radius-pill",
 ]) {
   assert.equal(
     defaultBoot.inline.has(property),
@@ -168,7 +168,7 @@ for (const property of [
   "--font-sans", "--font-mono",
   "--cave-reading-leading", "--cave-reading-tracking", "--cave-reading-align",
   "--cave-reading-width", "--cave-reading-weight", "--cave-reading-hyphens",
-  "--radius", "--radius-control", "--radius-card", "--radius-pill",
+  "--radius", "--radius-control", "--radius-card", "--radius-panel", "--radius-pill",
 ]) {
   assert.equal(
     explicitBoot.inline.has(property),
@@ -181,5 +181,40 @@ assert.equal(
   false,
   "a default slot in an otherwise non-default approved font pair should still reveal theme CSS",
 );
+
+// Radius ladder parity (cave-uvwhh / #4350). These literals are duplicated from
+// CORNER_RADIUS_VALUES in src/lib/appearance-corner-radius.ts, which the boot
+// script cannot import — it runs before any module resolves. Asserting the same
+// numbers on both sides is what makes that duplication safe: change one without
+// the other and one of the two suites fails.
+//
+// --radius-panel is the one this pins hardest. It was missing from both paths,
+// so "Sharp" left every modal and panel at the :root 16px while the cards inside
+// them dropped to 4px.
+for (const [property, expected] of [
+  ["--radius", "0.875rem"],
+  ["--radius-control", "12px"],
+  ["--radius-card", "16px"],
+  ["--radius-panel", "20px"],
+  ["--radius-pill", "999px"],
+]) {
+  assert.equal(
+    explicitBoot.inline.get(property),
+    expected,
+    `boot script must apply ${property}: ${expected} at corner radius "round" ` +
+      "(keep in sync with CORNER_RADIUS_VALUES in src/lib/appearance-corner-radius.ts)",
+  );
+}
+
+{
+  const px = (v) => Number.parseFloat(v);
+  const control = px(explicitBoot.inline.get("--radius-control"));
+  const card = px(explicitBoot.inline.get("--radius-card"));
+  const panel = px(explicitBoot.inline.get("--radius-panel"));
+  assert.ok(
+    control < card && card < panel,
+    `the pre-paint radius ladder must stay ordered control < card < panel, got ${control} / ${card} / ${panel}`,
+  );
+}
 
 console.log("theme-script.test.ts OK");

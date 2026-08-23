@@ -345,6 +345,13 @@ final class AppModel {
     }
 
     var connection: CaveConnection?
+    /// Per-Familiar hub dashboards (`cave-9rwd.2`). Owned here rather than by
+    /// the hub view so flipping between two Familiars in the roster does not
+    /// re-fetch what was read seconds ago. In-memory only, bounded by its own
+    /// LRU, and it drops everything when the endpoint changes — it reads that
+    /// endpoint from `connection.host`, which is why it needs no teardown wired
+    /// into `disconnect()`.
+    let familiarDashboards = FamiliarDashboardStore()
     /// Stamped the moment the state LEAVES `.connected` — the last instant the
     /// desktop was known reachable — so the reconnect pill can say
     /// "last seen 2 min ago" honestly during a drop.

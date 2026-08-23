@@ -4,6 +4,7 @@ import {
   COVEN_MAINTENANCE_MINIMUM_VERSION,
   COVEN_OWNER_LEASE_MS,
   createCovenMaintenanceClient,
+  defaultRunCoven,
   createRepositoryMaintenanceCoordinator,
   MAX_FENCED_MUTATION_TIMEOUT_MS,
   repositoryMaintenanceCapabilities,
@@ -27,6 +28,8 @@ function covenFixture({
   unavailable = false,
   releaseFails = false,
   version = COVEN_MAINTENANCE_MINIMUM_VERSION,
+  // What `defaultRunCoven` reports as the argv it actually executed.
+  binary = "/fixture/bin/coven",
 } = {}) {
   const calls = [];
   let owner = null;
@@ -35,7 +38,7 @@ function covenFixture({
     calls.push({ args, cwd });
     if (unavailable) return { ok: false, stdout: "", stderr: "", status: null };
     if (args[0] === "--version") {
-      return { ok: true, stdout: `coven ${version}\n`, stderr: "", status: 0 };
+      return { ok: true, stdout: `coven ${version}\n`, stderr: "", status: 0, binary };
     }
     const command = args[1];
     if (command === "acquire") {
@@ -140,7 +143,7 @@ test("Coven client rejects maintenance protocols below the reviewed release", ()
   assert.equal(supportsCovenMaintenanceVersion("unknown"), false);
 
   const client = createCovenMaintenanceClient({
-    run: covenFixture({ version: "0.2.4-recovery.1" }).run,
+    run: covenFixture({ version: "0.2.4-recovery.1", binary: "/opt/stale/coven" }).run,
   });
   assert.deepEqual(
     client.acquire({ ownerId: "cave-maintenance", repoDir, waitMs: 0 }),
@@ -148,7 +151,123 @@ test("Coven client rejects maintenance protocols below the reviewed release", ()
       ok: false,
       reason: "coven-version-unsupported",
       version: "0.2.4-recovery.1",
+      // A version refusal is usually the WRONG binary, not a missing one, so
+      // the refusal has to say which install it judged, what that install
+      // reported (raw, not only parsed — the bead that opened this could not
+      // say what stdout held), and the floor it failed (cave-6bb4m).
+      covenVersion: "0.2.4-recovery.1",
+      covenBinary: "/opt/stale/coven",
+      covenVersionOutput: "coven 0.2.4-recovery.1",
+      covenMinimumVersion: COVEN_MAINTENANCE_MINIMUM_VERSION,
     },
+  );
+
+  // Unparseable output is the sibling failure and had no detail at all.
+  const malformedVersion = createCovenMaintenanceClient({
+    run: () => ({ ok: true, stdout: "not a version\n", stderr: "", status: 0, binary: "/opt/odd/coven" }),
+  }).version(repoDir);
+  assert.equal(malformedVersion.reason, "coven-version-malformed");
+  assert.equal(malformedVersion.covenBinary, "/opt/odd/coven");
+  assert.equal(malformedVersion.covenVersionOutput, "not a version");
+  assert.equal(malformedVersion.covenMinimumVersion, COVEN_MAINTENANCE_MINIMUM_VERSION);
+
+  // The whole banner is kept, not just its first line. A notice printed AHEAD
+  // of the version is one of the candidate explanations the opening bead named
+  // for a surprising parse, so reporting only line one would hide the banner in
+  // precisely the case the field exists to diagnose.
+  const noisy = createCovenMaintenanceClient({
+    run: () => ({
+      ok: true,
+      stdout: "npm notice update available\n\ncoven 0.1.0 (engine 0.7.0)\n",
+      stderr: "",
+      status: 0,
+    }),
+  }).version(repoDir);
+  assert.equal(
+    noisy.covenVersionOutput,
+    "npm notice update available coven 0.1.0 (engine 0.7.0)",
+    "every line of stdout survives, folded onto one line",
+  );
+
+  // A client that fails loudly must not push a backtrace through the refusal.
+  const chatty = createCovenMaintenanceClient({
+    run: () => ({ ok: true, stdout: `coven 0.1.0\n${"x".repeat(5_000)}`, stderr: "", status: 0 }),
+  }).version(repoDir);
+  assert.equal(chatty.covenVersionOutput.length, 200);
+
+  // Nothing at all on stdout cannot parse either, and must not add an empty key.
+  const silent = createCovenMaintenanceClient({
+    run: () => ({ ok: true, stdout: "   \n", stderr: "", status: 0 }),
+  }).version(repoDir);
+  assert.equal(silent.reason, "coven-version-malformed");
+  assert.equal("covenVersionOutput" in silent, false);
+
+  // A caller that supplies no binary (any injected `run`) must degrade to
+  // fewer facts rather than to a key holding `undefined`.
+  const noBinary = createCovenMaintenanceClient({
+    run: () => ({ ok: true, stdout: "coven 0.1.0\n", stderr: "", status: 0 }),
+  }).version(repoDir);
+  assert.equal(noBinary.reason, "coven-version-unsupported");
+  assert.equal("covenBinary" in noBinary, false);
+  assert.equal(noBinary.covenMinimumVersion, COVEN_MAINTENANCE_MINIMUM_VERSION);
+});
+
+// Every other test in this file injects `run`, so the one runner that actually
+// spawns Coven is the one place the reported binary could quietly go missing —
+// and then every downstream assertion below would still pass while the real
+// refusal named nothing. Resolution may legitimately fail (no CLI installed,
+// as on CI); what must never happen is a successful spawn that does not say
+// what it spawned.
+test("the real runner reports the argv it executed", () => {
+  let result;
+  try {
+    result = defaultRunCoven({ args: ["--version"], cwd: process.cwd() });
+  } catch {
+    return; // no resolvable Coven CLI on this host; nothing was executed
+  }
+  assert.equal(typeof result.binary, "string");
+  assert.ok(result.binary.length > 0, "a spawn attempt always names its command");
+});
+
+// The composite coordinator prefixes the Coven reason and used to interpolate
+// nothing else, so every fact `version()` gathers was discarded one frame above
+// the only place a human reads it.
+test("a Coven version refusal reaches the caller with the binary, version, and floor intact", () => {
+  const localHandle = { generation: 1, token: "local", root: repoDir };
+  const released = [];
+  const coordinator = createRepositoryMaintenanceCoordinator({
+    localFence: {
+      acquire: () => ({ ok: true, handle: localHandle }),
+      heartbeat: () => ({ ok: true }),
+      verify: () => ({ ok: true }),
+      release: (handle) => (released.push(handle), { ok: true }),
+    },
+    covenClient: createCovenMaintenanceClient({
+      run: covenFixture({ version: "0.2.0-23-g976d3b5", binary: "C:\\Users\\dev\\.cargo\\bin\\coven.exe" }).run,
+    }),
+  });
+  const refusal = coordinator.acquire({ ownerId: "cave-maintenance", purpose: "test", repoDir });
+  assert.equal(refusal.ok, false);
+  assert.equal(refusal.reason, "coven-acquire-failed: coven-version-unsupported");
+  assert.equal(refusal.covenBinary, "C:\\Users\\dev\\.cargo\\bin\\coven.exe");
+  assert.equal(refusal.covenVersion, "0.2.0-23-g976d3b5");
+  assert.equal(refusal.covenMinimumVersion, COVEN_MAINTENANCE_MINIMUM_VERSION);
+  assert.deepEqual(released, [localHandle], "the local fence is still compensated");
+
+  // The plane report the patrol prints is the other surface a reader meets
+  // this on, and it renders `source` verbatim.
+  const capabilities = repositoryMaintenanceCapabilities({
+    repoDir,
+    covenClient: createCovenMaintenanceClient({
+      run: covenFixture({ version: "0.2.0", binary: "/opt/stale/coven" }).run,
+    }),
+  });
+  assert.equal(capabilities.coven.enforced, false);
+  assert.ok(capabilities.coven.source.includes("/opt/stale/coven"), capabilities.coven.source);
+  assert.ok(capabilities.coven.source.includes("0.2.0"), capabilities.coven.source);
+  assert.ok(
+    capabilities.coven.source.includes(COVEN_MAINTENANCE_MINIMUM_VERSION),
+    capabilities.coven.source,
   );
 });
 

@@ -173,7 +173,7 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
         onStop={canControl ? () => void act("cancel") : undefined}
       />
       {actionError ? (
-        <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--text-danger)]" role="alert">
+        <p className="mt-1 text-[length:var(--text-2xs)] text-[var(--danger-text)]" role="alert">
           {actionError}
         </p>
       ) : null}
@@ -206,7 +206,7 @@ export function ResearchRunSurface({
     >
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[length:var(--text-sm)] font-semibold text-[var(--fg-primary)]">
+          <p className="text-[length:var(--text-sm)] font-semibold text-[var(--fg-base)]">
             {run.title}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[length:var(--text-2xs)] text-[var(--fg-muted)]">
@@ -237,18 +237,18 @@ export function ResearchRunSurface({
                   className={[
                     "mt-0.5 grid h-5 w-5 place-items-center rounded-full border",
                     step.status === "active"
-                      ? "border-[var(--fg-primary)] text-[var(--fg-primary)]"
+                      ? "border-[var(--fg-base)] text-[var(--fg-base)]"
                       : step.status === "completed"
-                        ? "border-[var(--fg-primary)] bg-[var(--fg-primary)] text-[var(--bg-base)]"
+                        ? "border-[var(--fg-base)] bg-[var(--fg-base)] text-[var(--bg-base)]"
                         : step.status === "failed" || step.status === "blocked"
-                          ? "border-[var(--text-danger)] text-[var(--text-danger)]"
+                          ? "border-[var(--danger-text)] text-[var(--danger-text)]"
                           : "border-dashed border-[var(--border-strong)] text-[var(--fg-muted)]",
                   ].join(" ")}
                   aria-hidden
                 >
                   {icon ? <Icon name={icon} width={11} height={11} aria-hidden /> : null}
                 </span>
-                <span className={step.status === "pending" ? "text-[var(--fg-secondary)]" : "text-[var(--fg-primary)]"}>
+                <span className={step.status === "pending" ? "text-[var(--fg-muted)]" : "text-[var(--fg-base)]"}>
                   <span>{step.label}</span>
                   <span className="sr-only"> — {statusLabel(step.status)}</span>
                   {step.detail ? (
@@ -266,7 +266,7 @@ export function ResearchRunSurface({
       <div className="mt-4 border-t border-[var(--border-hairline)] pt-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-[length:var(--text-xs)] text-[var(--fg-secondary)]" aria-live="polite">
+            <p className="truncate text-[length:var(--text-xs)] text-[var(--fg-muted)]" aria-live="polite">
               {run.activity || active?.detail || (live ? "Research is in progress…" : statusLabel(run.status))}
             </p>
             {run.steps.length > 0 ? (
@@ -292,7 +292,7 @@ export function ResearchRunSurface({
             aria-label="Research progress"
             aria-valuetext="Research is active; progress is not yet measurable"
           >
-            <div className="h-full w-1/4 animate-pulse rounded-full bg-[var(--fg-primary)] motion-reduce:animate-none" aria-hidden />
+            <div className="h-full w-1/4 animate-pulse rounded-full bg-[var(--fg-base)] motion-reduce:animate-none" aria-hidden />
           </div>
         ) : null}
 

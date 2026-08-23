@@ -989,8 +989,24 @@ function ShellInner({
     };
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      // `matches` is an Element method, and the event target is not always an
+      // Element. A synthetic `new Event("keydown")` dispatched at `window` —
+      // the exact shape behind cave-lryhx — arrives with `target === window`,
+      // which answers the `?.` guard (it is not null) and then throws
+      // "target?.matches is not a function" on the call.
+      //
+      // This sits ABOVE both sites on the reported stack, so guarding only
+      // those left the handler still dying on the reported event. It surfaced
+      // only once an e2e dispatched the real thing at the real window: a unit
+      // test that calls matchesPanelShortcut directly never runs this line.
+      //
+      // A target we cannot ask is treated as not editable, which is the same
+      // answer `?? false` already gave for a null target: the shortcut is
+      // allowed through rather than suppressed.
       const editable =
-        target?.matches("input, textarea, select, [contenteditable='true'], [role='textbox']") ?? false;
+        typeof target?.matches === "function"
+          ? target.matches("input, textarea, select, [contenteditable='true'], [role='textbox']")
+          : false;
       if (!editable && hasRightChat && matchesPanelShortcut(e, panelShortcuts.toggleRightPanel)) {
         e.preventDefault();
         toggleRightChat();

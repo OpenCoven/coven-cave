@@ -50,7 +50,7 @@
 .dash-inbox__select-toggle { margin-left: auto; }
 .dash-inbox__bulkbar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  margin: var(--space-1) 0 var(--space-2); padding: 6px 8px; border-radius: 8px;
+  margin: var(--space-1) 0 var(--space-2); padding: 6px 8px; border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
 }
 .dash-inbox__bulkbar-left, .dash-inbox__bulkbar-right { display: flex; align-items: center; gap: 6px; }
@@ -72,7 +72,7 @@
 /* Open items beyond the visible cap drill through to the Rituals surface. */
 .dash-inbox__more {
   display: flex; align-items: center; gap: 6px;
-  margin-top: var(--space-2); padding: 7px 10px; border-radius: 8px;
+  margin-top: var(--space-2); padding: 7px 10px; border-radius: var(--radius-control);
   font-size: 0.8rem; font-weight: 600; color: var(--text-muted);
   text-decoration: none; border: 1px dashed var(--border-hairline);
 }

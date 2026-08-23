@@ -226,6 +226,65 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
   });
 
+  // cave-lryhx. The reported crash was a TypeError escaping the shell's
+  // window-level keydown handler:
+  //
+  //   Cannot read properties of undefined (reading 'toLowerCase')
+  //     at matchesPanelShortcut (src/lib/panel-shortcuts.ts:65:25)
+  //     at ShellInner.useEffect.handler (src/components/shell.tsx:805:31)
+  //
+  // Two sites are on that stack — matchesPanelShortcut, and a second direct
+  // read of the key further down the SAME handler — so guarding one alone just
+  // moves the throw a line. The unit tests cover matchesPanelShortcut; nothing
+  // covered the shell's own read, which is why this lives here: the second site
+  // only exists inside that effect, and only a real event dispatched at the
+  // real window reaches it.
+  //
+  // The event shape is the reported one: dispatched as "keydown" but
+  // constructed as a plain `Event`, so `key` is absent from the object
+  // entirely. That is what a password manager, a browser extension, or an
+  // IME/composition path sends, and the desktop shell is a WKWebView, where an
+  // off-spec event is more likely rather than less.
+  test("a keydown event with no key does not break the shell's panel shortcuts (cave-lryhx)", async ({ page }) => {
+    await gotoChat(page);
+    const search = page.locator('aside[aria-label="Sidebar"] .chat-sidebar').getByRole("searchbox", { name: "Search chats" });
+    const collapseToggle = page.getByRole("button", { name: "Collapse Chat sidebar" });
+
+    await expect(search).toBeVisible();
+    await expect(collapseToggle).toHaveAttribute("aria-expanded", "true");
+
+    // Uncaught exceptions thrown inside a listener are reported globally rather
+    // than propagating to dispatchEvent's caller, so they surface here and NOT
+    // as a rejected page.evaluate.
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(String(err)));
+
+    const dispatched = await page.evaluate(() => {
+      const event = new Event("keydown");
+      return { hasKey: "key" in event, dispatched: window.dispatchEvent(event) };
+    });
+    expect(dispatched.hasKey, "the reported shape carries no key at all").toBe(false);
+    expect(dispatched.dispatched).toBe(true);
+
+    // Give the error, if any, a turn of the event loop to be reported.
+    await page.waitForTimeout(250);
+    expect(pageErrors, "a keyless keydown must not throw out of the shell handler").toEqual([]);
+
+    // The property that matters is not "nothing threw" — it is that the
+    // shortcuts still WORK afterwards. Collapse with ⌘/Ctrl+B, then restore,
+    // so a guard that silently disabled the binding it protects would fail here
+    // rather than pass quietly.
+    await page.keyboard.press("ControlOrMeta+b");
+    await expect(page.getByRole("button", { name: "Expand Chat sidebar" })).toHaveAttribute("aria-expanded", "false");
+    await expect(search).toBeHidden();
+
+    await page.keyboard.press("ControlOrMeta+b");
+    await expect(search).toBeVisible();
+    await expect(page.getByRole("button", { name: "Collapse Chat sidebar" })).toHaveAttribute("aria-expanded", "true");
+
+    expect(pageErrors, "and still nothing thrown after the good shortcuts").toEqual([]);
+  });
+
   test("uses one compact recency list beneath the global project filter", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');

@@ -1,7 +1,18 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
-import { devNull } from "node:os";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  type Stats,
+} from "node:fs";
+import { devNull, tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import path from "node:path";
 import {
@@ -10,6 +21,7 @@ import {
   classifyWorktree,
   isDisposableIgnoredPath,
   normalizeAbsoluteWorktreePath,
+  retainedStatusChanges,
   type ManagedCreationException,
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
@@ -665,6 +677,110 @@ function processOwnersFor(
     .map(({ pid, command: processCommand }) => ({ pid, command: processCommand }));
 }
 
+/** Minimal shape of this module's `git()` result, so callers can pass their own. */
+export type LifecycleGitRunner = (
+  root: string,
+  args: string[],
+) => { ok: boolean; stdout: string; stderr: string };
+
+/**
+ * Does the filesystem backing this worktree store the POSIX executable bit?
+ *
+ * This is the same question git answers for itself when it auto-detects
+ * `core.fileMode`, asked the same way and in the same place: git probes its own
+ * git directory by writing a file, setting the executable bit, and re-reading
+ * the mode. Probing the git directory rather than the worktree root also means
+ * the scratch file can never appear in the `git status` output we are about to
+ * read.
+ *
+ * Fails closed. Every error — an unreadable git directory, a filesystem that
+ * refuses the write, a chmod that throws — returns `true`, which discounts
+ * nothing and leaves the caller with exactly the behaviour it had before.
+ */
+function executableBitRepresentable(root: string, runGit: LifecycleGitRunner): boolean {
+  const gitDir = runGit(root, ["rev-parse", "--absolute-git-dir"]);
+  if (!gitDir.ok || gitDir.stderr) return true;
+  const resolved = gitDir.stdout.trim();
+  if (resolved.length === 0) return true;
+  const probePath = path.join(resolved, `.filemode-probe-${randomUUID()}`);
+  try {
+    writeFileSync(probePath, "", { mode: 0o644 });
+    try {
+      chmodSync(probePath, 0o755);
+      return (statSync(probePath).mode & 0o111) !== 0;
+    } finally {
+      try {
+        rmSync(probePath, { force: true });
+      } catch {
+        // A probe file we could not remove is inert: it lives inside the git
+        // directory, never enters status output, and is overwritten by name on
+        // no future run. Losing the result would be worse than losing the file.
+      }
+    }
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Hashes worktree files exactly as `git add` would, so the result is directly
+ * comparable with the object ids `git status` reports from the index.
+ *
+ * `git hash-object` without `-w` writes nothing to the object database. Filters
+ * and end-of-line conversion are deliberately left ON (no `--no-filters`): the
+ * index holds post-clean content, so a checkout with `core.autocrlf` would
+ * otherwise mismatch on every text file.
+ *
+ * Returns `null` — meaning "no answer", which callers must treat as "changed" —
+ * if any batch fails or returns the wrong number of ids.
+ */
+function worktreeBlobOids(
+  root: string,
+  paths: string[],
+  runGit: LifecycleGitRunner,
+): Map<string, string> | null {
+  const oids = new Map<string, string>();
+  const batchSize = 64;
+  for (let offset = 0; offset < paths.length; offset += batchSize) {
+    const batch = paths.slice(offset, offset + batchSize);
+    const result = runGit(root, ["hash-object", "--", ...batch]);
+    if (!result.ok || result.stderr) return null;
+    const hashed = result.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (hashed.length !== batch.length) return null;
+    batch.forEach((batchPath, index) => oids.set(batchPath, hashed[index]));
+  }
+  return oids;
+}
+
+/**
+ * Removes the phantom "changes" a filesystem without an executable bit invents,
+ * without weakening what the status probe can see.
+ *
+ * The `-c core.fileMode=true` override on the status call is deliberate and
+ * stays: it stops repository configuration hiding a real permission change from
+ * a gate that authorises deletion. On NTFS, though, that override makes git
+ * compare a mode it recorded (100755) against a mode the filesystem cannot
+ * represent (100644), and every shell script and git hook in the checkout is
+ * reported modified forever. Measured on this repository: 24 such entries in a
+ * byte-for-byte clean worktree, which pinned every Windows worktree to `active`
+ * and made retirement structurally unreachable.
+ *
+ * So the override is kept and the false positive is removed one layer later,
+ * where both facts needed to prove an entry is an artifact are available.
+ */
+export function discountUnrepresentableExecutableBitChanges(
+  root: string,
+  changes: string[],
+  runGit: LifecycleGitRunner,
+): string[] {
+  if (changes.length === 0) return changes;
+  return retainedStatusChanges(
+    changes,
+    executableBitRepresentable(root, runGit),
+    (paths) => worktreeBlobOids(root, paths, runGit),
+  );
+}
+
 function statusState(root: string): {
   changes: string[];
   ignoredPaths: string[];
@@ -699,7 +815,11 @@ function statusState(root: string): {
     };
   }
   const entries = result.stdout.split("\0").filter(Boolean);
-  const changes = entries.filter((entry) => !entry.startsWith("# ") && !entry.startsWith("! "));
+  const changes = discountUnrepresentableExecutableBitChanges(
+    root,
+    entries.filter((entry) => !entry.startsWith("# ") && !entry.startsWith("! ")),
+    git,
+  );
   const ignoredPaths = entries
     .filter((entry) => entry.startsWith("! "))
     .map((entry) => entry.slice(2));
@@ -1978,31 +2098,317 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
   }
 }
 
-function fetchProcessOwners(): {
+/**
+ * What the Windows probe script said, with no judgement applied yet.
+ *
+ * Pure and total: every malformed, truncated, or missing part of the output
+ * comes back as an absence rather than a throw, so the caller decides what each
+ * absence means. Every absence it can produce means "cannot prove", never
+ * "proven free" — see {@link evaluateWindowsCwdProbe}, which does the deciding.
+ */
+export type WindowsCwdProbeOutput = {
+  /**
+   * The probe's OWN process id — deliberately not its directory. The caller
+   * looks that pid up among the ordinary records, which come from the same
+   * memory reads as every other process, so the answer cannot be produced any
+   * other way.
+   */
+  selfPid: number | null;
+  /** The `#end` marker was present, so the output is not truncated. */
+  complete: boolean;
+  /** Process counts, for the report. `null` when the line is missing or malformed. */
+  totals: { total: number; read: number; unreadable: number } | null;
+  /** Per requested directory: whether a live process holds it open. */
+  holds: Map<string, boolean>;
+  /** Per requested directory that could NOT be answered, why. */
+  holdErrors: Map<string, string>;
+  /** The `lsof -F pcn` section, verbatim, for {@link parseProcessOwners}. */
+  ownerRecords: string;
+};
+
+const WINDOWS_PROBE_HOLD = /^#hold (HELD|FREE|ERROR:(-?\d+)) (.+)$/;
+const WINDOWS_PROBE_TOTALS = /^#processes total=(\d+) read=(\d+) unreadable=(\d+)$/;
+
+export function parseWindowsCwdProbeOutput(raw: string): WindowsCwdProbeOutput {
+  const lines = raw.split(/\r?\n/);
+  const holds = new Map<string, boolean>();
+  const holdErrors = new Map<string, string>();
+  let selfPid: number | null = null;
+  let totals: WindowsCwdProbeOutput["totals"] = null;
+  let complete = false;
+  const ownerRecords: string[] = [];
+  // Directives are emitted before `#records` and the owner records after it, so
+  // the split is positional rather than by prefix. A command name is free to
+  // start with "#" without being mistaken for a directive.
+  let inRecords = false;
+
+  for (const line of lines) {
+    if (!inRecords) {
+      if (line === "#records") {
+        inRecords = true;
+        continue;
+      }
+      const selfMatch = /^#selfpid ([1-9]\d*)$/.exec(line);
+      if (selfMatch) {
+        const parsedPid = Number(selfMatch[1]);
+        selfPid = Number.isSafeInteger(parsedPid) ? parsedPid : null;
+        continue;
+      }
+      const totalsMatch = WINDOWS_PROBE_TOTALS.exec(line);
+      if (totalsMatch) {
+        totals = {
+          total: Number(totalsMatch[1]),
+          read: Number(totalsMatch[2]),
+          unreadable: Number(totalsMatch[3]),
+        };
+        continue;
+      }
+      const holdMatch = WINDOWS_PROBE_HOLD.exec(line);
+      if (holdMatch) {
+        const verdict = holdMatch[1];
+        const directory = holdMatch[3];
+        if (verdict === "HELD") holds.set(directory, true);
+        else if (verdict === "FREE") holds.set(directory, false);
+        else holdErrors.set(directory, `win32 error ${holdMatch[2]}`);
+      }
+      continue;
+    }
+    if (line === "#end") {
+      complete = true;
+      continue;
+    }
+    // Anything after `#end` is unexpected trailing output; keeping `complete`
+    // true would be wrong, so treat the marker as final.
+    if (complete) {
+      if (line.length > 0) complete = false;
+      continue;
+    }
+    if (line.length > 0) ownerRecords.push(line);
+  }
+
+  return {
+    selfPid,
+    complete: complete && inRecords,
+    totals,
+    holds,
+    holdErrors,
+    ownerRecords: ownerRecords.length === 0 ? "" : `${ownerRecords.join("\n")}\n`,
+  };
+}
+
+/**
+ * Pairs every directory the probe was ASKED about with the verdict it returned,
+ * and turns each missing pairing into an error.
+ *
+ * This is the invariant that lets the caller read a missing entry as "not held":
+ * a directory with no verdict is guaranteed to leave here carrying an error
+ * instead, and that error pins its unit on its own. Without it, a probe that
+ * answered for nothing at all would read as a checkout where nothing is running
+ * — which is precisely the shape of an inventory that is safe to delete.
+ */
+export function reconcileHoldVerdicts(
+  directories: string[],
+  probe: Pick<WindowsCwdProbeOutput, "holds" | "holdErrors">,
+): { holds: Map<string, boolean>; holdErrors: Map<string, string> } {
+  const holdErrors = new Map(probe.holdErrors);
+  for (const directory of directories) {
+    if (!probe.holds.has(directory) && !holdErrors.has(directory)) {
+      holdErrors.set(directory, "no verdict returned");
+    }
+  }
+  return { holds: new Map(probe.holds), holdErrors };
+}
+
+const WINDOWS_CWD_PROBE_SCRIPT = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "windows-process-cwd.ps1",
+);
+
+/**
+ * The Windows stand-in for `lsof -d cwd`, plus the directory-hold probe that
+ * covers what reading process memory cannot see.
+ *
+ * Windows has no lsof and no built-in CLI that reports a process's working
+ * directory at all, so this drives `scripts/windows-process-cwd.ps1`. See that
+ * file for the mechanism and its limits.
+ *
+ * EVERY failure path here returns an error, which the caller folds into each
+ * unit's `probeErrors` exactly as an `lsof` failure is folded in, pinning the
+ * unit to `uncertain`. That is the whole point: the cheap repair for this bug —
+ * dropping the error so units stop being pinned — would let a worktree be
+ * retired while the patrol cannot see whether anyone is working in it, trading a
+ * false positive for a false negative inside the gate that deletes work.
+ */
+function fetchWindowsProcessOwners(directories: string[]): {
   owners: Array<WorktreeProcessOwner & { cwd: string }>;
+  holds: Map<string, boolean>;
+  holdErrors: Map<string, string>;
   error: string | null;
 } {
+  const empty = { owners: [], holds: new Map<string, boolean>(), holdErrors: new Map<string, string>() };
+  if (!existsSync(WINDOWS_CWD_PROBE_SCRIPT)) {
+    return { ...empty, error: "process cwd probe script is missing" };
+  }
+  // Launched from the filesystem root, matching the POSIX call, so the probe's
+  // own process never counts as an occupant of any worktree.
+  const launchCwd = path.parse(process.cwd()).root;
+  const pathsFile = path.join(
+    tmpdir(),
+    `coven-cwd-probe-${process.pid}-${randomUUID()}.txt`,
+  );
+  let result: CommandResult;
+  try {
+    writeFileSync(pathsFile, directories.length === 0 ? "" : `${directories.join("\n")}\n`, "utf8");
+  } catch (error) {
+    return {
+      ...empty,
+      error: `process cwd probe could not stage its input: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    };
+  }
+  try {
+    result = command(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        WINDOWS_CWD_PROBE_SCRIPT,
+        pathsFile,
+      ],
+      launchCwd,
+    );
+  } finally {
+    try {
+      rmSync(pathsFile, { force: true });
+    } catch {
+      // A stranded temp file is inert; losing the probe result would not be.
+    }
+  }
+
+  return evaluateWindowsCwdProbe(result, launchCwd, directories);
+}
+
+/**
+ * Turns one completed probe invocation into an answer, or into a refusal.
+ *
+ * Separated from the spawning above so every refusal below is reachable from a
+ * test without having to break a real Windows installation to get there. It
+ * takes no I/O of its own beyond resolving the launch directory.
+ *
+ * There is no path out of here that reports "nothing is running" on doubtful
+ * evidence: every branch either returns owners the probe actually read, or an
+ * error, and the caller folds an error into the unit's `probeErrors`.
+ */
+export function evaluateWindowsCwdProbe(
+  result: Pick<CommandResult, "ok" | "stdout" | "stderr">,
+  launchCwd: string,
+  directories: string[],
+): {
+  owners: Array<WorktreeProcessOwner & { cwd: string }>;
+  holds: Map<string, boolean>;
+  holdErrors: Map<string, string>;
+  error: string | null;
+} {
+  const empty = {
+    owners: [],
+    holds: new Map<string, boolean>(),
+    holdErrors: new Map<string, string>(),
+  };
+  if (!result.ok) {
+    return { ...empty, error: result.stderr || "process cwd inventory unavailable" };
+  }
+  if (result.stderr) {
+    return { ...empty, error: "process cwd inventory reported incomplete data" };
+  }
+
+  const probe = parseWindowsCwdProbeOutput(result.stdout);
+  if (!probe.complete) {
+    return { ...empty, error: "process cwd inventory returned truncated data" };
+  }
+  const parsed = parseProcessOwners(probe.ownerRecords);
+  if (parsed.partial || parsed.owners.length === 0) {
+    return { ...empty, error: "process cwd inventory returned malformed or partial data" };
+  }
+
+  // The self-check, and it is deliberately not a special code path. We launched
+  // the probe, so we know exactly which directory its process is in; it tells us
+  // only its pid, and we go looking for that pid among the SAME records every
+  // other process produced. Finding it with the right directory proves the
+  // memory reads work on this Windows build and bitness, because there is no
+  // other way for that record to exist. Not finding it means the reads are
+  // broken, and a broken read reports an empty checkout — which is
+  // indistinguishable from a checkout where nothing is running, and is exactly
+  // the answer that would authorise deleting live work.
+  //
+  // normalizePath, not normalizeAbsoluteWorktreePath: parseProcessOwners resolves
+  // every reported cwd through realpath, so the expectation has to be resolved
+  // the same way or a symlinked or short-name launch directory would never match.
+  let expectedSelf: string | null = null;
+  try {
+    expectedSelf = normalizePath(launchCwd);
+  } catch {
+    expectedSelf = null;
+  }
+  const selfOwner =
+    probe.selfPid === null
+      ? undefined
+      : parsed.owners.find((owner) => owner.pid === probe.selfPid);
+  if (expectedSelf === null || selfOwner === undefined || selfOwner.cwd !== expectedSelf) {
+    return {
+      ...empty,
+      error: "process cwd probe self-check failed; process working directories are unreadable",
+    };
+  }
+
+  const reconciled = reconcileHoldVerdicts(directories, probe);
+  return {
+    owners: parsed.owners,
+    holds: reconciled.holds,
+    holdErrors: reconciled.holdErrors,
+    error: null,
+  };
+}
+
+function fetchProcessOwners(directories: string[]): {
+  owners: Array<WorktreeProcessOwner & { cwd: string }>;
+  holds: Map<string, boolean>;
+  holdErrors: Map<string, string>;
+  error: string | null;
+} {
+  if (process.platform === "win32") return fetchWindowsProcessOwners(directories);
+  const holds = new Map<string, boolean>();
+  const holdErrors = new Map<string, string>();
   const result = command("lsof", ["-d", "cwd", "-F", "pcn"], path.parse(process.cwd()).root);
   const parsed = parseProcessOwners(result.stdout);
   if (!result.ok) {
     return {
       owners: parsed.owners,
+      holds,
+      holdErrors,
       error: result.stderr || "process cwd inventory unavailable",
     };
   }
   if (result.stderr) {
     return {
       owners: parsed.owners,
+      holds,
+      holdErrors,
       error: "process cwd inventory reported incomplete data",
     };
   }
   if (!result.stdout.trim() || parsed.partial) {
     return {
       owners: parsed.owners,
+      holds,
+      holdErrors,
       error: "process cwd inventory returned malformed or partial data",
     };
   }
-  return { owners: parsed.owners, error: null };
+  return { owners: parsed.owners, holds, holdErrors, error: null };
 }
 
 function refsContaining(root: string, head: string): {
@@ -3123,7 +3529,12 @@ function collectInventory(
   const sessions = fetchSessions(root);
   const tasks = fetchTasks(root);
   const orphanedMetadata = collectOrphanedMetadata(tasks.tasks, localRefs, entries);
-  const processes = fetchProcessOwners();
+  // Normalized once, here, because the probe answers by exact path string and
+  // every later lookup has to use the same spelling the probe was asked for.
+  const unitPaths = [
+    ...new Set(units.flatMap((unit) => (unit.path === null ? [] : [normalizePath(unit.path)]))),
+  ];
+  const processes = fetchProcessOwners(unitPaths);
   const sessionOwnership =
     sessions.error === null
       ? assignActiveSessions(
@@ -3257,7 +3668,24 @@ function collectInventory(
           (unit.branch !== null && run.head_branch === unit.branch),
       )
       .map((run) => run.html_url);
-    const pathErrors = unit.path ? [state.error, flags.error, processes.error, sessions.error] : [];
+    // A directory-hold verdict this run could not obtain is charged to the one
+    // unit it names, not to the checkout: it says nothing about any other path,
+    // and stamping it everywhere is the per-unit warning storm this probe exists
+    // to end. It still fails ITS unit closed.
+    const holdError = unit.path
+      ? (processes.holdErrors.get(normalizePath(unit.path)) ?? null)
+      : null;
+    const pathErrors = unit.path
+      ? [
+          state.error,
+          flags.error,
+          processes.error,
+          sessions.error,
+          holdError === null
+            ? null
+            : `worktree root occupancy is unprovable: ${holdError}`,
+        ]
+      : [];
     const probeErrors = [
       ...new Set(
         [
@@ -3295,6 +3723,12 @@ function collectInventory(
       nonDisposableIgnoredPaths: state.nonDisposableIgnoredPaths,
       indexFlags: flags.flags,
       processOwners: unit.path ? processOwnersFor(unit.path, processes.owners) : [],
+      // `?? false` is safe only because an unanswered path is guaranteed to have
+      // produced a `holdError` above, which pins the unit on its own — so
+      // "absent" here never reaches the classifier as an unchallenged "free".
+      directoryHeldOpen: unit.path
+        ? (processes.holds.get(normalizePath(unit.path)) ?? false)
+        : false,
       claimOwners: [
         ...new Set(
           claims.claims
