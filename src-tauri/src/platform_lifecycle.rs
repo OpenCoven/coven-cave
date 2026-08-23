@@ -54,21 +54,34 @@ pub(super) fn show_startup_dialog(title: &str, msg: &str) {
         // doesn't require any additional dependencies (e.g. winapi crate).
         let temp = std::env::var("TEMP").unwrap_or_else(|_| "C:\\Temp".into());
         let path = format!("{}\\CovenCave-error.txt", temp);
-        // Notepad shows no heading of its own, so carry it into the file.
-        let _ = std::fs::write(&path, format!("{title}\r\n\r\n{msg}"));
+        // Notepad shows no heading of its own, so carry it into the file — and
+        // give the WHOLE file CRLF rather than only the two breaks that join
+        // the heading on. Every message reaching here is composed with bare
+        // "\n" (see `already_running_message`), and Notepad older than Windows
+        // 10 1809 renders a lone LF as no break at all, so a half-converted
+        // file would show a heading and then one run-on paragraph. The other
+        // two surfaces are left alone deliberately: osascript and zenity both
+        // take "\n", so the conversion belongs to this arm only.
+        let text = format!("{title}\n\n{msg}")
+            .replace("\r\n", "\n")
+            .replace('\n', "\r\n");
+        let _ = std::fs::write(&path, text);
         let _ = std::process::Command::new("notepad.exe").arg(&path).spawn();
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         // Try zenity (GNOME) then kdialog (KDE); fall back to stderr only.
+        // Both accept --title. Without it the caller's heading was dropped
+        // on this platform only, which is also why `title` read as unused
+        // here - and Linux is the platform CI actually compiles.
         let shown = std::process::Command::new("zenity")
-            .args(["--error", "--text", msg])
+            .args(["--error", "--title", title, "--text", msg])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
         if !shown {
             let _ = std::process::Command::new("kdialog")
-                .args(["--error", msg])
+                .args(["--title", title, "--error", msg])
                 .output();
         }
     }
@@ -105,11 +118,11 @@ pub(super) fn check_app_translocation() {
         if !path.contains("/AppTranslocation/") && !path.contains("/Volumes/") {
             return;
         }
-        // This copy is leaving without ever binding the port, and on
-        // macOS the dialog below blocks until someone clicks. Holding the
-        // claim across that wait would have the good copy in /Applications
-        // refused, naming a process that never binds anything.
-        crate::sidecar_port_lock::release_all_claims();
+        // No claim to release here: this runs before the port is claimed,
+        // and scripts/port-contract.test.mjs pins that ordering. The paths
+        // that DO need a release are the ones that hold a claim and then
+        // block on a dialog - report_existing_gui_owner below, and the two
+        // reaped-child fatal_exit arms in tauri_setup.rs.
         let msg = format!(
             "CovenCave is running from a read-only quarantine path:\n\n{}\n\nTo install properly, quit, then drag CovenCave.app into your /Applications folder and launch it from there.",
             path
@@ -137,7 +150,10 @@ pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
         "[cave] another CovenCave GUI (pid {pid}) already owns desktop reachability; this instance is exiting"
     );
     show_startup_dialog(
-        "CovenCave is already running",
+        // The heading is the app name rather than a second copy of the first
+        // sentence below; see `report_existing_port_owner` for why the body is
+        // the side that keeps the summary.
+        "CovenCave",
         &format!(
             "CovenCave is already running (process {pid}).\n\nSwitch to the window that is already open, or quit it before starting another copy."
         ),
@@ -179,7 +195,25 @@ pub(super) fn report_existing_port_owner(port: u16, pid: Option<u32>) -> ! {
         ),
     }
     show_startup_dialog(
-        "CovenCave is already running",
+        // Heading and body used to be the same sentence, so the macOS alert put
+        // a bold line above a message that immediately said it again and the
+        // Notepad file opened with it twice.
+        //
+        // The BODY is the side that has to keep it: `already_running_message` is
+        // also the entire text of the in-app startup failure, where
+        // `frontend-stub/startup.html` shows it under its own generic "Starting
+        // CovenCave" heading — so a body that started at "(process 4242) and is
+        // using port 3020" would name no application at all. Its unit test
+        // (`a_lost_claim_names_the_copy_that_won_it`) pins exactly that
+        // self-containment; weakening it so a heading could carry the sentence
+        // instead would trade a real guarantee for tidier duplication, on a
+        // surface that has no such heading to carry it.
+        //
+        // So the heading drops to the app name. That still keeps the one thing
+        // a caller-chosen heading is for here — not heading an ordinary,
+        // working refusal with `show_fatal_dialog`'s "CovenCave failed to
+        // start" — while adding nothing the body is about to repeat.
+        "CovenCave",
         &crate::sidecar_startup::already_running_message(port, pid),
     );
     std::process::exit(1);

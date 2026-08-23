@@ -16,9 +16,10 @@ breaking config changes; patch releases stay additive.
   arrives before the second copy touches anything the running one is using, so
   it no longer wipes the live diagnostics file, prunes the shared reliability
   store, or adds a duplicate tray icon on its way out. On Windows that means
-  the second copy no longer opens a window at all: the message appears the way
-  other early-exit messages do, rather than inside the startup screen behind a
-  runtime-preparation wait that can take minutes.
+  the second copy never opens the CovenCave startup screen: the refusal arrives
+  right away, in the same plain-text note other early-exit messages use, rather
+  than inside that screen behind a runtime-preparation wait that can take
+  minutes.
 
 ## [0.3.9] - 2026-08-21
 
