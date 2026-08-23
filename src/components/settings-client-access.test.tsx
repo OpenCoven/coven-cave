@@ -713,6 +713,106 @@ test("renders actionable request failures and retries successfully", async () =>
   await act(async () => renderer.unmount());
 });
 
+test("keeps the pending approvals empty state visible when a stale refresh fails", async () => {
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      if (pairingLoads === 1 || pairingLoads === 3) {
+        return success({ pairingRequests: [] });
+      }
+      return failure("Pending approvals refresh requires a fresh session.", 401);
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      return success({ credentials: [] });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+
+  await act(async () => {
+    findButton(renderer, "Refresh client access").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(rootText(renderer)).toContain("Couldn't refresh pending approvals.");
+  expect(rootText(renderer)).toContain("Pending approvals refresh requires a fresh session.");
+  expect(rootText(renderer)).toContain("No client credentials issued");
+  expect(announce).toHaveBeenCalledWith(
+    "Couldn't refresh client access. Check the sections below.",
+    "assertive",
+  );
+
+  await act(async () => {
+    findButton(renderer, "Retry pending approvals").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(rootText(renderer)).not.toContain("Couldn't refresh pending approvals.");
+  expect(announce).toHaveBeenCalledWith("Client access refreshed.", "polite");
+  expect(pairingLoads).toBe(3);
+  expect(credentialLoads).toBe(3);
+
+  await act(async () => renderer.unmount());
+});
+
+test("keeps the issued credentials empty state visible when a stale refresh fails", async () => {
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      return success({ pairingRequests: [] });
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      if (credentialLoads === 1 || credentialLoads === 3) {
+        return success({ credentials: [] });
+      }
+      return failure("Issued credential refresh timed out.", 504);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+
+  await act(async () => {
+    findButton(renderer, "Refresh client access").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No client credentials issued");
+  expect(rootText(renderer)).toContain("Couldn't refresh issued credentials.");
+  expect(rootText(renderer)).toContain("Issued credential refresh timed out.");
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(announce).toHaveBeenCalledWith(
+    "Couldn't refresh client access. Check the sections below.",
+    "assertive",
+  );
+
+  await act(async () => {
+    findButton(renderer, "Retry issued credentials").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No client credentials issued");
+  expect(rootText(renderer)).not.toContain("Couldn't refresh issued credentials.");
+  expect(announce).toHaveBeenCalledWith("Client access refreshed.", "polite");
+  expect(pairingLoads).toBe(3);
+  expect(credentialLoads).toBe(3);
+
+  await act(async () => renderer.unmount());
+});
+
 test("blocks duplicate mutations and announces failures accessibly", async () => {
   const pendingDecision = deferred<Response>();
   let decisionCalls = 0;

@@ -2,6 +2,7 @@
 
 import "@/styles/settings-client-access.css";
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SettingsOverview } from "@/components/settings-overview";
 import { Button } from "@/components/ui/button";
@@ -382,6 +383,59 @@ function ScopeList({
   );
 }
 
+function RefreshAlert({
+  alert,
+  retryLabel,
+  onRetry,
+}: {
+  alert: AlertState;
+  retryLabel: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="settings-client-access__inline-state">
+      <ErrorState
+        compact
+        live={false}
+        headline={alert.title}
+        subtitle={alert.message}
+        actions={(
+          <Button
+            size="xs"
+            variant="secondary"
+            aria-label={retryLabel}
+            onClick={onRetry}
+          >
+            Retry
+          </Button>
+        )}
+      />
+    </div>
+  );
+}
+
+function EmptyStateWithRefreshAlert({
+  alert,
+  retryLabel,
+  onRetry,
+  children,
+}: {
+  alert: AlertState | null;
+  retryLabel: string;
+  onRetry: () => void;
+  children: ReactNode;
+}) {
+  if (!alert) {
+    return <div className="settings-client-access__state">{children}</div>;
+  }
+  return (
+    <div className="settings-client-access__list">
+      <RefreshAlert alert={alert} retryLabel={retryLabel} onRetry={onRetry} />
+      <div className="settings-client-access__state">{children}</div>
+    </div>
+  );
+}
+
 function PairingRequestItem({
   item,
   busyAction,
@@ -633,6 +687,10 @@ export function ClientAccessSection() {
     return loadPromise;
   }, [announce]);
 
+  const retryLedger = useCallback(() => {
+    void loadLedger({ announceResult: true });
+  }, [loadLedger]);
+
   useEffect(() => {
     void loadLedger();
     return () => {
@@ -810,9 +868,7 @@ export function ClientAccessSection() {
                 aria-label="Refresh client access"
                 loading={refreshing}
                 disabled={refreshing || busyActionsRef.current.size > 0}
-                onClick={() => {
-                  void loadLedger({ announceResult: true });
-                }}
+                onClick={retryLedger}
               >
                 {refreshing ? "Refreshing…" : "Refresh"}
               </Button>
@@ -841,9 +897,7 @@ export function ClientAccessSection() {
                       size="xs"
                       variant="secondary"
                       aria-label="Retry pending approvals"
-                      onClick={() => {
-                        void loadLedger({ announceResult: true });
-                      }}
+                      onClick={retryLedger}
                     >
                       Retry
                     </Button>
@@ -851,37 +905,26 @@ export function ClientAccessSection() {
                 />
               </div>
             ) : pairings.items.length === 0 ? (
-              <div className="settings-client-access__state">
+              <EmptyStateWithRefreshAlert
+                alert={pairings.alert}
+                retryLabel="Retry pending approvals"
+                onRetry={retryLedger}
+              >
                 <EmptyState
                   live={false}
                   icon="ph:key"
                   headline="No pairing requests waiting"
                   subtitle="New client pairings appear here until you approve or deny them."
                 />
-              </div>
+              </EmptyStateWithRefreshAlert>
             ) : (
               <div className="settings-client-access__list">
                 {pairings.alert ? (
-                  <div className="settings-client-access__inline-state">
-                    <ErrorState
-                      compact
-                      live={false}
-                      headline={pairings.alert.title}
-                      subtitle={pairings.alert.message}
-                      actions={(
-                        <Button
-                          size="xs"
-                          variant="secondary"
-                          aria-label="Retry pending approvals"
-                          onClick={() => {
-                            void loadLedger({ announceResult: true });
-                          }}
-                        >
-                          Retry
-                        </Button>
-                      )}
-                    />
-                  </div>
+                  <RefreshAlert
+                    alert={pairings.alert}
+                    retryLabel="Retry pending approvals"
+                    onRetry={retryLedger}
+                  />
                 ) : null}
                 {pairings.items.map((item) => (
                   <PairingRequestItem
@@ -922,9 +965,7 @@ export function ClientAccessSection() {
                       size="xs"
                       variant="secondary"
                       aria-label="Retry issued credentials"
-                      onClick={() => {
-                        void loadLedger({ announceResult: true });
-                      }}
+                      onClick={retryLedger}
                     >
                       Retry
                     </Button>
@@ -932,37 +973,26 @@ export function ClientAccessSection() {
                 />
               </div>
             ) : credentials.items.length === 0 ? (
-              <div className="settings-client-access__state">
+              <EmptyStateWithRefreshAlert
+                alert={credentials.alert}
+                retryLabel="Retry issued credentials"
+                onRetry={retryLedger}
+              >
                 <EmptyState
                   live={false}
                   icon="ph:plug"
                   headline="No client credentials issued"
                   subtitle="Approved clients will appear here after they exchange a pairing approval."
                 />
-              </div>
+              </EmptyStateWithRefreshAlert>
             ) : (
               <div className="settings-client-access__list">
                 {credentials.alert ? (
-                  <div className="settings-client-access__inline-state">
-                    <ErrorState
-                      compact
-                      live={false}
-                      headline={credentials.alert.title}
-                      subtitle={credentials.alert.message}
-                      actions={(
-                        <Button
-                          size="xs"
-                          variant="secondary"
-                          aria-label="Retry issued credentials"
-                          onClick={() => {
-                            void loadLedger({ announceResult: true });
-                          }}
-                        >
-                          Retry
-                        </Button>
-                      )}
-                    />
-                  </div>
+                  <RefreshAlert
+                    alert={credentials.alert}
+                    retryLabel="Retry issued credentials"
+                    onRetry={retryLedger}
+                  />
                 ) : null}
                 {credentials.items.map((item) => (
                   <CredentialItem
