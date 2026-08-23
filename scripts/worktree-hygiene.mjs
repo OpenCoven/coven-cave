@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +38,7 @@ export const DISPOSABLE_FILES = Object.freeze([
 ]);
 
 const PROTECTED_BRANCHES = new Set(["main", "master", "__dolt_remote_info__"]);
+const HEALTHY_LIFECYCLE_LANES = new Set(["active", "cooldown", "retire-after-gate"]);
 const repoScript = path.join(path.dirname(fileURLToPath(import.meta.url)), "worktree-status.mjs");
 
 function exec(command, args, cwd, options = {}) {
@@ -373,28 +375,46 @@ function mutateThin(root, options) {
   return result;
 }
 
-function postParkLifecycleHealthy(root, branch, head) {
+export function lifecycleUnitPostcondition(report, expected) {
+  const item = Array.isArray(report?.items)
+    ? report.items.find((candidate) => candidate && typeof candidate === "object" && candidate.branch === expected.branch && candidate.head === expected.head)
+    : null;
+  if (!item) return { ok: false, reason: "lifecycle unit disappeared from authoritative inventory" };
+  if (item.path !== null && (typeof item.path !== "string" || !path.isAbsolute(item.path))) {
+    return { ok: false, reason: "lifecycle unit returned a malformed path" };
+  }
+  if (expected.path !== null && (typeof expected.path !== "string" || !path.isAbsolute(expected.path))) {
+    return { ok: false, reason: "expected lifecycle identity has a malformed path" };
+  }
+  const actualPath = item.path === null ? null : path.resolve(item.path);
+  const expectedPath = expected.path === null ? null : path.resolve(expected.path);
+  if (item.kind !== expected.kind || actualPath !== expectedPath) {
+    return {
+      ok: false,
+      reason: `expected ${expected.kind} lifecycle unit at ${expectedPath ?? "null"}, got ${item.kind ?? "unknown"} at ${actualPath ?? "null"}`,
+    };
+  }
+  if (!HEALTHY_LIFECYCLE_LANES.has(item.lane)) {
+    const reasons = Array.isArray(item.reasons) && item.reasons.every((reason) => typeof reason === "string")
+      ? item.reasons.join("; ")
+      : "malformed or unavailable reasons";
+    return { ok: false, reason: `lifecycle unit became lane ${String(item.lane)}: ${reasons}` };
+  }
+  return { ok: true, lane: item.lane };
+}
+
+function postMutationLifecycleHealthy(root, expected) {
   const patrol = exec(
     "node",
     ["--experimental-strip-types", path.join(path.dirname(repoScript), "worktree-lifecycle-patrol.ts"), "--repo", "OpenCoven/coven-cave", "--root", root, "--json"],
     root,
     { timeout: 90_000 },
   );
-  if (!patrol.ok) return { ok: false, reason: patrol.stderr || patrol.stdout || "lifecycle patrol unavailable after park" };
+  if (!patrol.ok) return { ok: false, reason: patrol.stderr || patrol.stdout || "lifecycle patrol unavailable after mutation" };
   let parsed;
   try { parsed = JSON.parse(patrol.stdout); }
-  catch { return { ok: false, reason: "lifecycle patrol returned malformed JSON after park" }; }
-  const item = Array.isArray(parsed.items)
-    ? parsed.items.find((candidate) => candidate.branch === branch && candidate.head === head)
-    : null;
-  if (!item) return { ok: false, reason: "parked branch disappeared from lifecycle inventory" };
-  if (item.path !== null || item.kind !== "branch-only") {
-    return { ok: false, reason: `expected branch-only lifecycle unit, got ${item.kind ?? "unknown"} at ${item.path ?? "null"}` };
-  }
-  if (item.lane === "uncertain" || item.lane === "recovery" || item.lane === "protected") {
-    return { ok: false, reason: `parked branch became lifecycle lane ${item.lane}: ${(item.reasons ?? []).join("; ")}` };
-  }
-  return { ok: true, lane: item.lane };
+  catch { return { ok: false, reason: "lifecycle patrol returned malformed JSON after mutation" }; }
+  return lifecycleUnitPostcondition(parsed, expected);
 }
 
 function branchStillExact(root, branch, head) {
@@ -406,12 +426,34 @@ function pathStillRegistered(root, target) {
   return parsePorcelainWorktrees(root).some((row) => path.resolve(row.path) === path.resolve(target));
 }
 
+export function parkedPathConfigKey(branch) {
+  const branchDigest = createHash("sha256").update(branch).digest("hex");
+  return `coven-hygiene.parked-path-${branchDigest}`;
+}
+
+function recordParkedPath(root, branch, target) {
+  return git(root, ["config", "--local", "--replace-all", parkedPathConfigKey(branch), path.resolve(target)]);
+}
+
+function readParkedPath(root, branch) {
+  const recorded = git(root, ["config", "--local", "--get", parkedPathConfigKey(branch)]);
+  if (!recorded.ok || !recorded.stdout) {
+    throw new Error(`no exact parked path is recorded for ${branch}; refusing to invent one`);
+  }
+  if (!path.isAbsolute(recorded.stdout)) throw new Error(`recorded parked path is not absolute: ${recorded.stdout}`);
+  return path.resolve(recorded.stdout);
+}
+
+function clearParkedPath(root, branch) {
+  return git(root, ["config", "--local", "--unset-all", parkedPathConfigKey(branch)]);
+}
+
 function mutatePark(root, options) {
   const rows = selectRows(root, options);
-  const result = { action: "park", apply: options.apply, parked: [], refused: [], rolledBack: [] };
-  let applied = 0;
+  const result = { ok: true, action: "park", apply: options.apply, parked: [], refused: [], rolledBack: [] };
+  let attempts = 0;
   for (const row of rows) {
-    if (applied >= options.max) break;
+    if (attempts >= options.max) break;
     const details = detailFor(row);
     const headResult = row.path ? git(row.path, ["rev-parse", "HEAD"]) : { ok: false, stderr: "missing path" };
     const head = headResult.ok ? headResult.stdout : null;
@@ -428,31 +470,67 @@ function mutatePark(root, options) {
       continue;
     }
 
-    removeDisposable(row.path, details.ignored.paths, true);
+    const recorded = recordParkedPath(root, row.branch, row.path);
+    if (!recorded.ok) {
+      result.ok = false;
+      result.refused.push({ branch: row.branch, path: row.path, reasons: [`could not record exact parked path: ${recorded.stderr}`] });
+      break;
+    }
+    attempts += 1;
+    try {
+      removeDisposable(row.path, details.ignored.paths, true);
+    } catch (error) {
+      const cleared = clearParkedPath(root, row.branch);
+      result.ok = false;
+      result.refused.push({
+        branch: row.branch,
+        path: row.path,
+        reasons: [
+          `disposable cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+          ...(!cleared.ok ? [`recorded-path cleanup failed: ${cleared.stderr}`] : []),
+        ],
+      });
+      break;
+    }
     const removed = git(root, ["worktree", "remove", row.path]);
     if (!removed.ok) {
-      result.refused.push({ branch: row.branch, path: row.path, reasons: [`git worktree remove failed: ${removed.stderr}`] });
-      continue;
+      const cleared = clearParkedPath(root, row.branch);
+      result.ok = false;
+      result.refused.push({
+        branch: row.branch,
+        path: row.path,
+        reasons: [
+          `git worktree remove failed: ${removed.stderr}`,
+          ...(!cleared.ok ? [`recorded-path cleanup failed: ${cleared.stderr}`] : []),
+        ],
+      });
+      break;
     }
 
-    const branchExact = branchStillExact(root, row.branch, head);
-    const absent = !pathStillRegistered(root, row.path);
-    const lifecycle = branchExact && absent
-      ? postParkLifecycleHealthy(root, row.branch, head)
-      : { ok: false, reason: `git postcondition failed (branchExact=${branchExact}, worktreeAbsent=${absent})` };
+    let lifecycle;
+    try {
+      const branchExact = branchStillExact(root, row.branch, head);
+      const absent = !pathStillRegistered(root, row.path);
+      lifecycle = branchExact && absent
+        ? postMutationLifecycleHealthy(root, { branch: row.branch, head, kind: "branch-only", path: null })
+        : { ok: false, reason: `git postcondition failed (branchExact=${branchExact}, worktreeAbsent=${absent})` };
+    } catch (error) {
+      lifecycle = { ok: false, reason: `park postcondition probe threw: ${error instanceof Error ? error.message : String(error)}` };
+    }
     if (!lifecycle.ok) {
-      const rollback = git(root, ["worktree", "add", "--no-track", row.path, row.branch]);
+      const rollback = git(root, ["worktree", "add", row.path, row.branch]);
+      const cleared = rollback.ok ? clearParkedPath(root, row.branch) : { ok: true, stderr: "" };
+      result.ok = false;
       result.rolledBack.push({
         branch: row.branch,
         path: row.path,
         reason: lifecycle.reason,
-        rollbackOk: rollback.ok,
-        rollbackError: rollback.ok ? null : rollback.stderr,
+        rollbackOk: rollback.ok && cleared.ok,
+        rollbackError: !rollback.ok ? rollback.stderr : !cleared.ok ? `recorded-path cleanup failed: ${cleared.stderr}` : null,
       });
-      continue;
+      break;
     }
     result.parked.push({ ...proposal, lifecycleLane: lifecycle.lane });
-    applied += 1;
   }
   return result;
 }
@@ -463,18 +541,37 @@ function mutateUnpark(root, options) {
   const worktrees = parsePorcelainWorktrees(root);
   if (worktrees.some((row) => row.branch === options.branch)) throw new Error(`branch is already checked out: ${options.branch}`);
   const head = requiredGit(root, ["rev-parse", `refs/heads/${options.branch}`], "resolve local branch");
-  const target = path.resolve(root, ".worktrees", worktreeSlug(options.branch));
+  const target = readParkedPath(root, options.branch);
   if (existsSync(target)) throw new Error(`target path already exists: ${target}`);
   const retention = remoteExact(root, options.branch, head);
   if (!retention.ok || !retention.retained) throw new Error(retention.reason);
   if (!options.apply) return { action: "unpark", apply: false, branch: options.branch, path: target, head, retainedBy: retention.via };
-  const added = git(root, ["worktree", "add", "--no-track", target, options.branch]);
+  const added = git(root, ["worktree", "add", target, options.branch]);
   if (!added.ok) throw new Error(`git worktree add failed: ${added.stderr}`);
-  if (!pathStillRegistered(root, target) || !branchStillExact(root, options.branch, head)) {
-    git(root, ["worktree", "remove", target]);
-    throw new Error("unpark postcondition failed; attempted rollback");
+  let lifecycle;
+  try {
+    const registered = pathStillRegistered(root, target);
+    const branchExact = branchStillExact(root, options.branch, head);
+    lifecycle = registered && branchExact
+      ? postMutationLifecycleHealthy(root, { branch: options.branch, head, kind: "worktree", path: target })
+      : { ok: false, reason: `git postcondition failed (branchExact=${branchExact}, worktreeRegistered=${registered})` };
+  } catch (error) {
+    lifecycle = { ok: false, reason: `unpark postcondition probe threw: ${error instanceof Error ? error.message : String(error)}` };
   }
-  return { action: "unpark", apply: true, branch: options.branch, path: target, head, retainedBy: retention.via };
+  if (!lifecycle.ok) {
+    const rollback = git(root, ["worktree", "remove", target]);
+    throw new Error(`unpark postcondition failed: ${lifecycle.reason}; rollback ${rollback.ok ? "succeeded" : `failed: ${rollback.stderr}`}`);
+  }
+  const cleared = clearParkedPath(root, options.branch);
+  if (!cleared.ok) {
+    const rollback = git(root, ["worktree", "remove", target]);
+    throw new Error(`could not clear recorded parked path: ${cleared.stderr}; rollback ${rollback.ok ? "succeeded" : `failed: ${rollback.stderr}`}`);
+  }
+  return { ok: true, action: "unpark", apply: true, branch: options.branch, path: target, head, retainedBy: retention.via, lifecycleLane: lifecycle.lane };
+}
+
+export function mutationExitCode(value) {
+  return value.ok === false ? 2 : 0;
 }
 
 function parseArgs(argv) {
@@ -512,7 +609,7 @@ function main(argv = process.argv.slice(2)) {
     else if (action === "unpark") value = mutateUnpark(root, options);
     else throw new Error(`unknown action: ${action}`);
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
-    return 0;
+    return mutationExitCode(value);
   } catch (error) {
     console.error(`worktree-hygiene: ${error instanceof Error ? error.message : String(error)}`);
     return 1;

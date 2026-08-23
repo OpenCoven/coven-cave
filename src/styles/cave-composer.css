@@ -1312,6 +1312,166 @@
   position: relative;
 }
 
+/* ── Live markdown decoration (cave-7ncq) ──────────────────────────────────
+   The composer stays a real <textarea>; this layer paints the same characters
+   behind it with syntax roles applied, and the textarea's own glyphs are
+   hidden only while the two have been measured to line up.
+
+   ⚠️ NOTHING in the layer rules below may change text metrics — no
+   font-family, font-size, font-weight, letter-spacing, word-spacing,
+   line-height, text-transform, or inline padding/margin. Any of those move
+   where lines wrap, and the decoration slides off the glyph it belongs to.
+   That is why bold is inked with -webkit-text-stroke rather than font-weight,
+   why a code span gets its padding from a box-shadow, and why a heading is
+   coloured rather than enlarged. The remaining metrics (family, size, padding,
+   …) are mirrored from the textarea's computed style at runtime, so the
+   user-selectable font catalog and the data-screen-scale steps carry over
+   without this file knowing about either.
+   `src/components/composer-markdown-layer.tsx` is the other half.  */
+.cave-composer-md-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Height is set from the textarea's own box at runtime, NOT from `inset: 0`.
+     The textarea is inline-block, so it sits on its parent's baseline and the
+     wrap is ~5px taller than the textarea itself — a layer stretched to the
+     wrap is that much taller than the text it is painting, and the alignment
+     check (correctly) refuses to activate. */
+  z-index: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  color: var(--text-primary);
+  pointer-events: none;
+  /* Hidden — not display:none — while inactive: the alignment check still
+     needs to measure it, and a display:none element has no scrollHeight. */
+  visibility: hidden;
+}
+
+.cave-composer-md-layer[data-active="true"] {
+  visibility: visible;
+}
+
+/* The textarea keeps painting above the layer. Without this the absolutely
+   positioned layer wins the paint order and covers the caret. */
+.cave-composer-input {
+  position: relative;
+  z-index: 1;
+}
+
+/* Applied only once the layer reports itself aligned AND the draft has
+   markdown in it. Both halves matter: -webkit-text-fill-color also blanks the
+   placeholder in WebKit, so an empty composer must never take this class. */
+.cave-composer-input--md {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text-primary);
+}
+
+.cave-composer-input--md::placeholder {
+  color: color-mix(in oklch, var(--foreground) 45%, transparent);
+  -webkit-text-fill-color: color-mix(in oklch, var(--foreground) 45%, transparent);
+}
+
+/* Selection has to stay translucent: it paints on the (invisible) textarea
+   text, and an opaque highlight would hide the layer underneath it. */
+.cave-composer-input--md::selection {
+  background: color-mix(in oklch, var(--accent-presence) 34%, transparent);
+}
+
+/* Off-screen probe pair used to decide whether slanting emphasis preserves
+   advance widths in the user's chosen font. */
+.cave-composer-md-probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.cave-composer-md-probe__slanted {
+  font-style: italic;
+}
+
+.cave-md-tok--marker {
+  color: var(--text-muted);
+}
+
+/* Ink the glyph thicker without widening its box — the metric-safe stand-in
+   for font-weight. */
+.cave-md-tok--strong,
+.cave-md-tok--strong-emphasis {
+  -webkit-text-stroke-width: 0.4px;
+  -webkit-text-stroke-color: currentcolor;
+}
+
+/* Slant is enabled only where the probe measured it as metric-neutral, i.e.
+   where the browser synthesizes the oblique from the regular face. */
+.cave-composer-md-layer[data-metric-safe="true"] .cave-md-tok--emphasis,
+.cave-composer-md-layer[data-metric-safe="true"] .cave-md-tok--strong-emphasis {
+  font-style: italic;
+}
+
+/* Emphasis still has to read when the probe says no. Colour is the fallback
+   channel, never the only one: the dimmed `*` markers stay visible either way,
+   so the construct is legible without relying on hue. */
+.cave-md-tok--emphasis,
+.cave-md-tok--strong-emphasis {
+  color: color-mix(in oklch, var(--text-primary) 88%, var(--accent-presence));
+}
+
+/* box-shadow, not padding: a spread shadow paints outside the glyph box
+   without participating in layout. */
+.cave-md-tok--code {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.cave-md-tok--strike {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.cave-md-tok--link-text {
+  color: var(--accent-presence);
+}
+
+.cave-md-tok--link-url {
+  color: var(--accent-presence);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cave-md-blk--heading-1,
+.cave-md-blk--heading-2,
+.cave-md-blk--heading-3,
+.cave-md-blk--heading-4,
+.cave-md-blk--heading-5,
+.cave-md-blk--heading-6 {
+  color: var(--text-primary);
+  -webkit-text-stroke-width: 0.4px;
+  -webkit-text-stroke-color: currentcolor;
+}
+
+.cave-md-blk--quote {
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.cave-md-blk--code-block {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.cave-md-blk--list.cave-md-tok--marker {
+  color: var(--accent-presence);
+}
+
 @media (max-width: 767px) {
   /* Grow the new controls to touch size (radius language stays — the plus
      keeps its 8px corner, the send its circle). */

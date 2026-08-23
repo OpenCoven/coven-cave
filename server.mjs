@@ -718,9 +718,10 @@ function isPtyAuthRequired() {
 function shouldRejectUnauthenticatedPtyUpgrade({
   sidecarTokenConfigured = false,
   accessTokenConfigured = false,
-  tokenAuthenticated = false
+  tokenAuthenticated = false,
+  directLoopback = false
 } = {}) {
-  if (tokenAuthenticated) return false;
+  if (tokenAuthenticated || directLoopback) return false;
   return sidecarTokenConfigured || accessTokenConfigured;
 }
 function isAuthorized(req, query) {
@@ -1093,7 +1094,8 @@ server.on("upgrade", (req, socket, head) => {
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
     accessTokenConfigured: Boolean(accessToken()),
-    tokenAuthenticated
+    tokenAuthenticated,
+    directLoopback: isDirectLoopbackRequest(req)
   })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
@@ -1174,6 +1176,11 @@ if (allowedTailnetNodeIds().size > 0) {
 }
 server.once("error", (err) => {
   cleanupStandaloneClientV1Discovery();
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `> Port ${port} on ${hostname} is already in use (EADDRINUSE); CovenCave cannot serve here.`
+    );
+  }
   console.error(err);
   process.exit(1);
 });

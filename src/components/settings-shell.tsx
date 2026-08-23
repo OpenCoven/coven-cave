@@ -43,6 +43,7 @@ import { ProfileSection } from "./settings-profile";
 import { SettingsOverview } from "./settings-overview";
 import { AboutSection } from "./settings-about";
 import { PhoneSection } from "./settings-phone";
+import { SettingsClientAccess } from "./settings-client-access";
 import {
   SECTIONS,
   SETTINGS_INDEX,
@@ -100,6 +101,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   } = useSurfaceHistory<Section>({ id: "settings:section", initial: "general" });
   const setSection = showSection;
   const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
+  const [hashHydrated, setHashHydrated] = useState(embedded);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
   // render that section.
@@ -169,20 +171,16 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   // is still the "general" default while the URL already says `#about`, so an
   // ungated write rewrites the deep link to `#general` and the reader below
   // then honours the value this effect just clobbered.
-  const hashHydratedRef = useRef(false);
   useEffect(() => {
-    if (embedded || typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
+    if (embedded || typeof window === "undefined" || !hashHydrated || pickerView) return;
     if (window.location.hash === `#${section}`) return;
     window.history.replaceState(null, "", `#${section}`);
-  }, [section, pickerView]);
+  }, [embedded, hashHydrated, pickerView, section]);
 
   // Support hash-based deep-linking. Read it after hydration so SSR and the
   // first client render both start on General.
   useEffect(() => {
-    if (embedded) {
-      hashHydratedRef.current = true;
-      return;
-    }
+    if (embedded) return;
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
@@ -196,7 +194,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
       setPickerView(true);
     };
     applyHashSection();
-    hashHydratedRef.current = true;
+    setHashHydrated(true);
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
   }, [embedded]);
@@ -354,6 +352,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
             />
           )}
           {section === "mobile"   && <PhoneSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
+          {section === "client-access" && <SettingsClientAccess />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
         </main>

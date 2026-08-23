@@ -64,7 +64,18 @@ await test("strict Git network probes have release-safe bounded timeouts", () =>
     strictGitTimeoutMs(["-C", "/tmp/example", "ls-remote", "origin", "HEAD"]),
     STRICT_GIT_NETWORK_TIMEOUT_MS,
   );
+  assert.equal(
+    strictGitTimeoutMs(["-c", "core.fileMode=true", "-C", "/tmp/example", "fetch", "origin"]),
+    STRICT_GIT_NETWORK_TIMEOUT_MS,
+  );
+  assert.equal(
+    strictGitTimeoutMs(["-c", "status.showUntrackedFiles=all", "status", "--porcelain"]),
+    STRICT_GIT_LOCAL_TIMEOUT_MS,
+  );
   assert.throws(() => strictGitTimeoutMs(["-C"]), /requires a directory/);
+  assert.throws(() => strictGitTimeoutMs(["-c"]), /requires key=value/);
+  assert.throws(() => strictGitTimeoutMs(["-c", "core.fileMode"]), /requires key=value/);
+  assert.throws(() => strictGitTimeoutMs(["-c", "core.fileMode=true"]), /command is required/);
 
   let now = 1_000;
   const deadline = createStrictRetentionDeadline({ timeoutMs: 250, now: () => now });

@@ -208,9 +208,38 @@ case "$DEV_SERVER_GRACE_SECONDS" in
 esac
 
 if [ "$should_start_server" = true ]; then
+  # The old-space ceiling for the server this launcher OWNS, taken from the same
+  # shared contract the packaged sidecar uses. Without it the ceiling is whatever
+  # V8 derives from host memory, which is why "how many hours before this session
+  # dies" differed per machine — and why server.ts's [heap-monitor] percentages
+  # had no fixed denominator to be read against.
+  #
+  # Resolved here rather than up top because it only describes a server this
+  # launcher starts: an attached pre-existing server keeps the ceiling it was
+  # launched with, and announcing one for it would be a lie.
+  #
+  # NODE_OPTIONS rather than argv because the server is started through
+  # `pnpm dev`, so this launcher cannot insert a V8 flag ahead of the entry path,
+  # and a flag after it is handed to the script and silently ignored. The helper
+  # preserves anything the operator already had in NODE_OPTIONS.
+  #
+  # This buys predictability, NOT immunity. The growth in a long dev session is
+  # upstream dev-toolchain retention (Turbopack HMR rebuild generations, React 19
+  # dev debug capture — see cave-r13x), so a bigger number only defers the same
+  # death. When [heap-monitor] warns, restart the dev server.
+  dev_node_options="$(node -e "import('./scripts/heap-limits.mjs').then((m) => process.stdout.write(m.heapLimitNodeOptions(process.env)))")"
+  case "$dev_node_options" in
+    *--max-old-space-size=[0-9]*) ;;
+    *)
+      echo "[dev:app] ERROR: resolved NODE_OPTIONS carry no heap ceiling: $(printf '%q' "$dev_node_options")" >&2
+      echo "[dev:app]        scripts/heap-limits.mjs did not answer; refusing to start an unbounded dev server." >&2
+      exit 1
+      ;;
+  esac
+  echo "[dev:app] dev server heap ceiling: ${dev_node_options}"
   # Bind explicitly to loopback. Git Bash exports HOSTNAME from the host (often
   # a non-loopback machine name), so relying on server.ts's default is unsafe.
-  HOSTNAME=127.0.0.1 PORT="$dev_port" pnpm dev &
+  HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &
   server_pid=$!
 fi
 

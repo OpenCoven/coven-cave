@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_QUERY_PARAM,
-  ACCESS_PROMPT_QUERY_PARAM,
+  LEGACY_ACCESS_PROMPT_QUERY_PARAM,
   TOKEN_PARAM,
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
@@ -29,6 +29,7 @@ import {
   requiresPasskeyPresence,
   clientV1IngressKind,
   isClientV1AdminPath,
+  isClientV1Path,
   isRefusedClientV1Path,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
@@ -104,6 +105,34 @@ async function mobileAccessVerification(
   return null;
 }
 
+async function mobileAccessQueryTokenRedirect(
+  req: NextRequest,
+  expected: string,
+  queryToken: string,
+) {
+  const url = req.nextUrl.clone();
+  url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
+  url.searchParams.delete(LEGACY_ACCESS_PROMPT_QUERY_PARAM);
+  const res = NextResponse.redirect(url);
+  const queryVerification = await isValidMobileAccessCredential({
+    supplied: queryToken,
+    expectedSecret: expected,
+  });
+  if (queryVerification.ok) {
+    const maxAge = queryVerification.legacy
+      ? undefined
+      : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
+    res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: req.nextUrl.protocol === "https:",
+      path: "/",
+      maxAge,
+    });
+  }
+  return res;
+}
+
 async function mobileAccessGate(
   req: NextRequest,
   trustedLocalPeer: boolean,
@@ -112,8 +141,18 @@ async function mobileAccessGate(
 ) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
-  const accessPromptRequested =
-    req.nextUrl.searchParams.get(ACCESS_PROMPT_QUERY_PARAM) === "1";
+  const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
+
+  // A local pairing link is already trusted for app access, but its query
+  // credential still needs the audited cookie exchange and URL cleanup before
+  // the prompt-free loopback bypass runs.
+  if (
+    trustedLocalPeer
+    && queryToken
+    && (req.method === "GET" || req.method === "HEAD")
+  ) {
+    return mobileAccessQueryTokenRedirect(req, expected, queryToken);
+  }
 
   // A server.ts-stamped direct loopback DOCUMENT navigation is this machine's
   // own window asking for a page, and it is the one request shape that cannot
@@ -126,14 +165,12 @@ async function mobileAccessGate(
   // This does NOT reopen the bypass this change exists to close. The stamp is
   // minted per boot, never leaves server.ts, and is applied only to loopback
   // sockets carrying no forwarding markers — Tailscale-Serve traffic always
-  // arrives with x-forwarded-*, so it can never earn the stamp. `/api/*` is
-  // deliberately still gated: there the sidecar credential keeps doing the work
-  // the comment on shouldRequireMobileAccessCredential describes, distinguishing
-  // the intended local user from other OS users on a shared machine.
+  // arrives with x-forwarded-*, so it can never earn the stamp. `/api/*`
+  // follows the same direct-loopback decision below, so a browser tab does not
+  // fall into a pairing loop merely because mobile access is armed.
   if (
     shouldBypassMobileAccessGate(
       trustedLocalPeer,
-      accessPromptRequested,
       req.method,
       req.nextUrl.pathname,
       req.headers.get("accept"),
@@ -155,7 +192,6 @@ async function mobileAccessGate(
     return null;
   }
 
-  const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
   const verification = await mobileAccessVerification(req, expected, suppliedTokens);
   if (!verification) {
     // Browser page navigations get an HTML access page instead of a raw JSON
@@ -176,27 +212,7 @@ async function mobileAccessGate(
   }
 
   if (queryToken && (req.method === "GET" || req.method === "HEAD")) {
-    const url = req.nextUrl.clone();
-    url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
-    url.searchParams.delete(ACCESS_PROMPT_QUERY_PARAM);
-    const res = NextResponse.redirect(url);
-    const queryVerification = await isValidMobileAccessCredential({
-      supplied: queryToken,
-      expectedSecret: expected,
-    });
-    if (queryVerification.ok) {
-      const maxAge = queryVerification.legacy
-        ? undefined
-        : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
-      res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: req.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge,
-      });
-    }
-    return res;
+    return mobileAccessQueryTokenRedirect(req, expected, queryToken);
   }
 
   return null;
@@ -292,10 +308,9 @@ export async function proxy(req: NextRequest) {
   const sidecarAuthenticatedAtGate = sidecarTokenMatches(
     req.headers.get(TOKEN_HEADER) ?? req.nextUrl.searchParams.get(TOKEN_PARAM),
   ) || mediaTicketAuthenticated;
-  // The local-peer stamp distinguishes direct from forwarded traffic, but TCP
-  // loopback is not OS-user identity. When mobile access is armed, the Tauri
-  // app must also present its per-launch sidecar credential and a plain local
-  // browser must use the same access-token gate as remote browsers.
+  // The local-peer stamp distinguishes direct from forwarded traffic. Direct,
+  // unforwarded loopback is the browser's no-prompt path; remote traffic still
+  // requires a mobile or sidecar credential.
   const trustedLocalPeer = isTrustedLocalPeer(
     req.headers.get(LOCAL_PEER_HEADER),
     process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
@@ -520,7 +535,13 @@ export async function proxy(req: NextRequest) {
     return nextWithMobileAccessMarker(req, remoteIngress);
   }
 
-  if (!sidecarAuthenticated && !mobileAccessVerified) {
+  // Direct loopback is the prompt-free browser path for ordinary app APIs.
+  // Client v1 is different: its reviewed public/authenticated routes returned
+  // above, while every remaining path intentionally stays on this credential
+  // boundary (especially the human-consent admin surface).
+  const trustedLocalBrowserApi =
+    trustedLocalPeer && !isClientV1Path(req.nextUrl.pathname);
+  if (!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi) {
     if (mediaTicketAuthenticated) {
       return nextWithMobileAccessMarker(req, remoteIngress);
     }

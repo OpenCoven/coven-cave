@@ -72,11 +72,17 @@ aes-gcm = { version = "0.10", features = ["zeroize"] }
 hkdf = "0.12"
 sha2 = "0.10"
 zeroize = "1"
+# Advisory cross-process file locks, for the same reason sha2 moved up here:
+# more than one desktop platform needs them. The Windows sidecar archive holds
+# one over the runtime cache, macOS holds one over reachability ownership, and
+# sidecar_port_lock.rs holds one over the dedicated port on every desktop
+# target — a second copy must lose that claim wherever it launches, not only
+# where a target block happened to list the crate.
+fs2 = "0.4.3"
 
 # Windows packages the large Next.js sidecar as one archive instead of one
 # WiX component per file. The launcher verifies and extracts it on first use.
 [target.'cfg(target_os = "windows")'.dependencies]
-fs2 = "0.4.3"
 # One credential-store backend per OS, so no unused backend is compiled in and
 # the Linux build never pulls a D-Bus stack: Credential Manager here, Keychain
 # Services on macOS, the kernel session keyring on Linux. See offline_cache.rs
@@ -84,7 +90,12 @@ fs2 = "0.4.3"
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 tar = "0.4"
 zstd = "0.13"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# Win32_Security_Authorization is Get/SetNamedSecurityInfoW and
+# ConvertSidToStringSidW: secret_path_acl.rs uses them to give the plaintext
+# mobile access token a DACL, which Windows has no create-time equivalent of.
+# The feature is a cfg gate over already-vendored bindings, so it pulls in no
+# new crate and leaves Cargo.lock untouched.
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # OS-level glass for the quick-chat tray window: NSVisualEffectView vibrancy
 # behind the transparent webview on macOS (the only platform we apply it on;
@@ -95,7 +106,6 @@ signal-hook-registry = "1.4"
 # Signal numbers for the daemon shutdown handler; signal-hook-registry only
 # exposes register(), not the SIG* constants.
 libc = "0.2"
-fs2 = "0.4.3"
 # Raw msg_send access to NSWindow's standard buttons (traffic-light
 # show/hide follows the side panel); already in the tree via tauri/wry.
 objc2 = "0.6"

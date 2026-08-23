@@ -150,6 +150,19 @@ jobs:
         working-directory: apps/ios/CovenCave
         run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 
+      # `build` compiles the APP target only — the scheme's test targets are
+      # built by the test action, which routine PR CI does not run. So until
+      # now a Swift file under CovenCaveTests/ could be syntactically broken,
+      # or assert against a symbol that no longer exists, and every PR stayed
+      # green: the suite that guards the native store was itself unguarded.
+      # `build-for-testing` compiles the unit and UI test bundles without
+      # booting a simulator, which is the compile gate those files were
+      # missing. It reuses this job's warm derived data, so it is a short step
+      # rather than a second full build.
+      - name: Compile the iOS test bundles
+        working-directory: apps/ios/CovenCave
+        run: xcodebuild -scheme CovenCave -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build-for-testing
+
   frontend-validation:
     name: Frontend validation (${{ matrix.validation.name }})
     needs: paths
@@ -227,9 +240,68 @@ jobs:
           echo "::error::pnpm build failed after 3 attempts"
           exit 1
 
+  frontend-e2e:
+    name: Frontend E2E (${{ matrix.shard }}/4)
+    needs: paths
+    if: needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      NEXT_PUBLIC_CAVE_CRAFTS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+
+      - name: Validate end-to-end behavior
+        run: pnpm exec playwright test --shard=${{ matrix.shard }}/4
+
+  frontend-e2e-agentic:
+    name: Frontend E2E (agentic)
+    needs: paths
+    if: needs.paths.outputs.e2e == 'true' && (github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_CAVE_CRAFTS: "1"
+      NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+
+      # This is a separate Playwright invocation, so its webServer starts with
+      # the explicit public capability instead of sharing a default-off server.
+      - name: Validate flag-enabled agentic journeys
+        run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+
   build:
     name: Frontend build
-    needs: [paths, ios, frontend-validation, frontend-bundle]
+    needs: [paths, ios, frontend-validation, frontend-bundle, frontend-e2e, frontend-e2e-agentic]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -253,6 +325,9 @@ jobs:
           FRONTEND_ENABLED: ${{ needs.paths.outputs.frontend }}
           FRONTEND_VALIDATION_RESULT: ${{ needs.frontend-validation.result }}
           FRONTEND_BUNDLE_RESULT: ${{ needs.frontend-bundle.result }}
+          E2E_ENABLED: ${{ needs.paths.outputs.e2e }}
+          FRONTEND_E2E_RESULT: ${{ needs.frontend-e2e.result }}
+          FRONTEND_E2E_AGENTIC_RESULT: ${{ needs.frontend-e2e-agentic.result }}
           IOS_ENABLED: ${{ needs.paths.outputs.ios }}
           IOS_RESULT: ${{ needs.ios.result }}
         run: |
@@ -261,6 +336,10 @@ jobs:
           if [ "$FRONTEND_ENABLED" = "true" ]; then
             test "$FRONTEND_VALIDATION_RESULT" = "success"
             test "$FRONTEND_BUNDLE_RESULT" = "success"
+          fi
+          if [ "$E2E_ENABLED" = "true" ]; then
+            test "$FRONTEND_E2E_RESULT" = "success"
+            test "$FRONTEND_E2E_AGENTIC_RESULT" = "success"
           fi
           if [ "$IOS_ENABLED" = "true" ]; then
             test "$IOS_RESULT" = "success"
@@ -283,10 +362,6 @@ jobs:
       - name: Validate docs
         if: needs.paths.outputs.docs == 'true'
         run: node scripts/docs-index.test.mjs
-
-      - name: Install JavaScript dependencies
-        if: needs.paths.outputs.e2e == 'true'
-        run: pnpm install --frozen-lockfile
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
         if: needs.paths.outputs.rust == 'true'
@@ -322,23 +397,6 @@ jobs:
           touch resources/node/.cargo-check-placeholder
           cargo check --locked
           cargo test --locked --lib
-
-      - name: Install Playwright browsers
-        if: needs.paths.outputs.e2e == 'true'
-        run: pnpm exec playwright install --with-deps chromium webkit
-
-      - name: Validate end-to-end behavior
-        if: needs.paths.outputs.e2e == 'true'
-        run: pnpm exec playwright test
-
-      # This is a separate Playwright invocation, so its webServer starts with
-      # the explicit public capability while the default-off suite above has
-      # already stopped its own server.
-      - name: Validate flag-enabled agentic journeys
-        if: needs.paths.outputs.e2e == 'true'
-        env:
-          NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
-        run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
 
       - name: Report skipped suites
         if: needs.paths.outputs.frontend != 'true' || needs.paths.outputs.rust != 'true' || needs.paths.outputs.e2e != 'true' || needs.paths.outputs.ios != 'true' || needs.paths.outputs.docs != 'true'

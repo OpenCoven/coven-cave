@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { bdLaunchCommand, withBdLaunch, type BdLaunchCommand } from "../bd-bin.ts";
 import { caveToolSpawnEnv } from "../coven-bin.ts";
 
 const execFileAsync = promisify(execFile);
@@ -85,7 +86,7 @@ export async function runBdCommand(
   repoRoot: string,
   beadsDir: string,
   args: string[],
-  options?: { platform?: NodeJS.Platform; exec?: Exec },
+  options?: { platform?: NodeJS.Platform; exec?: Exec; launch?: BdLaunchCommand },
 ): Promise<BdResult> {
   const platform = options?.platform ?? process.platform;
   const exec = options?.exec ?? (execFileAsync as unknown as Exec);
@@ -95,25 +96,44 @@ export async function runBdCommand(
     BD_NON_INTERACTIVE: "1",
   };
 
-  try {
-    const { stdout, stderr } = await exec("bd", args, {
-      windowsHide: true,
-      cwd: repoRoot,
-      env,
-      timeout: BD_TIMEOUT_MS,
-      maxBuffer: MAX_BD_BUFFER,
-    });
-    return { ok: true, stdout, stderr };
-  } catch (error) {
-    const direct = commandError(error);
-    if (direct.code !== "ENOENT" || platform !== "win32") {
-      return {
-        ok: false,
-        status: direct.code === "ENOENT" ? 503 : 502,
-        error: direct.code === "ENOENT" ? "bd unavailable" : direct.message || "bd command failed",
-        stdout: direct.stdout ?? "",
-        stderr: direct.stderr ?? "",
-      };
+  // Resolve `bd` before spawning. npm installs it on Windows as an
+  // extensionless script plus `bd.cmd`/`bd.ps1` and no `bd.exe`, so a bare
+  // `execFile("bd", …)` reaches CreateProcess, which only appends `.exe` and
+  // fails with ENOENT even when bd is installed and on PATH. The WSL fallback
+  // below then swallowed that: every Beads request on Windows was answered by
+  // whichever bd a Linux distro happened to hold — a different install, a
+  // different version, and a hard 503 on a machine with no WSL at all.
+  // Never `shell: true` here; `args` carry bead ids, free-text titles, and
+  // query strings, and cmd.exe would re-parse their metacharacters.
+  const resolved = options?.launch ?? bdLaunchCommand();
+  const launch = withBdLaunch("bd", args, resolved);
+  // A `.cmd` shim whose entry point could not be proven is not spawnable
+  // without a shell, and asking Windows to run an ambiguous batch file is
+  // exactly what the resolver exists to avoid. Treat it as "no native bd" and
+  // let the WSL fallback answer instead.
+  const nativeUnavailable = platform === "win32" && resolved.unresolvedWindowsShim === true;
+
+  if (!nativeUnavailable) {
+    try {
+      const { stdout, stderr } = await exec(launch.command, launch.args, {
+        windowsHide: true,
+        cwd: repoRoot,
+        env,
+        timeout: BD_TIMEOUT_MS,
+        maxBuffer: MAX_BD_BUFFER,
+      });
+      return { ok: true, stdout, stderr };
+    } catch (error) {
+      const direct = commandError(error);
+      if (direct.code !== "ENOENT" || platform !== "win32") {
+        return {
+          ok: false,
+          status: direct.code === "ENOENT" ? 503 : 502,
+          error: direct.code === "ENOENT" ? "bd unavailable" : direct.message || "bd command failed",
+          stdout: direct.stdout ?? "",
+          stderr: direct.stderr ?? "",
+        };
+      }
     }
   }
 

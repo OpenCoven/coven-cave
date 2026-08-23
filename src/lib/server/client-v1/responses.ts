@@ -4,7 +4,9 @@ import {
   CLIENT_V1_ERROR_CODES,
   CLIENT_V1_LIMITS,
   CLIENT_V1_MIN_CLIENT_VERSION,
+  CLIENT_V1_OPERATIONS,
   parseClientV1Capabilities,
+  parseClientV1Operations,
   parseClientV1Cursor,
   parseClientV1ErrorDetails,
   parseClientV1ErrorEnvelope,
@@ -19,6 +21,7 @@ import {
   type ClientV1ErrorEnvelope,
   type ClientV1EnvelopeBase,
   type ClientV1Identity,
+  type ClientV1Operation,
   type ClientV1Record,
   type ClientV1Revision,
   type ClientV1SuccessEnvelope,
@@ -27,6 +30,7 @@ import type { ClientV1RateLimitResult } from "./rate-limit.ts";
 
 export type ClientV1EnvelopeOptions = {
   capabilities?: readonly ClientV1Capability[];
+  operations?: readonly ClientV1Operation[];
   requestId?: string;
   identity?: ClientV1Identity;
   revision?: ClientV1Revision;
@@ -94,11 +98,18 @@ function defaultCapabilities(): ClientV1Capability[] {
   return [...CLIENT_V1_CAPABILITIES];
 }
 
+function defaultOperations(): ClientV1Operation[] {
+  return [...CLIENT_V1_OPERATIONS];
+}
+
 function envelopeBase(options: ClientV1EnvelopeOptions = {}): ClientV1EnvelopeBase {
   return {
     apiVersion: CLIENT_V1_API_VERSION,
     minimumClientVersion: CLIENT_V1_MIN_CLIENT_VERSION,
     capabilities: options.capabilities ? [...parseClientV1Capabilities(options.capabilities)] : defaultCapabilities(),
+    // Registry-closed on the way out, like capabilities: this is the producer
+    // side, and a build may not export an id no reviewed record backs.
+    operations: options.operations ? [...parseClientV1Operations(options.operations)] : defaultOperations(),
     ...(options.requestId !== undefined ? { requestId: parseClientV1RequestId(options.requestId) } : {}),
     ...(options.identity !== undefined
       ? { identity: cloneClientV1JsonValue(parseClientV1Identity(options.identity)) }

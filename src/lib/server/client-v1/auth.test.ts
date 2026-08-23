@@ -9,6 +9,7 @@ import {
   type ClientV1AuthResult,
 } from "./auth.ts";
 import { CLIENT_V1_PUBLIC_ROUTES } from "./contract.ts";
+import { CLIENT_V1_OPERATION_DEFINITIONS } from "./operations.ts";
 import type {
   ClientV1CredentialRecord,
   CredentialStore,
@@ -19,6 +20,7 @@ import {
   ACCESS_TOKEN_QUERY_PARAM,
   CLIENT_V1_AUTHENTICATED_PATHS,
   CLIENT_V1_PUBLIC_INGRESS,
+  LEGACY_ACCESS_PROMPT_QUERY_PARAM,
   LOCAL_PEER_HEADER,
   TAILNET_PEER_HEADER,
   TOKEN_HEADER,
@@ -347,6 +349,43 @@ test("every pre-authorized path is one the proxy hands to a client-v1 handler", 
   }
 });
 
+test("every declared operation's authority class matches what the proxy enforces", () => {
+  // The operation inventory publishes an authority class per operation
+  // (cave-8a0s2), and a client reads it to decide what it can call. Metadata
+  // that disagrees with the proxy would either promise access the proxy refuses
+  // or, worse, describe an admin route as something a paired bearer reaches.
+  //
+  // The mapping is deliberately not one-to-one: `admin` classifies NULL here,
+  // because the admin family keeps the ordinary sidecar-token gate rather than
+  // taking the client-v1 demotion. Writing that out is the point — an admin
+  // operation that started classifying "authenticated" would have been demoted
+  // to a bearer check without anyone deciding to do that.
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    const probe = operation.path.replace(/:[^/]+/gu, "probe-segment");
+    const expected =
+      operation.ingress === "public"
+        ? CLIENT_V1_PUBLIC_INGRESS
+        : operation.ingress === "authenticated"
+          ? "authenticated"
+          : null;
+    assert.equal(clientV1IngressKind(probe), expected, `${operation.id} (${probe})`);
+    // And the converse of the demotion rule: an operation the proxy
+    // pre-authorizes must be one whose own handler checks a credential, which
+    // for this surface means it declares a scope.
+    if (clientV1IngressKind(probe) === "authenticated") {
+      assert.notEqual(operation.scope, null, operation.id);
+    }
+  }
+  // No operation may claim the admin family and a non-admin authority at once.
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    assert.equal(
+      operation.path.startsWith("/api/client/v1/admin/"),
+      operation.ingress === "admin",
+      operation.id,
+    );
+  }
+});
+
 test("proxy public ingress follows the contract's public routes", () => {
   // The list above states the reviewed set; this states where it comes from.
   // CLIENT_V1_PUBLIC_ROUTES is what the discovery fixture advertises, so a
@@ -585,12 +624,16 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
       "/api/client/v1/admin/credentials",
       "/api/client/v1/private",
       "/api/client/v1/messages/send",
-      "/api/chat/conversation",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));
       assert.equal(passedThrough(response), false, route);
       assert.equal(response.status, 401, route);
     }
+
+    // Ordinary app APIs use the trusted-loopback browser exemption. They are
+    // outside Client v1's separately reviewed ingress and admin boundaries.
+    const appResponse = await proxy(proxyRequest("/api/chat/conversation", { headers }));
+    assert.equal(passedThrough(appResponse), true);
   } finally {
     restoreProxyEnv();
   }
@@ -636,6 +679,46 @@ test("client-v1 ingress is classified before legacy mobile query-token redirects
 
     assert.equal(response.status, 403);
     assert.equal(response.headers.has("location"), false);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("trusted loopback pairing query tokens are stripped before the prompt-free bypass", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+
+    for (const [token, shouldSetCookie] of [
+      ["configured-mobile-secret", true],
+      ["wrong-secret", false],
+    ] as const) {
+      const query = new URLSearchParams({
+        [ACCESS_TOKEN_QUERY_PARAM]: token,
+        [LEGACY_ACCESS_PROMPT_QUERY_PARAM]: "1",
+        mode: "focus",
+      });
+      const response = await proxy(proxyRequest(`/chat?${query}`, {
+        headers: {
+          accept: "text/html",
+          [LOCAL_PEER_HEADER]: "loopback-secret",
+        },
+      }));
+
+      assert.equal(response.status, 307);
+      assert.equal(response.headers.get("location"), `${ORIGIN}/chat?mode=focus`);
+      const cookie = response.headers.get("set-cookie");
+      if (shouldSetCookie) {
+        assert.match(cookie ?? "", /coven_cave_access=configured-mobile-secret/);
+        assert.match(cookie ?? "", /Path=\//);
+        assert.match(cookie ?? "", /HttpOnly/);
+        assert.match(cookie ?? "", /SameSite=lax/);
+      } else {
+        assert.equal(cookie, null);
+      }
+    }
   } finally {
     restoreProxyEnv();
   }

@@ -1177,8 +1177,9 @@ function shouldRejectUnauthenticatedPtyUpgrade({
   sidecarTokenConfigured = false,
   accessTokenConfigured = false,
   tokenAuthenticated = false,
+  directLoopback = false,
 } = {}) {
-  if (tokenAuthenticated) return false;
+  if (tokenAuthenticated || directLoopback) return false;
   return sidecarTokenConfigured || accessTokenConfigured;
 }
 
@@ -1684,21 +1685,14 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Any configured PTY credential closes the credential-less path, including
-  // direct loopback: another local account or process is not the paired app.
-  // Plain development remains credential-less only when neither token exists.
-  //
-  // Keep the credential-less case exactly that narrow. #714 removed it and
-  // 401'd every local terminal, reintroducing the v0.0.72 "Terminal connection
-  // failed" regression that server-pty-ws.test.ts still guards. What makes
-  // closing it safe HERE is that both peers now have a credential to present:
-  // the Tauri shell its per-launch sidecar token, and a local browser the
-  // access gate. TCP loopback proves only that the caller is on this machine,
-  // never which OS user it is.
+  // Direct, unforwarded loopback is the browser's no-prompt PTY path. Remote
+  // and forwarded clients still need a configured credential before they can
+  // spawn or adopt a shell.
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
     accessTokenConfigured: Boolean(accessToken()),
     tokenAuthenticated,
+    directLoopback: isDirectLoopbackRequest(req),
   })) {
     socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
@@ -1833,6 +1827,17 @@ if (allowedTailnetNodeIds().size > 0) {
 
 server.once("error", (err: NodeJS.ErrnoException) => {
   cleanupStandaloneClientV1Discovery();
+  // The launcher keeps a bounded tail of this output and shows it verbatim when
+  // the sidecar dies before it is ready (src-tauri/src/sidecar_startup.rs).
+  // Printing the Error object alone put a stack and a properties dump —
+  // `errno: -4091, syscall: 'listen'` — on the desktop startup screen, in front
+  // of someone whose only real problem was that another copy already held the
+  // port. Lead with one legible line; the object still follows it for the log.
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `> Port ${port} on ${hostname} is already in use (EADDRINUSE); CovenCave cannot serve here.`,
+    );
+  }
   console.error(err);
   process.exit(1);
 });

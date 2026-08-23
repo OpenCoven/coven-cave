@@ -1733,7 +1733,11 @@ fn run_sidecar_daemon() -> Result<i32, String> {
 
     let mut command = Command::new(&node);
     command
-        .arg(&server_entry)
+        // Same chosen old-space ceiling as the GUI's sidecar. This spawn site is
+        // the daemon lane for the SAME server entry, so leaving it on V8's
+        // host-derived default would mean the ceiling depended on which lane
+        // started the server. See src-tauri/src/sidecar_heap.rs.
+        .args(crate::sidecar_heap::sidecar_node_args(&server_entry))
         .current_dir(&server_dir)
         .env("PATH", daemon_augmented_path(&node))
         .env("PORT", port.to_string())

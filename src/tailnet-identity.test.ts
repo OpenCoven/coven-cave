@@ -93,8 +93,8 @@ assert.equal(
 );
 assert.equal(
   shouldRequireMobileAccessCredential("127.0.0.1:3000", false, true, false),
-  true,
-  "socket-verified loopback is not OS-user identity",
+  false,
+  "socket-verified direct loopback is the prompt-free local browser path",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("127.0.0.1:3000", false, false, false),

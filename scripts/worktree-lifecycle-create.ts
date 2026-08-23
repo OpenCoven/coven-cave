@@ -16,6 +16,7 @@ import {
 } from "../src/lib/worktree-lifecycle.ts";
 import {
   collectWorktreeLifecycleInventory,
+  discountUnrepresentableExecutableBitChanges,
   type OrphanedWorktreeMetadataRecord,
   type WorktreeMetadataClaimError,
 } from "./worktree-lifecycle-inventory.ts";
@@ -1071,6 +1072,10 @@ type FenceRefusal = {
   holderHost?: string;
   phase?: string;
   expiresAt?: string;
+  covenBinary?: string;
+  covenVersion?: string;
+  covenVersionOutput?: string;
+  covenMinimumVersion?: string;
 };
 
 function heartbeatBoth(leases: MaintenanceFence[], stage: string): void {
@@ -1298,8 +1303,16 @@ function cleanForCompensation(
     return { ok: false, reason: status.stderr || "git status failed" };
   }
   const entries = status.stdout.split("\0").filter(Boolean);
-  const changes = entries.filter(
-    (entry) => !entry.startsWith("# ") && !entry.startsWith("! "),
+  // Same filesystem artifact as the inventory's statusState: on a filesystem
+  // with no executable bit the forced `core.fileMode=true` above reports every
+  // tracked 100755 file as modified, which made this compensation refuse to roll
+  // back a worktree it had just created seconds earlier.
+  const changes = discountUnrepresentableExecutableBitChanges(
+    worktreePath,
+    entries.filter(
+      (entry) => !entry.startsWith("# ") && !entry.startsWith("! "),
+    ),
+    git,
   );
   const nonDisposableIgnored = entries
     .filter((entry) => entry.startsWith("! "))

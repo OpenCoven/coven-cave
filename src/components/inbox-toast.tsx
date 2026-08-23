@@ -51,9 +51,10 @@ const KIND_ACCENT: Record<NonNullable<Toast["kind"]>, string> = {
 };
 
 export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen }: Props) {
-  // Hover or focus anywhere inside a toast pauses its auto-hide (WCAG 2.2.1) —
-  // content stopped vanishing mid-read. Unpausing re-arms the full window,
-  // the generous simple option (no per-toast remaining-time bookkeeping).
+  // Hover (with a hovering pointer) or focus anywhere inside a toast pauses
+  // its auto-hide (WCAG 2.2.1) — content stopped vanishing mid-read.
+  // Unpausing re-arms the full window, the generous simple option (no
+  // per-toast remaining-time bookkeeping).
   const [pausedIds, setPausedIds] = useState<ReadonlySet<string>>(new Set());
   const setPaused = (ids: readonly string[], paused: boolean) =>
     setPausedIds((prev) => {
@@ -87,7 +88,10 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
   const overflow = groups.length - visible.length;
 
   return (
-    <div className="pointer-events-none fixed top-4 right-4 z-50 flex w-80 flex-col gap-2">
+    // Geometry lives in dash-act.css, not in utilities here: the phone layout
+    // has to clear the shell's top-right chrome, which a single desktop-shaped
+    // set of utilities cannot express (cave-lcxc6).
+    <div className="inbox-toast-stack">
       {visible.map((g) => {
         const t = g.lead;
         const title = normalizeInboxTitle(t.title);
@@ -101,8 +105,15 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
           role={urgent ? "alert" : "status"}
           aria-live={urgent ? "assertive" : "polite"}
           aria-atomic="true"
-          onMouseEnter={() => setPaused(g.ids, true)}
-          onMouseLeave={() => setPaused(g.ids, false)}
+          // Hover-pause is for a pointer that can hover. A touch tap also
+          // raises pointerenter, but the matching pointerleave only arrives
+          // when the user taps somewhere else — so a stray tap on the card
+          // (missing the ✕) pinned the auto-hide open indefinitely and the
+          // "transient" notification became permanent. Gate on pointer type
+          // and the touch case simply keeps its 8s window; keyboard users
+          // still get an unbounded pause through onFocus below.
+          onPointerEnter={(e) => { if (e.pointerType !== "touch") setPaused(g.ids, true); }}
+          onPointerLeave={(e) => { if (e.pointerType !== "touch") setPaused(g.ids, false); }}
           onFocus={() => setPaused(g.ids, true)}
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(g.ids, false);
