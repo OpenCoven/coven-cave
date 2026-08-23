@@ -99,8 +99,13 @@ assert.match(
 );
 assert.match(
   picker,
-  /Show \{hiddenProjectCount\} more project/,
+  /`Show \$\{hiddenProjectCount\} more project\$\{hiddenProjectCount === 1 \? "" : "s"\}`/,
   "the bounded list exposes the remaining project count",
+);
+assert.match(
+  picker,
+  /key="project-list-toggle"[\s\S]*setShowAllProjects\(\(current\) => !current\)[\s\S]*Show fewer projects/,
+  "the expansion control remains mounted as a collapse control so keyboard focus is preserved",
 );
 
 console.log("project-picker-frecency.test.ts: ok");
