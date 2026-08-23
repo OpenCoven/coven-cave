@@ -72,6 +72,7 @@ const {
 } = await import("./research-mission-x-runtime.ts");
 const {
   cacheNormalizedXPosts,
+  getCachedXPost,
   listSavedXSources,
   setXSourceMissionAttached,
   upsertSavedXSource,
@@ -386,6 +387,147 @@ test("a mission with no attached X sources touches neither X nor the network, an
   });
 
   assert.deepEqual(hydration.files, []);
+  assert.deepEqual(await runtimeFiles(mission.id), []);
+});
+
+// ---------------------------------------------------------------------------
+// Cache expiry — the boundary every test above reads through blindly
+// ---------------------------------------------------------------------------
+// cave-gbqwe. This suite could not see its own fuse. Every test above seeds
+// through `cacheLivePost`, which anchors to the real clock, so none of them can
+// tell a 24h TTL from an infinite one: mutating `x-sources` to never expire a
+// cache entry ran against this file at 27 passed / 0 failed. That is why the
+// original bomb (cave-p36ov) was invisible from inside its own suite for a
+// whole day — the file exercises hydration heavily and expiry not at all, even
+// though hydration's answer for every attached post turns on it.
+//
+// The dependency is real and unavoidable: `hydrateMissionXSources` resolves a
+// post through `deps.getCachedXPost`, whose production wiring is
+// `(postId) => sources.getCachedXPost(postId)` — one argument, so the clock is
+// `new Date()` and freshness is decided by comparing the stored `expiresAt`
+// against it. An entry that never dies means hydration never re-fetches; an
+// entry that dies too early means it always does. Neither is visible above.
+//
+// These are the only instants in this file read back through the same instants
+// they were written with, and that is deliberate rather than an exception to
+// `cacheLivePost`'s rule. The relationship asserted below holds BETWEEN two
+// fixtures and never consults the wall clock, so these tests behave identically
+// today, tomorrow, and a decade after any date written here — they pin the
+// boundary without re-arming what #4942 defused.
+const CACHED_AT = new Date("2026-05-01T00:00:00.000Z");
+/** One millisecond short of the TTL: the last instant the entry is still served. */
+const LAST_LIVE_AT = new Date("2026-05-01T23:59:59.999Z");
+/** Exactly one TTL after `CACHED_AT`. An entry is dead AT this instant, not after it. */
+const EXPIRES_AT = new Date("2026-05-02T00:00:00.000Z");
+/** One millisecond past the TTL. */
+const EXPIRED_AT = new Date("2026-05-02T00:00:00.001Z");
+
+test("a cached post is served through its TTL and gone at the expiry instant", async () => {
+  await cacheNormalizedXPosts([post("9001"), post("9002")], CACHED_AT);
+
+  // The lifetime the entry itself claims. Asserted against instants spelled out
+  // here rather than against the module's TTL constant, so shortening or
+  // lengthening that constant breaks this test instead of moving with it.
+  const entry = JSON.parse(await readFile(path.join(cacheDir, "9001.json"), "utf8")) as {
+    fetchedAt: string;
+    expiresAt: string;
+  };
+  assert.equal(entry.fetchedAt, CACHED_AT.toISOString(), "the entry is stamped when it is cached");
+  assert.equal(entry.expiresAt, EXPIRES_AT.toISOString(), "and lives exactly 24h from that stamp");
+
+  const stillLive = await getCachedXPost("9001", LAST_LIVE_AT);
+  assert.equal(
+    stillLive?.text,
+    POST_TEXT,
+    "an entry one millisecond short of its TTL is still served from cache",
+  );
+  assert.ok(
+    (await readdir(cacheDir)).includes("9001.json"),
+    "and reading a live entry must not evict it",
+  );
+
+  assert.equal(
+    await getCachedXPost("9001", EXPIRES_AT),
+    null,
+    "an entry is dead AT its expiry instant, not a millisecond later",
+  );
+  await assert.rejects(
+    () => readFile(path.join(cacheDir, "9001.json"), "utf8"),
+    /ENOENT/,
+    "an expired entry is dropped from disk rather than left for the next reader",
+  );
+
+  assert.equal(
+    await getCachedXPost("9002", EXPIRED_AT),
+    null,
+    "an entry past its expiry is not served either",
+  );
+});
+
+test("hydration serves an attached post from cache while its entry is inside the TTL", async () => {
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "9003");
+  await cacheNormalizedXPosts([post("9003")], CACHED_AT);
+
+  // Production wires `getCachedXPost: (postId) => sources.getCachedXPost(postId)`,
+  // which reads the wall clock. This override is that same call with the
+  // instant named — the only way to drive the boundary hydration depends on
+  // without waiting a day for the calendar to do it.
+  const hydration = await hydrateMissionXSources(mission, {
+    getCachedXPost: (postId) => getCachedXPost(postId, LAST_LIVE_AT),
+  });
+
+  // The default responder throws, so any upstream attempt would fail the call
+  // outright; the count says which side of the boundary answered.
+  assert.equal(upstreamCalls, 0, "a live entry satisfies hydration without asking X");
+  assert.deepEqual(hydration.files.map((file) => file.postId), ["9003"]);
+  assert.deepEqual(await runtimeFiles(mission.id), ["x-post-9003.md"]);
+});
+
+test("hydration treats an attached post past its cache TTL as a miss and re-fetches it", async () => {
+  const stale = "the stale body that must never reach the run";
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "9004");
+  await cacheNormalizedXPosts([post("9004", stale)], CACHED_AT);
+  respond = async () => lookupResponse("9004");
+
+  const hydration = await hydrateMissionXSources(mission, {
+    getCachedXPost: (postId) => getCachedXPost(postId, EXPIRED_AT),
+  });
+
+  assert.equal(upstreamCalls, 1, "an entry past its expiry cannot answer for the post");
+  const written = await readFile(path.join(runtimeDir(mission.id), "x-post-9004.md"), "utf8");
+  assert.ok(written.includes(POST_TEXT), "the iteration reads the re-fetched post");
+  assert.ok(!written.includes(stale), "an expired entry's body never reaches the iteration");
+  assert.deepEqual(hydration.unavailable, []);
+});
+
+test("an expired cache entry whose refetch fails stops the launch instead of serving stale text", async () => {
+  // The exact shape of the incident, induced deliberately rather than by the
+  // calendar: the seeded entry dies, hydration therefore has to ask X, and X
+  // refuses. An immortal cache turns this failure back into a silent success —
+  // which is what "a failure path resolving instead of failing closed" looked
+  // like from the outside when the real clock crossed the TTL.
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "9005");
+  await cacheNormalizedXPosts([post("9005")], CACHED_AT);
+  respond = async () => errorResponse(429);
+
+  const error = await hydrateMissionXSources(mission, {
+    getCachedXPost: (postId) => getCachedXPost(postId, EXPIRED_AT),
+  }).then(
+    () => null,
+    (thrown: unknown) => thrown,
+  );
+
+  assert.ok(
+    error instanceof ResearchMissionXHydrationError,
+    "an expired entry is a cache MISS, so the launch fails closed",
+  );
+  assert.equal(
+    (error as InstanceType<typeof ResearchMissionXHydrationError>).code,
+    "rate-limited",
+  );
   assert.deepEqual(await runtimeFiles(mission.id), []);
 });
 
