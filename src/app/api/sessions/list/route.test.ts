@@ -5,7 +5,16 @@ import { readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+// The computation moved to @/lib/server/sessions-list (cave-9rwd.1). The route
+// keeps query parsing, the familiar-id guard, and cache ownership; each source
+// assertion below now reads whichever file actually holds the behaviour it
+// describes. The behavioural suite further down still drives route.GET
+// end-to-end, so the extraction is covered by execution and not only by text.
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+const helper = readFileSync(
+  new URL("../../../../lib/server/sessions-list.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -25,30 +34,40 @@ assert.match(
   "the collapse flag is threaded into computeSessionsList",
 );
 
-assert.match(
+// No options argument: the route must keep the auto-archive sweeps and git
+// enrichment it has always run. The dashboard read is the caller that opts out,
+// and this pins the route to the default so the extraction cannot quietly
+// disable the sweeps for the poll that is the only thing driving them.
+assert.doesNotMatch(
   source,
+  /computeSessionsList\([^)]*sweepArchives/,
+  "the list route uses default compute options (sweeps and git enrichment on)",
+);
+
+assert.match(
+  helper,
   /if \(!collapseFamiliarWorkspace\) return sessions;/,
   "the collapse helper is a no-op (and skips the FS read) when the flag is off",
 );
 
 assert.equal(
-  (source.match(/applyFamiliarWorkspaceCollapse\(/g) || []).length,
+  (helper.match(/applyFamiliarWorkspaceCollapse\(/g) || []).length,
   3,
   "applyFamiliarWorkspaceCollapse is defined once and called in BOTH the happy and degraded paths",
 );
 
 assert.match(
-  source,
+  helper,
   /if \(hasActiveChatRun\(conv\.sessionId\)\) return \{ \.\.\.conv, status: "running", exitCode: 0 \};\s*\n\s*if \(conv\.pending\) return \{ \.\.\.conv, status: "failed", exitCode: 1 \};\s*\n\s*return conv;/,
   "projection-live conversations stay running via the live-run registry while inactive pending stubs fail",
 );
 assert.match(
-  source,
+  helper,
   /import \{ hasActiveChatRun \} from "@\/lib\/server\/chat-stop-registry"/,
   "the liveness probe comes from the in-process chat run registry",
 );
 assert.match(
-  source,
+  helper,
   /mergeSessionRows\(\{[\s\S]*?\}\)\.map\(\(session\) =>\s*\n?\s*hasActiveChatRun\(session\.id\)\s*\n?\s*\? \{ \.\.\.session, status: "running", exit_code: 0, attention: NO_CHAT_ATTENTION \}\s*\n?\s*: session\s*\)/,
   "registry liveness overrides merged daemon status and stale attention",
 );

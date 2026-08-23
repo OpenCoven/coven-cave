@@ -328,6 +328,8 @@ export const SUITES = {
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/auto-mission-state.test.ts",
+    "src/lib/auto-mission-presence.test.ts",
+    "src/components/running-sessions-mission-row.test.ts",
     "src/lib/auto-mode-preferences.test.ts",
     "src/lib/reader-rewrite.test.ts",
     "src/lib/reader-provenance.test.ts",
@@ -1437,6 +1439,7 @@ export const SUITES = {
     "src/app/api/opencoven-executions-route.test.ts",
     "src/app/api/opencoven-submissions-route.test.ts",
     "src/app/api/familiars/route.test.ts",
+    "src/app/api/familiars/[id]/dashboard/route.test.ts",
     "src/app/api/familiars/[id]/avatar/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
@@ -1511,6 +1514,7 @@ export const SUITES = {
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/sessions/list/route.test.ts",
+    "src/lib/server/sessions-list.test.ts",
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
     "src/app/api/chat/send/chat-attention-persistence.test.ts",
@@ -1603,6 +1607,8 @@ export const SUITES = {
     "src/lib/github-tasks-cache.test.ts",
     "src/lib/swr-cache.test.ts",
     "src/lib/server/sessions-list-cache.test.ts",
+    "src/lib/familiar-dashboard.test.ts",
+    "src/lib/server/familiar-dashboard-data.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
     "src/lib/server/familiar-contract-context.test.ts",
@@ -1889,6 +1895,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // Renders RunningSessionList, which resolves "@/lib/icon", "@/lib/types"
+  // and friends, and the spec itself imports "@/lib/auto-mission-state".
+  "src/components/running-sessions-mission-row.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",
   "src/app/api/client/v1/pairing/requests/route.test.ts",
@@ -1995,6 +2004,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/sessions/list/route.test.ts",
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
+  "src/app/api/familiars/[id]/dashboard/route.test.ts",
+  "src/lib/server/familiar-dashboard-data.test.ts",
+  "src/lib/server/sessions-list.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
   "src/lib/opencode-compatibility.test.ts",
