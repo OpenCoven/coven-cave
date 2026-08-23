@@ -34,6 +34,7 @@ import {
   GenerationConfigModal,
   GenerationReviewModal,
 } from "./research-studio-modals";
+import { StandardSelect } from "@/components/ui/select";
 import { elevenLabsDeliveryPreset } from "@/lib/voice/elevenlabs-shared";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -105,6 +106,20 @@ function byId(renderer: ReturnType<typeof create>, id: string) {
   );
 }
 
+/**
+ * The design system forbids a native <select>, so the two dropdowns are
+ * StandardSelect. Reach them by the primitive's own contract — its `options`
+ * and `onChange` — rather than by the popover markup it happens to render.
+ */
+function selectById(renderer: ReturnType<typeof create>, id: string) {
+  return (
+    renderer.root.findAll(
+      (node) => node.type === StandardSelect && node.props.id === id,
+      { deep: true },
+    )[0] ?? null
+  );
+}
+
 function textOf(node: unknown): string {
   if (node === null || node === undefined || node === false) return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -126,10 +141,18 @@ describe("Studio podcast delivery controls", () => {
       expect(byId(renderer, id), id).not.toBeNull();
     }
     // Every preset is offered, in the order the shared module defines.
-    const options = byId(renderer, "research-studio-config-delivery")
-      .findAllByType("option")
-      .map((option) => option.props.value);
-    expect(options).toEqual(["neutral", "conversational", "animated", "narration"]);
+    expect(
+      selectById(renderer, "research-studio-config-delivery").props.options.map(
+        (option: { value: string }) => option.value,
+      ),
+    ).toEqual(["neutral", "conversational", "animated", "narration"]);
+    // The model list keeps an explicit "use the pipeline default" entry, so
+    // choosing a model is never a one-way door in the dialog.
+    expect(
+      selectById(renderer, "research-studio-config-model").props.options.map(
+        (option: { value: string }) => option.value,
+      ),
+    ).toEqual(["", "eleven_multilingual_v2", "eleven_v3", "eleven_turbo_v2_5"]);
   });
 
   test("stay hidden where the render contract would reject them", () => {
@@ -151,12 +174,12 @@ describe("Studio podcast delivery controls", () => {
   test("report the chosen direction back to the Studio", () => {
     const { renderer, calls } = renderConfig();
     act(() => {
-      byId(renderer, "research-studio-config-delivery").props.onChange({
-        target: { value: "animated" },
-      });
-      byId(renderer, "research-studio-config-model").props.onChange({
-        target: { value: "eleven_v3" },
-      });
+      selectById(renderer, "research-studio-config-delivery").props.onChange(
+        "animated",
+      );
+      selectById(renderer, "research-studio-config-model").props.onChange(
+        "eleven_v3",
+      );
       byId(renderer, "research-studio-config-seed").props.onChange({
         target: { value: "20260823" },
       });

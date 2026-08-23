@@ -33,6 +33,7 @@ import { MarkdownBlock } from "@/components/message-bubble";
 import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { StandardSelect } from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
 import { useResearchMediaUrl } from "@/lib/research-media-client";
 import {
@@ -989,23 +990,18 @@ export function GenerationConfigModal({
                   >
                     Delivery
                   </label>
-                  <select
+                  <StandardSelect<ElevenLabsDeliveryPresetId>
                     id="research-studio-config-delivery"
+                    label="Delivery"
                     className="research-studio__select focus-ring"
                     value={mediaDelivery}
                     aria-describedby="research-studio-config-delivery-help"
-                    onChange={(event) =>
-                      onMediaDeliveryChange(
-                        event.target.value as ElevenLabsDeliveryPresetId,
-                      )
-                    }
-                  >
-                    {ELEVENLABS_DELIVERY_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={onMediaDeliveryChange}
+                    options={ELEVENLABS_DELIVERY_PRESETS.map((preset) => ({
+                      value: preset.id,
+                      label: preset.label,
+                    }))}
+                  />
                   <span
                     id="research-studio-config-delivery-help"
                     className="research-studio-config__hint"
@@ -1022,20 +1018,21 @@ export function GenerationConfigModal({
                   >
                     Render model
                   </label>
-                  <select
+                  <StandardSelect<string>
                     id="research-studio-config-model"
+                    label="Render model"
                     className="research-studio__select focus-ring"
                     value={mediaModel}
                     aria-describedby="research-studio-config-model-help"
-                    onChange={(event) => onMediaModelChange(event.target.value)}
-                  >
-                    <option value="">Default for offline renders</option>
-                    {ELEVENLABS_PODCAST_MODEL_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={onMediaModelChange}
+                    options={[
+                      { value: "", label: "Default for offline renders" },
+                      ...ELEVENLABS_PODCAST_MODEL_OPTIONS.map((option) => ({
+                        value: option.id,
+                        label: option.label,
+                      })),
+                    ]}
+                  />
                   <span
                     id="research-studio-config-model-help"
                     className="research-studio-config__hint"
