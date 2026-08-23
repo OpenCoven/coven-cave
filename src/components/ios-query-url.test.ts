@@ -15,7 +15,15 @@ const client = readFileSync(
   "utf8",
 );
 
-const requestFn = client.match(/private func request\([\s\S]*?\n    \}/)?.[0] ?? "";
+// The visibility is deliberately open-ended. This test guards how the request
+// is BUILT — split the query off, append only the path, reattach without
+// double-encoding — and none of that depends on whether the builder is private
+// or internal. Anchoring the locator on `private` made a widening of the
+// visibility (so sibling client extensions in other files could reuse the one
+// correct builder instead of copying it) read as "request() must exist" going
+// false, which is the least informative way this test could ever fail.
+const requestFn =
+  client.match(/(?:private\s+)?func request\([\s\S]*?\n    \}/)?.[0] ?? "";
 assert.ok(requestFn, "CaveClient.request(_:) must exist");
 
 // The query must be split off the path before path-appending…
