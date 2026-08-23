@@ -113,6 +113,7 @@ export const SUITES = {
     "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
+    "src/lib/research-chat-command.test.ts",
     "src/lib/research-prompt-brief.test.ts",
     "src/lib/research-refine-direction.test.ts",
     "src/lib/research-autoloop.test.ts",
@@ -145,6 +146,7 @@ export const SUITES = {
     "src/components/role-surfaces/use-research-links.test.ts",
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
+    "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
     "src/lib/research-generations.test.ts",
     "src/lib/research-paper-view.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
@@ -2243,6 +2245,7 @@ const VITEST_TESTS = new Set([
   // drives the Studio config + review dialogs through react-test-renderer
   "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
   "src/components/role-surfaces/use-research-missions.test.tsx",
+  "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
   "src/components/voice-provider-settings.test.tsx",
   "src/components/voice-provider-settings.integration.test.tsx",
   "src/components/use-openai-voice-preview.test.tsx",

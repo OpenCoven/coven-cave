@@ -11,9 +11,11 @@ const commandsSheet = await read(`${iosRoot}/Views/CommandsSheet.swift`);
 
 const desktopCommands = [...desktopSlash.matchAll(/name: "(\/[^"]+)"/g)]
   .map((match) => match[1])
-  // /canvas is retired on iOS; /save stays off the native catalog while the
-  // Library feature lives on feature/library (ios-library-isolation guard).
-  .filter((name) => !["/canvas", "/save", "/rituals", "/projects", "/terminal"].includes(name));
+  // /canvas is retired on iOS; /save and /research stay off the native catalog
+  // while the Library feature lives on feature/library — ios-library-isolation
+  // asserts the catalog mentions neither, so listing them here would make the
+  // two guards contradict each other.
+  .filter((name) => !["/canvas", "/save", "/research", "/rituals", "/projects", "/terminal"].includes(name));
 
 for (const command of desktopCommands) {
   assert.match(

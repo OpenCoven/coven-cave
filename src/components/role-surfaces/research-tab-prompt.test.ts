@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  createResearchMissionInputFromIntent,
   defaultResearchPlan,
   inferResearchMissionMode,
 } from "../../lib/research-mission-routing.ts";
@@ -268,9 +269,15 @@ test("suggested topics use shared grounded cards and retain explicit Research ac
   assert.match(promptTab, /Started mission ".+"\./);
   assert.match(promptTab, /Refined mission ".+"\./);
   assert.match(promptTab, /state=\{agenticCardState/);
-  assert.match(composer, /export function createRecommendedResearchMissionInput/);
-  assert.match(composer, /inferResearchMissionMode\(intent\)/);
-  assert.match(composer, /modeSource: "auto"/);
+  // "Start mission" builds its request through the shared intent→run builder,
+  // so assert the built request rather than the call site's spelling: the mode
+  // is auto-routed from the topic and no inferred title is persisted.
+  const started = createResearchMissionInputFromIntent("nova", "  compare two vector stores  ");
+  assert.equal(started.modeSource, "auto");
+  assert.equal(started.mode, inferResearchMissionMode("compare two vector stores").mode);
+  assert.equal(started.intent, "compare two vector stores");
+  assert.equal(started.title, undefined);
+  assert.deepEqual(started.bounds, defaultResearchPlan(started.mode).bounds);
   assert.doesNotMatch(promptTab, /title: payload\.topic/);
   assert.match(promptTab, /function focusResearchDesk/);
   assert.match(promptTab, /const draftRef = useRef\(draft\)/);
