@@ -83,6 +83,19 @@ enum ChatModelInventoryProvenancePresentation {
         }
     }
 
+    static func notice(for provenance: String?) -> String? {
+        switch normalized(provenance) {
+        case "cached":
+            return "Model choices may be out of date."
+        case "fallback":
+            return "Showing built-in model choices."
+        case "unavailable":
+            return "Couldn’t refresh model choices."
+        default:
+            return nil
+        }
+    }
+
     private static func normalized(_ provenance: String?) -> String? {
         guard let provenance else { return nil }
         let value = provenance.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -210,9 +223,6 @@ struct ChatModelBar: View {
                 HStack(spacing: 5) {
                     Image(systemName: "cpu").font(.system(size: 11, weight: .medium))
                     Text(label).font(.caption.weight(.medium)).lineLimit(1)
-                    Text(ChatModelInventoryProvenancePresentation.compactLabel(for: presentedProvenance))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                     if busy {
                         ProgressView().controlSize(.mini)
                     } else {
@@ -224,9 +234,7 @@ struct ChatModelBar: View {
                 .glassFill(.control, in: Capsule())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(
-                "Model: \(label). \(ChatModelInventoryProvenancePresentation.label(for: presentedProvenance)). Tap to change."
-            )
+            .accessibilityLabel("Model: \(label). Tap to change.")
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
             .padding(.bottom, 4)
@@ -366,15 +374,11 @@ struct ModelPickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Inventory") {
-                    Label(
-                        ChatModelInventoryProvenancePresentation.label(for: provenance),
-                        systemImage: "info.circle"
-                    )
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(
-                        ChatModelInventoryProvenancePresentation.label(for: provenance)
-                    )
+                if let notice = ChatModelInventoryProvenancePresentation.notice(for: provenance) {
+                    Section {
+                        Label(notice, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 // The active choice leads the sheet so "what am I talking to"
                 // is answered before any option scanning.

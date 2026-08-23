@@ -231,6 +231,7 @@ struct ProjectContextButton: View {
             label: primaryLabel,
             sublabel: secondaryLabel,
             active: app.projectContext != nil,
+            fillsWidth: true,
             accessibilityHint: "Opens the project switcher.",
             action: action
         ) {

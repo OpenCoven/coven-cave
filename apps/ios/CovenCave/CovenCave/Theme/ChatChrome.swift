@@ -115,6 +115,7 @@ struct PillSelector<Leading: View>: View {
     var sublabel: String? = nil
     var chevron: Bool = true
     var active: Bool = false
+    var fillsWidth: Bool = false
     var accessibilityHint: String? = nil
     var action: () -> Void
     @ViewBuilder var leading: Leading
@@ -134,6 +135,9 @@ struct PillSelector<Leading: View>: View {
                             .lineLimit(1)
                     }
                 }
+                if fillsWidth {
+                    Spacer(minLength: 8)
+                }
                 if chevron {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
@@ -142,6 +146,7 @@ struct PillSelector<Leading: View>: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
             .glass(.control, in: Capsule())
             .accentGlow(active: active)
         }
