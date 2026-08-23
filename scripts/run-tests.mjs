@@ -94,6 +94,7 @@ export const SUITES = {
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-lifecycle-filemode.test.mjs",
+    "scripts/worktree-lifecycle-windows-cwd.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
     "scripts/remote-hygiene.test.mjs",
@@ -1873,6 +1874,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",
+  "scripts/worktree-lifecycle-windows-cwd.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
