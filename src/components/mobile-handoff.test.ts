@@ -370,10 +370,15 @@ assert.doesNotMatch(
   "API must not use the request URL Host port as the backend Serve target",
 );
 assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscale/, "API should give an actionable dev hint when the access token is missing");
+// `await` since cave-fawvh: provisioning restricts the state directory and the
+// token file to this user before handing back a plaintext secret, and on
+// Windows that means reading a DACL out of a subprocess. The `await` is part of
+// what this pin protects — dropping it would resolve the guard to a Promise,
+// which is truthy, so `if (!access)` would sail past a refusal.
 assert.match(
   handoffRoute,
-  /async function ensureNativeAppServe[\s\S]*?const access = resolveMobileAccessSecret\(\);[\s\S]*?if \(!access\) \{[\s\S]*?return mobileAccessUnavailableResponse\(\)/,
-  "native app mobile-mode start must resolve (or self-provision) the mobile access secret before starting Tailscale Serve",
+  /async function ensureNativeAppServe[\s\S]*?const access = await resolveMobileAccessSecret\(\);[\s\S]*?if \(!access\) \{[\s\S]*?return mobileAccessUnavailableResponse\(\)/,
+  "native app mobile-mode start must await resolving (or self-provisioning) the mobile access secret before starting Tailscale Serve",
 );
 assert.match(settingsShell, /<PhoneSection onUseAsHub=/, "Settings should render the focused Phone section");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");

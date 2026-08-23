@@ -17,6 +17,144 @@ const execFileAsync = promisify(execFile);
 const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
 
+// ── The unverified-ownership waiver ─────────────────────────────────────────
+// The four constants below, `resolveUnverifiedOwnershipWaiver`, and the three
+// message builders after it are duplicated verbatim in server.ts, for the same
+// reason the PowerShell above is (`build:server` runs esbuild with
+// `--bundle=false`, so server.mjs cannot import this module). discovery.test.ts
+// compares each of those regions byte-for-byte and fails if they drift.
+//
+// This exists because reading the DACL is not possible on every Windows host.
+// Measured on Windows 11: PowerShell under Constrained Language Mode answers
+// the probe with `MethodInvocationNotSupportedInConstrainedLanguage` and exit
+// 1, and a `powershell.exe` absent from %SystemRoot% answers with ENOENT. Both
+// are WDAC/AppLocker-managed configurations, and on both the guard threw at
+// boot — which server.ts turned into `process.exit(1)`, so the app would not
+// start and there was no remedy reachable from inside it.
+//
+// The waiver is deliberately narrow. It covers ONE condition: the probe could
+// not answer at all. It never covers a DACL that WAS read and found shared —
+// that has a remedy the operator can run (`icacls <path> /reset`), and
+// admitting it is exactly the "reads as protection, provides none" defect
+// #4842 was filed about. Nor does it cover a POSIX uid mismatch, or a platform
+// with neither a uid nor an ACL.
+const UNVERIFIED_OWNERSHIP_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP";
+const UNVERIFIED_OWNERSHIP_REASON_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON";
+const UNVERIFIED_OWNERSHIP_TOKEN = "i-accept-unverified-path-ownership";
+const UNVERIFIED_OWNERSHIP_MIN_REASON = 12;
+
+type UnverifiedOwnershipWaiver =
+  | { granted: true; reason: string }
+  | { granted: false; note: string };
+
+/**
+ * Whether the operator has explicitly, attributably waived an unreadable DACL.
+ *
+ * Three properties make this impossible to trip by accident, and they are the
+ * point rather than ceremony:
+ *
+ * 1. The value is an exact sentence, not a boolean. Every other switch in this
+ *    codebase is `=1`, so an operator working from memory reaches for that —
+ *    and `1`, `true`, `yes` and a case-shifted token all do nothing here and
+ *    say so. Nothing an init script, a container image, or a CI matrix sets by
+ *    habit can satisfy it.
+ * 2. A second variable must carry a real sentence naming who accepted this and
+ *    why. Setting one variable is never enough, and the text is what turns up
+ *    in the log line the app then prints on every boot.
+ * 3. It is consulted at exactly one place — an unreadable DACL — so even a
+ *    correctly-set waiver cannot admit a path the probe read and refused.
+ *
+ * The house pattern for this is `release.yml`'s `allow_unconfigured_*` inputs:
+ * the hatch exists, it is manual and named, and pulling it is *disclosed* in
+ * the artifact it produces (cave-yp21x). The disclosure here is the warning the
+ * caller prints, once per waived path, plus the boot banner in server.ts.
+ */
+function resolveUnverifiedOwnershipWaiver(
+  env: Record<string, string | undefined>,
+): UnverifiedOwnershipWaiver {
+  const requested = env[UNVERIFIED_OWNERSHIP_ENV]?.trim() ?? "";
+  if (!requested) {
+    return {
+      granted: false,
+      note:
+        `If the DACL genuinely cannot be read on this host — PowerShell in `
+        + `Constrained Language Mode, or no powershell.exe under %SystemRoot% — `
+        + `set ${UNVERIFIED_OWNERSHIP_ENV}=${UNVERIFIED_OWNERSHIP_TOKEN} and `
+        + `${UNVERIFIED_OWNERSHIP_REASON_ENV} to a sentence naming who accepted `
+        + `that and why. It waives only an unreadable DACL, never one that was `
+        + `read and found shared.`,
+    };
+  }
+  if (requested !== UNVERIFIED_OWNERSHIP_TOKEN) {
+    return {
+      granted: false,
+      note:
+        `${UNVERIFIED_OWNERSHIP_ENV} is set, but not to the waiver: the only `
+        + `accepted value is the exact string ${UNVERIFIED_OWNERSHIP_TOKEN}. A `
+        + `boolean-shaped value ("1", "true", "yes") never waives this check.`,
+    };
+  }
+  const reason = env[UNVERIFIED_OWNERSHIP_REASON_ENV]?.trim() ?? "";
+  if (reason.length < UNVERIFIED_OWNERSHIP_MIN_REASON) {
+    return {
+      granted: false,
+      note:
+        `${UNVERIFIED_OWNERSHIP_ENV} is set, but ${UNVERIFIED_OWNERSHIP_REASON_ENV} `
+        + `must carry at least ${UNVERIFIED_OWNERSHIP_MIN_REASON} characters naming `
+        + `who accepted an unverified path and why. The waiver stays closed `
+        + `without that attribution.`,
+    };
+  }
+  return { granted: true, reason };
+}
+
+/** The refusal an unreadable DACL earns when no waiver is in force. */
+function unverifiableOwnershipRefusal(
+  subject: string,
+  path: string,
+  cause: Error,
+  note: string,
+): string {
+  return `${subject} ownership could not be verified on Windows: ${cause.message}. `
+    + `Refusing ${path}; inspect it with: icacls "${path}". ${note}`;
+}
+
+/** The disclosure a waived path earns — once per path, never suppressed. */
+function unverifiedOwnershipDisclosure(
+  subject: string,
+  path: string,
+  cause: Error,
+  reason: string,
+): string {
+  return `SECURITY WAIVER — ${subject} is being used UNVERIFIED. Its DACL could not `
+    + `be read on this host (${cause.message}), and ${UNVERIFIED_OWNERSHIP_ENV} is `
+    + `set, so ${path} is trusted on the operator's word alone: reason given — `
+    + `${reason}. Any principal that can write ${path} can mint credentials or `
+    + `point a paired client at another server. Unset ${UNVERIFIED_OWNERSHIP_ENV} `
+    + `to restore the check.`;
+}
+
+/**
+ * The refusal a DACL that WAS read and found shared earns.
+ *
+ * Never waivable, which is why the waiver appears here only to say it does not
+ * apply: this path has a remedy the operator can run, and admitting it would
+ * be the unconditional pass #4842 was filed about wearing an env var.
+ */
+function sharedOwnershipRefusal(
+  subject: string,
+  path: string,
+  findings: string[],
+  waiver: UnverifiedOwnershipWaiver,
+): string {
+  return `${subject} is not exclusive to the current user: ${findings.join("; ")}. `
+    + `Refusing ${path}; inspect it with: icacls "${path}"`
+    + (waiver.granted
+      ? `. ${UNVERIFIED_OWNERSHIP_ENV} does not cover a DACL that was read: this `
+        + `one was, and it is shared. Repair it with: icacls "${path}" /reset`
+      : "");
+}
+
 /** Result of one `windows-acl` probe: the state of the path after any repair. */
 export interface ClientV1WindowsAclReport {
   /** SID of the identity this process runs as. */
@@ -46,6 +184,13 @@ export interface ClientV1PathOwnershipOptions {
   getuid?: (() => number) | null;
   probeWindowsAcl?: ClientV1WindowsAclProbe;
   warn?: (message: string) => void;
+  /**
+   * Where the unverified-ownership waiver is read from. Injectable for the
+   * same reason as everything above it: the waiver only matters on Windows, so
+   * reading `process.env` directly would leave every assertion about it
+   * unreachable on the Linux runners.
+   */
+  env?: Record<string, string | undefined>;
 }
 
 /**
@@ -264,9 +409,23 @@ function exclusivityFindings(report: ClientV1WindowsAclReport): string[] {
  */
 const verifiedWindowsPaths = new Map<string, ClientV1WindowsAclReport>();
 
+/**
+ * Paths admitted UNVERIFIED under the operator's waiver, keyed by path.
+ *
+ * Separate from the success cache above because nothing here was verified. It
+ * exists for two reasons and both are about the host where it applies: on such
+ * a host the probe can *never* succeed, so re-driving it per authenticated
+ * request would fork a doomed ~290 ms subprocess every time (cave-okfb2 R6 in
+ * its worst form), and a disclosure repeated on every request is one nobody
+ * reads. Like the success cache this is per process, so installing PowerShell
+ * out of band takes effect at the next restart.
+ */
+const waivedWindowsPaths = new Map<string, string>();
+
 /** Test seam: drop cached verifications so a suite can re-drive the probe. */
 export function resetClientV1PathOwnershipCache(): void {
   verifiedWindowsPaths.clear();
+  waivedWindowsPaths.clear();
 }
 
 /**
@@ -291,43 +450,66 @@ export async function assertClientV1PathOwnership(
   label: string,
   options: ClientV1PathOwnershipOptions = {},
 ): Promise<void> {
+  return assertExclusivePathOwnership(path, metadata, `Client v1 ${label}`, options);
+}
+
+/**
+ * The same guard for a path that is not a client v1 path.
+ *
+ * `subject` is the whole noun phrase every message opens with, because the
+ * caller knows what the path is for and this module does not. The mobile
+ * pairing secret goes through here: it is a PLAINTEXT credential, not the
+ * SHA-256 hashes `client-v1-credentials.json` holds, and its `chmod(0o600)`
+ * was the same no-op on win32 that #4842 was filed about (cave-fawvh).
+ */
+export async function assertExclusivePathOwnership(
+  path: string,
+  metadata: { uid: number | bigint },
+  subject: string,
+  options: ClientV1PathOwnershipOptions = {},
+): Promise<void> {
   const platform = options.platform ?? process.platform;
   const getuid = options.getuid === undefined ? process.getuid : options.getuid;
 
   if (typeof getuid === "function") {
     if (metadata.uid !== getuid()) {
-      throw new Error(`Client v1 ${label} must be owned by the current user.`);
+      throw new Error(`${subject} must be owned by the current user.`);
     }
     return;
   }
 
   if (platform !== "win32") {
     throw new Error(
-      `Client v1 ${label} ownership cannot be verified on ${platform}: `
+      `${subject} ownership cannot be verified on ${platform}: `
       + `this platform exposes neither a uid nor a Windows ACL, so ${path} is refused.`,
     );
   }
 
-  if (verifiedWindowsPaths.has(path)) return;
+  if (verifiedWindowsPaths.has(path) || waivedWindowsPaths.has(path)) return;
 
+  const warn = options.warn ?? console.warn;
+  const waiver = resolveUnverifiedOwnershipWaiver(options.env ?? process.env);
   const probe = options.probeWindowsAcl ?? probeWindowsAcl;
   let report: ClientV1WindowsAclReport;
   try {
     report = await probe(path);
   } catch (cause) {
-    throw new Error(
-      `Client v1 ${label} ownership could not be verified on Windows: `
-      + `${(cause as Error).message}. Refusing ${path}; inspect it with: icacls "${path}"`,
-      { cause },
-    );
+    // The ONE condition the waiver covers: the host cannot answer the
+    // question. Everything below this point had an answer.
+    if (!waiver.granted) {
+      throw new Error(
+        unverifiableOwnershipRefusal(subject, path, cause as Error, waiver.note),
+        { cause },
+      );
+    }
+    waivedWindowsPaths.set(path, waiver.reason);
+    warn(unverifiedOwnershipDisclosure(subject, path, cause as Error, waiver.reason));
+    return;
   }
 
   const findings = exclusivityFindings(report);
   if (findings.length > 0) {
-    throw new Error(
-      `Client v1 ${label} is not exclusive to the current user: ${findings.join("; ")}. `
-      + `Refusing ${path}; inspect it with: icacls "${path}"`,
-    );
+    throw new Error(sharedOwnershipRefusal(subject, path, findings, waiver));
   }
 
   if (report.repaired) {
@@ -338,8 +520,8 @@ export async function assertClientV1PathOwnership(
     const removed = report.removed.length > 0
       ? report.removed.join(", ")
       : "inherited entries";
-    (options.warn ?? console.warn)(
-      `Client v1 ${label} had no enforced access control on Windows; `
+    warn(
+      `${subject} had no enforced access control on Windows; `
       + `restricted ${path} to the current user and revoked ${removed}.`,
     );
   }

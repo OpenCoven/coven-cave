@@ -567,6 +567,19 @@ The cursor rides the shared envelope:
   cursor, limit); replaying never advances and never loops.
 - **A deleted record does not strand you.** The token records a position in the
   ordering, not an index, so the next page resumes at the next surviving record.
+- **Do not carry a cursor across a Cave upgrade.** A token names a position in
+  *an* ordering, and the ordering a route uses can change between versions —
+  `/conversations` changed on 2026-08-22 (see below). The encoded version tag
+  covers a change to the token's *shape*, not to the meaning of the position
+  inside it, so a token minted by an older Cave is accepted rather than refused
+  and resumes somewhere the client did not ask for. Measured on the
+  2026-08-22 change: the stale token restarts the walk near the head and
+  re-serves rows the client already had. That change costs duplicates rather
+  than losses — a conversation's `updatedAt` is never below its `createdAt`, so
+  no row can hide above a resumed position — but that is a property of those two
+  fields, not a promise about the next reordering. A client that persists
+  cursors between sessions should discard them when the Cave's version changes
+  and start the walk again.
 - `previous` is never emitted. These reads are forward-only.
 
 Orderings are total — a sort key plus the id as tiebreak — because a page
@@ -577,25 +590,62 @@ both or skip both:
 |---|---|
 | `/familiars` | `id` ascending. A roster entry has no timestamp at all, so the identity is the sort key. |
 | `/projects` | `createdAt` descending, then `id` descending. `createdAt` is immutable; `updatedAt` moves under an open cursor. |
-| `/conversations` | `updatedAt` descending, then `id` descending. `createdAt` is optional on a conversation summary, so it cannot key the page. |
+| `/conversations` | `createdAt` descending, then `id` descending. A conversation with no `createdAt` sorts **last**, ordered among its peers by `id` descending. |
 | `/conversations/:id/messages` | Transcript order, oldest first. **Not** a keyset — see that route. |
 
-**One consequence worth planning for:** `/conversations` keys on a *mutable*
-field, so a conversation that receives a turn while you are paging **moves out
-of the window you have not reached yet**. The ordering is `updatedAt`
-descending and a touch only ever raises the key, so the touched row moves
-*above* your open cursor: one already served stays served, and one not yet
-served is **skipped** by the rest of the walk.
+**Every sort key here is immutable, with one narrow exception named in the third
+bullet.** Nothing rewrites a project's `createdAt` or a conversation's, a
+familiar's id is its identity, and saving a conversation stamps only its
+`updatedAt` — so the position a cursor names is a position the ordering still
+has when you resume. A walk that starts now serves the rows that existed when it
+started, in the order it started with, however much the Cave is written to
+underneath it. Three things are worth planning for:
 
-Earlier text here said such a row "can appear in two pages", and that the repeat
-was the cost. It is the other way round, and the difference matters: a repeat is
-deduplicable by `id`, a skip is silent. Measured over a real socket by
-[the conformance run](../workflows/client-v1-conformance.md) on 2026-08-22, no
-repeat was reproducible from a touch. **So a client that must not miss a
-conversation should re-read from the top rather than trust one walk** — and
-should still deduplicate by `id`, which costs nothing and covers the walks it
-restarts. The alternative key — a field half the corpus lacks — is worse than
-either.
+- **A conversation created while you are paging is not served by that walk.**
+  Its `createdAt` is *now*, which sorts above every cursor you already hold.
+  Nothing is lost — no row that existed when the walk began is affected — but a
+  client that wants the newest conversations re-reads from the top rather than
+  waiting for a walk in progress to surface them.
+- **A conversation deleted while you are paging simply stops appearing.** The
+  cursor names a position in the ordering rather than an index, so the walk
+  continues at the next surviving record.
+- **A conversation that has no `createdAt` at all can leave the tail block.**
+  Such a record is served last (see below), and it stays there for as long as it
+  has no `createdAt` — but the moment it acquires one it sorts above every
+  cursor you hold, so the walk in progress will not serve it. This is the one
+  row this ordering can still miss. It is rare (a transcript older than the
+  field, or one Cave could not read on the last scan) and it settles once the
+  record has a `createdAt`, but a walk cannot tell that it happened. If you must
+  not miss a conversation, re-read from the top and dedupe by `id`; that costs
+  nothing and covers this case.
+
+⚠️ **The ordering of `/conversations` changed.** It was `updatedAt` descending —
+the order the Cave's own sessions list shows — until 2026-08-22. `updatedAt`
+only ever rises and the ordering is descending, so a conversation that received a
+turn mid-walk moved *above* an open cursor: one already served stayed served, and
+one **not yet served was silently skipped** by the rest of the walk. Measured
+over a real socket by [the conformance run](../workflows/client-v1-conformance.md),
+which could not reproduce a repeat from a touch at all. A repeat would have been
+deduplicable by `id`; a skip is silent data loss from a read this document calls
+canonical, so the key moved to the immutable field.
+
+**What that costs you:** this route no longer matches the desktop sessions list
+row for row, and the cost is more than cosmetic, so it is worth stating exactly.
+`updatedAt` is served on every conversation record, so you can *rank* by
+recency — but only over rows you already hold. Sorting a single page by
+`updatedAt` does not give you the most recently active conversations; it gives
+you one arbitrary slice of the ledger, internally sorted. **To show "most recent
+first" you have to read the ledger to exhaustion and sort client-side.** For a
+Cave with a few hundred conversations that is one walk you can cache and keep
+warm; there is no server-side shortcut, and there cannot be one, because a
+keyset cursor cannot name a position in an order that moves. Deduplicating by
+`id` still costs nothing and is still worth doing across walks you restart.
+
+`createdAt` is optional on a conversation record — a transcript written before
+the field existed has none, and neither does the row Cave substitutes for a file
+it cannot read. Those rows are **served at the end of the walk**, not stranded
+and not skipped: they sort as if their key were empty, which is below every
+timestamp.
 
 ### `GET /api/client/v1/familiars`
 
@@ -682,8 +732,11 @@ registry view, so there is no familiar whose access could be applied.
 
 ### `GET /api/client/v1/conversations`
 
-The conversation ledger — the same rows, in the same order, that the Cave's own
-sessions list is built from.
+The conversation ledger — the same rows the Cave's own sessions list is built
+from, **in a different order**: newest-created first, not most-recently-touched
+first. See *Paging* above for why the recency ordering could not be paged safely
+and what it costs you — in short, a recency-ordered view has to be assembled
+client-side from a complete walk, not by sorting one page.
 
 **Request:** `Authorization: Bearer …`, the loopback stamp, optional `limit` and
 `cursor`.
@@ -716,7 +769,9 @@ sessions list is built from.
 
 Only `id`, `familiarId` and `updatedAt` are guaranteed. `exitCode` may be
 `null`, which means the run has no exit code yet — distinct from the field being
-absent, which means none was ever recorded.
+absent, which means none was ever recorded. `createdAt` is the field this route
+pages by, and it is *not* guaranteed: a record without one is served at the end
+of the walk rather than dropped.
 
 **`runtime` is not an enum, and for a local run it is a path.**
 `POST /api/chat/send` writes the field as
@@ -1106,11 +1161,52 @@ before it prints `Ready on …`:
 The file is 0600 inside a 0700 directory verified not to be a symlink, written
 temp-file → `fsync` → rename, and deleted on shutdown — but only if the record
 still carries *this* process's `nonce` and the same inode, so a Cave that has
-been restarted underneath never deletes its successor's record. **A publish
-failure is fatal**: the listener closes and the process exits 1 rather than
-serving on an endpoint nothing can discover. Both the directory and the file are
-also checked to be owned by the current user, but only where `process.getuid`
-exists — that check is a no-op on Windows.
+been restarted underneath never deletes its successor's record.
+
+Both the directory and the file are also checked to be owned by the current
+user, and to be writable by nobody else. On POSIX that is a `uid` comparison.
+On Windows it is a DACL read: `process.getuid` is undefined there and `lstat`
+reports uid 0 for every path, so the uid comparison alone passed unconditionally
+on the platform — the defect GitHub #4842 was filed for. `server.ts` now shells
+out to PowerShell, refuses a path any other principal can write, and repairs a
+DACL that merely inherited one (`icacls <path> /reset` undoes the repair as the
+ordinary user; no elevation is needed).
+
+**A publish failure disables client v1; it does not stop Cave.** The record is
+withheld, `clientV1DiscoveryPublished` stays false, and a banner naming the
+failure goes to stderr, but the server finishes starting and serves everything
+else. That is not a relaxation of the check: no path the guard refused is used,
+and the request-side guard keeps refusing every client v1 call that presents a
+credential — the credential store re-asserts ownership on every read and write,
+so `findByBearer` cannot answer on a path the guard refused. Measured on a host
+with no reachable `powershell.exe`: the server answers `Ready on …`, the record
+is absent, `GET /api/client/v1/health` still answers (it is unauthenticated by
+design and carries no user data), and a bearer-carrying request is refused. The
+one case that survives is narrow and deliberate: if the discovery *file* alone
+is unverifiable while the store's root is exclusive, a client that already
+holds a credential and a cached endpoint keeps working against the real server
+— it is the record, not the server, that could have been redirected. It is a
+correction of blast radius — this used to close the listener and exit 1, which
+on a host that cannot read a DACL at all (PowerShell in Constrained Language
+Mode, or no `powershell.exe` under `%SystemRoot%`, both measured on Windows 11
+under WDAC/AppLocker-shaped configurations) meant Cave would not start and there
+was no remedy reachable from inside it.
+
+An operator on such a host can opt back in, explicitly:
+
+```
+COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP=i-accept-unverified-path-ownership
+COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON="<who accepted this, and why>"
+```
+
+Both are required; the reason must be at least 12 characters. The value is that
+exact sentence, so `1`, `true` and `yes` do nothing and say so. It waives **one**
+condition — a DACL that could not be *read* — and never a DACL that was read and
+found shared, a POSIX uid mismatch, or a platform with neither a uid nor an ACL.
+Every waived path logs a `SECURITY WAIVER` line naming the path and the reason
+given. The same waiver covers the mobile pairing secret
+(`src/lib/server/mobile-access-provision.ts`), which is restricted by the same
+guard because its `chmod(0o600)` is equally inert on Windows.
 
 `endpoint` is validated before it is written: `http:`, a loopback host, an
 explicit port, no credentials, no path, query, or fragment. Treat `pid` and

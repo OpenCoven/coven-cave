@@ -136,17 +136,16 @@ export function isAllowedRequestSourceAny(value: string | null, expectedOrigins:
 export function shouldRequireMobileAccessCredential(
   _host: string | null,
   _hasSuppliedCredential: boolean,
-  _trustedLocalPeer = false,
+  trustedLocalPeer = false,
   tailnetPeerVerified = false,
   sidecarAuthenticated = false,
 ) {
   // Forwarded tailnet identity is context for presence policy, not a bearer
   // credential: a local process can forge proxy headers on a loopback socket.
   void tailnetPeerVerified;
-  // The Tauri sidecar credential is minted per launch and delivered only to
-  // the owning app. Unlike TCP loopback, it distinguishes the intended local
-  // user from other OS users on a shared machine.
-  return !sidecarAuthenticated;
+  // Direct, unforwarded loopback is the no-prompt browser path. Remote ingress
+  // still needs the mobile credential, while Tauri may use its sidecar token.
+  return !trustedLocalPeer && !sidecarAuthenticated;
 }
 
 /**
@@ -403,22 +402,14 @@ export function isHtmlNavigationRequest(
   return Boolean(accept && accept.toLowerCase().includes("text/html"));
 }
 
-export function accessPromptUrl(value: string) {
-  const url = new URL(value);
-  url.searchParams.set(ACCESS_PROMPT_QUERY_PARAM, "1");
-  return url.toString();
-}
-
 export function shouldBypassMobileAccessGate(
   trustedLocalPeer: boolean,
-  promptRequested: boolean,
   method: string,
   pathname: string,
   accept: string | null,
 ) {
   return (
     trustedLocalPeer &&
-    !promptRequested &&
     isHtmlNavigationRequest(method, pathname, accept)
   );
 }
@@ -441,7 +432,7 @@ export function accessGatePage({ invalidToken = false }: { invalidToken?: boolea
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Access required · Coven Cave</title>
+<title>Pair this device · Coven Cave</title>
 <style>
   :root { color-scheme: dark; }
   body {
@@ -502,11 +493,10 @@ export function accessGatePage({ invalidToken = false }: { invalidToken?: boolea
 <body>
 <main>
   <div class="dot" aria-hidden="true"></div>
-  <h1>Access token required</h1>
+  <h1>Pair this device</h1>
   <p>This Cave is protected. Open your pairing link, or paste an access token below.</p>
   ${note}
   <form method="get" action="">
-    <input type="hidden" name="${ACCESS_PROMPT_QUERY_PARAM}" value="1">
     <input type="password" name="${ACCESS_TOKEN_QUERY_PARAM}" autocomplete="off" required aria-label="Access token" placeholder="Access token">
     <button type="submit">Unlock</button>
   </form>
@@ -548,7 +538,7 @@ export function requiresPasskeyPresence(
 }
 
 export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
-export const ACCESS_PROMPT_QUERY_PARAM = "coven_access_prompt";
+export const LEGACY_ACCESS_PROMPT_QUERY_PARAM = "coven_access_prompt";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";
 export const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";

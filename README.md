@@ -184,6 +184,18 @@ It is an exploration workspace
 not the canonical source for anything in `src/components/`; shipped Cave code
 and `docs/coven-design-language.md` remain authoritative.
 
+### Local client access
+
+Native OpenCoven clients can discover the owner-local Cave listener and request
+scoped access through the Client v1 pairing API. Pairing always requires a human
+decision in **Settings → Client access**, where pending requests can be approved
+or denied and issued credentials can be revoked. Cave stores bearer hashes only;
+the paired native client owns secure bearer storage.
+
+See [`docs/api/client-v1.md`](docs/api/client-v1.md) for the discovery and API
+contract and [`docs/client-v1-settings.md`](docs/client-v1-settings.md) for the
+operator workflow and security boundary.
+
 ---
 
 ## Development

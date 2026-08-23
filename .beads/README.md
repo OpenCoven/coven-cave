@@ -26,8 +26,8 @@ bd show <issue-id>
 bd update <issue-id> --claim
 bd update <issue-id> --status done
 
-# Sync with Dolt remote
-bd dolt push
+# Sync with the Dolt remote through the repository watchdog
+pnpm beads:sync
 ```
 
 ### Working with Issues
@@ -51,7 +51,7 @@ Issues in Beads are:
 - Fast, lightweight, and stays out of your way
 
 🔧 **Git Integration**
-- Dolt-native sync via bd dolt push / bd dolt pull
+- Bounded Dolt-native sync via `pnpm beads:sync`
 - Branch-aware issue tracking
 - Dolt-native three-way merge resolution
 

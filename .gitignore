@@ -147,11 +147,4 @@ __verify-chat-detail.mjs
 .psyche*
 /.xcode-source-packages
 /.demo
-
-# build product of a pinned dependency (scripts/copy-pdf-worker.mjs); not source
-public/pdf.worker.min.mjs
-
-# Local Xcode build products and package caches. These are regenerable and
-# machine-specific; never add them to a stash or commit.
 /apps/ios/CovenCave/build-*
-
