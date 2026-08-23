@@ -13,7 +13,7 @@ export default async function DashboardPage() {
 
   return (
     <AnalyticsPageShell>
-      {/* div, not main: the shell's aps-main is the page's main landmark. */}
+      {/* div, not main: the universal Shell owns the page's main landmark. */}
       <div className="dr-page dr-page--bento">
         <div className="dr-topbar" data-tauri-drag-region="deep">
           <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">

@@ -55,6 +55,36 @@ assert.match(
   /setPaused\(g\.ids, true\)/,
   "hover/focus pauses auto-hide for every member of the group",
 );
+// cave-lcxc6: a touch tap raises pointerenter but pointerleave only lands when
+// the user taps elsewhere, so an ungated hover-pause turned a stray tap into a
+// permanent toast. Focus still pauses without limit for keyboard/AT users.
+assert.match(
+  src,
+  /onPointerEnter=\{\(e\) => \{ if \(e\.pointerType !== "touch"\) setPaused\(g\.ids, true\); \}\}/,
+  "hover-pause is gated on a hovering pointer, so touch keeps its auto-hide window",
+);
+assert.doesNotMatch(
+  src,
+  /onMouseEnter=/,
+  "no ungated mouseenter pause — touch emulates it and never sends the leave",
+);
+
+// ── Stack geometry ───────────────────────────────────────────────────────────
+// cave-lcxc6: the stack was `fixed top-4 right-4 w-80`, a desktop-shaped panel
+// pinned over the shell's top-right chrome. On a 390-393px viewport it took the
+// "Open Chat panel" toggle's own centre in `document.elementFromPoint`. The
+// responsive geometry now lives in dash-act.css; keep it out of utilities here
+// so there is one place that describes both shapes.
+assert.match(
+  src,
+  /className="inbox-toast-stack"/,
+  "the stack carries its geometry as one named class",
+);
+assert.doesNotMatch(
+  src,
+  /className="[^"]*\b(?:fixed|top-4|right-4|w-80)\b/,
+  "no desktop-only positioning utilities back on the stack root",
+);
 
 // ── Surface discipline ───────────────────────────────────────────────────────
 assert.match(src, /glass-overlay/, "toast cards use the shared glass token surface");
