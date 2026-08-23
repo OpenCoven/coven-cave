@@ -33,10 +33,35 @@
 /* ── Thread Signal card ──────────────────────────────────────────────────
    In-chat triage for one settled thread: a composite ring, six tappable score
    tiles that swap the rationale strip beneath them, and a ranked signal queue.
-   A queue row's detail opens as an overlay ABOVE the row instead of expanding
-   inline — the card's height never changes, so opening a signal never shoves
-   the transcript the reader is looking at. The card sizes off its container
-   (chat panes run ~320px to full width), not the viewport. */
+   The complete card floats above the transcript instead of becoming another
+   transcript row, so its arrival and every interaction leave scroll height
+   alone. A queue row's detail also opens above its row instead of expanding
+   inline. The card sizes off its container (chat panes run ~320px to full
+   width), not the viewport. */
+.cave-thread-signal-overlay {
+  position: absolute;
+  inset: var(--space-3) clamp(var(--space-3), 3vw, var(--space-8));
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+.cave-thread-signal-overlay > * {
+  width: min(100%, 720px);
+  max-height: 100%;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  scrollbar-width: thin;
+}
+.cave-thread-signal-overlay .tsc-card {
+  box-shadow:
+    0 18px 48px color-mix(in oklch, var(--shadow-color) 48%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
 .tsc-card {
   container-name: thread-signal;
   container-type: inline-size;

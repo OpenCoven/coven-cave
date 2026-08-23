@@ -151,6 +151,18 @@ describe("thread-signal-card module wiring", () => {
     assert.doesNotMatch(styles, /\.tsc-pop\s*\{[\s\S]*?position:\s*static;/);
   });
 
+  it("floats the complete card above chat content without changing transcript height", () => {
+    assert.match(
+      styles,
+      /\.cave-thread-signal-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:[\s\S]*?pointer-events:\s*none;/,
+    );
+    assert.match(
+      styles,
+      /\.cave-thread-signal-overlay\s*>\s*\*\s*\{[\s\S]*?pointer-events:\s*auto;/,
+      "the non-flow host stays transparent while the card remains interactive",
+    );
+  });
+
   it("carries severity on shared tone utilities rather than per-element colors", () => {
     for (const rule of [
       /\.tsc-tone--ok\s*\{\s*color:\s*var\(--color-success\);/,
