@@ -305,6 +305,27 @@ the source. Measured 2026-08-22 on `win32-x64` against Cave 0.3.9.
 | `parseClientV1PageLimit` clamps instead of refusing | **caught**, 5 failures | every `reads.refuses.limit-*` case: zero, over-ceiling, leading zero, exponent, signed |
 | `clientV1ConversationPageKey` reverted to the mutable `updatedAt` | **caught**, 9 failures | all seven mid-walk ids, plus `reads.conversations-shape` and `reads.conversations-paging`. The run reproduces the skip on the wire: the walk serves `[01, 02, 04, 05, 06]` and `conversation-03` is lost |
 
+Five more were run for `cave-wbxcu`, measured 2026-08-23 on `win32-x64` against
+Cave 0.3.9. Same method: patch source, full `pnpm build`, run, restore.
+
+| Mutation | Result | Assertions that caught it |
+|---|---|---|
+| `buildConversation` stamps a keyless existing record again (`existing?.createdAt ?? now`) | **caught**, 1 failure | `reads.conversations-keyless-row-written-mid-walk-is-still-served`, alone. The run reproduces the skip on the wire: the row is stamped mid-walk and the walk serves 7 of 8 |
+| the fallback row drops the carried-forward `createdAt` again | **caught**, 2 failures | `…-unreadable-row-keeps-its-position-mid-walk` and `…-recovering-row-keeps-its-position-mid-walk`, and nothing else — the two triggers are independently attributed |
+| the id tiebreak runs ascending | **caught**, 13 failures | every conversations assertion including all five new ones; the two tie assertions name the reversed pair explicitly |
+| the page key reverted to the mutable `updatedAt` (the `cave-fhjlu` regression, re-measured against the larger family) | **caught**, 14 failures | as above plus `…-row-deleted-mid-walk-does-not-strand` |
+| the keyless sentinel sorts to the HEAD instead of the tail (`?? "9999"`) | **caught**, 4 failures | `…-without-created-at-are-served-last`, `…-keyless-row-written-mid-walk-is-still-served`, `…-keyless-rows-tie-on-the-id-tiebreak`, `…-keyless-row-keyed-between-walks-moves-once` — and *not* the two fallback cases, which is the point: the tail-block assertions have power independent of the fallback fix |
+
+⚠️ **Two mutations were written first in a form that made the build fail, and a
+failed build is not a caught mutation — it is a run that never happened.**
+Deleting the `createdAt` spread from `fallbackConversationSummary` leaves its
+parameter unused, and `return ""` from `conversationSortKey` leaves `summary`
+unused; `tsconfig.json` sets `noUnusedLocals` and `noUnusedParameters`, so both
+died in `pnpm build` and the harness printed nothing. Both were rewritten to
+mutate a *behaviour* while leaving every symbol used. If a build-and-run
+mutation reports no assertion output at all, check the build before recording it
+as a miss.
+
 Three further mutations were aimed at the assertions rather than the route,
 because a fixture that cannot distinguish two behaviours is the failure mode this
 harness has been burned by twice. Each was applied, run against
