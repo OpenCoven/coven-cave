@@ -156,12 +156,19 @@ a claim about *which bytes* answered, and one that cannot say which has not made
 the claim.
 
 The current record is
+[`2026-08-23-v0.3.9-win32-cave-wbxcu.json`](../client-v1-conformance-results/2026-08-23-v0.3.9-win32-cave-wbxcu.json):
+**104 passed, 0 failed, 0 skipped** at `d64ab964` on `win32-x64`, run with
+`--include-ttl`. It is the first record taken after the keyless tail block was
+made immutable in the write and store paths, so it carries all twelve mid-walk
+assertions.
+
+The record before it is
 [`2026-08-22-v0.3.9-win32-cave-fhjlu.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32-cave-fhjlu.json):
-**99 passed, 0 failed, 0 skipped** at `ed6cc4b1` on `win32-x64`, run with
-`--include-ttl`, so `pairing.ttl-poll-expired` and `pairing.ttl-exchange-expired`
-are recorded as passes rather than skips. It is the first record taken after
+**99 passed, 0 failed, 0 skipped** at `ed6cc4b1`, also with `--include-ttl`, so
+`pairing.ttl-poll-expired` and `pairing.ttl-exchange-expired` are recorded as
+passes rather than skips there too. It is the first record taken after
 `/conversations` moved to an immutable page key, so it carries the seven
-mid-walk assertions described above and two findings rather than three.
+mid-walk assertions and two findings rather than three.
 
 The record for `cave-2hjtv` is
 [`2026-08-22-v0.3.9-win32.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32.json):
@@ -250,6 +257,46 @@ Two fixture properties make that family able to fail, and both are pinned by
 - two conversations **share** a `createdAt`, so the id tiebreak that makes the
   ordering total is exercised rather than merely present.
 
+### The residual that family then found — the tail block was not immutable
+
+The seven assertions above prove a row with no `createdAt` is *served*, at the
+tail. They did not prove it *stays* there, and it did not: `buildConversation`
+composed `args.existing?.createdAt ?? now`, so writing a turn to a transcript
+older than the field stamped it with `now` and moved the row from the tail to
+the head of the ordering, past every open cursor — `cave-fhjlu` again, on
+exactly the rows the sentinel exists to protect (`cave-wbxcu`). A second trigger
+needed no writer at all: the row Cave substitutes for a file it cannot read
+carried no `createdAt` either, so a file flipping between readable and
+unreadable moved a row into and out of the tail block under an open cursor.
+
+Five more assertions close the family, and three of them **reproduced the loss
+on the wire** against the build before the fix:
+
+| Assertion | On the unfixed build |
+|---|---|
+| `reads.conversations-keyless-row-written-mid-walk-is-still-served` | **failed** — the row was stamped `2026-08-23T03:30:29.860Z` mid-walk and the whole walk served 7 of 8 rows, losing `conversation-keyless-written` |
+| `reads.conversations-recovering-row-keeps-its-position-mid-walk` | **failed** — a file that became readable again mid-walk rose above the open cursor and was never served |
+| `reads.conversations-unreadable-row-keeps-its-position-mid-walk` | **failed** — a file that became unreadable mid-walk fell to the tail, reordering the walk |
+| `reads.conversations-keyless-rows-tie-on-the-id-tiebreak` | passed — an invariant that already held, kept so a sentinel tie is covered as the `createdAt` tie is |
+| `reads.conversations-keyless-row-keyed-between-walks-moves-once` | passed — the promise is scoped to one walk; the next walk must still see a consistent ledger |
+
+Two things about how they are written are worth copying rather than
+re-deriving:
+
+- **The write is driven through `POST /api/chat/conversation/:id`, over the
+  socket.** That route is where the defect lived. A case that simulated the
+  stamp by rewriting the transcript file would have kept passing after the write
+  path was fixed and kept failing after it was broken again — it would be
+  asserting the fixture, not Cave.
+- **The two readability directions need rows in different places.** A walk at
+  limit 2 opens its cursor after the two newest rows, so a recovering row is
+  only *skipped* if its real `createdAt` is above that cursor. The first version
+  of the recovering case used a row whose `createdAt` was the oldest in the
+  ledger: it rose to a position the walk had not reached yet, was served
+  normally, and **passed against the unfixed build**. That is the vacuous
+  assertion this harness exists to refuse, caught by running the new cases
+  against the broken build before trusting them.
+
 ## Harness mutation results
 
 A conformance run that passes against a broken server is worse than none, so the
@@ -264,6 +311,27 @@ the source. Measured 2026-08-22 on `win32-x64` against Cave 0.3.9.
 | `FileCredentialStore.findByBearer` ignores `revokedAt` | **caught**, 1 failure | `revocation.bearer-refused-after` |
 | `parseClientV1PageLimit` clamps instead of refusing | **caught**, 5 failures | every `reads.refuses.limit-*` case: zero, over-ceiling, leading zero, exponent, signed |
 | `clientV1ConversationPageKey` reverted to the mutable `updatedAt` | **caught**, 9 failures | all seven mid-walk ids, plus `reads.conversations-shape` and `reads.conversations-paging`. The run reproduces the skip on the wire: the walk serves `[01, 02, 04, 05, 06]` and `conversation-03` is lost |
+
+Five more were run for `cave-wbxcu`, measured 2026-08-23 on `win32-x64` against
+Cave 0.3.9. Same method: patch source, full `pnpm build`, run, restore.
+
+| Mutation | Result | Assertions that caught it |
+|---|---|---|
+| `buildConversation` stamps a keyless existing record again (`existing?.createdAt ?? now`) | **caught**, 1 failure | `reads.conversations-keyless-row-written-mid-walk-is-still-served`, alone. The run reproduces the skip on the wire: the row is stamped mid-walk and the walk serves 7 of 8 |
+| the fallback row drops the carried-forward `createdAt` again | **caught**, 2 failures | `…-unreadable-row-keeps-its-position-mid-walk` and `…-recovering-row-keeps-its-position-mid-walk`, and nothing else — the two triggers are independently attributed |
+| the id tiebreak runs ascending | **caught**, 13 failures | every conversations assertion including all five new ones; the two tie assertions name the reversed pair explicitly |
+| the page key reverted to the mutable `updatedAt` (the `cave-fhjlu` regression, re-measured against the larger family) | **caught**, 14 failures | as above plus `…-row-deleted-mid-walk-does-not-strand` |
+| the keyless sentinel sorts to the HEAD instead of the tail (`?? "9999"`) | **caught**, 4 failures | `…-without-created-at-are-served-last`, `…-keyless-row-written-mid-walk-is-still-served`, `…-keyless-rows-tie-on-the-id-tiebreak`, `…-keyless-row-keyed-between-walks-moves-once` — and *not* the two fallback cases, which is the point: the tail-block assertions have power independent of the fallback fix |
+
+⚠️ **Two mutations were written first in a form that made the build fail, and a
+failed build is not a caught mutation — it is a run that never happened.**
+Deleting the `createdAt` spread from `fallbackConversationSummary` leaves its
+parameter unused, and `return ""` from `conversationSortKey` leaves `summary`
+unused; `tsconfig.json` sets `noUnusedLocals` and `noUnusedParameters`, so both
+died in `pnpm build` and the harness printed nothing. Both were rewritten to
+mutate a *behaviour* while leaving every symbol used. If a build-and-run
+mutation reports no assertion output at all, check the build before recording it
+as a miss.
 
 Three further mutations were aimed at the assertions rather than the route,
 because a fixture that cannot distinguish two behaviours is the failure mode this

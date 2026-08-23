@@ -745,13 +745,15 @@ both or skip both:
 | `/conversations` | `createdAt` descending, then `id` descending. A conversation with no `createdAt` sorts **last**, ordered among its peers by `id` descending. |
 | `/conversations/:id/messages` | Transcript order, oldest first. **Not** a keyset — see that route. |
 
-**Every sort key here is immutable, with one narrow exception named in the third
-bullet.** Nothing rewrites a project's `createdAt` or a conversation's, a
-familiar's id is its identity, and saving a conversation stamps only its
-`updatedAt` — so the position a cursor names is a position the ordering still
-has when you resume. A walk that starts now serves the rows that existed when it
-started, in the order it started with, however much the Cave is written to
-underneath it. Three things are worth planning for:
+**Every sort key here is immutable.** Nothing rewrites a project's `createdAt`
+or a conversation's, a familiar's id is its identity, and saving a conversation
+stamps only its `updatedAt` — so the position a cursor names is a position the
+ordering still has when you resume. A conversation's `createdAt` is decided when
+the record is created and is read-only after that: a client body cannot rewrite
+it, and a transcript that has none is never given one. A walk that starts now
+serves the rows that existed when it started, in the order it started with,
+however much the Cave is written to underneath it. Three things are worth
+planning for:
 
 - **A conversation created while you are paging is not served by that walk.**
   Its `createdAt` is *now*, which sorts above every cursor you already hold.
@@ -761,15 +763,15 @@ underneath it. Three things are worth planning for:
 - **A conversation deleted while you are paging simply stops appearing.** The
   cursor names a position in the ordering rather than an index, so the walk
   continues at the next surviving record.
-- **A conversation that has no `createdAt` at all can leave the tail block.**
-  Such a record is served last (see below), and it stays there for as long as it
-  has no `createdAt` — but the moment it acquires one it sorts above every
-  cursor you hold, so the walk in progress will not serve it. This is the one
-  row this ordering can still miss. It is rare (a transcript older than the
-  field, or one Cave could not read on the last scan) and it settles once the
-  record has a `createdAt`, but a walk cannot tell that it happened. If you must
-  not miss a conversation, re-read from the top and dedupe by `id`; that costs
-  nothing and covers this case.
+- **A conversation that has no `createdAt` at all stays in the tail block.**
+  Such a record is served last (see below), and it stays there: nothing in Cave
+  gives a stored record a `createdAt` it did not already have. It used to —
+  writing a turn to a transcript older than the field stamped it with *now*,
+  which moved the row from the tail to the head, past every open cursor, and the
+  rest of that walk never served it. Fixed on 2026-08-23; if you are talking to
+  an older Cave, that row can still be missed. Re-reading from the top and
+  deduping by `id` costs nothing and covers it, as it covers every other reason
+  a ledger might have moved.
 
 ⚠️ **The ordering of `/conversations` changed.** It was `updatedAt` descending —
 the order the Cave's own sessions list shows — until 2026-08-22. `updatedAt`
@@ -793,11 +795,18 @@ warm; there is no server-side shortcut, and there cannot be one, because a
 keyset cursor cannot name a position in an order that moves. Deduplicating by
 `id` still costs nothing and is still worth doing across walks you restart.
 
-`createdAt` is optional on a conversation record — a transcript written before
-the field existed has none, and neither does the row Cave substitutes for a file
-it cannot read. Those rows are **served at the end of the walk**, not stranded
-and not skipped: they sort as if their key were empty, which is below every
-timestamp.
+`createdAt` is optional on a conversation record: a transcript written before
+the field existed has none. Those rows are **served at the end of the walk**,
+not stranded and not skipped — they sort as if their key were empty, which is
+below every timestamp — and they stay there, because Cave never adds the field
+to a record that lacks it.
+
+Cave substitutes a placeholder row for a transcript it cannot read or parse this
+scan; you can recognise one by its empty `familiarId`. It carries the `createdAt`
+Cave last read from that file, so it holds its place in the ordering rather than
+dropping to the tail and climbing back out as the file becomes readable again. A
+file Cave has *never* managed to read has no such value and is served in the tail
+block with the legacy rows.
 
 ### `GET /api/client/v1/familiars`
 
