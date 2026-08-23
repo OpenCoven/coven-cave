@@ -10,7 +10,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SUITES } from "./run-tests.mjs";
+import { SUITES, VITEST_TESTS } from "./run-tests.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -68,6 +68,9 @@ for (const [suite, files] of Object.entries(SUITES)) {
 }
 const referenced = new Set(referencedIn.keys());
 const duplicated = [...referencedIn.entries()].filter(([, at]) => at.length > 1).sort();
+const tsxMissingVitest = [...referenced]
+  .filter((f) => f.endsWith(".tsx") && !VITEST_TESTS.has(f))
+  .sort();
 
 const unwired = onDisk.filter((f) => !referenced.has(f) && !ALLOWLIST.has(f));
 const missing = [...referenced].filter((f) => !onDisk.includes(f)).sort();
@@ -89,6 +92,13 @@ if (duplicated.length) {
   console.error(`\n✗ ${duplicated.length} test file(s) are listed more than once in scripts/run-tests.mjs, so CI runs them more than once:\n`);
   for (const [f, at] of duplicated) console.error(`    ${f}  (${at.join(", ")})`);
   console.error(`\n  Fix: delete the extra entr(y/ies) from the suite array(s) in scripts/run-tests.mjs, keeping exactly one.\n`);
+}
+
+if (tsxMissingVitest.length) {
+  failed = true;
+  console.error(`\n✗ ${tsxMissingVitest.length} *.tsx test file(s) are wired into CI but not routed through VITEST_TESTS in scripts/run-tests.mjs:\n`);
+  for (const f of tsxMissingVitest) console.error(`    ${f}`);
+  console.error(`\n  Fix: add the file path to VITEST_TESTS in scripts/run-tests.mjs so pnpm test:app runs it through Vitest instead of Node.\n`);
 }
 
 if (missing.length) {
