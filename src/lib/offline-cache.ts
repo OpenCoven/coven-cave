@@ -202,12 +202,7 @@ export function sanitizeForOfflineCache(value: unknown): OfflineCacheSanitizeRes
 }
 
 function isValidName(value: string): boolean {
-  return (
-    value.length > 0 &&
-    value.length <= MAX_NAME_LENGTH &&
-    // eslint-disable-next-line no-control-regex -- the native side refuses these; match it here rather than round-trip a rejection.
-    !/[\u0000-\u001f\u007f]/.test(value)
-  );
+  return value.length > 0 && value.length <= MAX_NAME_LENGTH && !/[\p{Cc}]/u.test(value);
 }
 
 function defaultSupported(): boolean {
