@@ -87,6 +87,7 @@ export const SUITES = {
     "scripts/onboarding-feedback-report.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
     "scripts/beads-create.test.mjs",
+    "scripts/beads-sync.test.mjs",
     "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",

@@ -9,6 +9,7 @@ const packageJson = JSON.parse(read("package.json"));
 const agents = read("AGENTS.md");
 const claude = read("CLAUDE.md");
 const workflow = read("docs/workflows/beads-familiars.md");
+const watchdogPlan = read("docs/superpowers/plans/2026-08-22-beads-dolt-sync-watchdog.md");
 const beadsConfig = read(".beads/config.yaml");
 const beadsMetadata = JSON.parse(read(".beads/metadata.json"));
 const beadsExport = read(".beads/issues.jsonl").trim().split("\n").map((line) => JSON.parse(line));
@@ -40,7 +41,7 @@ assert.deepEqual(
     worktreesJson: "node --experimental-strip-types scripts/worktree-lifecycle-patrol.ts --repo OpenCoven/coven-cave --json",
     patrol: "pnpm beads:prs:patrol && pnpm beads:worktrees",
     patrolApply: "pnpm beads:prs:patrol:apply && pnpm beads:worktrees",
-    sync: "bd dolt pull && bd dolt push",
+    sync: "node --experimental-strip-types scripts/beads-sync.ts",
     doctor: "bd doctor && bd lint",
   },
   "package scripts should give familiars stable Beads and PR entrypoints",
@@ -50,7 +51,16 @@ assert.match(agents, /Beads Issue Tracker/, "AGENTS.md should install Beads issu
 assert.match(agents, /Coven Familiar Beads Protocol/, "AGENTS.md should add Coven-specific familiar workflow guidance");
 assert.match(agents, /bd prime[\s\S]*bd ready --json[\s\S]*bd update <id> --claim[\s\S]*bd close <id>/, "agents should learn the claim-and-close loop");
 assert.doesNotMatch(agents, /Do NOT use external issue trackers/, "Cave must bridge GitHub and Linear instead of banning them");
-assert.match(claude, /bd dolt push[\s\S]*git push/, "Claude session close guidance should include Beads Dolt sync before git push");
+assert.match(
+  claude,
+  /pnpm beads:sync[\s\S]*git push/,
+  "Claude session close guidance should use bounded Beads sync before git push",
+);
+assert.match(
+  agents,
+  /pnpm beads:sync[\s\S]*git push/,
+  "agent session close guidance should use bounded Beads sync before git push",
+);
 
 assert.equal(beadsMetadata.dolt_database, "cave", "Cave Beads IDs should use the short cave- prefix");
 assert.match(beadsConfig, /sync\.remote:\s+"git\+https:\/\/github\.com\/OpenCoven\/coven-cave\.git"/, "Beads should be configured for Dolt sync through origin");
@@ -73,6 +83,46 @@ assert.match(workflow, /No secrets in bead text/, "workflow doc should include t
 assert.match(workflow, /\.beads\/issues\.jsonl is an export, not the sync protocol/, "workflow doc should prevent JSONL sync misuse");
 assert.match(workflow, /public-scrubbed before committing/, "workflow doc should require public-safe JSONL review exports");
 assert.match(workflow, /bd dolt pull[\s\S]*bd dolt push/, "workflow doc should name Dolt sync commands");
+assert.match(
+  workflow,
+  /confirms the owned process tree was\s+terminated[\s\S]*retry `pnpm beads:sync` once/i,
+  "workflow docs should explain bounded retry and remote-ref verification",
+);
+assert.match(
+  workflow,
+  /cleanup could not be proven[\s\S]*stop the surviving process tree before retrying[\s\S]*refs\/dolt\/data/i,
+  "workflow docs should block retry while cleanup remains unproven",
+);
+assert.match(
+  workflow,
+  /Do not edit Git\s+configuration or credential\s+helpers/i,
+  "workflow docs should preserve transient credential guidance",
+);
+assert.match(
+  watchdogPlan,
+  /cleanup-unproven[\s\S]*cleanupUnprovenGuidance/,
+  "the executable plan must not recommend an ordinary retry after unproven cleanup",
+);
+assert.match(
+  watchdogPlan,
+  /confirms the owned process tree was[\s\S]*stop the surviving process tree before retrying[\s\S]*concurrent syncs/i,
+  "the executable plan must preserve conditional retry and concurrent-ref guidance",
+);
+assert.match(
+  watchdogPlan,
+  /resolveBdLaunchCommand\(\{[\s\S]*env: options\.env,[\s\S]*platform: options\.platform,/,
+  "the executable plan must resolve the Beads launcher from the injected environment and platform",
+);
+assert.match(
+  watchdogPlan,
+  /releaseUnprovenChildHandles[\s\S]*if \(!cleanupProven\) releaseUnprovenChildHandles\(\)[\s\S]*\.catch\(\(\) => \{[\s\S]*releaseUnprovenChildHandles\(\)/,
+  "the executable plan must release child pipes and references when cleanup is unproven",
+);
+assert.match(
+  watchdogPlan,
+  /child\.once\("error", \(error\) => \{[\s\S]*if \(terminating\) return;/,
+  "the executable plan must ignore delayed child errors after termination begins",
+);
 assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
 assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");
 assert.match(
