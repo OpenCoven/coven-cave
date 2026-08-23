@@ -49,7 +49,9 @@ import {
   tallyByName,
 } from "../../scripts/design-system/token-reference-scan.mjs";
 
-type Ref = { name: string; fallback: boolean; file: string; line: number };
+// `file`/`line` are attached by analyzeSources; collectReferences alone omits
+// them, so both shapes share one alias.
+type Ref = { name: string; fallback: boolean; file?: string; line?: number };
 type Def = { name: string; themeScoped: boolean; selectors: string[] };
 type Site = { kind: string; file?: string };
 

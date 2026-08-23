@@ -411,7 +411,9 @@ export function tallyByFile(sites) {
 //   - a banked name whose count goes DOWN -> the run prints the new number so
 //     the next PR banks the progress.
 //
-// Cleanup is tracked on cave-apg39's follow-ups; see the PR body for the list.
+// Cleanup is tracked on cave-z2sbd (the 110 undefined references, enumerated
+// site by site) and cave-4x1ag (--destructive / --shadow-popover, which a real
+// `pnpm build` confirms are defined only inside some [data-theme] blocks).
 
 /**
  * Undefined AND no fallback — `var(--x)` with nothing after the name. These
