@@ -93,7 +93,7 @@
 
 .familiar-inline-card__status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary); flex-wrap: wrap; }
 .familiar-inline-card__status-muted { color: var(--text-secondary); }
-.familiar-inline-card__dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.familiar-inline-card__dot { width: 8px; height: 8px; border-radius: var(--radius-pill); display: inline-block; }
 .familiar-inline-card__dot[data-pulse="1"] { animation: familiar-card-pulse 1.6s ease-in-out infinite; }
 @keyframes familiar-card-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) {
