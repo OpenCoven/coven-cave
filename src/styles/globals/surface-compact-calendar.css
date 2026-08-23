@@ -1281,7 +1281,7 @@
 .cave-next-path {
   display: inline-flex; align-items: center; flex: 0 0 auto; max-width: 100%;
   white-space: nowrap;
-  padding: 7px var(--space-3); border-radius: 8px;
+  padding: 7px var(--space-3); border-radius: var(--radius-control);
   border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--text-secondary); font-size: 12px; line-height: 1.2;

@@ -761,15 +761,16 @@ export async function startCopilotFlowRun(
   const spawnArgs = [...command.fixedArgs, ...args];
   const platform = runtime.platform ?? process.platform;
   assertCopilotCommandLineFitsWindows(command.command, spawnArgs, platform);
-  // The native supervisor is the supported transport, but no PUBLISHED
-  // @opencoven/cli provides it: `coven --print-native-binary-path` is an
-  // unrecognized flag as of 0.3.1, which is the newest release. Since #4524
-  // every research mission has therefore failed at its first iteration with
-  // "Coven's native process supervisor is unavailable", and the error's own
-  // advice — update the CLI — cannot be followed because there is nothing
-  // newer to install.
+  // The native supervisor is the supported transport, and on a current CLI it
+  // is the one taken: @opencoven/cli 0.4.0's npm wrapper implements
+  // `--print-native-binary-path`, so resolveCovenProcessSupervisorCommand()
+  // succeeds. This fallback exists for installs still on 0.3.1 or older, where
+  // the wrapper had no such flag and every research mission failed at its first
+  // iteration (#4578). Those installs are now behind a release, not waiting on
+  // one, so the diagnostic below names the upgrade rather than telling the
+  // reader to wait for a build that already shipped.
   //
-  // So fall back to the pre-#4524 transport: spawn Copilot directly. Only
+  // The fallback is the pre-#4524 transport: spawn Copilot directly. Only
   // CovenProcessSupervisorUnavailableError is caught, so a supervisor that
   // exists but misbehaves still fails loudly rather than silently degrading.
   let supervisorCommand: { command: string; fixedArgs: string[] } | null = null;
@@ -784,7 +785,8 @@ export async function startCopilotFlowRun(
     unsupervisedReason =
       "Coven's native process supervisor is unavailable, so this run was launched directly. " +
       "Cancelling or timing out stops Copilot itself, but any processes it spawns are not owned " +
-      "and may keep running. Update the Coven CLI once a build ships the process supervisor.";
+      "and may keep running. Process supervision needs @opencoven/cli 0.4.0 or newer; " +
+      "restore it with `npm i -g @opencoven/cli@latest`, then retry.";
   }
   // Resolution can yield to a wrapper probe. App shutdown may seal admission
   // while that probe is in flight, so re-check immediately before the single

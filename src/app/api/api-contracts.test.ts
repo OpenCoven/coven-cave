@@ -162,6 +162,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars/[id]/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", pathGuard: true },
   { route: "/familiars/[id]/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/familiars/[id]/dashboard", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/execution-analytics", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
@@ -1228,7 +1229,16 @@ for (const contract of contracts) {
 }
 
 {
+  // The computation moved to @/lib/server/sessions-list (cave-9rwd.1) so the
+  // Familiar dashboard read can reuse it without self-fetching this route.
+  // These assertions follow the behaviour to its new home rather than being
+  // relaxed: the route source is still checked for the things the route still
+  // owns (the shared cache), and the compute source for the rest.
   const sessionsListSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "server", "sessions-list.ts"),
+    "utf8",
+  );
+  const sessionsListRouteSource = readFileSync(
     path.join(apiRoot, "sessions", "list", "route.ts"),
     "utf8",
   );
@@ -1247,20 +1257,54 @@ for (const contract of contracts) {
     /import \{ enrichSessionsWithGitContext \} from "@\/lib\/session-git-enrich"/,
     "/sessions/list: sessions should be enriched from local git context (async lib)",
   );
+  // Checked on BOTH halves of the split, not just the one that happens to hold
+  // the git calls today: the ban is on sync subprocesses anywhere on this
+  // request path, and an extraction that moved the offending call into the
+  // other file would otherwise pass.
+  for (const [label, source] of [
+    ["compute helper", sessionsListSource],
+    ["route", sessionsListRouteSource],
+  ] as const) {
+    assert.doesNotMatch(
+      source,
+      /execFileSync|execSync|spawnSync/,
+      `/sessions/list: the polled list ${label} must never run sync subprocesses on the event loop (cave-n37w)`,
+    );
+  }
+  // Git enrichment is now reached through the `withGitContext` seam that lets a
+  // read-only caller switch it off (cave-9rwd.1). The property is unchanged and
+  // is asserted in both halves: the seam is async and returns the enrichment,
+  // and every call site awaits the seam rather than firing it and moving on.
+  assert.match(
+    sessionsListSource,
+    /const withGitContext = async \([\s\S]{0,160}enrichSessionsWithGitContext\(rows\)/,
+    "/sessions/list: the git-enrichment seam is async and delegates to the async lib",
+  );
+  assert.equal(
+    (sessionsListSource.match(/await withGitContext\(/g) || []).length,
+    2,
+    "/sessions/list: git enrichment is awaited on BOTH the healthy and degraded paths, not run synchronously or unawaited",
+  );
+  assert.equal(
+    (sessionsListSource.match(/enrichSessionsWithGitContext\(/g) || []).length,
+    1,
+    "/sessions/list: the git enrichment has exactly one call site — the awaited seam — so no path can bypass the read-only opt-out",
+  );
+  assert.match(
+    sessionsListRouteSource,
+    /import \{\s*sessionsListCache\s*\} from "@\/lib\/server\/sessions-list-cache"/,
+    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+  );
+  assert.match(
+    sessionsListRouteSource,
+    /sessionsListCache\.get\(cacheKey, \(\) =>\s*computeSessionsList\(/,
+    "/sessions/list: the route keeps cache ownership and delegates the cached compute to the shared helper",
+  );
+  // The extraction's whole point: one implementation, reachable without HTTP.
   assert.doesNotMatch(
     sessionsListSource,
-    /execFileSync|execSync|spawnSync/,
-    "/sessions/list: the polled list route must never run sync subprocesses on the event loop (cave-n37w)",
-  );
-  assert.match(
-    sessionsListSource,
-    /await enrichSessionsWithGitContext\(/,
-    "/sessions/list: git enrichment should be awaited (async), not run synchronously",
-  );
-  assert.match(
-    sessionsListSource,
-    /import \{\s*sessionsListCache,[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
-    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+    /sessionsListCache/,
+    "/sessions/list: the reusable compute helper must not own the route's cache",
   );
   const sessionsListCacheSource = readFileSync(
     path.join(apiRoot, "..", "..", "lib", "server", "sessions-list-cache.ts"),
