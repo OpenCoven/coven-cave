@@ -74,17 +74,30 @@ assert.doesNotMatch(
   /computePresence\(|<FamiliarAvatar/,
   "presence/avatar computation does not live in the menu bar",
 );
-// The New chat control now lives at the top of the left sidebar
-// (SidebarMinimal), not the desktop menu bar.
-assert.doesNotMatch(
+assert.match(
   source,
-  /menu-bar__new|menu-bar__compose|NewChatMenu/,
-  "the New chat / quick-compose control has moved out of the desktop menu bar",
+  /data-quick-chat-trigger[\s\S]{0,180}onClick=\{onOpenQuickChat\}[\s\S]{0,180}aria-label=\{NEW_CHAT_LABEL\}/,
+  "the menu bar keeps a shell-owned New chat action",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /onChatWithFamiliar|onComposeChat/,
-  "the menu bar no longer owns the chat-start handlers",
+  /const newChatShortcut = platformizeHint\("⌘J", keys\);[\s\S]*title=\{`\$\{NEW_CHAT_LABEL\} \(\$\{newChatShortcut\}\)`\}/,
+  "the menu bar platformizes the New chat shortcut hint",
+);
+assert.match(
+  source,
+  /const searchShortcut = platformizeHint\("⌘K", keys\);[\s\S]*title=\{`Search everything in your Cave \(\$\{searchShortcut\} opens the command palette\)`\}/,
+  "the menu bar platformizes the Search shortcut hint",
+);
+assert.match(
+  source,
+  /workspacePageDefinition\("settings"\)/,
+  "Settings naming comes from the shared page registry",
+);
+assert.match(
+  source,
+  /const settingsShortcut = platformizeHint\("⌘,", keys\);[\s\S]*onClick=\{onOpenSettings\}[\s\S]{0,180}title=\{`\$\{SETTINGS_LABEL\} \(\$\{settingsShortcut\}\)`\}/,
+  "the menu bar exposes Settings through the existing shell handler",
 );
 
 // Right group — tasks. A Tasks button (board) and a Schedules button, each
@@ -93,6 +106,11 @@ assert.match(
   source,
   /className="menu-bar__task focus-ring"[\s\S]*onClick=\{onViewTasks\}/,
   "the Tasks button jumps to the board",
+);
+assert.match(
+  source,
+  /workspacePageDefinition\("board"\)/,
+  "Tasks naming comes from the shared page registry",
 );
 assert.match(
   source,
@@ -115,7 +133,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Rituals<\/span>/,
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">\{RITUALS_LABEL\}<\/span>/,
   "the Rituals button matches the sidebar's Rituals label + icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
 );
 assert.doesNotMatch(
@@ -232,6 +250,11 @@ assert.match(
 );
 assert.match(
   workspace,
+  /<FamiliarMenuBar[\s\S]*onOpenSettings=\{\(\) => nextRouter\.push\("\/settings"\)\}/,
+  "workspace wires the desktop menu bar Settings action to the shared settings route",
+);
+assert.match(
+  workspace,
   /<FamiliarMenuBar[\s\S]*searchQuery=\{topSearchQuery\}[\s\S]*onSearchQueryChange=\{\(query\) => \{[\s\S]*setTopSearchQuery\(query\);[\s\S]*openPalette\(\);/,
   "desktop menu bar search shares the same palette query/open wiring as mobile top bar",
 );
@@ -246,11 +269,11 @@ assert.doesNotMatch(
   "Workspace should not render a floating Salem perch",
 );
 
-// The open (not-done) board cards are polled from /api/board, kept with their
-// familiar so the Tasks badge can scope the count.
+// The open (not-done) board cards are polled from the shared warm cache,
+// kept with their familiar so the Tasks badge can scope the count.
 assert.match(
   workspace,
-  /fetch\("\/api\/board"[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
+  /const nextOpenCards = cards\n\s*\.filter\(\(c\) => c\.status !== "done"\)\n\s*\.map\(\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\);/,
   "open (not-done) board cards are collected with their familiarId",
 );
 
@@ -275,8 +298,8 @@ assert.match(
 // it as a dropdown from this menubar.
 assert.match(
   source,
-  /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label="Quick chat"/,
-  "the desktop menu bar renders a data-quick-chat-trigger button wired to onOpenQuickChat",
+  /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label=\{NEW_CHAT_LABEL\}/,
+  "the desktop menu bar renders a New chat trigger wired to onOpenQuickChat",
 );
 // cave-xsq.6 + project-primary navigation: the quick-chat trigger enters the
 // shared shell launch path, which resolves project and acting-familiar authority

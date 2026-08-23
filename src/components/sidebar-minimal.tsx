@@ -25,18 +25,15 @@ import { NavSectionTabs } from "@/components/nav-section-tabs";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import {
   DEFAULT_NAV_SECTION,
-  navItemsForSection,
   roomBelongsToSection,
   type NavSection,
 } from "@/lib/nav-section";
+import { sidebarDestinations } from "@/lib/workspace-destination-policy";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
-import {
-  type WorkspaceNavItem,
-  type WorkspaceNavMode,
-} from "@/lib/workspace-navigation";
+import { type WorkspaceNavMode } from "@/lib/workspace-navigation";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import type { CreateProjectOptions } from "@/lib/chat-add-project";
 export type SidebarRoleSurfaceRow = {
@@ -116,7 +113,6 @@ const MODE_BADGES: Partial<Record<WorkspaceNavMode, (props: SidebarMinimalProps)
   board: (props) => badgeText(props.boardOpenCount),
   inbox: (props) => badgeText(props.scheduleNeedsCount),
 };
-
 
 function FolderRow({
   id,
@@ -271,26 +267,30 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         id={`nav-section-panel-${section}`}
         aria-labelledby={`nav-section-tab-${section}`}
       >
-          {navItemsForSection(section).map((fm: WorkspaceNavItem, i, rows) => (
-            <FolderRow
-              key={fm.id}
-              id={fm.id}
-              label={fm.label}
-              iconName={fm.iconName}
-              // Active follows the primary mode (Roles/Capabilities keep the
-              // Marketplace hub lit); pages open as split tiles get a lighter
-              // "open in split" state instead. Derivation in lib/sidebar-nav-state.
-              state={sidebarRowState(fm.id, mode, props.splitPageModes)}
-              badge={MODE_BADGES[fm.id]?.(props)}
-              kbd={fm.kbd}
-              description={fm.description}
-              quiet={fm.quiet}
-              // Index the RENDERED list — a navHidden entry between quiet rows
-              // must not throw off the "first quiet row" gap.
-              quietLead={Boolean(fm.quiet) && !rows[i - 1]?.quiet}
-              onClick={() => handleModeSelect(fm.id)}
-            />
-          ))}
+          {sidebarDestinations(section).map((destination, i, rows) => {
+            const quiet = destination.nav === "quiet";
+            return (
+              <FolderRow
+                key={destination.id}
+                id={destination.id}
+                label={destination.title}
+                iconName={destination.iconName}
+                // Active follows the primary mode (Roles/Capabilities keep the
+                // Marketplace hub lit); pages open as split tiles get a lighter
+                // "open in split" state instead. Derivation in lib/sidebar-nav-state.
+                state={sidebarRowState(destination.id, mode, props.splitPageModes)}
+                badge={MODE_BADGES[destination.id]?.(props)}
+                kbd={destination.kbd}
+                description={destination.description}
+                quiet={quiet}
+                // Index the rendered list — the policy selector already hides
+                // non-sidebar destinations, so the first quiet row still owns
+                // the visual step regardless of hidden companions.
+                quietLead={quiet && rows[i - 1]?.nav !== "quiet"}
+                onClick={() => handleModeSelect(destination.id)}
+              />
+            );
+          })}
           {/* Role Surface rooms — the active familiar's or selected scope's
             vocation workspaces, filtered to the open section (the coding
             workbench belongs to Code; every other room to Home).

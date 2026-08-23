@@ -200,8 +200,28 @@ assert.match(
 );
 assert.match(
   workspace,
+  /const primaryStatusPageId = primaryPaneRequest\?\.requestedPageId \?\? mode;/,
+  "workspace derives the status-policy page from the requested primary pane before falling back to mode",
+);
+assert.match(
+  workspace,
+  /const statusBarVisibility = statusContextPolicy\(primaryStatusPageId\);/,
+  "workspace derives strip visibility from the shared destination policy using the effective primary page",
+);
+assert.match(
+  workspace,
+  /const statusBarHasContext = Boolean\(/,
+  "contextual surfaces only render the strip when existing shell context is present",
+);
+assert.match(
+  workspace,
+  /statusBarVisibility === "persistent" \|\| \(statusBarVisibility === "contextual" && statusBarHasContext\)/,
+  "the strip stays visible for persistent surfaces and contextual surfaces with real context",
+);
+assert.doesNotMatch(
+  workspace,
   /mode === "home" \|\| mode === "chat" \? \(\s*\n\s*<StatusBar/,
-  "the strip renders only on Home and Chat",
+  "the strip no longer hardcodes Home and Chat as the only visible pages",
 );
 assert.match(
   workspace,
@@ -210,8 +230,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /\{detailContent\}\s*<\/div>[\s\S]{0,400}?\{firstProjectGateOpen \? null : statusBar\}/,
-  "the strip mounts under the detail content and hides while the first-project gate is up",
+  /const primaryDetail = primaryPaneRequest[\s\S]*renderPaneRequest\(primaryPaneRequest, \(\) => setPrimaryPaneRequest\(null\)\)[\s\S]*: defaultDetail;/,
+  "workspace resolves a single primary page before mounting the shared status-strip chrome",
+);
+assert.match(
+  workspace,
+  /const detail = \(\s*<div className="flex h-full min-h-0 min-w-0 flex-col">[\s\S]*<div className="min-h-0 min-w-0 flex-1">\{primaryDetail\}<\/div>[\s\S]*\{firstProjectGateOpen \? null : statusBar\}\s*<\/div>\s*\);/,
+  "the strip mounts in shared primary-pane chrome and hides while the first-project gate is up",
 );
 
 console.log("shell-chrome-revamp.test.ts: ok");
