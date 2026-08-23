@@ -61,6 +61,7 @@ function statusLabel(status: ResearchRunSurfaceModel["status"]): string {
 
 function evidenceSummary(run: ResearchRunSurfaceModel): string[] {
   const values: string[] = [];
+  if (run.evidence.sources !== undefined) values.push(`${run.evidence.sources} sources`);
   if (run.evidence.reviewed !== undefined) values.push(`${run.evidence.reviewed} reviewed`);
   if (run.evidence.retained !== undefined) values.push(`${run.evidence.retained} retained`);
   if (run.evidence.cited !== undefined) values.push(`${run.evidence.cited} cited`);
@@ -101,7 +102,13 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
       controller = new AbortController();
       try {
         const result = await getResearchMission(snapshot.runId, controller.signal);
-        if (stopped || !result.ok || !result.mission) return;
+        if (stopped) return;
+        if (!result.ok || !result.mission) {
+          // A provider-only snapshot may not have a local mission yet. Keep the
+          // truthful persisted snapshot visible and retry while it can change.
+          if (POLLABLE.has(snapshot.status)) timer = setTimeout(refresh, 5_000);
+          return;
+        }
         const next = researchMissionToRunSurface(result.mission);
         setRun(next);
         if (POLLABLE.has(next.status)) {
@@ -109,9 +116,9 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
         }
       } catch (error) {
         if (stopped || (error as Error).name === "AbortError") return;
-        // The persisted marker snapshot remains a truthful degraded view. Retry
-        // later while it still represents a live/interruptible run.
-        if (POLLABLE.has(run.status)) timer = setTimeout(refresh, 5_000);
+        // Transport loss is not evidence the run stopped. Keep the last
+        // durable/snapshot projection and retry instead of freezing the card.
+        timer = setTimeout(refresh, 5_000);
       }
     };
 
@@ -121,10 +128,7 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
       controller?.abort();
       if (timer) clearTimeout(timer);
     };
-  // Rehydrate when the stable run identity changes. The recursive poll derives
-  // its next cadence from the server response rather than from render state.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot.runId]);
+  }, [snapshot.runId, snapshot.status]);
 
   const act = useCallback(async (action: "pause" | "resume" | "cancel") => {
     if (busy) return;
@@ -271,7 +275,12 @@ export function ResearchRunSurface({
         </div>
 
         {live ? (
-          <div className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--bg-subtle)]" aria-label="Research is active">
+          <div
+            className="mt-3 h-1 overflow-hidden rounded-full bg-[var(--bg-subtle)]"
+            role="progressbar"
+            aria-label="Research progress"
+            aria-valuetext="Research is active; progress is not yet measurable"
+          >
             <div className="h-full w-1/4 animate-pulse rounded-full bg-[var(--fg-primary)] motion-reduce:animate-none" aria-hidden />
           </div>
         ) : null}
