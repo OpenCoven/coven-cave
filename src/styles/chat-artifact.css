@@ -25,7 +25,7 @@
   display: flex;
 }
 .chat-artifact--fullscreen .chat-artifact__preview-wrap,
-.chat-artifact--fullscreen .chat-artifact__code,
+.chat-artifact--fullscreen .chat-artifact__source,
 .chat-artifact--fullscreen .chat-artifact__code-edit {
   flex: 1;
   width: 100%;
@@ -76,22 +76,19 @@
 .chat-artifact__body { position: relative; }
 .chat-artifact__preview-wrap { position: relative; height: 360px; background: var(--surface-paper); }
 .chat-artifact__frame { width: 100%; height: 100%; border: 0; display: block; }
-.chat-artifact__code, .chat-artifact__code-edit {
+.chat-artifact__source,
+.chat-artifact__code-edit {
   margin: 0; width: 100%; height: 360px; box-sizing: border-box;
-  padding: var(--space-3) 14px; overflow: auto;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6;
-  color: var(--text-primary); background: var(--bg-base); border: 0;
+  border: 0;
+  border-radius: 0;
+}
+.chat-artifact__code-edit {
+  padding: var(--space-3) var(--space-4); overflow: auto;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xs); line-height: 1.6;
+  color: var(--text-primary); background: var(--bg-base);
 }
 .chat-artifact__code-edit { resize: vertical; white-space: pre; }
-/* Highlighted (read-only) code: the wrapper scrolls; Shiki's own <pre> drops
-   its padding/background so the box inherits the artifact's surface + spacing. */
-.chat-artifact__code--hl { padding: 0; }
-.chat-artifact__code--hl pre.shiki {
-  margin: 0; padding: 12px 14px; min-height: 100%; box-sizing: border-box;
-  background: transparent !important;
-  font: inherit; white-space: pre;
-}
-.chat-artifact__code--hl code { font: inherit; }
 .chat-artifact__error {
   position: absolute; left: 10px; right: 10px; bottom: 10px;
   display: flex; align-items: center; gap: 8px;

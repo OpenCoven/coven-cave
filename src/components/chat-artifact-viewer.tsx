@@ -7,7 +7,9 @@ import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { useSurfaceHistory } from "@/lib/use-surface-history";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { ArtifactSourceView } from "@/components/artifact-source-view";
 import { Tabs } from "@/components/ui/tabs";
+import { useArtifactRuntimeError } from "@/components/use-artifact-runtime-error";
 import {
   buildPreviewSrcDoc,
   buildRefinePrompt,
@@ -45,7 +47,6 @@ import {
   isCanvasComponentSelectedMessage,
 } from "@/lib/canvas-inspector";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
-import { highlightToHtml } from "@/components/message-bubble";
 
 type Props = {
   initialCode: string;
@@ -92,7 +93,11 @@ export function ChatArtifactViewer({
   });
   const [editing, setEditing] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const {
+    runtimeError,
+    setRuntimeError,
+    showNavigationWarning,
+  } = useArtifactRuntimeError();
   const [refineText, setRefineText] = useState("");
   const [refineOpen, setRefineOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -420,9 +425,7 @@ export function ChatArtifactViewer({
       setInspectorLoaded(false);
       commentModeRef.current = false;
       setCommentMode(false);
-      setRuntimeError(
-        "The artifact navigated away from its preview. Reload or reopen the preview before adding comments.",
-      );
+      showNavigationWarning();
     };
     if (status !== "pending") {
       disableInspection();
@@ -435,7 +438,7 @@ export function ChatArtifactViewer({
       if (channel?.settleFrameLoad() === "authenticated") return;
       disableInspection();
     }, 250);
-  }, []);
+  }, [showNavigationWarning]);
 
   const toggleCommentMode = useCallback(() => {
     if (!artifactRef.current || !inspectorLoaded) return;
@@ -456,7 +459,7 @@ export function ChatArtifactViewer({
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [srcDoc]);
+  }, [setRuntimeError, srcDoc]);
 
   // Fullscreen is a modal dialog: trap focus inside it, restore focus to the
   // Expand button on close, and close on Escape (shared convention).
@@ -475,7 +478,7 @@ export function ChatArtifactViewer({
     if (!openArtifactInTab(srcDoc)) {
       setRuntimeError("Pop-up blocked — allow pop-ups for Cave to open the artifact in a tab.");
     }
-  }, [srcDoc]);
+  }, [setRuntimeError, srcDoc]);
 
   const runRefine = useCallback(async () => {
     const ask = refineText.trim();
@@ -515,7 +518,7 @@ export function ChatArtifactViewer({
       generatingRef.current = false;
       setGenerating(false);
     }
-  }, [refineText, familiarId, code, kind, markLocalContentChanged]);
+  }, [refineText, familiarId, code, kind, markLocalContentChanged, setRuntimeError]);
 
   const cancelRefine = useCallback(() => {
     refineAbortRef.current?.abort();
@@ -638,7 +641,14 @@ export function ChatArtifactViewer({
       applyingCommentsRef.current = false;
       setApplyingComments(false);
     }
-  }, [artifact, familiarId, flushAnnotationWrites, postInspectorState, synchronizeArtifactSnapshot]);
+  }, [
+    artifact,
+    familiarId,
+    flushAnnotationWrites,
+    postInspectorState,
+    setRuntimeError,
+    synchronizeArtifactSnapshot,
+  ]);
 
   const openRefine = useCallback(() => {
     if (!familiarId || applyingCommentsRef.current) return;
@@ -685,7 +695,7 @@ export function ChatArtifactViewer({
       setSaveState("idle");
       setRuntimeError("Couldn't save to Canvas.");
     }
-  }, [saveState, sourcePrompt, title, code, kind]);
+  }, [saveState, sourcePrompt, title, code, kind, setRuntimeError]);
 
   const shell = (
     <div
@@ -792,7 +802,12 @@ export function ChatArtifactViewer({
             }}
           />
         ) : (
-          <ArtifactCode code={code} kind={kind} />
+          <ArtifactSourceView
+            className="chat-artifact__source"
+            code={code}
+            kind={kind}
+            ariaLabel={`${kind === "react" ? "React TSX" : "HTML"} source for ${title}`}
+          />
         )}
       </div>
 
@@ -1013,34 +1028,4 @@ export function ChatArtifactViewer({
   return fullscreen && typeof document !== "undefined"
     ? createPortal(shell, document.body)
     : shell;
-}
-
-/**
- * The Code tab's read-only view: the same code, Shiki-highlighted to match the
- * chat code blocks. Falls back to plain text until the (lazy) highlighter
- * resolves, and on any highlight failure, so the code is always shown. React
- * artifacts highlight as TSX; everything else as HTML.
- */
-function ArtifactCode({ code, kind }: { code: string; kind: ArtifactKind }) {
-  const [html, setHtml] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setHtml(null);
-    void highlightToHtml(code, kind === "react" ? "tsx" : "html")
-      .then((h) => { if (!cancelled) setHtml(h); })
-      .catch(() => { if (!cancelled) setHtml(null); });
-    return () => { cancelled = true; };
-  }, [code, kind]);
-
-  if (!html) {
-    return <pre className="chat-artifact__code"><code>{code}</code></pre>;
-  }
-  return (
-    <div
-      className="chat-artifact__code chat-artifact__code--hl"
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
 }

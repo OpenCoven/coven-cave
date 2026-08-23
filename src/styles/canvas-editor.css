@@ -140,6 +140,23 @@
   flex: 1;
   min-height: 0;
 }
+.canvas-editor__body[hidden] {
+  display: none;
+}
+
+.canvas-editor__source-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
+  background: var(--bg-base);
+}
+.canvas-editor__source-panel[hidden] {
+  display: none;
+}
+.canvas-editor__source {
+  flex: 1;
+}
 
 .canvas-editor__stage {
   flex: 1;

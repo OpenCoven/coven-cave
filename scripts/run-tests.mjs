@@ -699,6 +699,7 @@ export const SUITES = {
     "src/components/calendar-overflow-pill.test.ts",
     "src/lib/canvas-layout.test.ts",
     "src/lib/canvas-gallery.test.ts",
+    "src/lib/artifact-source.test.ts",
     "src/lib/canvas-artifacts.test.ts",
     "src/lib/canvas-comments.test.ts",
     "src/lib/canvas-content-sync.test.ts",
@@ -1013,6 +1014,7 @@ export const SUITES = {
     "src/components/settings-overview.test.ts",
     "src/components/settings-save-feedback.test.ts",
     "src/components/settings-save-feedback.behavior.test.tsx",
+    "src/components/use-artifact-runtime-error.test.tsx",
     "src/components/voice-engine-settings.test.ts",
     "src/components/voice-provider-settings.test.tsx",
     "src/components/voice-provider-settings.integration.test.tsx",
@@ -2094,6 +2096,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 const VITEST_TESTS = new Set([
   "src/lib/home-composer-context.test.ts",
   "src/components/settings-save-feedback.behavior.test.tsx",
+  "src/components/use-artifact-runtime-error.test.tsx",
   "src/components/chat-preview-card.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",

@@ -143,6 +143,36 @@ assert.doesNotMatch(
   /\.canvas-editor__play-(?:card|row)\b/,
   "retired Play mode does not leave dead stylesheet selectors",
 );
+assert.match(
+  editor,
+  /useState<"preview" \| "code">\("preview"\)/,
+  "the full editor opens on Preview",
+);
+assert.match(
+  editor,
+  /<Tabs[\s\S]{0,400}?ariaLabel="Canvas editor view"[\s\S]{0,400}?\{ id: "preview", label: "Preview"[\s\S]{0,200}?\{ id: "code", label: "Code"/,
+  "the full editor exposes an accessible top-level Preview and Code choice",
+);
+assert.match(
+  editor,
+  /className="canvas-editor__body"[\s\S]{0,180}?role="tabpanel"[\s\S]{0,180}?hidden=\{view !== "preview"\}/,
+  "the existing editor and iframe remain mounted in the Preview panel",
+);
+assert.match(
+  editor,
+  /className="canvas-editor__source-panel"[\s\S]{0,180}?role="tabpanel"[\s\S]{0,180}?hidden=\{view !== "code"\}[\s\S]{0,300}?<ArtifactSourceView[\s\S]{0,160}?code=\{code\}[\s\S]{0,100}?kind=\{kind\}/,
+  "Code renders the current in-memory editor source and kind",
+);
+assert.match(
+  editor,
+  /\{view === "preview" \? \([\s\S]{0,3000}?aria-label="Viewport size"[\s\S]{0,3000}?aria-label="Editor mode"/,
+  "iframe-dependent viewport and component tools are shown only in Preview",
+);
+assert.match(
+  editor,
+  /setCode\(nextCode\);[\s\S]{0,80}?setKind\(nextKind\);/,
+  "accepted design changes update the state consumed by the Code panel immediately",
+);
 
 // Inspector wiring replicates the viewer's deliberate security boundary.
 assert.match(

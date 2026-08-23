@@ -14,6 +14,8 @@ const { formatArtifactWhen, mergeCanvasArtifactSnapshot, sortArtifactsForGallery
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./chat-canvas-view.tsx", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("./chat-artifact-viewer.tsx", import.meta.url), "utf8");
+const runtimeError = readFileSync(new URL("./use-artifact-runtime-error.ts", import.meta.url), "utf8");
+const sourceView = readFileSync(new URL("./artifact-source-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/chat-canvas.css", import.meta.url), "utf8");
 
 // ── Tab wiring in the chat surface ──────────────────────────────────────────
@@ -164,6 +166,36 @@ assert.match(
 );
 assert.match(
   view,
+  /useState<"preview" \| "code">\("preview"\)/,
+  "preview dialogs default to the rendered sketch",
+);
+assert.match(
+  view,
+  /useEffect\(\(\) => \{\s*setPreviewTab\("preview"\);[\s\S]{0,160}?\}, \[previewId\]\)/,
+  "opening another saved sketch resets the dialog to Preview",
+);
+assert.match(
+  view,
+  /<Tabs[\s\S]{0,400}?ariaLabel="Sketch preview view"[\s\S]{0,400}?\{ id: "preview", label: "Preview"[\s\S]{0,200}?\{ id: "code", label: "Code"/,
+  "the preview modal exposes accessible Preview and Code tabs",
+);
+assert.match(
+  view,
+  /role="tabpanel"[\s\S]{0,180}?id="canvas-preview-view-panel-preview"[\s\S]{0,180}?hidden=\{previewTab !== "preview"\}/,
+  "the live sandbox is wired as the Preview tab panel",
+);
+assert.match(
+  view,
+  /role="tabpanel"[\s\S]{0,180}?id="canvas-preview-view-panel-code"[\s\S]{0,180}?hidden=\{previewTab !== "code"\}[\s\S]{0,300}?<ArtifactSourceView[\s\S]{0,200}?code=\{preview\.code\}[\s\S]{0,120}?kind=\{preview\.kind \?\? "html"\}/,
+  "the Code panel receives the exact persisted source instead of preview srcDoc",
+);
+assert.match(
+  view,
+  /\{previewTab === "preview" \? \([\s\S]{0,700}?aria-label=\{previewPlaying \? "Stop interacting with the sketch" : "Interact with the sketch"\}/,
+  "the iframe-only Interact control is available only in Preview",
+);
+assert.match(
+  view,
   /setEditorId\(preview\.id\);\s*setPreviewId\(null\);/,
   "Open in editor closes the preview and enters the editor",
 );
@@ -253,8 +285,13 @@ assert.match(
 );
 assert.match(
   viewer,
-  /handleFrameLoad\(\)[\s\S]{0,1000}?commentModeRef\.current = false[\s\S]{0,500}?reload or reopen/i,
-  "artifact-initiated iframe navigation closes the channel, disables comments, and instructs recovery",
+  /handleFrameLoad\(\)[\s\S]{0,1000}?commentModeRef\.current = false[\s\S]{0,500}?showNavigationWarning\(\)/,
+  "artifact-initiated iframe navigation closes the channel, disables comments, and shows recovery",
+);
+assert.match(
+  runtimeError,
+  /Reload or reopen the preview before adding comments\./,
+  "the transient navigation warning retains actionable recovery guidance",
 );
 assert.match(
   viewer,
@@ -439,6 +476,16 @@ assert.doesNotMatch(
   css,
   /\.chat-canvas-preview__frame[\s\S]{0,200}?pointer-events: none/,
   "the preview-modal sketch receives pointer input",
+);
+assert.match(
+  sourceView,
+  /highlightToHtml\(source\.code, source\.language\)/,
+  "the shared source view reuses the chat artifact syntax highlighter",
+);
+assert.match(
+  sourceView,
+  /role="region"[\s\S]{0,120}?aria-label=\{ariaLabel\}[\s\S]{0,120}?tabIndex=\{0\}/,
+  "source code is a labelled, keyboard-focusable scrolling region",
 );
 
 // ── Pure helpers ────────────────────────────────────────────────────────────

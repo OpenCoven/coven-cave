@@ -75,7 +75,8 @@ const BASELINES = {
 };
 
 // Product recovery banks the consolidated rail, analytics, profile, memory, and chat spacing cleanup.
-BASELINES.offScaleSpacingPx = 1607;
+// Canvas source view banks the artifact code panel's former 14px inset by moving it onto --space-4.
+BASELINES.offScaleSpacingPx = 1606;
 BASELINES.inlineTsxStyles = 280;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────

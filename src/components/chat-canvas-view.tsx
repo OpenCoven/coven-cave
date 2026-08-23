@@ -4,10 +4,12 @@ import "@/styles/chat-canvas.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { ArtifactSourceView } from "@/components/artifact-source-view";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SearchInput } from "@/components/ui/search-input";
+import { Tabs } from "@/components/ui/tabs";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CanvasAddTile } from "@/components/canvas-add-tile";
@@ -46,6 +48,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const [q, setQ] = useState("");
   const [kindFilter, setKindFilter] = useState<CanvasKindFilter>("all");
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewTab, setPreviewTab] = useState<"preview" | "code">("preview");
   // In-place expand: the preview dialog grows to fill the viewport. Reset per
   // sketch so the next preview always opens at the normal size.
   const [previewExpanded, setPreviewExpanded] = useState(false);
@@ -175,6 +178,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   );
 
   useEffect(() => {
+    setPreviewTab("preview");
     setPreviewExpanded(false);
     setPreviewPlaying(false);
   }, [previewId]);
@@ -394,20 +398,34 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
           >
             <header className="chat-canvas-preview__head">
               <span className="chat-canvas-preview__title" title={preview.title}>{preview.title}</span>
+              <Tabs
+                variant="segment"
+                size="sm"
+                ariaLabel="Sketch preview view"
+                idPrefix="canvas-preview-view"
+                value={previewTab}
+                onChange={setPreviewTab}
+                items={[
+                  { id: "preview", label: "Preview", icon: "ph:play" },
+                  { id: "code", label: "Code", icon: "ph:code" },
+                ]}
+              />
               <span className="chat-canvas-preview__tag">
                 {galleryArtifactKind(preview) === "react" ? "React" : "HTML"}
                 {(() => { const when = formatArtifactWhen(preview.updatedAt); return when ? ` · ${when}` : ""; })()}
               </span>
-              <button
-                type="button"
-                className="chat-canvas-preview__expand focus-ring"
-                title={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
-                aria-label={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
-                aria-pressed={previewPlaying}
-                onClick={() => setPreviewPlaying((current) => !current)}
-              >
-                <Icon name={previewPlaying ? "ph:pause" : "ph:play"} width={15} aria-hidden />
-              </button>
+              {previewTab === "preview" ? (
+                <button
+                  type="button"
+                  className="chat-canvas-preview__expand focus-ring"
+                  title={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
+                  aria-label={previewPlaying ? "Stop interacting with the sketch" : "Interact with the sketch"}
+                  aria-pressed={previewPlaying}
+                  onClick={() => setPreviewPlaying((current) => !current)}
+                >
+                  <Icon name={previewPlaying ? "ph:pause" : "ph:play"} width={15} aria-hidden />
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="chat-canvas-preview__expand focus-ring"
@@ -427,7 +445,13 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 <Icon name="ph:x" width={15} aria-hidden />
               </button>
             </header>
-            <div className="chat-canvas-preview__body">
+            <div
+              className="chat-canvas-preview__body"
+              role="tabpanel"
+              id="canvas-preview-view-panel-preview"
+              aria-labelledby="canvas-preview-view-tab-preview"
+              hidden={previewTab !== "preview"}
+            >
               <iframe
                 className="chat-canvas-preview__frame"
                 title={`Preview of ${preview.title}`}
@@ -437,8 +461,24 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 tabIndex={0}
               />
             </div>
+            <div
+              className="chat-canvas-preview__body chat-canvas-preview__body--source"
+              role="tabpanel"
+              id="canvas-preview-view-panel-code"
+              aria-labelledby="canvas-preview-view-tab-code"
+              hidden={previewTab !== "code"}
+            >
+              <ArtifactSourceView
+                className="chat-canvas-preview__source"
+                code={preview.code}
+                kind={preview.kind ?? "html"}
+                ariaLabel={`${preview.kind === "react" ? "React TSX" : "HTML"} source for ${preview.title}`}
+              />
+            </div>
             <p className="chat-canvas-preview__hint">
-              Live preview — open it in the editor to inspect, comment, or refine.
+              {previewTab === "preview"
+                ? "Live preview — open it in the editor to inspect, comment, or refine."
+                : "Saved source — open it in the editor to keep refining."}
             </p>
             <footer className="chat-canvas-preview__foot">
               <Button

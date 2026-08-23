@@ -370,13 +370,24 @@
   display: flex;
   flex: 1;
   min-height: 340px;
-  background: white; /* sketches expect a white page behind them (thumb precedent) */
+  background: var(--surface-paper);
+}
+.chat-canvas-preview__body[hidden] {
+  display: none;
+}
+.chat-canvas-preview__body--source {
+  background: var(--code-surface);
 }
 .chat-canvas-preview__frame {
   flex: 1;
   width: 100%;
   border: 0;
   display: block;
+}
+.chat-canvas-preview__source {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
 }
 /* Play toggle hands the sandbox its own input back (cave canvas interactivity).
    Isolation is unchanged — still an opaque-origin allow-scripts sandbox. */

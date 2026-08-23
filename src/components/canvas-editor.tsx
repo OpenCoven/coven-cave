@@ -11,6 +11,8 @@
 import "@/styles/canvas-editor.css";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArtifactSourceView } from "@/components/artifact-source-view";
+import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import {
   buildPreviewSrcDoc,
@@ -169,6 +171,7 @@ export function CanvasEditor(props: {
 
   const [code, setCode] = useState(artifact.code);
   const [kind, setKind] = useState<ArtifactKind>(artifact.kind ?? "html");
+  const [view, setView] = useState<"preview" | "code">("preview");
   const [mode, setMode] = useState<EditorMode>("interact");
   const [selection, setSelection] = useState<CanvasComponentTarget | null>(null);
   const [inspectorLoaded, setInspectorLoaded] = useState(false);
@@ -836,59 +839,81 @@ export function CanvasEditor(props: {
           <Icon name="ph:caret-left" width={11} aria-hidden /> Gallery
         </button>
         <span className="canvas-editor__title" title={artifact.title}>{artifact.title}</span>
-        <span className="canvas-editor__view-controls" role="group" aria-label="Viewport size">
-          {CANVAS_VIEWPORT_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              className={`canvas-editor__view focus-ring-inset${viewportId === preset.id ? " is-active" : ""}`}
-              title={preset.width && preset.height ? `${preset.label} — ${preset.width}×${preset.height}` : `${preset.label} the stage`}
-              aria-label={preset.width && preset.height ? `${preset.label} viewport — ${preset.width}×${preset.height}` : "Fill the stage"}
-              aria-pressed={viewportId === preset.id}
-              onClick={() => selectViewport(preset.id)}
-            >
-              <Icon name={preset.icon} width={15} aria-hidden />
-            </button>
-          ))}
-        </span>
-        {viewportCaption ? (
-          <span className="canvas-editor__viewport-size" aria-hidden>{viewportCaption}</span>
+        <Tabs
+          variant="segment"
+          size="sm"
+          ariaLabel="Canvas editor view"
+          idPrefix="canvas-editor-view"
+          value={view}
+          onChange={setView}
+          items={[
+            { id: "preview", label: "Preview", icon: "ph:play" },
+            { id: "code", label: "Code", icon: "ph:code" },
+          ]}
+        />
+        {view === "preview" ? (
+          <>
+            <span className="canvas-editor__view-controls" role="group" aria-label="Viewport size">
+              {CANVAS_VIEWPORT_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`canvas-editor__view focus-ring-inset${viewportId === preset.id ? " is-active" : ""}`}
+                  title={preset.width && preset.height ? `${preset.label} — ${preset.width}×${preset.height}` : `${preset.label} the stage`}
+                  aria-label={preset.width && preset.height ? `${preset.label} viewport — ${preset.width}×${preset.height}` : "Fill the stage"}
+                  aria-pressed={viewportId === preset.id}
+                  onClick={() => selectViewport(preset.id)}
+                >
+                  <Icon name={preset.icon} width={15} aria-hidden />
+                </button>
+              ))}
+            </span>
+            {viewportCaption ? (
+              <span className="canvas-editor__viewport-size" aria-hidden>{viewportCaption}</span>
+            ) : null}
+            <span className="canvas-editor__view-controls" role="group" aria-label="Sketch view">
+              <button
+                type="button"
+                className={`canvas-editor__view focus-ring-inset${expanded ? " is-active" : ""}`}
+                title="Expand sketch"
+                aria-label="Expand sketch"
+                aria-pressed={expanded}
+                onClick={toggleExpanded}
+              >
+                <Icon name={expanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={15} aria-hidden />
+              </button>
+              {fullscreenAvailable ? (
+                <button
+                  type="button"
+                  className="canvas-editor__view focus-ring-inset"
+                  title={nativeFullscreen ? "Exit full screen" : "Enter full screen"}
+                  aria-label={nativeFullscreen ? "Exit full screen" : "Enter full screen"}
+                  onClick={toggleNativeFullscreen}
+                >
+                  <Icon name="ph:frame-corners" width={15} aria-hidden />
+                </button>
+              ) : null}
+            </span>
+            <span className="canvas-editor__modes" role="group" aria-label="Editor mode">
+              {modeButton("interact", "Interact", "Use the sketch")}
+              {modeButton("select", "Select", "Select components")}
+              {modeButton("comment", "Comment", "Pin comments to components")}
+              {modeButton("edit", "Edit", "Edit fonts, borders, padding")}
+            </span>
+          </>
         ) : null}
-        <span className="canvas-editor__view-controls" role="group" aria-label="Sketch view">
-          <button
-            type="button"
-            className={`canvas-editor__view focus-ring-inset${expanded ? " is-active" : ""}`}
-            title="Expand sketch"
-            aria-label="Expand sketch"
-            aria-pressed={expanded}
-            onClick={toggleExpanded}
-          >
-            <Icon name={expanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={15} aria-hidden />
-          </button>
-          {fullscreenAvailable ? (
-            <button
-              type="button"
-              className="canvas-editor__view focus-ring-inset"
-              title={nativeFullscreen ? "Exit full screen" : "Enter full screen"}
-              aria-label={nativeFullscreen ? "Exit full screen" : "Enter full screen"}
-              onClick={toggleNativeFullscreen}
-            >
-              <Icon name="ph:frame-corners" width={15} aria-hidden />
-            </button>
-          ) : null}
-        </span>
-        <span className="canvas-editor__modes" role="group" aria-label="Editor mode">
-          {modeButton("interact", "Interact", "Use the sketch")}
-          {modeButton("select", "Select", "Select components")}
-          {modeButton("comment", "Comment", "Pin comments to components")}
-          {modeButton("edit", "Edit", "Edit fonts, borders, padding")}
-        </span>
         <button type="button" className="canvas-editor__done focus-ring" onClick={onClose}>
           Done
         </button>
       </div>
 
-      <div className="canvas-editor__body">
+      <div
+        className="canvas-editor__body"
+        role="tabpanel"
+        id="canvas-editor-view-panel-preview"
+        aria-labelledby="canvas-editor-view-tab-preview"
+        hidden={view !== "preview"}
+      >
         <div className="canvas-editor__stage" ref={stageRef}>
           <div
             className={`canvas-editor__frame-shell${sizedViewport ? " canvas-editor__frame-shell--viewport" : ""}`}
@@ -1196,6 +1221,20 @@ export function CanvasEditor(props: {
             </div>
           </div>
         </aside>
+      </div>
+      <div
+        className="canvas-editor__source-panel"
+        role="tabpanel"
+        id="canvas-editor-view-panel-code"
+        aria-labelledby="canvas-editor-view-tab-code"
+        hidden={view !== "code"}
+      >
+        <ArtifactSourceView
+          className="canvas-editor__source"
+          code={code}
+          kind={kind}
+          ariaLabel={`${kind === "react" ? "React TSX" : "HTML"} source for ${artifact.title}`}
+        />
       </div>
     </div>
   );
