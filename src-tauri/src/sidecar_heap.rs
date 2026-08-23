@@ -65,8 +65,19 @@ pub(super) fn heap_limit_mb() -> u32 {
 /// from being re-derived at two spawn sites (Windows goes through the process
 /// launch gate, everything else through `Command::arg`).
 pub(super) fn sidecar_node_args(entry: &Path) -> Vec<OsString> {
+    node_args_with_limit(entry, heap_limit_mb())
+}
+
+/// The vector builder itself, with the ceiling passed in.
+///
+/// Split out only so the tests can drive the REAL builder at a limit no host
+/// defaults to. Asserting against the shipped 4096 alone is vacuous on a machine
+/// whose V8 default already sits at ~4.3 GB: deleting the flag entirely would
+/// still report a ~4 GB ceiling and the assertion would hold. Verified — that
+/// mutation passed the shipped-value check and was caught only here.
+fn node_args_with_limit(entry: &Path, limit_mb: u32) -> Vec<OsString> {
     vec![
-        OsString::from(format!("--max-old-space-size={}", heap_limit_mb())),
+        OsString::from(format!("--max-old-space-size={limit_mb}")),
         entry.as_os_str().to_owned(),
     ]
 }
@@ -175,25 +186,31 @@ mod tests {
         );
     }
 
-    /// Proves the previous test is not passing by accident on a host whose V8
-    /// default already sits near CAVE_HEAP_LIMIT_MB: ask for a limit nothing
-    /// would default to, and watch it move.
+    /// The previous test cannot fail on a host whose V8 default already sits at
+    /// ~4.3 GB — deleting the flag outright still reports a ~4 GB ceiling, and
+    /// that mutation did pass it. So drive the SAME builder at limits nothing
+    /// defaults to and watch the running process follow.
     #[test]
-    fn the_flag_drives_the_limit_rather_than_the_host_default() {
+    fn the_builders_output_drives_the_limit_rather_than_the_host_default() {
         let probe = heap_limit_probe();
-        let small = reported_limit_mb(&[
-            OsString::from("--max-old-space-size=512"),
-            probe.as_os_str().to_owned(),
-        ]);
-        let large = reported_limit_mb(&[
-            OsString::from("--max-old-space-size=3000"),
-            probe.as_os_str().to_owned(),
-        ]);
+        let small = reported_limit_mb(&node_args_with_limit(&probe, 512));
+        let large = reported_limit_mb(&node_args_with_limit(&probe, 3000));
         let _ = std::fs::remove_file(&probe);
 
         assert!((512..1024).contains(&small), "a 512 MiB request reported {small} MiB");
         assert!((3000..3512).contains(&large), "a 3000 MiB request reported {large} MiB");
         assert!(large > small, "the limit must track the request");
+    }
+
+    /// And the shipped path really does hand the resolved ceiling to that
+    /// builder, rather than some other number that happens to be nearby.
+    #[test]
+    fn the_shipped_args_carry_the_resolved_ceiling() {
+        let entry = PathBuf::from("/opt/cave/server.mjs");
+        assert_eq!(
+            sidecar_node_args(&entry),
+            node_args_with_limit(&entry, heap_limit_mb())
+        );
     }
 
     /// The ordering contract, verified against a real process rather than by
