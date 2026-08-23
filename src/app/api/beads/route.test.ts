@@ -145,6 +145,14 @@ try {
       "blocked --json": {
         stdout: "[]\n",
       },
+      // Deliberately IDENTICAL to project A's join result. A blocker-name join
+      // that leaked into the wrong repository would then return something
+      // entirely plausible, so no assertion about the RESPONSE could catch it —
+      // only the cwd sweep can. Two projects whose beads look alike is the case
+      // that check exists for; make the fixture actually pose it.
+      "list --id cave-blocker --json": {
+        stdout: '[{"id":"cave-blocker","title":"Provision the signing key","status":"open","priority":1}]\n',
+      },
     }),
   ]);
 
@@ -227,20 +235,12 @@ printf '[]\\n'
   assert.equal(joinCalls.length, 1, "the whole blocker set is named in ONE join, not one bd show per id");
   assert.deepEqual(joinCalls[0].args, ["list", "--id", "cave-blocker", "--json"]);
 
-  // No blockers to name means no join at all.
-  const rootB = encodeURIComponent(projectB);
-  const emptyBlocked = await beads.GET(
-    localRequest(`http://127.0.0.1/api/beads?mode=blocked&projectRoot=${rootB}`),
-  );
-  assert.equal(emptyBlocked.status, 200, await emptyBlocked.clone().text());
-  assert.deepEqual((await emptyBlocked.json()).blockers, []);
-  assert.equal(
-    (await readCommands()).filter(
-      (entry) => entry.command === "bd" && entry.args[0] === "list" && entry.args.includes("--id"),
-    ).length,
-    1,
-    "a blocked set with no blocker ids spawns no join",
-  );
+  // The empty-blocker-set case needs a SECOND project, so it cannot run here:
+  // every request before the blanket cwd sweep below must target project A, or
+  // the sweep's own invariant ("bd never falls back to an unrelated root")
+  // stops meaning anything. It runs against project B at the end of this file,
+  // where the isolation checks live — see "mode=blocked stays inside the
+  // project it was asked for".
 
   // ── action=priority is the ONLY ordering write (cave-7c329) ───────────────
   //
@@ -393,6 +393,47 @@ printf '[]\\n'
   commands = await readCommands();
   assert.equal(countOverviewCommands(commands, canonicalProjectA), 2);
   assert.equal(countOverviewCommands(commands, canonicalProjectB), 2);
+
+  // ── mode=blocked stays inside the project it was asked for (cave-7c329) ───
+  //
+  // The mirror of the blanket sweep above: that one proves a project-A request
+  // never reaches another root, this proves a project-B request never reaches
+  // project A. A scheduler that read or mutated beads in the wrong repository
+  // would be exactly the dishonesty the Work surface exists to avoid, and the
+  // join is the new place that could do it — it spawns a SECOND bd off the
+  // first one's result, so it has its own chance to resolve a different root.
+  //
+  // Project B's blocked set is empty, which also pins the other half: no
+  // blocker ids means no join is spawned at all.
+  source.__clearBeadsDeliveryOverviewCacheForTests();
+  await clearCommands();
+  const emptyBlocked = await beads.GET(
+    localRequest(`http://127.0.0.1/api/beads?mode=blocked&projectRoot=${encodeURIComponent(projectB)}`),
+  );
+  assert.equal(emptyBlocked.status, 200, await emptyBlocked.clone().text());
+  const emptyBlockedBody = await emptyBlocked.json();
+  assert.equal(emptyBlockedBody.projectRoot, canonicalProjectB);
+  assert.deepEqual(emptyBlockedBody.data, []);
+  assert.deepEqual(emptyBlockedBody.blockers, []);
+
+  const blockedBCommands = await readCommands();
+  assert.deepEqual(
+    blockedBCommands.map((command) => command.args),
+    [["blocked", "--json"]],
+    "a blocked set with no blocker ids spawns no join",
+  );
+  for (const command of blockedBCommands) {
+    assert.equal(
+      command.cwd,
+      canonicalProjectB,
+      `${command.command} never falls back to unrelated process.cwd() or project A`,
+    );
+    assert.equal(
+      command.beadsDir,
+      path.join(canonicalProjectB, ".beads"),
+      "a mode=blocked read stays inside the requested project's Beads workspace",
+    );
+  }
 } finally {
   process.chdir(previous.cwd);
   if (previous.path === undefined) delete process.env.PATH;
