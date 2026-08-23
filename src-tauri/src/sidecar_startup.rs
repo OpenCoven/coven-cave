@@ -87,10 +87,52 @@ pub(super) fn sidecar_output_text(output: &Arc<Mutex<SidecarOutputTail>>) -> Str
 
 /// Who is already on the dedicated loopback port.
 ///
-/// Replaces `find_free_port()`, which bound `127.0.0.1:0` and let the kernel
-/// pick — that is what made the packaged app's port different on every launch.
-/// See src-tauri/src/sidecar_ports.rs and scripts/ports.mjs for why a moving
-/// port is more than an inconvenience.
+/// The verdicts `classify_port_occupant` below can return. See that function
+/// for why the conflict is resolved by identity rather than by relocating.
+#[cfg(desktop)]
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum PortOccupant {
+    /// Nothing accepted a connection.
+    Free,
+    /// Answered `/api/app/build-info` as CovenCave.
+    ///
+    /// Both a packaged copy and a `pnpm dev` server land here, and the probe
+    /// cannot tell them apart — `/api/app/build-info` is deliberately
+    /// value-free. A packaged copy answers even though it holds a sidecar
+    /// token: `server.ts` stamps the local-peer header on any direct loopback
+    /// request, and `src/proxy.ts` lets a trusted local peer through ordinary
+    /// app APIs without one (`trustedLocalBrowserApi`). Reading only the token
+    /// check in that file suggests a 401; the request never reaches it.
+    Cave,
+    /// Answered, but refused the unauthenticated probe (401/403).
+    ///
+    /// Not the ordinary second-copy case — that answers 200 and lands in
+    /// `Cave` above. This is a Cave reached without `server.ts` in front of it,
+    /// or something else entirely that gates the same path, so it stays its own
+    /// verdict rather than being guessed in either direction.
+    Gated,
+    /// Accepted a connection but is not a Cave this build can name.
+    Stranger,
+}
+
+/// Total wall-clock a loopback read LOOP may spend.
+///
+/// Not a hard ceiling: the deadline is checked before entering each
+/// `read()`, so the worst case is this plus one `set_read_timeout` window.
+///
+/// Both readers on this path need one. The occupant probe talks to a program we
+/// know nothing about, and the readiness handshake runs inside a loop whose
+/// deadline is checked only BETWEEN calls — neither has a cancellation
+/// checkpoint mid-read, so this is the whole budget for each.
+#[cfg(desktop)]
+const LOOPBACK_READ_BUDGET: Duration = Duration::from_secs(2);
+
+/// Classify whoever holds `port`.
+///
+/// Replaces the old `find_free_port()`, which bound `127.0.0.1:0` and let the
+/// kernel pick — that is what made the packaged app's port different on every
+/// launch. See src-tauri/src/sidecar_ports.rs and scripts/ports.mjs for why a
+/// moving port is more than an inconvenience.
 ///
 /// A busy port is NOT worked around by relocating: relocating is exactly how
 /// the address stopped being dependable in the first place. The conflict is
@@ -102,36 +144,6 @@ pub(super) fn sidecar_output_text(output: &Arc<Mutex<SidecarOutputTail>>) -> Str
 /// the instant it was collected, and `node` binds seconds later.
 /// `sidecar_port_lock` is what actually excludes a second copy; this exists to
 /// say WHO, so the refusal names something instead of guessing.
-#[cfg(desktop)]
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum PortOccupant {
-    /// Nothing accepted a connection.
-    Free,
-    /// Answered `/api/app/build-info` as CovenCave, unauthenticated. In
-    /// practice that means a tokenless `pnpm dev`: a packaged sidecar always
-    /// carries `COVEN_CAVE_AUTH_TOKEN`, and src/proxy.ts refuses an
-    /// unauthenticated `/api/` request without it — so a running packaged copy
-    /// reports as `Gated` below, never here.
-    Cave,
-    /// Answered, but refused the unauthenticated probe (401/403). Most often
-    /// another packaged CovenCave; anything else gating the same path looks
-    /// identical, which is why this is its own verdict rather than a guess in
-    /// either direction.
-    Gated,
-    /// Accepted a connection but is not a Cave this build can name.
-    Stranger,
-}
-
-/// Total wall-clock any single loopback read may spend.
-///
-/// Both readers on this path need one. The occupant probe talks to a program we
-/// know nothing about, and the readiness handshake runs inside a loop whose
-/// deadline is checked only BETWEEN calls — neither has a cancellation
-/// checkpoint mid-read, so this is the whole budget for each.
-#[cfg(desktop)]
-const LOOPBACK_READ_BUDGET: Duration = Duration::from_secs(2);
-
-/// Classify whoever holds `port`.
 ///
 /// One deliberate difference from `scripts/dev-port-owner.mjs`: it downgrades a
 /// connected-but-silent port to "free" so the caller's own bind produces the
@@ -248,15 +260,7 @@ fn parse_http_response(response: &[u8]) -> Option<(u16, Vec<u8>)> {
         .parse::<u16>()
         .ok()?;
     let encoded = &response[header_end + separator.len()..];
-    let chunked = headers.lines().any(|line| {
-        line.split_once(':').is_some_and(|(name, value)| {
-            name.eq_ignore_ascii_case("transfer-encoding")
-                && value
-                    .split(',')
-                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
-        })
-    });
-    let body = if chunked {
+    let body = if headers_declare_chunked(headers) {
         decode_chunked_body(encoded).ok()?
     } else {
         encoded.to_vec()
@@ -294,14 +298,13 @@ pub(super) fn port_conflict_message(port: u16, occupant: &PortOccupant) -> Strin
              again now.\n\nRe-launch CovenCave."
         ),
         PortOccupant::Cave => format!(
-            "Port {port} is already serving CovenCave, most likely a dev server started with \
-             `pnpm dev`.\n\nStop it and re-launch. {}",
+            "Port {port} is already serving CovenCave — either another copy of the app, or a \
+             dev server started with `pnpm dev`.\n\nSwitch to it, or stop it and re-launch. {}",
             second_copy_hint()
         ),
         PortOccupant::Gated => format!(
-            "Port {port} is serving something that will not identify itself to this copy — most \
-             often another CovenCave, from a different build or holding its own token.\n\nQuit \
-             that one and re-launch. {}",
+            "Port {port} is serving something that will not identify itself to this copy.\n\n\
+             Quit whatever is using port {port} and re-launch. {}",
             second_copy_hint()
         ),
         PortOccupant::Stranger => format!(
@@ -546,14 +549,7 @@ pub(super) fn validate_readiness_response_classified(
         ));
     }
     let encoded_body = &response[header_end + separator.len()..];
-    let body = if headers.lines().any(|line| {
-        line.split_once(':').is_some_and(|(name, value)| {
-            name.eq_ignore_ascii_case("transfer-encoding")
-                && value
-                    .split(',')
-                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
-        })
-    }) {
+    let body = if headers_declare_chunked(headers) {
         decode_chunked_body(encoded_body)
             .map_err(|message| readiness_refusal(ReliabilityFailureClass::Transport, message))?
     } else {
@@ -603,6 +599,24 @@ pub(super) fn validate_readiness_response_classified(
         ));
     }
     Ok(())
+}
+
+/// Whether a response's headers declare a chunked body.
+///
+/// Shared by the two HTTP readers on this path. They were separate copies of
+/// the same block, which matters more than tidiness: the hostile-chunk fix
+/// landed in the shared `decode_chunked_body`, but a fix to header parsing
+/// would have had to be made twice, and the second one is easy to miss.
+#[cfg(desktop)]
+fn headers_declare_chunked(headers: &str) -> bool {
+    headers.lines().any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.eq_ignore_ascii_case("transfer-encoding")
+                && value
+                    .split(',')
+                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
+        })
+    })
 }
 
 #[cfg(desktop)]
@@ -841,6 +855,12 @@ fn run_sidecar_runtime(
     // runtime, which releases the loser into exactly the window where the
     // winner has finished extracting and has not yet bound. The claim is what
     // makes that ordering harmless (sidecar_port_lock.rs).
+    //
+    // The setup hook already claimed this port, so in practice the call below
+    // hits the same-process short-circuit and returns `Acquired`. That is
+    // deliberate defence in depth rather than dead weight: the `HeldBy` arm is
+    // still reachable when the setup claim itself failed open, which is exactly
+    // the case where nothing else is guarding the port.
     match app
         .path()
         .app_local_data_dir()

@@ -372,9 +372,12 @@ pub fn run() {
             // hold for minutes, behind a Retry button that can never succeed
             // while the other copy lives.
             //
-            // macOS has always exited here instead, via the reachability lease.
-            // This gives every desktop platform that behaviour, keyed on the
-            // port so `COVEN_CAVE_PORT` still admits a deliberate second copy.
+            // macOS already refused a second GUI, via the reachability lease —
+            // but that lease sits further down, AFTER the reliability store and
+            // the diagnostics reset, so even there a refused copy had already
+            // written to both. This is earlier and it is on every desktop
+            // platform, keyed on the port so `COVEN_CAVE_PORT` still admits a
+            // deliberate second copy.
             //
             // Skipped when a dev server owns the origin: `pnpm dev` holds the
             // port on purpose, and the bundled sidecar is never started then.
@@ -382,7 +385,8 @@ pub fn run() {
             // URL below — probing twice let the two decisions disagree and
             // strand a claim on a port this copy would never bind.
             //
-            // Only two things run above it, and both moved up to stay there.
+            // Only two things run above it. `check_app_translocation` was moved
+            // up to get there; the dev-server probe was already first.
             // `check_app_translocation` shows a BLOCKING dialog, so a copy
             // about to be told it is translocated must not be holding the port
             // while that alert waits for a click — the good copy in
@@ -409,7 +413,17 @@ pub fn run() {
                     // cannot be evaluated must never be the reason a launch is
                     // refused.
                     Err(error) => {
+                        // Both, and not just the `log` line: this claim runs
+                        // above the log-plugin registration further down, so on
+                        // its own that message goes to a facade with no logger
+                        // and is dropped. This is the one path where that would
+                        // matter most — failing open means cross-copy exclusion
+                        // is silently OFF, and the next launch gets node's raw
+                        // EADDRINUSE with nothing anywhere naming the cause.
                         log::warn!("[cave] could not claim the dedicated port {port}: {error}");
+                        eprintln!(
+                            "[cave] could not claim the dedicated port {port}: {error};                              a second copy will not be refused"
+                        );
                     }
                 }
             }

@@ -149,9 +149,9 @@ Illegal transitions:
 
 | Failure mode | Detection | Current effect | Safe recovery | Residual risk |
 | --- | --- | --- | --- | --- |
-| Duplicate GUI | PID/birth identity and GUI lease | Second instance exits with owner evidence | Focus existing owner where supported | The early exit is macOS-only; elsewhere the duplicate is refused later, at the port claim below |
+| Duplicate GUI | Pre-spawn advisory claim on the resolved port, then the macOS GUI lease | Second instance names the owning process and exits before touching shared state | Switch to the running copy, or set `COVEN_CAVE_PORT` | The claim now runs first on every desktop platform; the macOS lease remains as a second, later gate |
 | Fixed port occupied by another copy | Pre-spawn advisory claim on the resolved port | Startup refuses and names the owning process | Switch to the running copy, quit it, or set `COVEN_CAVE_PORT` | The claim covers the GUI sidecar only; the macOS background daemon still binds by scan |
-| Fixed port occupied by something else | Unauthenticated `/api/app/build-info` probe, classified `Cave`/`Gated`/`Stranger` | Startup refuses and names what kind of occupant it found | Stop the named occupant, or set `COVEN_CAVE_PORT` | A packaged copy answers `401`, so the probe alone cannot positively identify one — the claim is what supplies certainty |
+| Fixed port occupied by something else | Unauthenticated `/api/app/build-info` probe, classified `Cave`/`Gated`/`Stranger` | Startup refuses and names what kind of occupant it found | Stop the named occupant, or set `COVEN_CAVE_PORT` | `Cave` covers both a second copy and a dev server; the probe cannot separate them, so the claim is what identifies a second copy |
 | Child exits before ready | Owned-child `try_wait` during readiness | Startup fails and cleanup runs | Retry after classified evidence | Tail is bounded but not correlated across components |
 | Child hangs before ready | Condition timeout | Fails after 60/90 seconds | Cancel or retry; preserve bounded output tail | Timeout budget is not yet measured by platform |
 | Child dies after ready, macOS/Linux | Native liveness poll | Bounded refillable revive and webview re-navigation | Automatic | Full end-to-end revive test is still missing |
@@ -326,9 +326,12 @@ Outcomes are:
   readiness was not. It is eligible in the success-rate denominator and is not
   success.
 - `failure`: an eligible operation failed.
-- `blocked`: the operation could not start because of contention, such as
-  another copy already holding the claim on the dedicated port. Blocked records
-  are reported separately and excluded from both success and failure rates.
+- `blocked`: the operation could not start because of contention, such as a
+  program this app does not own holding the dedicated port. Blocked records are
+  reported separately and excluded from both success and failure rates. Note a
+  second copy refused by the port claim records nothing at all: it exits from
+  the setup hook, deliberately before the reliability store is configured, so
+  that a copy which may not run never mutates the running copy's state.
 - `cancelled`: shutdown or explicit cancellation ended the operation. It is
   reported separately and excluded from the success-rate denominator.
 
