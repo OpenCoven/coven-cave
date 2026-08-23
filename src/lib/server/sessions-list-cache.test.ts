@@ -66,13 +66,27 @@ function fnBlock(source, name) {
   const route = read("../../app/api/sessions/list/route.ts");
   assert.match(
     route,
-    /import \{\s*sessionsListCache,[\s\S]{0,120}\} from "@\/lib\/server\/sessions-list-cache"/,
+    /import \{\s*sessionsListCache\s*\} from "@\/lib\/server\/sessions-list-cache"/,
     "the list route imports the shared sessions-list cache",
   );
   assert.doesNotMatch(
     route,
     /createSwrCache/,
     "the list route does not create a private cache instance",
+  );
+  // Cache ownership stayed with the route when the computation moved to
+  // @/lib/server/sessions-list (cave-9rwd.1). If it had followed the compute,
+  // the mutation-invalidation hook below would still find its import here while
+  // the cached callback lived somewhere nothing busts.
+  assert.match(
+    route,
+    /sessionsListCache\.get\(cacheKey, \(\) =>\s*computeSessionsList\(/,
+    "the route owns the cache and delegates the cached compute to the shared helper",
+  );
+  assert.doesNotMatch(
+    read("./sessions-list.ts"),
+    /sessionsListCache/,
+    "the reusable compute helper does not touch the route's cache",
   );
 }
 
