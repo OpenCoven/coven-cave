@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -23,6 +24,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const PAIRING_REQUESTS_URL = "/api/client/v1/admin/pairing-requests";
 const CREDENTIALS_URL = "/api/client/v1/admin/credentials";
 const TOKEN_HEADER = "x-coven-cave-token";
+const TOOLBAR_LABEL = "Client access operator summary";
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -122,15 +124,29 @@ function rootText(renderer: ReactTestRenderer): string {
   return textContent(renderer.toJSON());
 }
 
+function regionText(renderer: ReactTestRenderer, label: string): string {
+  return textContent(
+    renderer.root.find((node) => node.props["aria-label"] === label).children,
+  );
+}
+
 async function flushMicrotasks() {
   await Promise.resolve();
   await Promise.resolve();
 }
 
-async function renderSection() {
+async function renderSection({ strictMode = false }: { strictMode?: boolean } = {}) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
-    renderer = create(<ClientAccessSection />);
+    renderer = create(
+      strictMode ? (
+        <StrictMode>
+          <ClientAccessSection />
+        </StrictMode>
+      ) : (
+        <ClientAccessSection />
+      ),
+    );
     await flushMicrotasks();
   });
   return renderer;
@@ -170,7 +186,7 @@ afterEach(() => {
   }
 });
 
-test("shows loading skeletons before resolving empty states", async () => {
+test("waits for the first confirmed snapshot before showing toolbar totals", async () => {
   const pairings = deferred<Response>();
   const credentials = deferred<Response>();
 
@@ -182,6 +198,7 @@ test("shows loading skeletons before resolving empty states", async () => {
   }) as unknown as FetchMock;
 
   const renderer = await renderSection();
+  const toolbarBeforeSnapshot = regionText(renderer, TOOLBAR_LABEL);
 
   expect(
     renderer.root.findAll(
@@ -190,6 +207,11 @@ test("shows loading skeletons before resolving empty states", async () => {
         && node.props.className.includes("ui-skeleton"),
     ).length,
   ).toBeGreaterThan(0);
+  expect(toolbarBeforeSnapshot).toContain("Counts appear after the first confirmed snapshot.");
+  expect(toolbarBeforeSnapshot).toContain("Waiting for the first confirmed client access snapshot.");
+  expect(toolbarBeforeSnapshot).not.toContain("0 pending");
+  expect(toolbarBeforeSnapshot).not.toContain("0 active credentials");
+  expect(toolbarBeforeSnapshot).not.toContain("0 revoked credentials");
 
   await act(async () => {
     pairings.resolve(success({ pairingRequests: [] }));
@@ -201,6 +223,83 @@ test("shows loading skeletons before resolving empty states", async () => {
 
   expect(rootText(renderer)).toContain("No pairing requests waiting");
   expect(rootText(renderer)).toContain("No client credentials issued");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 pending");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 active credentials");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 revoked credentials");
+
+  await act(async () => renderer.unmount());
+});
+
+test("StrictMode effect replay re-arms the mounted lifecycle for the next load", async () => {
+  const firstPairings = deferred<Response>();
+  const firstCredentials = deferred<Response>();
+  const secondPairings = deferred<Response>();
+  const secondCredentials = deferred<Response>();
+  const abortedRefreshes: string[] = [];
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      if (pairingLoads === 1) {
+        return abortableResponse(
+          firstPairings.promise,
+          init?.signal,
+          () => abortedRefreshes.push("pairings:first"),
+        );
+      }
+      if (pairingLoads === 2) {
+        return abortableResponse(
+          secondPairings.promise,
+          init?.signal,
+          () => abortedRefreshes.push("pairings:second"),
+        );
+      }
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      if (credentialLoads === 1) {
+        return abortableResponse(
+          firstCredentials.promise,
+          init?.signal,
+          () => abortedRefreshes.push("credentials:first"),
+        );
+      }
+      if (credentialLoads === 2) {
+        return abortableResponse(
+          secondCredentials.promise,
+          init?.signal,
+          () => abortedRefreshes.push("credentials:second"),
+        );
+      }
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection({ strictMode: true });
+
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("Waiting for the first confirmed client access snapshot.");
+  expect(abortedRefreshes).toEqual(
+    expect.arrayContaining(["pairings:first", "credentials:first"]),
+  );
+
+  await act(async () => {
+    secondPairings.resolve(success({ pairingRequests: [] }));
+    secondCredentials.resolve(success({ credentials: [] }));
+    await secondPairings.promise;
+    await secondCredentials.promise;
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(rootText(renderer)).toContain("No client credentials issued");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 pending");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 active credentials");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 revoked credentials");
+  expect(pairingLoads).toBe(2);
+  expect(credentialLoads).toBe(2);
 
   await act(async () => renderer.unmount());
 });
@@ -809,6 +908,79 @@ test("keeps the issued credentials empty state visible when a stale refresh fail
   expect(announce).toHaveBeenCalledWith("Client access refreshed.", "polite");
   expect(pairingLoads).toBe(3);
   expect(credentialLoads).toBe(3);
+
+  await act(async () => renderer.unmount());
+});
+
+test("keeps toolbar totals on the last confirmed snapshot after a partial refresh failure", async () => {
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      if (pairingLoads === 1) {
+        return success({
+          pairingRequests: [
+            {
+              id: "pair-alpha",
+              appName: "Alpha Client",
+              installationId: "alpha-install",
+              scopes: ["chat:read"],
+              status: "pending",
+              createdAt: Date.now() - 60_000,
+              expiresAt: Date.now() + 4 * 60_000,
+              decidedAt: null,
+            },
+          ],
+        });
+      }
+      return success({ pairingRequests: [] });
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      if (credentialLoads === 1) {
+        return success({
+          credentials: [
+            {
+              id: "cred-gamma",
+              appName: "Gamma Client",
+              installationId: "gamma-install",
+              scopes: ["github:write"],
+              createdAt: Date.now() - 10 * 60_000,
+              lastUsedAt: Date.now() - 2 * 60_000,
+              revokedAt: null,
+              revocationReason: null,
+            },
+          ],
+        });
+      }
+      return failure("Issued credential refresh timed out.", 504);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("1 pending");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("1 active credential");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 revoked credentials");
+
+  await act(async () => {
+    findButton(renderer, "Refresh client access").props.onClick();
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(rootText(renderer)).toContain("Couldn't refresh issued credentials.");
+  expect(rootText(renderer)).toContain("Issued credential refresh timed out.");
+  expect(rootText(renderer)).toContain("Gamma Client");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("1 pending");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("1 active credential");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("0 revoked credentials");
+  expect(regionText(renderer, TOOLBAR_LABEL)).toContain("Showing the last confirmed snapshot");
+  expect(regionText(renderer, TOOLBAR_LABEL)).not.toContain("0 pending");
 
   await act(async () => renderer.unmount());
 });

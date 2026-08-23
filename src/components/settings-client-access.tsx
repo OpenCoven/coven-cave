@@ -46,6 +46,13 @@ type AlertState = {
 
 type LedgerLoadOutcome = "succeeded" | "failed" | "superseded" | "aborted";
 
+type LedgerSummary = {
+  pendingCount: number;
+  activeCredentials: number;
+  revokedCredentials: number;
+  refreshedAt: number;
+};
+
 type ListState<T> = {
   status: "loading" | "ready" | "error";
   items: T[];
@@ -342,6 +349,20 @@ function formatPendingCount(count: number): string {
   return `${count} pending`;
 }
 
+function summarizeLedger(
+  pairings: PairingRequestRecord[],
+  credentials: CredentialRecord[],
+  refreshedAt: number,
+): LedgerSummary {
+  const revokedCredentials = credentials.filter((record) => record.revokedAt !== null).length;
+  return {
+    pendingCount: pairings.length,
+    activeCredentials: credentials.length - revokedCredentials,
+    revokedCredentials,
+    refreshedAt,
+  };
+}
+
 function StatusChip({
   label,
   tone,
@@ -582,12 +603,12 @@ export function ClientAccessSection() {
   const [pairings, setPairings] = useState<ListState<PairingRequestRecord>>(initialListState);
   const [credentials, setCredentials] = useState<ListState<CredentialRecord>>(initialListState);
   const [refreshing, setRefreshing] = useState(true);
-  const [lastSuccessfulRefreshAt, setLastSuccessfulRefreshAt] = useState<number | null>(null);
+  const [confirmedSummary, setConfirmedSummary] = useState<LedgerSummary | null>(null);
   const [busyActions, setBusyActions] = useState<Record<string, BusyAction>>({});
   const loadControllerRef = useRef<AbortController | null>(null);
   const loadRequestIdRef = useRef(0);
   const latestLoadPromiseRef = useRef<Promise<LedgerLoadOutcome> | null>(null);
-  const mountedRef = useRef(true);
+  const mountedRef = useRef(false);
   const busyActionsRef = useRef(new Map<string, BusyAction>());
   const mutationControllersRef = useRef(new Map<string, AbortController>());
 
@@ -665,7 +686,12 @@ export function ClientAccessSection() {
         const succeeded =
           pairingsResult.status === "fulfilled"
           && credentialsResult.status === "fulfilled";
-        if (succeeded) setLastSuccessfulRefreshAt(Date.now());
+        if (succeeded) {
+          const refreshedAt = Date.now();
+          setConfirmedSummary(
+            summarizeLedger(pairingsResult.value, credentialsResult.value, refreshedAt),
+          );
+        }
 
         if (options.announceResult) {
           announce(
@@ -692,6 +718,7 @@ export function ClientAccessSection() {
   }, [loadLedger]);
 
   useEffect(() => {
+    mountedRef.current = true;
     void loadLedger();
     return () => {
       mountedRef.current = false;
@@ -712,29 +739,25 @@ export function ClientAccessSection() {
     pauseWhileInputActive: true,
   });
 
-  const pendingCount = pairings.items.length;
-  const activeCredentials = useMemo(
-    () => credentials.items.filter((record) => record.revokedAt === null).length,
-    [credentials.items],
-  );
-  const revokedCredentials = useMemo(
-    () => credentials.items.filter((record) => record.revokedAt !== null).length,
-    [credentials.items],
-  );
+  const confirmedSnapshotLabel = confirmedSummary
+    ? relativeLabel(confirmedSummary.refreshedAt) ?? "earlier"
+    : null;
 
   const ledgerStamp = useMemo(() => {
-    if (refreshing) return "Refreshing the access ledger…";
-    if (pairings.alert || credentials.alert) {
-      if (lastSuccessfulRefreshAt !== null) {
-        return `Showing the last successful snapshot from ${relativeLabel(lastSuccessfulRefreshAt) ?? "earlier"}.`;
+    if (!confirmedSummary) {
+      if (pairings.alert || credentials.alert) {
+        return "No confirmed client access snapshot yet. Check the sections below.";
       }
-      return "Client access needs attention.";
+      return "Waiting for the first confirmed client access snapshot.";
     }
-    if (lastSuccessfulRefreshAt !== null) {
-      return `Updated ${relativeLabel(lastSuccessfulRefreshAt) ?? "just now"}.`;
+    if (refreshing) {
+      return `Refreshing the access ledger. Last confirmed ${confirmedSnapshotLabel ?? "earlier"}.`;
     }
-    return "Waiting for the first client access snapshot.";
-  }, [credentials.alert, lastSuccessfulRefreshAt, pairings.alert, refreshing]);
+    if (pairings.alert || credentials.alert) {
+      return `Showing the last confirmed snapshot from ${confirmedSnapshotLabel ?? "earlier"}. Check the sections below.`;
+    }
+    return `Updated ${confirmedSnapshotLabel ?? "just now"}.`;
+  }, [confirmedSnapshotLabel, confirmedSummary, credentials.alert, pairings.alert, refreshing]);
 
   const handlePairingDecision = useCallback(async (
     item: PairingRequestRecord,
@@ -834,30 +857,33 @@ export function ClientAccessSection() {
               <p className="settings-client-access__summary">
                 Metadata only — pairing secrets and bearer tokens never render in
                 Settings.
+                {confirmedSummary ? null : " Counts appear after the first confirmed snapshot."}
               </p>
-              <ul className="settings-client-access__totals" aria-label="Client access counts">
-                <li>
-                  <StatusChip
-                    compact
-                    label={formatPendingCount(pendingCount)}
-                    tone="pending"
-                  />
-                </li>
-                <li>
-                  <StatusChip
-                    compact
-                    label={formatCount(activeCredentials, "active credential")}
-                    tone="active"
-                  />
-                </li>
-                <li>
-                  <StatusChip
-                    compact
-                    label={formatCount(revokedCredentials, "revoked credential")}
-                    tone="revoked"
-                  />
-                </li>
-              </ul>
+              {confirmedSummary ? (
+                <ul className="settings-client-access__totals" aria-label="Client access counts">
+                  <li>
+                    <StatusChip
+                      compact
+                      label={formatPendingCount(confirmedSummary.pendingCount)}
+                      tone="pending"
+                    />
+                  </li>
+                  <li>
+                    <StatusChip
+                      compact
+                      label={formatCount(confirmedSummary.activeCredentials, "active credential")}
+                      tone="active"
+                    />
+                  </li>
+                  <li>
+                    <StatusChip
+                      compact
+                      label={formatCount(confirmedSummary.revokedCredentials, "revoked credential")}
+                      tone="revoked"
+                    />
+                  </li>
+                </ul>
+              ) : null}
             </div>
             <div className="settings-client-access__toolbar-actions">
               <p className="settings-client-access__stamp">{ledgerStamp}</p>
