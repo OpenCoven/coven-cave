@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mkdtemp,
   readFile,
+  realpath,
   readdir,
   rm,
   stat,
@@ -314,6 +315,7 @@ test("a colliding temporary file remains unchanged when exclusive creation fails
 
 test("a failing post-commit chmod neither rejects issue nor yields a second credential", async (t) => {
   await withCredentialRoot(async (root) => {
+    const physicalRoot = await realpath(root);
     const attempted: Array<[string, number]> = [];
     const store = createCredentialStore({
       root,
@@ -330,7 +332,7 @@ test("a failing post-commit chmod neither rejects issue nor yields a second cred
     // appends a SECOND live bearer for one administrator approval — two live
     // credentials that one revocation does not clear.
     const issued = await store.issue(credentialInput);
-    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    const path = join(physicalRoot, CLIENT_V1_CREDENTIAL_STORE_FILE);
     assert.deepEqual(attempted, [[path, 0o600]], "the post-commit repair ran and threw");
 
     const persisted = JSON.parse(await readFile(path, "utf8"));
@@ -551,7 +553,7 @@ test("refuses a planted credential file a foreign Windows principal can write", 
   };
 
   await withCredentialRoot(async (root) => {
-    const path = join(root, CLIENT_V1_CREDENTIAL_STORE_FILE);
+    const path = join(await realpath(root), CLIENT_V1_CREDENTIAL_STORE_FILE);
     await writeFile(
       path,
       JSON.stringify({

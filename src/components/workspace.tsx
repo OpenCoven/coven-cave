@@ -4081,11 +4081,6 @@ export function Workspace() {
     [setMode],
   );
 
-  const workspaceContextNotice =
-    mode === "home" || mode === "chat"
-      ? null
-      : "Applies to new chats. This view is not filtered by project yet.";
-
   const sidebar = (
     <SidebarMinimal
       mode={mode}
@@ -4147,7 +4142,7 @@ export function Workspace() {
       projectCrewLoading={effectiveProjectCrewLoading}
       projectCrewError={projectCrewError}
       reloadProjectCrew={reloadProjectCrew}
-      contextNotice={workspaceContextNotice}
+      contextNotice={null}
     />
   );
 
@@ -4208,7 +4203,7 @@ export function Workspace() {
       projectCrewLoading={effectiveProjectCrewLoading}
       projectCrewError={projectCrewError}
       reloadProjectCrew={reloadProjectCrew}
-      contextNotice={workspaceContextNotice}
+      contextNotice={null}
       selectedFamiliarIds={scopeIds}
     />
   );
