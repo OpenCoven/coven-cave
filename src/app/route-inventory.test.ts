@@ -95,6 +95,10 @@ const ROUTE_INVENTORY = {
   "/familiars/[id]/analytics": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/analytics" },
   "/familiars/[id]/profile": { kind: "redirect", target: "/dashboard/familiars/", leaf: "/profile" },
   "/aesthetic": { kind: "dev-only" },
+  // Same standing as /aesthetic and for the same reason: a contributor-facing
+  // reference, not a destination. It renders the vendored Beautiful UI set so a
+  // palette switch can be checked against all 19 at once (docs/beautiful-ui.md).
+  "/aesthetic/beautiful": { kind: "dev-only" },
 };
 
 // ── Discover every page.tsx under src/app ────────────────────────────────────

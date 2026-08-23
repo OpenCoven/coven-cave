@@ -13,7 +13,7 @@ import {
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
 // Opt-in: renaming a chat out from under someone is surprising, so it is off.
-assert.equal(DEFAULT_CHAT_AUTO_RENAME_POLICY.enabled, false);
+assert.equal(DEFAULT_CHAT_AUTO_RENAME_POLICY.enabled, true);
 assert.equal(DEFAULT_CHAT_AUTO_RENAME_POLICY.everyTurns, 4);
 assert.equal(DEFAULT_CHAT_AUTO_RENAME_POLICY.preserveManualTitles, true);
 

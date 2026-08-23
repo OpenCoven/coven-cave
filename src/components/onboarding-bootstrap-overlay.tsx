@@ -18,6 +18,7 @@ type Props = {
   open: boolean;
   onDismiss: () => void;
   autoFinishWhenComplete?: boolean;
+  initialState?: OnboardingBootstrapState;
 };
 
 type BootstrapResponse = OnboardingBootstrapState & {
@@ -50,13 +51,24 @@ function stageTone(status: OnboardingBootstrapStageStatus): string {
   return "border-[var(--border-hairline)] text-[var(--text-muted)]";
 }
 
+function nextSetupStep(activeStage: OnboardingBootstrapState["activeStage"]) {
+  if (activeStage === "core-tools") {
+    return "Next, Cave checks your defaults, then checks the local service.";
+  }
+  if (activeStage === "workspace") {
+    return "Next, Cave starts its local service if it needs to.";
+  }
+  return "Cave is finishing its local setup.";
+}
+
 export function OnboardingOverlay({
   open,
   onDismiss,
   autoFinishWhenComplete = false,
+  initialState,
 }: Props) {
   const [state, setState] = useState<OnboardingBootstrapState>(
-    createOnboardingBootstrapState(),
+    () => initialState ?? createOnboardingBootstrapState(),
   );
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -73,6 +85,11 @@ export function OnboardingOverlay({
       localStorage.setItem("cave:onboarding:dismissed", "1");
     } catch {
       /* private mode */
+    }
+    try {
+      document.cookie = "cave_onboarding_dismissed=1; Path=/; Max-Age=31536000; SameSite=Lax";
+    } catch {
+      /* embedded browser storage disabled */
     }
   }, []);
 
@@ -157,9 +174,9 @@ export function OnboardingOverlay({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || initialState) return;
     void request("GET");
-  }, [open, request]);
+  }, [initialState, open, request]);
 
   useEffect(() => {
     if (!open || !state.failure?.diagnostics) setDiagnosticsOpen(false);
@@ -278,6 +295,15 @@ export function OnboardingOverlay({
               </li>
             ))}
           </ol>
+
+          {running ? (
+            <div className="grid gap-1 rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-[var(--bg-subtle)] p-3 text-[length:var(--text-xs)] leading-4 text-[var(--text-secondary)]">
+              <p className="font-medium text-[var(--text-primary)]">
+                Cave keeps working if you run setup in the background.
+              </p>
+              <p>{nextSetupStep(state.activeStage)}</p>
+            </div>
+          ) : null}
 
           {state.failure ? (
             <div

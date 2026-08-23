@@ -1,11 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import {
   canonicalProbeSpawnEnv,
   restoreAllowedGitHubTokenEnv,
+  restoreGrantedVaultEnv,
   restoreGrantedVaultGitHubTokenEnv,
   subtractScopedVaultKeys,
   vaultFreeDiscoveryEnv,
@@ -242,6 +243,22 @@ assert.match(
   /runCovenOneShot\(args, req\.signal, workspace, familiarId\)/,
   "reader rewrite runs through the shared runner with its familiar id",
 );
+const rewritePermissionIndex = rewriteSource.search(/['"]--permission['"]\s*,\s*['"]read-only['"]/);
+const rewriteSeparatorIndex = rewriteSource.search(/['"]--['"]\s*,/);
+assert.notEqual(
+  rewritePermissionIndex,
+  -1,
+  "reader rewrite includes a read-only permission flag in the harness args",
+);
+assert.notEqual(
+  rewriteSeparatorIndex,
+  -1,
+  "reader rewrite includes the prompt separator in the harness args",
+);
+assert.ok(
+  rewritePermissionIndex < rewriteSeparatorIndex,
+  "reader rewrite constrains untrusted answer text to a read-only harness run",
+);
 assert.doesNotMatch(rewriteSource, /covenSpawnEnv/);
 
 const automationSource = read("./server/automation-runner.ts");
@@ -263,7 +280,11 @@ assert.match(
 assert.doesNotMatch(daemonStartSource, /covenSpawnEnv/);
 
 const vaultRouteSource = read("../app/api/vault/route.ts");
-assert.match(vaultRouteSource, /scope: map\[key\]\?\.scope/, "/api/vault edits preserve existing grants");
+assert.match(
+  vaultRouteSource,
+  /input\.scope === undefined[\s\S]*?\? map\[key\]\?\.scope[\s\S]*?: normalizeVaultScope\(input\.scope\)/,
+  "/api/vault edits preserve existing grants unless the caller supplies a scope",
+);
 
 const githubPatSource = read("../app/api/github/pat/route.ts");
 assert.match(githubPatSource, /scope: map\[PAT_KEY\]\?\.scope/, "GitHub PAT re-save preserves existing grants");
@@ -285,8 +306,13 @@ assert.match(
 );
 assert.match(
   helperSource,
-  /restoreGrantedVaultGitHubTokenEnv[\s\S]*isVaultKeyGrantedTo\(entry, familiarId\)[\s\S]*resolveVaultManagedSecret\(key, entry\)\?\.trim\(\)/,
+  /restoreGrantedVaultGitHubTokenEnv[\s\S]*isVaultKeyGrantedTo\(entry, familiarId\)[\s\S]*entry\.storage === "environment"[\s\S]*resolveVaultManagedSecret\(key, entry, resolution\)\?\.trim\(\)/,
   "a Vault-managed GitHub alias is restored only for the granted familiar after the generic child-env scrub",
+);
+assert.match(
+  helperSource,
+  /restoreGrantedVaultEnv[\s\S]*isForbiddenSpawnEnvKey\(key\)[\s\S]*canMirrorVaultKeyToProcessEnv\(key\)[\s\S]*isVaultKeyGrantedTo\(entry, familiarId\)[\s\S]*resolveCachedVaultManagedSecret\(key, entry, resolution\)\?\.trim\(\)/,
+  "every safe generic Vault key is materialized only for a granted familiar",
 );
 {
   const helperStart = helperSource.indexOf("export function canonicalProbeSpawnEnv");
@@ -295,7 +321,7 @@ assert.match(
   const probeHelperSource = helperSource.slice(helperStart, helperEnd);
   assert.doesNotMatch(
     probeHelperSource,
-    /restoreGrantedVaultGitHubTokenEnv|restoreAllowedGitHubTokenEnv|resolveVaultManagedSecret/,
+    /restoreGrantedVaultEnv|restoreGrantedVaultGitHubTokenEnv|restoreAllowedGitHubTokenEnv|resolveVaultManagedSecret/,
     "probe environment construction never restores or materializes familiar/shared credentials",
   );
 }
@@ -310,6 +336,12 @@ const tokenOriginal = {
   COVEN_CAVE_ENV_FILE: process.env.COVEN_CAVE_ENV_FILE,
   GITHUB_PAT: process.env.GITHUB_PAT,
   GH_TOKEN: process.env.GH_TOKEN,
+  COVEN_GENERIC_ENV: process.env.COVEN_GENERIC_ENV,
+  COVEN_CAVE_AUTH_TOKEN: process.env.COVEN_CAVE_AUTH_TOKEN,
+  __NEXT_PRIVATE_TEST_TOKEN: process.env.__NEXT_PRIVATE_TEST_TOKEN,
+  PATH: process.env.PATH,
+  COVEN_CAVE_REF_READ_TIMEOUT_MS: process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS,
+  COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS: process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS,
 };
 process.env.COVEN_VAULT_FILE = join(tokenDir, "vault.yaml");
 process.env.COVEN_CAVE_LOCAL_VAULT_FILE = join(tokenDir, "local-vault.enc.json");
@@ -317,6 +349,9 @@ process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = join(tokenDir, "local-vault.key");
 process.env.COVEN_CAVE_ENV_FILE = join(tokenDir, ".env.local");
 process.env.GITHUB_PAT = "launcher-pat";
 process.env.GH_TOKEN = "launcher-token";
+process.env.COVEN_GENERIC_ENV = "launcher-generic";
+process.env.COVEN_CAVE_AUTH_TOKEN = "side";
+process.env.__NEXT_PRIVATE_TEST_TOKEN = "next";
 try {
   assert.equal(
     restoreAllowedGitHubTokenEnv({}, new Set(["GITHUB_PAT"]), new Set()).GITHUB_PAT,
@@ -344,6 +379,71 @@ try {
     restoreAllowedGitHubTokenEnv({}, new Set(["GITHUB_PAT"]), new Set(Object.keys(loadVaultMap(true)))).GITHUB_PAT,
     undefined,
     "an opt-in cannot replace a Vault-managed GitHub PAT with the launcher's same-named value",
+  );
+  saveVaultMap({
+    GH_TOKEN: { storage: "environment", scope: ["nova"] },
+  });
+  assert.equal(
+    restoreGrantedVaultGitHubTokenEnv({}, loadVaultMap(true), "nova").GH_TOKEN,
+    "launcher-token",
+    "a granted environment mapping keeps launcher custody while applying familiar scope",
+  );
+  assert.equal(
+    restoreGrantedVaultGitHubTokenEnv({}, loadVaultMap(true), "sage").GH_TOKEN,
+    undefined,
+    "an environment-owned GitHub token remains hidden from an ungranted familiar",
+  );
+  saveVaultMap({
+    COVEN_GENERIC_ENV: { storage: "environment", scope: ["nova"] },
+    COVEN_GENERIC_SECRET: { storage: "encrypted", scope: ["nova"] },
+    COVEN_CAVE_AUTH_TOKEN: { storage: "environment", scope: ["nova"] },
+    __NEXT_PRIVATE_TEST_TOKEN: { storage: "environment", scope: ["nova"] },
+    NODE_OPTIONS: { storage: "environment", scope: ["nova"] },
+  });
+  setLocalEncryptedSecret("COVEN_GENERIC_SECRET", "safe");
+  assert.deepEqual(
+    restoreGrantedVaultEnv({}, loadVaultMap(true), "nova"),
+    {
+      COVEN_GENERIC_ENV: "launcher-generic",
+      COVEN_GENERIC_SECRET: "safe",
+    },
+    "generic granted environment and encrypted keys materialize without runtime-control keys",
+  );
+  assert.deepEqual(
+    restoreGrantedVaultEnv({}, loadVaultMap(true), "sage"),
+    {},
+    "generic Vault keys remain hidden from an ungranted familiar",
+  );
+
+  const fakeBin = join(tokenDir, "bin");
+  const fakeOp = join(fakeBin, "op");
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(fakeBin));
+  writeFileSync(
+    fakeOp,
+    "#!/usr/bin/env node\nsetTimeout(() => process.stdout.write('late-secret\\n'), 2000);\n",
+  );
+  chmodSync(fakeOp, 0o755);
+  process.env.PATH = `${fakeBin}${delimiter}${process.env.PATH ?? ""}`;
+  process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS = "5000";
+  process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS = "5000";
+  const providerMap = {
+    FIRST_PROVIDER_SECRET: { ref: "op://Dev/First/credential", scope: ["nova"] },
+    SECOND_PROVIDER_SECRET: { ref: "op://Dev/Second/credential", scope: ["nova"] },
+  };
+  const providerStartedAt = Date.now();
+  assert.deepEqual(
+    restoreGrantedVaultEnv(
+      {},
+      providerMap,
+      "nova",
+      { deadlineMs: providerStartedAt + 150 },
+    ),
+    {},
+    "provider timeouts fail closed without injecting partial credentials",
+  );
+  assert.ok(
+    Date.now() - providerStartedAt < 1_000,
+    "one aggregate deadline bounds all provider resolution during harness startup",
   );
 } finally {
   for (const [key, value] of Object.entries(tokenOriginal)) {

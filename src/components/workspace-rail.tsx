@@ -45,17 +45,14 @@ export function WorkspaceRail({
 }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Lazy pty: the terminal (and its shell) is not mounted until the Terminal tab
-  // is first selected from the fullscreen rail. Once opened it stays mounted
-  // (keepalive) while fullscreen but is hidden when another tab is active.
+  // is first selected. Once opened it stays mounted (keepalive) but is hidden
+  // when another tab is active.
   const [terminalEverOpened, setTerminalEverOpened] = useState(false);
   useEffect(() => {
-    if (!isFullscreen && activeTab === "terminal") onSelectTab("files");
-  }, [activeTab, isFullscreen, onSelectTab]);
-  useEffect(() => {
-    if (isFullscreen && activeTab === "terminal") setTerminalEverOpened(true);
-  }, [activeTab, isFullscreen]);
-  const terminalVisible = isFullscreen && activeTab === "terminal";
-  const title = activeTab === "terminal" && !isFullscreen ? TAB_TITLE.files : TAB_TITLE[activeTab];
+    if (activeTab === "terminal") setTerminalEverOpened(true);
+  }, [activeTab]);
+  const terminalVisible = activeTab === "terminal";
+  const title = TAB_TITLE[activeTab];
 
   return (
     <section
@@ -83,17 +80,15 @@ export function WorkspaceRail({
         >
           <Icon name="ph:folder" width={16} aria-hidden />
         </button>
-        {isFullscreen && (
-          <button
-            type="button"
-            aria-label="Terminal"
-            aria-pressed={activeTab === "terminal"}
-            className={`workspace-rail__tab focus-ring${activeTab === "terminal" ? " is-active" : ""}`}
-            onClick={() => onSelectTab("terminal")}
-          >
-            <Icon name="ph:terminal-window" width={16} aria-hidden />
-          </button>
-        )}
+        <button
+          type="button"
+          aria-label="Terminal"
+          aria-pressed={activeTab === "terminal"}
+          className={`workspace-rail__tab focus-ring${activeTab === "terminal" ? " is-active" : ""}`}
+          onClick={() => onSelectTab("terminal")}
+        >
+          <Icon name="ph:terminal-window" width={16} aria-hidden />
+        </button>
       </nav>
       <div className="workspace-rail__body">
         {/* Progressive disclosure (§8): pin + fullscreen are occasional-use —
@@ -158,7 +153,7 @@ export function WorkspaceRail({
           ) : null}
           {/* Terminal: mounted lazily on first selection, then kept mounted but
               visually hidden when another tab is active so the pty persists. */}
-          {terminalEverOpened && isFullscreen ? (
+          {terminalEverOpened ? (
             <div
               className={`workspace-rail__terminal workspace-rail__panel${terminalVisible ? "" : " is-hidden"}`}
               hidden={!terminalVisible}

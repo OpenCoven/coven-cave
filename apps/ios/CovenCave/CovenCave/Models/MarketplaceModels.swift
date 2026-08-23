@@ -9,6 +9,13 @@ struct MarketplaceConfigField: Codable, Hashable, Identifiable {
     let sensitive: Bool
 }
 
+struct MarketplaceLogoIdentity: Codable, Hashable {
+    let kind: String
+    let title: String
+    let monogram: String
+    let assetPath: String?
+}
+
 struct MarketplacePlugin: Codable, Hashable, Identifiable {
     let id: String
     let displayName: String
@@ -24,6 +31,7 @@ struct MarketplacePlugin: Codable, Hashable, Identifiable {
     let available: Bool
     let requiredConfig: [MarketplaceConfigField]
     let configured: Bool
+    let logo: MarketplaceLogoIdentity?
 }
 
 struct MarketplaceResponse: Codable {

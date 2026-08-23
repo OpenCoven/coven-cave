@@ -23,6 +23,27 @@ private final class FamiliarAvatarURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+private extension URLRequest {
+    func capturedBody() throws -> Data? {
+        if let httpBody { return httpBody }
+        guard let stream = httpBodyStream else { return nil }
+
+        stream.open()
+        defer { stream.close() }
+        var body = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 {
+                throw stream.streamError ?? URLError(.cannotDecodeRawData)
+            }
+            if count == 0 { break }
+            body.append(contentsOf: buffer.prefix(count))
+        }
+        return body
+    }
+}
+
 final class FamiliarAvatarClientTests: XCTestCase {
     override func tearDown() {
         FamiliarAvatarURLProtocol.handler = nil
@@ -41,10 +62,14 @@ final class FamiliarAvatarClientTests: XCTestCase {
     func testUploadSendsRawImageAndReturnsRevisionedURL() async throws {
         let image = Data([0x89, 0x50, 0x4e, 0x47])
         FamiliarAvatarURLProtocol.handler = { request in
-            XCTAssertEqual(request.url?.path, "/api/familiars/nova/avatar")
+            XCTAssertEqual(
+                URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.percentEncodedPath,
+                "/api/familiars/nova%2Ffamiliar/avatar"
+            )
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "image/png")
-            XCTAssertEqual(request.httpBody, image)
+            XCTAssertNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+            XCTAssertEqual(try request.capturedBody(), image)
             let response = try XCTUnwrap(HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
                 statusCode: 200,
@@ -61,7 +86,7 @@ final class FamiliarAvatarClientTests: XCTestCase {
         }
 
         let mutation = try await client().uploadFamiliarAvatar(
-            id: "nova",
+            id: "nova/familiar",
             imageData: image,
             contentType: "image/png"
         )
@@ -72,7 +97,10 @@ final class FamiliarAvatarClientTests: XCTestCase {
 
     func testDeleteUsesIdempotentAvatarContract() async throws {
         FamiliarAvatarURLProtocol.handler = { request in
-            XCTAssertEqual(request.url?.path, "/api/familiars/nova/avatar")
+            XCTAssertEqual(
+                URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.percentEncodedPath,
+                "/api/familiars/nova%2Ffamiliar/avatar"
+            )
             XCTAssertEqual(request.httpMethod, "DELETE")
             let response = try XCTUnwrap(HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
@@ -85,7 +113,7 @@ final class FamiliarAvatarClientTests: XCTestCase {
             """.utf8))
         }
 
-        let mutation = try await client().deleteFamiliarAvatar(id: "nova")
+        let mutation = try await client().deleteFamiliarAvatar(id: "nova/familiar")
 
         XCTAssertNil(mutation.avatarUrl)
         XCTAssertNil(mutation.revision)

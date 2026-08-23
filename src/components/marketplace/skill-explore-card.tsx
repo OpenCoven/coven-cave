@@ -3,6 +3,7 @@
 import { memo } from "react";
 import { Icon } from "@/lib/icon";
 import type { SkillBrowserEntry } from "@/lib/skill-directory";
+import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 
 export type SkillExploreCardProps = {
   skill: SkillBrowserEntry;
@@ -20,9 +21,7 @@ export const SkillExploreCard = memo(function SkillExploreCard({
         onClick={() => onOpen(skill)}
         className="focus-ring flex min-w-0 items-center gap-3 rounded-md text-left"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-          <Icon name="ph:sparkle" width={16} className="text-[var(--text-muted)]" />
-        </span>
+        <MarketplaceLogo id={skill.id} displayName={skill.name} />
         <span className="min-w-0">
           <span className="block truncate text-[length:var(--text-md)] font-semibold text-[var(--text-primary)]">
             {skill.name}

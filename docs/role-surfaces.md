@@ -144,7 +144,20 @@ never fake production data.
 - **Research Desk** (`researcher-desk`, role `researcher`) — mission-first
   research intake with explainable Brief/Sweep/Paper/Autoresearch routing,
   real Flow progress, provenance-rich Knowledge artifacts, structured sources,
-  checkpoints, and finite linked Codex Automations.
+  checkpoints, and finite linked Codex Automations. Contextual next-topic
+  recommendations are grounded in current missions, saved links (including
+  durable X Article snapshots), and bounded relevant Vault evidence. They remain
+  ephemeral proposals: starting or refining a mission always requires an
+  explicit action. The read-only evidence route returns a context fingerprint
+  plus a lightweight revision projection; a changed mission, saved/X source, or
+  Vault revision makes a displayed proposal stale before an action can use it.
+  Resources accepts mixed
+  ordinary, Hugging Face paper, and X Article URLs (up to 10 X Articles per
+  submission). X Article ingestion uses the third-party Sorsa provider
+  (`COVEN_CAVE_X_ARTICLE_PROVIDER=sorsa`) because the official X API does not
+  expose full Article bodies; keep `SORSA_API_KEY` in Cave Vault, never a
+  client environment. It retains durable normalized snapshots and
+  mission-local provenance Markdown copies.
 - **Comms Operations** (`messenger-ops`, role `messenger`) — channel-aware
   drafting (email/Discord/Slack/SMS/Teams/social), approval-required states,
   real inbox items, delivery queue drawer. Nothing sends externally — no
@@ -183,10 +196,24 @@ never fake production data.
   [`orchestration-ready-tasks.md`](./orchestration-ready-tasks.md), and the
   overlay is imported once and removed. Until that lands, the overlay remains
   the only dependency store and is still not authoritative.
-- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a tri-pane deck: a
-  summary strip; a filterable, collapsible review queue built from sessions
-  carrying PRs, working changes, or branches; a center change viewer with file
-  tabs over a colored unified diff (capped by the changes API); a context rail
-  with session facts, PR/session jumps, and a reviewer note; and a checkpoints
-  footer. A verdict bar dispatches approve / request-changes / merge to the real
-  GitHub review + merge routes. Never edits the working tree.
+
+  Agentic Enhance uses the canonical Board task graph and persists its proposal
+  audit with the task. It may normalize only mechanically verified references;
+  prose, dependencies, blockers, next steps, lifecycle transitions, and
+  approval-bound work remain review proposals and never dispatch automatically.
+  Generation and verified normalizations pass through `cave-board` mutators in
+  one lock-checked atomic batch, so a stale or failed apply leaves the proposal
+  reviewable and preserves the explicit error.
+- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a focused review
+  run built from sessions carrying PRs, working changes, or branches. A compact
+  attention queue sits at the edge while the line-numbered unified diff remains
+  dominant. A proof ribbon and explicit reviewed-file controls persist progress
+  against the exact PR head SHA (or an honest local working-tree revision);
+  progress resets when that identity changes. Overview, comments, merge status,
+  and session context move into an adaptive evidence dock. Reviewer notes appear
+  only inside approve/request-changes flows and remain per-session drafts.
+  Checkpoints appear only for local reviews. PR sessions always read GitHub;
+  only sessions without a linked PR read the local working tree. Unknown
+  readiness stays non-actionable, and approve / request-changes / squash-merge
+  continue to dispatch through the real GitHub routes. The deck never edits the
+  working tree.

@@ -99,6 +99,44 @@ assert.match(
 // ── EnhanceStrip: one status row, four phases ────────────────────────────────
 assert.match(source, /if \(state\.phase === "idle"\) return null/, "the strip renders nothing at rest");
 assert.match(source, /role="status"/, "the strip is a status live region");
+{
+  const stripSrc = source.slice(source.indexOf("export function EnhanceStrip"));
+  const suggestedStart = stripSrc.indexOf('state.phase === "suggested"');
+  const apply = stripSrc.indexOf('aria-label="Apply enhanced prompt"', suggestedStart);
+  const dismiss = stripSrc.indexOf('aria-label="Dismiss enhanced prompt"', suggestedStart);
+  const why = stripSrc.indexOf("Why this?", suggestedStart);
+  assert.ok(
+    suggestedStart >= 0 && apply > suggestedStart && dismiss > apply && why > dismiss,
+    "suggestion keyboard order remains Apply → Dismiss → Why this?",
+  );
+  assert.match(
+    stripSrc,
+    /state\.phase === "error"[\s\S]*?role="alert"/,
+    "a terminal enhancement error is an assertive alert, not a polite loading update",
+  );
+  assert.doesNotMatch(
+    stripSrc,
+    /\.focus\(/,
+    "enhancement state changes never steal focus from the composer or invoking control",
+  );
+  assert.match(
+    stripSrc,
+    /onFocusComposer\?: \(\) => void/,
+    "strip actions receive an explicit composer-focus callback instead of querying the DOM",
+  );
+  assert.match(
+    stripSrc,
+    /requestAnimationFrame\(\(\) => onFocusComposer\?\.\(\)\)/,
+    "only an action completion schedules focus after the strip's control unmounts",
+  );
+  for (const action of ["onApply", "onDismiss", "onRevert", "onCancel"]) {
+    assert.match(
+      stripSrc,
+      new RegExp(`${action}\\(\\);\\s*focusComposerAfterAction\\(\\)`),
+      `${action} returns focus to the composer after a user action`,
+    );
+  }
+}
 assert.match(
   source,
   /state\.phase === "loading" \?[\s\S]*?\{state\.preview \? state\.preview : "Enhancing…"\}[\s\S]*?Cancel/,
@@ -123,6 +161,16 @@ assert.match(
   source,
   /rounded-\[var\(--radius-pill\)\] border border-\[var\(--border-hairline\)\]/,
   "strip actions use the pill token + hairline language (tracks the corner radius setting)",
+);
+assert.match(
+  source,
+  /Why this\?/,
+  "enhanced prompt proposals expose their rationale without adding another Enhance control",
+);
+assert.match(
+  source,
+  /Evidence/,
+  "enhanced prompt proposals expose the bounded evidence that informed them",
 );
 
 // ── All three composers mount the shared enhance ─────────────────────────────
@@ -150,6 +198,15 @@ for (const [name, src] of [["home-composer", home], ["chat-view", chat], ["quick
       ? /<EnhanceControl[\s\S]*?state=\{promptEnhance\.state\}[\s\S]*?onEnhance=\{promptEnhance\.enhance\}/
       : /<EnhanceStrip[\s\S]*?onApply=\{promptEnhance\.apply\}[\s\S]*?onRevert=\{promptEnhance\.revert\}/,
     `${name} renders the shared status strip`,
+  );
+  assert.match(
+    src,
+    name === "home-composer"
+      ? /<EnhanceStrip[\s\S]*?onFocusComposer=\{\(\) => textareaRef\.current\?\.focus\(\)\}/
+      : name === "chat-view"
+        ? /<EnhanceStrip[\s\S]*?onFocusComposer=\{\(\) => inputRef\.current\?\.focus\(\)\}/
+        : /<EnhanceStrip[\s\S]*?onFocusComposer=\{\(\) => composerRef\?\.current\?\.focus\(\)\}/,
+    `${name} supplies its existing composer ref for user-action focus return`,
   );
   assert.doesNotMatch(
     src,

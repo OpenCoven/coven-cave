@@ -221,7 +221,7 @@ export async function enrichSessionsWithGitContext(
       (entry?.gitContext?.isWorktree ? entry.gitContext.branch ?? null : null);
     if (root && attributedBranch) {
       const pr = prCache.get(root, attributedBranch);
-      if (pr) enriched.pullRequest = pr;
+      if (pr) enriched.pullRequest = { ...pr, attribution: "branch" };
     }
     // Transcript fallback (cave-u9wl): familiar chats do their work in agent
     // worktrees, so branch attribution finds nothing on the chat's own cwd —

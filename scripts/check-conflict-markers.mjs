@@ -13,6 +13,8 @@
 
 import { execFileSync } from "node:child_process";
 
+import { isDirectRun } from "./direct-run.mjs";
+
 /**
  * Only `<<<<<<<` and `>>>>>>>` trigger a failure, never a bare `=======`.
  *
@@ -98,4 +100,4 @@ function main() {
   process.exit(1);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (isDirectRun(import.meta.url)) main();

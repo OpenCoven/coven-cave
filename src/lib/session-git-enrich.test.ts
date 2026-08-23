@@ -302,7 +302,7 @@ const REPO_SCRIPT = {
       runner,
       prCache,
     );
-    assert.deepEqual(rows[0].pullRequest, mergedPr("feat/mine"));
+    assert.deepEqual(rows[0].pullRequest, { ...mergedPr("feat/mine"), attribution: "branch" });
     assert.equal(rows[1].pullRequest, undefined, "bystander in the same root stays unstamped");
     assert.deepEqual(prCache.lookups, [{ root, branch: "feat/mine" }]);
   }
@@ -319,7 +319,7 @@ const REPO_SCRIPT = {
     const prCache = fakePrCache({ "feat/thing": mergedPr("feat/thing") });
     const rows = await enrichSessionsWithGitContext([session("wt", root)], runner, prCache);
     assert.equal(rows[0].git.isWorktree, true);
-    assert.deepEqual(rows[0].pullRequest, mergedPr("feat/thing"));
+    assert.deepEqual(rows[0].pullRequest, { ...mergedPr("feat/thing"), attribution: "branch" });
   }
 }
 
@@ -382,7 +382,7 @@ const REPO_SCRIPT = {
       { get: (_root, branch) => (branch === "feat/mine" ? branchPr : null) },
       urlCache,
     );
-    assert.deepEqual(rows[0].pullRequest, branchPr);
+    assert.deepEqual(rows[0].pullRequest, { ...branchPr, attribution: "branch" });
     assert.equal(urlCache.lookups.length, 0, "branch-attributed rows never probe the URL cache");
   }
 

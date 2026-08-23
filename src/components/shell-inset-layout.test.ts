@@ -10,16 +10,58 @@ const responsiveCss = readFileSync(
   new URL("../styles/globals/shell-responsive.css", import.meta.url),
   "utf8",
 );
+const foundationsCss = readFileSync(
+  new URL("../styles/globals/foundations.css", import.meta.url),
+  "utf8",
+);
+const backdropCss = readFileSync(
+  new URL("../styles/backdrop.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   shellCss,
   /\.shell-body\s*\{[^}]*background:\s*var\(--bg-panel\);/,
-  "the sidebar and inset gutter should share the shell floor",
+  "the nav pane's ground stays --bg-panel — the rail's shade is that ground plus .shell-nav's translucent paint, and moving it would move the rail",
+);
+// The gutter is the frame, so it reads the rail's own rendered shade rather
+// than the bare ground beneath the rail. Pinned because the two used to be the
+// same token, which made the mismatch invisible in review.
+assert.match(
+  foundationsCss,
+  /--shell-floor:\s*color-mix\(in oklch, var\(--bg-raised\) 88%, var\(--bg-panel\)\);/,
+  "the frame token should be the flat equivalent of .shell-nav's 88% --bg-raised over --bg-panel",
 );
 assert.match(
   shellCss,
-  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-detail-panel\s*\{[^}]*padding:\s*var\(--space-2\);[^}]*background:\s*var\(--bg-panel\);/,
-  "desktop detail should reserve an even tokenized inset around the main content",
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?\.shell-detail-panel\s*\{[^}]*padding:\s*var\(--space-2\);[^}]*background:\s*var\(--shell-floor\);/,
+  "desktop detail should reserve an even tokenized inset around the main content, painted in the frame color",
+);
+// With a backdrop up, the pane goes transparent so the image shows through the
+// content — which also handed the gutter to the fixed z-0 layer. The band is
+// repainted above it; without these the frame silently bleeds again.
+assert.match(
+  backdropCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?html\[data-backdrop-on\] \.shell-detail-panel::before\s*\{[\s\S]*?background-image:[\s\S]*?linear-gradient\(var\(--shell-floor\) 0 0\)/,
+  "a backdrop-on gutter should be repainted in the frame color above the backdrop layer",
+);
+assert.match(
+  backdropCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?html\[data-backdrop-on\] \.shell-detail-panel::before\s*\{[\s\S]*?background-size:\s*\n?\s*100% var\(--space-2\),\s*\n?\s*var\(--space-2\) 100%,\s*\n?\s*100% var\(--space-2\),\s*\n?\s*var\(--space-2\) 100%;/,
+  "the repaint must be four strips the width of the gutter, never a fill over the content box",
+);
+assert.match(
+  backdropCss,
+  /html\[data-backdrop-on\] \.shell-detail\s*\{\s*box-shadow:\s*\n?\s*0 0 0 var\(--space-2\) var\(--shell-floor\),/,
+  "the content's rounded corners need the same color spread behind them, or the image shows in the four wedges the strips cannot reach",
+);
+// The pane must stay transparent even though it is positioned for the strips:
+// positioning lifts it over the z-0 layer, so any opaque paint here covers the
+// image across the whole box, hero included.
+assert.match(
+  backdropCss,
+  /@media \(min-width: 1024px\)\s*\{[\s\S]*?html\[data-backdrop-on\] \.shell-detail-panel\s*\{[^}]*position:\s*relative;[^}]*background:\s*transparent;/,
+  "the positioned detail pane must paint nothing itself — the strips own the gutter",
 );
 assert.match(
   shellCss,

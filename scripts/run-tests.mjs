@@ -7,8 +7,10 @@
 //   suites: app | api | mobile   (pass "all" or nothing to run every suite)
 //
 // Each test runs in its own `node` process, sequentially; the runner exits on
-// the first failure (preserving the old `&&` short-circuit). `.ts` tests get
-// the TS type-stripper; the few `.mjs` tests that need it are listed below.
+// the first failure (preserving the old `&&` short-circuit). Some suites also
+// run read-only preflights first so generated fixtures cannot self-repair
+// later in the same validation pass. `.ts` tests get the TS type-stripper; the
+// few `.mjs` tests that need it are listed below.
 //
 // To add a test: append its repo-relative path to the right suite array. The
 // `check:tests-wired` guard imports SUITES from here and fails CI if any
@@ -16,6 +18,8 @@
 // allowlisted there).
 
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,6 +60,8 @@ export const SUITES = {
     "src/lib/workspace-pane-request.test.ts",
     "src/lib/workspace-pane-error.test.ts",
     "src/lib/workspace-url-state.test.ts",
+    "src/lib/workspace-context.test.ts",
+    "src/lib/workspace-context-storage.test.ts",
     "src/lib/pending-code-navigation.test.ts",
     "src/lib/workspace-navigation.test.ts",
     "src/lib/workspace-navigation-history.test.ts",
@@ -72,11 +78,16 @@ export const SUITES = {
     "scripts/maintenance-gate.test.mjs",
     "scripts/local-maintenance-gate.test.mjs",
     "scripts/fence-refusal-message.test.mjs",
+    "scripts/rules-of-hooks-gate.test.mjs",
+    "scripts/eslint/react-hooks-gate.test.mjs",
     "scripts/check-beads-jsonl-duplicates.test.mjs",
     "scripts/check-conflict-markers.test.mjs",
+    "scripts/direct-run.test.mjs",
+    "scripts/pdf-worker-asset.test.mjs",
     "scripts/onboarding-feedback-report.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
     "scripts/beads-create.test.mjs",
+    "scripts/beads-sync.test.mjs",
     "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
@@ -84,6 +95,7 @@ export const SUITES = {
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
+    "scripts/remote-hygiene.test.mjs",
     "src/lib/board-cache-events.test.ts",
     "src/lib/surface-warmup-registry.test.ts",
     "src/components/workspace-surface-warmup.test.ts",
@@ -127,9 +139,11 @@ export const SUITES = {
     "src/components/role-surfaces/research-tab-library.test.ts",
     "src/components/role-surfaces/research-tab-studio.test.ts",
     "src/components/role-surfaces/research-tab-resources.test.ts",
+    "src/components/role-surfaces/use-research-links.test.ts",
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
     "src/lib/research-generations.test.ts",
+    "src/lib/research-paper-view.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
@@ -137,11 +151,25 @@ export const SUITES = {
     "src/components/role-surfaces/chart-room-model.test.ts",
     "src/components/role-surfaces/indexer-surface.test.ts",
     "src/components/role-surfaces/reviewer-surface.test.ts",
+    "src/components/role-surfaces/review-progress.test.ts",
+    "src/components/role-surfaces/review-preferences.test.ts",
+    "src/components/role-surfaces/review-workbench-model.test.ts",
     "src/components/role-surfaces/review-readiness.test.ts",
     "src/components/role-surfaces/review-file-tree.test.ts",
+    "src/lib/review-landing.test.ts",
     "src/components/chat-view-render-cap.test.ts",
+    "src/components/chat-preview-card.test.tsx",
+    "src/components/chat-preview-routing.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
+    "src/components/streaming-chat-wiring.test.ts",
+    "src/components/streaming-turn-response.test.tsx",
     "src/lib/chat-composer-prefs.test.ts",
+    "src/lib/chat-assistant-output.test.ts",
+    "src/lib/chat-result-markers.test.ts",
+    "src/lib/chat-tool-verification.test.ts",
+    "src/lib/streaming-markdown-blocks.test.ts",
+    "src/lib/streaming-turn-view-model.test.ts",
+    "src/lib/use-stick-to-bottom.test.ts",
     "src/lib/model-control-capabilities.test.ts",
     "src/lib/chat-transcript-groups.test.ts",
     "src/components/chat-view-chunk-coalescing.test.ts",
@@ -154,6 +182,7 @@ export const SUITES = {
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/x-api.test.ts",
+    "src/lib/x-articles.test.ts",
     "src/lib/tweet-thread-protocol.test.ts",
     "src/lib/tweet-thread-validation.test.ts",
     "src/lib/tweet-thread-scoring.test.ts",
@@ -163,9 +192,13 @@ export const SUITES = {
     "src/lib/server/familiar-avatar-mutation.test.ts",
     "src/lib/server/x-app-config.test.ts",
     "src/lib/server/x-client.test.ts",
+    "src/lib/server/x-article-sorsa.test.ts",
     "src/lib/server/x-credentials.test.ts",
     "src/lib/server/x-access.test.ts",
     "src/lib/server/x-sources.test.ts",
+    "src/lib/server/x-publications.test.ts",
+    "src/lib/x-publish-composer.test.ts",
+    "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
     "src/lib/open-system-browser.test.ts",
     "src/components/familiar-x-section.test.ts",
     "src/components/familiar-x-section-behavior.test.tsx",
@@ -183,6 +216,7 @@ export const SUITES = {
     "src/lib/daemon-connection-supervisor.test.ts",
     "src/lib/daemon-fault-harness.test.ts",
     "src/lib/daemon-reliability.test.ts",
+    "src/lib/performance-budgets.test.ts",
     "src/lib/daemon-status-classification.test.ts",
     "src/lib/daemon-desktop-auto-start.test.ts",
     "src/lib/daemon-recovery-presentation.test.ts",
@@ -203,9 +237,11 @@ export const SUITES = {
     "src-tauri/release-runtime.test.mjs",
     "src-tauri/notch-window-chrome.test.mjs",
     "scripts/react-compiler-config.test.mjs",
+    "scripts/turbopack-dev-cache.test.mjs",
     "scripts/codemods/tokenize-tsx-design.test.mjs",
     "scripts/eslint/design-system-plugin.test.mjs",
     "scripts/bundle-budget.test.mjs",
+    "scripts/cave-performance-report.test.mjs",
     "scripts/daemon-reliability-benchmark.test.mjs",
     "scripts/enforce-branch-cap.test.mjs",
     "scripts/branch-cap-workflow.test.mjs",
@@ -249,6 +285,7 @@ export const SUITES = {
     "src/lib/skill-blocks.test.ts",
     "src/lib/github-blocks.test.ts",
     "src/lib/image-blocks.test.ts",
+    "src/lib/preview-blocks.test.ts",
     "src/lib/chat-attention-marker.test.ts",
     "src/lib/chat-attention-stream.test.ts",
     "src/lib/chat-attention-events.test.ts",
@@ -272,6 +309,7 @@ export const SUITES = {
     "src/lib/gfm-autolink.test.ts",
     "src/lib/gh-diff.test.ts",
     "src/lib/gh-review-html.test.ts",
+    "src/lib/project-organizations.test.ts",
     "src/lib/chat-projects.test.ts",
     "src/lib/chat-pr-link.test.ts",
     "src/lib/changes-review.test.ts",
@@ -282,6 +320,8 @@ export const SUITES = {
     "src/lib/chat-start-from.test.ts",
     "src/lib/chat-thread-instruments.test.ts",
     "src/lib/chat-tool-batches.test.ts",
+    "src/lib/use-tool-run-disclosure.test.ts",
+    "src/components/chat-tool-run-disclosure.test.ts",
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/auto-mission-state.test.ts",
@@ -303,6 +343,7 @@ export const SUITES = {
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-session-grouping.test.ts",
     "src/lib/chat-session-status.test.ts",
+    "src/lib/chat-session-kind.test.ts",
     "src/lib/chat-session-activity.test.ts",
     "src/lib/chat-session-sort.test.ts",
     "src/lib/chat-turn-gap.test.ts",
@@ -320,6 +361,7 @@ export const SUITES = {
     "scripts/sync-marketplace.test.mjs",
     "scripts/crafts-audited-content.test.mjs",
     "src/lib/marketplace-catalog.test.ts",
+    "src/lib/marketplace-logo.test.ts",
     "src/lib/craft-draft.test.ts",
     "src/lib/craft-arrival.test.ts",
     "src/lib/role-craft-composition.test.ts",
@@ -377,9 +419,14 @@ export const SUITES = {
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-lifecycle.test.ts",
     "src/lib/server/research-links.test.ts",
+    "src/lib/server/research-link-materialization.test.ts",
+    "src/lib/server/hf-paper-metadata.test.ts",
+    "src/lib/server/x-article-ingest.test.ts",
     "src/lib/server/process-intent-lock.test.ts",
+    "src/lib/server/research-mission-lock.test.ts",
     "src/lib/server/research-generations.test.ts",
     "src/lib/server/research-media-store.test.ts",
+    "src/lib/research-media-ticket.test.ts",
     "src/lib/server/chat-attachment-store.test.ts",
     "src/lib/server/research-podcast-pipeline.test.ts",
     "src/lib/server/research-video-renderer.test.ts",
@@ -432,6 +479,7 @@ export const SUITES = {
     "src/components/familiar-daily-notes.test.ts",
     "src/lib/dashboard-model.test.ts",
     "src/lib/dashboard-analytics.test.ts",
+    "src/lib/activity-heatmap-window.test.ts",
     "src/lib/bento-dashboard.test.ts",
     "src/lib/heat-tip.test.ts",
     "src/lib/coven-analytics.test.ts",
@@ -450,6 +498,7 @@ export const SUITES = {
     "src/lib/readable-text-color.test.ts",
     "src/lib/theme-runtime.test.ts",
     "src/lib/preferences-schema.test.ts",
+    "src/lib/sidecar-smoke-preferences.test.ts",
     "src/lib/app-preferences.test.ts",
     "src/lib/app-preferences-runtime.test.ts",
     "src/lib/app-preferences-paint-bootstrap.test.ts",
@@ -457,6 +506,7 @@ export const SUITES = {
     "src/components/settings-about.test.ts",
     "src/components/settings-phone.test.ts",
     "src/lib/tailscale-failure.test.ts",
+    "src/lib/tailscale-recovery.test.ts",
     "src/components/settings-github.test.ts",
     "src/components/settings-profile.test.ts",
     "src/components/settings-search.test.ts",
@@ -483,7 +533,6 @@ export const SUITES = {
     "src/lib/skill-dryrun.test.ts",
     "src/lib/skill-agent-prompt.test.ts",
     "src/lib/skill-directory.test.ts",
-    "src/components/terminal-scope.test.ts",
     "src/components/top-bar.test.ts",
     "src/components/command-palette.test.ts",
     "src/components/command-palette-a11y.test.ts",
@@ -503,11 +552,14 @@ export const SUITES = {
     "src/components/home-chat-handoff.test.ts",
     "src/components/home-composer.test.ts",
     "src/lib/home-composer-context.test.ts",
+    "src/components/composer-context-pill.test.ts",
     "src/components/composer-enhance.test.ts",
+    "src/components/agentic-recommendation-card.test.ts",
     "src/components/prompt-snippets-modal.test.ts",
     "src/components/marketplace/marketplace-detail.test.ts",
     "src/lib/knowledge-pack-ui.test.ts",
     "src/components/home-hearth.test.ts",
+    "src/lib/home-task-handoff.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
     "src/components/home-composer-centering.test.ts",
@@ -518,6 +570,7 @@ export const SUITES = {
     "src/components/ios-query-url.test.ts",
     "src/components/chat-all-familiars-project-list.test.ts",
     "src/components/chat-list-delete.test.ts",
+    "src/components/chat-list-filter-defaults.test.ts",
     "src/lib/chat-list-model.test.ts",
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
@@ -526,8 +579,6 @@ export const SUITES = {
     "src/components/right-chat-panel.test.ts",
     "src/components/right-chat-panel-behavior.test.tsx",
     "src/components/chat-compose-instance.test.ts",
-    "src/components/chat-split-host.test.ts",
-    "src/lib/chat-split.test.ts",
     "src/components/chat-thread-rail.test.ts",
     "src/components/chat-rail-modern-redesign.test.ts",
     "src/components/message-bubble-markdown.test.ts",
@@ -546,10 +597,13 @@ export const SUITES = {
     "src/components/message-bubble-jump-to-line.test.ts",
     "src/components/message-bubble-file-links.test.ts",
     "src/components/chat-view-polish-tools-activity.test.ts",
+    "src/components/chat-tool-activity-lifecycle.test.ts",
+    "src/components/chat-tool-run-lifecycle.test.ts",
     "src/components/chat-view-polish-header-composer.test.ts",
     "src/components/chat-view-polish-attachments-mentions.test.ts",
     "src/components/chat-view-polish-edit-review.test.ts",
     "src/components/chat-composer-footer-band.test.ts",
+    "src/components/chat-composer-command-capsule.test.ts",
     "src/components/task-link-picker.test.ts",
     "src/components/composer-actions-menu.test.ts",
     "src/components/composer-add-menu.test.ts",
@@ -599,7 +653,8 @@ export const SUITES = {
     "src/components/nav-section-tabs.test.ts",
     "src/components/sidebar-minimal.test.ts",
     "src/components/sidebar-rail-header.test.ts",
-    "src/components/nav-section-tabs.test.ts",
+    "src/components/workspace-context-switcher.test.ts",
+    "src/components/acting-familiar-gate.test.ts",
     "src/components/shell-chrome-revamp.test.ts",
     "src/components/shell-inset-layout.test.ts",
     "src/components/sidebar-footer.test.ts",
@@ -609,7 +664,6 @@ export const SUITES = {
     "src/components/sidepanel-peel-reveal.test.ts",
     "src/components/sidepanel-keyboard-nav.test.ts",
     "src/components/recent-activity-rollup.test.ts",
-    "src/lib/nav-section.test.ts",
     "src/components/sidebar-familiar-filter.test.ts",
     "src/components/shell-edge-rails.test.ts",
     "src/components/shell-first-paint.test.ts",
@@ -677,6 +731,7 @@ export const SUITES = {
     "src/lib/canvas-react-harness.test.ts",
     "src/lib/canvas-generate.test.ts",
     "src/lib/canvas-add.test.ts",
+    "src/lib/diagram-command.test.ts",
     "src/lib/slash-commands.test.ts",
     "src/lib/slash-model.test.ts",
     "src/lib/opencode-models.test.ts",
@@ -700,6 +755,7 @@ export const SUITES = {
     "src/lib/journal-constellation.test.ts",
     "src/lib/server/journal-store.test.ts",
     "src/components/chat-canvas-command.test.ts",
+    "src/components/chat-diagram-command.test.ts",
     "src/components/calendar-actions.test.ts",
     "src/components/calendar-keyboard.test.ts",
     "src/components/task-chat-cwd.test.ts",
@@ -724,6 +780,12 @@ export const SUITES = {
     "src/lib/stop-phrase.test.ts",
     "src/lib/use-prompt-enhance.test.ts",
     "src/lib/reply-recommendation.test.ts",
+    "src/lib/agentic-diagnostics.test.ts",
+    "src/lib/agentic-recommendations.test.ts",
+    "src/lib/use-agentic-recommendations.test.ts",
+    "src/lib/feature-flags.test.ts",
+    "src/lib/research-recommendation-context.test.ts",
+    "src/lib/research-topic-recommendations.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/code-lang.test.ts",
     "src/lib/shiki-highlighter.test.ts",
@@ -771,6 +833,8 @@ export const SUITES = {
     "src/lib/chat-debug-store.test.ts",
     "src/components/bottom-terminal-ws-bridge.test.ts",
     "src/components/bottom-terminal-startup-watchdog.test.ts",
+    "src/components/bottom-terminal-health.test.ts",
+    "src/components/code-terminal-focus-mode.test.ts",
     "src/components/familiars-memory-view-filter-paginate.test.ts",
     "src/components/familiars-memory-view-detail.test.ts",
     "src/components/familiars-memory-view-compact-path.test.ts",
@@ -807,6 +871,7 @@ export const SUITES = {
     "src/lib/familiar-analytics-insight.test.ts",
     "src/lib/familiar-heal-requests.test.ts",
     "src/lib/thread-self-report.test.ts",
+    "src/lib/thread-self-report-timing.test.ts",
     "src/lib/threads-read.test.ts",
     "src/lib/threads-adapters.test.ts",
     "src/lib/weave-map.test.ts",
@@ -854,8 +919,6 @@ export const SUITES = {
     "src/lib/inbox-title.test.ts",
     "src/lib/toast-groups.test.ts",
     "src/components/inbox-toast-stack.test.ts",
-    "src/lib/daily-summary-notifications.test.ts",
-    "src/components/daily-summary-notifications.test.ts",
     "src/app/daily-report-page.test.ts",
     "src/components/shipped-table.test.ts",
     "src/components/reminder-link-field.test.ts",
@@ -893,12 +956,12 @@ export const SUITES = {
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
     "src/components/project-picker.test.ts",
+    "src/components/project-picker-focus.test.tsx",
     "src/components/chat-project-launch-gate.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
     "src/lib/directory-picker-pins.test.ts",
     "src/components/first-project-gate.test.ts",
-    "src/components/chat-view.test.ts",
     "src/components/drag-to-split.test.ts",
     "src/components/daemon-start-button.test.ts",
     "src/components/workspace-daemon-connection.test.ts",
@@ -918,8 +981,11 @@ export const SUITES = {
     "src/components/github-action-popover-chat-launch.test.ts",
     "src/components/github-card-wiring.test.ts",
     "src/components/image-carousel-wiring.test.ts",
+    "src/components/image-carousel-fill.test.ts",
     "src/components/chat-spec-card.test.ts",
     "src/components/chat-spec-card-wiring.test.ts",
+    "src/components/chat-markdown-reader.test.ts",
+    "src/lib/file-ref-open.test.ts",
     "src/lib/gh-card-commands.test.ts",
     "src/lib/gh-review-draft.test.ts",
     "src/components/skill-stage-card-wiring.test.ts",
@@ -961,6 +1027,8 @@ export const SUITES = {
     "src/components/settings-action-buttons.test.ts",
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
+    "src/components/settings-save-feedback.test.ts",
+    "src/components/settings-save-feedback.behavior.test.tsx",
     "src/components/voice-engine-settings.test.ts",
     "src/components/voice-provider-settings.test.tsx",
     "src/components/voice-provider-settings.integration.test.tsx",
@@ -991,6 +1059,7 @@ export const SUITES = {
     "src/lib/github-repo-link.test.ts",
     "src/lib/link-extractor.test.ts",
     "src/lib/link-organizer.test.ts",
+    "src/lib/hf-papers.test.ts",
     "src/lib/memory-inspector.test.ts",
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
@@ -1052,6 +1121,10 @@ export const SUITES = {
     "src/tailnet-identity.test.ts",
     "src/lib/font-settings.test.ts",
     "src/lib/font-wiring.test.ts",
+    "src/lib/inference-routes.test.ts",
+    "src/lib/inference-route-config.test.ts",
+    "src/lib/server/inference-launch-plan.test.ts",
+    "src/app/api/chat/send/inference-route-routing.test.ts",
     "src/lib/cave-config.test.ts",
     "src/lib/cave-config-compatibility.test.ts",
     "src/lib/omnigent/client.test.ts",
@@ -1152,6 +1225,7 @@ export const SUITES = {
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
     "src/lib/cave-board-orchestration.test.ts",
+    "src/lib/board-agentic-enhance.test.ts",
     "src/lib/cave-board-model-override.test.ts",
     "src/components/ui/tabs.test.ts",
     "src/components/ui/charts/charts.test.ts",
@@ -1188,7 +1262,6 @@ export const SUITES = {
     "src/components/familiar-chatout-codex/TranscriptCard.test.ts",
     "src/lib/familiar-image-upload.test.ts",
     "src/lib/clipboard.test.ts",
-    "src/app/daily-report-page.test.ts",
     "src/lib/icon-subset.test.ts",
     "src/lib/panel-shortcuts.test.ts",
     "src/lib/settings-familiar-picker.test.ts",
@@ -1234,6 +1307,9 @@ export const SUITES = {
     "src/lib/onboarding-status-probes.test.ts",
     "src/lib/onboarding-status-ui.test.ts",
     "src/components/settings-multihost.test.ts",
+    "src/app/api/research/links/ingest-urls.test.ts",
+    "src/app/api/research/links/route.test.ts",
+    "src/app/api/research/papers/pdf/route.test.ts",
   ],
   api: [
     "src/app/api/afs/afs-routes.test.ts",
@@ -1260,9 +1336,14 @@ export const SUITES = {
     "scripts/beads-pr-bridge.test.mjs",
     "scripts/beads-pr-patrol.test.mjs",
     "scripts/ci-paths.test.mjs",
+    "scripts/export-client-v1-contract.test.mjs",
+    "scripts/client-v1-doc-contract.test.mjs",
+    "scripts/client-v1-release-smoke.test.mjs",
+    "scripts/client-v1-conformance.test.mjs",
     "scripts/ci-recovery.test.mjs",
     "scripts/ci-recovery-workflow.test.mjs",
-    "scripts/worktree-lifecycle-retirement.test.mjs",
+    "scripts/main-health.test.mjs",
+    "scripts/main-health-workflow.test.mjs",
     "scripts/worktree-lifecycle-create.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/lib/server/cave-home-migration-backup-recovery.test.ts",
@@ -1284,6 +1365,7 @@ export const SUITES = {
     "src/app/api/cave-home-migration/route.test.ts",
     "src/app/api/beads/route.test.ts",
     "src/app/api/beads/overview/route.test.ts",
+    "src/app/api/board/[id]/enhance/route.test.ts",
     "src/lib/server/beads-delivery-source.test.ts",
     "src/app/api/queue/readiness/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
@@ -1293,11 +1375,42 @@ export const SUITES = {
     "src/lib/server/daemon-travel-reconcile.test.ts",
     "src/app/api/chat/conversation/route.test.ts",
     "src/app/api/chat/conversation/[id]/route.test.ts",
+    "src/app/api/chat/conversation/[id]/turns/[turnId]/route.test.ts",
     "src/app/api/sessions/[id]/route.test.ts",
     "src/app/api/canvas/route.test.ts",
+    "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
+    "src/lib/server/client-v1/contract.test.ts",
+    "src/lib/server/client-v1/instance-id.test.ts",
+    "src/lib/server/client-v1/pairing-store.test.ts",
+    "src/lib/server/client-v1/credential-store.test.ts",
+    "src/lib/server/client-v1/auth.test.ts",
+    "src/lib/server/client-v1/rate-limit.test.ts",
+    "src/lib/server/client-v1/discovery.test.ts",
+    "src/lib/server/client-v1/path-ownership.test.ts",
+    "src/lib/server/client-v1/runtime.test.ts",
+    "src/app/api/client/v1/health/route.test.ts",
+    "src/app/api/client/v1/pairing/requests/route.test.ts",
+    "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
+    "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",
+    "src/app/api/client/v1/admin/pairing-requests/route.test.ts",
+    "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
+    "src/app/api/client/v1/admin/credentials/route.test.ts",
+    "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+    "src/app/api/client/v1/admin/security.e2e.test.ts",
+    "src/lib/server/client-v1/pagination.test.ts",
+    "src/lib/server/client-v1/reads.test.ts",
+    "src/lib/server/client-v1/read-guard.test.ts",
+    "src/app/api/client/v1/familiars/route.test.ts",
+    "src/app/api/client/v1/projects/route.test.ts",
+    "src/app/api/client/v1/conversations/route.test.ts",
+    "src/app/api/client/v1/conversations/[id]/route.test.ts",
+    "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
     "src/app/api/x/account-routes.test.ts",
+    "src/app/api/x/connection-route-behavior.test.ts",
     "src/app/api/x/research-routes.test.ts",
+    "src/app/api/x/sources-route-behavior.test.ts",
+    "src/app/api/research/recommendations/route.test.ts",
     "src/app/api/hermes-profiles/route.test.ts",
     "src/lib/server/x-oauth.test.ts",
     "src/app/api/coven-memory/route.test.ts",
@@ -1348,6 +1461,7 @@ export const SUITES = {
     "src/lib/coven-daemon.test.ts",
     "src/lib/server/canonical-memory-gateway.test.ts",
     "src/lib/coven-bin.test.ts",
+    "src/lib/bd-bin.test.ts",
     "src/lib/harness-version.test.ts",
     "src/lib/hermes-shim.test.ts",
     "src/lib/hermes-responses-stream.test.ts",
@@ -1390,6 +1504,7 @@ export const SUITES = {
     "src/app/api/chat/send/harness-routing-attachments.test.ts",
     "src/app/api/chat/send/harness-routing-tool-events.test.ts",
     "src/app/api/chat/send/harness-routing-model-capabilities.test.ts",
+    "src/app/api/chat/send/chat-send-runtime.test.ts",
     "src/app/api/chat/send/harness-routing-copilot-jsonl.test.ts",
     "src/app/api/chat/send/harness-routing-opencode.test.ts",
     "src/app/api/chat/send/chat-send-models.test.ts",
@@ -1465,6 +1580,7 @@ export const SUITES = {
     "src/lib/chat-project-access.test.ts",
     "src/lib/chat-history-fallback.test.ts",
     "src/lib/conversation-cache.test.ts",
+    "src/lib/offline-cache.test.ts",
     "src/lib/familiar-identity-scaffold.test.ts",
     "src/lib/session-list-merge.test.ts",
     "src/lib/session-pin-persistence.test.ts",
@@ -1473,7 +1589,6 @@ export const SUITES = {
     "src/lib/github-tasks-cache.test.ts",
     "src/lib/swr-cache.test.ts",
     "src/lib/server/sessions-list-cache.test.ts",
-    "src/lib/server/session-security.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
     "src/lib/server/familiar-contract-context.test.ts",
@@ -1538,6 +1653,13 @@ export const SUITES = {
     "scripts/release-macos-signing.test.mjs",
     "scripts/release-notes.test.mjs",
     "scripts/generate-latest-json.test.mjs",
+    "scripts/verify-release-updater.test.mjs",
+    "scripts/release-packaging-contract.test.mjs",
+    "scripts/release-promotion.test.mjs",
+    "scripts/release-promotion-workflow.test.mjs",
+    "scripts/release-rollback-readiness.test.mjs",
+    "scripts/release-acceptance.test.mjs",
+    "scripts/release-rollout.test.mjs",
     "scripts/stamp-release.test.mjs",
     "src/app/api/daemon/start/route.test.ts",
     "src/lib/github-token.test.ts",
@@ -1596,6 +1718,7 @@ export const SUITES = {
     "src/app/api/feedback/message/route.test.ts",
     "src/app/api/launch/route.test.ts",
     "scripts/sidecar-archive-manifest.test.mjs",
+    "scripts/sidecar-lock.test.mjs",
     "scripts/sidecar-bundle.test.mjs",
     "scripts/sidecar-bundle-deps.test.mjs",
     "scripts/sidecar-runtime-closure.test.mjs",
@@ -1622,6 +1745,8 @@ export const SUITES = {
     "src/lib/mobile-handoff.test.ts",
     "src/lib/mobile-mode-reconcile.test.ts",
     "src/lib/mobile-token-refresh.test.ts",
+    "src/lib/desktop-reachability.test.ts",
+    "src/lib/server/mobile-paired.test.ts",
     "scripts/ios-build-ci.test.mjs",
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
@@ -1655,12 +1780,14 @@ export const SUITES = {
     "scripts/ios-export-selected-zip.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-auto-reconnect.test.mjs",
+    "scripts/ios-background-refresh.test.mjs",
     "scripts/ios-ats-protections.test.mjs",
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
     "scripts/ios-bulk-reminders.test.mjs",
     "scripts/ios-session-refetch.test.mjs",
     "scripts/ios-thread-server-persistence.test.mjs",
+    "scripts/ios-message-delete-persistence.test.mjs",
     "scripts/ios-swipe-ux.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",
     "scripts/ios-port-discovery.test.mjs",
@@ -1688,9 +1815,6 @@ export const SUITES = {
     "scripts/ios-chat-draft-lag.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-chat-tab-free.test.mjs",
-    "scripts/ios-development-terminal-chrome.test.mjs",
-    "scripts/ios-terminal-composer.test.mjs",
-    "scripts/ios-surface-failures.test.mjs",
     "scripts/ios-surface-load-discipline.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
     "src/components/mobile-handoff.test.ts",
@@ -1707,12 +1831,21 @@ export const SUITES = {
     "src/components/chat-list-mobile-rail-port.test.ts",
     "src/components/chat-artifact-viewer.test.ts",
   ],
-  // Cross-environment conformance (#1990). Runs on the ubuntu/windows/macos CI
-  // matrix via `pnpm test:conformance` — the SAME assertions on every OS. Kept
-  // out of the app/api/mobile suites (the neutral Linux baseline) on purpose;
-  // the matrix is where per-OS behavior is verified.
+  // Cross-environment conformance (#1990). Release CI runs the SAME assertions
+  // on ubuntu/windows/macos, and normal pull-request CI runs them on Ubuntu.
+  // Keep this separate from the broader app/api/mobile suites.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/research-protocol-conformance.test.ts",
+    "scripts/research-protocol-scenario-conformance.test.ts",
+    "src/lib/research-protocol/common.test.ts",
+    "src/lib/research-protocol/digest.test.ts",
+    "src/lib/research-protocol/context-pack.test.ts",
+    "src/lib/research-protocol/topic-discovery.test.ts",
+    "src/lib/research-protocol/research-run.test.ts",
+    "src/lib/research-protocol/model-task.test.ts",
+    "src/lib/research-protocol/run-manifest.test.ts",
+    "src/lib/research-protocol/index.test.ts",
     "scripts/daemon-connectivity-faults.test.ts",
     "scripts/windows-native-browser-regression.test.mjs",
     "scripts/cave-home-migration-windows.test.ts",
@@ -1721,6 +1854,8 @@ export const SUITES = {
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
+  // imports ../src/lib/performance-budgets.ts through cave-performance-report.mjs
+  "scripts/cave-performance-report.test.mjs",
   "scripts/release-macos-signing.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
@@ -1731,7 +1866,31 @@ const STRIP_TYPES_MJS = new Set([
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
+export const SUITE_PREFLIGHTS = {
+  api: [
+    ["scripts/export-client-v1-contract.mjs", "--check"],
+  ],
+};
+
 const ALIAS_LOADER = new Set([
+  // Imports proxy.ts, which resolves Next's extensionless next/server entry.
+  "src/lib/server/client-v1/auth.test.ts",
+  "src/app/api/client/v1/pairing/requests/route.test.ts",
+  "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
+  "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",
+  "src/app/api/client/v1/admin/pairing-requests/route.test.ts",
+  "src/app/api/client/v1/admin/pairing-requests/[id]/decision/route.test.ts",
+  "src/app/api/client/v1/admin/credentials/route.test.ts",
+  "src/app/api/client/v1/admin/credentials/[id]/route.test.ts",
+  "src/app/api/client/v1/admin/security.e2e.test.ts",
+  // The Phase 2 canonical reads: the route modules resolve "@/lib/server/..."
+  // and "@/proxy-helpers" as runtime values, and their suites import the same
+  // aliases for the loopback header and the runtime factory.
+  "src/app/api/client/v1/familiars/route.test.ts",
+  "src/app/api/client/v1/projects/route.test.ts",
+  "src/app/api/client/v1/conversations/route.test.ts",
+  "src/app/api/client/v1/conversations/[id]/route.test.ts",
+  "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",
@@ -1740,6 +1899,19 @@ const ALIAS_LOADER = new Set([
   "src/app/api/onboarding/install/install-service.test.ts",
   // Imports flow-executor.ts, whose production graph uses @/lib aliases.
   "src/lib/server/flow-executor.test.ts",
+  // instance-id.ts reads the Cave home through "@/lib/coven-paths", and the
+  // health route reaches it plus "@/lib/app-version" and the client v1
+  // response builders.
+  "src/lib/server/client-v1/instance-id.test.ts",
+  "src/app/api/client/v1/health/route.test.ts",
+  // hf-paper-metadata.ts imports "@/lib/hf-papers" as a runtime value.
+  "src/lib/server/hf-paper-metadata.test.ts",
+  // ingest-urls.ts imports "@/lib/link-extractor" and "@/lib/hf-papers".
+  "src/app/api/research/links/ingest-urls.test.ts",
+  // X Article ingest reaches the configured provider and Research Links route
+  // through runtime @/lib imports.
+  "src/lib/server/x-article-ingest.test.ts",
+  "src/app/api/research/links/route.test.ts",
   // beads-delivery-source.ts imports "@/lib/beads-delivery",
   // "@/lib/server/beads-cli" and "@/lib/server/beads-workspace" as runtime
   // values, so the resolver has to be loaded or the file throws
@@ -1766,10 +1938,17 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/research-quick-saves.test.ts",
   "src/components/role-surfaces/research-library-view.test.ts",
   "src/components/role-surfaces/research-studio-providers.test.ts",
+  "src/components/role-surfaces/use-research-links.test.ts",
   "src/lib/daemon-desktop-auto-start.test.ts",
   "src/lib/cave-board-orchestration.test.ts",
+  "src/lib/board-agentic-enhance.test.ts",
   "src/app/api/board/orchestration-route.test.ts",
+  "src/app/api/board/[id]/enhance/route.test.ts",
+  "src/lib/research-topic-recommendations.test.ts",
+  "src/app/api/research/recommendations/route.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
+  // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
+  "src/lib/use-auto-expand-new-groups.test.ts",
   "src/lib/podcast-script.test.ts",
   // resolves "@/lib/tool-visual" for the batch band's tint
   "src/lib/chat-tool-batches.test.ts",
@@ -1803,6 +1982,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-conversations.test.ts",
   "src/app/api/chat/send/chat-send-models.test.ts",
   "src/app/api/chat/send/chat-send-capabilities.test.ts",
+  "src/app/api/chat/send/chat-send-runtime.test.ts",
+  "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
   "src/app/api/chat/send/route-opencode.integration.test.ts",
   "src/app/api/chat/send/route-grok-compatibility.integration.test.ts",
   "src/app/api/chat/send/route-opencode-preflight.integration.test.ts",
@@ -1816,7 +1997,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
   "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
   "src/app/api/chat/send/route-body-validation.test.ts",
+  "src/app/api/x/connection-route-behavior.test.ts",
   "src/app/api/x/research-routes.test.ts",
+  "src/app/api/x/sources-route-behavior.test.ts",
   "src/lib/server/runtime-model-options.test.ts",
   "src/lib/server/grok-models.test.ts",
   "src/lib/familiar-workspace-sessions.test.ts",
@@ -1861,6 +2044,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/passkey-store.test.ts",
   // reaches "@/proxy-helpers" and the store through the ceremony module
   "src/lib/server/passkey-ceremony.test.ts",
+  // mobile-paired resolves the Cave state path, atomic writer, and proxy marker.
+  "src/lib/server/mobile-paired.test.ts",
   "src/lib/server/preferences-store.test.ts",
   "src/lib/server/backdrop-store.test.ts",
   "src/lib/server/beads-cli.test.ts",
@@ -1974,11 +2159,15 @@ const ALIAS_LOADER = new Set([
   "src/app/api/hermes-profiles/route.test.ts",
   "src/app/api/salem/route.test.ts",
   "src/app/api/chat/conversation/[id]/route.test.ts",
+  "src/app/api/chat/conversation/[id]/turns/[turnId]/route.test.ts",
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",
   "src/lib/voice/registry.test.ts",
   "src/lib/voice/elevenlabs.test.ts",
   "src/lib/project-root-migration.test.ts",
+  // arxiv-url.ts imports "@/lib/hf-papers" as a runtime value, and route.ts
+  // reaches "@/lib/server/api-security" for the local-request guard.
+  "src/app/api/research/papers/pdf/route.test.ts",
 ]);
 
 // These gates inspect physical source files. The CSS facade expander would
@@ -1991,6 +2180,11 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
+  "src/lib/home-composer-context.test.ts",
+  "src/components/project-picker-focus.test.tsx",
+  "src/components/streaming-turn-response.test.tsx",
+  "src/components/settings-save-feedback.behavior.test.tsx",
+  "src/components/chat-preview-card.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
@@ -2002,6 +2196,7 @@ const VITEST_TESTS = new Set([
   "src/components/workspace-canonical-memory-lazy-familiar.test.tsx",
   "src/components/projects-view-repair-behavior.test.tsx",
   "src/components/familiar-x-section-behavior.test.tsx",
+  "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
   "src/components/role-surfaces/use-research-missions.test.tsx",
   "src/components/voice-provider-settings.test.tsx",
@@ -2009,11 +2204,14 @@ const VITEST_TESTS = new Set([
   "src/components/use-openai-voice-preview.test.tsx",
   "src/components/workspace-sidebar-attention.test.ts",
   "src/components/chat-sidebar-wiring.behavior.test.ts",
+  // renders streaming turns through the Vite transform (JSX)
+  "src/components/streaming-turn-response.test.tsx",
   "src/components/chat-title-sparkle-behavior.test.tsx",
   "src/components/right-chat-panel-behavior.test.tsx",
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
   "src/components/mobile-drawer-nav-list-focus.test.tsx",
+  "src/components/streaming-turn-response.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
   // renders the hook through react-test-renderer
@@ -2040,6 +2238,23 @@ export function nodeArgsFor(file) {
   return args;
 }
 
+function runSuitePreflights(names, root) {
+  const seen = new Set();
+  for (const name of names) {
+    for (const args of SUITE_PREFLIGHTS[name] ?? []) {
+      const key = JSON.stringify(args);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const res = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });
+      if (res.status !== 0) {
+        console.error(`
+✗ FAILED PREFLIGHT: ${args.join(" ")}`);
+        process.exit(res.status ?? 1);
+      }
+    }
+  }
+}
+
 function main(argv) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   let names = argv.length ? argv : ["all"];
@@ -2049,19 +2264,37 @@ function main(argv) {
     console.error(`unknown suite(s): ${unknown.join(", ")}. known: ${[...Object.keys(SUITES), "all"].join(", ")}`);
     process.exit(2);
   }
+  runSuitePreflights(names, root);
   const list = names.flatMap((n) => SUITES[n]);
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
+  const secretRoot = mkdtempSync(path.join(tmpdir(), "coven-test-secrets-"));
+  const testEnv = {
+    ...process.env,
+    COVEN_VAULT_FILE: path.join(secretRoot, "vault.yaml"),
+    COVEN_CAVE_ENV_FILE: path.join(secretRoot, ".env.local"),
+    COVEN_CAVE_LOCAL_VAULT_FILE: path.join(secretRoot, "local-vault.enc.json"),
+    COVEN_CAVE_LOCAL_VAULT_KEY_FILE: path.join(secretRoot, "local-vault.key"),
+  };
   let passed = 0;
-  for (const file of list) {
-    const args = VITEST_TESTS.has(file)
-      ? ["./node_modules/vitest/vitest.mjs", "run", file]
-      : nodeArgsFor(file);
-    const res = spawnSync(process.execPath, args, { stdio: "inherit", cwd: root });
-    if (res.status !== 0) {
-      console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
-      process.exit(res.status ?? 1);
+  try {
+    for (const file of list) {
+      const args = VITEST_TESTS.has(file)
+        ? ["./node_modules/vitest/vitest.mjs", "run", file]
+        : nodeArgsFor(file);
+      const res = spawnSync(process.execPath, args, {
+        stdio: "inherit",
+        cwd: root,
+        env: testEnv,
+      });
+      if (res.status !== 0) {
+        console.error(`\n✗ FAILED: ${file}  (${passed} passed before it)`);
+        process.exitCode = res.status ?? 1;
+        return;
+      }
+      passed++;
     }
-    passed++;
+  } finally {
+    rmSync(secretRoot, { recursive: true, force: true });
   }
   console.log(`\n✓ ${passed} test file(s) passed [${names.join(", ")}]`);
 }

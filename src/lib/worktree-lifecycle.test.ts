@@ -87,6 +87,7 @@ assert.equal(
     "artifacts/report.json",
     "test-results/results.json",
     "public/sandbox/runtime.js",
+    "public/pdf.worker.min.mjs",
     "src-tauri/gen/schemas.json",
     "src-tauri/resources/server/server.mjs",
     "src-tauri/target/debug/app",
@@ -97,6 +98,11 @@ assert.equal(
     isDisposableIgnoredPath("docs/superpowers/plans/uncommitted-design.md"),
     false,
     "ignored authored work remains preservation evidence",
+  );
+  assert.equal(
+    isDisposableIgnoredPath("public/valuable-source.mjs"),
+    false,
+    "other ignored public assets remain preservation evidence",
   );
   assert.equal(
     isDisposableIgnoredPath("node_modules\\valuable/source.ts"),
@@ -310,6 +316,72 @@ function legacyObservation(overrides = {}) {
     NOW,
   );
   assert.equal(item.lane, "recovery", "backup branches are never cleanup candidates");
+}
+
+// cave-22d8v — `wip` is a NAMESPACE, not a token anywhere in the branch name.
+{
+  for (const branch of [
+    "backup/feat-x",
+    "archive/cave-8i8q5-wip-2026-07-29",
+    "rescue/cave-1-snapshot",
+    "retention/cave-58eoq-authenticated-readiness-wip-2026-08-10",
+    "wip/cave-2-half-done",
+  ]) {
+    const item = classifyLifecycleUnit(
+      observation({
+        branch,
+        ref: `refs/heads/${branch}`,
+        remoteRefsContainingHead: [`refs/remotes/origin/${branch}`],
+        remoteRef: { ref: `refs/remotes/origin/${branch}`, oid: "a".repeat(40) },
+      }),
+      NOW,
+    );
+    assert.equal(item.lane, "recovery", `${branch} is a snapshot namespace and stays preserved`);
+    assert.match(item.reasons.join("\n"), /recovery or WIP snapshot/);
+  }
+}
+
+// The false positives the old token-anywhere rule produced. Neither branch holds
+// WIP: the first is named for the WIP merge it REVERTS (observed 2026-08-14 —
+// clean tree, PR #4590 merged, and still unretirable because of its name), and
+// the second merely contains the letters as part of another word.
+//
+// The assertion is that the NAME contributes nothing, not that the unit is
+// retirable: each is compared against an ordinary control branch under an
+// otherwise identical observation, so whatever the control earns on its own
+// merits, these earn too. Asserting `lane !== "recovery"` outright would be
+// wrong — a unit whose head is not yet proven landed is `recovery` regardless
+// of its name, and the control shows exactly that.
+{
+  const unit = (branch) =>
+    classifyLifecycleUnit(
+      observation({
+        branch,
+        ref: `refs/heads/${branch}`,
+        remoteRefsContainingHead: [`refs/remotes/origin/${branch}`],
+        remoteRef: { ref: `refs/remotes/origin/${branch}`, oid: "a".repeat(40) },
+      }),
+      NOW,
+    );
+  const control = unit("feat/ordinary-branch");
+  for (const branch of ["fix/cave-qqt1g-revert-wip-merge", "fix/ios-wipe-gesture"]) {
+    const item = unit(branch);
+    assert.doesNotMatch(
+      item.reasons.join("\n"),
+      /recovery or WIP snapshot/,
+      `${branch} names WIP as its subject, not its content, so the name must not pin it`,
+    );
+    assert.equal(
+      item.lane,
+      control.lane,
+      `${branch} classifies exactly like an ordinary branch`,
+    );
+    assert.deepEqual(
+      item.reasons,
+      control.reasons,
+      `${branch} earns the same reasons as an ordinary branch`,
+    );
+  }
 }
 
 {
@@ -1154,6 +1226,71 @@ function legacyObservation(overrides = {}) {
     expectedWithoutFooter,
     "the mutable apply renderer reuses the same report body without the report-only footer",
   );
+}
+
+// ── cave-5ulwl: the head-mismatch reason must be REACHABLE ──────────────────
+// It was dead code. `mergedPr` is built by the inventory from an exact
+// `headRefOid === head` filter, so `mergedPr.headOid !== head` could never be
+// true for any observation the inventory produces, and a unit sitting one
+// commit behind its own merged PR fell through to the generic
+// "not proven landed" — which reads as "may hold unlanded work".
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      head: "a".repeat(40),
+      headOnDefaultBranch: false,
+      mergedPr: null,
+      branchMergedPr: { number: 4658, url: "https://example.test/4658", headOid: "b".repeat(40) },
+    }),
+    NOW,
+  );
+  assert.equal(item.lane, "recovery", "a behind-HEAD unit is still preserved");
+  const reasons = item.reasons.join("\n");
+  assert.match(reasons, /does not match merged PR #4658/, "names the PR that actually merged");
+  assert.match(reasons, /bbbbbbbbb/, "names the commit to fast-forward to");
+  assert.match(reasons, /--ff-only/, "names the remedy, since the fix is mechanical");
+  assert.doesNotMatch(
+    reasons,
+    /not proven landed/,
+    "the specific diagnosis replaces the generic one rather than joining it",
+  );
+}
+
+// The near miss must NEVER be mistaken for landing evidence: exact equality is
+// what proves a unit landed, and widening that is the failure this design
+// avoids. A behind-HEAD unit stays in recovery, never cleanup-ready.
+{
+  const item = classifyLifecycleUnit(
+    observation({
+      head: "a".repeat(40),
+      headOnDefaultBranch: false,
+      mergedPr: null,
+      branchMergedPr: { number: 1, url: "https://example.test/1", headOid: "c".repeat(40) },
+      updatedAtMs: NOW - 30 * DAY,
+    }),
+    NOW,
+  );
+  assert.notEqual(item.lane, "cleanup-ready", "a near miss is not landing evidence");
+}
+
+// A near miss whose head EQUALS this unit's head is not a mismatch at all, and
+// an absent field must read as "no near miss known" for legacy callers.
+{
+  const head = "a".repeat(40);
+  for (const near of [
+    { number: 9, url: "https://example.test/9", headOid: head },
+    null,
+  ]) {
+    const item = classifyLifecycleUnit(
+      observation({ head, headOnDefaultBranch: false, mergedPr: null, branchMergedPr: near }),
+      NOW,
+    );
+    assert.match(
+      item.reasons.join("\n"),
+      /not proven landed/,
+      "without a genuine mismatch the generic reason still applies",
+    );
+  }
 }
 
 console.log("worktree-lifecycle.test.ts: ok");

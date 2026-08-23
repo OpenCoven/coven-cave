@@ -22,12 +22,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
+  /splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
 );
 assert.match(
   chatView,
-  /if \(turn\.pending\) \{[\s\S]*?renderSegments = bubbleSegments;/,
-  "pending turns stay on the ordinary streaming path",
+  /let renderSegments: MessageBubbleSegment\[\] \| undefined;[\s\S]*?if \(turn\.pending\) \{[\s\S]*?renderSegments = bubbleSegments;[\s\S]*?\} else \{[\s\S]*?renderSegments = split\.some/,
+  "pending turns use chronological tool segments while settled turns add spec cards",
 );
 
 console.log("chat-spec-card wiring: all assertions passed");

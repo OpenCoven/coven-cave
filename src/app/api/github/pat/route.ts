@@ -15,9 +15,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import { deleteLocalEncryptedSecret, getLocalEncryptedSecret, hasLocalEncryptedSecret, setLocalEncryptedSecret } from "@/lib/local-encrypted-vault";
+import {
+  commitLocalEncryptedSecretBatch,
+  getLocalEncryptedSecret,
+  hasLocalEncryptedSecret,
+} from "@/lib/local-encrypted-vault";
 import { resolveGitHubToken } from "@/lib/github-token";
-import { loadVaultMap, resolveSecret, saveVaultMap } from "@/lib/vault";
+import {
+  loadVaultMapForMutation,
+  resolveSecret,
+  saveVaultMap,
+  type VaultMap,
+} from "@/lib/vault";
 import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +55,16 @@ function applyEnvUpdates(updates: Record<string, string | null>): void {
   mkdirSync(dirname(envPath), { recursive: true });
   const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   writeFileSync(envPath, upsertEnvContent(existing, updates), "utf8");
+}
+
+function mutationError(error: unknown) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: error instanceof Error ? error.message : "failed to update GitHub credentials",
+    },
+    { status: 500 },
+  );
 }
 
 async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
@@ -157,8 +176,13 @@ export async function POST(req: NextRequest) {
   const updates: Record<string, string | null> = {};
 
   if (pat) {
-    setLocalEncryptedSecret(PAT_KEY, pat);
-    const map = loadVaultMap(true);
+    let map: VaultMap;
+    try {
+      map = loadVaultMapForMutation();
+    } catch (error) {
+      return mutationError(error);
+    }
+    const previousMap = structuredClone(map);
     map[PAT_KEY] = {
       storage: "encrypted",
       description: "GitHub Personal Access Token",
@@ -166,7 +190,15 @@ export async function POST(req: NextRequest) {
       // Re-saving the PAT must not reset per-familiar grants back to shared.
       scope: map[PAT_KEY]?.scope,
     };
-    saveVaultMap(map);
+    try {
+      commitLocalEncryptedSecretBatch(
+        [{ key: PAT_KEY, value: pat }],
+        () => saveVaultMap(map),
+        () => saveVaultMap(previousMap),
+      );
+    } catch (error) {
+      return mutationError(error);
+    }
     updates[PAT_KEY] = null;
   }
   if (login) updates[LOGIN_KEY] = login;
@@ -181,6 +213,13 @@ export async function POST(req: NextRequest) {
 
 // DELETE — remove PAT
 export async function DELETE() {
+  let map: VaultMap;
+  try {
+    map = loadVaultMapForMutation();
+  } catch (error) {
+    return mutationError(error);
+  }
+
   // Preserve a launcher-provided GITHUB_PAT when it wins over an older local
   // value. resolveSecret caches local values in process.env, so clear only a
   // cached local token rather than blindly removing every inherited value.
@@ -191,12 +230,19 @@ export async function DELETE() {
   } catch {
     // Deletion still removes the malformed local entry below.
   }
-  applyEnvUpdates({ [PAT_KEY]: null });
-  deleteLocalEncryptedSecret(PAT_KEY);
-  const map = loadVaultMap(true);
+  const previousMap = structuredClone(map);
   if (map[PAT_KEY]?.storage === "encrypted") {
     delete map[PAT_KEY];
-    saveVaultMap(map);
+  }
+  try {
+    commitLocalEncryptedSecretBatch(
+      [{ key: PAT_KEY, value: null }],
+      () => saveVaultMap(map),
+      () => saveVaultMap(previousMap),
+    );
+    applyEnvUpdates({ [PAT_KEY]: null });
+  } catch (error) {
+    return mutationError(error);
   }
   const processPat = process.env[PAT_KEY]?.trim();
   if (processPat && (processPat === localEnvPat || processPat === encryptedPat)) {

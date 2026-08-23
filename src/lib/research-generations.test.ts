@@ -30,6 +30,17 @@ test("extractive and media kind unions stay explicit and composable", () => {
   assert.equal(isResearchGenerationMediaKind("slides"), false);
 });
 
+test("generation directions use the shared 10,000-character ceiling", () => {
+  assert.equal(RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH, 10_000);
+  assert.equal(
+    validateCreateResearchGenerationInput({
+      familiarId: "nova", kind: "blog", sourceMissionId: "m-1",
+      directions: "x".repeat(RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH),
+    }).ok,
+    true,
+  );
+});
+
 test("media kinds carry capability copy rather than stale readiness claims", () => {
   assert.deepEqual(
     RESEARCH_GENERATION_MEDIA_KINDS,
@@ -204,6 +215,170 @@ test("podcast style is podcast-only with an explicit vocabulary", () => {
       voice: "piper-lessac-medium",
       length: "standard",
       style: "freestyle",
+    }).ok,
+    false,
+  );
+});
+
+test("podcast model and voice settings are ElevenLabs-only, podcast-only, and normalized", () => {
+  assert.deepEqual(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "standard",
+      model: "eleven_v3",
+      voiceSettings: { stability: 0.3 },
+    }),
+    {
+      ok: true,
+      value: {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        model: "eleven_v3",
+        voiceSettings: {
+          stability: 0.3,
+          similarityBoost: 0.75,
+          style: 0,
+          useSpeakerBoost: true,
+          speed: 1,
+        },
+      },
+    },
+  );
+  // Absent model/voiceSettings stay absent — old configs revalidate unchanged.
+  const bare = validateResearchMediaRenderConfig("podcast", {
+    provider: "elevenlabs",
+    voice: "21m00Tcm4TlvDq8ikWAM",
+    length: "standard",
+  });
+  assert.ok(bare.ok);
+  if (bare.ok) {
+    assert.equal("model" in bare.value, false);
+    assert.equal("voiceSettings" in bare.value, false);
+  }
+  // Model/voiceSettings are rejected on the local provider and on non-podcast kinds.
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      model: "eleven_v3",
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("short-video", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "brief",
+      model: "eleven_v3",
+    }).ok,
+    false,
+  );
+  // Malformed model ids and out-of-range settings are rejected.
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "standard",
+      model: "a/b",
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "standard",
+      voiceSettings: { stability: 1.5 },
+    }).ok,
+    false,
+  );
+  for (const speed of [0.25, 4]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        voiceSettings: { speed },
+      }).ok,
+      true,
+      `REST speed ${speed} is accepted`,
+    );
+  }
+  for (const speed of [0.249, 4.001]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        voiceSettings: { speed },
+      }).ok,
+      false,
+      `out-of-range REST speed ${speed} is rejected`,
+    );
+  }
+});
+
+test("podcast seed is ElevenLabs-only, podcast-only, and bounded", () => {
+  const pinned = validateResearchMediaRenderConfig("podcast", {
+    provider: "elevenlabs",
+    voice: "21m00Tcm4TlvDq8ikWAM",
+    length: "standard",
+    seed: 20_260_817,
+  });
+  assert.ok(pinned.ok);
+  if (pinned.ok) assert.equal(pinned.value.seed, 20_260_817);
+
+  // An absent seed stays absent, so stored configs revalidate unchanged.
+  const bare = validateResearchMediaRenderConfig("podcast", {
+    provider: "elevenlabs",
+    voice: "21m00Tcm4TlvDq8ikWAM",
+    length: "standard",
+  });
+  assert.ok(bare.ok);
+  if (bare.ok) assert.equal("seed" in bare.value, false);
+
+  for (const seed of [0, 4_294_967_295]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        seed,
+      }).ok,
+      true,
+      `seed ${seed} is in range`,
+    );
+  }
+  for (const seed of [-1, 1.5, 4_294_967_296, "7"]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        seed,
+      }).ok,
+      false,
+      `seed ${seed} is rejected`,
+    );
+  }
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      seed: 7,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("short-video", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "brief",
+      seed: 7,
     }).ok,
     false,
   );

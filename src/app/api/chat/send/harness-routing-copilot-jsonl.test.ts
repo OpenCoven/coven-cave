@@ -60,12 +60,12 @@ assert.deepEqual(
     model: null,
     permissionMode: "full",
     addDirs: [],
-  }).slice(0, 6),
-  ["--no-auto-update", "--allow-all", "--output-format", "json", "--stream", "on"],
-  "the direct full-mode routing decision keeps its approval flag before the reviewed JSONL launch contract",
+  }).slice(0, 7),
+  ["--no-auto-update", "--allow-all-tools", "--allow-all-urls", "--output-format", "json", "--stream", "on"],
+  "direct full-mode routing approves tools and URLs without disabling path verification",
 );
 
-for (const capabilityVersion of ["1.0.70.1", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
+for (const capabilityVersion of ["1.0.70.1", "1.0.64", "0.9.9", "2.0.0", "2.0.0-rc.1"]) {
   const routing = resolveCopilotChatRouting({
     harness: "copilot",
     isSshRuntime: false,

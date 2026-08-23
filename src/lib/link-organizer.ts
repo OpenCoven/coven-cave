@@ -9,6 +9,7 @@
  */
 
 import type { IconName } from "./icon.tsx";
+import { parseXArticleCandidateUrl, type XArticleSnapshot } from "./x-articles.ts";
 import { extractLinks } from "./link-extractor.ts";
 
 export type LinkCategory =
@@ -51,6 +52,19 @@ export type SavedLink = {
   addedAt: string;
   /** Where the save originated. */
   source: "chat" | "desk";
+  /** Present only for papers resolved through hf-papers ingest. */
+  paper?: {
+    arxivId: string;
+    authors: string[];
+    abstract: string;
+    publishedAt: string;
+  };
+  /** Present only for persisted X Article snapshots. */
+  xArticle?: XArticleSnapshot;
+};
+
+export type SavedLinkSummary = Omit<SavedLink, "xArticle"> & {
+  xArticle?: Omit<XArticleSnapshot, "body">;
 };
 
 const VIDEO_HOSTS = new Set([
@@ -126,6 +140,9 @@ export function categorizeLink(rawUrl: string): LinkCategory {
   if (host === "github.com" || host === "gist.github.com" || host.endsWith(".github.io")) {
     return "github";
   }
+  // huggingface.co also serves models, datasets, spaces and blog posts, so the
+  // host cannot join PAPER_HOSTS — only this path may.
+  if (host === "huggingface.co" && /^\/papers(\/|$)/.test(pathname)) return "paper";
   if (hostMatches(host, PAPER_HOSTS)) return "paper";
   if (hostMatches(host, VIDEO_HOSTS)) return "video";
   if (hostMatches(host, SOCIAL_HOSTS)) return "social";
@@ -214,6 +231,13 @@ export function normalizeLinkUrl(rawUrl: string): string {
   return out;
 }
 
+/** Saved-link identity collapses X status aliases to the shared source post. */
+export function savedLinkDedupeKey(rawUrl: string): string {
+  const xArticleCandidate = parseXArticleCandidateUrl(rawUrl);
+  if (xArticleCandidate) return `x-status:${xArticleCandidate.sourcePostId}`;
+  return normalizeLinkUrl(rawUrl);
+}
+
 export type LinkIntakeItem = {
   url: string;
   category: LinkCategory;
@@ -239,11 +263,11 @@ export function summarizeLinkIntake(
   savedLinks: readonly Pick<SavedLink, "url">[],
 ): LinkIntakeSummary {
   const extracted = extractLinks(text);
-  const existing = new Set(savedLinks.map((link) => normalizeLinkUrl(link.url)));
+  const existing = new Set(savedLinks.map((link) => savedLinkDedupeKey(link.url)));
   const unique = new Map<string, LinkIntakeItem>();
 
   for (const url of extracted) {
-    const key = normalizeLinkUrl(url);
+    const key = savedLinkDedupeKey(url);
     if (unique.has(key)) continue;
     unique.set(key, {
       url,
@@ -282,25 +306,28 @@ export function linkCategoryMeta(category: string): { label: string; icon: IconN
 
 export type LinkUsageGroupId = "selected" | "uncited" | "cited";
 
-export type LinkUsageGroup = {
+export type LinkUsageGroup<TLink extends Pick<SavedLink, "url"> = SavedLink> = {
   id: LinkUsageGroupId;
   label: string;
   description: string;
-  links: SavedLink[];
+  links: TLink[];
 };
 
 /** Group links by how they relate to the selected and prior research runs. */
-export function groupSavedLinksByUsage<TMission extends { id: string }>(
-  links: SavedLink[],
+export function groupSavedLinksByUsage<
+  TLink extends Pick<SavedLink, "url">,
+  TMission extends { id: string },
+>(
+  links: TLink[],
   citedByUrl: ReadonlyMap<string, readonly TMission[]>,
   selectedMissionId?: string,
-): LinkUsageGroup[] {
-  const selected: SavedLink[] = [];
-  const uncited: SavedLink[] = [];
-  const cited: SavedLink[] = [];
+): LinkUsageGroup<TLink>[] {
+  const selected: TLink[] = [];
+  const uncited: TLink[] = [];
+  const cited: TLink[] = [];
 
   for (const link of links) {
-    const missions = citedByUrl.get(normalizeLinkUrl(link.url)) ?? [];
+    const missions = citedByUrl.get(savedLinkDedupeKey(link.url)) ?? [];
     if (selectedMissionId && missions.some((mission) => mission.id === selectedMissionId)) {
       selected.push(link);
     } else if (missions.length === 0) {
@@ -310,7 +337,7 @@ export function groupSavedLinksByUsage<TMission extends { id: string }>(
     }
   }
 
-  const groups: LinkUsageGroup[] = [];
+  const groups: LinkUsageGroup<TLink>[] = [];
   if (selectedMissionId) {
     groups.push({
       id: "selected",

@@ -173,6 +173,7 @@ import {
   type LocalRuntimeCapabilityPlan,
 } from "@/lib/server/local-runtime-capability-gate";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
+import { resolveInferenceLaunchPlan } from "@/lib/server/inference-launch-plan";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
 import {
@@ -181,7 +182,7 @@ import {
   projectlessGenerationLaunch,
 } from "@/lib/server/chat-project-launch";
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
-import { resolveRuntimeSkillRoots } from "@/lib/server/skill-scan";
+import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
 import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
@@ -272,10 +273,10 @@ import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
-  cleanupStagedImageFiles,
-  persistImageAttachments,
+  cleanupStagedAttachmentFiles,
+  persistChatAttachments,
   resolveMentionedFiles,
-  writeImageAttachmentsToRuntime,
+  writeAttachmentsToRuntime,
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
@@ -307,7 +308,11 @@ import {
   type ModelControlValues,
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
-import { conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace } from "./chat-send-runtime";
+import {
+  daemonSessionCwd,
+  filterUsableLocalDirectories,
+  resolveFamiliarWorkspace,
+} from "./chat-send-runtime";
 import { resolveOpenClawGatewayOutcome } from "./openclaw-gateway-outcome";
 
 export const dynamic = "force-dynamic";
@@ -654,6 +659,9 @@ async function maybeQueueOfflineChat(args: {
     sessionId,
     familiarId: args.body.familiarId,
     harness: args.responseMetadata.harness ?? bindingFor(args.config, args.body.familiarId).harness,
+    ...(args.responseMetadata.inferenceRouteId
+      ? { inferenceRouteId: args.responseMetadata.inferenceRouteId }
+      : {}),
     ...(Object.prototype.hasOwnProperty.call(args.responseMetadata, "model")
       ? { model: args.responseMetadata.model ?? undefined }
       : {}),
@@ -710,6 +718,7 @@ function openClawChatResponse(args: {
   promptText: string;
   harnessPrompt: string;
   attachments: ChatAttachment[];
+  cwd: string;
   desiredModel: string;
   modelState: ChatModelState;
   initialModelIntent: string | null;
@@ -793,32 +802,11 @@ function openClawChatResponse(args: {
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
-      let cwd: string;
-      try {
-        cwd = await resolveLocalRuntimeCwd(
-          args.body.projectRoot ??
-            (await conversationCwd(args.body.sessionId)) ??
-            (await daemonSessionCwd(args.body.sessionId)),
-        );
-      } catch (error) {
-        if (error instanceof RuntimeScopeError) {
-          pushProgress("openclaw-start", "OpenClaw bridge not started", "error", error.message);
-          push({ kind: "error", code: error.code, message: error.message });
-          push({
-            kind: "done",
-            durationMs: Date.now() - startedAt,
-            isError: true,
-          });
-          close();
-          return;
-        }
-        throw error;
-      }
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
         model: args.desiredModel,
-        runtime: `local:${cwd}`,
+        runtime: `local:${args.cwd}`,
         requestedModel: args.body.modelOverride === ""
           ? ""
           : cleanModelId(args.body.modelOverride) ?? undefined,
@@ -999,6 +987,9 @@ function openClawChatResponse(args: {
           sessionId: conversationId,
           familiarId: args.body.familiarId,
           harness: "openclaw",
+          ...(responseMetadata.inferenceRouteId
+            ? { inferenceRouteId: responseMetadata.inferenceRouteId }
+            : {}),
           ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: stubTitle,
@@ -1109,6 +1100,12 @@ function openClawChatResponse(args: {
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
+          if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
+            conv.inferenceRouteId = responseMetadata.inferenceRouteId;
+            if (responseMetadata.inferenceRouteFingerprint) {
+              conv.inferenceRouteFingerprint = responseMetadata.inferenceRouteFingerprint;
+            }
+          }
           persistSendModelIntent(
             conv,
             args.body,
@@ -1194,7 +1191,7 @@ function openClawChatResponse(args: {
         env: openclawEnv,
         requiredFiles: openclawLaunch.requiredFiles,
         unresolvedWindowsShim: openclawLaunch.unresolvedWindowsShim === true,
-        cwd,
+        cwd: args.cwd,
       });
       if (openclawAvailability.state !== "ready") {
         pushProgress(
@@ -1227,7 +1224,7 @@ function openClawChatResponse(args: {
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
         const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
-          cwd,
+          cwd: args.cwd,
           stdio: ["ignore", "pipe", "pipe"],
           env: openclawEnv,
           shell: false,
@@ -1294,6 +1291,9 @@ function openClawChatResponse(args: {
         sessionId: conversationId,
         familiarId: args.body.familiarId,
         harness: "openclaw",
+        ...(responseMetadata.inferenceRouteId
+          ? { inferenceRouteId: responseMetadata.inferenceRouteId }
+          : {}),
         ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
         ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
         title: stubTitle,
@@ -1492,6 +1492,12 @@ function openClawChatResponse(args: {
               };
               conv.model = responseMetadata.model;
               conv.runtime = responseMetadata.runtime;
+              if (!isError && !cancelledByUser && responseMetadata.inferenceRouteId) {
+                conv.inferenceRouteId = responseMetadata.inferenceRouteId;
+                if (responseMetadata.inferenceRouteFingerprint) {
+                  conv.inferenceRouteFingerprint = responseMetadata.inferenceRouteFingerprint;
+                }
+              }
               persistSendModelIntent(
                 conv,
                 args.body,
@@ -1565,7 +1571,7 @@ function openClawChatResponse(args: {
         await sleep(20);
         close();
       }
-      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
+      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", args.cwd);
       child = spawnChild(executionMode);
       attachChild(child);
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
@@ -1683,12 +1689,10 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  // Persisted transcripts keep attachment metadata only — base64 image
-  // payloads stay out of the conversation store. Images additionally get a
-  // durable copy in the attachment store, and the transcript records its id,
-  // so reopening the thread can show the picture again instead of degrading
-  // to a filename chip (cave-cysu4).
-  const persistedAttachments = await persistImageAttachments(
+  // Persisted transcripts keep metadata plus a durable store id; base64
+  // payloads stay out of the conversation JSON. Reloads and retries can then
+  // render images/media or rematerialize source files for a local harness.
+  const persistedAttachments = await persistChatAttachments(
     stripPreviewOnlyAttachmentFields(attachments),
     attachments,
   );
@@ -1716,6 +1720,14 @@ export async function POST(req: Request) {
   // rejects any malformed legacy value.
   if (existingConversation) {
     binding.harness = canonicalHarnessId(existingConversation.harness);
+    if (
+      binding.inferenceRouteId?.startsWith("native:") &&
+      binding.inferenceRouteId !== `native:${binding.harness}`
+    ) {
+      binding.inferenceRouteId =
+        existingConversation.inferenceRouteId ?? `native:${binding.harness}`;
+      delete binding.hasInvalidInferenceRouteBinding;
+    }
   }
   // Native Board handoffs reserve Cave's conversation id before the harness
   // writes its transcript. Bind that pre-transcript id to the server-owned
@@ -2057,14 +2069,14 @@ export async function POST(req: Request) {
       ? await resolveInstalledClaudeCompatibility()
       : null;
   await ensureAdapterManifestScaffold(binding.harness);
-// The Responses API does not expose a documented, enforceable equivalent of
-  // Cave's read-only sandbox. Do not downgrade that security promise to a
-  // prompt merely because a familiar opted into the structured transport.
-  if (hermesDirect && hermesApi && body.permissionMode === "read") {
+  // Neither the Responses API nor the direct CLI exposes a documented,
+  // enforceable equivalent of Cave's read-only sandbox. Reject both transports
+  // rather than silently launching Hermes with full local access.
+  if ((hermesDirect || hermesApi) && body.permissionMode === "read") {
     return new Response(
       JSON.stringify({
         ok: false,
-        error: "Hermes API does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
+        error: "Hermes does not support Cave's Read-only mode yet. Switch Access to Full access to run it.",
       }),
       { status: 501, headers: { "content-type": "application/json" } },
     );
@@ -2124,6 +2136,22 @@ export async function POST(req: Request) {
   const resumeCwdResolved = resumeCwd
     ? await realpath(resumeCwd).catch(() => undefined)
     : undefined;
+  // The workspace exemption assumes a workspace directory is not a registered
+  // project. A user can register one whose root lives under the familiar's
+  // workspace, so ask the registry rather than trusting containment: a resume
+  // root that resolves to a real project id is gated like any other project
+  // root (cave-g8fqc). `unregistered:<root>` is the fail-closed sentinel and
+  // does NOT count as registered.
+  const resumeProjectAccessId = resumeCwd
+    ? chatProjectAccessId({
+        projects,
+        resumeCwd,
+        resolvedCwd: resumeCwdResolved ?? resumeCwd,
+      })
+    : null;
+  const resumeCwdIsRegisteredProject = Boolean(
+    resumeProjectAccessId && !resumeProjectAccessId.startsWith("unregistered:"),
+  );
   const projectlessLaunch = projectlessGenerationLaunch({
     origin: generationOrigin,
     hasRequestedProjectRoot: Boolean(body.projectRoot),
@@ -2132,6 +2160,7 @@ export async function POST(req: Request) {
     resumeCwd,
     resumeCwdResolved,
     familiarWorkspace: resolvedFamiliarWorkspace,
+    resumeCwdIsRegisteredProject,
   });
   // A Board task may be isolated in a worktree below its registered project.
   // The worktree itself is intentionally not a separate project record, so
@@ -2205,7 +2234,11 @@ export async function POST(req: Request) {
   }
   let cwd: string;
   try {
-    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(authorizedProjectRoot);
+    cwd = sshRuntime
+      ? homedir()
+      : await resolveLocalRuntimeCwd(authorizedProjectRoot, {
+          rootAuthority: "authorized-project",
+        });
   } catch (error) {
     if (error instanceof RuntimeScopeError) {
       return new Response(
@@ -2368,6 +2401,28 @@ export async function POST(req: Request) {
     binding.harness !== "grok" &&
     binding.harness !== "hermes" &&
     ((await probeCovenCapability(covenRunSupportsPermission)) ?? false);
+  const directReadOnlyEnforcement =
+    !sshRuntime &&
+    (Boolean(copilotStream) || grokDirect || (codexDirect && codexDirectCapabilities?.sandbox === true));
+  // Read-only is a security boundary, not a best-effort preference. Refuse the
+  // turn unless the selected direct transport enforces it itself or the local
+  // Coven transport can forward its native read-only flag. In particular, an
+  // absent/failed capability probe must never downgrade a read-only request to
+  // an unrestricted generic run, and the SSH builder cannot forward the flag.
+  if (
+    body.permissionMode === "read" &&
+    (!directReadOnlyEnforcement && (!permissionForwardingEnabled || Boolean(sshRuntime)))
+  ) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        code: "read_only_unavailable",
+        error:
+          "This runtime cannot enforce Cave's Read-only mode. Switch Access to Full access or update the runtime before running it.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
   const addDirForwardingEnabled =
     !openCodeDirect &&
     binding.harness !== "openclaw" &&
@@ -2381,6 +2436,27 @@ export async function POST(req: Request) {
     existingConversation,
     modelForwardingEnabled,
   });
+  const inferenceLaunch = resolveInferenceLaunchPlan({
+    routes: config.inferenceRoutes,
+    binding,
+    requestedModel: cleanModelId(desiredModel),
+    existingConversation,
+  });
+  if (!inferenceLaunch.ok) {
+    return NextResponse.json({
+      ok: false,
+      code: "inference_route_unavailable",
+      error: inferenceLaunch.message,
+    }, { status: 400 });
+  }
+  const inferencePlan = inferenceLaunch.plan;
+  if (!inferencePlan.route.id.startsWith("native:")) {
+    return NextResponse.json({
+      ok: false,
+      code: "inference_route_not_implemented",
+      error: "This inference route is configured but its harness adapter is not available yet.",
+    }, { status: 501 });
+  }
   const savedModelRejection = savedModelSelectionRejection({
     desiredModel,
     modelState,
@@ -2502,13 +2578,22 @@ export async function POST(req: Request) {
   const accessibleProjects = sshRuntime
     ? []
     : await listAccessibleProjects(projects, body.familiarId);
-  const grantedProjectRoots = accessibleProjects.map((entry) => entry.project.root);
+  const usableProjectRoots = new Set(
+    await filterUsableLocalDirectories(
+      accessibleProjects.map((entry) => entry.project.root),
+    ),
+  );
+  const effectiveAccessibleProjects = accessibleProjects.filter((entry) =>
+    usableProjectRoots.has(entry.project.root.trim())
+  );
+  const omittedGrantCount = accessibleProjects.length - effectiveAccessibleProjects.length;
+  const grantedProjectRoots = effectiveAccessibleProjects.map((entry) => entry.project.root.trim());
   const grantedProjectRootAccess: Record<string, ProjectAccessLevel> = Object.fromEntries(
-    accessibleProjects.map((entry) => [entry.project.root, entry.access]),
+    effectiveAccessibleProjects.map((entry) => [entry.project.root.trim(), entry.access]),
   );
   const runtimeResourceRoots = sshRuntime
     ? []
-    : await resolveRuntimeSkillRoots({
+    : await resolveRuntimeResourceRoots({
         coveredRoots: [
           cwd,
           ...grantedProjectRoots,
@@ -2544,6 +2629,11 @@ export async function POST(req: Request) {
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
     harness: binding.harness,
+    inferenceRouteId: inferencePlan.route.id,
+    inferenceRouteFingerprint: inferencePlan.fingerprint,
+    inferenceProvider: inferencePlan.route.provider,
+    inferenceProtocol: inferencePlan.route.protocol,
+    inferenceSupportTier: inferencePlan.route.supportTier,
     model: desiredModel,
     runtime: sshRuntime
       ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
@@ -2574,8 +2664,8 @@ export async function POST(req: Request) {
   const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
     !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
   const attachmentStagingRoot = resolvedFamiliarWorkspace ?? cwd;
-  const imageFilePaths = imagesSupported
-    ? await writeImageAttachmentsToRuntime(attachments, attachmentStagingRoot)
+  const attachmentFilePaths = imagesSupported
+    ? await writeAttachmentsToRuntime(attachments, attachmentStagingRoot)
     : new Map<number, string>();
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
@@ -2654,7 +2744,8 @@ export async function POST(req: Request) {
                   buildPromptWithResponseControls(
                     buildPromptWithAttachments(promptText, attachments, {
                       imagesSupported,
-                      imageFilePaths,
+                      filesSupported: imagesSupported,
+                      attachmentFilePaths,
                     }),
                     { modelControls: promptModelControls },
                   ),
@@ -2686,6 +2777,7 @@ export async function POST(req: Request) {
       promptText,
       harnessPrompt,
       attachments: persistedAttachments,
+      cwd,
       desiredModel,
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
@@ -2728,10 +2820,11 @@ export async function POST(req: Request) {
           : forwardModel) ?? undefined;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
-  // Directory grants: forward every granted project root — plus the familiar's
-  // own workspace when it isn't the spawn cwd — so the harness actually trusts
-  // the roots the runtime-scope preamble grants. The spawn cwd is already
-  // trusted implicitly, so it's excluded. Gated on the `--add-dir` probe and
+  // Directory grants are writable in full-permission harness modes. Forward
+  // only writable project roots and the familiar workspace; runtime skill
+  // roots are advertised as read-only and must never be promoted through an
+  // `--add-dir` grant. The spawn cwd is already trusted implicitly, so it is
+  // excluded. Generic forwarding remains gated on the `--add-dir` probe and
   // local runtimes only (SSH runtimes own their remote filesystem).
   const spawnRoot = cwd;
   const grantDirs = !sshRuntime
@@ -2740,7 +2833,6 @@ export async function POST(req: Request) {
           [
             ...grantedProjectRoots,
             ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
-            ...runtimeResourceRoots,
           ]
             .map((root) => root.trim())
             .filter((root) => root && root !== spawnRoot),
@@ -2952,6 +3044,14 @@ export async function POST(req: Request) {
   const runtimeAccessRetry = runtimeAccessRefreshNeeded
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
+  const inferenceRouteRefreshNeeded = Boolean(
+    existingConversation &&
+    resumeTarget &&
+    !inferencePlan.resumeSafe
+  );
+  const inferenceRouteRetry = inferenceRouteRefreshNeeded
+    ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
+    : null;
   // Grok deliberately refuses to change a resumed session's sandbox. Persist
   // the profile used for the previous native session and transparently start a
   // fresh one (with recent context replayed) when the access chip changed. An
@@ -2991,11 +3091,17 @@ export async function POST(req: Request) {
   const openCodeCompatibilityRetry = openCodeFreshSessionForCompatibility
     ? buildResumeRetryPrompt(harnessPrompt, existingConversation)
     : null;
+  const freshNativeSessionRequired =
+    runtimeAccessRefreshNeeded ||
+    inferenceRouteRefreshNeeded ||
+    grokFreshSessionForSandbox ||
+    openCodeFreshSessionForCompatibility;
   const args = buildArgs(
-    runtimeAccessRefreshNeeded || grokFreshSessionForSandbox || openCodeFreshSessionForCompatibility
-      ? null
-      : resumeTarget,
-    runtimeAccessRetry?.prompt ?? grokSandboxRetry?.prompt ?? openCodeCompatibilityRetry?.prompt,
+    freshNativeSessionRequired ? null : resumeTarget,
+    runtimeAccessRetry?.prompt ??
+      inferenceRouteRetry?.prompt ??
+      grokSandboxRetry?.prompt ??
+      openCodeCompatibilityRetry?.prompt,
   );
 
   // Resume failures from common harnesses. Codex emits
@@ -3059,7 +3165,8 @@ export async function POST(req: Request) {
           // buffer has expired. It carries file names only, never contents.
           id === "familiar-contract" ||
           id === "runtime-process" ||
-          id === "runtime-launch-diagnostics"
+          id === "runtime-launch-diagnostics" ||
+          id === "runtime-grants"
         ) {
           persistedCompatibilityDiagnostics.push({
             id,
@@ -3092,6 +3199,14 @@ export async function POST(req: Request) {
       };
 
       push({ kind: "user", text: promptText });
+      if (omittedGrantCount > 0) {
+        pushProgress(
+          "runtime-grants",
+          "Unavailable project grants skipped",
+          "notice",
+          `${omittedGrantCount} registered project ${omittedGrantCount === 1 ? "directory was" : "directories were"} unavailable on this host.`,
+        );
+      }
       // Report what identity context this turn actually loaded. A familiar
       // asked "what is in your SOUL.md" should be answerable from the run's own
       // record rather than from the familiar's introspection, which is exactly
@@ -3136,6 +3251,16 @@ export async function POST(req: Request) {
             : "Started a fresh harness session with the current grants.",
         );
       }
+      if (inferenceRouteRefreshNeeded) {
+        pushProgress(
+          "inference-route-refresh",
+          "Model connection refreshed",
+          "done",
+          inferenceRouteRetry?.replayedHistory
+            ? "Started a fresh harness session with the selected connection and recent context."
+            : "Started a fresh harness session with the selected connection.",
+        );
+      }
 
       let sessionId: string | null = body.sessionId ?? null;
       // Cave keeps `sessionId` as the stable conversation id for resumed
@@ -3164,7 +3289,9 @@ export async function POST(req: Request) {
       // A conversation created by Hermes CLI has a CLI-native session id here,
       // not a Responses id. If the API rejects it, the shared resume fallback
       // replays saved context into one fresh Responses turn instead.
-      let hermesPreviousResponseId = existingConversation?.harnessSessionId ?? null;
+      let hermesPreviousResponseId = freshNativeSessionRequired
+        ? null
+        : existingConversation?.harnessSessionId ?? null;
       // Legacy/failed conversations may not have a usable Responses id. A
       // fresh API request must receive saved context rather than silently
       // answering only the newest prompt.
@@ -3247,9 +3374,12 @@ export async function POST(req: Request) {
         { output: string | undefined; isError: boolean }
       >();
       const MAX_PENDING_COPILOT_TOOL_COMPLETIONS = 64;
-      let claudeToolsEnabled =
+      let claudeEnvelopeToolsEnabled =
         binding.harness !== "claude" ||
         (claudeCompatibility?.kind === "compatible" && !claudeCompatibility.stale);
+      // Local Coven hook lines remain useful evidence independently of the
+      // versioned stream-json envelope. SSH stdout has no equivalent provenance.
+      const claudeHookEvidenceEnabled = binding.harness !== "claude" || !sshRuntime;
       const claudeDiagnostic = claudeCompatibility
         ? claudeCompatibilityDiagnostic(claudeCompatibility)
         : binding.harness === "claude" && sshRuntime
@@ -3270,7 +3400,7 @@ export async function POST(req: Request) {
         // One malformed frame means the selected envelope profile no longer
         // describes this stream. Continue showing assistant text, but do not
         // resume profile-selected tool decoding on later frames.
-        claudeToolsEnabled = false;
+        claudeEnvelopeToolsEnabled = false;
         if (claudeUnsupportedFrameDiagnosticSent) return;
         claudeUnsupportedFrameDiagnosticSent = true;
         console.warn("[chat] Claude stream frame could not be decoded", {
@@ -3280,7 +3410,7 @@ export async function POST(req: Request) {
         claudeCompatibilityDiagnosticSent = true;
         pushProgress(
           "claude-runtime-compatibility",
-          "A Claude Code stream frame could not be decoded; chat text will continue without unverified tool bubbles.",
+          "A Claude Code stream frame could not be decoded; stream-json tool bubbles are disabled, but local hook evidence will still be shown when available.",
           "notice",
         );
       };
@@ -3288,7 +3418,7 @@ export async function POST(req: Request) {
         // An unrecognised tool block can change the meaning or ordering of
         // later frames, so fail closed for the rest of this stream rather than
         // treating subsequent familiar labels as independently trustworthy.
-        claudeToolsEnabled = false;
+        claudeEnvelopeToolsEnabled = false;
         if (claudeUnsupportedFrameDiagnosticSent) return;
         claudeUnsupportedFrameDiagnosticSent = true;
         console.warn("[chat] Claude tool frame ignored by compatibility profile", {
@@ -3298,7 +3428,7 @@ export async function POST(req: Request) {
         claudeCompatibilityDiagnosticSent = true;
         pushProgress(
           "claude-runtime-compatibility",
-          "A Claude Code tool frame is not supported by the selected compatibility profile; chat text will continue without unverified tool bubbles.",
+          "A Claude Code tool frame is not supported by the selected compatibility profile; stream-json tool bubbles are disabled, but local hook evidence will still be shown when available.",
           "notice",
         );
       };
@@ -3470,6 +3600,7 @@ export async function POST(req: Request) {
           sessionId: announcedId,
           familiarId: body.familiarId,
           harness: binding.harness,
+          inferenceRouteId: inferencePlan.route.id,
           ...(responseMetadata.model ? { model: responseMetadata.model } : {}),
           ...(responseMetadata.runtime ? { runtime: responseMetadata.runtime } : {}),
           title: ownsFirstExchangeTitle
@@ -4239,7 +4370,7 @@ export async function POST(req: Request) {
               binding.harness === "claude" &&
               claudeCompatibility?.kind === "compatible" &&
               !claudeCompatibility.stale &&
-              claudeToolsEnabled
+              claudeEnvelopeToolsEnabled
             ) {
               // Profile-selected decoding keeps version-specific envelope names
               // outside this route. The shared tracker continues to provide
@@ -4332,7 +4463,6 @@ export async function POST(req: Request) {
         }
         // Snapshot error-looking stdout lines for the empty-response diagnostic.
         captureCodexAdapterFailure(cleaned);
-        recordStdoutErrorTail(cleaned);
         // Surface tool-use hook lines as structured events so the chat can
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
@@ -4344,16 +4474,18 @@ export async function POST(req: Request) {
         if (binding.harness !== "claude") {
           recordStdoutErrorTail(cleaned);
         }
-        if (toolMatch && claudeToolsEnabled) {
+        if (toolMatch && claudeHookEvidenceEnabled) {
           const isPost = trimmed.startsWith("hook: post_tool_use");
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();
-          if (!isPost) boundarySentinel?.observe(name, rest);
+          if (!isPost && (binding.harness !== "claude" || claudeEnvelopeToolsEnabled)) {
+            boundarySentinel?.observe(name, rest);
+          }
           const toolEv = isPost
             ? toolTracker.hookEnd(
                 name,
                 formatToolPayload(rest),
-                /error|fail|denied|exit\s*[1-9]/i.test(rest),
+                /error|fail|denied|exit(?:[\s_-]*code)?["']?\s*[:=]?\s*[1-9]/i.test(rest),
               )
             : toolTracker.hookStart(name, formatToolPayload(rest), assistantText.length);
           push({ kind: "tool_use", ...toolEv });
@@ -5179,6 +5311,24 @@ export async function POST(req: Request) {
         await runAttempt(args);
       }
 
+      // Copilot can silently close an expired native session with exit code 0:
+      // no result frame, no assistant text, and no "session not found" stderr.
+      // Treat that exact resumed-attempt shape as a stale session so the
+      // existing bounded context-replay retry can answer the user's turn.
+      if (
+        copilotStream &&
+        resumeTarget &&
+        !runtimeAccessRefreshNeeded &&
+        !inferenceRouteRefreshNeeded &&
+        !runHandle.stopRequested &&
+        !launchFailure &&
+        !assistantText.trim() &&
+        result.duration_ms == null &&
+        result.is_error == null
+      ) {
+        resumeFailed = true;
+      }
+
       // Self-heal (cave-1c05): a stale scaffolded manifest whose id the
       // installed CLI now ships as a built-in harness makes the registry load
       // fatal, killing the run before any assistant output. Quarantine the
@@ -5753,6 +5903,8 @@ export async function POST(req: Request) {
           }
           if (grokDirect && grokSessionId) conv.grokSandboxProfile = grokSandboxProfile;
           if (!result.is_error && !cancelledByUser) {
+            conv.inferenceRouteId = inferencePlan.route.id;
+            conv.inferenceRouteFingerprint = inferencePlan.fingerprint;
             conv.runtimeAccessFingerprint = runtimeAccessFingerprint;
           }
           conv.turns.push(userTurn, assistantTurn);
@@ -5788,7 +5940,7 @@ export async function POST(req: Request) {
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
-      cleanupStagedImageFiles(imageFilePaths);
+      cleanupStagedAttachmentFiles(attachmentFilePaths);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
       runBuffer?.finish();

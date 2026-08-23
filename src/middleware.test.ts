@@ -19,8 +19,33 @@ const nextConfigSource = await readFile(new URL("../next.config.ts", import.meta
 const proxyHelpersSource = await readFile(new URL("./proxy-helpers.ts", import.meta.url), "utf8");
 
 assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16 proxy entrypoint should guard requests");
-assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
+assert.ok(
+  source.includes(
+    'matcher: ["/((?!_next/static|_next/image|favicon.ico|pdf\\\\.worker\\\\.min\\\\.mjs$).*)"]',
+  ),
+  "proxy should exempt only the exact public pdf.js worker filename",
+);
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
+assert.match(
+  source,
+  /process\.env\.COVEN_CAVE_DEV_PROBE_TOKEN[\s\S]*?req\.method === "GET"[\s\S]*?req\.nextUrl\.pathname === "\/"[\s\S]*?req\.nextUrl\.searchParams\.get\("__devShellProbe"\) === "1"/,
+  "the dev readiness credential must be scoped to the exact root-document probe",
+);
+assert.match(
+  source,
+  /isAuthenticatedDevReadinessProbe\(req, trustedLocalPeer\)[\s\S]*?response\.headers\.set\(DEV_READINESS_PROOF_HEADER, "1"\)/,
+  "an authenticated local dev probe must receive explicit server readiness proof",
+);
+const readinessHelper = source.slice(
+  source.indexOf("function isAuthenticatedDevReadinessProbe"),
+  source.indexOf("function bearerToken"),
+);
+assert.doesNotMatch(
+  readinessHelper,
+  /COVEN_CAVE_ACCESS_TOKEN|authorization/,
+  "dev readiness must not reuse or transmit the persisted mobile-access credential",
+);
+assert.match(source, /isValidResearchMediaTicketRequest/, "proxy should accept only the restricted native media ticket when a media element cannot send the sidecar header");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
 assert.match(
   source,
@@ -96,8 +121,13 @@ assert.match(source, /missing request source/, "tokenless GET webhooks should re
 // extend to mobile-cookie-authenticated requests in exchange.
 assert.match(
   source,
-  /if \(!sidecarAuthenticated && !mobileAccessVerified\) \{/,
-  "the final sidecar gate must independently admit a verified access token",
+  /const trustedLocalBrowserApi =\s*trustedLocalPeer && !isClientV1Path\(req\.nextUrl\.pathname\)/,
+  "the trusted-loopback browser exemption must not cross Client v1's private boundary",
+);
+assert.match(
+  source,
+  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi\) \{/,
+  "the final sidecar gate must independently admit a verified access token or a trusted ordinary app API",
 );
 assert.match(
   source,
@@ -179,11 +209,16 @@ assert.match(
 assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens should not overwrite the access cookie");
 assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
+assert.match(
+  source,
+  /url\.searchParams\.delete\(ACCESS_TOKEN_QUERY_PARAM\)[\s\S]*url\.searchParams\.delete\(LEGACY_ACCESS_PROMPT_QUERY_PARAM\)/,
+  "successful access-token exchange should remove the token and any retired prompt marker",
+);
 
-// ── User-bound local authentication (cave-ruw4z) ──────────────────────────
-// The local-peer stamp still distinguishes direct from forwarded ingress, but
-// cannot bypass authentication because TCP loopback does not identify an OS
-// user. Only the per-launch sidecar credential exempts the owning Tauri app.
+// ── Prompt-free trusted local browser access (cave-99eon) ─────────────────
+// The server-stamped peer proof distinguishes direct loopback from forwarded
+// ingress. Direct local browser traffic stays prompt-free; remote traffic still
+// needs the mobile or sidecar credential.
 assert.match(
   source,
   /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
@@ -197,26 +232,22 @@ assert.doesNotMatch(
 assert.match(
   source,
   /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,\s*tailnetPeerVerified,\s*sidecarAuthenticated,?\s*\)/,
-  "the mobile gate must require user-bound sidecar or mobile credentials even for local peers",
+  "the mobile gate should share the trusted local and sidecar evidence",
 );
-// ...with exactly one exemption: a stamped direct-loopback DOCUMENT navigation.
-// That request cannot carry a credential (a navigation is not a fetch, so
-// SidecarAuthBridge never sees it, and the sidecar token gets no cookie), so
-// gating it serves the access page instead of the app on every hard reload —
-// the v0.3.0 lockout. The stamp is only ever applied to unforwarded loopback
-// sockets, so Serve/tailnet traffic can never reach this branch.
 assert.match(
   source,
-  /if \(\s*trustedLocalPeer &&\s*isHtmlNavigationRequest\(req\.method, req\.nextUrl\.pathname, req\.headers\.get\("accept"\)\)\s*\) \{\s*return null;/,
-  "a stamped local-peer document navigation must skip the mobile gate so the app can always load",
+  /if \(\s*shouldBypassMobileAccessGate\(\s*trustedLocalPeer,\s*req\.method,\s*req\.nextUrl\.pathname,\s*req\.headers\.get\("accept"\),?\s*\)\s*\) \{\s*return null;/,
+  "a stamped local-peer document navigation must always skip the mobile gate",
 );
-// The exemption must be navigation-scoped, never a blanket local-peer bypass:
-// `/api/*` keeps requiring the sidecar credential, which is what distinguishes
-// this user from other OS users on a shared machine.
-assert.doesNotMatch(
+assert.match(
   source,
-  /if \(trustedLocalPeer\) return null;/,
-  "the local-peer exemption must not extend past document navigations to the API surface",
+  /const queryToken = req\.nextUrl\.searchParams\.get\(ACCESS_TOKEN_QUERY_PARAM\);[\s\S]*?if \(\s*trustedLocalPeer\s*&& queryToken\s*&& \(req\.method === "GET" \|\| req\.method === "HEAD"\)\s*\) \{\s*return mobileAccessQueryTokenRedirect\(req, expected, queryToken\);\s*\}[\s\S]*?shouldBypassMobileAccessGate/,
+  "trusted local pairing links must exchange and remove query credentials before the prompt-free bypass",
+);
+assert.match(
+  source,
+  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi\) \{/,
+  "the final API credential gate must preserve prompt-free trusted loopback access outside Client v1",
 );
 assert.match(
   source,

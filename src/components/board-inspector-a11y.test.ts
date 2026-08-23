@@ -100,4 +100,154 @@ assert.match(src, /JSON\.stringify\(card, null, 2\)/, "the full card JSON is ava
 assert.match(src, /\["cwd", card\.cwd \?\? "—"\]/, "debug rows include the working directory");
 assert.match(src, /\["session", card\.sessionId \?\? "—"\]/, "debug rows include the linked session id");
 
+// ── Governed agentic Enhance stays opt-in and routes every mutation through
+// the Board contract rather than an optimistic client patch. ──────────────────
+assert.match(
+  src,
+  /import \{ caveAgenticRecommendations \} from "@\/lib\/feature-flags"/,
+  "Board Enhance checks the disabled-by-default agentic capability",
+);
+assert.match(
+  src,
+  /function BoardAgenticEnhanceSection\(/,
+  "the inspector owns the governed Board Enhance review surface",
+);
+assert.match(
+  src,
+  /"x-coven-cave-intent": "board-agentic-enhance"/,
+  "Enhance mutations carry the route's governed intent",
+);
+assert.match(
+  src,
+  /fetch\(`\/api\/board\/\$\{card\.id\}\/enhance`/,
+  "apply, dismiss, and revert use the governed Board Enhance route",
+);
+assert.match(
+  src,
+  /contextFingerprint: proposal\?\.context\.fingerprint/,
+  "proposal mutations send the current persisted context fingerprint",
+);
+assert.match(
+  src,
+  /onCardReplaced\(body\.card as Card\)/,
+  "the persisted route response replaces the local card instead of applying a client patch",
+);
+assert.match(
+  src,
+  /Human authorship conflict/,
+  "human-authored orchestration conflicts are named in the review UI",
+);
+assert.match(
+  src,
+  /Enhance does not dispatch or transition this task\./,
+  "approval-bound proposals make the no-dispatch boundary explicit",
+);
+assert.match(
+  src,
+  /moves\.filter\(\(move\) => move\.to !== "dispatched"\)/,
+  "approval-bound work hides dispatch without suppressing recovery or cancellation",
+);
+assert.doesNotMatch(
+  src,
+  /card\.needsHuman === true[\s\S]{0,400}availableMoves/,
+  "generic needs-human attention does not suppress lifecycle recovery controls",
+);
+assert.match(
+  src,
+  /void mutate\("generate"\)/,
+  "an empty review can explicitly request governed Board recommendations",
+);
+assert.match(
+  src,
+  /intent: "generate"/,
+  "generation uses the Board backend's generate intent rather than client-authored output",
+);
+assert.doesNotMatch(
+  src,
+  /EMPTY_AGENTIC_RECOMMENDATIONS_OUTPUT|recommendations: \[\]/,
+  "the UI never sends empty recommendation output as a fake generation result",
+);
+assert.match(
+  src,
+  /setOpen\(true\);[\s\S]{0,160}void mutate\("generate"\)/,
+  "the review panel opens before generation so failures remain visible",
+);
+assert.match(
+  src,
+  /Regenerate recommendations/,
+  "persisted recommendations retain an independent regeneration action",
+);
+assert.match(
+  src,
+  /aria-label="Enhance actions"/,
+  "generation and review controls remain independently addressable",
+);
+assert.match(
+  src,
+  /className="board-agentic-enhance__panel focus-ring"/,
+  "programmatic focus on the recommendation panel remains visibly indicated",
+);
+assert.match(
+  src,
+  /mutationSequenceRef/,
+  "proposal mutations carry a monotonic sequence for stale response safety",
+);
+assert.match(
+  src,
+  /sequence !== mutationSequenceRef\.current/,
+  "an older mutation response is ignored after a newer request supersedes it",
+);
+assert.match(
+  src,
+  /proposalDisplayPatch/,
+  "blocked replacement proposals still render a review-only patch diff",
+);
+assert.match(src, /function isRecord\(/, "proposal display values are narrowed before reading fields");
+assert.match(src, /Invalid dependency:/, "malformed blocked dependencies render safely");
+assert.match(src, /Invalid GitHub reference:/, "malformed blocked GitHub references render safely");
+assert.doesNotMatch(
+  src,
+  /payload\.patch as BoardAgenticPatch/,
+  "blocked payload patches are never unsafely cast to the trusted patch type",
+);
+assert.match(
+  src,
+  />Current</,
+  "proposal diffs expose the current task value",
+);
+assert.match(
+  src,
+  />Proposed</,
+  "proposal diffs expose the proposed task value",
+);
+assert.match(
+  src,
+  /Added|Removed/,
+  "collection diffs call out additions and removals",
+);
+for (const field of [
+  "primaryBlockerPinned",
+  "actorFamiliarId",
+  "capability",
+  "target",
+  "inputs",
+  "taskId",
+  "reference",
+  "state",
+  "kind",
+  "label",
+]) {
+  assert.match(src, new RegExp(field), `proposal diffs expose routing field "${field}"`);
+}
+assert.match(
+  src,
+  /primaryLabel\(card\.primaryBlockerId, currentDependencies\)/,
+  "primary blocker diffs resolve current values through stable dependency identity",
+);
+assert.match(
+  src,
+  /useAnnouncer\(\)/,
+  "agentic proposal mutations are announced through the shared live region",
+);
+
 console.log("board-inspector-a11y.test.ts: ok");

@@ -538,6 +538,7 @@
  * webview) the group must still span the full detail width so the panes never
  * leave a trailing gap on the far edge. */
 .split-host__group {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
@@ -575,6 +576,7 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
+  border: 0;
   background: var(--bg-base);
 }
 .split-host__tile {
@@ -582,14 +584,23 @@
   min-width: 0;
   overflow: hidden;
 }
+/* The flex (non-grid) panel lays its tile out on the ROW axis, so a pane with
+   no flex basis shrink-to-fits its own content instead of filling the panel.
+   Surfaces with wide intrinsic content hid this; a narrow one (the browser
+   pane, whose toolbar is only ~120px wide) collapsed to a slice with dead
+   space beside it. The grid path is untouched — it sizes tiles by track. */
+.split-host__tile-panel > .split-host__pane {
+  flex: 1 1 auto;
+  width: 100%;
+}
 .split-host__pane-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
   padding: 6px var(--space-2) 6px var(--space-3);
-  border-bottom: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  border-bottom: 0;
+  background: color-mix(in oklch, var(--bg-raised) 42%, transparent);
   flex: 0 0 auto;
 }
 .split-host__pane-title {
@@ -653,6 +664,102 @@
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
+}
+
+.split-host__focus-trigger {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 8;
+  display: grid;
+  width: var(--space-7);
+  height: var(--space-7);
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-elevated) 82%, transparent);
+  color: var(--text-muted);
+  backdrop-filter: blur(var(--space-2));
+  cursor: pointer;
+}
+
+.split-host__focus-trigger:hover,
+.split-host__focus-trigger[aria-pressed="true"] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.split-host__group[data-focus-mode="true"] .split-host__sep {
+  display: none;
+}
+
+.split-host__group[data-focus-mode="true"] .split-host__tile-panel:not([data-focus-visible="true"]) {
+  position: absolute !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.split-host__group[data-focus-mode="true"] .split-host__tile-panel[data-focus-visible="true"] {
+  position: absolute !important;
+  inset: 0 calc(var(--space-10) + var(--space-3)) 0 0;
+  z-index: 3;
+  width: auto !important;
+  height: 100% !important;
+  flex: none !important;
+  visibility: visible;
+}
+
+.split-host__carousel {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--bg-elevated) 86%, transparent);
+  backdrop-filter: blur(var(--space-2));
+  transform: translateY(-50%);
+}
+
+.split-host__carousel-item {
+  position: relative;
+  display: grid;
+  width: var(--space-8);
+  height: var(--space-8);
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.split-host__carousel-item:hover,
+.split-host__carousel-item:focus-visible,
+.split-host__carousel-item[data-previewing="true"] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.split-host__carousel-item[aria-selected="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--accent-presence);
+}
+
+.split-host__carousel-index {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  min-width: var(--space-3);
+  padding: 0 1px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--space-3);
+  text-align: center;
 }
 
 /* ── Split divider: a calm hairline that reveals a grip on hover/drag ──────── */
@@ -994,6 +1101,12 @@
   width: 100% !important;
 }
 
+/* `> [data-panel][data-active="false"]` covers the two-pane path, whose Panel
+   elements carry NO class at all — only the tile path gets .split-host__tile*.
+   Without it the inactive pane stayed fully laid out under the tab fallback, so
+   mobile rendered BOTH panes stacked past the viewport and the tabs changed
+   nothing visually (cave-ktvy0). */
+.split-host__group[data-presentation="tabs"] > [data-panel][data-active="false"],
 .split-host__group[data-presentation="tabs"] .split-host__tile-panel[data-active="false"],
 .split-host__group[data-presentation="tabs"] .split-host__tile[data-active="false"] {
   position: absolute !important;

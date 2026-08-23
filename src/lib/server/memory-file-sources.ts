@@ -181,7 +181,9 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
     const rel = path.relative(covenFamiliars, resolved);
     const parts = rel.split(path.sep);
     const familiarId = parts[0];
-    if (familiarId && familiarId !== ".." && parts[1] === "memory" && parts.length >= 3) {
+    const isFamiliarIndex = parts.length === 2 && parts[1] === "MEMORY.md";
+    const isFamiliarMemory = parts.length >= 3 && parts[1] === "memory";
+    if (familiarId && familiarId !== ".." && (isFamiliarIndex || isFamiliarMemory)) {
       return {
         sourceId: "coven-familiar",
         sourceKind: "coven-origin",

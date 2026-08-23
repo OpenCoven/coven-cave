@@ -5,6 +5,10 @@
  */
 
 import type { IconName } from "@/lib/icon";
+import {
+  resolveMarketplaceLogo,
+  type MarketplaceLogoIdentity,
+} from "./marketplace-logo.ts";
 import { INTERNAL_COVEN_FAMILIAR_IDS } from "./familiar-roster-guard.ts";
 
 export type RoleAffinity = { familiar: string; roles: string[] };
@@ -178,6 +182,8 @@ export type MarketplacePlugin = {
   draftId?: string;
   /** Install state retained locally after its catalog card disappeared. */
   unlisted?: boolean;
+  /** Exhaustive visual identity: a bundled brand mark or deterministic monogram. */
+  logo?: MarketplaceLogoIdentity;
 };
 
 export function isCraftInstallationVerified(
@@ -273,6 +279,7 @@ export function mergeCatalog(
       return {
         id: p.name,
         displayName: p.displayName ?? p.name,
+        logo: resolveMarketplaceLogo(p.name, p.displayName ?? p.name),
         description: manifest.description ?? "",
         category: p.category ?? "Other",
         author: authorName(manifest.author),
@@ -324,6 +331,7 @@ function unlistedInstalledPlugin(
   return {
     id,
     displayName: humanizeMarketplaceId(id) || id,
+    logo: resolveMarketplaceLogo(id, humanizeMarketplaceId(id) || id),
     description: "Installed locally. Catalog details are no longer available.",
     category: "Local installs",
     author: "Local install",

@@ -65,6 +65,7 @@ const queuedOfflineSeed = {
   sessionId: "queued-offline-idempotent",
   familiarId: "sage",
   harness: "claude",
+  inferenceRouteId: "native:claude",
   createdAt: "2026-08-05T20:00:02.000Z",
   userTurn: {
     id: "queued-stable-user-turn",
@@ -114,6 +115,7 @@ assert.deepEqual(
 );
 assert.equal(queuedOfflineConversation?.activeLeafId, "queued-stable-user-turn");
 assert.equal(queuedOfflineConversation?.pendingUserTurnId, undefined);
+assert.equal(queuedOfflineConversation?.inferenceRouteId, "native:claude");
 assert.equal(await deleteConversation("queued-offline-idempotent"), true);
 
 assert.deepEqual(
@@ -797,6 +799,7 @@ console.log("cave-conversations.test.ts: ok");
     sessionId: "stub-first-turn",
     familiarId: "charm",
     harness: "claude",
+    inferenceRouteId: "native:claude",
     model: "claude-4",
     runtime: "local:/tmp/project",
     title: "Fix the flaky test",
@@ -833,6 +836,7 @@ console.log("cave-conversations.test.ts: ok");
   assert.deepEqual(stub?.turns[0]?.modelControls, { reasoning: "medium" });
   assert.equal(stub?.turns[0]?.modelOverride, "anthropic/claude-opus-4-6");
   assert.equal(stub?.modelIntent?.model, "anthropic/claude-opus-4-6");
+  assert.equal(stub?.inferenceRouteId, "native:claude");
   assert.equal(stub?.activeLeafId, "pending-user-turn");
   assert.equal(stub?.title, "Fix the flaky test");
 

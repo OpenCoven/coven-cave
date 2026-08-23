@@ -18,8 +18,13 @@ import {
 import { resolveSecret } from "../vault.ts";
 import {
   DEFAULT_ELEVENLABS_MODEL_ID,
+  DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,
   DEFAULT_ELEVENLABS_VOICE_ID,
+  DEFAULT_ELEVENLABS_VOICE_SETTINGS,
   isValidElevenLabsVoiceId,
+  isValidElevenLabsSeed,
+  modelSupportsRequestStitching,
+  type ElevenLabsVoiceSettings,
 } from "../voice/elevenlabs-shared.ts";
 import {
   RESEARCH_AUDIO_MAX_BYTES,
@@ -282,10 +287,137 @@ export async function readBoundedElevenLabsAudio(
   return bytes;
 }
 
+async function readBoundedResponsePrefix(
+  response: Response,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (size < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = maxBytes - size;
+      if (value.byteLength > remaining) {
+        chunks.push(value.subarray(0, remaining));
+        size = maxBytes;
+        await reader.cancel("response prefix limit reached").catch(() => {});
+        break;
+      }
+      chunks.push(value);
+      size += value.byteLength;
+      if (size === maxBytes) {
+        await reader.cancel("response prefix limit reached").catch(() => {});
+        break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+export type ElevenLabsSynthesisOptions = {
+  /** Model id; callers default to `DEFAULT_ELEVENLABS_MODEL_ID`. */
+  model?: string;
+  /** Delivery controls; callers default to the shared baseline settings. */
+  voiceSettings?: ElevenLabsVoiceSettings;
+  /** The previous segment's text, for cross-segment prosody continuity. */
+  previousText?: string;
+  /** The next segment's text, for cross-segment prosody continuity. */
+  nextText?: string;
+  /** Pins provider sampling so two renders of the same script are comparable. */
+  seed?: number;
+};
+
+export type ElevenLabsTtsBody = {
+  text: string;
+  model_id: string;
+  voice_settings: {
+    stability: number;
+    similarity_boost: number;
+    style: number;
+    use_speaker_boost: boolean;
+    speed: number;
+  };
+  previous_text?: string;
+  next_text?: string;
+  seed?: number;
+};
+
+/**
+ * Build the ElevenLabs text-to-speech request body for one render segment.
+ * Pure and exported so the body shape is unit-testable without a network call.
+ */
+export function buildElevenLabsTtsBody(
+  text: string,
+  options: {
+    modelId?: string;
+    voiceSettings?: ElevenLabsVoiceSettings;
+    previousText?: string;
+    nextText?: string;
+    seed?: number;
+  } = {},
+): ElevenLabsTtsBody {
+  const settings = options.voiceSettings ?? DEFAULT_ELEVENLABS_VOICE_SETTINGS;
+  const modelId = options.modelId ?? DEFAULT_ELEVENLABS_MODEL_ID;
+  const body: ElevenLabsTtsBody = {
+    text,
+    model_id: modelId,
+    voice_settings: {
+      stability: settings.stability,
+      similarity_boost: settings.similarityBoost,
+      style: settings.style,
+      use_speaker_boost: settings.useSpeakerBoost,
+      speed: settings.speed,
+    },
+  };
+  // Dropping unsupported context is the only degradation that keeps the render
+  // alive: the provider rejects the entire request rather than ignoring it.
+  if (modelSupportsRequestStitching(modelId)) {
+    if (options.previousText) body.previous_text = options.previousText;
+    if (options.nextText) body.next_text = options.nextText;
+  }
+  if (isValidElevenLabsSeed(options.seed)) body.seed = options.seed;
+  return body;
+}
+
+/**
+ * Read a bounded slice of a failed response so the thrown error names the
+ * provider's actual complaint. A bare status turned an `invalid_parameters`
+ * rejection into an unattributable "http 400" during triage.
+ */
+const ELEVENLABS_ERROR_DETAIL_MAX_CHARS = 300;
+const ELEVENLABS_ERROR_DETAIL_MAX_BYTES = ELEVENLABS_ERROR_DETAIL_MAX_CHARS * 4;
+
+export async function readElevenLabsErrorDetail(response: Response): Promise<string> {
+  try {
+    const raw = new TextDecoder().decode(
+      await readBoundedResponsePrefix(response, ELEVENLABS_ERROR_DETAIL_MAX_BYTES),
+    );
+    const detail = raw.replace(/\s+/g, " ").trim();
+    if (!detail) return "";
+    return detail.length > ELEVENLABS_ERROR_DETAIL_MAX_CHARS
+      ? `${detail.slice(0, ELEVENLABS_ERROR_DETAIL_MAX_CHARS)}…`
+      : detail;
+  } catch {
+    return "";
+  }
+}
+
 async function synthesizeElevenLabs(
   text: string,
   requestedVoice: string | undefined,
   signal: AbortSignal,
+  options: ElevenLabsSynthesisOptions = {},
 ): Promise<{ bytes: Uint8Array; voice: string }> {
   const apiKey = resolveSecret("ELEVENLABS_API_KEY");
   if (!apiKey) throw new Error("Set ELEVENLABS_API_KEY in Vault settings.");
@@ -300,11 +432,22 @@ async function synthesizeElevenLabs(
     {
       method: "POST",
       headers: { "xi-api-key": apiKey, "content-type": "application/json" },
-      body: JSON.stringify({ text, model_id: DEFAULT_ELEVENLABS_MODEL_ID }),
+      body: JSON.stringify(buildElevenLabsTtsBody(text, {
+        modelId: options.model,
+        voiceSettings: options.voiceSettings,
+        previousText: options.previousText,
+        nextText: options.nextText,
+        seed: options.seed,
+      })),
       signal: requestSignal,
     },
   );
-  if (!response.ok) throw new Error(`ElevenLabs returned http ${response.status}`);
+  if (!response.ok) {
+    const detail = await readElevenLabsErrorDetail(response);
+    throw new Error(
+      `ElevenLabs returned http ${response.status}${detail ? `: ${detail}` : ""}`,
+    );
+  }
   const pcm = await readBoundedElevenLabsAudio(response);
   return { bytes: pcmToWav(pcm), voice };
 }
@@ -315,10 +458,11 @@ export async function synthesizeResearchPodcastSegment(
   provider: "local" | "elevenlabs",
   voice: string | undefined,
   signal: AbortSignal,
+  options: ElevenLabsSynthesisOptions = {},
 ): Promise<{ bytes: Uint8Array; voice: string }> {
   return provider === "local"
     ? synthesizeLocal(text, voice, signal)
-    : synthesizeElevenLabs(text, voice, signal);
+    : synthesizeElevenLabs(text, voice, signal, options);
 }
 
 export type PodcastMediaJobInput = {
@@ -334,6 +478,7 @@ export type PodcastPipelineDependencies = {
     provider: ResearchMediaRenderConfig["provider"],
     voice: string,
     signal: AbortSignal,
+    options?: ElevenLabsSynthesisOptions,
   ) => Promise<{ bytes: Uint8Array; voice: string }>;
 };
 
@@ -397,6 +542,15 @@ export function createPodcastMediaJobDefinition(
               provider,
               segmentVoice,
               context.signal,
+              {
+                model: input.renderConfig.model ?? DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,
+                voiceSettings: input.renderConfig.voiceSettings,
+                previousText: input.script[index - 1]?.text,
+                nextText: input.script[index + 1]?.text,
+                ...(input.renderConfig.seed !== undefined
+                  ? { seed: input.renderConfig.seed }
+                  : {}),
+              },
             );
             if (synthesized.voice !== segmentVoice) {
               throw new Error(

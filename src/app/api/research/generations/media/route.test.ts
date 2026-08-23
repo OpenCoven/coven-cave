@@ -5,7 +5,8 @@ import test from "node:test";
 const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 test("media serving is local-only, streaming, and range-capable", () => {
-  assert.match(route, /rejectNonLocalRequest/);
+  assert.match(route, /rejectResearchMediaRequest/);
+  assert.match(route, /await rejectResearchMediaRequest\(req\)/);
   assert.match(route, /openResearchGenerationMedia/);
   assert.match(route, /handle\.createReadStream/);
   assert.match(route, /autoClose: true/);
@@ -14,6 +15,16 @@ test("media serving is local-only, streaming, and range-capable", () => {
   assert.match(route, /content-range/);
   assert.match(route, /range \? 206/);
   assert.match(route, /status: 416/);
+});
+
+test("native players can use the restricted media-ticket path without weakening the route", () => {
+  const ticketRoute = readFileSync(new URL("../media-ticket/route.ts", import.meta.url), "utf8");
+  assert.match(ticketRoute, /rejectNonLocalRequest/);
+  assert.match(ticketRoute, /signResearchMediaTicket/);
+  assert.match(ticketRoute, /RESEARCH_MEDIA_TICKET_PARAM/);
+  assert.match(ticketRoute, /hasReadyMedia/);
+  assert.match(ticketRoute, /media not found/);
+  assert.match(ticketRoute, /RESEARCH_MEDIA_PATH/);
 });
 
 test("media route resolves only ready generation file references", () => {

@@ -18,16 +18,23 @@ import { readFileSync } from "node:fs";
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const activityCss = readFileSync(new URL("../styles/cave-chat/activity.css", import.meta.url), "utf8");
 
-test("2a ④ — the work line states batches and settled calls, trouble stays tinted", () => {
+test("2a ④ — the work line states the compact activity summary, trouble stays tinted", () => {
+  const toolGroup = chatView.match(/function ToolGroup\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(toolGroup, "expected ToolGroup in ChatView");
   assert.match(
-    chatView,
-    /const rollup = toolBatchSummary\(tools, toolBatches\(tools\)\);/,
-    "the rollup comes from the pure model, not a second count in the component",
+    toolGroup,
+    /const summary = toolActivitySummary\(tools\);/,
+    "the summary comes from the pure model, not a second count in the component",
   );
   assert.match(
-    chatView,
-    /\{rollup \? <span className="cave-tool-rollup">\{rollup\}<\/span> : null\}[\s\S]{0,400}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
-    "the neutral rollup precedes the tinted running and error counters",
+    toolGroup,
+    /<span className="cave-work-line__label">\{summary\}<\/span>[\s\S]{0,400}cave-tool-count--running[\s\S]{0,300}cave-tool-count--error/,
+    "the compact summary precedes the tinted running and error counters",
+  );
+  assert.doesNotMatch(
+    toolGroup,
+    /lastCommand|toolBatchSummary|Worked for|steps|success|\bok\b/,
+    "ToolGroup no longer derives duration, command, batch, step-count, or success prose",
   );
 });
 
@@ -48,8 +55,22 @@ test("2a ④ — one band per block of calls, and none when a band would say not
   // into a run, one-offs still render as blocks.
   assert.match(
     toolRuns,
-    /groupConsecutiveTools\(tools\)[\s\S]*<ToolRunGroup[\s\S]*<ToolBlock/,
-    "banding is layered over the existing run/block grammar, not instead of it",
+    /groupConsecutiveTools\(tools\)[\s\S]*containsEdit[\s\S]*<ToolBlock[\s\S]*<ToolRunGroup/,
+    "banding is layered over the stable non-edit run shell and standalone edit blocks",
+  );
+  // Fragment key must be stable for the run's lifetime: the first tool ID is
+  // unique and does not change as adjacent repeats append further calls.
+  // A key that joins the growing list remounts ToolRunGroup on every append,
+  // losing open/focused descendant state mid-stream.
+  assert.match(
+    toolRuns,
+    /const key = run\.tools\[0\]!\.id;/,
+    "Fragment key is the run's first tool ID — stable as adjacent repeats append",
+  );
+  assert.doesNotMatch(
+    toolRuns,
+    /run\.tools\.map[\s\S]{0,80}\.join/,
+    "Fragment key must not join the growing tool list — that remounts ToolRunGroup on each append",
   );
 });
 

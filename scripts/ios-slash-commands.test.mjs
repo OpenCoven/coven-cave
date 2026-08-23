@@ -13,7 +13,7 @@ const desktopCommands = [...desktopSlash.matchAll(/name: "(\/[^"]+)"/g)]
   .map((match) => match[1])
   // /canvas is retired on iOS; /save stays off the native catalog while the
   // Library feature lives on feature/library (ios-library-isolation guard).
-  .filter((name) => !["/canvas", "/save", "/rituals", "/projects"].includes(name));
+  .filter((name) => !["/canvas", "/save", "/rituals", "/projects", "/terminal"].includes(name));
 
 for (const command of desktopCommands) {
   assert.match(
@@ -52,16 +52,12 @@ assert.doesNotMatch(
   "Commands sheet should not render desktop-only command rows on iOS",
 );
 
-assert.match(
-  iosSlash,
-  /name: "\/terminal"[\s\S]{0,240}availability: \.native[\s\S]{0,120}action: \.openTerminal/,
-  "/terminal should open the native Terminal tab",
-);
-assert.match(
-  chatView,
-  /case \.openTerminal:[\s\S]{0,120}app\.selectedTab = \.terminal/,
-  "/terminal routes directly to the Terminal tab",
-);
+assert.doesNotMatch(iosSlash, /case openTerminal/, "iOS should not expose a terminal navigation action");
+assert.doesNotMatch(chatView, /case \.openTerminal/, "chat dispatch should not route to a terminal");
+assert.doesNotMatch(iosSlash, /name: "\/terminal"|name: "\/comux"/,
+  "the retired iOS terminal commands stay out of the native catalog");
+assert.doesNotMatch(chatView, /\.openTerminal|selectedTab = \.terminal/,
+  "chat command routing cannot reach the retired iOS terminal");
 
 // /model is native on iOS: it switches the chat model via the model-state API.
 assert.match(
@@ -73,6 +69,21 @@ assert.match(
   chatView,
   /case \.switchModel:[\s\S]{0,80}await switchModel\(args\)/,
   "Chat slash dispatch should handle /model via switchModel",
+);
+assert.match(
+  iosSlash,
+  /name: "\/diagram"[\s\S]{0,360}availability: \.native[\s\S]{0,80}action: \.startDiagram/,
+  "/diagram should be a native guided chat command",
+);
+assert.match(
+  chatView,
+  /case \.startDiagram:[\s\S]{0,80}startDiagram\(args\)/,
+  "Chat slash dispatch should start the diagram intake",
+);
+assert.match(
+  iosSlash,
+  /enum DiagramCommandPrompt[\s\S]{0,1400}exactly one concise, highest-value question per turn[\s\S]{0,900}exactly one fenced `html` code block/,
+  "iOS should carry the guided intake and artifact contract",
 );
 assert.match(
   chatView,

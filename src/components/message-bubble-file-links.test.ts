@@ -45,7 +45,15 @@ const wiring = await readFile(new URL("./message-dom-wiring.ts", import.meta.url
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const css = (
   await Promise.all(
-    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
+    [
+      // cave-md.css is now an ordered @import facade, so the affordance's rule
+      // lives in the split sheet it imports (cave-md/interactions.css).
+      "cave-md/interactions",
+      "cave-composer",
+      "chat-list",
+      "calendar",
+      "cave-chat",
+    ].map((sheet) =>
       readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
     ),
   )
@@ -57,11 +65,21 @@ assert.match(
   /code\.closest\("pre"\) \|\| code\.closest\("\.cave-code-wrap"\)\) continue/,
   "only inline code is linkified (fenced blocks skipped)",
 );
+// Where the click lands is decided by src/lib/file-ref-open.ts (behavior
+// covered directly in file-ref-open.test.ts): the Code workspace for code, the
+// chat's own reader for a `.md` file the surface claims. The wiring's job is
+// only to raise that decision on the real window.
 assert.match(
   wiring,
-  /dispatchEvent\(new CustomEvent\("cave:open-project-file", \{ detail: \{ path, line \} \}\)\)/,
-  "clicking a file ref opens it in the Code workspace",
+  /const open = \(\) => openFileRef\(\{ path, line \}, dispatchFileRefEvent\);/,
+  "clicking a file ref routes through the shared open decision",
 );
+assert.match(
+  wiring,
+  /const dispatchFileRefEvent: FileRefDispatch = \(name, init\) =>\s*window\.dispatchEvent\(new CustomEvent\(name, init\)\);/,
+  "that decision is raised as real window events",
+);
+assert.match(wiring, /code\.title = fileRefLinkTitle\(ref!\);/, "the tooltip names the real destination");
 // A ref is only linkified when the surface's resolver confirms the click can
 // open it; wiring reconciles (adds AND removes the affordance) so a resolver
 // change never leaves a stale clickable ref.

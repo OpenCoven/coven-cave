@@ -45,6 +45,8 @@ type RuntimeSkillRootOptions = {
   coveredRoots?: string[];
 };
 
+type RuntimeResourceRootOptions = RuntimeSkillRootOptions;
+
 function isWithinRoot(candidate: string, root: string): boolean {
   const rel = path.relative(root, candidate);
   return rel === "" || (
@@ -88,6 +90,40 @@ export async function resolveRuntimeSkillRoots(
       if (!roots.includes(resolved)) roots.push(resolved);
     } catch {
       // An absent skill source advertises nothing and receives no grant.
+    }
+  }
+  return roots;
+}
+
+/**
+ * Narrow read-only roots a local harness may inspect without promoting an
+ * entire harness home directory. Skills are procedures; Codex's generated
+ * image directory is an artifact handoff surface that lets a familiar copy an
+ * approved output into its writable workspace.
+ */
+export async function resolveRuntimeResourceRoots(
+  options: RuntimeResourceRootOptions = {},
+): Promise<string[]> {
+  const roots = await resolveRuntimeSkillRoots(options);
+  const home = options.homeDir ?? homedir();
+  const candidates = [path.join(home, ".codex", "generated_images")];
+  const covered = await Promise.all(
+    (options.coveredRoots ?? []).map(async (root) => {
+      try {
+        return await realpath(root);
+      } catch {
+        return path.resolve(root);
+      }
+    }),
+  );
+  for (const candidate of candidates) {
+    try {
+      const resolved = await realpath(candidate);
+      if (!(await stat(resolved)).isDirectory()) continue;
+      if (covered.some((root) => isWithinRoot(resolved, root))) continue;
+      if (!roots.includes(resolved)) roots.push(resolved);
+    } catch {
+      // An absent generated-artifact root advertises nothing and receives no grant.
     }
   }
   return roots;

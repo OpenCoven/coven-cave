@@ -41,15 +41,15 @@ assert.match(
 // Retry routes through the in-place thread.retry (not delete-and-resend).
 assert.match(
   view,
-  /func retryAssistant[\s\S]*?thread\.retry\(assistant\.id, client: client\)/,
-  "retryAssistant should call thread.retry in place",
+  /func retryAssistant[\s\S]*?thread\.retry\([\s\S]*?assistant\.id,[\s\S]*?client: client,[\s\S]*?onConnectionFailure: \{ app\.noteConnectionFailure\(\$0\) \}/,
+  "retryAssistant should call thread.retry in place and report connection failures",
 );
 
 // --- thread.retry re-streams a single familiar in place ---------------------
 assert.match(
   thread,
-  /func retry\(_ messageId: String, client: CaveClient, onChange: @escaping \(\) -> Void\)/,
-  "ChatThread should expose retry(messageId:client:onChange:)",
+  /func retry\(_ messageId: String, client: CaveClient,[\s\S]{0,120}?onConnectionFailure: \(\(Error\) -> Void\)\? = nil,[\s\S]{0,80}?onChange: @escaping \(\) -> Void\)/,
+  "ChatThread should expose retry(messageId:client:onConnectionFailure:onChange:)",
 );
 assert.match(
   thread,

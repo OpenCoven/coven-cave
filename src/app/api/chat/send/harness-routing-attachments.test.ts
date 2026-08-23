@@ -52,14 +52,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /imagesSupported\s*\?\s*await writeImageAttachmentsToRuntime\(attachments, attachmentStagingRoot\)/,
-  "Image payloads should be staged inside a granted runtime root before the harness prompt is built",
+  /imagesSupported\s*\?\s*await writeAttachmentsToRuntime\(attachments, attachmentStagingRoot\)/,
+  "Validated attachment payloads should be staged inside a granted runtime root before the harness prompt is built",
 );
 
 assert.match(
   chatRoute,
-  /buildPromptWithAttachments\(promptText, attachments, \{\s*imagesSupported,\s*imageFilePaths,\s*\}\)/,
-  "The harness prompt should carry the saved image paths or the unsupported notice",
+  /buildPromptWithAttachments\(promptText, attachments, \{\s*imagesSupported,\s*filesSupported: imagesSupported,\s*attachmentFilePaths,\s*\}\)/,
+  "The harness prompt should carry saved attachment paths or the unsupported notice",
 );
 
 assert.match(
@@ -110,37 +110,88 @@ assert.match(
 
 assert.match(
   attachmentDelivery,
-  /await writeFile\(filePath, payload, \{ mode: 0o600 \}\)/,
-  "Staged image payloads should be private files (mode 0600)",
+  /await writeFile\(filePath, bytes, \{ mode: 0o600 \}\)/,
+  "Staged attachment payloads should be private files (mode 0600)",
 );
 assert.match(
   attachmentDelivery,
-  /crypto\.randomUUID\(\)\}\.\$\{imageExtension\(attachment\.mimeType\)/,
-  "Temp image filenames should be random with an extension derived from the validated mime type, never user input",
+  /crypto\.randomUUID\(\)\}\.\$\{attachmentExtension\(\{ \.\.\.attachment, mimeType \}\)/,
+  "Staged filenames should be random with a safe source extension",
 );
 
 assert.match(
   chatRoute,
-  /const runtimeResourceRoots = sshRuntime[\s\S]*?resolveRuntimeSkillRoots\([\s\S]*?readOnlyResourceRoots: runtimeResourceRoots/,
-  "Local skill sources should be declared as read-only runtime resources in the boundary prompt",
+  /const runtimeResourceRoots = sshRuntime[\s\S]*?resolveRuntimeResourceRoots\([\s\S]*?readOnlyResourceRoots: runtimeResourceRoots/,
+  "Local instruction and artifact sources should be declared as read-only runtime resources in the boundary prompt",
+);
+
+function extractAllowedRootsArrayFromCreateBoundarySentinel(source: string) {
+  const sentinelCallIndex = source.indexOf("createBoundarySentinel(");
+  assert.notEqual(
+    sentinelCallIndex,
+    -1,
+    "Expected chat route to construct a write-boundary sentinel",
+  );
+
+  const allowedRootsIndex = source.indexOf("allowedRoots:", sentinelCallIndex);
+  assert.notEqual(
+    allowedRootsIndex,
+    -1,
+    "Expected createBoundarySentinel(...) to define allowedRoots",
+  );
+
+  const arrayStartIndex = source.indexOf("[", allowedRootsIndex);
+  assert.notEqual(
+    arrayStartIndex,
+    -1,
+    "Expected allowedRoots to be defined as an array",
+  );
+
+  let depth = 0;
+  for (let index = arrayStartIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(arrayStartIndex, index + 1);
+      }
+    }
+  }
+
+  assert.fail(
+    "Expected allowedRoots array in createBoundarySentinel(...) to be balanced",
+  );
+}
+
+const boundarySentinelAllowedRoots = extractAllowedRootsArrayFromCreateBoundarySentinel(
+  chatRoute,
+);
+
+assert.match(
+  boundarySentinelAllowedRoots,
+  /\.\.\.runtimeResourceRoots/,
+  "Read-only runtime resources must not be falsely reported as out-of-boundary reads",
+);
+
+const grantDirsInitializerMatch = chatRoute.match(
+  /const grantDirs\s*=\s*([\s\S]*?);/,
+);
+assert.ok(
+  grantDirsInitializerMatch,
+  "The chat route should define a grantDirs initializer",
+);
+assert.doesNotMatch(
+  grantDirsInitializerMatch[1],
+  /\bruntimeResourceRoots\b/,
+  "Read-only skill resources must not be promoted to writable harness grants",
 );
 
 assert.match(
   chatRoute,
-  /createBoundarySentinel\([\s\S]*?allowedRoots:[\s\S]*?\.\.\.runtimeResourceRoots/,
-  "Reading an advertised skill should not be reported as a boundary violation",
-);
-
-assert.match(
-  chatRoute,
-  /const grantDirs = !sshRuntime[\s\S]*?\.\.\.runtimeResourceRoots/,
-  "Harness launches should receive the same skill-resource directories as the boundary prompt",
-);
-
-assert.match(
-  chatRoute,
-  /cleanupStagedImageFiles\(imageFilePaths\);/,
-  "Staged image files should be best-effort deleted after the harness child has exited",
+  /cleanupStagedAttachmentFiles\(attachmentFilePaths\);/,
+  "Staged attachment files should be best-effort deleted after the harness child has exited",
 );
 
 assert.match(
@@ -151,16 +202,17 @@ assert.match(
 
 // The transcript still never receives a base64 payload. Since cave-cysu4 the
 // stripped record additionally carries a `storedId` pointing at the durable
-// copy, so a reopened thread can render the image — but the strip stays the
-// inner call, i.e. nothing reaches persistence that the strip did not pass.
+// copy, so a reopened thread can render media or retry source files — but the
+// strip stays the inner call, i.e. nothing reaches persistence that the strip
+// did not pass.
 assert.match(
   chatRoute,
-  /const persistedAttachments = await persistImageAttachments\(\s*stripPreviewOnlyAttachmentFields\(attachments\),\s*attachments,\s*\);/,
-  "Persisted transcripts should keep attachment metadata only, not base64 image payloads",
+  /const persistedAttachments = await persistChatAttachments\(\s*stripPreviewOnlyAttachmentFields\(attachments\),\s*attachments,\s*\);/,
+  "Persisted transcripts should keep attachment metadata only, not base64 payloads",
 );
 assert.match(
   chatRoute,
-  /import \{[\s\S]*?persistImageAttachments,[\s\S]*?\} from "\.\/chat-send-attachments";/,
+  /import \{[\s\S]*?persistChatAttachments,[\s\S]*?\} from "\.\/chat-send-attachments";/,
   "The durable-copy step lives with the other attachment helpers",
 );
 
@@ -182,7 +234,6 @@ const smallPng = `data:image/png;base64,${Buffer.from("png-payload-bytes").toStr
   const oversizedBase64 = "A".repeat((Math.ceil(MAX_ATTACHMENT_IMAGE_BYTES / 3) + 4) * 4);
   const cases = [
     { label: "oversized payload", dataUrl: `data:image/png;base64,${oversizedBase64}` },
-    { label: "non-image data URL", dataUrl: "data:application/pdf;base64,aGVsbG8=" },
     { label: "non-base64 payload", dataUrl: "data:image/png;base64,not!!valid~~" },
     { label: "non-data URL", dataUrl: "https://example.com/x.png" },
     { label: "empty payload", dataUrl: "data:image/png;base64," },
@@ -193,6 +244,27 @@ const smallPng = `data:image/png;base64,${Buffer.from("png-payload-bytes").toStr
     ]);
     assert.equal(image.dataUrl, undefined, `normalize should reject ${label}`);
   }
+}
+
+{
+  const pdfDataUrl = "data:application/pdf;base64,aGVsbG8=";
+  const [file] = normalizeChatAttachments([
+    { name: "brief.pdf", mimeType: "application/pdf", size: 5, dataUrl: pdfDataUrl },
+  ]);
+  assert.equal(file.dataUrl, pdfDataUrl, "normalize should preserve a bounded generic file payload");
+
+  const savedPath = "/tmp/coven-cave-attachments/00000000-0000-0000-0000-000000000000.pdf";
+  const localPrompt = buildPromptWithAttachments("Review this.", [file], {
+    filesSupported: true,
+    attachmentFilePaths: new Map([[0, savedPath]]),
+  });
+  assert.match(localPrompt, new RegExp(`File saved to ${savedPath}`));
+  assert.doesNotMatch(localPrompt, /metadata only/);
+
+  const remotePrompt = buildPromptWithAttachments("Review this.", [file], {
+    filesSupported: false,
+  });
+  assert.match(remotePrompt, /file attachments are not supported by this harness/);
 }
 
 {

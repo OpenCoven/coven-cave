@@ -23,12 +23,18 @@ const ROOT = mkdtempSync(join(tmpdir(), "chat-send-image-persistence-"));
 process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = ROOT;
 
 const {
-  cleanupStagedImageFiles,
-  persistImageAttachments,
-  writeImageAttachmentsToRuntime,
+  cleanupStagedAttachmentFiles,
+  persistChatAttachments,
+  writeAttachmentsToRuntime,
 } = await import("./chat-send-attachments.ts");
-const { normalizeChatAttachments, stripPreviewOnlyAttachmentFields, chatAttachmentSrc } =
+const {
+  normalizeChatAttachments,
+  stripPreviewOnlyAttachmentFields,
+  stripPreviewOnlyAttachmentFieldsKeepingImages,
+  chatAttachmentSrc,
+} =
   await import("@/lib/chat-attachments");
+const { readChatImageAttachment } = await import("@/lib/server/chat-attachment-store");
 
 after(() => rmSync(ROOT, { recursive: true, force: true }));
 
@@ -45,7 +51,7 @@ const TEXT_FILE = { name: "notes.txt", type: "text/plain", size: 12, text: "hell
 
 test("an image gains a storedId while its payload stays out of the transcript", async () => {
   const attachments = normalizeChatAttachments([IMAGE, TEXT_FILE]);
-  const persisted = await persistImageAttachments(
+  const persisted = await persistChatAttachments(
     stripPreviewOnlyAttachmentFields(attachments),
     attachments,
   );
@@ -73,13 +79,143 @@ test("an image gains a storedId while its payload stays out of the transcript", 
 test("a tool-readable image is staged inside the granted runtime root", async () => {
   const grantedRoot = mkdtempSync(join(tmpdir(), "cave-granted-image-stage-"));
   try {
-    const files = await writeImageAttachmentsToRuntime([IMAGE], grantedRoot);
+    const files = await writeAttachmentsToRuntime([IMAGE], grantedRoot);
     const staged = files.get(0);
     assert.ok(staged, "a valid image should be staged for local harnesses");
     const rel = relative(realpathSync(grantedRoot), staged);
     assert.equal(isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`), false);
     assert.equal(statSync(staged).isFile(), true);
-    cleanupStagedImageFiles(files);
+    cleanupStagedAttachmentFiles(files);
+  } finally {
+    rmSync(grantedRoot, { recursive: true, force: true });
+  }
+});
+
+test("a bounded generic file payload survives normalization and send stripping", () => {
+  const payload = Buffer.from("PK fake zip source bundle");
+  const dataUrl = `data:application/zip;base64,${payload.toString("base64")}`;
+  const [normalized] = normalizeChatAttachments([
+    {
+      name: "chat-components-design-handoff.zip",
+      type: "application/zip",
+      mimeType: "application/zip",
+      size: payload.byteLength,
+      dataUrl,
+    },
+  ]);
+
+  assert.equal(normalized.dataUrl, dataUrl, "normalization keeps bounded generic file bytes");
+  const [sendBody] = stripPreviewOnlyAttachmentFieldsKeepingImages([normalized]);
+  assert.equal(sendBody.dataUrl, dataUrl, "the send body keeps generic file bytes for staging");
+});
+
+test("a generic file is staged inside the granted runtime root", async () => {
+  const grantedRoot = mkdtempSync(join(tmpdir(), "cave-granted-file-stage-"));
+  const payload = Buffer.from("PK fake zip source bundle");
+  try {
+    const files = await writeAttachmentsToRuntime([
+      {
+        name: "chat-components-design-handoff.zip",
+        type: "application/zip",
+        mimeType: "application/zip",
+        size: payload.byteLength,
+        dataUrl: `data:application/zip;base64,${payload.toString("base64")}`,
+      },
+    ], grantedRoot);
+    const staged = files.get(0);
+    assert.ok(staged, "a valid generic file should be staged for local harnesses");
+    assert.match(staged, /\.zip$/, "the staged file keeps a safe source extension");
+    assert.deepEqual(readFileSync(staged), payload, "the staged bytes match the source file");
+    assert.equal(statSync(staged).mode & 0o777, 0o600, "the staged file is owner-only");
+    cleanupStagedAttachmentFiles(files);
+  } finally {
+    rmSync(grantedRoot, { recursive: true, force: true });
+  }
+});
+
+test("a generic file survives transcript reload and retry by stored id", async () => {
+  const grantedRoot = mkdtempSync(join(tmpdir(), "cave-granted-file-retry-"));
+  const payload = Buffer.from("<main>component catalog</main>");
+  const source = normalizeChatAttachments([
+    {
+      name: "Coven Cave - Components.html",
+      type: "text/html",
+      mimeType: "text/html",
+      size: payload.byteLength,
+      dataUrl: `data:text/html;base64,${payload.toString("base64")}`,
+    },
+  ]);
+  try {
+    const persisted = await persistChatAttachments(
+      stripPreviewOnlyAttachmentFields(source),
+      source,
+    );
+    assert.ok(persisted[0].storedId, "the transcript records a durable source id");
+    assert.equal(persisted[0].dataUrl, undefined, "the transcript excludes base64 source bytes");
+
+    const reloaded = normalizeChatAttachments(persisted);
+    assert.equal(reloaded[0].storedId, persisted[0].storedId, "reload keeps the durable source id");
+    assert.equal(
+      existsSync(join(ROOT, persisted[0].storedId)),
+      true,
+      "the durable source bytes exist before retry staging",
+    );
+    assert.deepEqual(
+      (await readChatImageAttachment(persisted[0].storedId)).data,
+      payload,
+      "the retry path can reopen the durable source",
+    );
+    const files = await writeAttachmentsToRuntime(reloaded, grantedRoot);
+    const staged = files.get(0);
+    assert.ok(staged, "a retry materializes the stored source for the local harness");
+    assert.match(staged, /\.html$/, "the retry path preserves the source extension");
+    assert.deepEqual(readFileSync(staged), payload);
+    cleanupStagedAttachmentFiles(files);
+  } finally {
+    rmSync(grantedRoot, { recursive: true, force: true });
+  }
+});
+
+test("playable media keeps its existing metadata-only harness behavior", async () => {
+  const grantedRoot = mkdtempSync(join(tmpdir(), "cave-granted-media-stage-"));
+  try {
+    const files = await writeAttachmentsToRuntime([
+      {
+        name: "demo.mp4",
+        type: "video/mp4",
+        mimeType: "video/mp4",
+        size: 5,
+        dataUrl: "data:video/mp4;base64,aGVsbG8=",
+      },
+    ], grantedRoot);
+    assert.equal(files.size, 0, "audio and video are not presented as Read-tool files");
+  } finally {
+    rmSync(grantedRoot, { recursive: true, force: true });
+  }
+});
+
+test("reloaded media stays metadata-only instead of staging from its stored id", async () => {
+  const grantedRoot = mkdtempSync(join(tmpdir(), "cave-granted-media-retry-"));
+  const payload = Buffer.from("fake media bytes");
+  const source = normalizeChatAttachments([
+    {
+      name: "demo.mp4",
+      type: "video/mp4",
+      mimeType: "video/mp4",
+      size: payload.byteLength,
+      dataUrl: `data:video/mp4;base64,${payload.toString("base64")}`,
+    },
+  ]);
+  try {
+    const persisted = await persistChatAttachments(
+      stripPreviewOnlyAttachmentFields(source),
+      source,
+    );
+    const reloaded = normalizeChatAttachments(persisted);
+    assert.ok(reloaded[0]?.storedId, "reloaded media should retain a durable source id");
+    assert.equal(reloaded[0].dataUrl, undefined, "the transcript excludes media bytes");
+    const files = await writeAttachmentsToRuntime(reloaded, grantedRoot);
+    assert.equal(files.size, 0, "a stored media source is not staged for the Read tool");
   } finally {
     rmSync(grantedRoot, { recursive: true, force: true });
   }
@@ -87,7 +223,7 @@ test("a tool-readable image is staged inside the granted runtime root", async ()
 
 test("a storedId survives the round trip through normalization", async () => {
   const attachments = normalizeChatAttachments([IMAGE]);
-  const [persisted] = await persistImageAttachments(
+  const [persisted] = await persistChatAttachments(
     stripPreviewOnlyAttachmentFields(attachments),
     attachments,
   );
@@ -117,7 +253,7 @@ test("a media attachment gains a storedId the same way", async () => {
     },
   ]);
   assert.ok(attachments[0].dataUrl, "the media payload survives normalization");
-  const [persisted] = await persistImageAttachments(
+  const [persisted] = await persistChatAttachments(
     stripPreviewOnlyAttachmentFields(attachments),
     attachments,
   );
@@ -135,7 +271,7 @@ test("a media attachment gains a storedId the same way", async () => {
 test("a turn with no images does no store work", async () => {
   const attachments = normalizeChatAttachments([TEXT_FILE]);
   const before = readdirSync(ROOT).length;
-  const persisted = await persistImageAttachments(
+  const persisted = await persistChatAttachments(
     stripPreviewOnlyAttachmentFields(attachments),
     attachments,
   );
@@ -179,7 +315,7 @@ test("a staged file orphaned by a crashed turn is swept on the next delivery", a
     writeFileSync(foreignish, Buffer.from(PIXEL_B64, "base64"));
     utimesSync(foreignish, twoHoursAgo, twoHoursAgo);
 
-    const files = await writeImageAttachmentsToRuntime([IMAGE], grantedRoot);
+    const files = await writeAttachmentsToRuntime([IMAGE], grantedRoot);
 
     assert.equal(existsSync(orphan), false, "the abandoned staged file is swept");
     assert.equal(existsSync(inFlight), true, "a concurrent turn's file is left alone");
@@ -191,7 +327,7 @@ test("a staged file orphaned by a crashed turn is swept on the next delivery", a
     );
     assert.ok(files.get(0), "the sweep does not prevent this turn's delivery");
 
-    cleanupStagedImageFiles(files);
+    cleanupStagedAttachmentFiles(files);
   } finally {
     rmSync(grantedRoot, { recursive: true, force: true });
   }

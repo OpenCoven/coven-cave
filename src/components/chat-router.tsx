@@ -47,13 +47,16 @@ import { useProjects } from "@/lib/use-projects";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
+  migrateOrganizationExpansionKeys,
   normalizeSelection,
   projectSelectionKeys,
   readPersisted,
+  PROJECT_SIDEBAR_EXPANSION_VERSION,
   PROJECT_SIDEBAR_KEYS,
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import { organizationExpansionKey } from "@/lib/project-organizations";
 import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
 import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
@@ -87,12 +90,15 @@ type Props = {
   familiarsError?: string | null;
   /** Retry a failed roster load. */
   onRetryFamiliars?: () => void;
+  /** Delegate user-initiated blank-chat launches to the shell's actor gate. */
+  onRequestNewChat?: () => void;
   onSlashFromChat?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   pendingProjectRoot?: string | null;
   /** Route back to the linked board task from the chat header. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   /** Mirror the open chat into the URL hash (`#chat-<sessionId>`) so chats are
    *  deep-linkable and browser Back/Forward navigates list ↔ chat. Only the
    *  main chat surface opts in — the companion-rail ChatRouter must not fight
@@ -164,11 +170,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     familiarsLoaded,
     familiarsError,
     onRetryFamiliars,
+    onRequestNewChat,
     onSlashFromChat,
     onOpenOnboarding,
     pendingProjectRoot,
     onOpenTask,
     onOpenUrl,
+    onOpenPreview,
     syncUrlHash,
     compact = false,
     hideRail = false,
@@ -273,6 +281,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
   }, [onOpenProjectsTab]);
   const sidebarPrefsLoadedRef = useRef(false);
+  const sidebarOrganizationMigrationPendingRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
@@ -302,7 +311,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
     : null;
   const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
-  const { projects } = useProjects();
+  const {
+    projects,
+    loadedSuccessfully: projectsLoadedSuccessfully,
+  } = useProjects();
   const projectOverrides = useProjectOverrides();
 
   const sidebarSessions = useMemo(
@@ -313,15 +325,38 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     () => deriveChatProjectGroups(applyProjectOverrides(sidebarSessions, projectOverrides), projects),
     [sidebarSessions, projects, projectOverrides],
   );
+  const migrationSessions = useMemo(
+    () => filterVisibleChatSessions(sessions, null),
+    [sessions],
+  );
+  const migrationGroups = useMemo(
+    () => deriveChatProjectGroups(applyProjectOverrides(migrationSessions, projectOverrides), projects),
+    [migrationSessions, projects, projectOverrides],
+  );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
   );
+  const toggleSidebarExpanded = useCallback((key: string) => {
+    sidebarDefaultExpandedRef.current = false;
+    setExpandedKeys((prev) =>
+      prev.includes(key) ? prev.filter((entry) => entry !== key) : [...prev, key],
+    );
+  }, []);
   const syncSidebarProjectRoot = useCallback((nextProjectRoot: string | null) => {
     const nextSelection = selectionForProjectRoot(nextProjectRoot, sidebarGroups);
     setSelection(nextSelection);
-    if (nextSelection !== "all") {
-      setExpandedKeys((prev) => (prev.includes(nextSelection) ? prev : [...prev, nextSelection]));
+    const group = sidebarGroups.find(
+      (entry) => selectionKey(entry.projectId, entry.projectRoot) === nextSelection,
+    );
+    if (nextSelection !== "all" && group) {
+      const organizationKey = organizationExpansionKey(group.organization.key);
+      setExpandedKeys((prev) => {
+        const next = [...prev];
+        if (!next.includes(organizationKey)) next.push(organizationKey);
+        if (!next.includes(nextSelection)) next.push(nextSelection);
+        return next.length === prev.length ? prev : next;
+      });
     }
   }, [sidebarGroups]);
 
@@ -329,15 +364,30 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (sidebarPrefsLoadedRef.current) return;
     if (sessionsLoaded === false) return;
     sidebarPrefsLoadedRef.current = true;
-    const hasStoredExpanded =
-      typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
-    sidebarDefaultExpandedRef.current = !hasStoredExpanded;
     const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
-    setExpandedKeys(
-      Array.isArray(storedExpanded)
-        ? storedExpanded.filter((k): k is string => typeof k === "string")
-        : projectSelectionKeys(sidebarGroups),
+    const storedExpansionVersion = readPersisted<unknown>(
+      PROJECT_SIDEBAR_KEYS.expandedVersion,
+      null,
     );
+    sidebarDefaultExpandedRef.current = !Array.isArray(storedExpanded);
+    if (Array.isArray(storedExpanded)) {
+      setExpandedKeys(storedExpanded.filter((k): k is string => typeof k === "string"));
+      sidebarOrganizationMigrationPendingRef.current =
+        storedExpansionVersion !== PROJECT_SIDEBAR_EXPANSION_VERSION;
+    } else {
+      setExpandedKeys(projectSelectionKeys(sidebarGroups));
+      sidebarOrganizationMigrationPendingRef.current = false;
+    }
+    if (!sidebarOrganizationMigrationPendingRef.current) {
+      try {
+        window.localStorage.setItem(
+          PROJECT_SIDEBAR_KEYS.expandedVersion,
+          JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
+        );
+      } catch {
+        // persistence is best-effort
+      }
+    }
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSidebarHydrated(true);
@@ -347,15 +397,53 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     setExpandedKeys(projectSelectionKeys(sidebarGroups));
   }, [sidebarHydrated, sidebarGroups]);
   useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
+    if (!sidebarHydrated || sidebarOrganizationMigrationPendingRef.current) return;
+    try {
+      window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
+    } catch {
+      // persistence is best-effort
+    }
   }, [sidebarHydrated, expandedKeys]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
+  useEffect(() => {
+    if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return;
+    if (sessionsLoaded === false || sessionsError) return;
+    if (!projectsLoadedSuccessfully) return;
+    const migratedExpandedKeys = migrateOrganizationExpansionKeys(
+      expandedKeys,
+      migrationGroups,
+      projects,
+    );
+    setExpandedKeys(migratedExpandedKeys);
+    try {
+      window.localStorage.setItem(
+        PROJECT_SIDEBAR_KEYS.expanded,
+        JSON.stringify(migratedExpandedKeys),
+      );
+      window.localStorage.setItem(
+        PROJECT_SIDEBAR_KEYS.expandedVersion,
+        JSON.stringify(PROJECT_SIDEBAR_EXPANSION_VERSION),
+      );
+    } catch {
+      // persistence is best-effort
+    }
+    sidebarOrganizationMigrationPendingRef.current = false;
+  }, [
+    sidebarHydrated,
+    sessionsLoaded,
+    sessionsError,
+    projectsLoadedSuccessfully,
+    expandedKeys,
+    migrationGroups,
+    projects,
+  ]);
   // First chat in a fresh project folder (or this surface's just-started
   // chat) must not hide inside a collapsed group (cave-mllp).
   useAutoExpandNewGroups({
     hydrated: sidebarHydrated,
+    scopeKey: familiar?.id ?? "all",
     sessions,
     groups: sidebarGroups,
     activeSessionId: view.kind === "chat" ? view.sessionId : null,
@@ -778,6 +866,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiar={familiar}
         familiars={familiars}
         sessions={sessions}
+        selection={selection}
+        expandedKeys={expandedKeys}
+        onSelectionChange={setSelection}
+        onToggleExpanded={toggleSidebarExpanded}
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
         sessionsError={sessionsError}
@@ -793,6 +885,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           if (fq) setPendingFind({ query: fq, nonce: Date.now() });
         }}
         onNewChat={(projectRoot, familiarId) => {
+          if (onRequestNewChat) {
+            onRequestNewChat();
+            return;
+          }
           // No familiar supplied means the user has not chosen one. Leave it
           // null so NewChatLaunch renders and asks, rather than adopting
           // visibleFamiliars[0] and silently making it the active familiar.
@@ -810,6 +906,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiars={familiars}
         sessions={sessions}
         pendingProjectRoot={pendingProjectRoot}
+        onRequestActor={onRequestNewChat}
         onPick={(familiarId) => {
           const next = selectFamiliarForChat(familiarId);
           setView({
@@ -943,6 +1040,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       onOpenOnboarding={onOpenOnboarding}
       onOpenTask={onOpenTask}
       onOpenUrl={onOpenUrl}
+      onOpenPreview={onOpenPreview}
       onProjectRootChange={syncSidebarProjectRoot}
     />
   );
@@ -977,6 +1075,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
               onSessionsDeleted={onSessionsDeleted}
               onOpenTask={onOpenTask}
               onOpenUrl={onOpenUrl}
+              onOpenPreview={onOpenPreview}
             />
           ),
         },
@@ -993,28 +1092,25 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         expandedKeys={expandedKeys}
         activeSessionId={view.kind === "chat" ? view.sessionId : null}
         onSelect={setSelection}
-        onToggleExpanded={(key) => {
-          sidebarDefaultExpandedRef.current = false;
-          setExpandedKeys((prev) =>
-            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-          );
-        }}
+        onToggleExpanded={toggleSidebarExpanded}
         onOpenSession={(s) => {
           const next = selectFamiliarForChat(s.familiarId);
           setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
         }}
         onOpenSessionInSplit={enableSplit ? handleOpenSessionInSplit : undefined}
-        onNewChat={(root) => {
-          const group = sidebarGroups.find((g) => g.projectRoot === root);
-          // The group's own latest familiar is a real signal. Absent it, ask
-          // rather than fall back to whichever familiar sorts first.
-          const nextFamiliarId = group?.defaultFamiliarId ?? familiar?.id ?? null;
+        onNewChat={() => {
+          if (onRequestNewChat) {
+            onRequestNewChat();
+            return;
+          }
+          const nextFamiliarId = familiar?.id ?? null;
+          if (!nextFamiliarId) return;
           const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
           advanceComposeInstance();
           setView({
             kind: "chat",
             sessionId: null,
-            projectRoot: root ?? undefined,
+            projectRoot: undefined,
             familiarId: next?.id ?? nextFamiliarId ?? null,
           });
         }}

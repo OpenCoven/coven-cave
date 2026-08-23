@@ -40,13 +40,14 @@ import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
-import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
-import { ChatRunRail } from "@/components/chat-run-rail";
+import { ChatActivityMap } from "@/components/chat-run-rail";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
+import { buildDiagramGuidePrompt, DIAGRAM_COMMAND_START } from "@/lib/diagram-command";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools, segmentTurn } from "@/lib/turn-segments";
-import { formatBatchDuration, toolBatchSummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
   CHAT_OPEN_COVEN_EVENT,
   CHAT_OPEN_PROJECTS_EVENT,
@@ -208,11 +209,12 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import type { NextPath } from "@/lib/next-paths";
+import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
 import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
+import { slicePreviewBlocks } from "@/lib/preview-blocks";
 import { parseSkillInvocation } from "@/lib/skill-blocks";
 import {
   chatTurnVisibleText,
@@ -251,6 +253,9 @@ import {
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { ChatSpecCard } from "@/components/chat-spec-card";
+import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-file-reader";
+import { joinProjectPath } from "@/components/message-dom-wiring";
+import { ChatPreviewCard } from "@/components/chat-preview-card";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
@@ -266,8 +271,6 @@ import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import { projectAccessLabel } from "@/lib/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
-  DEFAULT_PERMISSION_MODE,
-  PERMISSION_MODES,
   normalizeCommandControls,
   type CommandPermissionMode,
   type CommandResponseSpeed,
@@ -289,7 +292,7 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
+import { useActivityMapVisible } from "@/lib/thread-instruments-visibility";
 import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
@@ -314,6 +317,7 @@ import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
   buildThreadReflectPrompt,
+  shouldAutoReviewThread,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
@@ -472,6 +476,7 @@ type Props = {
    *  card focused. The link is bidirectional; this is the chat→task side. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   onProjectRootChange?: (projectRoot: string | null) => void;
 };
 
@@ -597,6 +602,8 @@ const CHAT_ATTACHMENT_ACCEPT = [
   "audio/*",
   "application/pdf",
   "application/json",
+  "application/zip",
+  "application/x-zip-compressed",
   "text/*",
   ".txt",
   ".md",
@@ -614,6 +621,7 @@ const CHAT_ATTACHMENT_ACCEPT = [
   ".scss",
   ".html",
   ".xml",
+  ".zip",
   ".rs",
   ".go",
   ".py",
@@ -1931,7 +1939,7 @@ function conciseStreamError(error: unknown, fallback: string): string {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialModelOverride, autoSendInitialPrompt = false, initialPromptHandoffId = null, startNewConversation = false, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, openVoiceNonce, openVoiceSessionId, daemonRunning, activeFamiliarId, familiars = [], sessions, composerDraftKey = DEFAULT_CHAT_COMPOSER_DRAFT_KEY, composeInstance = 0, onSessionStarted, onVoiceSessionCreated, onVoiceSessionDiscarded, onSessionsChanged, onSessionsDeleted, onSessionRemoved, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onOpenPreview, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -1958,7 +1966,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
+  const [busy, setBusy] = useState(false);
   const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
+  const reflectTranscript = useMemo(() => buildReflectTranscript(turns), [turns]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
   const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
     sessionId: null,
@@ -1992,14 +2002,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, []);
 
   const reflectOnThread = useCallback(async () => {
-    if (!sessionId || reflecting) return;
+    if (!sessionId || reflecting || !reflectTranscript) return;
     setReflecting(true);
     setReflectError(null);
     try {
       // Generate the reflection client-side via the chat bridge — the daemon has
       // no LLM endpoint. Run it ephemerally (embed the transcript instead of
       // resuming the session) so it never appends a turn to the user's thread.
-      const prompt = buildThreadReflectPrompt({ sessionId, transcript: buildReflectTranscript(turns) });
+      const prompt = buildThreadReflectPrompt({ sessionId, transcript: reflectTranscript });
       const { text, error } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
@@ -2029,12 +2039,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setReflecting(false);
     }
-  }, [familiar.display_name, familiar.id, onSessionsChanged, reflecting, session?.title, sessionId, turns]);
+  }, [familiar.display_name, familiar.id, onSessionsChanged, reflectTranscript, reflecting, session?.title, sessionId]);
 
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
-    if (!familiar.autoSelfReport) return;
+    if (!familiar.autoSelfReport || !reflectTranscript) return;
     try {
-      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: buildReflectTranscript(turns) });
+      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: reflectTranscript });
       const { text, error } = await streamFamiliarText({
         familiarId: familiar.id,
         prompt,
@@ -2062,11 +2072,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
-  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, session?.title, turns]);
+  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, reflectTranscript, session?.title]);
 
   useEffect(() => {
     const status = session?.status?.toLowerCase();
-    const eligible = Boolean(
+    const terminal = Boolean(
       session?.archived_at ||
       status === "closed" ||
       status === "completed" ||
@@ -2074,14 +2084,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       status === "done" ||
       status === "stopped",
     );
+    const settledAssistantTurns = turns.filter(
+      (turn) => turn.role === "assistant" && !turn.pending && !turn.error,
+    ).length;
+    const eligible = shouldAutoReviewThread({
+      settledAssistantTurns,
+      terminal,
+      busy,
+    });
     const previous = autoSelfReportEligibilityRef.current;
-    const reachedClosedState = previous.sessionId === sessionId && !previous.eligible && eligible;
+    const reachedReviewCheckpoint = previous.sessionId === sessionId && !previous.eligible && eligible;
     autoSelfReportEligibilityRef.current = { sessionId, eligible };
-    if (!sessionId || !reachedClosedState || !familiar.autoSelfReport) return;
+    if (!sessionId || !reachedReviewCheckpoint || !familiar.autoSelfReport) return;
     if (autoSelfReportSessionsRef.current.has(sessionId)) return;
     autoSelfReportSessionsRef.current.add(sessionId);
     void autoReflectOnThread(sessionId);
-  }, [autoReflectOnThread, familiar.autoSelfReport, session?.archived_at, session?.status, sessionId]);
+  }, [
+    autoReflectOnThread,
+    busy,
+    familiar.autoSelfReport,
+    session?.archived_at,
+    session?.status,
+    sessionId,
+    turns,
+  ]);
 
   useEffect(() => {
     setThreadSignalReport(null);
@@ -2296,7 +2322,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Reply to Chat: the turn the next message quotes, shown as a composer chip
   // and prepended as a markdown blockquote to the outgoing prompt at send time.
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
-  const [busy, setBusy] = useState(false);
   const [queuedMessages, setQueuedMessages] = useState<QueuedChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   // Debug context for the inline error strip below the chat: which turn failed
@@ -2627,11 +2652,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  // Reader preference for the gutter instruments (spine + minimap). Read here
-  // rather than inside them so an unchecked toggle skips mounting entirely —
-  // hiding them with CSS would leave their scroll measurement and
-  // ResizeObservers running for furniture nobody can see.
-  const [instrumentsVisible] = useThreadInstrumentsVisible();
+  const [activityMapVisible] = useActivityMapVisible();
   const threadRef = useRef<HTMLDivElement | null>(null);
   // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
   // pinned to the newest content". It releases on user INTENT (wheel up /
@@ -3630,13 +3651,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
   const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   const composerResponseSections: ComposerOptionSection[] = [
-    {
-      id: "access",
-      label: "Access",
-      value: permissionMode,
-      options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
-      onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
-    },
     ...(composerRuntimeOwnsDefault || composerModelOptions.length > 0 || composerModelInventory.loading
       ? [{
           id: "model",
@@ -3710,6 +3724,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         : null,
       selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
       recentThreadTitle: session?.title ?? null,
+      modelScope: `${modelState?.source ?? "runtime-default"}:${composerModelValue}`,
+      recentMessages: turns
+        .filter((turn) => (turn.role === "user" || turn.role === "assistant") && !turn.pending && !turn.error)
+        .slice(-4)
+        .map((turn) => ({ id: turn.id, role: turn.role, text: turn.text })),
+      recentToolOutcomes: turns
+        .flatMap((turn) => turn.tools ?? [])
+        .filter((tool) => tool.status === "ok" || tool.status === "error")
+        .slice(-3)
+        .map((tool) => ({ id: tool.id, name: tool.name, status: tool.status, output: tool.output ?? "" })),
+      linkedTask: linkedContext?.task ?? null,
     },
     disabled: busy,
   });
@@ -3802,6 +3827,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       resolveFileRefTarget(ref, transcriptFileRoot, fileRefIndex.files) != null,
     [fileRefIndex, transcriptFileRoot],
   );
+
+  // A `.md` ref reads in the chat's own Markdown reader rather than the Code
+  // workspace (Val, 2026-08-20): docs are read, not edited, at the moment they
+  // are cited. The wiring event is cancelable, so claiming it here is what
+  // keeps every other surface on the Code route — and a path this transcript
+  // cannot resolve stays unclaimed and falls through to that route too.
+  const [documentTarget, setDocumentTarget] = useState<ChatFileReaderTarget | null>(null);
+  useEffect(() => {
+    const onOpenDocument = (event: Event) => {
+      // A second transcript (the right-hand chat panel) listens too; the first
+      // to claim it wins, so two readers never stack over one click.
+      if (event.defaultPrevented) return;
+      const detail = (event as CustomEvent<{ path?: string; line?: number }>).detail;
+      const path = typeof detail?.path === "string" ? detail.path : null;
+      if (!path || !transcriptFileRoot || fileRefIndex?.root !== transcriptFileRoot) return;
+      const rel = resolveFileRefTarget({ path }, transcriptFileRoot, fileRefIndex.files);
+      if (!rel) return;
+      event.preventDefault();
+      setDocumentTarget({
+        path: rel,
+        absPath: joinProjectPath(transcriptFileRoot, rel),
+        line: typeof detail?.line === "number" ? detail.line : undefined,
+      });
+    };
+    window.addEventListener("cave:open-markdown-document", onOpenDocument as EventListener);
+    return () => {
+      window.removeEventListener("cave:open-markdown-document", onOpenDocument as EventListener);
+    };
+  }, [transcriptFileRoot, fileRefIndex]);
 
   // Insert the picked path inline, replacing the `@query` token (Claude Code
   // convention: `@src/foo.ts`), and record it for the send body.
@@ -3913,9 +3967,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .reverse()
       .find((t) => t.role === "assistant" && !t.pending && !t.error);
     if (!last?.text) return empty;
-    const suggestions = extractChatRenderedText(last.text).nextPaths;
+    const suggestions = contextualizeNextPaths(extractChatRenderedText(last.text).nextPaths, {
+      messageId: last.id,
+      taskId: linkedContext?.task?.id ?? null,
+      toolOutcomeIds: (last.tools ?? [])
+        .filter((tool) => tool.status === "ok" || tool.status === "error")
+        .map((tool) => tool.id),
+    });
     return suggestions.length ? { suggestions } : empty;
-  }, [activePath]);
+  }, [activePath, linkedContext?.task?.id]);
 
   const handleFollowUp = useCallback((path: NextPath) => {
     if (path.kind === "reply") {
@@ -4876,6 +4936,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setInput("");
       const wrapped = buildSketchPrompt(args);
       setTimeout(() => void sendRaw(args, [], [], { promptOverride: wrapped }), 0);
+      return true;
+    }
+    if (command === "/diagram") {
+      const brief = args.trim();
+      setInput("");
+      const wrapped = buildDiagramGuidePrompt(brief);
+      setTimeout(
+        () => void sendRaw(brief || DIAGRAM_COMMAND_START, [], [], { promptOverride: wrapped }),
+        0,
+      );
       return true;
     }
     // Workspace-level commands routed through the parent
@@ -6738,7 +6808,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // pick its first send used.
   const draftViewKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    const viewKey = `${sessionId ?? ""}|${projectRoot ?? ""}`;
+    const viewKey = sessionId
+      ? `session:${sessionId}`
+      : `draft:${projectRoot ?? ""}`;
     const viewChanged = draftViewKeyRef.current !== viewKey;
     draftViewKeyRef.current = viewKey;
     setProjectIdDraft((prev) => {
@@ -6761,19 +6833,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // Initialise when unset, or always resync on session switch.
       return prev === null ? resolved : resolved ?? prev;
     });
-    setMentionedFiles([]);
-    setRuntimeHost(null);
-    // ChatView is a single instance reused across threads (not keyed by
-    // sessionId in ChatRouter), so per-thread composer context must be cleared
-    // on switch or it bleeds into the next conversation's next send: a
-    // reply-quote and staged attachments would be injected into the wrong
-    // thread, a pending branch parent would mis-parent the turn onto a node
-    // that doesn't exist in the new tree, and the "Prompt improved / Revert"
-    // strip would resurrect the previous thread's pre-enhancement draft.
-    setReplyTarget(null);
-    clearAttachments();
-    setPendingBranchParent(undefined);
-    promptEnhance.reset();
+    if (viewChanged) {
+      setMentionedFiles([]);
+      setRuntimeHost(null);
+      // ChatView is a single instance reused across threads (not keyed by
+      // sessionId in ChatRouter), so per-thread composer context must be cleared
+      // on switch or it bleeds into the next conversation's next send: a
+      // reply-quote and staged attachments would be injected into the wrong
+      // thread, a pending branch parent would mis-parent the turn onto a node
+      // that doesn't exist in the new tree, and the "Prompt improved / Revert"
+      // strip would resurrect the previous thread's pre-enhancement draft.
+      setReplyTarget(null);
+      clearAttachments();
+      setPendingBranchParent(undefined);
+      promptEnhance.reset();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
@@ -7011,7 +7085,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // chatContextControls and placed adaptively — footer cluster for new chats
   // (inlineComposer) and session header for active chats (!inlineComposer)
   // so picker state is never duplicated.
-  const inlineComposer = sessionId === null;
+  // Tool-only commands such as /image and /auto can produce transcript turns
+  // before the daemon assigns a session id. The new-chat dashboard disappears
+  // as soon as that happens, so move the same composer into the reply dock.
+  const inlineComposer = sessionId === null && turns.length === 0;
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const chatContextControls = (
@@ -7316,7 +7393,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onVoice={() => setVoiceCallOpen(true)}
             />
 
-            <div className="cave-composer-panel">
+            <div className="cave-composer-panel" data-access-mode={permissionMode}>
               <div className="cave-composer-edge-actions">
                 <ComposerActionsMenu
                   attach={{
@@ -7380,7 +7457,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     saveAsTemplateDisabled: !input.trim(),
                     indicator:
                       composerHostValue !== LOCAL_HOST_ID ||
-                      permissionMode !== DEFAULT_PERMISSION_MODE ||
                       thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
                       responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed,
                   }}
@@ -7485,6 +7561,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onDismiss={promptEnhance.dismiss}
                 onRevert={promptEnhance.revert}
                 onCancel={promptEnhance.cancel}
+                onFocusComposer={() => inputRef.current?.focus()}
               />
               {queuedMessages.length > 0 ? (
                 <div className="cave-composer-queue" role="group" aria-label="Queued messages">
@@ -7540,7 +7617,60 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                 />
                 <div className="cave-composer-control-row">
-                  <div className="cave-composer-utility-row">
+                  <div className="cave-composer-mode-switch" role="group" aria-label="Access mode">
+                    <button
+                      type="button"
+                      className="cave-composer-mode-option focus-ring"
+                      aria-pressed={permissionMode === "read"}
+                      onClick={() => setPermissionMode("read")}
+                      title="Explore — read only"
+                    >
+                      <Icon name="ph:globe" width="var(--icon-md)" aria-hidden />
+                      <span>Explore</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="cave-composer-mode-option focus-ring"
+                      aria-pressed={permissionMode === "full"}
+                      onClick={() => setPermissionMode("full")}
+                      title="Build — full access"
+                    >
+                      <Icon name="ph:flask" width="var(--icon-md)" aria-hidden />
+                      <span>Build</span>
+                    </button>
+                  </div>
+                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
+                  <div className="cave-composer-submit-row">
+                    {busy && (input.trim() || attachments.length > 0) ? (
+                      <button
+                        type="button"
+                        onClick={() => void send()}
+                        data-typing={input.trim() ? "true" : undefined}
+                        className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
+                        title="Queue message"
+                        aria-label="Queue message"
+                      >
+                        <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
+                      </button>
+                    ) : null}
+                    {busy ? (
+                      <button
+                        type="button"
+                        onClick={cancelSend}
+                        className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
+                        title="Stop response (esc)"
+                        aria-label="Cancel response"
+                        aria-keyshortcuts="Escape"
+                      >
+                        <span>esc · stop</span>
+                      </button>
+                    ) : null}
+                    <EnhanceControl
+                      state={promptEnhance.state}
+                      onEnhance={promptEnhance.enhance}
+                      onCancel={promptEnhance.cancel}
+                      disabled={busy || !input.trim()}
+                    />
                     <button
                       type="button"
                       className="cave-composer-footer-action focus-ring"
@@ -7549,43 +7679,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       title="Voice call"
                       aria-label="Voice call"
                     >
-                      <Icon name="ph:phone" width="var(--icon-md)" aria-hidden />
+                      <Icon name="ph:microphone" width="var(--icon-md)" aria-hidden />
                     </button>
-                  </div>
-                  <ComposerContextMeter usage={lastSettledAssistantTurn?.usage} model={contextRowModel ?? undefined} />
-                  <div className="cave-composer-submit-row">
-                    <EnhanceControl
-                      state={promptEnhance.state}
-                      onEnhance={promptEnhance.enhance}
-                      onCancel={promptEnhance.cancel}
-                      disabled={busy || !input.trim()}
-                    />
-                    {/* The compact send keeps its queue/cancel behavior in one
-                        stable action slot. */}
-                    {busy ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => void send()}
-                          disabled={!projectLaunchReady || (!input.trim() && attachments.length === 0)}
-                          data-typing={input.trim() ? "true" : undefined}
-                          className="cave-composer-send cave-composer-send--queue focus-ring transition-colors"
-                          title="Queue message"
-                          aria-label="Queue message"
-                        >
-                          <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelSend}
-                          className="cave-composer-send cave-composer-send--busy focus-ring transition-colors"
-                          title="Cancel (esc)"
-                          aria-label="Cancel response"
-                        >
-                          <Icon name="ph:x-bold" width="var(--icon-md)" aria-hidden />
-                        </button>
-                      </>
-                    ) : (
+                    {!busy ? (
                       <button
                         type="button"
                         onClick={() => void send()}
@@ -7597,7 +7693,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       >
                         <Icon name="ph:arrow-up-bold" width="var(--icon-md)" aria-hidden />
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -7738,7 +7834,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 promotableFamiliars={promotableFamiliars}
                 onPromoteToCoven={promoteToCoven}
                 reflecting={reflecting}
-                onReflect={familiar.id ? () => void reflectOnThread() : undefined}
+                onReflect={familiar.id && reflectTranscript ? () => void reflectOnThread() : undefined}
                 registerCurrentRoot={setupCandidateRoot ?? undefined}
                 onRegisterCurrentRoot={
                   setupCandidateRoot ? () => setProjectSetupRoot(setupCandidateRoot) : undefined
@@ -7847,24 +7943,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           hasTurns={turns.length > 0}
           onOpenUrl={onOpenUrl}
         />
-        {/* Thread instruments (Chat.dc.html 2a, cave-j86la): the run spine in
-            the left gutter and the thread minimap on the right edge. Both
-            derive from the SAME activePath the transcript renders and gate
-            themselves to wide panes, so narrow layouts never see them. */}
-        {activePath.length > 0 && instrumentsVisible ? (
-          <>
-            <ChatThreadMinimap
-              turns={activePath}
-              scrollRef={scrollRef}
-              familiarName={familiar.display_name}
-            />
-            <ChatThreadSpine
-              turns={activePath}
-              scrollRef={scrollRef}
-              familiarName={familiar.display_name}
-            />
-          </>
-        ) : null}
         <div
           ref={threadRef}
           className="cave-chat-thread"
@@ -7965,6 +8043,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             expandedAvatarTurnId={expandedAvatarTurnId}
             setExpandedAvatarTurnId={setExpandedAvatarTurnId}
             onOpenUrl={onOpenUrl}
+            onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
           />
           {shouldShowChatArchiveNudge({
@@ -8039,6 +8118,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }}
         />
       ) : null}
+      {documentTarget ? (
+        <ChatFileReader
+          target={documentTarget}
+          onClose={() => setDocumentTarget(null)}
+          onOpenUrl={onOpenUrl}
+        />
+      ) : null}
               {/* Run rail (Coven Cave - Chat Session handoff, cave-w716g): the
                   timeline, tool mix and live step, derived from the SAME
                   activePath the transcript renders. Shares the instruments
@@ -8051,8 +8137,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   which put the rail ahead of the conversation for screen
                   readers — `order` moves boxes, never reading order. DOM order
                   is the accessible order, so the annotation follows the log. */}
-              {activePath.length > 0 && instrumentsVisible ? (
-                <ChatRunRail turns={activePath} conversationCreatedAt={session?.created_at} />
+              {activePath.length > 0 && activityMapVisible ? (
+                <ChatActivityMap turns={activePath} conversationCreatedAt={session?.created_at} />
               ) : null}
       </div>
       </CodeReadingContext.Provider>
@@ -8348,7 +8434,7 @@ function splitSegmentsForSpecs(
       }
       return [{
         kind: "block" as const,
-        key: `spec-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
+        key: `${piece.spec.kind}-${segmentIndex}-${pieceIndex}-${piece.spec.title}`,
         node: <ChatSpecCard spec={piece.spec} onOpenUrl={onOpenUrl} />,
       }];
     });
@@ -8368,6 +8454,7 @@ function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubble
       out.push(seg);
       return;
     }
+
     const pieces = sliceImageBlocks(seg.text);
     if (pieces.length === 1 && pieces[0].kind === "text") {
       // `sliceImageBlocks` also removes a terminal incomplete marker. Preserve
@@ -8388,6 +8475,34 @@ function splitSegmentsForImages(segments: MessageBubbleSegment[]): MessageBubble
     });
   });
   return out;
+}
+
+function splitSegmentsForPreviews(
+  segments: MessageBubbleSegment[],
+  onOpenPreview?: (url: string) => void,
+  onOpenUrl?: (url: string) => void,
+): MessageBubbleSegment[] {
+  return segments.flatMap<MessageBubbleSegment>((segment, segmentIndex) => {
+    if (segment.kind !== "text") return [segment];
+    return slicePreviewBlocks(segment.text).flatMap<MessageBubbleSegment>((piece, pieceIndex) => {
+      if (piece.kind === "text") {
+        return piece.text.trim()
+          ? [{ kind: "text" as const, text: piece.text }]
+          : [];
+      }
+      return [{
+        kind: "block" as const,
+        key: `preview-${segmentIndex}-${pieceIndex}-${piece.preview.url}`,
+        node: (
+          <ChatPreviewCard
+            preview={piece.preview}
+            onOpenPreview={onOpenPreview}
+            onOpenUrl={onOpenUrl}
+          />
+        ),
+      }];
+    });
+  });
 }
 
 // ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
@@ -8446,6 +8561,7 @@ const TranscriptRows = memo(function TranscriptRows({
   expandedAvatarTurnId,
   setExpandedAvatarTurnId,
   onOpenUrl,
+  onOpenPreview,
   handlersRef,
 }: {
   groupedTurns: TranscriptGroup[];
@@ -8463,6 +8579,7 @@ const TranscriptRows = memo(function TranscriptRows({
   expandedAvatarTurnId: string | null;
   setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   handlersRef: React.RefObject<TranscriptHandlers>;
 }) {
   const handlers = () => handlersRef.current;
@@ -8533,6 +8650,7 @@ const TranscriptRows = memo(function TranscriptRows({
           readerPrompt={handlers().readerPromptFor(t)}
           onRerunWith={handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
+          onOpenPreview={onOpenPreview}
           onRequest={(prompt) => void handlers().send(prompt)}
           handlersRef={handlersRef}
           feedbackContext={feedbackContext}
@@ -8600,6 +8718,7 @@ const TranscriptRows = memo(function TranscriptRows({
               readerPrompt={handlers().readerPromptFor(t)}
               onRerunWith={handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
+              onOpenPreview={onOpenPreview}
               onRequest={(prompt) => void handlers().send(prompt)}
               handlersRef={handlersRef}
               feedbackContext={feedbackContext}
@@ -8655,6 +8774,7 @@ function TurnRowImpl({
   readerPrompt,
   onRerunWith,
   onOpenUrl,
+  onOpenPreview,
   expanded = false,
   onToggleAvatar,
   onRequest,
@@ -8689,6 +8809,7 @@ function TurnRowImpl({
    *  which is what hides the reader's Edit affordance. */
   onRerunWith?: (prompt: string) => void;
   onOpenUrl?: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
   expanded?: boolean;
   onToggleAvatar?: () => void;
   /** Model/runtime stamp for thumbs votes (per-model analytics). */
@@ -8698,11 +8819,9 @@ function TurnRowImpl({
 }) {
   const profileSnapshot = useUserProfile();
   const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
-  // Tool activity renders inline while a turn streams (watching tools run IS the
-  // live feedback). Once the turn settles, the prose is shown uninterrupted and
-  // every tool call is collected into one designated, collapsed "Tool activity"
-  // section below it (the ToolGroup) — so a familiar's response reads cleanly and
-  // its tool usage is clearly separated rather than woven through the text.
+  // Tool UI keeps the same render slots for the turn's lifetime: non-edit calls
+  // stay in one compact ToolGroup above the answer, while edit cards stay below
+  // it. Settlement updates those instances instead of relocating them.
   // Chat timestamp format (12h/24h clock + MM.DD/DD.MM/Off date) — a user
   // preference; the model/cwd/duration that used to sit here now live only in
   // the debug pane's per-turn JSON.
@@ -8874,33 +8993,22 @@ function TurnRowImpl({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible && !reasoning;
 
-  // CHAT-D4-01: when every tool event carries a textOffset (live turns from
-  // this session), render the turn as ordered segments — prose spans with
-  // each tool call inline at its chronological position — instead of the
-  // legacy "all text, then a trailing Tool activity rollup" stack that
-  // inverted causality. Offsets were captured against the raw streamed text;
-  // segmentTurn snaps them forward to fence-safe paragraph boundaries (and
-  // clamps past-end offsets, e.g. when splitReasoning stripped thinking
-  // markup), so a drifted offset degrades toward trailing — never a split
-  // inside a code fence. Stored transcripts without offsets return null and
-  // keep today's trailing ToolGroup.
-  const segments = segmentTurn(visible, turn.tools);
-  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((seg, i) =>
-    seg.kind === "text"
-      ? { kind: "text" as const, text: seg.text }
+  const bubbleSegments: MessageBubbleSegment[] | undefined = segmentTurn(
+    presentedProjection.visible,
+    turn.tools,
+  )?.map((segment, index) =>
+    segment.kind === "text"
+      ? { kind: "text" as const, text: segment.text }
       : {
           kind: "block" as const,
-          key: `tools-${seg.tools[0]?.id ?? i}`,
-          // Each chronology-preserving segment only rolls consecutive calls
-          // with the same name; prose and a new offset stay hard boundaries.
-          node: <ToolRuns tools={seg.tools} />,
+          key: `tools-${segment.tools[0]?.id ?? index}`,
+          node: <ToolRuns tools={segment.tools} />,
         },
   );
 
-  // Auto-detect renderable artifacts and inject the tabbed viewer. Applies to
-  // SETTLED turns only (streaming shows plain code until the fence closes).
+  // Auto-detect renderable artifacts only after settlement. Streaming keeps the
+  // ordinary markdown path until markers and fences are complete.
   const artifactCtx = { familiarId: familiar.id };
-
   let renderSegments: MessageBubbleSegment[] | undefined;
   if (turn.pending) {
     // Streaming: interleave tool blocks inline at their chronological offset so
@@ -8917,14 +9025,18 @@ function TurnRowImpl({
     const split = splitSegmentsForGitHub(
       splitSegmentsForArtifacts(
         splitSegmentsForImages(
-          splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+          splitSegmentsForPreviews(
+            splitSegmentsForSpecs([{ kind: "text", text: visibleWithGh }], onOpenUrl),
+            onOpenPreview,
+            onOpenUrl,
+          ),
         ),
         artifactCtx,
       ),
       onOpenUrl,
       ghFamiliar,
     );
-    renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
+    renderSegments = split.some((segment) => segment.kind === "block") ? split : undefined;
   }
 
   // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
@@ -8936,13 +9048,13 @@ function TurnRowImpl({
   const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
   const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
 
-  // Chat-revamp 1b: settled tool activity splits once, up front. Codex
+  // Chat-revamp 1b: tool activity splits once, up front. Codex
   // file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE inline
   // below the prose — they're the actionable output (Review/Undo), so they
   // must not be buried in a collapsed rollup. All OTHER tool activity (reads,
   // greps, bash, …) collapses into the ONE work line ABOVE the answer
-  // ("Worked for <duration> · <N> steps · ran <cmd>"). Streaming turns weave
-  // tools inline instead — see renderSegments.
+  // ("<N> calls · <categories>"). These partitions do not depend on pending,
+  // so React updates the same instances when the turn settles.
   const isEditCard = (t: ToolEvent) => toolInputAsDiff(t.name, t.input) != null;
   const settledTools = !turn.pending && turn.tools?.length ? turn.tools : [];
   const editCards = settledTools.filter(isEditCard);
@@ -8976,24 +9088,26 @@ function TurnRowImpl({
                 )
               : null}
             {!pending && otherTools.length ? (
-              <ToolGroup tools={otherTools} durationMs={turn.durationMs} />
+              <ToolGroup tools={otherTools} />
             ) : null}
           </div>
         )
       : undefined;
 
   const proseContent =
-    !pending && renderSegments
-      ? renderSegments.map((segment, index) =>
-          segment.kind === "text" ? (
-            <ProgressiveMarkdownBlock
-              key={`rich-prose-${index}`}
-              text={segment.text}
-            />
-          ) : (
-            <div key={segment.key} className="my-2">{segment.node}</div>
-          ),
-        )
+    !pending
+      ? renderSegments
+        ? renderSegments.map((segment, index) =>
+            segment.kind === "text" ? (
+              <ProgressiveMarkdownBlock
+                key={`rich-prose-${index}`}
+                text={segment.text}
+              />
+            ) : (
+              <div key={segment.key} className="my-2">{segment.node}</div>
+            ),
+          )
+        : <ProgressiveMarkdownBlock text={visible} />
       : undefined;
   const showEmptySuccessfulFallback = shouldUseEmptySuccessfulFallback({
     emptySuccessful: streamingModel.emptySuccessful,
@@ -9080,7 +9194,7 @@ function TurnRowImpl({
           })()
         : null}
       {/* Comment on substantial settled markdown artifacts. */}
-      {!pending && !turn.error && visible.trim().length > 80 ? (
+      {!turn.pending && !turn.error && visible.trim().length > 80 ? (
         <ArtifactComments
           turnId={turn.id}
           familiarName={familiar.display_name}
@@ -9185,11 +9299,11 @@ function TurnRowImpl({
                 timestamp={turn.createdAt}
                 showTimestamp={false}
                 pending={turn.pending}
-                isError={showEmptySuccessfulFallback}
+                isError={Boolean(turn.error) || showEmptySuccessfulFallback}
                 label={familiar.display_name}
                 messageId={turn.id}
                 feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
-                onRegenerate={onRegenerate}
+                onRegenerate={turn.error ? undefined : onRegenerate}
                 onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 assistantBody={
@@ -9369,24 +9483,33 @@ function ProgressRow({ event }: { event: ProgressEvent }) {
   );
 }
 
-function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: number }) {
-  // Chat-revamp 1b: agent work collapses to ONE quiet bordered line —
-  // "Worked for <duration> · <N> steps · ran <last command>" — expandable to
-  // the full per-tool detail. aria-expanded mirrors the native <details>
-  // disclosure state for AT that doesn't map summary semantics.
+/** The outer disclosure's accessible name: the same compact summary sighted
+ *  readers get, plus the running/error counts that otherwise live only in a
+ *  tinted (color-only) chip — so a screen reader hears "3 running" and
+ *  "1 error" exactly like the eye sees them. */
+function toolGroupAriaLabel(summary: string, running: number, errors: number): string {
+  return [
+    summary ? `Tool activity: ${summary}` : "",
+    running ? `${running} running` : "",
+    errors ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function ToolGroup({ tools }: { tools: ToolEvent[] }) {
+  // Chat-revamp 1b, compacted: agent work collapses to ONE quiet bordered
+  // line — a call count plus the categories it touched ("6 calls · read,
+  // shell") — expandable to the full per-tool detail. aria-expanded mirrors
+  // the native <details> disclosure state for AT that doesn't map summary
+  // semantics.
   const [open, setOpen] = useState(false);
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
-  const duration = fmtDuration(durationMs);
-  // The last shell-ish command the agent ran — the "· ran `cmd`" mono chip.
-  const lastShellTool = [...tools]
-    .reverse()
-    .find((t) => /bash|shell|terminal|command|exec/i.test(t.name));
-  const lastCommand = lastShellTool ? toolArgSummary(lastShellTool.name, lastShellTool.input) : "";
-  // Chat.dc.html 2a ④: the quiet rollup on the right of the work line —
-  // "4 batches · 6 ok". Running and failed calls keep their tinted counters
-  // beside it so trouble never reads as neutral mono.
-  const rollup = toolBatchSummary(tools, toolBatches(tools));
+  // The turn's own compact activity summary — count + distinct categories,
+  // e.g. "6 calls · read, shell". Running/error calls keep their own tinted
+  // counters beside it, so trouble never reads as neutral mono.
+  const summary = toolActivitySummary(tools);
   // The capabilities this turn actually reached for, as the design's SKILLS
   // eyebrow above the card. Absent when the turn used none — this surface
   // never shows a label with nothing under it.
@@ -9427,19 +9550,14 @@ function ToolGroup({ tools, durationMs }: { tools: ToolEvent[]; durationMs?: num
         data-default-collapsed="true"
         onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
       >
-        <summary className="cave-tool-summary" aria-expanded={open} aria-label="Tool activity">
-          <span className="cave-work-line__label">
-            {duration ? `Worked for ${duration} · ` : ""}
-            {tools.length} {tools.length === 1 ? "step" : "steps"}
-          </span>
-          {lastCommand ? (
-            <span className="cave-work-line__ran">
-              {"· ran "}
-              <code className="cave-work-line__cmd">{lastCommand}</code>
-            </span>
-          ) : null}
-          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-            {rollup ? <span className="cave-tool-rollup">{rollup}</span> : null}
+        <summary
+          className="cave-tool-summary focus-ring"
+          aria-expanded={open}
+          aria-label={toolGroupAriaLabel(summary, running, errors)}
+        >
+          <Icon name="ph:wrench" width={12} className="cave-tool-icon shrink-0" aria-hidden />
+          <span className="cave-work-line__label">{summary}</span>
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-work-line__status">
             {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
             {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           </span>
@@ -9465,17 +9583,16 @@ function ToolRuns({ tools }: { tools: ToolEvent[] }) {
     batches.length > 1 && batches.some((batch) => batch.toolIds.length > 1) ? batches : [];
   const headerByToolId = new Map(bandedBatches.map((batch) => [batch.headToolId, batch]));
   return groupConsecutiveTools(tools).map((run) => {
-    const key = run.tools.map((tool) => tool.id).join(":");
+    // Stable for the run's lifetime: the first tool ID is unique and does not
+    // change as adjacent repeats append further calls to the same run.
+    const key = run.tools[0]!.id;
     const header = headerByToolId.get(run.tools[0]!.id);
     // File-mutation cards carry review/undo affordances. Keeping each one
     // standalone means a repeated edit never hides an actionable change.
     const containsEdit = run.tools.some((tool) => toolInputAsDiff(tool.name, tool.input) != null);
-    const body =
-      run.tools.length > 1 && !containsEdit ? (
-        <ToolRunGroup name={run.name} tools={run.tools} />
-      ) : (
-        run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
-      );
+    const body = containsEdit
+      ? run.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
+      : <ToolRunGroup name={run.name} tools={run.tools} />;
     return (
       <Fragment key={key}>
         {header ? <ToolBatchHeader batch={header} /> : null}
@@ -9504,36 +9621,35 @@ function ToolBatchHeader({ batch }: { batch: ToolBatch }) {
 }
 
 function ToolRunGroup({ name, tools }: { name: string; tools: ToolEvent[] }) {
-  const [open, setOpen] = useState(false);
+  // The shell exists for the first call, but is visually inert until a second
+  // adjacent call arrives. That stable parent/list keeps the first ToolBlock's
+  // DOM, focus, and local disclosure state intact across the one→two transition.
+  const repeated = tools.length > 1;
   const visual = toolVisual(name);
   const displayName = name.trim() || "Tool";
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
 
   return (
-    <details
-      className="cave-tool-run"
-      data-default-collapsed="true"
-      data-tool-category={visual.category}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+    <ChatToolRunDisclosure
+      repeated={repeated}
+      statuses={tools.map((tool) => tool.status)}
+      category={visual.category}
+      ariaLabel={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}${running ? `, ${running} running` : ""}${errors ? `, ${errors} ${errors === 1 ? "error" : "errors"}` : ""}`}
+      summary={
+        <>
+          <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
+          <span className="cave-tool-run__name">{displayName}</span>
+          <span className="cave-tool-count">×{tools.length}</span>
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)] cave-tool-run__status">
+            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
+          </span>
+        </>
+      }
     >
-      <summary
-        className="cave-tool-summary focus-ring"
-        aria-expanded={open}
-        aria-label={`${displayName}, ${tools.length} ${tools.length === 1 ? "call" : "calls"}`}
-      >
-        <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
-        <span className="cave-tool-run__name">{displayName}</span>
-        <span className="cave-tool-count">{tools.length} {tools.length === 1 ? "call" : "calls"}</span>
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[length:var(--text-2xs)] normal-case tracking-normal text-[var(--text-muted)]">
-          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
-        </span>
-      </summary>
-      <div className="cave-tool-run__list">
-        {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
-      </div>
-    </details>
+      {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+    </ChatToolRunDisclosure>
   );
 }
 
@@ -9701,7 +9817,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     const base = displayPath.split("/").pop() || displayPath;
     return (
       <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category}>
-        <summary className="cave-edit-card__summary">
+        <summary className="cave-edit-card__summary focus-ring">
           <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
           <span className="cave-edit-card__body">
             <span className="cave-edit-card__title">Edited {base}</span>
@@ -9738,7 +9854,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
-      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)]">
+      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[length:var(--text-xs)] focus-ring">
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (

@@ -27,6 +27,11 @@ import {
 } from "./familiar-runtime.ts";
 import { loadConversation } from "./cave-conversations.ts";
 import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
+import {
+  implicitNativeInferenceRoute,
+  normalizeInferenceRoute,
+  type InferenceRoute,
+} from "./inference-routes.ts";
 import { runtimeOwnsModelDefault } from "./runtime-models.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
 import {
@@ -93,6 +98,7 @@ const DEFAULT_CONFIG: CaveConfig = {
     hostWorkspaceMap: {},
     exposeHostsInComposer: true,
   },
+  inferenceRoutes: {},
   remoteHosts: [],
 };
 
@@ -106,6 +112,7 @@ function defaultConfig(): CaveConfig {
     marketplace: { installed: {} },
     multiHost: { ...DEFAULT_CONFIG.multiHost, executorUrls: [] },
     omnigent: { ...DEFAULT_CONFIG.omnigent },
+    inferenceRoutes: {},
     remoteHosts: [],
   };
 }
@@ -197,6 +204,10 @@ export type FamiliarOmnigentBinding = {
 export type FamiliarBinding = {
   harness: string;
   model: string;
+  /** Non-secret provider/protocol connection. Missing derives native:<harness>. */
+  inferenceRouteId?: string;
+  /** An explicit route id was missing, disabled, or incompatible with harness. */
+  hasInvalidInferenceRouteBinding?: boolean;
   display_name?: string;
   role?: string;
   /** Explicit familiar Type id(s) (familiar-types.ts). May be a single id or
@@ -242,10 +253,11 @@ type FamiliarBindingPatch = {
 
 type CaveConfigPatch = Omit<
   Partial<CaveConfig>,
-  "defaults" | "familiars" | "chatAutoArchive" | "chatAutoRename"
+  "defaults" | "familiars" | "inferenceRoutes" | "chatAutoArchive" | "chatAutoRename"
 > & {
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
+  inferenceRoutes?: Record<string, InferenceRoute | null>;
   multiHost?: Partial<CaveMultiHostConfig>;
   omnigent?: Partial<CaveOmnigentConfig>;
   remoteHosts?: CaveRemoteHost[];
@@ -342,6 +354,7 @@ export type CaveConfig = {
   version: number;
   defaults: FamiliarBinding;
   familiars: Record<string, Partial<FamiliarBinding>>;
+  inferenceRoutes: Record<string, InferenceRoute>;
   roles: RoleConfigEntry[];
   addons?: {
     github?: boolean;
@@ -464,6 +477,7 @@ async function loadConfigUnlocked(): Promise<CaveConfig> {
       version,
       defaults: { ...DEFAULT_CONFIG.defaults, ...(parsed.defaults ?? {}) },
       familiars: parsed.familiars ?? {},
+      inferenceRoutes: normalizeStoredInferenceRoutes(parsed.inferenceRoutes),
       roles: parsed.roles ?? [],
       addons: {
         github: parsed.addons?.github ?? false,
@@ -540,6 +554,42 @@ function sanitizeMultiHostHubToken(config: Pick<CaveConfig, "multiHost">): boole
   }
   reconcileHubAccessTokenForOrigin(url);
   return false;
+}
+
+function normalizeStoredInferenceRoutes(value: unknown): Record<string, InferenceRoute> {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid inference routes.");
+  }
+  const routes: Record<string, InferenceRoute> = {};
+  for (const [id, candidate] of Object.entries(value)) {
+    const route = normalizeInferenceRoute(candidate);
+    if (!route || route.id !== id) {
+      throw new Error(`Invalid inference route: ${id}`);
+    }
+    routes[id] = route;
+  }
+  return routes;
+}
+
+function mergeInferenceRoutes(
+  current: Record<string, InferenceRoute>,
+  patch?: Record<string, InferenceRoute | null>,
+): Record<string, InferenceRoute> {
+  if (patch === undefined) return current;
+  const routes = { ...current };
+  for (const [id, candidate] of Object.entries(patch)) {
+    if (candidate === null) {
+      delete routes[id];
+      continue;
+    }
+    const route = normalizeInferenceRoute(candidate);
+    if (!route || route.id !== id) {
+      throw new Error(`Invalid inference route: ${id}`);
+    }
+    routes[id] = route;
+  }
+  return routes;
 }
 
 function mergeFamiliarConfigs(
@@ -637,6 +687,10 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
       ...current.omnigent,
       ...(patch.omnigent ?? {}),
     }),
+    inferenceRoutes: mergeInferenceRoutes(
+      current.inferenceRoutes,
+      patch.inferenceRoutes,
+    ),
     // Deep-merge defaults
     defaults,
     familiars: mergeFamiliarConfigs(current.familiars, patch.familiars),
@@ -732,12 +786,34 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
   const hermesProfile = normalizeHermesProfileBinding(rawHermesProfile);
   const hasInvalidHermesProfileBinding =
     rawHermesProfile !== undefined && rawHermesProfile !== null && !hermesProfile;
+  const rawInferenceRouteId =
+    f.inferenceRouteId ?? config.defaults.inferenceRouteId;
+  const normalizedInferenceRouteId =
+    typeof rawInferenceRouteId === "string" ? rawInferenceRouteId.trim() : "";
+  const implicitInferenceRouteId = implicitNativeInferenceRoute(harness).id;
+  const usesImplicitInferenceRoute =
+    normalizedInferenceRouteId === implicitInferenceRouteId;
+  const explicitInferenceRoute =
+    normalizedInferenceRouteId && !usesImplicitInferenceRoute
+      ? config.inferenceRoutes[normalizedInferenceRouteId]
+      : undefined;
+  const hasInvalidInferenceRouteBinding = Boolean(
+    normalizedInferenceRouteId &&
+      !usesImplicitInferenceRoute &&
+      (!explicitInferenceRoute ||
+        !explicitInferenceRoute.enabled ||
+        explicitInferenceRoute.harness !== harness),
+  );
+  const inferenceRouteId = hasInvalidInferenceRouteBinding
+    ? normalizedInferenceRouteId
+    : explicitInferenceRoute?.id ?? implicitInferenceRouteId;
   return {
     harness,
     // Missing is meaningful for runtime-owned defaults: preserve it as an
     // empty launch value instead of silently reconstructing Cave's global
     // model. Callers omit empty launch values at the daemon boundary.
     model: f.model ?? (runtimeOwnsModelDefault(harness) ? "" : config.defaults.model),
+    inferenceRouteId,
     display_name: f.display_name,
     role: f.role,
     familiarType: f.familiarType,
@@ -760,6 +836,9 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
     ...(hermesProfile ? { hermesProfile } : {}),
     ...(hasInvalidHermesProfileBinding ? { hasInvalidHermesProfileBinding: true } : {}),
+    ...(hasInvalidInferenceRouteBinding
+      ? { hasInvalidInferenceRouteBinding: true }
+      : {}),
     ...(omnigent ? { omnigent } : {}),
   };
 }

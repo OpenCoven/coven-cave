@@ -32,11 +32,14 @@ const E2E_CAVE_HOME = join(tmpdir(), `cave-e2e-cave-${E2E_RUN_ID}`);
 const E2E_COVEN_SOCKET = join(tmpdir(), `cave-e2e-socket-${E2E_RUN_ID}.sock`);
 const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
 const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
+const E2E_AGENTIC_RECOMMENDATIONS =
+  process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS ?? "false";
 
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
 const SETUP_FOCUS_VISIBILITY_TEST =
   /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
+const MOBILE_SURFACE_SPECS = /(?:mobile\/.*|right-chat-panel)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 
@@ -156,6 +159,23 @@ export default defineConfig({
       name: "desktop",
       dependencies: ["preferences-iphone-13"],
       testMatch: /.*\.spec\.ts/,
+      // tests/mobile/** belongs to the pixel-5 and iphone-13 projects below.
+      // Without this, `/.*\.spec\.ts/` also matches them and every mobile spec
+      // runs a THIRD time under Desktop Chrome. That was survivable only while
+      // mobile specs happened to be viewport-agnostic; the first one that
+      // genuinely is not (tests/mobile/workspace-half-split.spec.ts, asserting
+      // the container-width tab fallback) fails all 22 of its cases there and
+      // burns ~4.5 minutes locally. Doubled by `retries: 1` and multiplied on
+      // CI's slower runners, that is what pushed the job past its 60-minute cap
+      // so every PR reported a bare "cancelled" with no failing test (cave-3wmla).
+      //
+      // Anchor on the `tests/mobile/` SEGMENT, not a bare `mobile/`: Playwright
+      // matches testIgnore against the ABSOLUTE path, so a loose pattern also
+      // matches any checkout whose own directory contains "mobile" — a worktree
+      // named `…-ignores-mobile` silently ignored EVERY desktop spec and the
+      // project collected 0 tests. That would still have looked green on CI,
+      // whose runner path has no such segment.
+      testIgnore: /[\\/]tests[\\/]mobile[\\/]/,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Desktop Chrome"] },
     },
@@ -169,14 +189,14 @@ export default defineConfig({
     {
       name: "pixel-5",
       dependencies: ["preferences-iphone-13"],
-      testMatch: /mobile\/.*\.spec\.ts/,
+      testMatch: MOBILE_SURFACE_SPECS,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["Pixel 5"] },
     },
     {
       name: "iphone-13",
       dependencies: ["preferences-iphone-13"],
-      testMatch: /mobile\/.*\.spec\.ts/,
+      testMatch: MOBILE_SURFACE_SPECS,
       grepInvert: PERSISTED_SCREEN_SCALE_TEST,
       use: { ...devices["iPhone 13"] },
     },
@@ -196,6 +216,10 @@ export default defineConfig({
       // Crafts stay hidden in production by default. Their dedicated E2E
       // specs exercise the explicitly enabled surface through this fixture.
       NEXT_PUBLIC_CAVE_CRAFTS: "1",
+      // Agentic recommendations stay disabled by default. Their E2E journeys
+      // require an explicit NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1 opt-in,
+      // so ordinary browser coverage exercises the production-safe default.
+      NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: E2E_AGENTIC_RECOMMENDATIONS,
       // Keep app-owned preferences and backdrop bytes out of the developer's
       // real ~/.coven directory. A per-config UUID prevents concurrent runs or
       // later PID reuse from sharing stale state while remaining stable for

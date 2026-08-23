@@ -2,6 +2,8 @@ import { NextResponse } from "next/server.js";
 
 import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
 import { isLocalOrigin } from "./local-origin.ts";
+import { MOBILE_ACCESS_HEADER } from "../../proxy-helpers.ts";
+import { isValidResearchMediaTicketRequest } from "../research-media-ticket.ts";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 
@@ -51,6 +53,32 @@ export function rejectNonLocalRequest(req: Request): NextResponse | null {
   }
 
   return null;
+}
+
+/**
+ * Research media is the one local route that must accept a native media
+ * subrequest. A Tauri HTMLMediaElement cannot attach the sidecar header, so a
+ * valid generation-scoped media ticket is an alternative credential. Keep the
+ * exception here rather than weakening the shared local-origin rule used by
+ * desktop-only APIs.
+ */
+export async function rejectResearchMediaRequest(req: Request): Promise<NextResponse | null> {
+  const ordinary = rejectNonLocalRequest(req);
+  if (!ordinary) return null;
+
+  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return ordinary;
+  const host = req.headers.get("host");
+  if (!isLocalHost(host)) return ordinary;
+  const origin = req.headers.get("origin");
+  if (origin) {
+    try {
+      if (!isLocalHost(new URL(origin).host)) return ordinary;
+    } catch {
+      return ordinary;
+    }
+  }
+  const secret = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
+  return await isValidResearchMediaTicketRequest(req, secret) ? null : ordinary;
 }
 
 export async function readJsonBody<T>(req: Request, maxBytes: number): Promise<JsonBodyResult<T>> {

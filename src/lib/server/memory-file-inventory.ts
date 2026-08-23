@@ -210,6 +210,12 @@ async function collectCovenFamiliarWorkspaces(acc: Candidate[], home: string) {
   }
   for (const item of items) {
     if (!item.isDirectory() || item.name.startsWith(".")) continue;
+    const familiarRoot = path.join(familiarsDir, item.name);
+    acc.push({
+      fullPath: path.join(familiarRoot, "MEMORY.md"),
+      baseDir: familiarRoot,
+      overrides: { relPath: "MEMORY.md", familiarIdFallback: item.name },
+    });
     const memDir = path.join(familiarsDir, item.name, "memory");
     await walk(memDir, acc, memDir);
   }

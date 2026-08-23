@@ -1,6 +1,9 @@
 import { readerOutline, readingStats } from "./reader-outline.ts";
 
+export type FamiliarDocumentKind = "spec" | "handoff";
+
 export type SpecBlock = {
+  kind: FamiliarDocumentKind;
   title: string;
   markdown: string;
   sectionCount: number;
@@ -11,7 +14,8 @@ export type SpecTextPiece =
   | { kind: "text"; text: string }
   | { kind: "spec"; spec: SpecBlock };
 
-const SPEC_OPEN_RE = /^(`{3,})spec(?:[ \t]+title="([^"\r\n]*)")?[ \t]*$/;
+const DOCUMENT_OPEN_RE =
+  /^(`{3,})(spec|handoff)(?:[ \t]+title="([^"\r\n]*)")?[ \t]*$/;
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const FENCE_CLOSE_RE = /^ {0,3}(`+|~+)[ \t]*$/;
 
@@ -63,10 +67,15 @@ function findFenceClose(
   return -1;
 }
 
-function specFrom(markdown: string, explicitTitle: string | undefined): SpecBlock {
+function specFrom(
+  kind: FamiliarDocumentKind,
+  markdown: string,
+  explicitTitle: string | undefined,
+): SpecBlock {
   const outline = readerOutline(markdown);
   return {
-    title: explicitTitle?.trim() || outline[0]?.text || "Familiar spec",
+    kind,
+    title: explicitTitle?.trim() || outline[0]?.text || `Familiar ${kind}`,
     markdown,
     sectionCount: outline.length,
     readingMinutes: readingStats(markdown).minutes,
@@ -83,7 +92,7 @@ export function sliceSpecBlocks(text: string): SpecTextPiece[] {
 
   while (index < lines.length) {
     const line = lines[index];
-    const opening = line.content.match(SPEC_OPEN_RE);
+    const opening = line.content.match(DOCUMENT_OPEN_RE);
     if (opening) {
       if (line.end === line.contentEnd) break;
       const closeIndex = findFenceClose(lines, index, opening[1], true);
@@ -100,7 +109,12 @@ export function sliceSpecBlocks(text: string): SpecTextPiece[] {
       if (line.start > cursor) {
         pieces.push({ kind: "text", text: text.slice(cursor, line.start) });
       }
-      pieces.push({ kind: "spec", spec: specFrom(markdown, opening[2]) });
+      const kind: FamiliarDocumentKind =
+        opening[2] === "handoff" ? "handoff" : "spec";
+      pieces.push({
+        kind: "spec",
+        spec: specFrom(kind, markdown, opening[3]),
+      });
       cursor = close.contentEnd;
       index = closeIndex + 1;
       continue;

@@ -4,9 +4,9 @@
  * GET    — returns vault mappings + resolution status for each entry.
  *          Never returns secret values.
  *
- * POST   — adds or updates a mapping:
- *          { key, ref, description?, required? } for 1Password refs, or
- *          { key, storage: "encrypted", value, description?, required? } for local encrypted secrets.
+ * POST   — adds or updates one mapping, or an `entries` batch. Supports local
+ *          encrypted values, op:// and dl:// references, and environment-owned
+ *          metadata without copying external values.
  *
  * PATCH  — grants or revokes one familiar without rewriting the secret.
  *
@@ -15,14 +15,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import {
-  deleteLocalEncryptedSecret,
-  setLocalEncryptedSecret,
+  commitLocalEncryptedSecretBatch,
+  hasLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
 import {
-  canMirrorVaultKeyToProcessEnv,
-  getVaultStatuses,
+  clearMirroredVaultSecretFromProcessEnv,
+  getVaultMetadataStatuses,
   grantVaultScope,
-  loadVaultMap,
+  loadVaultMapForMutation,
   mirrorVaultSecretToProcessEnv,
   normalizeVaultScope,
   refStorage,
@@ -30,18 +30,34 @@ import {
   saveVaultMap,
   validateRef,
   type VaultEntry,
+  type VaultMap,
 } from "@/lib/vault";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
+import {
+  normalizeVaultKey,
+  VAULT_PASTE_MAX_ENTRIES,
+  VAULT_PASTE_MAX_VALUE_LENGTH,
+  VAULT_STORAGE_IDS,
+  vaultStorageForReference,
+  type VaultStorageId,
+} from "@/lib/vault-storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+function vaultError(error: unknown, fallback: string) {
+  return NextResponse.json(
+    { ok: false, error: error instanceof Error ? error.message : fallback },
+    { status: 500 },
+  );
+}
 
 // ── GET — list all mappings + live status ─────────────────────────────────────
 
 export async function GET() {
   try {
-    const statuses = getVaultStatuses();
-    const map = loadVaultMap();
+    const map = loadVaultMapForMutation();
+    const statuses = getVaultMetadataStatuses();
     return NextResponse.json({
       ok: true,
       mappings: statuses.map((status) => ({
@@ -50,71 +66,174 @@ export async function GET() {
       })),
     });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
+    return vaultError(e, "failed to read Vault metadata");
   }
 }
 
 // ── POST — add / update a mapping ─────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  let body: {
-    key?: string;
-    ref?: string;
-    storage?: string;
-    value?: string;
-    description?: string;
-    required?: boolean;
-    scope?: unknown;
-  } = {};
+  let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { /**/ }
 
-  const key = typeof body.key === "string" ? body.key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_") : "";
-  const ref = typeof body.ref === "string" ? body.ref.trim() : "";
-  const storage = body.storage === "encrypted" || typeof body.value === "string" ? "encrypted" : "1password";
-
-  if (!key) return NextResponse.json({ ok: false, error: "key is required" }, { status: 400 });
-
-  const map = loadVaultMap(true);
-
-  const baseEntry = {
-    description: typeof body.description === "string" ? body.description.trim() : undefined,
-    required: body.required ?? false,
-    // Grants are edited elsewhere (per-familiar Vault tab) — re-saving a
-    // mapping here must not silently reset a key back to shared.
-    scope: map[key]?.scope,
-  };
-  if (body.scope !== undefined) {
-    baseEntry.scope = normalizeVaultScope(body.scope);
+  const rawEntries = Array.isArray(body.entries) ? body.entries : [body];
+  if (rawEntries.length === 0 || rawEntries.length > VAULT_PASTE_MAX_ENTRIES) {
+    return NextResponse.json(
+      { ok: false, error: `save between 1 and ${VAULT_PASTE_MAX_ENTRIES} entries at once` },
+      { status: 400 },
+    );
   }
 
-  let entry: VaultEntry;
-  if (storage === "encrypted") {
-    const value = typeof body.value === "string" ? body.value : "";
-    if (!value) return NextResponse.json({ ok: false, error: "value is required" }, { status: 400 });
-    setLocalEncryptedSecret(key, value);
-    entry = { ...baseEntry, storage: "encrypted" };
-  } else {
-    const refError = validateRef(ref);
-    if (refError) return NextResponse.json({ ok: false, error: refError }, { status: 400 });
-    deleteLocalEncryptedSecret(key);
-    entry = { ...baseEntry, ref };
+  let map: VaultMap;
+  try {
+    map = loadVaultMapForMutation();
+  } catch (error) {
+    return vaultError(error, "failed to read Vault metadata");
+  }
+  const seen = new Set<string>();
+  const prepared: Array<{
+    key: string;
+    storage: VaultStorageId;
+    secret?: string;
+    entry: VaultEntry;
+  }> = [];
+
+  for (const rawEntry of rawEntries) {
+    if (!rawEntry || typeof rawEntry !== "object") {
+      return NextResponse.json({ ok: false, error: "each entry must be an object" }, { status: 400 });
+    }
+    const input = rawEntry as Record<string, unknown>;
+    const key = normalizeVaultKey(typeof input.key === "string" ? input.key : "");
+    if (!key) return NextResponse.json({ ok: false, error: "key is required" }, { status: 400 });
+    if (seen.has(key)) {
+      return NextResponse.json({ ok: false, error: `${key} appears more than once` }, { status: 400 });
+    }
+    seen.add(key);
+
+    const description = typeof input.description === "string"
+      ? input.description.trim()
+      : undefined;
+    if (
+      typeof input.storage === "string"
+      && !VAULT_STORAGE_IDS.includes(input.storage as VaultStorageId)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: `${key} uses an unsupported storage provider` },
+        { status: 400 },
+      );
+    }
+    const explicitStorage = typeof input.storage === "string"
+      && VAULT_STORAGE_IDS.includes(input.storage as VaultStorageId)
+      ? input.storage as VaultStorageId
+      : null;
+    const ref = typeof input.ref === "string" ? input.ref.trim() : "";
+    const value = typeof input.value === "string" ? input.value : "";
+    const storage = explicitStorage ?? (ref ? vaultStorageForReference(ref) : "encrypted");
+    const baseEntry = {
+      description: description || undefined,
+      required: input.required === true,
+      // Grants are edited elsewhere. Re-saving a mapping must not silently
+      // reset it back to shared unless the caller provides a scope.
+      scope: input.scope === undefined
+        ? map[key]?.scope
+        : normalizeVaultScope(input.scope),
+    };
+
+    if (storage === "environment") {
+      if (ref || value) {
+        return NextResponse.json(
+          { ok: false, error: `${key} environment mappings do not accept a secret value` },
+          { status: 400 },
+        );
+      }
+      prepared.push({ key, storage, entry: { ...baseEntry, storage } });
+      continue;
+    }
+
+    if (storage === "1password" || storage === "dashlane") {
+      const reference = ref || value.trim();
+      const refError = validateRef(reference);
+      if (refError) {
+        return NextResponse.json({ ok: false, error: `${key}: ${refError}` }, { status: 400 });
+      }
+      if (refStorage(reference) !== storage) {
+        return NextResponse.json(
+          { ok: false, error: `${key} must use ${storage === "dashlane" ? "dl://" : "op://"}` },
+          { status: 400 },
+        );
+      }
+      prepared.push({ key, storage, entry: { ...baseEntry, ref: reference } });
+      continue;
+    }
+
+    if (value.length > VAULT_PASTE_MAX_VALUE_LENGTH) {
+      return NextResponse.json(
+        { ok: false, error: `${key} is too large to store in the Vault` },
+        { status: 400 },
+      );
+    }
+    const existingEntry = map[key];
+    const keepsExistingEncryptedValue = existingEntry?.storage === "encrypted" || (
+      existingEntry?.storage !== "environment"
+      && !existingEntry?.ref
+      && hasLocalEncryptedSecret(key)
+    );
+    if (!value && !keepsExistingEncryptedValue) {
+      return NextResponse.json({ ok: false, error: `${key} value is required` }, { status: 400 });
+    }
+    prepared.push({
+      key,
+      storage,
+      secret: value || undefined,
+      entry: { ...baseEntry, storage: "encrypted" },
+    });
   }
 
-  map[key] = entry;
-  saveVaultMap(map);
+  try {
+    const previousMap = structuredClone(map);
+    const nextMap = structuredClone(map);
+    for (const item of prepared) {
+      nextMap[item.key] = item.entry;
+    }
+    const secretChanges: Array<{ key: string; value: string | null }> = [];
+    for (const item of prepared) {
+      if (item.storage === "encrypted") {
+        if (item.secret) secretChanges.push({ key: item.key, value: item.secret });
+      } else {
+        secretChanges.push({ key: item.key, value: null });
+      }
+    }
+    commitLocalEncryptedSecretBatch(
+      secretChanges,
+      () => saveVaultMap(nextMap),
+      () => saveVaultMap(previousMap),
+    );
 
-  if (storage === "encrypted" && typeof body.value === "string") {
-    mirrorVaultSecretToProcessEnv(key, body.value, { source: "vault", storage: "encrypted" });
-  } else if (canMirrorVaultKeyToProcessEnv(key)) {
-    delete process.env[key];
+    for (const item of prepared) {
+      const clearedVaultValue = clearMirroredVaultSecretFromProcessEnv(item.key);
+      if (
+        item.storage === "encrypted"
+        && item.secret
+        && (clearedVaultValue || !process.env[item.key])
+      ) {
+        mirrorVaultSecretToProcessEnv(item.key, item.secret, {
+          source: "vault",
+          storage: "encrypted",
+        });
+      }
+    }
+  } catch (error) {
+    return vaultError(error, "failed to save Vault entries");
   }
 
-  return NextResponse.json({
-    ok: true,
+  const saved = prepared.map(({ key, storage, entry }) => ({
     key,
     ref: entry.ref ?? null,
-    storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : "1password"),
-  });
+    storage,
+  }));
+  return NextResponse.json(saved.length === 1
+    ? { ok: true, ...saved[0] }
+    : { ok: true, entries: saved });
 }
 
 // ── PATCH — update one familiar grant without touching the secret ────────────
@@ -127,9 +246,7 @@ export async function PATCH(req: NextRequest) {
   } = {};
   try { body = await req.json(); } catch { /**/ }
 
-  const key = typeof body.key === "string"
-    ? body.key.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_")
-    : "";
+  const key = normalizeVaultKey(typeof body.key === "string" ? body.key : "");
   const familiarId = typeof body.familiarId === "string"
     ? body.familiarId.trim().toLowerCase()
     : "";
@@ -145,7 +262,12 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "action must be grant or revoke" }, { status: 400 });
   }
 
-  const map = loadVaultMap(true);
+  let map: VaultMap;
+  try {
+    map = loadVaultMapForMutation();
+  } catch (error) {
+    return vaultError(error, "failed to read Vault metadata");
+  }
   const entry = map[key];
   if (!entry) {
     return NextResponse.json({ ok: false, error: "key not found" }, { status: 404 });
@@ -155,7 +277,11 @@ export async function PATCH(req: NextRequest) {
     ? grantVaultScope(entry.scope, familiarId)
     : revokeVaultScope(entry.scope, familiarId);
   map[key] = { ...entry, scope };
-  saveVaultMap(map);
+  try {
+    saveVaultMap(map);
+  } catch (error) {
+    return vaultError(error, "failed to save Vault grant");
+  }
 
   return NextResponse.json({ ok: true, key, scope });
 }
@@ -166,19 +292,30 @@ export async function DELETE(req: NextRequest) {
   let body: { key?: string } = {};
   try { body = await req.json(); } catch { /**/ }
 
-  const key = typeof body.key === "string" ? body.key.trim().toUpperCase() : "";
+  const key = normalizeVaultKey(typeof body.key === "string" ? body.key : "");
   if (!key) return NextResponse.json({ ok: false, error: "key is required" }, { status: 400 });
 
-  const map = loadVaultMap(true);
+  let map: VaultMap;
+  try {
+    map = loadVaultMapForMutation();
+  } catch (error) {
+    return vaultError(error, "failed to read Vault metadata");
+  }
   if (!map[key]) return NextResponse.json({ ok: false, error: "key not found" }, { status: 404 });
 
+  const previousMap = structuredClone(map);
   delete map[key];
-  saveVaultMap(map);
-  deleteLocalEncryptedSecret(key);
+  try {
+    commitLocalEncryptedSecretBatch(
+      [{ key, value: null }],
+      () => saveVaultMap(map),
+      () => saveVaultMap(previousMap),
+    );
+  } catch (error) {
+    return vaultError(error, "failed to delete Vault entry");
+  }
 
-  // Clear cached safe values so the next resolve is fresh. Denied keys may be
-  // inherited runtime configuration and are never owned by the vault.
-  if (canMirrorVaultKeyToProcessEnv(key)) delete process.env[key];
+  clearMirroredVaultSecretFromProcessEnv(key);
 
   return NextResponse.json({ ok: true });
 }

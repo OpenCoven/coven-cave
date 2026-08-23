@@ -7,7 +7,7 @@ vi.mock("@/lib/reasoning-visibility", () => ({
   useShowThinking: () => [false, vi.fn()],
 }));
 vi.mock("@/lib/thread-instruments-visibility", () => ({
-  useThreadInstrumentsVisible: () => [false, vi.fn()],
+  useActivityMapVisible: () => [false, vi.fn()],
 }));
 vi.mock("@/components/project-picker", () => ({
   ProjectPickerPopover: () => null,

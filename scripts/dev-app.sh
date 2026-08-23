@@ -151,11 +151,45 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 
+# This credential is accepted only by the root-document readiness probe. Unlike
+# the mobile access secret, disclosing it to a process that later reclaims the
+# port grants no API, PTY, or application-session authority.
+if [ -z "${COVEN_CAVE_DEV_PROBE_TOKEN:-}" ]; then
+  COVEN_CAVE_DEV_PROBE_TOKEN="$(
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
+  )"
+  export COVEN_CAVE_DEV_PROBE_TOKEN
+fi
+
+# The packaged app always gives its sidecar and WebView the same ephemeral
+# credential. Mirror that contract in dev even when the caller did not provide
+# one: server.ts may re-arm the persisted mobile-access gate for this port, and
+if [ -z "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
+  COVEN_CAVE_AUTH_TOKEN="$(
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
+  )"
+  export COVEN_CAVE_AUTH_TOKEN
+fi
+# The packaged app always gives its sidecar and WebView the same ephemeral
+# credential. Mirror that contract in dev even when the caller did not provide
+# one: server.ts may re-arm the persisted mobile-access gate for this port, and
+# a tokenless WebView would otherwise receive 401s from every API route.
+if [ -z "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
+  COVEN_CAVE_AUTH_TOKEN="$(
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
+  )"
+  export COVEN_CAVE_AUTH_TOKEN
+fi
+
 # The launcher starts both the Tauri dev process and its owned server with this
 # secret. Carry it into the browser-side bridge through the URL fragment so it
 # never participates in Next's module URL resolution or reaches the HTTP server.
 # The bridge stores it in sessionStorage, strips it,
 # and attaches the header to same-origin `/api/` calls.
+if [ -z "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
+  COVEN_CAVE_AUTH_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+  export COVEN_CAVE_AUTH_TOKEN
+fi
 dev_url="http://127.0.0.1:${dev_port}"
 if [ -n "${COVEN_CAVE_AUTH_TOKEN:-}" ]; then
   sidecar_token_fragment="$(node -p 'encodeURIComponent(process.env.COVEN_CAVE_AUTH_TOKEN)')"

@@ -145,11 +145,11 @@ export type SessionPullRequestContext = {
   state?: string;
   branch?: string;
   draft?: boolean;
-  /** How the PR was attributed to the session. Absent/"branch" = resolved
-   *  from the session's own work branch (authoritative — feeds the merged-PR
-   *  auto-archive sweep). "transcript" = derived from a PR URL the chat
-   *  reported in a reply — badge-only, never swept (long-lived familiar chats
-   *  report many PRs over their lifetime). */
+  /** How the PR was attributed to the session. "branch" = resolved from the
+   *  session's own work branch (authoritative — feeds the merged-PR
+   *  auto-archive sweep and action controls). "transcript" = derived from a PR
+   *  URL the chat reported in a reply — badge-only, never swept (long-lived
+   *  familiar chats report many PRs over their lifetime). */
   attribution?: "branch" | "transcript";
 };
 

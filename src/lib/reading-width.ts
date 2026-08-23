@@ -17,11 +17,11 @@ export type ReadingWidth = (typeof READING_WIDTH_OPTIONS)[number];
 
 export const DEFAULT_READING_WIDTH: ReadingWidth = "full";
 
-/** max-width value per level. `full` is unset (the rule falls back to `none`). */
+/** Character-based prose measures used by DocumentReader when selected. */
 export const READING_WIDTH_VALUES: Record<ReadingWidth, string> = {
-  full: "none",
-  medium: "680px",
-  narrow: "560px",
+  full: "66ch",
+  medium: "58ch",
+  narrow: "50ch",
 };
 
 export function normalizeReadingWidth(value: unknown): ReadingWidth {
@@ -42,8 +42,9 @@ export function readReadingWidth(): ReadingWidth {
 }
 
 /**
- * Apply the level: set `--cave-reading-width` on <html> (or remove it for the
- * default so `.cave-md`'s `none` fallback applies) and persist the choice.
+ * Apply the level. The default removes the override: DocumentReader falls back
+ * to 66ch while legacy `.cave-md` surfaces retain their existing unconstrained
+ * default until they move onto the canonical reader.
  */
 export function applyReadingWidth(level: ReadingWidth, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;

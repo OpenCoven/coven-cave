@@ -1,13 +1,15 @@
 // @ts-nocheck
 // The nav toggle lives in the desktop top menu bar, anchoring the bar's left
-// edge and matching the row's compact icon-button controls. (The right
-// side-panel + expand toggles were removed with the right companion panel.)
+// edge and matching the row's compact icon-button controls.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
+const analyticsShell = readFileSync(new URL("./analytics-page-shell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
+const titlebarMarker = readFileSync(new URL("./tauri-titlebar-marker.tsx", import.meta.url), "utf8");
+const tauriSetup = readFileSync(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
 // #3576 decomposed globals.css into @imported sheets under src/styles —
 // pin against the whole global cascade, wherever a rule now lives.
 const stylesDir = new URL("../styles/", import.meta.url);
@@ -40,8 +42,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>/,
-  "the top bar row leads with the nav toggle before the rendered top bar",
+  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">[\s\S]*?<span className="shell-window-titlebar__title">Coven<\/span>[\s\S]*?<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?\{historyNav\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>[\s\S]*?\{rightChatToggle\}/,
+  "the functional controls share one titlebar row from left toggle through search/actions to the right toggle",
 );
 // `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
 // bare region on DIRECT presses on the attributed element, so empty chrome
@@ -54,7 +56,12 @@ assert.match(
 assert.equal(
   shell.match(/<div className="shell-top" data-tauri-drag-region="deep">/g)?.length,
   1,
-  "the hydration-stable shell should expose one deep Tauri drag region on the titlebar container",
+  "the hydration-stable shell should expose one deep Tauri drag region on the toolbar container",
+);
+assert.equal(
+  shell.match(/<div className="shell-window-titlebar" data-tauri-drag-region="deep"/g)?.length,
+  1,
+  "the hydration-stable shell should expose one dedicated native title strip",
 );
 assert.doesNotMatch(
   shell,
@@ -66,10 +73,24 @@ assert.equal(
   1,
   "the hydration-stable top-bar wrapper should remain draggable when its empty chrome is clicked",
 );
+// #4791 replaced the drag-lane pin below with one asserting a
+// `.shell-window-titlebar__controls` group holding `{navToggle}` and
+// `{historyNav}` — shell.tsx's own vocabulary — but shell.tsx was not touched
+// by that commit, or by anything since, so the assertion described markup that
+// has never existed in this file. The grouping is real; it lives on the
+// standalone destination shells, where the connected rail puts its boundary
+// controls inside the native strip. Both guarantees are kept below, each
+// against the file that actually makes the promise, so neither the drag lane
+// nor the grouping loses its cover.
 assert.match(
   shell,
   /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" \/>\s*\{navToggle\}/,
-  "the desktop top bar should expose a dedicated non-interactive drag lane before its controls",
+  "the desktop top bar exposes a dedicated non-interactive drag lane before its controls",
+);
+assert.match(
+  analyticsShell,
+  /<div className="shell-window-titlebar__controls">[\s\S]*?onClick=\{handleToggleNav\}[\s\S]*?<DesktopHistoryNav \/>[\s\S]*?<\/div>/,
+  "the native title strip groups its interactive boundary controls",
 );
 assert.match(
   shell,
@@ -78,7 +99,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?\? "Collapse Chat sidebar"[\s\S]*?: "Expand Chat sidebar"[\s\S]*?\? "Collapse navigation to icons"[\s\S]*?: "Expand navigation"\}/,
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{chatContextual[\s\S]*?\? "Collapse Chat sidebar"[\s\S]*?: "Expand Chat sidebar"[\s\S]*?\? "Close navigation"[\s\S]*?: "Expand navigation"\}/,
   "nav toggle label reflects both contextual Chat and normal navigation state",
 );
 assert.match(
@@ -137,7 +158,7 @@ assert.match(
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar,\s*\.shell-top \.menu-bar__group,\s*\.shell-top \.top-bar__lead,\s*\.shell-top \.top-bar__actions\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
+  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-window-titlebar,\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar,\s*\.shell-top \.menu-bar__group,\s*\.shell-top \.top-bar__lead,\s*\.shell-top \.top-bar__actions\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
   "macOS Tauri titlebar mode should keep the full rendered top-bar band draggable, including inert layout wrappers",
 );
 assert.doesNotMatch(
@@ -201,13 +222,18 @@ assert.doesNotMatch(
   "the dead familiar trigger-rail CSS is pruned",
 );
 
-// The right edge-rail tab toggle was retired — the top-bar right toggle now owns
-// showing/hiding the companion panel.
-assert.doesNotMatch(
-  workspace,
-  /familiarPanelRail=/,
-  "workspace no longer passes a right edge-rail tab toggle to the shell",
+assert.match(shell, /const rightChatToggle = \(/, "the dedicated Chat toggle is hydration-stable");
+assert.match(shell, /aria-label=\{rightChatOpen \? "Close Chat panel" : "Open Chat panel"\}/, "the toggle name is truthful");
+assert.match(shell, /aria-expanded=\{rightChatOpen\}/, "the toggle exposes visibility");
+assert.match(shell, /aria-controls=\{isMobile \? "shell-right-chat-drawer" : "shell-right-chat-panel"\}/, "the toggle controls the active responsive container");
+assert.match(
+  shell,
+  /name=\{rightChatOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"\}[\s\S]{0,180}className="shell-top-toggle__icon--mirrored"/,
+  "the right panel toggle mirrors the left sidebar control instead of using a second chat glyph",
 );
+assert.match(shell, /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)/, "the existing right-panel shortcut controls Chat");
+assert.doesNotMatch(shell, /RightPanelKind|companionTabs|agent\?: ReactNode|rightPanelPeek/, "generic companion architecture stays retired");
+assert.doesNotMatch(workspace, /rightPanel=|familiarPanel=|agent=/, "Workspace does not restore generic companion props");
 // The chat projects rail migrated onto the shared SurfaceRail (Sessions
 // redesign): the collapsed 56px rail's own toggle is the reopen affordance,
 // so the bespoke edge-rail reopen chip is gone from this sidebar.
@@ -238,6 +264,11 @@ assert.doesNotMatch(
   "Shift+B must not fall through to the left sidebar toggle",
 );
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
+assert.match(css, /\.shell-right-chat-panel,[\s\S]*?height:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;/, "the fourth panel fills its allocation");
+assert.match(css, /\.right-chat__header\s*\{[^}]*display:\s*flex;[^}]*min-height:/, "the compact Chat header is a stable flex row");
+assert.match(css, /\.mobile-right-chat-drawer\s*\{[^}]*right:\s*0;[^}]*width:\s*min\(100vw,\s*480px\);/, "the modal enters from the right with a tablet cap");
+assert.match(css, /@media \(max-width: 480px\)[\s\S]*?\.mobile-right-chat-drawer\s*\{[^}]*width:\s*100vw;/, "narrow phones use the available width");
+assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?\.mobile-right-chat-drawer[\s\S]*?animation:\s*none/, "drawer motion respects the global reduced-motion contract");
 
 // The right companion panel (and its in-panel collapse bridge) was removed.
 assert.doesNotMatch(
@@ -246,64 +277,6 @@ assert.doesNotMatch(
   "Shell no longer wires the retired in-panel collapse event",
 );
 
-
-// ── Dia-style traffic lights follow the side panel (cave-9ja2) ──────────────
-{
-  const tauriSetup = readFileSync(new URL("../../src-tauri/src/tauri_setup.rs", import.meta.url), "utf8");
-  assert.match(
-    shell,
-    /const navPeekVisible = navPeekEnabled && navPeeking;/,
-    "traffic-light visibility is fed by the synchronously gated visible-peek state",
-  );
-  assert.match(
-    shell,
-    /const trafficLightsVisible = navOpen \|\| navPeekVisible \|\| isMobile;/,
-    "lights show whenever the panel is open, visibly hover-peeked, or the layout is mobile",
-  );
-  assert.match(
-    shell,
-    /invoke\("set_traffic_lights_visible", \{ visible \}\)/,
-    "the shell drives the native buttons through the app command",
-  );
-  // Title-bar fit contract: the 78px inset is released only AFTER the native
-  // hide is confirmed — marking "hidden" optimistically slid the nav toggle +
-  // history chevrons under still-visible lights when the command failed.
-  assert.match(
-    shell,
-    /applyNative\(false\)\s*\.then\(\(\) => \{\s*if \(!cancelled\) root\.dataset\.trafficLights = "hidden";/,
-    "the root attribute flips to hidden only once the native hide resolves",
-  );
-  assert.match(
-    shell,
-    /\.catch\(\(\) => \{[\s\S]{0,220}?if \(!cancelled\) root\.dataset\.trafficLights = "visible";/,
-    "a failed native hide keeps the inset reserved for the still-visible lights",
-  );
-  assert.match(
-    shell,
-    /window\.addEventListener\("focus", onFocus\)/,
-    "focus re-asserts the hidden state after AppKit re-shows the buttons",
-  );
-  assert.match(
-    css,
-    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-top \{[\s\S]*?padding-left: var\(--space-3\);/,
-    "hiding the lights releases the 78px title-bar inset",
-  );
-  assert.match(
-    tauriSetup,
-    /fn set_traffic_lights_visible\(window: tauri::WebviewWindow, visible: bool\)/,
-    "the Rust command exists",
-  );
-  assert.match(
-    tauriSetup,
-    /standardWindowButton: kind/,
-    "the command toggles NSWindow's standard buttons",
-  );
-  assert.match(
-    tauriSetup,
-    /shell_pick_directory,\s*set_traffic_lights_visible,/,
-    "the command is registered with the invoke handler",
-  );
-}
 
 // ── Title-bar fit is comprehensive (cave-i7wf follow-up) ────────────────────
 // The overlay title bar is a property of the WINDOW, not of the workspace
@@ -324,17 +297,37 @@ assert.doesNotMatch(
     /dataset\.tauriTitlebar =/,
     "the workspace shell no longer sets the marker — it must survive shell unmount",
   );
-  assert.match(
-    shell,
-    /if \(!isMacDesktopShell\(\)\) return;/,
-    "the lights effect detects the platform directly instead of racing the marker mount",
-  );
-  // The shell-top reserve applies at every width (a sub-1024 window put the
-  // mobile top-bar's controls under the lights when it was media-gated).
+  // The dedicated title strip reserves the traffic-light inset inside the
+  // connected rail segment while workspace controls begin at its live edge.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{\s*padding-left: var\(--titlebar-lights-inset\);\s*\}/,
-    "the shell-top lights inset is not desktop-media-gated",
+    /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[\s\S]{0,360}?padding-left: max\(var\(--titlebar-lights-inset\), var\(--space-3\)\);/,
+    "the connected rail header reserves the traffic-light inset",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,420}?border-bottom:\s*0;/,
+    "the native titlebar does not draw a horizontal seam through the connected rail",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,260}?border-bottom:\s*0;/,
+    "the workspace toolbar continues the titlebar surface without a second rule",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-nav \{\s*padding-top: calc\(var\(--shell-native-titlebar-height\) \+ var\(--space-2\)\);/,
+    "the rail content starts on the compact titlebar rhythm",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-window-titlebar__rail,[\s\S]{0,180}?\{\s*padding-left: var\(--space-3\);/,
+    "the connected rail header releases the traffic-light inset when navigation is collapsed",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,180}?padding-left: var\(--space-3\);/,
+    "the functional toolbar starts at the normal app inset below native chrome",
   );
   // Full-window route bands reserve the same inset…
   for (const band of ["settings-shell__header", "dr-topbar", "fa-topbar"]) {
@@ -355,8 +348,8 @@ assert.doesNotMatch(
   // and no-backdrop-filter fallbacks.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
-    "the native shell titlebar carries subtle glass",
+    /:root\[data-tauri-titlebar\] \.shell-window-titlebar \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the native identity strip carries subtle glass",
   );
   const dashboardCss = readFileSync(new URL("../styles/dashboard.css", import.meta.url), "utf8");
   assert.match(
@@ -376,5 +369,56 @@ assert.doesNotMatch(
     "the settings header is a real window drag region (CSS app-region is inert on loopback URLs)",
   );
 }
+
+assert.match(
+  analyticsShell,
+  /<div className="shell-window-titlebar" data-tauri-drag-region="deep" aria-label="Coven window">[\s\S]*?<button[\s\S]*?onClick=\{handleToggleNav\}[\s\S]*?<DesktopHistoryNav \/>[\s\S]*?<span className="shell-window-titlebar__title">Coven<\/span>/,
+  "standalone destination routes keep their navigation toggle in the topmost native strip",
+);
+assert.match(
+  shell,
+  /useMacTrafficLightsForNavState\(trafficLightsVisible\)/,
+  "the workspace shell hides native traffic lights with its collapsed navigation",
+);
+assert.match(
+  analyticsShell,
+  /useMacTrafficLightsForNavState\(isExpanded \|\| isMobile\)/,
+  "standalone destination routes hide native traffic lights with their collapsed navigation",
+);
+assert.match(
+  titlebarMarker,
+  /appWindow\.isFullscreen\(\)[\s\S]*?appWindow\.onResized\(/,
+  "the global titlebar marker keeps native fullscreen state synchronized",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\[data-window-fullscreen\] \{\s*--titlebar-lights-inset: 0px;/,
+  "fullscreen removes the absent traffic lights' leading inset",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\[data-window-fullscreen\] \.shell-window-titlebar__rail \{\s*padding-left: var\(--space-3\);/,
+  "fullscreen titlebar controls sit flush with the standard app gutter",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\] \.shell-window-titlebar__rail \{[\s\S]{0,260}?flex: 0 0 var\(--shell-nav-chrome-width\);/,
+  "the native titlebar's left segment tracks the resizable navigation width",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,180}?left: var\(--shell-nav-chrome-width\);/,
+  "workspace toolbar chrome begins at the connected rail edge",
+);
+assert.match(
+  tauriSetup,
+  /fn set_traffic_lights_visible\(window: tauri::WebviewWindow, visible: bool\)/,
+  "the desktop runtime exposes the native traffic-light visibility command",
+);
+assert.match(
+  tauriSetup,
+  /shell_pick_directory,\s*set_traffic_lights_visible,/,
+  "the native traffic-light command is registered with the desktop invoke handler",
+);
 
 console.log("shell-edge-rails.test.ts OK");

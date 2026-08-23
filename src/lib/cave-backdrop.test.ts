@@ -372,10 +372,22 @@ assert.match(
   "the layer revokes its previous object URL before replacing or clearing it",
 );
 assert.match(layer, /root\.dataset\.backdropOn = "1"/, "the frontmost-surface flag rides <html>");
+// Asserts the two scoping props, not the element's full shape. The trailing
+// `/>` used to be part of this pattern, which made any ADDED prop fail a pin
+// about scoping — the accent wash prop tripped it without changing either
+// contract below.
 assert.match(
   workspace,
-  /<CaveBackdropLayer\s+active=\{mode === "home" \|\| mode === "chat"\}\s+familiarId=\{mode === "chat" \? activeId : null\}\s*\/>/,
+  /<CaveBackdropLayer\s+active=\{mode === "home" \|\| mode === "chat"\}\s+familiarId=\{mode === "chat" \? activeId : null\}/,
   "the workspace scopes the backdrop to Home + Chat, with the active chat familiar as the override scope",
+);
+// The accent seed follows the SAME scope as familiarId. Unscoped, Home (which
+// has no single active familiar) would wash the room in whichever familiar was
+// last selected in chat.
+assert.match(
+  workspace,
+  /accent=\{\s*mode === "chat"\s*\?\s*resolvedFamiliars\.find\(\(f\) => f\.id === activeId\)\?\.color \?\? null\s*:\s*null\s*\}/,
+  "the accent wash is seeded only from the active chat familiar, never on Home",
 );
 assert.match(css, /html\[data-backdrop-on\] \.shell-root,/, "shell panes go translucent only while a backdrop surface is frontmost");
 assert.match(

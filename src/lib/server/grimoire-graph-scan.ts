@@ -19,13 +19,21 @@ import { open } from "node:fs/promises";
 import { listKnowledgeEntries } from "./knowledge-vault";
 import { listMemoryFileEntries } from "./memory-file-inventory";
 import { listJournalEntries, readJournalEntry } from "./journal-store";
+import { familiarInScope } from "../familiar-multiselect";
 import { parseMdDocument } from "../md-frontmatter";
 import { buildDocGraph, type DocGraph, type GraphSourceDoc } from "../grimoire-graph";
 import type { WikiDocIndex } from "../wiki-link-resolve";
 
 export type GrimoireGraphMeta = {
   knowledge: { scanned: number };
-  memory: { scanned: number; total: number };
+  /**
+   * Scope-relative once a familiar scope is supplied: `total` counts the
+   * markdown memory files owned by the scope, not the whole coven, so
+   * `scanned < total` keeps meaning "this scope has more than the cap shows"
+   * rather than "the coven does" (cave-z6xvd). `scoped` says which reading
+   * applies, so the shortfall notice never has to infer it.
+   */
+  memory: { scanned: number; total: number; scoped: boolean };
   journal: { scanned: number; total: number };
 };
 
@@ -54,13 +62,19 @@ export type GrimoireGraphMeta = {
  * further is a RENDERER change first: make repulsion Barnes-Hut, or bound the
  * node count independently of the scan. Do not raise it on I/O evidence alone.
  *
- * Note what this cap can and cannot fix. It is applied coven-wide BEFORE the
- * client's familiar scoping, so a scoped view shows that familiar's slice of
- * the coven's most-recent N — never all of their files. Going 400 → 1200 took a
- * familiar owning 260 of ~2065 files from ~35 nodes to ~150, but closing the
- * gap entirely needs scoping to happen before truncation (cave-ed4s3). Until
- * then the graph view states the shortfall outright rather than implying the
- * scoped count is the familiar's whole corpus.
+ * The cap is now applied AFTER the familiar scope rather than coven-wide, so a
+ * scoped view gets that familiar's most-recent N instead of their slice of the
+ * coven's most-recent N (cave-z6xvd). It used to be the other way round, which
+ * meant a familiar owning F of T files saw roughly (F/T) × CAP of their own —
+ * 260 of ~2065 files is 12.6%, so 400 → 1200 moved them from ~35 nodes to ~150
+ * and reaching all 260 would have needed a cap near 2065, i.e. the whole corpus
+ * at 1.89s of settle time.
+ *
+ * Scoping first is why the cap no longer has to grow to fix that: coverage goes
+ * UP while the node count stays SMALL, so the O(n²) sim stays cheap. The
+ * unscoped ("All") view is unchanged and still bounded coven-wide by this cap,
+ * and the graph view still states any remaining shortfall outright — `meta`
+ * reports it scope-relative (cave-ed4s3).
  */
 export const MEMORY_SCAN_CAP = 1200;
 /** …and the most recent N journal days. */
@@ -129,7 +143,28 @@ function memoryBasename(fullPath: string): string {
   return seg.replace(MARKDOWN_RE, "");
 }
 
-export async function scanGrimoireGraph(): Promise<{ graph: DocGraph; meta: GrimoireGraphMeta }> {
+/**
+ * Scan the corpus, optionally narrowed to a familiar scope.
+ *
+ * The scope is applied BEFORE the cap, which is the whole point (cave-z6xvd).
+ * Truncating coven-wide and scoping afterwards handed a familiar owning F of T
+ * files roughly (F/T) × CAP of their own — never all F, whatever the cap. At
+ * 260 of ~2065 files that is 12.6%, so cap 1200 showed ~150 of 260 and closing
+ * the gap by raising the cap would have needed ~2065, where the O(n²) force sim
+ * costs 1.9s to settle.
+ *
+ * Scoping first is better on BOTH axes rather than a trade: the familiar gets
+ * all of their files up to the cap, AND the node count stays small so the sim
+ * stays cheap. Only MEMORY entries carry an owner, so only they are scoped —
+ * knowledge and journal stay coven-wide, matching `scopeDocGraph`, because they
+ * are the graph's connective tissue.
+ *
+ * An empty scope means "All" and reproduces the previous coven-wide behavior
+ * exactly, so the unscoped caller is unchanged.
+ */
+export async function scanGrimoireGraph(
+  familiarScope: ReadonlySet<string> = new Set(),
+): Promise<{ graph: DocGraph; meta: GrimoireGraphMeta }> {
   const [knowledge, memoryEntries, journalDays] = await Promise.all([
     listKnowledgeEntries(),
     listMemoryFileEntries(),
@@ -152,7 +187,7 @@ export async function scanGrimoireGraph(): Promise<{ graph: DocGraph; meta: Grim
 
   // Memory — most recently modified markdown files, bounded reads.
   const memoryMarkdown = memoryEntries
-    .filter((m) => MARKDOWN_RE.test(m.fullPath))
+    .filter((m) => MARKDOWN_RE.test(m.fullPath) && familiarInScope(familiarScope, m.familiarId))
     .sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
   const memoryScanSet = memoryMarkdown.slice(0, MEMORY_SCAN_CAP);
   const memoryDocs = await mapConcurrent(memoryScanSet, async (m) => {
@@ -191,7 +226,11 @@ export async function scanGrimoireGraph(): Promise<{ graph: DocGraph; meta: Grim
   const graph = buildDocGraph(docs, index);
   const meta: GrimoireGraphMeta = {
     knowledge: { scanned: knowledge.length },
-    memory: { scanned: memoryScanSet.length, total: memoryMarkdown.length },
+    memory: {
+      scanned: memoryScanSet.length,
+      total: memoryMarkdown.length,
+      scoped: familiarScope.size > 0,
+    },
     journal: { scanned: journalScanSet.length, total: journalDays.length },
   };
   return { graph, meta };

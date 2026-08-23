@@ -33,6 +33,10 @@ import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { pulseDelta, pulseTotal, type PulseDay } from "@/lib/session-pulse";
+import {
+  activityHeatmapWindowDays,
+  type ActivityHeatmapWindowDays,
+} from "@/lib/activity-heatmap-window";
 import type { CardLifecycle } from "@/lib/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import "@/styles/familiar-tab-analytics.css";
@@ -80,15 +84,26 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 // Six 4-hour bands cover the day without pretending hourly resolution.
 const HOUR_BANDS = ["12a", "4a", "8a", "12p", "4p", "8p"] as const;
 
-function heatmapFromSessions(sessions: SessionRow[]): { cells: HeatCell[]; max: number } {
+function heatmapFromSessions(
+  sessions: SessionRow[],
+  now: number,
+): { cells: HeatCell[]; max: number; windowDays: ActivityHeatmapWindowDays } {
+  const windowDays = activityHeatmapWindowDays(
+    sessions.map((session) => session.created_at),
+    now,
+  );
+  const today = Math.floor(now / 86_400_000);
+  const windowStart = today - (windowDays - 1);
   const counts = new Map<string, number>();
   for (const session of sessions) {
     const ms = Date.parse(session.created_at);
     if (!Number.isFinite(ms)) continue;
+    const day = Math.floor(ms / 86_400_000);
+    if (day < windowStart || day > today) continue;
     const date = new Date(ms);
-    // getDay(): 0 = Sunday; rotate so the grid reads Mon → Sun.
-    const row = WEEKDAYS[(date.getDay() + 6) % 7];
-    const col = HOUR_BANDS[Math.min(5, Math.floor(date.getHours() / 4))];
+    // getUTCDay(): 0 = Sunday; rotate so the grid reads Mon → Sun.
+    const row = WEEKDAYS[(date.getUTCDay() + 6) % 7];
+    const col = HOUR_BANDS[Math.min(5, Math.floor(date.getUTCHours() / 4))];
     const key = `${row}:${col}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -101,7 +116,7 @@ function heatmapFromSessions(sessions: SessionRow[]): { cells: HeatCell[]; max: 
       cells.push({ row, col, value });
     }
   }
-  return { cells, max };
+  return { cells, max, windowDays };
 }
 
 function barsByProject(sessions: SessionRow[], cap = 6): BarDatum[] {
@@ -324,7 +339,11 @@ function AnalyticsBody({
     sessionsPerDaySeries(sessionPulse),
     cumulativeSeries(sessionPulse),
   ], [sessionPulse]);
-  const heat = useMemo(() => heatmapFromSessions(recentSessions), [recentSessions]);
+  const heat = useMemo(() => {
+    const parsed = Date.parse(updatedAt ?? "");
+    const now = Number.isFinite(parsed) ? parsed : Date.now();
+    return heatmapFromSessions(recentSessions, now);
+  }, [recentSessions, updatedAt]);
   const bars = useMemo(() => barsByProject(recentSessions), [recentSessions]);
   const heatColorFor = useCallback((value: number) => {
     if (value === 0) return "var(--bg-raised)";
@@ -449,7 +468,11 @@ function AnalyticsBody({
           {/* Chart carousel — outcomes donut, per-project bars, weekday heatmap. */}
           <section aria-label="Chart carousel" className="familiar-analytics-tab__card">
             <div className="familiar-analytics-tab__card-head">
-              <span className="familiar-analytics-tab__card-title">{CHART_LABELS[chartIdx]}</span>
+              <span className="familiar-analytics-tab__card-title">
+                {chartIdx === 2
+                  ? `Activity heatmap · past ${heat.windowDays} days`
+                  : CHART_LABELS[chartIdx]}
+              </span>
               <span className="familiar-analytics-tab__nav">
                 <IconButton
                   icon="ph:caret-left"
@@ -491,7 +514,7 @@ function AnalyticsBody({
                   cells={heat.cells}
                   colorFor={heatColorFor}
                   height={150}
-                  ariaLabel={`Session activity by weekday and time of day across the last ${recentSessions.length} sessions`}
+                  ariaLabel={`Session activity by weekday and time of day over the past ${heat.windowDays} days`}
                   cellTitle={(cell) => `${cell.row} ${cell.col}: ${cell.value} session${cell.value === 1 ? "" : "s"}`}
                 />
               </Slide>

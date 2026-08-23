@@ -441,7 +441,40 @@ test("the current maximum Research input is measured and pathological quoting fa
   assert.equal(plainPrompt.split(plainDeliverable).length - 1, 1);
   assert.equal(plainPrompt.split(plainAudience).length - 1, 1);
   const plainArgs = flowLaunchArgs(plainPrompt);
-  assert.doesNotThrow(() => assertCopilotCommandLineFitsWindows("copilot.exe", plainArgs, "win32"));
+  // cave-r3vmj raised RESEARCH_INTENT_MAX_LENGTH to 25k so real briefs can carry
+  // pasted context. Copilot is argv-only today, so a maximum-length intent no
+  // longer fits the bounded Windows command line even with plain quoting — the
+  // guard fails closed with the actionable message rather than truncating a
+  // prompt. Every other platform, and any runtime with stdin prompt support, is
+  // unaffected. Moving Copilot to stdin is what would lift this ceiling.
+  assert.ok(
+    windowsCommandLineUtf16Length("copilot.exe", plainArgs) > WINDOWS_COPILOT_COMMAND_LINE_SAFE_UNITS,
+    "a maximum-length intent exceeds the bounded argv transport",
+  );
+  assert.throws(
+    () => assertCopilotCommandLineFitsWindows("copilot.exe", plainArgs, "win32"),
+    /Shorten the Research mission intent or use a runtime with stdin prompt support/,
+  );
+  assert.doesNotThrow(
+    () => assertCopilotCommandLineFitsWindows("copilot.exe", plainArgs, "darwin"),
+    "the ceiling is a Windows argv limit, not a product-wide one",
+  );
+
+  // A brief that does fit still launches — the ceiling is a real size, not a
+  // blanket refusal.
+  const fittingValidated = validateCreateResearchMissionInput({
+    ...researchMission("i".repeat(8_000)),
+    deliverable: plainDeliverable,
+    audience: plainAudience,
+  });
+  assert.equal(fittingValidated.ok, true);
+  const fittingPrompt = compileFlowPrompt(
+    buildResearchMissionFlow(researchMission(fittingValidated.value.intent, fittingValidated.value), 1),
+  );
+  assert.doesNotThrow(
+    () => assertCopilotCommandLineFitsWindows("copilot.exe", flowLaunchArgs(fittingPrompt), "win32"),
+    "an 8k intent still launches through the Windows argv transport",
+  );
 
   const validatedQuoted = validateCreateResearchMissionInput({
     ...researchMission('"'.repeat(RESEARCH_INTENT_MAX_LENGTH)),

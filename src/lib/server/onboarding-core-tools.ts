@@ -269,6 +269,7 @@ export async function ensureOnboardingCoreTools(
     return stageFailure({ code: "unsupported_platform", inspection });
   }
 
+  await onProgress("Checking Cave’s local Node.js, npm, and Coven CLI…");
   let inspection = await dependencies.inspect();
   if (inspection.runtimeReady && inspection.coreToolsReady) {
     return {
@@ -281,7 +282,7 @@ export async function ensureOnboardingCoreTools(
   let lastInstaller: ReturnType<typeof diagnosticInstaller> | undefined;
 
   if (!inspection.runtimeReady) {
-    await onProgress("Setting up Cave’s private Node.js and npm runtime…");
+    await onProgress("Preparing Cave’s private Node.js and npm runtime…");
     const result = await runReviewedInstall("managed-node", dependencies);
     lastInstaller = diagnosticInstaller(
       result.target,
@@ -314,9 +315,11 @@ export async function ensureOnboardingCoreTools(
         installer: lastInstaller,
       });
     }
+
+    await onProgress("Checking Cave’s private Node.js and npm runtime…");
+    inspection = await dependencies.inspect();
   }
 
-  inspection = await dependencies.inspect();
   if (!inspection.coreToolsReady) {
     await onProgress("Installing and verifying the Coven CLI…");
     const result = await runReviewedInstall("coven-cli", dependencies);

@@ -4,7 +4,8 @@ import { afterEach, test } from "node:test";
 
 import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
 import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
-import { readJsonBody, rejectNonLocalRequest } from "./api-security.ts";
+import { signResearchMediaTicket } from "../research-media-ticket.ts";
+import { readJsonBody, rejectNonLocalRequest, rejectResearchMediaRequest } from "./api-security.ts";
 
 const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;
 
@@ -77,6 +78,35 @@ test("accepts valid loopback plus sidecar token requests", () => {
   );
 
   assert.equal(res, null);
+});
+
+test("accepts only a scoped media ticket when native playback cannot set the sidecar header", async () => {
+  process.env.COVEN_CAVE_AUTH_TOKEN = "sidecar-secret";
+  const ticket = await signResearchMediaTicket({
+    secret: "sidecar-secret",
+    familiarId: "rida",
+    generationId: "gen_1",
+  });
+  const url = new URL("http://127.0.0.1:3000/api/research/generations/media");
+  url.searchParams.set("familiarId", "rida");
+  url.searchParams.set("id", "gen_1");
+  url.searchParams.set("mediaTicket", ticket);
+
+  assert.equal(
+    await rejectResearchMediaRequest(new Request(url, { headers: { host: "127.0.0.1:3000" } })),
+    null,
+  );
+  assert.ok(
+    await rejectResearchMediaRequest(new Request(url, {
+      headers: { host: "127.0.0.1:3000", [MOBILE_ACCESS_HEADER]: "1" },
+    })),
+    "mobile-marked requests remain denied",
+  );
+  url.pathname = "/api/research/generations";
+  assert.ok(
+    await rejectResearchMediaRequest(new Request(url, { headers: { host: "127.0.0.1:3000" } })),
+    "the ticket cannot grant a different route",
+  );
 });
 
 test("accepts loopback origins without widening the host allowlist", () => {

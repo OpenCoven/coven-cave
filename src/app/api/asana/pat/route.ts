@@ -17,11 +17,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import {
-  deleteLocalEncryptedSecret,
+  commitLocalEncryptedSecretBatch,
   hasLocalEncryptedSecret,
-  setLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
-import { loadVaultMap, resolveSecret, saveVaultMap } from "@/lib/vault";
+import {
+  loadVaultMapForMutation,
+  resolveSecret,
+  saveVaultMap,
+  type VaultMap,
+} from "@/lib/vault";
 import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +39,16 @@ function applyEnvUpdates(updates: Record<string, string | null>): void {
   mkdirSync(dirname(envPath), { recursive: true });
   const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   writeFileSync(envPath, upsertEnvContent(existing, updates), "utf8");
+}
+
+function mutationError(error: unknown) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: error instanceof Error ? error.message : "failed to update Asana credentials",
+    },
+    { status: 500 },
+  );
 }
 
 async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
@@ -97,8 +111,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  setLocalEncryptedSecret(PAT_KEY, pat);
-  const map = loadVaultMap(true);
+  let map: VaultMap;
+  try {
+    map = loadVaultMapForMutation();
+  } catch (error) {
+    return mutationError(error);
+  }
+  const previousMap = structuredClone(map);
   map[PAT_KEY] = {
     storage: "encrypted",
     description: "Asana Personal Access Token",
@@ -106,7 +125,15 @@ export async function POST(req: NextRequest) {
     // Re-saving the PAT must not reset per-familiar grants back to shared.
     scope: map[PAT_KEY]?.scope,
   };
-  saveVaultMap(map);
+  try {
+    commitLocalEncryptedSecretBatch(
+      [{ key: PAT_KEY, value: pat }],
+      () => saveVaultMap(map),
+      () => saveVaultMap(previousMap),
+    );
+  } catch (error) {
+    return mutationError(error);
+  }
 
   const updates: Record<string, string | null> = { [PAT_KEY]: null };
   if (result.login) updates[USER_KEY] = result.login;
@@ -120,12 +147,25 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
-  applyEnvUpdates({ [PAT_KEY]: null });
-  deleteLocalEncryptedSecret(PAT_KEY);
-  const map = loadVaultMap(true);
+  let map: VaultMap;
+  try {
+    map = loadVaultMapForMutation();
+  } catch (error) {
+    return mutationError(error);
+  }
+  const previousMap = structuredClone(map);
   if (map[PAT_KEY]?.storage === "encrypted") {
     delete map[PAT_KEY];
-    saveVaultMap(map);
+  }
+  try {
+    commitLocalEncryptedSecretBatch(
+      [{ key: PAT_KEY, value: null }],
+      () => saveVaultMap(map),
+      () => saveVaultMap(previousMap),
+    );
+    applyEnvUpdates({ [PAT_KEY]: null });
+  } catch (error) {
+    return mutationError(error);
   }
   delete process.env[PAT_KEY];
   return NextResponse.json({ ok: true });

@@ -6,6 +6,7 @@ import {
   buildThreadReflectPrompt,
   buildThreadSignalBatchResolutionPrompt,
   buildThreadSignalResolutionPrompt,
+  buildThreadSignalReviewQueue,
   buildThreadSignalRows,
   buildThreadSignalScoreTiles,
   compositeTone,
@@ -143,13 +144,11 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(/Return ONLY a valid JSON object/.test(prompt));
   });
 
-  it("falls back to a context-free instruction when no transcript is given", () => {
-    const prompt = buildThreadReflectPrompt({ sessionId: "sess-2" });
-    assert.ok(prompt.includes("No transcript was captured"));
-    assert.ok(prompt.includes("session: sess-2"));
-    assert.ok(
-      /do not treat the missing transcript as a finding/i.test(prompt),
-      "an absent transcript must not be reported as a thread finding",
+  it("refuses to score a thread without transcript evidence", () => {
+    assert.throws(
+      () => buildThreadReflectPrompt({ sessionId: "sess-2", transcript: "   " }),
+      /requires transcript evidence/i,
+      "an absent transcript must not produce a scored self-report",
     );
   });
 
@@ -191,6 +190,22 @@ describe("buildThreadReflectPrompt", () => {
     });
     assert.match(prompt, /A prose claim that an image was shown is not delivery evidence/i);
     assert.match(prompt, /\[visible attachments:/i);
+  });
+
+  it("separates skill access from vendor authentication and reports only unresolved fallback gaps", () => {
+    const prompt = buildThreadReflectPrompt({
+      sessionId: "sess-design-fallback",
+      transcript: [
+        "assistant: frontend-design loaded successfully.",
+        "assistant: claude_design MCP is unavailable, so I used the exported HTML.",
+        "assistant: Updated /tmp/Components.dc.html and rendered /tmp/components.png.",
+      ].join("\n"),
+    });
+
+    assert.match(prompt, /skill listed in "skillsUsed"[\s\S]*must not[\s\S]*"skillsNeedingAccess"/i);
+    assert.match(prompt, /vendor authentication[\s\S]*capability[\s\S]*not a skill-access gap/i);
+    assert.match(prompt, /fallback[\s\S]*completed the task[\s\S]*do not report[\s\S]*persistentBlockers/i);
+    assert.match(prompt, /visual refinement[\s\S]*changed artifact path[\s\S]*fresh render/i);
   });
 
   it("builds a resolution prompt that directs the thread to fix a selected review item", () => {
@@ -497,6 +512,62 @@ describe("aggregateThreadSignals stale signal clearing", () => {
     const aggregate = aggregateThreadSignals([staleOnly, older, newest]);
     assert.deepEqual(aggregate.persistentBlockers.map((item) => item.id), ["still-active"]);
     assert.equal(aggregate.persistentBlockers[0].frequency, 3);
+  });
+
+  it("clears recovered context-pressure and low-score review rows using the newest report", () => {
+    const stale = reportAt("session-old", "2026-08-20T12:00:00.000Z", {
+      overallConfidence: 38,
+      toolReliability: { score: 45, failedTools: ["harness"], unreliableTools: [] },
+      contextPressure: "critical",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 38,
+      fileLocatabilityScore: 45,
+      persistentBlockers: [],
+    });
+    const recovered = reportAt("session-new", "2026-08-20T13:00:00.000Z", {
+      overallConfidence: 96,
+      toolReliability: { score: 98, failedTools: [], unreliableTools: [] },
+      contextPressure: "adequate",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 100,
+      fileLocatabilityScore: 98,
+      persistentBlockers: [],
+    });
+
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      const queue = buildThreadSignalReviewQueue(aggregateThreadSignals(reports));
+      assert.equal(queue.some((item) => item.kind === "context-pressure"), false);
+      assert.equal(queue.some((item) => item.kind === "low-score"), false);
+    }
+  });
+
+  it("keeps valid zero scores visible in the current review queue", () => {
+    const current = reportAt("session-zero", "2026-08-20T14:00:00.000Z", {
+      overallConfidence: 0,
+      toolReliability: { score: 0, failedTools: ["harness"], unreliableTools: [] },
+      contextPressure: "adequate",
+      skillsNeedingClarity: [],
+      skillsNeedingAccess: [],
+      capabilitiesLacking: [],
+      capabilitiesVital: [],
+      memoryRecallScore: 0,
+      fileLocatabilityScore: 0,
+      persistentBlockers: [],
+    });
+
+    const lowScores = buildThreadSignalReviewQueue(aggregateThreadSignals([current]))
+      .filter((item) => item.kind === "low-score");
+    assert.equal(lowScores.length, 4);
+    assert.ok(lowScores.every((item) => item.severity === "critical"));
   });
 });
 

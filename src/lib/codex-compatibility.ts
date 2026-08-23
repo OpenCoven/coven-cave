@@ -928,10 +928,36 @@ function codexProbeCacheKey(target: Required<CodexProbeTarget>, env: NodeJS.Proc
  */
 const CODEX_PROBE_TIMEOUT_MS = 5_000;
 
+/**
+ * The probe timeout, overridable via `COVEN_CODEX_PROBE_TIMEOUT_MS`.
+ *
+ * Production keeps the bounded 5s default: a hung binary must not stall a chat
+ * turn indefinitely. The override exists for FIXTURE-DRIVEN TESTS, which assert
+ * routing correctness and have no business riding a latency budget — when the
+ * budget is missed they do not fail loudly, they silently take the generic
+ * fallback and the assertion reports as a routing bug.
+ *
+ * That is why this is an override rather than another raise of the constant.
+ * 1.5s was raised to 5s for exactly this symptom and 5s went on to miss too, so
+ * raising it again buys a quieter suite at the cost of a slower production
+ * failure — and buys it only until the next loaded runner. (cave-qwebr)
+ *
+ * Anything not a finite number greater than zero falls back to the default, so
+ * a malformed value degrades to today's behavior instead of disabling the
+ * timeout.
+ */
+export function codexProbeTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.COVEN_CODEX_PROBE_TIMEOUT_MS;
+  if (raw === undefined || raw.trim() === "") return CODEX_PROBE_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return CODEX_PROBE_TIMEOUT_MS;
+  return parsed;
+}
+
 /** Safe local discovery; failures become an explicit unavailable report. */
 export async function discoverCodexRuntime(
   command: string | CodexProbeTarget = "codex",
-  timeout = CODEX_PROBE_TIMEOUT_MS,
+  timeout = codexProbeTimeoutMs(),
   env?: NodeJS.ProcessEnv,
 ): Promise<CodexRuntimeReport> {
   try {
@@ -977,7 +1003,7 @@ export async function discoverCodexRuntime(
 /** Single-flight, bounded-cadence discovery for chat turns. */
 export async function discoverCachedCodexRuntime(
   command: string | CodexProbeTarget = "codex",
-  timeout = CODEX_PROBE_TIMEOUT_MS,
+  timeout = codexProbeTimeoutMs(),
   env = codexProbeEnv(),
   now = Date.now(),
 ): Promise<CodexRuntimeReport> {
@@ -1023,7 +1049,7 @@ function startCodexRuntimeDiscovery(
  */
 export function peekCachedCodexRuntime(
   command: string | CodexProbeTarget = "codex",
-  timeout = CODEX_PROBE_TIMEOUT_MS,
+  timeout = codexProbeTimeoutMs(),
   env = codexProbeEnv(),
   now = Date.now(),
 ): CodexRuntimeReport {

@@ -1,7 +1,7 @@
 import Foundation
 
 extension CaveClient {
-    /// Project roots remain shared by Terminal and the chat Projects panel.
+    /// Project roots are shared by chat creation and the Projects panel.
     func projects() async throws -> [ProjectInfo] {
         try await projects(familiarId: nil)
     }

@@ -7,24 +7,21 @@ that diverge. It pairs with the conformance suite that enforces them.
 
 ## How it's verified
 
-- **Neutral baseline** — the `Frontend build` job (`ubuntu-latest`) runs the
-  platform-agnostic checks every PR must pass: typecheck, `check:tests-wired`,
-  `test:app` / `test:api` / `test:mobile`, and `pnpm build`. No OS-specific
-  behavior lives here.
-- **Cross-OS matrix** — the `Cross-environment (<os>)` job runs
-  `pnpm test:conformance` on `ubuntu-latest`, `windows-latest`, and
-  `macos-latest` from one matrix spec, so the *same* definition of "works" is
-  executed on every target. `fail-fast: false`, so one OS failing still reports
-  the others.
-- **Stable required check** — `Cross-environment required` depends on the
-  matrix and fails unless every OS leg succeeds. Use that stable job name for
-  branch protection instead of requiring each dynamic matrix leg directly.
-- **Packaged sidecar runtime matrix** — `Sidecar runtime (<os>)` builds the
-  OS-specific bundled Node sidecar on `ubuntu-latest`, `windows-latest`, and
-  `macos-latest`, boots the packaged `server.mjs` with sidecar auth, and proves
-  a seeded raster familiar avatar is transcoded through the real HTTP route.
-  `Sidecar runtime required` is the stable aggregate check for branch
-  protection.
+- **Current pull-request protection** — classic branch protection still
+  requires `Frontend build`. Phase 1 adds the always-reporting Linux `PR
+  checks` context in parallel; do not change the required context until an
+  operator confirms it has reported successfully after this change merges.
+- **Pull-request baseline** — `PR checks` runs lint, typecheck, test wiring,
+  and app/API/mobile tests on Ubuntu for every pull request. It is not
+  path-skipped and deliberately omits builds, Rust, browser, conformance, and
+  packaged-sidecar work.
+- **Release-candidate matrix** — the `Release candidate` workflow runs the
+  production frontend build, Playwright, Rust, conformance, packaged sidecar,
+  and Windows-native checks. Its runtime matrix covers `ubuntu-24.04`,
+  `windows-latest`, and `macos-15`; `fail-fast: false` reports every platform.
+- **Fail-closed rollup** — `Release candidate validated` succeeds only when
+  every deferred job and matrix leg succeeds. It authorizes release promotion;
+  it is not a branch-protection context.
 - **The conformance suite** — [`scripts/cross-environment.test.ts`](../scripts/cross-environment.test.ts).
   Identical assertions on every OS; branches that can only run on one platform
   run there for real and are **explicit, reasoned skips** elsewhere (printed as
@@ -49,8 +46,8 @@ that diverge. It pairs with the conformance suite that enforces them.
 | E2E (Playwright) port | `3100` (fixed, avoids colliding with `pnpm dev`) | `PORT` env ([`playwright.config.ts`](../playwright.config.ts)) |
 | Config / state home | `~/.coven/` | `COVEN_HOME` env ([`src/lib/coven-paths.ts`](../src/lib/coven-paths.ts)) |
 | Familiar workspaces | `~/.coven/workspaces/familiars/<id>/` | via `COVEN_HOME` |
-| `coven` CLI binary | discovered on PATH / well-known install dirs | `COVEN_BIN` env ([`src/lib/coven-bin.ts`](../src/lib/coven-bin.ts)) |
-| CI Node.js | `22` | — |
+| `coven` CLI binary | discovered on PATH / well-known install dirs | `COVEN_BIN` env ([`src/lib/coven-bin.ts`](../src/lib/coven-bin.ts), [`src-tauri/src/sidecar_discovery.rs`](../src-tauri/src/sidecar_discovery.rs)) |
+| CI Node.js | `24` | — |
 
 ## Per-OS deltas
 

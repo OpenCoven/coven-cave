@@ -116,7 +116,11 @@ test.describe("chat boot landing", () => {
     await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
 
     await page.goto("/?mode=chat");
-    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
+    // Scoped to the primary chat panel: the shell also mounts a persistent,
+    // closed-by-default auxiliary Chat panel (data-testid="right-chat") that
+    // renders its own ChatNewDashboard while unopened, so an unscoped
+    // page-wide `chat-new-dashboard` query now matches two elements.
+    await expect(page.getByTestId("chat-main").getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
@@ -137,7 +141,9 @@ test.describe("chat boot landing", () => {
     });
 
     await page.goto("/?mode=chat");
-    await expect(page.getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
+    // Scoped to the primary chat panel — see the boot-baseline test above
+    // for why an unscoped page-wide query now matches the auxiliary panel too.
+    await expect(page.getByTestId("chat-main").getByTestId("chat-new-dashboard")).toBeVisible({ timeout: 45_000 });
     expect(sessionsFulfilled).toBe(false);
 
     // Unblock the fetch and confirm the settled landing is intact. (The
@@ -163,7 +169,9 @@ test.describe("chat boot landing", () => {
     // loosened compose gate must not flash a compose view over it.
     const takeover = page.getByRole("status").filter({ hasText: "Opening chat…" });
     await expect(takeover).toBeVisible({ timeout: 45_000 });
-    await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);
+    // Scoped to the primary chat panel — see the boot-baseline test above for
+    // why an unscoped page-wide query would also match the auxiliary panel.
+    await expect(page.getByTestId("chat-main").getByTestId("chat-new-dashboard")).toHaveCount(0);
     await expect(page.locator(".cave-chat-empty")).toHaveCount(0);
 
     releaseSessions();
@@ -201,21 +209,26 @@ test.describe("chat boot landing", () => {
     });
     await page.goto("/?mode=chat");
     await scopedProjectsLoaded;
-    const dash = page.getByTestId("chat-new-dashboard");
+    // Scoped to the primary chat panel — see the boot-baseline test above for
+    // why an unscoped page-wide query would also match the auxiliary panel.
+    const dash = page.getByTestId("chat-main").getByTestId("chat-new-dashboard");
     await expect(dash).toBeVisible({ timeout: 45_000 });
 
-    // Chat.dc.html 2b: the launcher is a band per SOURCE of work, and the
-    // live board's inbox card surfaces as a tile in the Tasks band…
-    const tasksBand = dash.locator('.cave-sf__band[data-kind="tasks"]');
-    await expect(tasksBand).toBeVisible();
-    const workTile = tasksBand.locator(".cave-sf__tile", { hasText: "Fix login flow" });
+    // Chat.dc.html 2b: the launcher is a tabbed deck — one source switcher over
+    // a single active band — and the live board's inbox card surfaces as a tile
+    // in the Tasks source…
+    const tasksSource = dash.locator('.cave-sf__source[data-kind="tasks"]');
+    await expect(tasksSource).toBeVisible();
+    const tasksDeck = dash.locator('.cave-sf__deck[data-kind="tasks"]');
+    await expect(tasksDeck).toBeVisible();
+    const workTile = tasksDeck.locator(".cave-sf__tile", { hasText: "Fix login flow" });
     await expect(workTile).toBeVisible();
     // …badged with its column, since a medium priority is too quiet to spend
     // the tile's one badge on (taskTileBadge).
     await expect(workTile.locator(".cave-sf__tile-badge")).toHaveText("inbox");
-    // The band head states how much of the source is on screen, so the hero
+    // The source switcher states how much of the source there is, so the hero
     // no longer repeats a count that is already there.
-    await expect(tasksBand.locator(".cave-sf__band-count")).toHaveText("1");
+    await expect(tasksSource.locator(".cave-sf__source-count")).toHaveText("1");
     await expect(dash.locator(".home-dash__headline")).toContainText("What should we begin?");
 
     // The context rail is retired: no quick-start rows, no rail project
@@ -239,10 +252,14 @@ test.describe("chat boot landing", () => {
     await expect(page.getByText("Requesting microphone…")).toBeVisible();
     await voiceDialog.getByRole("button", { name: "End call" }).click();
     await expect(voiceDialog).toHaveCount(0);
-    await page.getByRole("button", { name: "Chat options" }).click();
-    // The unified + menu folds the old Improve section into enhance rows.
-    await expect(page.getByRole("menuitem", { name: "Enhance prompt" })).toBeVisible();
-    await page.keyboard.press("Escape");
+    // The enhance affordance is no longer behind an overflow menu on the landing
+    // surface: the composer surfaces it directly (composer-enhance.tsx), so there
+    // is no "Chat options"/"Session options" trigger to click here — the page
+    // snapshot at turn zero shows `button "Enhance prompt"` and
+    // `button "Enhance options"` inline, both disabled until there is a prompt.
+    // Assert the affordance where it now lives (cave-ktvy0).
+    await expect(page.getByRole("button", { name: "Enhance prompt" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Enhance options" })).toBeVisible();
   });
 });
 
@@ -284,9 +301,14 @@ test("booting with no active familiar asks which one instead of picking", async 
   await expect(launch).toBeVisible();
   await expect(page.getByRole("heading", { name: "Start a new chat" })).toBeVisible();
 
-  // Both familiars are offered; neither has been chosen for the user.
-  await expect(launch.getByText("Aster")).toBeVisible();
-  await expect(launch.getByText("Nova")).toBeVisible();
+  // The launcher no longer lists familiars inline — it delegates actor choice to
+  // the shared acting-familiar gate, and that wiring is pinned separately by
+  // acting-familiar-gate.test.ts. What this surface must still prove is the
+  // thing this test exists for: that it chose nobody. The control is a generic
+  // prompt rather than a familiar's name, and no composer is bound to one.
+  await expect(launch.getByRole("button", { name: "Choose familiar" })).toBeVisible();
+  await expect(launch.getByText("Aster")).toHaveCount(0);
+  await expect(launch.getByText("Nova")).toHaveCount(0);
 
   // And no composer is sitting there already bound to one of them.
   await expect(page.getByTestId("chat-new-dashboard")).toHaveCount(0);

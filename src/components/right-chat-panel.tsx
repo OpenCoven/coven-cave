@@ -121,6 +121,7 @@ type Props = {
   onOpenOnboarding: () => void;
   onOpenTask: (cardId: string) => void;
   onOpenUrl: (url: string) => void;
+  onOpenPreview?: (url: string) => void;
 };
 
 /**
@@ -695,6 +696,7 @@ export function RightChatPanel(props: Props) {
             onOpenOnboarding={props.onOpenOnboarding}
             onOpenTask={props.onOpenTask}
             onOpenUrl={props.onOpenUrl}
+            onOpenPreview={props.onOpenPreview}
             onActiveSessionChange={handleActiveSessionChange}
             composerDraftKey={`cave:right-chat-composer-draft:v1:${activeFamiliar.id}`}
             compact

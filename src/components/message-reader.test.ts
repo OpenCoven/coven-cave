@@ -142,7 +142,7 @@ test("3a — provenance is the turn's own tool events, and absent when there are
   assert.match(
     chatView,
     /readerTools=\{settledTools\}/,
-    "the reader reads the same settled events the stream renders",
+    "the reader reads the turn's settled tool events",
   );
   assert.match(
     reader,

@@ -121,8 +121,8 @@ assert.doesNotMatch(
 );
 
 // Permission enforcement: Read-only forwards `coven run --permission read-only`
-// (mapped to the harness's native sandbox flag), gated on the CLI advertising
-// the flag; "full" stays implicit so the harness keeps its default sandbox.
+// (mapped to the harness's native sandbox flag) only when advertised, and
+// fails closed when neither the direct runtime nor Coven can enforce it.
 assert.match(
   chatRoute,
   /probeCovenCapability\(covenRunSupportsPermission\)/,
@@ -137,6 +137,21 @@ assert.match(
   chatRoute,
   /a\.push\("--permission", forwardPermission\)/,
   "coven run argv forwards --permission when enabled",
+);
+assert.match(
+  chatRoute,
+  /body\.permissionMode === "read"[\s\S]*?!directReadOnlyEnforcement && \(!permissionForwardingEnabled \|\| Boolean\(sshRuntime\)\)[\s\S]*?code: "read_only_unavailable"[\s\S]*?status: 501/,
+  "read-only requests fail closed before launch when the selected runtime cannot enforce the boundary",
+);
+assert.match(
+  chatRoute,
+  /if \(\(hermesDirect \|\| hermesApi\) && body\.permissionMode === "read"\)/,
+  "Hermes read-only guard must cover both the API and direct CLI transports",
+);
+assert.match(
+  chatRoute,
+  /error: "Hermes does not support Cave[\s\S]*?status: 501/,
+  "Hermes must return HTTP 501 with a Hermes-specific error before either transport runs",
 );
 
 assert.match(
@@ -470,7 +485,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /import \{ conversationCwd, daemonSessionCwd, resolveFamiliarWorkspace \} from "\.\/chat-send-runtime";/,
+  /import \{[\s\S]{0,200}daemonSessionCwd,[\s\S]{0,200}filterUsableLocalDirectories,[\s\S]{0,200}resolveFamiliarWorkspace,[\s\S]{0,50}\} from "\.\/chat-send-runtime";/,
   "The daemon-session resume fallback comes from the shared chat-send-runtime helper",
 );
 const sendRuntimeHelpers = await readFile(
@@ -482,16 +497,21 @@ assert.match(
   /export async function daemonSessionCwd\(sessionId\?: string\): Promise<string \| undefined> \{[\s\S]*?callDaemon<DaemonSessionRow\[\]>\(\{ path: "\/api\/v1\/sessions" \}\)[\s\S]*?path\.isAbsolute\(root\)[\s\S]*?\n\}/,
   "daemonSessionCwd resolves the session's project_root from the daemon's own session list and only trusts absolute paths",
 );
-assert.match(
+assert.doesNotMatch(
   chatRoute,
   /args\.body\.projectRoot \?\?\s*\(await conversationCwd\(args\.body\.sessionId\)\) \?\?\s*\(await daemonSessionCwd\(args\.body\.sessionId\)\)/,
-  "The OpenClaw bridge resume gets the same daemon-session cwd fallback",
+  "The OpenClaw bridge must not bypass the shared project launch gate by resolving its own raw root",
+);
+assert.match(
+  chatRoute,
+  /openClawChatResponse\(\{[\s\S]*?attachments: persistedAttachments,[\s\S]*?\bcwd,[\s\S]*?desiredModel,/,
+  "The OpenClaw bridge receives the same authorized runtime cwd as every other local harness",
 );
 
 assert.match(
   chatRoute,
-  /await resolveLocalRuntimeCwd\(authorizedProjectRoot\)/,
-  "Local Cave chat should resolve only the root accepted by the shared launch gate",
+  /await resolveLocalRuntimeCwd\(authorizedProjectRoot,\s*\{\s*rootAuthority: "authorized-project",\s*\}\)/,
+  "Local Cave chat should resolve only the root accepted by the shared launch gate, without reapplying the obsolete home-only boundary",
 );
 
 assert.match(
@@ -677,8 +697,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(!isPost\) boundarySentinel\?\.observe\(name, rest\)/,
-  "pre_tool_use hook lines should feed the boundary sentinel",
+  /if \(!isPost && \(binding\.harness !== "claude" \|\| claudeEnvelopeToolsEnabled\)\) \{\s*boundarySentinel\?\.observe\(name, rest\);/,
+  "pre_tool_use hooks should feed the boundary sentinel only while their Claude envelope profile remains verified",
 );
 
 assert.match(

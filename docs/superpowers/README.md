@@ -49,3 +49,12 @@ Committing a design here makes it survive the authoring machine, which is what
 this directory is for. It does not make it survive a checkout that is never
 pushed. If a design matters, get it onto `origin`, and consider also pasting it
 into the bead's `DESIGN` field, which syncs through Dolt independently of git.
+
+Approval is the durability boundary. Once a spec or plan is approved, land it
+on `main` through a docs-only PR even if its implementation is deferred,
+reworked, or abandoned. A Bead may cite an approved design only by a path that
+resolves on `main`.
+
+Archive tags remain valuable recovery evidence, but they are not the canonical
+home of an approved design: a reader should not need to discover a retired
+branch name before they can open the document that governs active work.

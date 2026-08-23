@@ -28,20 +28,39 @@ export type BranchPrRunner = (root: string, branch: string) => Promise<string>;
 
 /** Normalize a single REST pull object into the SessionRow.pullRequest shape.
  *  REST uses `html_url` and `draft`; GraphQL used `url`/`isDraft`. `parseBranchPr`
- *  accepts either shape so cached callers and tests stay stable. */
+ *  accepts either shape so cached callers and tests stay stable.
+ *
+ *  ⚠️ REST reports a merged PR as `state: "closed"` — merged-ness lives in
+ *  `merged_at` (list + single) and `merged` (single only). Without this
+ *  derivation every merged PR badges as red "closed" and the merged-chat
+ *  auto-archive sweep (which matches `state === "merged"`) never fires. */
 function normalizePull(
-  pull: { number?: unknown; url?: unknown; html_url?: unknown; state?: unknown; isDraft?: unknown; draft?: unknown },
+  pull: {
+    number?: unknown;
+    url?: unknown;
+    html_url?: unknown;
+    state?: unknown;
+    isDraft?: unknown;
+    draft?: unknown;
+    merged?: unknown;
+    merged_at?: unknown;
+    mergedAt?: unknown;
+  },
   branch?: string,
 ): SessionPullRequestContext | null {
   const url = typeof pull.html_url === "string" ? pull.html_url : typeof pull.url === "string" ? pull.url : undefined;
   if (typeof pull.number !== "number" || !url) return null;
   const match = PR_URL_RE.exec(url);
   if (!match) return null;
+  const merged =
+    pull.merged === true ||
+    (typeof pull.merged_at === "string" && pull.merged_at.length > 0) ||
+    (typeof pull.mergedAt === "string" && pull.mergedAt.length > 0);
   return {
     repo: match[1]!,
     number: pull.number,
     url: match[0],
-    state: typeof pull.state === "string" ? pull.state.toLowerCase() : "open",
+    state: merged ? "merged" : typeof pull.state === "string" ? pull.state.toLowerCase() : "open",
     ...(branch ? { branch } : {}),
     draft: pull.draft === true || pull.isDraft === true,
   };

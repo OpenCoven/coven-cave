@@ -42,7 +42,7 @@ assert.match(
 );
 assert.match(
   src,
-  /try \{\s*\(\{ pathname, query \} = parseUpgradeTarget\(req\.url \?\? "\/"\)\);\s*\} catch \{\s*socket\.write\("HTTP\/1\.1 400 Bad Request\\r\\n\\r\\n"\);\s*socket\.destroy\(\);\s*return;/,
+  /try \{\s*\(\{ pathname, query \} = parseUpgradeTarget\(req\.url \?\? "\/"\)\);\s*\} catch \{\s*socket\.write\("HTTP\/1\.1 400 Bad Request\\r\\nConnection: close\\r\\nContent-Length: 0\\r\\n\\r\\n"\);\s*socket\.destroy\(\);\s*return;/,
   "malformed upgrade targets fail with HTTP 400 and a closed socket",
 );
 assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
@@ -53,25 +53,19 @@ assert.match(
   /const secret = accessToken\(\);\s*if \(!secret \|\| !value\) return false/,
   "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
 );
-// The 401 applies when a remote/mobile credential is configured. With neither
-// token (plain local development) the loopback host+origin gate is the
-// protection. Once either credential exists, even loopback callers must prove
-// they hold it before the server will spawn or adopt a shell.
+// Remote/mobile callers need a configured credential. Direct, unforwarded
+// loopback remains the prompt-free browser path even while mobile access is
+// armed.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
 assert.match(
   src,
-  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
-  "PTY upgrade authentication closes the credential-less path whenever either token is configured",
+  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,\s*directLoopback: isDirectLoopbackRequest\(req\),/,
+  "PTY upgrade authentication preserves direct-loopback access while keeping remote credentials required",
 );
-// ...and it decides that WITHOUT consulting loopback at all. The positive
-// assertion above would still pass if someone re-introduced a direct-loopback
-// escape hatch beside it, which is exactly the bypass cave-ruw4z removed: TCP
-// loopback proves the caller is on this machine, never which OS user it is, so
-// any local account could otherwise adopt a shell as the Cave process owner.
-assert.doesNotMatch(
+assert.match(
   src,
-  /shouldRejectUnauthenticatedPtyUpgrade\([\s\S]{0,400}?isDirectLoopbackRequest/,
-  "no direct-loopback term may re-enter the PTY rejection decision",
+  /if \(tokenAuthenticated \|\| directLoopback\) return false;/,
+  "a verified direct-loopback caller must never be redirected into pairing for PTY access",
 );
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present
@@ -145,6 +139,56 @@ assert.match(
   "origin gate accepts a scheme-agnostic same-host Origin (Serve-terminated TLS)",
 );
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
+assert.match(
+  src,
+  /COVEN_CAVE_PASSKEY_REQUIRED === "1"[\s\S]{0,150}!isDirectLoopbackRequest\(req\)[\s\S]{0,150}!hasValidPasskeyPresence\(req, tailnetNodeId\)/,
+  "remote PTY upgrades enforce passkey presence because they bypass Next middleware",
+);
+assert.match(
+  src,
+  /timingSafeEqualString\(parts\[5\], expected\)[\s\S]{0,100}expiresAt > Date\.now\(\)[\s\S]{0,100}parts\[2\] === tailnetNodeId/,
+  "PTY presence verification checks the signature, expiry, and tailnet-device binding",
+);
+
+// ── Presence-verification parity (cave: keep server.ts in sync with passkey-presence.ts) ────────
+// The HMAC/expiry/tailnet-binding check in hasValidPasskeyPresence is intentionally duplicated
+// from src/lib/passkey-presence.ts because server.mjs is emitted without bundling. These
+// assertions pin the key structural invariants (token format, part count, HMAC body
+// construction, field ordering) so that a divergence between the two implementations
+// manifests as a CI failure rather than a silent security regression.
+{
+  const presenceSrc = readFileSync(new URL("../src/lib/passkey-presence.ts", import.meta.url), "utf8");
+
+  // Both files must agree on the version prefix.
+  assert.match(src, /parts\[0\] !== "v1"/, "server.ts presence verifier checks for 'v1' prefix");
+  assert.match(presenceSrc, /"v1"/, "passkey-presence.ts also uses 'v1' as the token version");
+
+  // Both files must require exactly 6 dot-delimited parts.
+  assert.match(src, /parts\.length !== 6/, "server.ts presence verifier expects 6 token parts");
+  assert.match(presenceSrc, /parts\.length !== 6/, "passkey-presence.ts also expects 6 token parts");
+
+  // Both files must construct the HMAC body from the first 5 parts.
+  // passkey-presence.ts uses payload() which produces `v1.${expiresAt}.${tailnetNodeId}.${credentialId}.${nonce}`,
+  // matching parts 0–4. server.ts must use parts.slice(0, 5).join(".").
+  assert.match(
+    src,
+    /parts\.slice[(]0, 5[)]\.join/,
+    "server.ts HMAC body is parts.slice(0,5).join('.'), matching passkey-presence.ts payload()",
+  );
+  assert.match(
+    presenceSrc,
+    /`\$\{VERSION\}\.\$\{expiresAt\}\.\$\{tailnetNodeId\}\.\$\{credentialId\}\.\$\{nonce\}`/,
+    "passkey-presence.ts payload() constructs a 5-field dot-delimited HMAC body",
+  );
+
+  // Both files must bind the tailnet node id (parts[2]).
+  assert.match(src, /parts\[2\] === tailnetNodeId/, "server.ts presence verifier checks tailnetNodeId at parts[2]");
+  assert.match(presenceSrc, /tailnetNodeId/, "passkey-presence.ts also verifies tailnetNodeId binding");
+
+  // Both files must sign/verify with HMAC-SHA256.
+  assert.match(src, /createHmac\("sha256"/, "server.ts presence verifier uses HMAC-SHA256");
+  assert.match(presenceSrc, /SHA-256/, "passkey-presence.ts also uses SHA-256");
+}
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
 // src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
 // pairing flow mints them and the phone renews them monthly. The WS gate must
@@ -423,15 +467,44 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     /function loopbackHostname\([\s\S]*?return "127\.0\.0\.1";\n}/,
   );
   assert.ok(hostnameBlock, "server defines a testable loopback-only hostname selector");
-  const loopbackHostname = new Function(
-    `${hostnameBlock[0]}; return loopbackHostname;`,
-  )();
+  const endpointBlock = src.match(
+    /function loopbackHttpEndpoint\([\s\S]*?\n}/,
+  );
+  assert.ok(endpointBlock, "server defines a testable loopback endpoint formatter");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${hostnameBlock[0]}\n${endpointBlock[0]}\nexport { loopbackHostname, loopbackHttpEndpoint };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  const loopbackModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const loopbackHostname = loopbackModule.loopbackHostname as (raw?: string) => string;
+  const loopbackHttpEndpoint = loopbackModule.loopbackHttpEndpoint as (
+    hostname: string,
+    port: number,
+  ) => string;
   for (const hostname of ["127.0.0.1", "localhost", "::1"]) {
     assert.equal(loopbackHostname(hostname), hostname, `${hostname} remains a supported loopback bind`);
   }
   for (const hostname of ["0.0.0.0", "192.168.1.20", "cave-host", ""]) {
     assert.equal(loopbackHostname(hostname), "127.0.0.1", `${hostname || "empty"} cannot expose the server`);
   }
+  assert.equal(
+    loopbackHttpEndpoint("127.0.0.1", 3020),
+    "http://127.0.0.1:3020",
+    "IPv4 loopback discovery endpoints remain unchanged",
+  );
+  assert.equal(
+    loopbackHttpEndpoint("localhost", 3020),
+    "http://localhost:3020",
+    "localhost discovery endpoints remain unchanged",
+  );
+  assert.equal(
+    loopbackHttpEndpoint("::1", 3020),
+    "http://[::1]:3020",
+    "IPv6 loopback discovery endpoints use URL brackets",
+  );
 }
 
 {

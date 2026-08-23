@@ -109,12 +109,9 @@ mod native_startup_terminal_tests {
     }
 }
 
-/// Show or hide the macOS traffic lights (close/minimize/zoom) on the
-/// invoking window. The main window's title bar is an Overlay (see the main
-/// window builder), so the buttons float over web content — when the app's
-/// side panel is closed the shell asks for them to disappear, Dia-style, and
-/// brings them back the moment the panel (or its hover-peek) opens. AppKit
-/// must be touched on the main thread; a no-op elsewhere.
+/// Keep the native macOS window controls in sync with the primary side panel.
+/// When the side panel is closed the shell asks for them to disappear, Dia-style,
+/// and brings them back the moment the panel (or its hover-peek) opens.
 #[cfg(desktop)]
 #[tauri::command]
 fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
@@ -129,7 +126,8 @@ fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
                 let ns_window = ns_ptr as *mut AnyObject;
                 // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
                 for kind in 0u64..=2u64 {
-                    let button: *mut AnyObject = msg_send![&*ns_window, standardWindowButton: kind];
+                    let button: *mut AnyObject =
+                        msg_send![&*ns_window, standardWindowButton: kind];
                     if !button.is_null() {
                         let _: () = msg_send![&*button, setHidden: !visible];
                     }
@@ -274,6 +272,8 @@ pub fn run() {
     #[cfg(desktop)]
     let reliability_recorder = Arc::new(ReliabilityRecorder::default());
     #[cfg(desktop)]
+    let offline_cache = Arc::new(offline_cache::OfflineCacheState::default());
+    #[cfg(desktop)]
     let builder = builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
@@ -296,6 +296,7 @@ pub fn run() {
             browser::browser_commands::browser_report_title,
             browser::browser_commands::browser_report_scroll,
             shell_open,
+            open_tailscale_app,
             open_x_oauth_url,
             shell_open_path,
             shell_pick_directory,
@@ -311,6 +312,10 @@ pub fn run() {
             desktop_reachability_status,
             desktop_reachability_configure,
             record_daemon_reliability_measurement,
+            offline_cache::offline_cache_read,
+            offline_cache::offline_cache_write,
+            offline_cache::offline_cache_clear,
+            offline_cache::offline_cache_status,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
             #[cfg(target_os = "windows")]
@@ -321,6 +326,7 @@ pub fn run() {
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
         .manage(Arc::clone(&reliability_recorder))
+        .manage(Arc::clone(&offline_cache))
         .manage(browser::BrowserLifecycleState::default());
     // Registered on every desktop platform even though the watcher thread is
     // non-Windows: the teardown path reads this flag unconditionally, and a
@@ -337,6 +343,11 @@ pub fn run() {
                     .configure(app_data_dir);
             }
             if let Ok(app_local_data_dir) = app.path().app_local_data_dir() {
+                // Local data, not roaming app data: the offline cache is a
+                // machine-local copy of daemon state and must not follow a
+                // roaming profile onto another machine.
+                app.state::<Arc<offline_cache::OfflineCacheState>>()
+                    .configure(app_local_data_dir.clone());
                 let diagnostics_path =
                     app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
                 if let Err(error) =
@@ -498,14 +509,11 @@ pub fn run() {
                         // them.
                         .disable_drag_drop_handler();
                 // macOS: dissolve the seam between the native title bar and the
-                // app's top toolbar. `Overlay` lets the webview content fill to the
+                // app's title strip. `Overlay` lets the webview content fill to the
                 // very top (the traffic-light buttons float over it) and
-                // `hidden_title` drops the centered "CovenCave" label, so the
-                // toolbar reads as one continuous strip. The web side reserves room
-                // for the traffic lights (`[data-tauri-titlebar]` in globals.css)
-                // and marks the bar `data-tauri-drag-region="deep"`; the drag is
-                // an ACL-gated IPC call, granted to this loopback origin by
-                // capabilities/loopback-window-drag.json. No-op on Windows/Linux.
+                // `hidden_title` drops the native "CovenCave" label. The web side
+                // renders the centered Coven identity, reserves room for the
+                // traffic lights, and marks the strip as a deep drag region.
                 #[cfg(target_os = "macos")]
                 {
                     main_window = main_window

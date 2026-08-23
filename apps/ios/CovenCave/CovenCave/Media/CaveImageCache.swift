@@ -4,12 +4,15 @@ import UIKit
 
 enum CaveImageSource: Hashable, Sendable {
     case remoteURL(URL)
+    case authenticatedRemoteURL(URL, bearerToken: String)
     case dataURL(String)
 
     fileprivate var identity: CaveImageSourceIdentity {
         switch self {
         case .remoteURL(let url):
-            return .remoteURL(url.absoluteString)
+            return .remoteURL(url.absoluteString, bearerToken: nil)
+        case .authenticatedRemoteURL(let url, let bearerToken):
+            return .remoteURL(url.absoluteString, bearerToken: bearerToken)
         case .dataURL(let value):
             return .dataURL(value)
         }
@@ -25,7 +28,7 @@ protocol CaveImageDataLoading: Sendable {
 }
 
 private enum CaveImageSourceIdentity: Hashable, Sendable {
-    case remoteURL(String)
+    case remoteURL(String, bearerToken: String?)
     case dataURL(String)
 }
 
@@ -91,7 +94,7 @@ private final class CaveImageMemoryWarningObserver {
     }
 }
 
-private final class DefaultCaveImageDataLoader: CaveImageDataLoading, @unchecked Sendable {
+final class DefaultCaveImageDataLoader: CaveImageDataLoading, @unchecked Sendable {
     private let session: URLSession
 
     init() {
@@ -107,15 +110,8 @@ private final class DefaultCaveImageDataLoader: CaveImageDataLoading, @unchecked
         switch source {
         case .dataURL(let value):
             return Self.decodeDataURL(value)
-        case .remoteURL(let url):
-            guard let scheme = url.scheme?.lowercased(),
-                  scheme == "http" || scheme == "https" else {
-                return nil
-            }
-
-            var request = URLRequest(url: url)
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-
+        case .remoteURL, .authenticatedRemoteURL:
+            guard let request = Self.request(for: source) else { return nil }
             do {
                 let (data, response) = try await session.data(for: request)
                 if let response = response as? HTTPURLResponse,
@@ -127,6 +123,32 @@ private final class DefaultCaveImageDataLoader: CaveImageDataLoading, @unchecked
                 return nil
             }
         }
+    }
+
+    static func request(for source: CaveImageSource) -> URLRequest? {
+        let url: URL
+        let bearerToken: String?
+        switch source {
+        case .remoteURL(let remoteURL):
+            url = remoteURL
+            bearerToken = nil
+        case .authenticatedRemoteURL(let remoteURL, let token):
+            url = remoteURL
+            bearerToken = token
+        case .dataURL:
+            return nil
+        }
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        if let bearerToken {
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+        return request
     }
 
     private static func decodeDataURL(_ value: String) -> Data? {

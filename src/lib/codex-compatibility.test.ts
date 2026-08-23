@@ -9,6 +9,7 @@ import {
   CodexJsonlDecoder,
   CodexSchemaCache,
   codexProbeEnv,
+  codexProbeTimeoutMs,
   discoverCodexRuntime,
   codexSchemaSignatureVerifierFromEnv,
   parseCodexVersionOutput,
@@ -472,6 +473,47 @@ try {
   assert.equal((await readCodexSchemaCache(cachePath, verify, new Date("2026-07-24T12:00:00.000Z")))?.contentHash, newerDocument.contentHash, "failed refresh preserves the newest last-known-good cache");
 } finally {
   await rm(cacheDir, { recursive: true, force: true });
+}
+
+// cave-qwebr: the probe timeout is overridable so fixture-driven tests can opt
+// out of a production latency budget. A missed budget does NOT fail loudly --
+// the route silently serves the turn through the generic coven fallback -- so
+// the override exists to keep routing assertions from reporting a timing miss
+// as a routing bug. Production keeps the bounded 5s default.
+{
+  // ProcessEnv is augmented with required members here, so build probe envs the
+  // way codexProbeEnv does rather than passing bare literals.
+  const probeEnv = (value?: string) => {
+    const env = {} as NodeJS.ProcessEnv;
+    if (value !== undefined) env.COVEN_CODEX_PROBE_TIMEOUT_MS = value;
+    return env;
+  };
+
+  assert.equal(codexProbeTimeoutMs(probeEnv()), 5_000, "absent override keeps the production default");
+  assert.equal(codexProbeTimeoutMs(probeEnv("")), 5_000, "empty is absent");
+  assert.equal(codexProbeTimeoutMs(probeEnv("   ")), 5_000, "blank is absent");
+  assert.equal(codexProbeTimeoutMs(probeEnv("120000")), 120_000, "a valid override is honored");
+  assert.equal(codexProbeTimeoutMs(probeEnv("1500")), 1_500, "an override may also shorten it");
+
+  // Malformed values degrade to the default rather than disabling the timeout:
+  // execFile treats 0 as "no timeout", so a typo must never hang a chat turn on
+  // a wedged binary.
+  for (const bad of ["0", "-1", "abc", "NaN", "Infinity", "-Infinity", "1e", "12,000"]) {
+    assert.equal(
+      codexProbeTimeoutMs(probeEnv(bad)),
+      5_000,
+      `${JSON.stringify(bad)} falls back to the bounded default`,
+    );
+  }
+
+  // Defaults are evaluated per call, so an override set after module load still
+  // takes effect — which is what lets a test set it before importing the route.
+  const previous = process.env.COVEN_CODEX_PROBE_TIMEOUT_MS;
+  process.env.COVEN_CODEX_PROBE_TIMEOUT_MS = "90000";
+  assert.equal(codexProbeTimeoutMs(), 90_000, "reads process.env by default");
+  if (previous === undefined) delete process.env.COVEN_CODEX_PROBE_TIMEOUT_MS;
+  else process.env.COVEN_CODEX_PROBE_TIMEOUT_MS = previous;
+  assert.equal(codexProbeTimeoutMs(), 5_000, "restores once the override is cleared");
 }
 
 console.log("codex-compatibility: ok");

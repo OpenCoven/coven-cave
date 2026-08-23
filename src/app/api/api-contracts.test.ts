@@ -2,6 +2,24 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import type { ConversationFile } from "../../lib/cave-conversations.ts";
+import {
+  buildFamiliarExecutionAnalytics,
+  EXECUTION_ATTEMPT_SCHEMA_VERSION,
+  normalizeExecutionAttemptSnapshot,
+  type ExecutionAttemptSnapshotV1,
+} from "../../lib/familiar-execution-analytics.ts";
+import { backfillFamiliarExecutionAttempts } from "../../lib/server/familiar-execution-analytics-backfill.ts";
+import {
+  deterministicExecutionAttemptId,
+  projectConversationExecutionAttempts,
+} from "../../lib/server/familiar-execution-analytics-projection.ts";
+import { serializeExecutionAttemptLedgerRecord } from "../../lib/server/familiar-execution-analytics-store.ts";
+import {
+  CLIENT_V1_AUTHENTICATED_PATHS,
+  CLIENT_V1_PUBLIC_INGRESS,
+  clientV1IngressKind,
+} from "../../proxy-helpers.ts";
 
 const root = process.cwd();
 const apiRoot = path.join(root, "src", "app", "api");
@@ -41,6 +59,7 @@ const contracts: RouteContract[] = [
   { route: "/beads/overview", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/beads/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/board/[id]/enhance", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]/lifecycle", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
@@ -53,6 +72,7 @@ const contracts: RouteContract[] = [
   { route: "/chat/attachment", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
   { route: "/chat/conversation", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/chat/conversation/[id]/turns/[turnId]", methods: ["DELETE"], kind: "json" },
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/rewrite", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/search", methods: ["GET"], kind: "json" },
@@ -61,6 +81,58 @@ const contracts: RouteContract[] = [
   { route: "/chat/stream", methods: ["GET"], kind: "stream" },
   { route: "/chat/stream/status", methods: ["GET"], kind: "json" },
   { route: "/chat/usage", methods: ["GET"], kind: "json" },
+  // Client v1 deliberately carries no localOriginGuard, but for two different
+  // reasons — and only the first is an exemption at all.
+  //
+  // Health and the pairing routes are the exemption: an external client must
+  // be able to read its compatibility answer and walk the pairing exchange
+  // before it holds a credential, which is the whole reason they exist. They
+  // are the paths clientV1IngressKind (src/proxy-helpers.ts) classifies as
+  // public, so proxy.ts applies the client-v1 ingress rules to them instead of
+  // the ordinary gate. Health returns no user data and no paths, and is the one
+  // route on this surface whose locality comes from that proxy branch alone.
+  // All three pairing routes re-check the loopback stamp for themselves through
+  // runtime.authenticator.isTrustedLoopback (client-v1/auth.ts) — the two POSTs
+  // always did, and GET /client/v1/pairing/requests/[id] joined them in #4854,
+  // because being the one dynamic-segmented route with no check of its own is
+  // what made the escaped-path ingress hole answer there and nowhere else. Both
+  // id-bearing routes also require the per-request pairing secret; the creating
+  // POST mints that secret rather than checking one, and is bounded by the
+  // pairing-create rate limit instead.
+  //
+  // The admin routes are NOT exempted. clientV1IngressKind returns null for
+  // them, so they never take the client-v1 ingress branch's pass-through and
+  // stay on the ordinary sidecar-token path in proxy.ts. Their locality is not
+  // a by-product of that path: proxy.ts binds the family to a direct loopback
+  // peer with a check of its own (#4843), refusing a forwarded caller with
+  // `403 forbidden peer: client v1 admin requires direct loopback` before
+  // falling through to that gate. requireClientV1Admin
+  // (client-v1/admin-auth.ts) then adds the per-launch COVEN_CAVE_AUTH_TOKEN,
+  // plus a same-origin Origin/Referer on mutations; it reads no loopback stamp
+  // of its own, deliberately, because transport locality is not proof of the
+  // administrator — the proxy check asks FROM WHERE, this one asks WHO.
+  { route: "/client/v1/admin/credentials", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/credentials/[id]", methods: ["DELETE"], kind: "json", readsJson: true },
+  { route: "/client/v1/admin/pairing-requests", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/admin/pairing-requests/[id]/decision", methods: ["POST"], kind: "json", readsJson: true },
+  // The Phase 2 canonical reads (cave-jfa9y). Every one is a GET with no body,
+  // and every one authenticates its own bearer through requireScope — which is
+  // load-bearing rather than routine, because these five paths are the first
+  // entries in CLIENT_V1_AUTHENTICATED_PATHS and a listed path returns from
+  // proxy() before the sidecar-token block ever runs. They also re-check the
+  // loopback stamp for themselves, the way all three pairing routes do. That
+  // began as cover for #4854, which #4855 has since closed at the proxy; it
+  // stays because a route this list DEMOTES should not take its locality on
+  // trust from the thing that demoted it.
+  { route: "/client/v1/conversations", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/conversations/[id]/messages", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/familiars", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/health", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/client/v1/pairing/requests/[id]", methods: ["GET"], kind: "json" },
+  { route: "/client/v1/pairing/requests/[id]/exchange", methods: ["POST"], kind: "json" },
+  { route: "/client/v1/projects", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/codex-automations/[id]/runs", methods: ["GET"], kind: "json" },
@@ -87,6 +159,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars/[id]/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", pathGuard: true },
   { route: "/familiars/[id]/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/familiars/[id]/execution-analytics", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/self-report", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
@@ -229,6 +302,10 @@ const contracts: RouteContract[] = [
   { route: "/research/generations/cancel", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/generations/infographic", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
   { route: "/research/generations/media", methods: ["GET"], kind: "stream", localOriginGuard: true, pathGuard: true },
+  // Mints the signed ticket the media route above consumes. No pathGuard: it
+  // never resolves a filesystem path — it validates familiarId/id as opaque
+  // ids and returns a URL, so there is no "path not allowed" 403 to preserve.
+  { route: "/research/generations/media-ticket", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/readiness", methods: ["GET"], kind: "json", localOriginGuard: true },
   { route: "/research/generations/render", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -237,6 +314,10 @@ const contracts: RouteContract[] = [
   { route: "/research/missions/[id]/schedule", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/research/recommendations", methods: ["GET"], kind: "json", localOriginGuard: true },
+  // No pathGuard: the id is validated against a strict arXiv shape and
+  // interpolated into a hard-coded host, so there is no filesystem path to deny.
+  { route: "/research/papers/pdf", methods: ["GET"], kind: "stream", localOriginGuard: true },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
@@ -307,6 +388,7 @@ const contracts: RouteContract[] = [
   { route: "/x/oauth/start", methods: ["POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/x/posts/lookup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/x/posts/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/x/publish", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/x/sources", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
 ];
 
@@ -337,8 +419,15 @@ function exportedMethods(source: string): string[] {
   return [...functions, ...constants, ...aliases];
 }
 
+// Client v1 routes hand response construction to the shared envelope builders
+// so every route answers in the same shape. Name those builders here rather
+// than inlining `client-v1/responses.ts` into the route source: the builders
+// are recognisable at the call site, the check does not depend on how a route
+// spells the import specifier (`…/responses` vs `…/responses.ts`), and the
+// readsJson / invalidJson assertions below keep reading the route itself
+// instead of an unrelated module's text.
 function usesJsonResponse(source: string): boolean {
-  return /NextResponse\.json|Response\.json|new Response\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
+  return /NextResponse\.json|Response\.json|new Response\(|clientV1(?:Success|Error|RateLimit)Response\s*\(|canonicalMemory(?:Json|ListResponse|OverviewResponse|DetailResponse)\s*\(/.test(source);
 }
 
 function effectiveRouteSource(file: string, source: string): string {
@@ -371,11 +460,308 @@ function effectiveRouteSource(file: string, source: string): string {
   return parts.join("\n");
 }
 
+// --- source text vs. source code ---------------------------------------------
+//
+// assert.match reads a route file as text, so any check spelled as "the source
+// mentions X" is satisfied by a comment, a string, or a doc block that merely
+// names X. For the credential assertions below that is not a nit: the whole
+// point of those checks is to catch an author who MEANT to call the guard, and
+// "meant to" is exactly what a `// TODO: … requireScope(…)` line looks like.
+// Strip comments and literal text first so only code can satisfy them.
+//
+// A character scanner rather than a regex pair, because the naive
+// `replace(/\/\/.*/g, "")` corrupts as much as it removes: a `//` inside a
+// string literal, or a quote inside a regex character class such as /["']/,
+// flips the state and eats real code up to the next delimiter. Anything the
+// scanner cannot classify is dropped rather than kept, so the failure mode is a
+// noisy assertion, not a silent pass.
+function skipQuoted(source: string, start: number, quote: string): number {
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === quote || ch === "\n") return i + 1;
+    i += 1;
+  }
+  return i;
+}
+
+function skipTemplate(source: string, start: number): number {
+  let i = start + 1;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "`") return i + 1;
+    // A ${…} substitution is dropped with the literal around it: real code has
+    // no reason to call a credential guard from inside an interpolation, and
+    // dropping it keeps the scanner from mistaking the closing brace for the
+    // end of the template.
+    if (ch === "$" && source[i + 1] === "{") {
+      i += 2;
+      let depth = 1;
+      while (i < source.length && depth > 0) {
+        const inner = source[i];
+        if (inner === "\\") {
+          i += 2;
+          continue;
+        }
+        if (inner === "`") {
+          i = skipTemplate(source, i);
+          continue;
+        }
+        if (inner === '"' || inner === "'") {
+          i = skipQuoted(source, i, inner);
+          continue;
+        }
+        if (inner === "{") depth += 1;
+        else if (inner === "}") depth -= 1;
+        i += 1;
+      }
+      continue;
+    }
+    i += 1;
+  }
+  return i;
+}
+
+function skipRegexLiteral(source: string, start: number): number {
+  let i = start + 1;
+  let inClass = false;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === "\n") return i; // unterminated: it was division after all
+    if (ch === "[") inClass = true;
+    else if (ch === "]") inClass = false;
+    else if (ch === "/" && !inClass) return i + 1;
+    i += 1;
+  }
+  return i;
+}
+
+// A `/` opens a regex literal only where a value may begin. Reading the last
+// meaningful character already emitted is the standard way to tell that from
+// division without a full parser.
+const REGEX_MAY_FOLLOW = /(?:[(,=:[!&|?{};+\-*%~^<>]|\b(?:return|typeof|instanceof|in|of|new|delete|void|do|else|case|yield|await))$/;
+
+function executableSource(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
+      i += 2;
+      out += " ";
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      i = skipQuoted(source, i, ch);
+      out += `${ch}${ch}`;
+      continue;
+    }
+    if (ch === "`") {
+      i = skipTemplate(source, i);
+      out += "``";
+      continue;
+    }
+    if (ch === "/" && REGEX_MAY_FOLLOW.test(out.trimEnd())) {
+      i = skipRegexLiteral(source, i);
+      out += " ";
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 const routeFiles = walkRoutes(apiRoot);
 const actualRoutes = routeFiles.map(routeFromFile).sort();
 const contractRoutes = contracts.map((contract) => contract.route).sort();
 
+// Phase 0 forbade every /api/client/v1 route while the public contract was
+// still an unserved module. Phase 1 ended that for the reviewed bootstrap and
+// admin surface: health (a client cannot discover it is too old without an
+// endpoint to ask), the pairing exchange, and the admin routes that approve
+// and revoke credentials. Phase 2 adds the canonical reads the contract's
+// capability list has been advertising since Phase 0 — familiars, projects,
+// conversations, and a conversation's messages (cave-jfa9y). The gate is
+// narrowed rather than dropped, because what it was really protecting against
+// is client-v1 surface appearing faster than it is reviewed — so each new route
+// has to be added here deliberately, not just by existing on disk.
+assert.deepEqual(
+  actualRoutes.filter((route) => route.startsWith("/client/v1")),
+  [
+    "/client/v1/admin/credentials",
+    "/client/v1/admin/credentials/[id]",
+    "/client/v1/admin/pairing-requests",
+    "/client/v1/admin/pairing-requests/[id]/decision",
+    "/client/v1/conversations",
+    "/client/v1/conversations/[id]",
+    "/client/v1/conversations/[id]/messages",
+    "/client/v1/familiars",
+    "/client/v1/health",
+    "/client/v1/pairing/requests",
+    "/client/v1/pairing/requests/[id]",
+    "/client/v1/pairing/requests/[id]/exchange",
+    "/client/v1/projects",
+  ],
+  "client-v1 must expose exactly the reviewed bootstrap, admin, and canonical-read routes",
+);
 assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must have an API contract entry");
+
+// --- client-v1 proxy pre-authorization (cave-4841) -------------------------
+//
+// clientV1IngressKind classifies a request BEFORE proxy() reaches the
+// sidecar-token block, and a match makes proxy() return early: the mobile
+// access gate is skipped and no bearer is checked. Everything after that point
+// is the route's own responsibility. The two assertions below are the halves of
+// that bargain, checked against what is actually on disk rather than against a
+// list someone has to remember to prune.
+//
+// Concrete probe paths per route, because the ingress classifier takes a
+// request pathname and the App Router directory speaks in [param] segments. A
+// single [param] stands in as one literal segment, which is exactly what the
+// single-segment [^/]+ patterns match.
+//
+// A [...catchAll] does NOT reduce to one segment, and treating it as if it did
+// is how a route impersonates a reviewed public path:
+// pairing/requests/[...rest] would probe as /api/client/v1/pairing/requests/
+// probe-segment, match the single-segment public pattern, and be excused from
+// the requireScope assertion below — while actually serving an unbounded tail
+// that no one reviewed. So a catch-all is probed at every width it serves: the
+// one-segment case it shares with [param], a two-segment case standing in for
+// the whole tail, and — for the optional [[...catchAll]] — the parent path with
+// the segment absent. The classification below then only excuses the route if
+// EVERY one of those shapes is in the reviewed public set.
+const PROBE_SEGMENT = "probe-segment";
+
+function isDynamicSegment(segment: string): boolean {
+  return segment.startsWith("[");
+}
+
+function isCatchAllSegment(segment: string): boolean {
+  return segment.startsWith("[...") || segment.startsWith("[[...");
+}
+
+function isOptionalCatchAllSegment(segment: string): boolean {
+  return segment.startsWith("[[...");
+}
+
+function clientV1ProbePaths(route: string): string[] {
+  const segments = route.slice(1).split("/");
+  let paths: string[][] = [[]];
+  for (const segment of segments) {
+    const widths = !isDynamicSegment(segment)
+      ? [[segment]]
+      : isCatchAllSegment(segment)
+        ? [
+            ...(isOptionalCatchAllSegment(segment) ? [[] as string[]] : []),
+            [PROBE_SEGMENT],
+            [PROBE_SEGMENT, PROBE_SEGMENT],
+          ]
+        : [[PROBE_SEGMENT]];
+    paths = paths.flatMap((prefix) => widths.map((width) => [...prefix, ...width]));
+  }
+  return paths.map((parts) => `/api/${parts.join("/")}`);
+}
+
+const clientV1Routes = routeFiles
+  .map((file) => ({ file, route: routeFromFile(file) }))
+  .filter(({ route }) => route.startsWith("/client/v1"));
+const clientV1ProbeSurface = clientV1Routes.flatMap(({ route }) => clientV1ProbePaths(route));
+
+// Half one: the list may not pre-authorize a path that nothing serves. Before
+// cave-4841 it named thirteen Phase 2 paths and none of them had a route.ts, so
+// the first Phase 2 handler to land would have been exempted from the sidecar
+// token on the day it appeared — with its own requireScope call as the sole
+// remaining layer, and no test anywhere insisting that call exist. Adding the
+// entry is now part of adding the handler.
+for (const pattern of CLIENT_V1_AUTHENTICATED_PATHS) {
+  assert.ok(
+    clientV1ProbeSurface.some((probe) => pattern.test(probe)),
+    `${pattern} pre-authorizes client-v1 ingress but no src/app/api/client/v1 route.ts matches it`,
+  );
+}
+
+// Half two: every client-v1 route that is not deliberately credential-free has
+// to enforce a credential in its own source. That holds whether or not the path
+// is pre-authorized above — the pre-authorization removes the sidecar token,
+// and this check is what makes removing it survivable. Classification is read
+// from the repo, not hardcoded: the admin family from the directory it lives
+// in, the credential-free bootstrap surface from clientV1IngressKind itself.
+// Growing the public set to dodge this check is not a quiet edit —
+// CLIENT_V1_PUBLIC_PATHS only matches a path the allow-list assertion above
+// already admits by name.
+for (const { file, route } of clientV1Routes) {
+  // executableSource, not the raw text: both assertions below are satisfied by
+  // a call the route really makes, never by the NAME appearing in a comment or
+  // a string. `// TODO(next): route this through requireScope(...)` on a route
+  // with no credential check at all is exactly the accident this pair exists to
+  // catch, and it read as a pass until cave-4841's review.
+  const source = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+  if (route === "/client/v1/admin" || route.startsWith("/client/v1/admin/")) {
+    // Admin routes never reach the client-v1 ingress branch at all
+    // (clientV1IngressKind returns null for them), so they keep the ordinary
+    // sidecar-token path and layer requireClientV1Admin on top. Different
+    // credential, same obligation to name one.
+    assert.match(
+      source,
+      /requireClientV1Admin\s*\(/,
+      `${route} must call requireClientV1Admin`,
+    );
+    continue;
+  }
+  // EVERY shape the route serves has to be in the reviewed public set, not just
+  // the narrowest one — a catch-all that happens to cover a reviewed
+  // single-segment path still serves the rest of its tail credential-free.
+  if (
+    clientV1ProbePaths(route).every(
+      (probe) => clientV1IngressKind(probe) === CLIENT_V1_PUBLIC_INGRESS,
+    )
+  ) {
+    continue;
+  }
+  assert.match(
+    source,
+    /requireScope\s*\(/,
+    `${route} is neither the admin family nor the reviewed credential-free bootstrap surface, so it must call requireScope`,
+  );
+  // Half three (cave-jfa9y): the same route must also meter the credential it
+  // just accepted. Added with the first routes that actually call requireScope,
+  // because until then consumeAuthenticated had no caller and the obligation
+  // had nothing to attach to. A pre-authorized path has already given up the
+  // sidecar-token gate, so an unmetered one lets a single valid bearer drive
+  // the store, the daemon, and the transcript directory without bound — and
+  // nothing else in the suite would notice, since an unmetered route passes
+  // every functional test it has.
+  //
+  // Matched on the success-path charge specifically, and on that name ALONE —
+  // there is no alternation here, deliberately. A future route that meters
+  // against a different budget fails this assertion and has to widen it in
+  // review rather than inherit an exemption by being written differently.
+  assert.match(
+    source,
+    /consumeAuthenticated\s*\(/,
+    `${route} calls requireScope but never charges the authenticated rate-limit budget`,
+  );
+}
 
 for (const contract of contracts) {
   const file = path.join(apiRoot, ...contract.route.slice(1).split("/"), "route.ts");
@@ -413,8 +799,33 @@ for (const contract of contracts) {
     // (/x/oauth/start passes rejectNonLocalRequest into
     // createXOAuthStartRouteHandlers, which calls it), and reading only the
     // route file would report that as a missing guard when it is present.
-    assert.match(effectiveSource, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);
-    if (effectiveSource.includes("rejectNonLocalRequest")) {
+    // rejectResearchMediaRequest counts: it CALLS rejectNonLocalRequest first
+    // and returns null whenever that passes, so it is a narrowing rather than a
+    // weakening. It relaxes only when the host and the origin are both local
+    // AND a signed media ticket validates — the carve-out exists because a
+    // native <audio>/<video> element cannot go through patched fetch, so the
+    // ticket proves the sidecar credential instead (#4634).
+    assert.match(
+      effectiveSource,
+      /isLocalOrigin|rejectNonLocalRequest|rejectResearchMediaRequest/,
+      `${contract.route} must preserve local-origin guard`,
+    );
+    if (effectiveSource.includes("rejectResearchMediaRequest")) {
+      assert.match(
+        effectiveSource,
+        /await\s+rejectResearchMediaRequest\(\s*[A-Za-z_$][\w$]*\s*\)/,
+        `${contract.route} must call the shared media guard`,
+      );
+      const guardSource = readFileSync(
+        path.join(apiRoot, "..", "..", "lib", "server", "api-security.ts"),
+        "utf8",
+      );
+      assert.match(
+        guardSource,
+        /export async function rejectResearchMediaRequest[\s\S]{0,200}rejectNonLocalRequest\(req\)/,
+        "rejectResearchMediaRequest must still delegate to the local-origin guard",
+      );
+    } else if (effectiveSource.includes("rejectNonLocalRequest")) {
       assert.match(effectiveSource, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
     } else {
       assert.match(effectiveSource, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
@@ -861,9 +1272,309 @@ for (const contract of contracts) {
   );
 }
 
+{
+  const privateMarker = "PRIVATE-CONTENT-MUST-NOT-SURVIVE";
+  const snapshot = normalizeExecutionAttemptSnapshot({
+    schemaVersion: EXECUTION_ATTEMPT_SCHEMA_VERSION,
+    attemptId: "ea1_privacy",
+    familiarId: "cody",
+    sessionId: "session-private",
+    turnId: "turn-private",
+    attemptNumber: 1,
+    execution: {
+      kind: "assistant-response",
+      origin: "chat",
+      prompt: privateMarker,
+      cwd: `/private/${privateMarker}`,
+    },
+    harness: { id: "claude", version: "1.2.3", binaryPath: privateMarker },
+    models: {
+      requested: { kind: "model", id: "anthropic/claude-sonnet" },
+      forwarded: "claude-sonnet",
+      confirmed: "claude-sonnet",
+      response: privateMarker,
+    },
+    timing: {
+      completedAt: "2026-08-18T09:00:00.000Z",
+      durationMs: 1200,
+      rawEvent: privateMarker,
+    },
+    usage: { inputTokens: 10, outputTokens: 20, rawPayload: privateMarker },
+    costUsd: 0,
+    outcome: { status: "error", error: privateMarker },
+    tools: [{
+      name: "shell",
+      status: "error",
+      durationMs: 100,
+      input: privateMarker,
+      output: privateMarker,
+      path: `/private/${privateMarker}`,
+    }],
+    provenance: {
+      source: "live",
+      sourceSchema: "execution-attempt-v1",
+      capturedAt: "2026-08-18T09:00:00.000Z",
+      rawPayload: privateMarker,
+    },
+    coverage: { knownFields: ["tools"], arbitrary: privateMarker },
+    prompt: privateMarker,
+    response: privateMarker,
+    errorText: privateMarker,
+    path: `/private/${privateMarker}`,
+  });
+  assert.ok(snapshot, "metadata-only snapshots should accept the versioned allowlist");
+  const serialized = serializeExecutionAttemptLedgerRecord(snapshot);
+  assert.ok(serialized, "valid snapshots should serialize into a ledger record");
+  assert.doesNotMatch(
+    serialized,
+    new RegExp(privateMarker),
+    "snapshot normalization must discard prompt/response text, payloads, paths, and arbitrary errors",
+  );
+  assert.deepEqual(
+    snapshot.tools,
+    [{ name: "shell", status: "error", durationMs: 100 }],
+    "tools retain only name, status, and duration",
+  );
+  assert.equal(snapshot.costUsd, 0, "a known zero cost remains distinct from missing cost");
+}
+
+{
+  const conversation: ConversationFile = {
+    sessionId: "session-deterministic",
+    familiarId: "cody",
+    harness: "claude-code",
+    origin: "chat",
+    createdAt: "2026-08-18T08:00:00.000Z",
+    updatedAt: "2026-08-18T09:00:00.000Z",
+    turns: [
+      {
+        id: "user-secret",
+        role: "user",
+        text: "private prompt",
+        createdAt: "2026-08-18T08:00:00.000Z",
+      },
+      {
+        id: "assistant-result",
+        role: "assistant",
+        text: "private response",
+        reasoning: "private reasoning",
+        createdAt: "2026-08-18T08:00:05.000Z",
+        durationMs: 5000,
+        usage: { inputTokens: 11, outputTokens: 7 },
+        costUsd: 0.02,
+        tools: [{
+          id: "tool-1",
+          name: "shell",
+          input: "private tool input",
+          output: "private tool output",
+          status: "ok",
+          durationMs: 800,
+        }],
+        responseMetadata: {
+          familiarId: "cody",
+          harness: "claude-code",
+          model: "anthropic/claude-sonnet",
+          runtime: "local",
+          requestedModel: "anthropic/claude-sonnet",
+          forwardedModel: "claude-sonnet",
+          confirmedModel: "claude-sonnet",
+          requestedControls: { reasoning: "high" },
+          forwardedControls: { reasoning: "high" },
+          appliedControls: { reasoning: "high" },
+        },
+      },
+    ],
+  };
+  const first = projectConversationExecutionAttempts(conversation);
+  const second = projectConversationExecutionAttempts(conversation);
+  assert.deepEqual(first, second, "conversation projection must be deterministic");
+  assert.equal(first.length, 1);
+  assert.equal(
+    first[0].attemptId,
+    deterministicExecutionAttemptId({
+      familiarId: "cody",
+      sessionId: "session-deterministic",
+      turnId: "assistant-result",
+      attemptNumber: 1,
+    }),
+  );
+  assert.deepEqual(
+    first[0].harness,
+    { id: "claude" },
+    "historical projection canonicalizes the harness id without inventing a current version",
+  );
+  assert.equal("version" in (first[0].harness ?? {}), false);
+  assert.doesNotMatch(JSON.stringify(first[0]), /private prompt|private response|private reasoning|private tool/);
+
+  const deps = {
+    listConversations: async () => [{
+      sessionId: conversation.sessionId,
+      familiarId: conversation.familiarId,
+      harness: conversation.harness,
+      updatedAt: conversation.updatedAt,
+    }],
+    loadConversation: async () => conversation,
+  };
+  const initial = await backfillFamiliarExecutionAttempts({
+    familiarId: "cody",
+    existing: [],
+    dependencies: deps,
+  });
+  const replay = await backfillFamiliarExecutionAttempts({
+    familiarId: "cody",
+    existing: initial.attempts,
+    dependencies: deps,
+  });
+  assert.equal(initial.toAppend.length, 1);
+  assert.equal(replay.toAppend.length, 0, "replaying the same conversation must dedupe");
+  assert.deepEqual(replay.attempts, initial.attempts);
+}
+
+{
+  function attempt(
+    attemptId: string,
+    completedAt: string,
+    extras: Record<string, unknown> = {},
+  ): ExecutionAttemptSnapshotV1 {
+    const value = normalizeExecutionAttemptSnapshot({
+      schemaVersion: EXECUTION_ATTEMPT_SCHEMA_VERSION,
+      attemptId,
+      familiarId: "cody",
+      sessionId: `session-${attemptId}`,
+      turnId: `turn-${attemptId}`,
+      attemptNumber: 1,
+      execution: { kind: "assistant-response", origin: "chat" },
+      timing: { completedAt },
+      outcome: { status: "succeeded" },
+      provenance: {
+        source: "live",
+        sourceSchema: "execution-attempt-v1",
+        capturedAt: completedAt,
+      },
+      coverage: { knownFields: [] },
+      ...extras,
+    });
+    assert.ok(value);
+    return value;
+  }
+
+  const attempts = [
+    attempt("recent-known", "2026-08-17T10:00:00.000Z", {
+      harness: { id: "claude", version: "1.0.0" },
+      models: { confirmed: "claude-sonnet" },
+      timing: { completedAt: "2026-08-17T10:00:00.000Z", durationMs: 1000 },
+      usage: { inputTokens: 10, outputTokens: 20 },
+      costUsd: 0,
+      tools: [],
+    }),
+    attempt("recent-missing", "2026-08-16T10:00:00.000Z"),
+    attempt("old", "2026-06-01T10:00:00.000Z", {
+      outcome: { status: "error" },
+      timing: { completedAt: "2026-06-01T10:00:00.000Z", durationMs: 3000 },
+    }),
+  ];
+  const analytics = buildFamiliarExecutionAnalytics({
+    familiarId: "cody",
+    attempts,
+    now: new Date("2026-08-18T10:00:00.000Z"),
+    recentLimit: 1,
+  });
+  assert.equal(analytics.windows["7d"].attempts, 2);
+  assert.equal(analytics.windows.all.attempts, 3);
+  assert.deepEqual(
+    analytics.windows.all.coverage.duration,
+    { known: 2, total: 3, ratio: 2 / 3 },
+  );
+  assert.deepEqual(
+    analytics.windows.all.coverage.cost,
+    { known: 1, total: 3, ratio: 1 / 3 },
+  );
+  assert.equal(analytics.windows.all.costUsd, 0);
+  assert.deepEqual(
+    analytics.windows.all.coverage.harnessVersion,
+    { known: 1, total: 3, ratio: 1 / 3 },
+  );
+  assert.equal(analytics.recentAttempts.length, 1, "recent attempts are bounded");
+  assert.equal(
+    "cacheReadTokens" in analytics.recentAttempts[0],
+    false,
+    "an unknown recent-attempt metric remains absent",
+  );
+  assert.deepEqual(
+    Object.keys(analytics).sort(),
+    ["backfill", "generatedAt", "recentAttempts", "windows"],
+    "the analytics domain object contains only the response contract",
+  );
+}
+
+{
+  const routeSource = readFileSync(
+    path.join(apiRoot, "familiars", "[id]", "execution-analytics", "route.ts"),
+    "utf8",
+  );
+  const source = readFileSync(
+    path.join(root, "src", "lib", "server", "familiar-execution-analytics-source.ts"),
+    "utf8",
+  );
+  const projection = readFileSync(
+    path.join(root, "src", "lib", "server", "familiar-execution-analytics-projection.ts"),
+    "utf8",
+  );
+  assert.match(
+    routeSource,
+    /if \(!isValidFamiliarId\(id\)\)[\s\S]*?"path not allowed"[\s\S]*?status: 403/,
+    "/familiars/[id]/execution-analytics validates the familiar id before storage access",
+  );
+  assert.match(
+    routeSource,
+    /Math\.max\(0, Math\.min\(100, parsed\)\)/,
+    "/familiars/[id]/execution-analytics bounds recent attempts",
+  );
+  assert.match(
+    routeSource,
+    /__setFamiliarExecutionAnalyticsSourceForTests/,
+    "/familiars/[id]/execution-analytics exposes the established route test override",
+  );
+  assert.match(
+    routeSource,
+    /analytics: \{\s*generatedAt: analytics\.generatedAt,\s*windows: analytics\.windows,\s*recentAttempts: analytics\.recentAttempts,\s*backfill: analytics\.backfill,\s*\}/,
+    "/familiars/[id]/execution-analytics returns the exact public analytics shape",
+  );
+  assert.match(
+    source,
+    /listConversations[\s\S]*loadConversation[\s\S]*backfillFamiliarExecutionAttempts/,
+    "analytics source backfills from Cave-owned conversation files",
+  );
+  assert.match(
+    source,
+    /appendAttempts\(args\.familiarId, backfill\.toAppend\)[\s\S]*?\.catch\(\(\) => 0\)/,
+    "derived ledger persistence is best-effort",
+  );
+  assert.doesNotMatch(
+    projection,
+    /turn\.text|turn\.reasoning|tool\.input|tool\.output|conversation\.runtime|conversation\.branch|conversation\.prUrl/,
+    "conversation projection must not copy content, tool payloads, paths, or PR data",
+  );
+}
+
 // The test:api npm script delegates to scripts/run-tests.mjs; assert this
 // suite is listed in that runner's manifest so it actually runs in CI.
 const runnerSource = readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8");
 assert.match(runnerSource, /api-contracts\.test\.ts/, "scripts/run-tests.mjs must list this API contract suite");
+assert.match(
+  runnerSource,
+  /src\/lib\/server\/client-v1\/contract\.test\.ts/,
+  "scripts/run-tests.mjs must list the public client v1 contract suite",
+);
+assert.match(
+  runnerSource,
+  /scripts\/export-client-v1-contract\.test\.mjs/,
+  "scripts/run-tests.mjs must list the public client v1 exporter suite",
+);
+assert.match(
+  runnerSource,
+  /SUITE_PREFLIGHTS[\s\S]*api:\s*\[[\s\S]*\["scripts\/export-client-v1-contract\.mjs", "--check"\]/,
+  "scripts/run-tests.mjs must read-only check the public client v1 contract fixture before API tests",
+);
 
 console.log(`api-contracts.test.ts: ${contracts.length} route contracts passed`);

@@ -56,6 +56,22 @@ export type ProjectlessGenerationLaunchInput = {
   resumeCwdResolved?: string;
   /** Already symlink-resolved by resolveFamiliarWorkspace. */
   familiarWorkspace?: string;
+  /**
+   * Whether the resume root maps to a REGISTERED project.
+   *
+   * The workspace exemption below rests on the premise that a familiar's
+   * workspace is not a registered project and so carries no grant to check.
+   * Nothing enforced that premise: a user may register a project whose root
+   * lives under `~/.coven/workspaces/familiars/<id>/`, and for such a root the
+   * exemption applied to a genuinely registered project — the same bypass shape
+   * cave-o3nq7 closed, narrowed to projects inside a familiar workspace.
+   *
+   * The caller resolves this (it owns the project registry); the decision stays
+   * pure. Undefined reads as "not registered", which preserves the exemption
+   * for callers that cannot answer — the containment test still has to pass
+   * first, so this never widens the exemption beyond the workspace. (cave-g8fqc)
+   */
+  resumeCwdIsRegisteredProject?: boolean;
 };
 
 export type ProjectlessGenerationLaunchDecision =
@@ -82,6 +98,13 @@ export type ProjectlessGenerationLaunchDecision =
  * unless it resolves inside the familiar's own workspace — the multi-turn
  * canvas case, where turn 1 legitimately ran auth-free in that workspace and
  * persisted it as the conversation runtime.
+ *
+ * That last exemption is further narrowed to roots that are not REGISTERED
+ * projects (cave-g8fqc). "A workspace carries no grant to check" is a premise,
+ * not a guarantee: a user can register a project whose root lives under the
+ * workspace, and the exemption then applied to a real project — letting a
+ * hidden turn 2 skip re-authorization on it, and a turn 1 naming a daemon
+ * session rooted there launch with no grant at all.
  */
 export function projectlessGenerationLaunch(
   input: ProjectlessGenerationLaunchInput,
@@ -100,7 +123,11 @@ export function projectlessGenerationLaunch(
   // named an unresolvable root.
   const resolved = input.resumeCwdResolved?.trim();
   if (!resolved) return { kind: "gated" };
-  if (workspace && isInsideRoot(workspace, resolved)) {
+  // Containment alone is not enough. The exemption describes an UNREGISTERED
+  // workspace directory; a registered project that happens to sit inside the
+  // workspace has a grant to check, so it is gated like any other project
+  // root (cave-g8fqc).
+  if (workspace && isInsideRoot(workspace, resolved) && !input.resumeCwdIsRegisteredProject) {
     return { kind: "workspace", root: resolved };
   }
   return { kind: "gated" };

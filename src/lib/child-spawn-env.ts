@@ -24,6 +24,25 @@ function comparableEnvKey(key: string, platform: NodeJS.Platform): string {
   return platform === "win32" ? key.toUpperCase() : key;
 }
 
+export function isForbiddenSpawnEnvKey(
+  key: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const comparableKey = comparableEnvKey(key, platform);
+  return (
+    isSidecarInternalEnvKey(key, platform) ||
+    FORBIDDEN_SPAWN_ENV_KEYS.some((forbidden) => comparableKey === forbidden)
+  );
+}
+
+export function isSidecarInternalEnvKey(
+  key: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const comparableKey = comparableEnvKey(key, platform);
+  return SIDECAR_INTERNAL_ENV_PREFIXES.some((prefix) => comparableKey.startsWith(prefix));
+}
+
 /**
  * Remove Cave/sidecar-internal variables (and forbidden token keys) from a
  * spawn env, in place.
@@ -33,13 +52,7 @@ export function scrubSidecarInternalEnv(
   platform: NodeJS.Platform = process.platform,
 ): NodeJS.ProcessEnv {
   for (const key of Object.keys(env)) {
-    const comparableKey = comparableEnvKey(key, platform);
-    if (
-      SIDECAR_INTERNAL_ENV_PREFIXES.some((prefix) => comparableKey.startsWith(prefix)) ||
-      FORBIDDEN_SPAWN_ENV_KEYS.some((forbidden) => comparableKey === forbidden)
-    ) {
-      delete env[key];
-    }
+    if (isForbiddenSpawnEnvKey(key, platform)) delete env[key];
   }
   return env;
 }

@@ -1,10 +1,19 @@
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
 import type { ChatAttentionReason } from "./chat-attention-marker.ts";
+import type {
+  InferenceProtocol,
+  InferenceSupportTier,
+} from "./inference-routes.ts";
 
 export type ChatResponseMetadata = {
   familiarId: string;
   harness: string;
+  inferenceRouteId?: string;
+  inferenceRouteFingerprint?: string;
+  inferenceProvider?: string;
+  inferenceProtocol?: InferenceProtocol;
+  inferenceSupportTier?: InferenceSupportTier;
   model: string;
   runtime: string;
   /** Explicit user model intent, including the empty runtime-default sentinel. */

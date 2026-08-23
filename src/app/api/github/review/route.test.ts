@@ -25,3 +25,5 @@ assert.doesNotMatch(source, /:\s*token\b/, "review route must not return token m
 console.log("github-review-route.test.ts OK");
 assert.match(source, /new Set\(\["APPROVE", "REQUEST_CHANGES", "COMMENT"\]\)/, "review events are allow-listed");
 assert.match(source, /event !== "APPROVE" && !text/, "non-approve reviews require a body");
+assert.match(source, /GITHUB_REVIEW_BODY_MAX_LENGTH/, "review body cap is shared between the UI and route");
+assert.match(source, /review body must be at most/, "oversized review bodies fail before GitHub dispatch");

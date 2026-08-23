@@ -9,9 +9,10 @@ This is the shared operating contract for Cave tasks. The spec explains *why* an
 task shape. Read it before writing anything that creates, blocks, unblocks, or
 dispatches a task.
 
-Status: approved design. The fields described here are the target contract, not
-yet shipped — until they land, treat this as the shape to design toward and do
-not invent a competing one.
+Status: the canonical fields, mutator enforcement, lifecycle blockers, primary
+blocker promotion, and promotion audit are implemented. Board and Chart Room
+editing surfaces, Enhance proposals, and overlay retirement remain phased work;
+do not invent a competing task shape while those surfaces migrate.
 
 ## The one rule
 
@@ -112,6 +113,27 @@ changes a model asserts are safe.
 
 **Human authorship wins.** If you wrote a dependency or a next step, automation
 proposes a replacement rather than overwriting you.
+
+The shared recommendation contract adds a second mutation boundary: only
+allowlisted deterministic payloads carrying fresh, code-owned verification
+checks may enter `auto-apply`. Serialized or reconstructed proposals must be
+verified again because a stored `verification.status` cannot authorize a write.
+Board adapters still route the resulting mutation through `cave-board.ts`, so
+this trust check supplements rather than replaces orchestration validation.
+See [Agentic Enhance and Recommendation Design](./superpowers/specs/2026-08-19-agentic-enhance-recommendations-design.md).
+
+Board generation persists proposals and audit records through the Board mutator
+under its write lock. A batch first revalidates every candidate against one
+snapshot, then atomically applies verified normalizations and saves the
+rebased proposal state. A stale, blocked, cancelled, or failed application
+keeps its existing explicit error; it never becomes a success-shaped fallback.
+
+The Board/Research recommendation capability is disabled unless
+`NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS` is enabled in the client build.
+Turning it off is a rollback of new recommendation UI, not permission to
+delete persisted Board audit history or bypass normal reversions. Legacy Chat
+Enhance remains independently available and still never submits a message on
+the user's behalf.
 
 ## Readiness
 

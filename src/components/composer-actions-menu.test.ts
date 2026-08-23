@@ -188,13 +188,13 @@ assert.match(
 );
 assert.match(
   popover,
-  /semantic === "button" \? undefined : radio \? "menuitemradio" : "menuitem"/,
+  /semantic === "button" \? undefined : selectable \? selectableRole : "menuitem"/,
   "native-button rows omit the forced menuitem role while pure-menu rows keep the existing default",
 );
 assert.match(
   popover,
-  /semantic === "button" \? undefined : radio \? checked : undefined/,
-  "native-button rows do not carry menuitemradio aria-checked",
+  /semantic === "button" \? undefined : selectable \? checked : undefined/,
+  "native-button rows do not carry a checked-row aria-checked",
 );
 
 assert.match(options, /role="radiogroup"/);

@@ -19,6 +19,19 @@ export async function register() {
   } catch (error) {
     console.warn("[instrumentation] research media jobs could not start:", error);
   }
+  try {
+    // The application-startup sweep for the bounded X post cache. Read-time
+    // expiry only reaches a post someone looks up again, so without this an
+    // abandoned entry keeps its text, author id and handle on disk forever
+    // (cave-1tu16). Best-effort and detached: a stale cache file must never
+    // hold up shell delivery, and the Research Desk load sweeps as well.
+    const xSources = await import("@/lib/server/x-sources");
+    void xSources.sweepExpiredXCache().catch((error) => {
+      console.warn("[instrumentation] X cache sweep failed:", error);
+    });
+  } catch (error) {
+    console.warn("[instrumentation] X cache sweep could not start:", error);
+  }
   const mod = await import("@/lib/inbox-scheduler");
   mod.startScheduler();
   const watcher = await import("@/lib/github-watcher");

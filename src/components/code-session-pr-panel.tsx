@@ -24,10 +24,16 @@ import { resolveStageForBranch, type StageSnapshot, type StageStep } from "@/lib
 import { codeSessionBranch, codeSessionWorkRoot } from "@/lib/code-surface";
 import type { PullRequestSummary } from "@/lib/beads-pr-management";
 import type { MergedPrRef, ReadyBead } from "@/lib/beads-work-queue";
-import type { SessionRow } from "@/lib/types";
+import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
 
 const STAGE_POLL_MS = 60_000;
 const CHECKS_POLL_MS = 30_000;
+
+function isTrustedPrAttribution(
+  attribution: SessionPullRequestContext["attribution"] | undefined,
+): attribution is "branch" {
+  return attribution === "branch";
+}
 
 // ── Stage strip ───────────────────────────────────────────────────────────────
 
@@ -318,7 +324,15 @@ function usePrThreads(repo: string, number: number): ThreadsState & { refresh: (
   return { ...state, refresh };
 }
 
-function ThreadsSection({ repo, number }: { repo: string; number: number }) {
+function ThreadsSection({
+  repo,
+  number,
+  allowResolve,
+}: {
+  repo: string;
+  number: number;
+  allowResolve: boolean;
+}) {
   const state = usePrThreads(repo, number);
   const [busyThread, setBusyThread] = useState<string | null>(null);
 
@@ -369,7 +383,7 @@ function ThreadsSection({ repo, number }: { repo: string; number: number }) {
                   {thread.path ?? "(general)"}
                   {thread.isOutdated ? " · outdated" : ""}
                 </span>
-                {state.authed ? (
+                {state.authed && allowResolve ? (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -523,6 +537,7 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
 
   const pr = row.pullRequest;
   const hasPr = Boolean(pr?.repo && pr?.number != null);
+  const trustedForActions = hasPr && isTrustedPrAttribution(pr?.attribution);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -555,13 +570,29 @@ export function CodeSessionPrPanel({ row }: { row: SessionRow }) {
             ) : null}
           </div>
           <ChecksSection repo={pr.repo} number={pr.number as number} />
-          <ThreadsSection repo={pr.repo} number={pr.number as number} />
-          <ActionsSection
+          <ThreadsSection
             repo={pr.repo}
             number={pr.number as number}
-            prState={pr.state}
-            onActed={() => setActedTick((t) => t + 1)}
+            allowResolve={trustedForActions}
           />
+          {trustedForActions ? (
+            <ActionsSection
+              repo={pr.repo}
+              number={pr.number as number}
+              prState={pr.state}
+              onActed={() => setActedTick((t) => t + 1)}
+            />
+          ) : (
+            <section aria-label="Review and merge" className="flex flex-col gap-2">
+              <h2 className="text-[length:var(--text-sm)] font-semibold text-[var(--text-primary)]">
+                Actions
+              </h2>
+              <div className="rounded-lg border border-[var(--border-muted)] bg-[var(--surface-muted)] p-3 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                This PR was detected from the chat transcript, so it is shown for reference only.
+                Review and merge actions stay disabled until a PR is resolved from this session&apos;s work branch.
+              </div>
+            </section>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-start gap-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">

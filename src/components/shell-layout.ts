@@ -17,6 +17,7 @@ type ResolveShellDestinationLayoutOptions = {
 const roundPercentage = (value: number) => Number.parseFloat(value.toFixed(3));
 const LAYOUT_SUM_TOLERANCE = 0.1;
 const COLLAPSED_PIXEL_TOLERANCE = 1;
+const LEGACY_COLLAPSED_NAV_PX = 56;
 
 export function resolveShellNavWidth(raw: string | null): number {
   if (raw === null || raw.trim() === "") return SHELL_NAV_DEFAULT_PX;
@@ -34,6 +35,33 @@ export function resolveShellNavOpenPreference(
   return persistedOpen === null
     ? { open: defaultOpen, shouldPersist: true }
     : { open: persistedOpen, shouldPersist: false };
+}
+
+export type ShellNavSwipeIntent = "open" | "close";
+
+export function resolveShellNavSwipe({
+  intent,
+  deltaX,
+  deltaY,
+  minDistance = 64,
+  axisRatio = 1.25,
+}: {
+  intent: ShellNavSwipeIntent;
+  deltaX: number;
+  deltaY: number;
+  minDistance?: number;
+  axisRatio?: number;
+}): ShellNavSwipeIntent | null {
+  const horizontalDistance = Math.abs(deltaX);
+  if (
+    horizontalDistance < minDistance ||
+    horizontalDistance < Math.abs(deltaY) * axisRatio
+  ) {
+    return null;
+  }
+  if (intent === "open" && deltaX > 0) return "open";
+  if (intent === "close" && deltaX < 0) return "close";
+  return null;
 }
 
 /** Nav policy names, mirrored from `ShellNavPolicy` in shell.tsx so this pure
@@ -128,8 +156,12 @@ export function isShellNavCollapsedLayout({
   ) {
     return false;
   }
+  const collapsedThreshold = Math.max(
+    collapsedNavPixels,
+    LEGACY_COLLAPSED_NAV_PX,
+  );
   return ((layout.nav ?? 0) / 100) * groupSize <=
-    collapsedNavPixels + COLLAPSED_PIXEL_TOLERANCE;
+    collapsedThreshold + COLLAPSED_PIXEL_TOLERANCE;
 }
 
 export function resolveShellLayoutPersistence({
@@ -251,7 +283,21 @@ export function resolveShellDestinationLayout({
     layout.nav = navPercentage;
     layout.detail = detailPercentage;
 
-    return isCompleteLayout(layout, panelIds) ? layout : undefined;
+    // react-resizable-panels' PanelGroup.setLayout() validates a keyed layout
+    // object by zipping Object.values(layout) positionally against its
+    // internal per-panel constraints array, which is ordered by panel
+    // registration (DOM) order — it does not match by key. The loop above
+    // inserts non-nav/detail panel keys (e.g. "right-chat") before "nav" and
+    // "detail", so an object built in that order silently validates each
+    // panel's requested size against a DIFFERENT panel's min/max/collapsed
+    // constraints. Rebuilding the object in panelIds' order (which mirrors
+    // DOM order) keeps every value aligned with its own panel's constraints.
+    const orderedLayout: ShellPanelLayout = {};
+    for (const panelId of panelIds) {
+      orderedLayout[panelId] = layout[panelId];
+    }
+
+    return isCompleteLayout(orderedLayout, panelIds) ? orderedLayout : undefined;
   };
 
   const preserveSavedNonNavPanels = savedLayoutIsComplete && !savedNavIsCollapsed;

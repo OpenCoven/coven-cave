@@ -11,6 +11,74 @@ export const DEFAULT_ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5";
  *  the provider speaks out of the box before the user picks a voice. */
 export const DEFAULT_ELEVENLABS_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
+/**
+ * Quality-tier default for offline podcast renders.
+ * The live voice-call path keeps `DEFAULT_ELEVENLABS_MODEL_ID` (turbo) because
+ * latency is the binding constraint there; an offline render is a queued,
+ * character-capped job, so it can afford a higher-fidelity model and is
+ * overridable per render through the render configuration's `model` field.
+ */
+export const DEFAULT_ELEVENLABS_PODCAST_MODEL_ID = "eleven_multilingual_v2";
+
+/** Delivery controls sent as ElevenLabs `voice_settings` on the render path. */
+export type ElevenLabsVoiceSettings = {
+  /** 0..1 — how much the model holds a consistent speaking style. */
+  stability: number;
+  /** 0..1 — how closely the model matches the reference voice. */
+  similarityBoost: number;
+  /** 0..1 — style exaggeration supported by v2+, v3, and multilingual models. */
+  style: number;
+  /** Whether to apply the speaker-boost filter. */
+  useSpeakerBoost: boolean;
+  /** 0.25..4 — REST API speaking-rate multiplier. */
+  speed: number;
+};
+
+/** ElevenLabs' own baseline settings — delivery-neutral, safe on every model. */
+export const DEFAULT_ELEVENLABS_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
+  stability: 0.5,
+  similarityBoost: 0.75,
+  style: 0,
+  useSpeakerBoost: true,
+  speed: 1,
+};
+
+const ELEVENLABS_VOICE_SETTINGS_RANGES: Record<
+  "stability" | "similarityBoost" | "style" | "speed",
+  [number, number]
+> = {
+  stability: [0, 1],
+  similarityBoost: [0, 1],
+  style: [0, 1],
+  speed: [0.25, 4],
+};
+
+/**
+ * Normalize an optional `voice_settings` object into the canonical shape,
+ * defaulting omitted fields. Returns null when a field is the wrong type or
+ * out of range — the caller decides how to surface the rejection.
+ */
+export function validateElevenLabsVoiceSettings(
+  value: unknown,
+): ElevenLabsVoiceSettings | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const out: ElevenLabsVoiceSettings = { ...DEFAULT_ELEVENLABS_VOICE_SETTINGS };
+  for (const key of ["stability", "similarityBoost", "style", "speed"] as const) {
+    const candidate = raw[key];
+    if (candidate === undefined) continue;
+    if (typeof candidate !== "number" || !Number.isFinite(candidate)) return null;
+    const [min, max] = ELEVENLABS_VOICE_SETTINGS_RANGES[key];
+    if (candidate < min || candidate > max) return null;
+    out[key] = candidate;
+  }
+  if (raw.useSpeakerBoost !== undefined) {
+    if (typeof raw.useSpeakerBoost !== "boolean") return null;
+    out.useSpeakerBoost = raw.useSpeakerBoost;
+  }
+  return out;
+}
+
 /** Per-utterance cap shared by the client mouth (clamps before posting) and
  *  the proxy (hard 400 over it) — sentence chunks are small; this only guards
  *  degenerate unterminated tails and direct callers. */
@@ -24,6 +92,33 @@ export function isValidElevenLabsVoiceId(id: unknown): id is string {
 
 export function isValidElevenLabsModelId(id: unknown): id is string {
   return typeof id === "string" && /^[a-z0-9_]{1,64}$/.test(id);
+}
+
+/**
+ * Request stitching (`previous_text` / `next_text`) is not accepted by the v3
+ * model family — the provider rejects the whole request with HTTP 400
+ * `invalid_parameters`, so sending it unconditionally fails every render on
+ * those models rather than degrading. Capability is derived from the model id
+ * prefix so `eleven_v3` and its dated/preview variants are all covered.
+ */
+export function modelSupportsRequestStitching(modelId: string): boolean {
+  return !modelId.startsWith("eleven_v3");
+}
+
+/** ElevenLabs accepts an unsigned 32-bit integer seed for reproducible renders. */
+export const ELEVENLABS_MAX_SEED = 4_294_967_295;
+
+/**
+ * A pinned seed is what makes two renders comparable; without it every
+ * before/after delivery measurement is confounded by provider run variance.
+ */
+export function isValidElevenLabsSeed(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= ELEVENLABS_MAX_SEED
+  );
 }
 
 // ── Account catalog (saved voices + available models) ────────────────────────

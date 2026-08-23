@@ -19,6 +19,7 @@ import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
 import { FamiliarLifecycleSection } from "@/components/familiar-lifecycle-section";
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 type Props = {
   familiar: ResolvedFamiliar;
@@ -64,8 +65,14 @@ export function FamiliarStudioIdentityTab({
           textarea={f.textarea}
           value={current[f.key]}
           daemonValue={rawDaemonValues[f.key]}
-          onSave={(v) => setFamiliarOverride(familiar.id, { [f.key]: v })}
-          onReset={() => clearFamiliarOverrideField(familiar.id, f.key)}
+          onSave={(v) => {
+            setFamiliarOverride(familiar.id, { [f.key]: v });
+            showSettingsSavedToast(`${f.label} saved.`);
+          }}
+          onReset={() => {
+            clearFamiliarOverrideField(familiar.id, f.key);
+            showSettingsSavedToast(`${f.label} reset.`);
+          }}
         />
       ))}
       <FamiliarGrimoireFiles familiarId={familiar.id} />
@@ -290,6 +297,7 @@ function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
                 if (t.id === "general") {
                   setFamiliarOverride(familiar.id, { familiarType: "general" });
                   announce("Type set to General");
+                  showSettingsSavedToast();
                 } else {
                   const next = new Set(selectedIds);
                   if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
@@ -301,6 +309,7 @@ function FamiliarTypePicker({ familiar }: { familiar: ResolvedFamiliar }) {
                       ? "Type set to General"
                       : `Type set to ${selected.map((s) => s.label).join(", ")}`,
                   );
+                  showSettingsSavedToast();
                 }
               }}
             >
@@ -341,15 +350,18 @@ function IdentityField({
   const [draft, setDraft] = useState(value ?? "");
   const placeholder = daemonValue ?? "—";
   const hasOverride = value !== undefined;
+  const dirty = draft !== (value ?? "");
 
   useEffect(() => {
     setDraft(value ?? "");
   }, [field, value]);
 
   function commit() {
+    if (!dirty) return;
     if (draft.trim() === "") {
       // Empty input clears the override (reverts to daemon).
-      onReset();
+      setDraft("");
+      if (hasOverride) onReset();
       return;
     }
     if (draft !== value) onSave(draft);
@@ -360,7 +372,13 @@ function IdentityField({
     placeholder,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setDraft(e.target.value),
-    onBlur: commit,
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (event.nativeEvent.isComposing) return;
+      if (event.key === "Enter" && (!textarea || event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        commit();
+      }
+    },
     className: "familiar-studio-identity__input",
   };
 
@@ -384,6 +402,15 @@ function IdentityField({
             setDraft("");
           }}
         />
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon="ph:floppy-disk-bold"
+          disabled={!dirty}
+          onClick={commit}
+        >
+          Save
+        </Button>
       </div>
     </label>
   );

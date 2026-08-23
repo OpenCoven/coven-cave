@@ -193,6 +193,48 @@ test("managed Node paths are user-scoped and never point at a system installatio
   assert.equal(managedNodeRoot("linux", { XDG_DATA_HOME: "/home/sage/.local/share" } as unknown as NodeJS.ProcessEnv, "/home/sage"), "/home/sage/.local/share/opencoven/coven-cave/toolchains");
 });
 
+test("managed Node spawn environment replaces Windows PATH keys case-insensitively", () => {
+  const paths = managedNodePaths(
+    "win32",
+    "x64",
+    { LOCALAPPDATA: "C:\\Users\\Sage\\AppData\\Local" } as unknown as NodeJS.ProcessEnv,
+    "C:\\Users\\Sage",
+  );
+  assert.ok(paths);
+  const env = managedNodeSpawnEnv({
+    Path: "C:\\stale-user-path",
+    PATH: "C:\\stale-uppercase-path",
+  } as unknown as NodeJS.ProcessEnv, paths);
+  assert.ok(env);
+  assert.deepEqual(
+    Object.keys(env).filter((key) => key.toUpperCase() === "PATH"),
+    ["PATH"],
+  );
+  assert.deepEqual(
+    env.PATH?.split(";"),
+    [paths.npmBin, paths.installDir, "C:\\stale-uppercase-path"],
+  );
+});
+
+test("managed Node spawn environment preserves a mixed-case Windows Path value", () => {
+  const paths = managedNodePaths(
+    "win32",
+    "x64",
+    { LOCALAPPDATA: "C:\\Users\\Sage\\AppData\\Local" } as unknown as NodeJS.ProcessEnv,
+    "C:\\Users\\Sage",
+  );
+  assert.ok(paths);
+  const env = managedNodeSpawnEnv(
+    { Path: "C:\\Windows\\System32" } as unknown as NodeJS.ProcessEnv,
+    paths,
+  );
+  assert.ok(env);
+  assert.deepEqual(
+    env.PATH?.split(";"),
+    [paths.npmBin, paths.installDir, "C:\\Windows\\System32"],
+  );
+});
+
 test("managed Node probe distinguishes an absent toolchain from an unusable one", async () => {
   const missing = await probeManagedNodeToolchain({ platform: "linux", architecture: "x64", home: path.join(tmpdir(), "missing-coven-node") });
   assert.equal(missing.status, "missing");
@@ -612,6 +654,96 @@ test("managed Node installer reports a successful reviewed installation", async 
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.outcome, "installed");
     assert.equal(await readFile(path.join(paths.installDir, "reviewed-runtime"), "utf8"), "ready");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("managed Node install retries transient rename failures", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-node-rename-retry-"));
+  const paths = managedNodePaths("linux", "x64", TEST_ENV, home);
+  const artifact = nodeArchiveFor("linux", "x64");
+  assert.ok(paths);
+  assert.ok(artifact);
+  let probes = 0;
+  let renameCalls = 0;
+  try {
+    const result = await installManagedNodeToolchain({
+      platform: "linux",
+      architecture: "x64",
+      env: TEST_ENV,
+      home,
+      fetch: async () => approvedResponse(),
+      dependencies: {
+        digest: () => artifact.sha256,
+        extractArchive: async (_format, _archive, destination) => {
+          const runtime = path.join(destination, `node-v${MANAGED_NODE_VERSION}-linux-x64`);
+          await mkdir(runtime, { recursive: true });
+          await writeFile(path.join(runtime, "reviewed-runtime"), "ready");
+        },
+        probe: async () => {
+          probes += 1;
+          return probes === 1
+            ? { status: "missing", paths }
+            : { status: "ready", version: MANAGED_NODE_VERSION, paths };
+        },
+        rename: async (source, destination) => {
+          renameCalls += 1;
+          if (renameCalls <= 2) {
+            throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+          }
+          await rename(source, destination);
+        },
+      },
+    });
+
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.outcome, "installed");
+    assert.equal(renameCalls, 4, "two transient EPERM failures are retried before the staged move succeeds");
+    assert.equal(await readFile(path.join(paths.installDir, "reviewed-runtime"), "utf8"), "ready");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("managed Node install reports filesystem_failed for persistent rename EPERM", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "coven-node-rename-persist-"));
+  const paths = managedNodePaths("linux", "x64", TEST_ENV, home);
+  const artifact = nodeArchiveFor("linux", "x64");
+  assert.ok(paths);
+  assert.ok(artifact);
+  let probes = 0;
+  let renameCalls = 0;
+  try {
+    const result = await installManagedNodeToolchain({
+      platform: "linux",
+      architecture: "x64",
+      env: TEST_ENV,
+      home,
+      fetch: async () => approvedResponse(),
+      dependencies: {
+        digest: () => artifact.sha256,
+        extractArchive: async (_format, _archive, destination) => {
+          const runtime = path.join(destination, `node-v${MANAGED_NODE_VERSION}-linux-x64`);
+          await mkdir(runtime, { recursive: true });
+          await writeFile(path.join(runtime, "reviewed-runtime"), "ready");
+        },
+        probe: async () => {
+          probes += 1;
+          return probes === 1
+            ? { status: "missing", paths }
+            : { status: "ready", version: MANAGED_NODE_VERSION, paths };
+        },
+        rename: async () => {
+          renameCalls += 1;
+          throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+        },
+      },
+    });
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.failure, "filesystem_failed");
+    assert.equal(renameCalls, 7, "the bounded retry window ends and the persistent EPERM propagates");
   } finally {
     await rm(home, { recursive: true, force: true });
   }

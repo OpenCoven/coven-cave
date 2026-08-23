@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
+import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenOverrideRejection, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
@@ -20,6 +20,51 @@ const childSpawnEnvSource = await readFile(
 assert.equal(isWindowsRemoteExecutablePath("\\\\server\\share\\coven.exe"), true);
 assert.equal(isWindowsRemoteExecutablePath("\\\\?\\UNC\\server\\share\\coven.exe"), true);
 assert.equal(isWindowsRemoteExecutablePath("\\\\?\\C:\\Tools\\coven.exe"), false);
+// Spellings the two-regex denylist admitted. Each was measured on Windows 11
+// reading `\\localhost\C$\Windows\win.ini` with the host spelled `localhost`,
+// so each would have sourced and spawned coven.exe from another machine.
+for (const admitted of [
+  String.raw`\\.\UNC\remote-host\share\coven.exe`,
+  String.raw`\\?\GLOBALROOT\Device\Mup\remote-host\share\coven.exe`,
+  String.raw`\\?\GLOBALROOT\Device\LanmanRedirector\remote-host\share\coven.exe`,
+  String.raw`\\?\GLOBALROOT\??\UNC\remote-host\share\coven.exe`,
+  String.raw`\\.\C:\..\..\UNC\remote-host\share\coven.exe`,
+  // The `\\?\` prefix does not make a `..` inert for a *file* path, whatever
+  // it does for a pipe name — this one read the remote file just as the `\\.\`
+  // spelling above it did. The traversal refusal is load-bearing under both
+  // prefixes, so do not narrow it to one of them.
+  String.raw`\\?\C:\..\..\UNC\remote-host\share\coven.exe`,
+]) {
+  assert.equal(
+    isWindowsRemoteExecutablePath(admitted),
+    true,
+    `${admitted} reaches another machine and must not be eligible`,
+  );
+}
+// Forward slashes reach the same object-manager routes, and the value is read
+// as written, before anything else trims it.
+assert.equal(isWindowsRemoteExecutablePath("//./UNC/remote-host/share/coven.exe"), true);
+assert.equal(isWindowsRemoteExecutablePath("  \\\\remote-host\\share\\coven.exe  "), true);
+// The edge-whitespace fold is spelled out because `String.prototype.trim` and
+// Rust's `str::trim` disagree on exactly two characters: JS folds U+FEFF and
+// not U+0085, Rust the reverse. A differential over 203 spellings found both,
+// and each was a value one copy refused while the other admitted it, so the
+// union is pinned on both sides.
+for (const [name, code] of [["U+0085 NEL", 0x85], ["U+FEFF BOM", 0xfeff]] as const) {
+  assert.equal(
+    isWindowsRemoteExecutablePath(`${String.fromCharCode(code)}\\\\remote-host\\share\\coven.exe`),
+    true,
+    `a leading ${name} is folded on both sides, so the TS and Rust copies agree`,
+  );
+}
+// The pipe device stays on this machine, but no launcher lives there, so the
+// executable boundary is one notch tighter than the daemon-socket one.
+assert.equal(isWindowsRemoteExecutablePath("\\\\.\\pipe\\coven"), true);
+// Local spellings stay eligible: a plain drive letter is not rooted at `\\` at
+// all, and a drive behind either device prefix is on this machine.
+assert.equal(isWindowsRemoteExecutablePath("C:\\Tools\\coven.exe"), false);
+assert.equal(isWindowsRemoteExecutablePath("\\\\.\\C:\\Tools\\coven.exe"), false);
+assert.equal(isWindowsRemoteExecutablePath("coven.exe"), false);
 assert.match(
   source,
   /const canonical = realpathSync[\s\S]*isWindowsRemoteExecutablePath\(canonical\)[\s\S]*return st\.isFile\(\) \? canonical : null/,
@@ -813,6 +858,50 @@ assert.match(
   source,
   /process\.platform === "win32"\) throw new Error\(COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC\)/,
   "a missing Windows Coven CLI fails closed instead of returning a bare executable name",
+);
+
+// An explicit override that fails verification must not vanish: resolution
+// falls through to the managed copy, and without a line naming the reason the
+// only way to discover that is to read the resolver.
+assert.match(
+  source,
+  /console\.warn\([\s\S]{0,200}ignoring COVEN_BIN/,
+  "an unusable COVEN_BIN is reported instead of silently falling through to discovery",
+);
+assert.equal(
+  covenOverrideRejection("coven.exe", "linux"),
+  "it is not an absolute path",
+  "a relative override is named as such - Windows would resolve it against the child cwd",
+);
+assert.equal(
+  covenOverrideRejection("\\\\remote-host\\share\\coven.exe", "win32"),
+  "it is not on a local drive",
+);
+assert.equal(
+  covenOverrideRejection(
+    String.raw`\\?\GLOBALROOT\Device\Mup\remote-host\share\coven.exe`,
+    "win32",
+  ),
+  "it is not on a local drive",
+  "the operator hears about a device-namespace share, not only the obvious spelling",
+);
+// The canonical re-check has its own sentence, and it is the one branch of
+// `covenOverrideRejection` no assertion reached: reverting it to the old UNC
+// wording left every test in this file and `coven-daemon.test.ts` passing.
+// Reproducing it behaviourally needs a reparse point aimed at a real share, so
+// the shape is pinned here instead — the branch and its wording together.
+assert.match(
+  source,
+  /isWindowsRemoteExecutablePath\(canonical\)\) \{\s*return "it resolves off this machine";/,
+  "a COVEN_BIN whose reparse target leaves the machine says so, and is not described as UNC",
+);
+assert.equal(
+  covenOverrideRejection(path.join(os.tmpdir(), "cave-coven-override-absent")),
+  "it does not exist",
+);
+assert.equal(
+  covenOverrideRejection(await realpath(os.tmpdir())),
+  "it is not a file",
 );
 
 if (process.platform === "win32") {

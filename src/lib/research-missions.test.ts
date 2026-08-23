@@ -15,12 +15,16 @@ import {
   RESEARCH_CONSTRAINT_MAX_COUNT,
   RESEARCH_CONSTRAINT_MAX_LENGTH,
   RESEARCH_DELIVERABLE_MAX_LENGTH,
+  RESEARCH_DIRECTION_MAX_LENGTH,
+  RESEARCH_INTENT_MAX_LENGTH,
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
   RESEARCH_HARNESS_IDS,
+  RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT,
   RESEARCH_MODEL_MAX_LENGTH,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
   RESEARCH_TITLE_MAX_LENGTH,
+  nextResearchIterationNumber,
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
@@ -77,6 +81,26 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
     ...validMission(),
     constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
   }), null);
+});
+
+test("mission parser preserves valid title provenance and rejects unknown values", () => {
+  const explicit = { ...validMission(), titleSource: "explicit" } as const;
+  assert.deepEqual(parseResearchMission(explicit), explicit);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: "inferred" }), null);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: new String("explicit") }), null);
+});
+
+test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
+  assert.equal(RESEARCH_INTENT_MAX_LENGTH, 25_000);
+  assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 10_000);
+  assert.equal(
+    validateCreateResearchMissionInput({ ...validMission(), intent: "i".repeat(RESEARCH_INTENT_MAX_LENGTH) }).ok,
+    true,
+  );
+  assert.equal(
+    validateCreateResearchMissionInput({ ...validMission(), intent: "i".repeat(RESEARCH_INTENT_MAX_LENGTH + 1) }).ok,
+    false,
+  );
 });
 
 test("mission parser strips private process-owner provenance from public state", () => {
@@ -386,10 +410,50 @@ test("mission input rejects lossful and NUL-bearing prompt fields", () => {
     audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH),
     constraints: ["c".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH)],
   });
+
   assert.equal(boundary.ok, true);
   if (boundary.ok) {
     assert.equal(boundary.value.title?.length, RESEARCH_TITLE_MAX_LENGTH);
     assert.equal(boundary.value.constraints?.[0]?.length, RESEARCH_CONSTRAINT_MAX_LENGTH);
+  }
+});
+
+test("mission creation validates, deduplicates, and bounds initial saved links", () => {
+  const valid = {
+    familiarId: "sage",
+    intent: "Compare two databases",
+    mode: "brief",
+    modeSource: "auto",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+  const accepted = validateCreateResearchMissionInput({
+    ...valid,
+    savedLinkIds: ["link-a", " link-b ", "link-a"],
+  });
+  assert.equal(accepted.ok, true);
+  if (accepted.ok) {
+    assert.deepEqual(accepted.value.savedLinkIds, ["link-a", "link-b"]);
+  }
+
+  for (const savedLinkIds of [
+    "link-a",
+    ["ok", 42],
+    [""],
+    ["x".repeat(129)],
+    Array.from({ length: RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT + 1 }, (_, index) => `link-${index}`),
+  ]) {
+    assert.equal(
+      validateCreateResearchMissionInput({ ...valid, savedLinkIds }).ok,
+      false,
+    );
   }
 });
 
@@ -997,7 +1061,7 @@ test("Continue is labeled with its real consequence", () => {
     { iterations: [{ number: 1, status: "checkpoint" }], bounds, startedAt },
     tenMinutesIn,
   );
-  assert.equal(withinPlan.label, "Continue (i2/3)");
+  assert.equal(withinPlan.label, "Continue to iteration 2 of 3");
   assert.equal(withinPlan.gated, false);
   // Even ungated, the sentence is a request, not a promise — the runner
   // re-checks its stop gates with live clocks.
@@ -1014,10 +1078,21 @@ test("Continue is labeled with its real consequence", () => {
     },
     tenMinutesIn,
   );
-  assert.equal(beyond.label, "Continue (i2/1)");
+  assert.equal(beyond.label, "Iteration limit reached");
   assert.equal(beyond.gated, true);
   assert.match(beyond.description, /past the planned 1/);
   assert.match(beyond.description, /iteration limit/);
+
+  assert.equal(
+    nextResearchIterationNumber({
+      iterations: [
+        { number: 1, status: "completed" },
+        { number: 3, status: "checkpoint" },
+      ],
+    }),
+    4,
+    "the next iteration follows the latest persisted iteration number, not the array length",
+  );
 });
 
 test("Continue reports every runner stop gate, not just the iteration limit", () => {
@@ -1056,7 +1131,28 @@ test("Continue reports every runner stop gate, not just the iteration limit", ()
     Date.parse("2026-07-15T00:10:00Z"),
   );
   assert.equal(noCost.gated, true);
+  assert.equal(noCost.costApprovalRequired, true);
+  assert.match(noCost.label, /Continue with unreported cost/);
   assert.match(noCost.description, /finished without reporting cost/);
+
+  const spendBeforeApproval = researchContinueLabel(
+    {
+      iterations: [
+        { number: 1, status: "checkpoint" as const, finishedAt: "2026-07-15T00:05:00Z", costUsd: 5 },
+        { number: 2, status: "checkpoint" as const, finishedAt: "2026-07-15T00:10:00Z" },
+      ],
+      bounds: {
+        ...bounds,
+        maxIterations: 3,
+        maxSpendUsd: 5,
+        stopWhenCostUnavailable: true,
+      },
+      startedAt,
+    },
+    Date.parse("2026-07-15T00:10:00Z"),
+  );
+  assert.equal(spendBeforeApproval.costApprovalRequired, false);
+  assert.match(spendBeforeApproval.description, /reported spend has reached/);
 });
 
 // --- bound readings: a bar only where a denominator exists -----------------

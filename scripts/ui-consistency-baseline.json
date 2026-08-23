@@ -18,11 +18,6 @@
   "findings": [
     {
       "rule": "components/no-native-select",
-      "path": "src/components/chat-list.tsx",
-      "excerpt": "<select value={groupBy} onChange={(e) => setGroupBy(normalizeChatGroupBy(e.target.value))} aria-label=\"Group sessions by\" className=\"chat-list-group-select focus-ring h-7 shrink-0 cursor-pointer rounded-[var(--radius-pill)] border border-[var(--border-hairline)] bg-transparent px-2.5 text-[length:var(--text-xs)] text-[var(--text-secondary)]\" >"
-    },
-    {
-      "rule": "components/no-native-select",
       "path": "src/components/chat-view.tsx",
       "excerpt": "<select className=\"focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/60 px-2 py-1 text-[length:var(--text-xs)] font-medium text-[var(--text-primary)]\" defaultValue=\"\" disabled={busy} aria-label=\"Pick a project to run this chat in\" onChange={(event) => { if (event.target.value) onPickProject(event.target.value); }} >"
     },
@@ -69,7 +64,7 @@
     {
       "rule": "components/no-native-select",
       "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-source\" className=\"research-studio__select\" value={selectedSourceId ?? \"\"} onChange={(event) => onSelectSource(event.target.value)} >"
+      "excerpt": "<select id=\"research-studio-config-source\" className=\"research-studio__select focus-ring\" value={selectedSourceId ?? \"\"} onChange={(event) => onSelectSource(event.target.value)} >"
     },
     {
       "rule": "components/no-native-select",
@@ -79,7 +74,7 @@
     {
       "rule": "components/no-native-select",
       "path": "src/components/role-surfaces/research-tab-studio.tsx",
-      "excerpt": "<select id=\"research-studio-source\" className=\"research-studio__select\" value={effectiveSourceId ?? \"\"} onChange={(event) => setSourceId(event.target.value)} >"
+      "excerpt": "<select id=\"research-studio-source\" className=\"research-studio__select focus-ring\" value={effectiveSourceId ?? \"\"} onChange={(event) => setSourceId(event.target.value)} >"
     },
     {
       "rule": "components/no-native-select",
@@ -178,18 +173,8 @@
     },
     {
       "rule": "copy/no-ascii-ellipsis",
-      "path": "src/components/familiars-memory-view.tsx",
-      "excerpt": "placeholder={ lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory…` : \"Search memory...\" }"
-    },
-    {
-      "rule": "copy/no-ascii-ellipsis",
       "path": "src/components/marketplace/craft-create-drawer.tsx",
       "excerpt": "Loading roles..."
-    },
-    {
-      "rule": "copy/no-ascii-ellipsis",
-      "path": "src/components/mobile-handoff-modal.tsx",
-      "excerpt": "{loading ? \"Starting...\" : \"No QR\"}"
     },
     {
       "rule": "copy/no-ascii-ellipsis",

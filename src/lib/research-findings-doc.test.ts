@@ -135,6 +135,51 @@ test("lists parse into a single ul block", () => {
   assert.equal(list.items.length, 2);
 });
 
+test("fenced Mermaid survives as a code block instead of flattened prose", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+## Architecture
+
+\`\`\`mermaid
+flowchart TD
+  UI[Research Desk] --> D[Daemon]
+\`\`\`
+
+## Runtime
+
+Ready.
+`, SOURCES);
+  const architecture = doc.sections.find((s) => s.heading === "Architecture");
+  assert.ok(architecture);
+  assert.equal(architecture.blocks.length, 1);
+  assert.deepEqual(architecture.blocks[0], {
+    kind: "code",
+    language: "mermaid",
+    code: "flowchart TD\n  UI[Research Desk] --> D[Daemon]",
+  });
+  assert.deepEqual(doc.sections.map((section) => section.heading), ["Architecture", "Runtime"]);
+});
+
+test("headings inside fenced code do not split the document", () => {
+  const doc = parseFindingsDoc(`# Findings
+
+\`\`\`markdown
+# This is code, not a section
+\`\`\`
+
+## Real section
+
+Body.
+`, SOURCES);
+  assert.deepEqual(doc.sections.map((section) => section.heading), ["", "Real section"]);
+  const overview = doc.sections.find((section) => section.id === "s-overview");
+  assert.deepEqual(overview?.blocks[0], {
+    kind: "code",
+    language: "markdown",
+    code: "# This is code, not a section",
+  });
+});
+
 test("section and document ref ids are collected in order", () => {
   const doc = parseFindingsDoc(FINDINGS, SOURCES);
   assert.deepEqual(doc.refIds, ["S14", "S6", "C1"]);

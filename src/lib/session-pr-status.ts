@@ -8,12 +8,13 @@
 import type { SessionPullRequestContext } from "@/lib/types";
 import type { IconName } from "@/lib/icon";
 
-export type SessionPrStatusKey = "open" | "draft" | "merged" | "closed";
+export type SessionPrStatusKey = "open" | "draft" | "merged" | "closed" | "unknown";
 
 export type SessionPrStatus = {
   key: SessionPrStatusKey;
   icon: IconName;
-  /** e.g. "PR #42 · merged" — the badge's title/aria text. */
+  /** e.g. "PR #42 · merged" — the badge's title/aria text. States outside
+   *  GitHub's own vocabulary claim only the link ("PR #42"), never a state. */
   label: string;
   /** Always resolvable: falls back to the canonical github.com PR URL. */
   url: string;
@@ -28,9 +29,12 @@ function statusKey(pr: SessionPullRequestContext): SessionPrStatusKey {
   if (MERGED.has(state)) return "merged";
   if (CLOSED.has(state)) return "closed";
   if (pr.draft || state === "draft") return "draft";
-  // Anything else — "open", or a GitHub-task lifecycle word like
-  // "running"/"review" — still means "there's a live PR here".
-  return "open";
+  if (state === "open") return "open";
+  // Anything else — a GitHub-task lifecycle word like "running"/"review"/
+  // "done", or no state at all — still means "there's a PR here", but the
+  // GitHub state is unverified: a "done" task's PR has likely merged, so
+  // painting it as an open PR would be a guess. Claim the link, not the state.
+  return "unknown";
 }
 
 /**
@@ -51,5 +55,6 @@ export function sessionPrStatus(
   const key = statusKey(pr);
   const icon: IconName = key === "merged" ? "ph:git-merge" : "ph:git-pull-request";
   const number = typeof pr.number === "number" ? ` #${pr.number}` : "";
-  return { key, icon, label: `PR${number} · ${key}`, url };
+  const label = key === "unknown" ? `PR${number}` : `PR${number} · ${key}`;
+  return { key, icon, label, url };
 }

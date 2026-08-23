@@ -216,20 +216,26 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /if \(toolMatch && claudeToolsEnabled\)/,
-  "Claude compatibility fallback must not create tool bubbles from unverified hook lines",
+  /const claudeHookEvidenceEnabled = binding\.harness !== "claude" \|\| !sshRuntime;[\s\S]*?if \(toolMatch && claudeHookEvidenceEnabled\)/,
+  "local Claude hook evidence remains available when stream-json envelope decoding is quarantined",
 );
 
 assert.match(
   chatRoute,
-  /let claudeToolsEnabled =\s*binding\.harness !== "claude" \|\|\s*\(claudeCompatibility\?\.kind === "compatible" && !claudeCompatibility\.stale\);[\s\S]*?binding\.harness === "claude" &&\s*claudeCompatibility\?\.kind === "compatible" &&\s*!claudeCompatibility\.stale &&\s*claudeToolsEnabled/,
-  "an expired profile must preserve text-only Claude chat while disabling both hook and envelope tool decoding",
+  /let claudeEnvelopeToolsEnabled =\s*binding\.harness !== "claude" \|\|\s*\(claudeCompatibility\?\.kind === "compatible" && !claudeCompatibility\.stale\);[\s\S]*?binding\.harness === "claude" &&\s*claudeCompatibility\?\.kind === "compatible" &&\s*!claudeCompatibility\.stale &&\s*claudeEnvelopeToolsEnabled/,
+  "an expired profile must preserve text and local hook evidence while disabling envelope tool decoding",
 );
 
 assert.match(
   chatRoute,
-  /reportMalformedClaudeStreamFrame = \(frame: unknown\) => \{[\s\S]*?claudeToolsEnabled = false;[\s\S]*?reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?claudeToolsEnabled = false;/,
-  "a malformed or unknown Claude frame must disable profile-selected tool decoding for the rest of the stream",
+  /reportMalformedClaudeStreamFrame = \(frame: unknown\) => \{[\s\S]*?claudeEnvelopeToolsEnabled = false;[\s\S]*?reportUnsupportedClaudeToolFrame = \(frame: unknown\) => \{[\s\S]*?claudeEnvelopeToolsEnabled = false;/,
+  "a malformed or unknown Claude frame must disable only profile-selected envelope decoding for the rest of the stream",
+);
+
+assert.match(
+  chatRoute,
+  /if \(!isPost && \(binding\.harness !== "claude" \|\| claudeEnvelopeToolsEnabled\)\) \{\s*boundarySentinel\?\.observe\(name, rest\);/,
+  "quarantined Claude hook evidence must not regain verified boundary-sentinel authority",
 );
 
 assert.match(
@@ -263,7 +269,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /Claude stream frame could not be decoded[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?chat text will continue without unverified tool bubbles[\s\S]*?reportMalformedClaudeStreamFrame\(line\)/,
+  /Claude stream frame could not be decoded[\s\S]*?fingerprint: redactedEventFingerprint\(frame\)[\s\S]*?stream-json tool bubbles are disabled, but local hook evidence will still be shown[\s\S]*?reportMalformedClaudeStreamFrame\(line\)/,
   "malformed Claude JSONL must be reduced to a fingerprint and diagnostic rather than falling through to payload-bearing stdout diagnostics",
 );
 

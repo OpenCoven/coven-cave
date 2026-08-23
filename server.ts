@@ -1,10 +1,25 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHmac, randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
@@ -110,6 +125,454 @@ function accessToken(): string {
 }
 const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 
+const CLIENT_V1_DISCOVERY_FILE = "client-v1-discovery.json";
+const CLIENT_V1_DISCOVERY_NONCE = randomUUID();
+const CLIENT_V1_DISCOVERY_STARTED_AT = new Date().toISOString();
+let clientV1DiscoveryPublished = false;
+
+function standaloneCaveHome(): string {
+  const covenHome = process.env.COVEN_HOME || join(homedir(), ".coven");
+  return resolve(process.env.COVEN_CAVE_HOME || join(covenHome, "cave"));
+}
+
+function clientV1DiscoveryFile(): string {
+  return join(standaloneCaveHome(), CLIENT_V1_DISCOVERY_FILE);
+}
+
+// Windows ownership, inlined for the same reason as everything else in this
+// block: `build:server` runs esbuild with `--bundle=false`, so server.mjs
+// cannot import src/lib/server/client-v1/path-ownership.ts. That module is the
+// authority; the PowerShell below is a verbatim copy of its script and
+// discovery.test.ts fails if the two ever drift.
+const WINDOWS_SYSTEM_SID = "S-1-5-18";
+const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
+
+// The unverified-ownership waiver, inlined from path-ownership.ts for the same
+// reason as the script below. See that module for why it is shaped this way;
+// discovery.test.ts pins every part of it byte-for-byte, because a copy that
+// drifts is a copy that opts out on terms the module never agreed to.
+const UNVERIFIED_OWNERSHIP_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP";
+const UNVERIFIED_OWNERSHIP_REASON_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON";
+const UNVERIFIED_OWNERSHIP_TOKEN = "i-accept-unverified-path-ownership";
+const UNVERIFIED_OWNERSHIP_MIN_REASON = 12;
+
+type UnverifiedOwnershipWaiver =
+  | { granted: true; reason: string }
+  | { granted: false; note: string };
+
+function resolveUnverifiedOwnershipWaiver(
+  env: Record<string, string | undefined>,
+): UnverifiedOwnershipWaiver {
+  const requested = env[UNVERIFIED_OWNERSHIP_ENV]?.trim() ?? "";
+  if (!requested) {
+    return {
+      granted: false,
+      note:
+        `If the DACL genuinely cannot be read on this host — PowerShell in `
+        + `Constrained Language Mode, or no powershell.exe under %SystemRoot% — `
+        + `set ${UNVERIFIED_OWNERSHIP_ENV}=${UNVERIFIED_OWNERSHIP_TOKEN} and `
+        + `${UNVERIFIED_OWNERSHIP_REASON_ENV} to a sentence naming who accepted `
+        + `that and why. It waives only an unreadable DACL, never one that was `
+        + `read and found shared.`,
+    };
+  }
+  if (requested !== UNVERIFIED_OWNERSHIP_TOKEN) {
+    return {
+      granted: false,
+      note:
+        `${UNVERIFIED_OWNERSHIP_ENV} is set, but not to the waiver: the only `
+        + `accepted value is the exact string ${UNVERIFIED_OWNERSHIP_TOKEN}. A `
+        + `boolean-shaped value ("1", "true", "yes") never waives this check.`,
+    };
+  }
+  const reason = env[UNVERIFIED_OWNERSHIP_REASON_ENV]?.trim() ?? "";
+  if (reason.length < UNVERIFIED_OWNERSHIP_MIN_REASON) {
+    return {
+      granted: false,
+      note:
+        `${UNVERIFIED_OWNERSHIP_ENV} is set, but ${UNVERIFIED_OWNERSHIP_REASON_ENV} `
+        + `must carry at least ${UNVERIFIED_OWNERSHIP_MIN_REASON} characters naming `
+        + `who accepted an unverified path and why. The waiver stays closed `
+        + `without that attribution.`,
+    };
+  }
+  return { granted: true, reason };
+}
+
+function unverifiableOwnershipRefusal(
+  subject: string,
+  path: string,
+  cause: Error,
+  note: string,
+): string {
+  return `${subject} ownership could not be verified on Windows: ${cause.message}. `
+    + `Refusing ${path}; inspect it with: icacls "${path}". ${note}`;
+}
+
+function unverifiedOwnershipDisclosure(
+  subject: string,
+  path: string,
+  cause: Error,
+  reason: string,
+): string {
+  return `SECURITY WAIVER — ${subject} is being used UNVERIFIED. Its DACL could not `
+    + `be read on this host (${cause.message}), and ${UNVERIFIED_OWNERSHIP_ENV} is `
+    + `set, so ${path} is trusted on the operator's word alone: reason given — `
+    + `${reason}. Any principal that can write ${path} can mint credentials or `
+    + `point a paired client at another server. Unset ${UNVERIFIED_OWNERSHIP_ENV} `
+    + `to restore the check.`;
+}
+
+function sharedOwnershipRefusal(
+  subject: string,
+  path: string,
+  findings: string[],
+  waiver: UnverifiedOwnershipWaiver,
+): string {
+  return `${subject} is not exclusive to the current user: ${findings.join("; ")}. `
+    + `Refusing ${path}; inspect it with: icacls "${path}"`
+    + (waiver.granted
+      ? `. ${UNVERIFIED_OWNERSHIP_ENV} does not cover a DACL that was read: this `
+        + `one was, and it is shared. Repair it with: icacls "${path}" /reset`
+      : "");
+}
+
+const WINDOWS_ACL_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+$item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
+$me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_SYSTEM_SID}')
+$admins = New-Object System.Security.Principal.SecurityIdentifier('${WINDOWS_ADMINISTRATORS_SID}')
+$trusted = @($me.Value, $system.Value, $admins.Value)
+
+function Read-State {
+  param($target)
+  $acl = $target.GetAccessControl('Access,Owner')
+  $aces = @($acl.Access | ForEach-Object {
+    [pscustomobject]@{
+      sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+      type = [string]$_.AccessControlType
+    }
+  })
+  [pscustomobject]@{
+    owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+    protected = [bool]$acl.AreAccessRulesProtected
+    aces = $aces
+  }
+}
+
+function Test-Exclusive {
+  param($state)
+  if (-not $state.protected) { return $false }
+  if ($state.owner -ne $me.Value) { return $false }
+  foreach ($ace in $state.aces) {
+    if ($ace.type -ne 'Allow') { return $false }
+    if ($trusted -notcontains $ace.sid) { return $false }
+  }
+  return $true
+}
+
+$state = Read-State $item
+$repaired = $false
+$removed = @()
+if (-not (Test-Exclusive $state)) {
+  $removed = @($state.aces | Where-Object { $trusted -notcontains $_.sid } |
+    ForEach-Object { $_.sid } | Select-Object -Unique)
+  $acl = $item.GetAccessControl('Access')
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
+  $inheritance = if ($item.PSIsContainer) { 'ContainerInherit, ObjectInherit' } else { 'None' }
+  foreach ($sid in @($me, $system, $admins)) {
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+      $sid, 'FullControl', $inheritance, 'None', 'Allow')))
+  }
+  $item.SetAccessControl($acl)
+  $repaired = $true
+  $state = Read-State $item
+}
+
+[pscustomobject]@{
+  self = $me.Value
+  owner = $state.owner
+  protected = $state.protected
+  repaired = $repaired
+  removed = @($removed)
+  aces = $state.aces
+} | ConvertTo-Json -Compress -Depth 4
+`;
+
+const standaloneVerifiedWindowsPaths = new Set<string>();
+// Paths admitted UNVERIFIED under the operator's waiver. Separate from the set
+// above because nothing here was verified — and cached for the same reason the
+// module caches it: on a host where the probe can never answer, re-driving it
+// would fork a doomed subprocess per request and repeat a disclosure nobody
+// would then read.
+const standaloneWaivedWindowsPaths = new Set<string>();
+
+function assertStandaloneWindowsExclusive(path: string, label: string): void {
+  if (standaloneVerifiedWindowsPaths.has(path)) return;
+  if (standaloneWaivedWindowsPaths.has(path)) return;
+  const subject = `Client v1 discovery ${label}`;
+  const waiver = resolveUnverifiedOwnershipWaiver(process.env);
+  const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+  // The smallest environment PowerShell needs, never this server's own: it
+  // holds COVEN_CAVE_ACCESS_TOKEN and COVEN_CAVE_AUTH_TOKEN, and a subprocess
+  // that only has to read a DACL has no business receiving them. Same rule
+  // sanitizedEnv() enforces for PTY shells. The path under test travels here
+  // too, so no quoting rule stands between a path containing a quote and the
+  // identity being checked.
+  const probeEnv: NodeJS.ProcessEnv = {
+    COVEN_CAVE_CLIENT_V1_ACL_PATH: path,
+    // Next augments ProcessEnv to require this. It carries no secret.
+    NODE_ENV: process.env.NODE_ENV,
+    SystemRoot: systemRoot,
+    windir: systemRoot,
+    PATH: join(systemRoot, "System32"),
+    PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD",
+    TEMP: process.env.TEMP || process.env.TMP || join(systemRoot, "Temp"),
+    TMP: process.env.TMP || process.env.TEMP || join(systemRoot, "Temp"),
+  };
+  let report: {
+    self: string;
+    owner: string;
+    protected: boolean;
+    repaired: boolean;
+    removed: string[];
+    aces: { sid: string; type: string }[];
+  };
+  try {
+    report = JSON.parse(execFileSync(
+      join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-NoLogo",
+        "-InputFormat",
+        "None",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        WINDOWS_ACL_SCRIPT,
+      ],
+      {
+        env: probeEnv,
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 15_000,
+        maxBuffer: 1024 * 1024,
+      },
+    ));
+    // `aces` carries the whole access decision, so a shape this cannot read has
+    // to be an error rather than a default: an absent or non-array `aces` reads
+    // downstream as "no principal has access" and would therefore admit the
+    // path. Same contract as parseClientV1WindowsAclReport in the module.
+    if (
+      !report
+      || typeof report !== "object"
+      || typeof report.self !== "string"
+      || !report.self
+      || typeof report.owner !== "string"
+      || !report.owner
+      || typeof report.protected !== "boolean"
+      || typeof report.repaired !== "boolean"
+      || !Array.isArray(report.aces)
+      || !Array.isArray(report.removed)
+    ) {
+      throw new Error("the ACL probe returned a malformed report");
+    }
+  } catch (cause) {
+    // The ONE condition the waiver covers: the host cannot answer the
+    // question. Everything below this point had an answer.
+    if (!waiver.granted) {
+      throw new Error(
+        unverifiableOwnershipRefusal(subject, path, cause as Error, waiver.note),
+        { cause },
+      );
+    }
+    standaloneWaivedWindowsPaths.add(path);
+    console.warn(
+      unverifiedOwnershipDisclosure(subject, path, cause as Error, waiver.reason),
+    );
+    return;
+  }
+
+  const trusted = new Set([report.self, WINDOWS_SYSTEM_SID, WINDOWS_ADMINISTRATORS_SID]);
+  const findings: string[] = [];
+  if (report.owner !== report.self) {
+    findings.push(`owned by ${report.owner}, not ${report.self}`);
+  }
+  if (!report.protected) findings.push("its DACL still inherits from the parent");
+  const foreign = report.aces
+    .filter((ace) => ace.type !== "Allow" || !trusted.has(ace.sid))
+    .map((ace) => `${ace.type}:${ace.sid}`);
+  if (foreign.length > 0) {
+    findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
+  }
+  if (findings.length > 0) {
+    throw new Error(sharedOwnershipRefusal(subject, path, findings, waiver));
+  }
+  if (report.repaired) {
+    console.warn(
+      `${subject} had no enforced access control on Windows; `
+      + `restricted ${path} to the current user and revoked `
+      + `${report.removed.length > 0 ? report.removed.join(", ") : "inherited entries"}.`,
+    );
+  }
+  standaloneVerifiedWindowsPaths.add(path);
+}
+
+function requireStandaloneOwner(
+  path: string,
+  metadata: NonNullable<ReturnType<typeof lstatSync>>,
+  label: string,
+): void {
+  // The uid comparison alone was inert on win32 — `process.getuid` is undefined
+  // there and `lstat` reports uid 0 for every path — so the discovery record
+  // that points a client at this server had no enforced owner at all. Anything
+  // that can answer neither question is refused rather than waved through.
+  if (typeof process.getuid === "function") {
+    if (metadata.uid !== process.getuid()) {
+      throw new Error(`Client v1 discovery ${label} must be owned by the current user.`);
+    }
+    return;
+  }
+  if (process.platform !== "win32") {
+    throw new Error(
+      `Client v1 discovery ${label} ownership cannot be verified on ${process.platform}: `
+      + `this platform exposes neither a uid nor a Windows ACL, so ${path} is refused.`,
+    );
+  }
+  assertStandaloneWindowsExclusive(path, label);
+}
+
+function assertStandaloneDiscoveryTarget(path: string): void {
+  try {
+    const metadata = lstatSync(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new Error(`Client v1 discovery target must be a regular file: ${path}.`);
+    }
+    requireStandaloneOwner(path, metadata, "target");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+}
+
+function publishStandaloneClientV1DiscoveryRecord(endpoint: string): void {
+  const root = join(clientV1DiscoveryFile(), "..");
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const rootMetadata = lstatSync(root);
+  if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
+    throw new Error("Client v1 discovery root must be a real directory.");
+  }
+  requireStandaloneOwner(root, rootMetadata, "root");
+  const physicalRoot = realpathSync(root);
+  if (physicalRoot !== root) {
+    throw new Error("Client v1 discovery root must not resolve through a symlink.");
+  }
+  chmodSync(root, 0o700);
+
+  const url = new URL(endpoint);
+  const loopback = url.hostname === "127.0.0.1"
+    || url.hostname === "localhost"
+    || url.hostname === "[::1]";
+  if (
+    url.protocol !== "http:"
+    || !loopback
+    || !url.port
+    || url.username
+    || url.password
+    || url.pathname !== "/"
+    || url.search
+    || url.hash
+    || /%(?:2f|5c)/i.test(endpoint)
+  ) {
+    throw new Error("Client v1 discovery endpoint must be a path-free loopback HTTP URL.");
+  }
+
+  const path = clientV1DiscoveryFile();
+  assertStandaloneDiscoveryTarget(path);
+  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  let fd: number | null = null;
+  let ownsTemporaryPath = false;
+  try {
+    fd = openSync(temporaryPath, "wx", 0o600);
+    ownsTemporaryPath = true;
+    writeFileSync(fd, `${JSON.stringify({
+      version: 1,
+      endpoint,
+      pid: process.pid,
+      nonce: CLIENT_V1_DISCOVERY_NONCE,
+      startedAt: CLIENT_V1_DISCOVERY_STARTED_AT,
+    }, null, 2)}\n`, "utf8");
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = null;
+    assertStandaloneDiscoveryTarget(path);
+    renameSync(temporaryPath, path);
+    ownsTemporaryPath = false;
+    chmodSync(path, 0o600);
+    clientV1DiscoveryPublished = true;
+  } catch (error) {
+    if (fd !== null) closeSync(fd);
+    if (ownsTemporaryPath) rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+function removeStandaloneClientV1DiscoveryRecord(nonce: string): boolean {
+  const path = clientV1DiscoveryFile();
+  let before: ReturnType<typeof lstatSync>;
+  let parsed: unknown;
+  try {
+    before = lstatSync(path);
+    if (!before.isFile() || before.isSymbolicLink()) return false;
+    requireStandaloneOwner(path, before, "target");
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    if (error instanceof SyntaxError) return false;
+    throw error;
+  }
+  if (
+    !parsed
+    || typeof parsed !== "object"
+    || Array.isArray(parsed)
+    || (parsed as { nonce?: unknown }).nonce !== nonce
+  ) {
+    return false;
+  }
+  const current = lstatSync(path);
+  if (
+    !current.isFile()
+    || current.isSymbolicLink()
+    || current.dev !== before.dev
+    || current.ino !== before.ino
+  ) {
+    return false;
+  }
+  unlinkSync(path);
+  clientV1DiscoveryPublished = false;
+  return true;
+}
+
+function cleanupStandaloneClientV1Discovery(): void {
+  if (!clientV1DiscoveryPublished) return;
+  // This runs first inside the SIGINT/SIGTERM handler, so a throw here escapes
+  // the signal handler and kills the process before `terminatePtySessions()`
+  // and `server.close()` — stranding PTY children and leaving behind the very
+  // record this function exists to remove. The owner guard could not throw on
+  // win32 before it learned to read a DACL; now it can, and it does so by
+  // spawning a subprocess at the exact moment the OS is tearing the session
+  // down. Refusing to unlink a record we cannot verify is still correct — but
+  // it is a reason to skip the unlink, never a reason to abort the shutdown.
+  try {
+    removeStandaloneClientV1DiscoveryRecord(CLIENT_V1_DISCOVERY_NONCE);
+  } catch (error) {
+    console.error("[cave] failed to remove client-v1 discovery record", error);
+  }
+}
+
 // Local-peer stamp (cave-vn2r): only this file sees the raw TCP socket, so
 // only it can prove a request truly came from this machine. Requests whose
 // peer is loopback AND that carry no forwarding markers get LOCAL_PEER_HEADER
@@ -133,6 +596,7 @@ const FORWARDING_HEADERS = [
 
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const PRESENCE_COOKIE = "coven_passkey_presence";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const SIDECAR_QUERY_PARAM = "covenCaveToken";
 
@@ -201,6 +665,7 @@ async function terminatePackagedUnixSidecarTree(): Promise<void> {
     // EOF/Job boundary finish cleanup instead of waiting past Tauri's lease.
     console.error("[cave] direct Copilot process-tree shutdown could not be proved", error);
   } finally {
+    cleanupStandaloneClientV1Discovery();
     terminatePtySessions();
     try {
       process.kill(-process.pid, "SIGKILL");
@@ -297,21 +762,33 @@ function scrollbackFrom(session: PtySession, cursor: number): Buffer[] {
   return output;
 }
 
-function getTokensFromCookie(header: string | undefined): string[] {
-  if (!header) return [];
-  const tokens: string[] = [];
+function parseCookies(header: string | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!header) return map;
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
-    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
-      const raw = rest.join("=") ?? "";
-      try {
-        tokens.push(decodeURIComponent(raw));
-      } catch {
-        // Ignore malformed percent-encoding.
-      }
+    if (!key) continue;
+    try {
+      map.set(key, decodeURIComponent(rest.join("=")));
+    } catch {
+      // Leave malformed percent-encoded values out of the map.
     }
   }
+  return map;
+}
+
+function getTokensFromCookie(header: string | undefined): string[] {
+  const cookies = parseCookies(header);
+  const tokens: string[] = [];
+  for (const name of [ACCESS_COOKIE, LEGACY_ACCESS_COOKIE]) {
+    const value = cookies.get(name);
+    if (value !== undefined) tokens.push(value);
+  }
   return tokens;
+}
+
+function getCookie(header: string | undefined, name: string): string | null {
+  return parseCookies(header).get(name) ?? null;
 }
 
 function timingSafeEqualString(a: string, b: string): boolean {
@@ -356,6 +833,37 @@ function isValidSignedAccessToken(value: string, secret: string): boolean {
     .update(`v1.${parts[1]}.${parts[2]}`)
     .digest("base64url");
   return timingSafeEqualString(parts[3], expected);
+}
+
+// Mirrors src/lib/passkey-presence.ts. server.mjs is emitted without bundling,
+// so this entrypoint cannot import from src/ at runtime.
+function hasValidPasskeyPresence(req: IncomingMessage, tailnetNodeId: string | null): boolean {
+  if (!tailnetNodeId) return false;
+  const secret = process.env.COVEN_CAVE_PASSKEY_SESSION_SECRET;
+  const token = getCookie(req.headers.cookie, PRESENCE_COOKIE);
+  if (!secret || !token) return false;
+
+  const parts = token.split(".");
+  if (parts.length !== 6 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  const field = /^[A-Za-z0-9_-]+$/;
+  if (
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= 0 ||
+    !field.test(parts[2]) ||
+    !field.test(parts[3]) ||
+    !parts[4] ||
+    !parts[5]
+  ) {
+    return false;
+  }
+  const body = parts.slice(0, 5).join(".");
+  const expected = createHmac("sha256", secret).update(body).digest("base64url");
+  return (
+    timingSafeEqualString(parts[5], expected) &&
+    expiresAt > Date.now() &&
+    parts[2] === tailnetNodeId
+  );
 }
 
 function bearerToken(req: IncomingMessage): string | null {
@@ -669,8 +1177,9 @@ function shouldRejectUnauthenticatedPtyUpgrade({
   sidecarTokenConfigured = false,
   accessTokenConfigured = false,
   tokenAuthenticated = false,
+  directLoopback = false,
 } = {}) {
-  if (tokenAuthenticated) return false;
+  if (tokenAuthenticated || directLoopback) return false;
   return sidecarTokenConfigured || accessTokenConfigured;
 }
 
@@ -1108,6 +1617,11 @@ function loopbackHostname(raw = process.env.HOSTNAME) {
   return "127.0.0.1";
 }
 
+function loopbackHttpEndpoint(hostname: string, port: number): string {
+  const urlHostname = hostname === "::1" ? `[${hostname}]` : hostname;
+  return `http://${urlHostname}:${port}`;
+}
+
 const dev = process.env.NODE_ENV !== "production";
 const hostname = loopbackHostname();
 const port = cavePort();
@@ -1140,7 +1654,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1160,46 +1674,54 @@ server.on("upgrade", (req, socket, head) => {
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
   // Forwarding headers are not credentials at this boundary: a local process
   // can forge them, so allowlisted tailnet identity alone must never authorize
-  // spawning or adopting a shell.
+  // spawning or adopting a shell. The resolved tailnet node id is still needed
+  // below to verify the passkey presence token's tailnet-device binding.
+  const tailnetNodeId = resolveTailnetPeer(req);
   const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
-    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
 
-  // Any configured PTY credential closes the credential-less path, including
-  // direct loopback: another local account or process is not the paired app.
-  // Plain development remains credential-less only when neither token exists.
-  //
-  // Keep the credential-less case exactly that narrow. #714 removed it and
-  // 401'd every local terminal, reintroducing the v0.0.72 "Terminal connection
-  // failed" regression that server-pty-ws.test.ts still guards. What makes
-  // closing it safe HERE is that both peers now have a credential to present:
-  // the Tauri shell its per-launch sidecar token, and a local browser the
-  // access gate. TCP loopback proves only that the caller is on this machine,
-  // never which OS user it is.
+  // Direct, unforwarded loopback is the browser's no-prompt PTY path. Remote
+  // and forwarded clients still need a configured credential before they can
+  // spawn or adopt a shell.
   if (shouldRejectUnauthenticatedPtyUpgrade({
     sidecarTokenConfigured: Boolean(SIDECAR_TOKEN),
     accessTokenConfigured: Boolean(accessToken()),
     tokenAuthenticated,
+    directLoopback: isDirectLoopbackRequest(req),
   })) {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  // Unlike ordinary API requests, this upgrade is handled here rather than by
+  // Next middleware. Apply the same remote passkey gate before granting shell
+  // access; direct loopback remains exempt just as it is in proxy.ts.
+  if (
+    process.env.COVEN_CAVE_PASSKEY_REQUIRED === "1" &&
+    !isDirectLoopbackRequest(req) &&
+    !hasValidPasskeyPresence(req, tailnetNodeId)
+  ) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
 
   const threadId = String(query.threadId ?? "");
   if (!threadId) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
 
   const replayCursor = parsePtyReplayCursor(query.ptyReplayCursor);
   if (replayCursor === null) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1208,7 +1730,7 @@ server.on("upgrade", (req, socket, head) => {
   try {
     cwd = validateCwd(query.projectRoot ? String(query.projectRoot) : undefined);
   } catch {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -1230,9 +1752,71 @@ server.on("upgrade", (req, socket, head) => {
 server.keepAliveTimeout = 75_000;
 server.headersTimeout = 80_000;
 
+/**
+ * Turn off client v1 — loudly — instead of refusing to boot (cave-37fxr).
+ *
+ * Publishing was fail-closed to `server.close(() => process.exit(1))`, which
+ * is right about the record and wrong about the process. The guard learned to
+ * read a Windows DACL in #4852, which made it able to throw on win32 for the
+ * first time, and on a host where the DACL cannot be read at all — PowerShell
+ * in Constrained Language Mode, or no `powershell.exe` under `%SystemRoot%`,
+ * both measured — that throw is permanent and there is no remedy reachable
+ * from inside an app that will not start.
+ *
+ * Withholding the record is the correct fail-closed response and it costs
+ * exactly one surface: the discovery file is what a paired client reads to
+ * find this server, and the request-side guard refuses every client v1 call on
+ * such a host anyway. Nothing else here — the terminal, chat, the board — has
+ * anything to do with client v1 or with that path. So the degraded state is
+ * "client v1 off, everything else up", and the crash is replaced by a banner
+ * loud enough to be the thing that gets noticed. `clientV1DiscoveryPublished`
+ * stays false, so shutdown will not try to unlink a record this process does
+ * not own.
+ */
+function reportClientV1DiscoveryUnavailable(error: unknown): void {
+  clientV1DiscoveryPublished = false;
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error("[cave] ─────────────── CLIENT V1 DISABLED ───────────────");
+  console.error(`[cave] ${detail}`);
+  console.error(
+    "[cave] The client v1 discovery record was NOT published, so paired clients"
+    + " cannot find this server and every client v1 request stays refused."
+    + " Everything else on this server is running normally.",
+  );
+  console.error(
+    `[cave] Repair the path and restart. If — and only if — this host cannot`
+    + ` read a DACL at all, ${UNVERIFIED_OWNERSHIP_ENV}=${UNVERIFIED_OWNERSHIP_TOKEN}`
+    + ` with ${UNVERIFIED_OWNERSHIP_REASON_ENV} set admits an unreadable one; it`
+    + ` never admits a DACL that was read and found shared.`,
+  );
+  console.error("[cave] ────────────────────────────────────────────────────");
+}
+
 server.listen(port, hostname, () => {
-  console.log(`> Ready on http://${hostname}:${port}`);
+  try {
+    publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
+  } catch (error) {
+    reportClientV1DiscoveryUnavailable(error);
+  }
+  console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
 });
+
+let httpShutdownStarted = false;
+function shutdownHttpServer(): void {
+  if (httpShutdownStarted) return;
+  httpShutdownStarted = true;
+  cleanupStandaloneClientV1Discovery();
+  terminatePtySessions();
+  const timer = setTimeout(() => process.exit(1), 2_000);
+  timer.unref?.();
+  server.close(() => {
+    clearTimeout(timer);
+    process.exit(0);
+  });
+}
+
+process.once("SIGINT", shutdownHttpServer);
+process.once("SIGTERM", shutdownHttpServer);
 
 // Prime the tailnet allowlist immediately, then keep it fresh. unref() so the
 // poll never holds the process open on its own.
@@ -1242,6 +1826,7 @@ if (allowedTailnetNodeIds().size > 0) {
 }
 
 server.once("error", (err: NodeJS.ErrnoException) => {
+  cleanupStandaloneClientV1Discovery();
   console.error(err);
   process.exit(1);
 });

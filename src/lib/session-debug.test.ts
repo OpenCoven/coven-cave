@@ -481,22 +481,34 @@ assert.match(
   "CHAT-D4-01: turn-segments comments should document mid-paragraph streaming behavior",
 );
 
-// TurnRow renders the segmented path from the reasoning-stripped visible
-// text, and keeps the trailing ToolGroup ONLY as the legacy (no-offset) path.
+// TurnRow uses the persisted offset model to keep live tools chronological,
+// then settles non-edit activity and edit cards into their durable sections.
 assert.match(
   chatViewSource,
-  /const segments = segmentTurn\(visible, turn\.tools\)/,
-  "CHAT-D4-01: assistant turns segment the visible text by tool offsets",
+  /segmentTurn\(\s*presentedProjection\.visible,\s*turn\.tools,\s*\)[\s\S]*?node: <ToolRuns tools=\{segment\.tools\} \/>/,
+  "assistant turns preserve live tool chronology through text-offset segments",
 );
 assert.match(
   chatViewSource,
-  /!turn\.pending && turn\.tools\?\.length[\s\S]*otherTools\.length \? <ToolGroup tools=\{otherTools\} durationMs=\{turn\.durationMs\} \/>/,
-  "settled turns render edit-tool cards inline and collapse other tool activity into the work-line ToolGroup (chat-revamp 1b: above the answer, stamped with the turn duration)",
+  /const settledTools = !turn\.pending && turn\.tools\?\.length \? turn\.tools : \[\];[\s\S]*const editCards = settledTools\.filter\(isEditCard\);[\s\S]*const otherTools = settledTools\.filter/,
+  "settled turns partition edit cards from grouped non-edit activity",
 );
-assert.match(
-  chatViewSource,
-  /node: <ToolRuns tools=\{seg\.tools\} \/>/,
-  "CHAT-D4-01: interleaved tools retain their chronology while the shared run renderer preserves each ToolBlock",
+assert.doesNotMatch(
+  chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "",
+  /<ChatToolActivityLayout/,
+  "TurnRow no longer routes the shared response through the obsolete fixed-slot layout",
+);
+// Exclusivity, not just existence. The segment assertion above pins that ONE
+// <ToolRuns> renders inside the chronology map; it says nothing about a second
+// one elsewhere in the same turn, which is exactly what renders every tool
+// twice. The predecessor guard was a flat `doesNotMatch(/<ToolRuns/)` — correct
+// while the component was banned outright, and unusable once it became the
+// legitimate path. Counting keeps the protection without the ban.
+assert.equal(
+  (chatViewSource.match(/function TurnRowImpl[\s\S]*?\n}\n\nfunction ReasoningBlock/)?.[0] ?? "")
+    .match(/<ToolRuns\b/g)?.length ?? 0,
+  1,
+  "TurnRow renders <ToolRuns> exactly once — a second call site double-renders every tool",
 );
 
 // MessageBubble: only the LAST text span streams (progressive markdown);

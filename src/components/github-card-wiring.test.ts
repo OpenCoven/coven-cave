@@ -20,8 +20,8 @@ assert.match(chatView, /function splitSegmentsForGitHub\(/, "has the segments→
 assert.match(chatView, /<GitHubCard descriptor=/, "renders GitHubCard as a block segment");
 assert.match(
   chatView,
-  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
-  "settled path keeps GitHub splitting after artifacts while image groups remain intact across both boundaries",
+  /splitSegmentsForGitHub\(\s*splitSegmentsForArtifacts\(\s*splitSegmentsForImages\(\s*splitSegmentsForPreviews\(\s*splitSegmentsForSpecs\(\[\{ kind: "text", text: visibleWithGh \}\], onOpenUrl\)/,
+  "settled path keeps GitHub splitting after artifacts while image groups remain intact across preview and card boundaries",
 );
 assert.match(
   chatView,
@@ -40,13 +40,13 @@ assert.match(
 );
 assert.match(
   renderedText,
-  /visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
-  "GitHub/image markers strip unconditionally and LAST — after skill, auto-status, attention, and next-path extraction have all seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
+  /visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)\)/,
+  "preview/GitHub/image markers strip unconditionally and LAST — after skill, auto-status, attention, and next-path extraction have all seen the marker-bearing text — so raw tags never flash on pending OR settled turns",
 );
 assert.doesNotMatch(
   renderedText,
-  /pending\s*\?\s*stripImageMarkers\(stripGitHubMarkers\(/,
-  "GitHub/image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
+  /pending\s*\?\s*stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(/,
+  "preview/GitHub/image stripping must not be gated behind turn.pending — it runs unconditionally on both streaming and settled turns",
 );
 assert.match(
   chatView,

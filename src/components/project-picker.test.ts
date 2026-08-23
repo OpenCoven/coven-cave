@@ -7,8 +7,13 @@
 // freshly added project is immediately usable instead of 403ing in chat.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { resolveProjectPickerSelection } from "../lib/project-picker-selection.ts";
 
 const src = readFileSync(new URL("./project-picker.tsx", import.meta.url), "utf8");
+const helperSrc = readFileSync(
+  new URL("../lib/project-picker-selection.ts", import.meta.url),
+  "utf8",
+);
 // The picker's CSS moved out of surface-marketplace.css when that sheet was
 // code-split onto the Marketplace chunk (cave-ii7xi) — a shared picker used by
 // the always-loaded shell cannot ship with a mode-gated surface.
@@ -70,19 +75,20 @@ assert.match(
   /aria-label=\{`\$\{ariaLabel\}: \$\{selectedAccessibleLabel\}`\}/,
   "the picker trigger's accessible name includes the selected project's Read or Full access",
 );
+// Selection logic lives in the shared helper — check it there.
 assert.match(
-  src,
+  helperSrc,
   /allowNoProject \? "No project" : "Choose project"/,
   "a required picker names the missing state as Choose project, not No project",
 );
 assert.match(
-  src,
-  /value[\s\S]{0,80}\? sorted\.find\(\(project\) => project\.id === value\)[\s\S]{0,80}: defaultToFirst \? sorted\[0\] : undefined/,
+  helperSrc,
+  /isStale[\s\S]{0,80}foundProject === null/,
   "an explicit stale picker value resolves to no project instead of silently selecting the first",
 );
 assert.match(
-  src,
-  /defaultToFirst \? sorted\[0\] : undefined/,
+  helperSrc,
+  /defaultToFirst \? \(sorted\[0\]/,
   "callers that require an explicit durable choice can keep null rendered as Choose project",
 );
 assert.match(src, /import \{ Button \}/, "picker trigger uses the shared Button primitive");
@@ -93,12 +99,17 @@ assert.doesNotMatch(
   "picker should use shared CSS/tokenized radii instead of hard-coded rounded classes",
 );
 
-// ── Home composer: project picker reached from the context pill ─────────────
-// The selector lets the user choose which project a new chat runs in (mirrors
-// the chat composer). The pill chains to the shared ProjectPickerPopover, so
-// selection reads the same everywhere (chat revamp 1d).
-assert.match(homeComposer, /<ComposerContextChips[\s\S]*?projectValue=\{displayProjectId\}/, "home composer's context chips host the shared project picker");
-assert.match(homeComposer, /\{plusAddProject\.addError \? \(/, "home's Start a new project flow renders add failures");
+// ── Home composer: the shell rail owns project selection ────────────────────
+assert.match(
+  homeComposer,
+  /<ComposerContextChips[\s\S]*?showProject=\{false\}/,
+  "Home suppresses its redundant project picker while retaining model context",
+);
+assert.doesNotMatch(
+  homeComposer,
+  /plusAddProject|setSelectedProjectId/,
+  "Home no longer owns a second add/select project flow",
+);
 assert.match(contextPill, /export type ComposerContextProps = \{/, "context props are reusable");
 assert.match(
   contextPill,
@@ -161,5 +172,243 @@ assert.match(src, /ph:folder-plus/, "register row carries the folder-plus icon")
 // caller then resolves is pinned in lib/project-display-name-spaces.test.ts.
 assert.match(src, /onChange: \(id: string\) => void;/, "the picker's selection callback takes an id");
 assert.match(src, /onChange\(project\.id\);/, "picking a project emits its id, not its display name");
+
+// ── Stage 1 Task 4: All projects option ─────────────────────────────────────
+// Both props are optional and additive — existing callers with neither retain
+// existing behavior. onChange: (id: string) => void is unchanged.
+assert.match(
+  src,
+  /allProjectsLabel\?: string/,
+  "ProjectPicker and popover accept optional allProjectsLabel prop",
+);
+assert.match(
+  src,
+  /onSelectAllProjects\?: \(\) => void/,
+  "ProjectPicker and popover accept optional onSelectAllProjects callback",
+);
+// Both picker surfaces call the shared helper which enforces these invariants:
+assert.match(
+  helperSrc,
+  /const allProjectsEnabled = Boolean\(allProjectsLabel && hasAllProjectsAction\)/,
+  "allProjectsEnabled is a clear boolean requiring both props — no partial-prop UI",
+);
+assert.match(
+  helperSrc,
+  /const allProjectsSelected = allProjectsEnabled && value === null;/,
+  "allProjectsSelected is the explicit null-scope gate",
+);
+assert.strictEqual(
+  (src.match(/hasAllProjectsAction: Boolean\(onSelectAllProjects\)/g) ?? []).length,
+  2,
+  "both picker surfaces pass the action flag to the shared helper — default-to-first suppression cannot diverge",
+);
+assert.match(
+  src,
+  /onSelectAllProjects\?\.\(\);[\s\S]{0,40}close\(\)/,
+  "All projects onSelect calls the callback then closes the popover",
+);
+assert.match(
+  src,
+  /checked=\{allProjectsSelected\}[\s\S]{0,80}active=\{allProjectsSelected\}/,
+  "All projects row is checked/active only when allProjectsSelected",
+);
+// noProjectSelected: corrected semantics (reviewer cases — see table tests below).
+// - NO_PROJECT_ID + allowNoProject=false → NOT selected ("Choose project")
+// - stale + full All + allowNoProject → IS selected/labeled "No project"
+assert.match(
+  helperSrc,
+  /\(isExplicitNoProject && allowNoProject\)[\s\S]{0,20}\|\|[\s\S]{0,50}\(isStale && allowNoProject\)/,
+  "noProjectSelected gates NO_PROJECT_ID on allowNoProject and covers stale+allowNoProject regardless of All projects",
+);
+assert.match(
+  src,
+  /checked=\{noProjectSelected\}[\s\S]{0,80}active=\{noProjectSelected\}/,
+  "No project row is checked/active only from noProjectSelected (value === NO_PROJECT_ID)",
+);
+assert.doesNotMatch(
+  src,
+  /No project[\s\S]{0,120}checked=\{!selected\}/,
+  "No project row no longer shares the null-selected state with All projects",
+);
+assert.doesNotMatch(
+  src,
+  /No project[\s\S]{0,120}active=\{!selected\}/,
+  "No project row no longer shares the null-active state with All projects",
+);
+assert.match(
+  src,
+  /ph:squares-four/,
+  "All projects row uses the ph:squares-four icon",
+);
+// ── Stable caret class for collapsed-rail hide ──────────────────────────────
+// The collapsed CSS in workspace-context-switcher.css hides the caret by
+// targeting .cave-project-picker__trigger-caret — a stable authored class.
+// This pin ensures the class stays on the Icon so the CSS rule keeps working.
+assert.match(
+  src,
+  /className="cave-project-picker__trigger-caret"/,
+  "trigger caret carries the stable class for collapsed-rail CSS targeting",
+);
+assert.match(
+  css,
+  /\.cave-project-picker__trigger-caret\s*\{[\s\S]*?margin-left:\s*auto;/,
+  "the project caret uses the same trailing-edge spacing as familiar selection",
+);
+assert.match(
+  src,
+  /\{allProjectsLabel\}/,
+  "All projects row renders the allProjectsLabel string",
+);
+// emptyLabel now lives in the helper; "Choose project" is gated on allowNoProject
+// (NO_PROJECT_ID + allowNoProject=false → "Choose project", not "No project").
+assert.match(
+  helperSrc,
+  /const emptyLabel = allProjectsSelected\s*\?\s*allProjectsLabel!\s*:\s*\(allowNoProject \? "No project" : "Choose project"\)/,
+  "empty trigger label: All projects scope wins, then allowNoProject determines the fallback; NO_PROJECT_ID without allowNoProject shows Choose project",
+);
+// Existing NO_PROJECT_ID / No project path preserved
+assert.match(src, /onChange\(NO_PROJECT_ID\);/, "explicit No-project row preserved");
+assert.match(src, /NO_PROJECT_ID/, "NO_PROJECT_ID constant still imported and used");
+
+// ── Pure helper unit tests (table-driven) ────────────────────────────────────
+// Directly exercises resolveProjectPickerSelection. Catches the two reviewer
+// cases without going through React rendering.
+{
+  const NO = "__no-project__";
+  const A = { id: "a" };
+  const B = { id: "b" };
+  const sorted = [A, B];
+
+  // Helper to run a case and check key outputs.
+  function check(label, args, expected, projectList = sorted) {
+    const result = resolveProjectPickerSelection({ ...args, noProjectId: NO, sorted: projectList });
+    for (const [key, val] of Object.entries(expected)) {
+      assert.strictEqual(
+        result[key], val,
+        `[${label}] ${key}: expected ${JSON.stringify(val)}, got ${JSON.stringify(result[key])}`,
+      );
+    }
+    // Exclusivity: at most one of selected/allProjectsSelected/noProjectSelected is truthy.
+    const truths = [
+      result.selected !== null,
+      result.allProjectsSelected,
+      result.noProjectSelected,
+    ].filter(Boolean).length;
+    assert.ok(
+      truths <= 1,
+      `[${label}] checked-state exclusivity violated: ${JSON.stringify(result)}`,
+    );
+  }
+
+  // ── Full All props ──────────────────────────────────────────────────────────
+  const full = { allProjectsLabel: "All", hasAllProjectsAction: true };
+
+  // null → All projects selected (suppress defaultToFirst)
+  check("null+full+allowNoProject", { value: null, allowNoProject: true, defaultToFirst: true, ...full },
+    { selected: null, allProjectsEnabled: true, allProjectsSelected: true, noProjectSelected: false, emptyLabel: "All" });
+
+  // known id → project selected
+  check("knownId+full", { value: "a", allowNoProject: false, defaultToFirst: true, ...full },
+    { selected: A, allProjectsEnabled: true, allProjectsSelected: false, noProjectSelected: false });
+
+  // NO_PROJECT_ID + allowNoProject=true → No project selected
+  check("noProjectId+full+allow", { value: NO, allowNoProject: true, defaultToFirst: true, ...full },
+    { selected: null, noProjectSelected: true, emptyLabel: "No project" });
+
+  // REVIEWER CASE 1: NO_PROJECT_ID + allowNoProject=false → "Choose project", NOT No project
+  check("noProjectId+full+noallow", { value: NO, allowNoProject: false, defaultToFirst: true, ...full },
+    { selected: null, noProjectSelected: false, emptyLabel: "Choose project" });
+
+  // REVIEWER CASE 2: stale + full All + allowNoProject → No project selected and labeled
+  check("stale+full+allowNoProject", { value: "stale-xyz", allowNoProject: true, defaultToFirst: true, ...full },
+    { selected: null, allProjectsEnabled: true, allProjectsSelected: false, noProjectSelected: true, emptyLabel: "No project" });
+
+  // stale + full All + !allowNoProject → no row selected, "Choose project"
+  check("stale+full+noallow", { value: "stale-xyz", allowNoProject: false, defaultToFirst: true, ...full },
+    { selected: null, noProjectSelected: false, emptyLabel: "Choose project" });
+
+  // ── Partial/neither props (legacy behavior) ─────────────────────────────────
+  const labelOnly = { allProjectsLabel: "All", hasAllProjectsAction: false };
+  const actionOnly = { allProjectsLabel: undefined, hasAllProjectsAction: true };
+  const neither = { allProjectsLabel: undefined, hasAllProjectsAction: false };
+
+  for (const [desc, props] of [["labelOnly", labelOnly], ["actionOnly", actionOnly], ["neither", neither]]) {
+    // Partial: no All projects row; null+defaultToFirst → first project
+    check(`null+${desc}+defaultToFirst`, { value: null, allowNoProject: false, defaultToFirst: true, ...props },
+      { selected: A, allProjectsEnabled: false, allProjectsSelected: false, noProjectSelected: false, emptyLabel: "Choose project" });
+
+    // Partial: null+defaultToFirst=false+allowNoProject → noProjectSelected
+    check(`null+${desc}+notDefault+allow`, { value: null, allowNoProject: true, defaultToFirst: false, ...props },
+      { selected: null, allProjectsEnabled: false, noProjectSelected: true, emptyLabel: "No project" });
+
+    // Partial: null+defaultToFirst=false+!allowNoProject → "Choose project"
+    check(`null+${desc}+notDefault+noallow`, { value: null, allowNoProject: false, defaultToFirst: false, ...props },
+      { selected: null, noProjectSelected: false, emptyLabel: "Choose project" });
+  }
+
+  // ── defaultToFirst true/false without All ───────────────────────────────────
+  check("null+noAll+defaultToFirst=true", { value: null, allowNoProject: false, defaultToFirst: true, ...neither },
+    { selected: A, noProjectSelected: false, emptyLabel: "Choose project" });
+
+  check("null+noAll+defaultToFirst=false+allow", { value: null, allowNoProject: true, defaultToFirst: false, ...neither },
+    { selected: null, noProjectSelected: true, emptyLabel: "No project" });
+
+  check(
+    "null+noAll+defaultToFirst=true+empty+allow",
+    { value: null, allowNoProject: true, defaultToFirst: true, ...neither },
+    { selected: null, noProjectSelected: true, emptyLabel: "No project" },
+    [],
+  );
+
+  check(
+    "null+noAll+defaultToFirst=true+empty+noallow",
+    { value: null, allowNoProject: false, defaultToFirst: true, ...neither },
+    { selected: null, noProjectSelected: false, emptyLabel: "Choose project" },
+    [],
+  );
+
+  // ── allowNoProject true/false: NO_PROJECT_ID sentinel ───────────────────────
+  check("noProjectId+noAll+allow", { value: NO, allowNoProject: true, defaultToFirst: false, ...neither },
+    { selected: null, noProjectSelected: true, emptyLabel: "No project" });
+
+  check("noProjectId+noAll+noallow", { value: NO, allowNoProject: false, defaultToFirst: false, ...neither },
+    { selected: null, noProjectSelected: false, emptyLabel: "Choose project" });
+
+  // ── Stale id without All props ───────────────────────────────────────────────
+  check("stale+noAll+allow", { value: "gone", allowNoProject: true, defaultToFirst: true, ...neither },
+    { selected: null, noProjectSelected: true, emptyLabel: "No project" });
+
+  check("stale+noAll+noallow", { value: "gone", allowNoProject: false, defaultToFirst: true, ...neither },
+    { selected: null, noProjectSelected: false, emptyLabel: "Choose project" });
+}
+
+// ── Disabled transition: popoverOpen gate ────────────────────────────────────
+// When the trigger is disabled the popover must be gated closed. The button
+// is already disabled, but deriving popoverOpen = open && !disabled ensures
+// aria-expanded and the popover's own open prop also reflect the gated state.
+// An effect clears stored open when disabled so the popover does not reappear
+// the moment the control is re-enabled.
+assert.match(
+  src,
+  /const popoverOpen = open && !disabled;/,
+  "popoverOpen derives from open and disabled — never opens while disabled",
+);
+assert.match(
+  src,
+  /aria-expanded=\{popoverOpen\}/,
+  "trigger aria-expanded reflects the gated popoverOpen, not raw open",
+);
+assert.match(
+  src,
+  /useEffect\([\s\S]*?if \(disabled\) setOpen\(false\);[\s\S]*?\[disabled\]/,
+  "effect clears stored open when disabled so it does not reappear on re-enable",
+);
+// The onClick guard provides belt-and-suspenders protection (the button is
+// already disabled, but the guard stops a programmatic or future path too).
+assert.match(
+  src,
+  /if \(!disabled\) setOpen/,
+  "onClick guard prevents open being set while disabled",
+);
 
 console.log("project-picker.test.ts OK");

@@ -24,8 +24,13 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Working in this repo
 
 - [`multi-session-coordination.md`](multi-session-coordination.md) — how concurrent agent sessions produce overlapping or orphaned work, and the hooks that catch it
-- [`source-text-pins.md`](source-text-pins.md) — what a source-reading test may assert (a contract) and may not (arity, formatting, distance), the extraction rule, and why every repair must be mutation-tested
+- [`source-text-pins.md`](source-text-pins.md) — contract-first source-reading tests, deliberate adoption counts, parser-over-regex guidance, safe extraction, and mutation testing
+- [`performance-budgets.md`](performance-budgets.md) — the single catalogue of approved production performance budgets: which gate enforces each, why a missing measurement fails closed, and how a limit is seeded and re-seeded
 - [`workflows/`](workflows) — branching, release, and PR mechanics
+
+### Public APIs
+
+- [`api/client-v1.md`](api/client-v1.md) — the Client v1 HTTP surface: the shared envelope, the loopback ingress rules, the pairing handshake, the administrator routes, the rate limits, and the routes that do not exist yet
 
 ### Platform and runtime
 
@@ -41,6 +46,7 @@ A document in `docs/` proper should be one somebody keeps current.
 
 - [`mobile-tailscale.md`](mobile-tailscale.md) — exposing the browser surface to a phone over Tailscale Serve, including tokenless tailnet-device access
 - [`mobile-memory.md`](mobile-memory.md) — the read-only iOS client of the canonical-memory API
+- [`ios-current-direction.md`](ios-current-direction.md) — the canonical native iOS product shape, active priorities, and historical-plan boundary
 
 ### Chat, familiars, and tasks
 
@@ -50,6 +56,7 @@ A document in `docs/` proper should be one somebody keeps current.
 - [`role-surfaces.md`](role-surfaces.md) — role-aware rooms, and why the Cave is not role-hardcoded
 - [`chat-github-integration.md`](chat-github-integration.md) — the shipped GitHub integration and its turn-marker protocol
 - [`chat-image-carousel.md`](chat-image-carousel.md) — image carousel markers, reusing the protocol above
+- [`execution-analytics.md`](execution-analytics.md) — model- and harness-level analytics: the three model identities, why harness version is never recorded, coverage as the honesty layer, and what the aggregate discards
 
 ### Knowledge, authoring, and marketplace
 
@@ -69,9 +76,11 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Design
 
 - [`coven-design-language.md`](coven-design-language.md) — the consolidated reference for how the product looks, moves, and speaks, written from shipped code
+- [`beautiful-ui.md`](beautiful-ui.md) — the vendored Beautiful UI primitives: what the token adapter maps, why their CSS is scoped out of the root bundle, and why they are reference implementations rather than drop-in components
 
 ### Integrity and integrations
 
+- [`dependency-advisories.md`](dependency-advisories.md) — open Dependabot alerts whose patched version is unreachable from this dependency graph: the resolver refusal, the exposure assessment, and the upstream change that would lift each
 - [`project-permission-integrity.md`](project-permission-integrity.md) — reconciling stale grants against the project registry
 - [`discord-rich-presence.md`](discord-rich-presence.md) — privacy-safe local activity publishing
 
@@ -102,6 +111,7 @@ Point-in-time records. Read for intent, not for current behavior.
 - [`mobile-readiness.md`](mobile-readiness.md) — manual dogfood checklist for the `feat/mobile-readiness` rollout
 - [`windows-sidecar-compression.md`](windows-sidecar-compression.md) — a zstd-level benchmark against a fixed production payload
 - [`salem-chat-api-model.md`](salem-chat-api-model.md) — an outbound brief for the `opencoven-chat-api` repo, not a Cave contract
+- [`coven-autoloop-cli-wrapper-spec.md`](coven-autoloop-cli-wrapper-spec.md) — scoping handoff for the unbuilt `bin/coven-autoloop` write path; the read path in `src/lib/research-autoloop.ts` already ships and is not what this describes
 
 ---
 
@@ -113,7 +123,8 @@ Point-in-time records. Read for intent, not for current behavior.
 
 ## Other trees under `docs/`
 
-- [`superpowers/`](superpowers) — the approved spec and plan store beads cite (133 files)
+- [`api/`](api) — reference documentation for versioned public HTTP surfaces, listed individually under **Living** above
+- [`superpowers/`](superpowers) — the approved spec and plan store beads cite (142 files)
 - [`specs/`](specs) — **frozen** (55 files). The earlier flat convention, which overlapped `superpowers/` from 2026-06-30 to 2026-08-06. Closed to new files, and deliberately not migrated: beads cite these by path, including one open unit. See [`specs/README.md`](specs/README.md) for the reasoning and for the three undated standing contracts it holds
 - [`plans/`](plans), [`audits/`](audits) — small point-in-time sets predating the `superpowers/` store
 - [`design-handoff/`](design-handoff), [`diagrams/`](diagrams), [`screenshots/`](screenshots), [`familiar-chatout-codex/`](familiar-chatout-codex) — supporting material

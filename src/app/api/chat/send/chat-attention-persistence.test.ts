@@ -174,7 +174,7 @@ test("ChatView renders through the shared attention-aware text projection", () =
   );
 });
 
-test("the shared projection extracts attention after skill/auto-status and before next-path/GitHub/image stripping", () => {
+test("the shared projection extracts attention after results and before next-path/preview/GitHub/image stripping", () => {
   // Pinned as a flow (per the skill-stage-card-wiring precedent above this
   // file): what must hold is that autoStatusSplit's visible text feeds the
   // attention extractor, and the attention-stripped visible feeds
@@ -184,30 +184,46 @@ test("the shared projection extracts attention after skill/auto-status and befor
   const autoStatusIndex = pipeline.indexOf(
     "const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);",
   );
+  const resultIndex = pipeline.indexOf(
+    "const resultSplit = extractChatResultMarkers(autoStatusSplit.visible, {",
+  );
   const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, {",
+    "const attentionSplit = extractChatAttentionMarker(resultSplit.visible, {",
   );
   const nextPathsIndex = pipeline.indexOf(
     "const nextPathSplit = extractNextPaths(attentionSplit.visible);",
   );
   assert.notEqual(autoStatusIndex, -1, "auto-status extraction should read skillSplit.visible");
-  assert.notEqual(attentionIndex, -1, "attention extraction should read autoStatusSplit.visible");
+  assert.notEqual(resultIndex, -1, "result extraction should read autoStatusSplit.visible");
+  assert.notEqual(attentionIndex, -1, "attention extraction should read resultSplit.visible");
   assert.notEqual(nextPathsIndex, -1, "next-path extraction should read attentionSplit.visible");
   assert.ok(
-    autoStatusIndex < attentionIndex && attentionIndex < nextPathsIndex,
-    "attention extraction must run strictly between auto-status extraction and next-path extraction",
+    autoStatusIndex < resultIndex && resultIndex < attentionIndex && attentionIndex < nextPathsIndex,
+    "attention extraction must run after result extraction and before next-path extraction",
   );
-  assert.doesNotMatch(
-    renderedText,
-    /extractNextPaths\((?:text|reasoningSplit\.visible|skillSplit\.visible|autoStatusSplit\.visible)\)/,
-    "next-paths must never run on text upstream of the attention split — a raw or partial marker would flash",
-  );
+  // Universally quantified, NOT a denylist of known-bad upstream stages. A
+  // denylist only rejects the stages someone thought to name, so every new
+  // upstream split silently becomes an accepted argument. That is not
+  // hypothetical: while this assertion listed
+  // `text|reasoningSplit|skillSplit|autoStatusSplit`, the pipeline gained
+  // `resultSplit` — and `extractNextPaths(resultSplit.visible)`, which would
+  // flash a raw attention marker, matched nothing and passed. Pin the one
+  // argument that is correct instead, so a new stage has to be considered.
+  const nextPathCalls = renderedText.match(/extractNextPaths\([^)]*\)/g) ?? [];
+  assert.ok(nextPathCalls.length > 0, "the projection must still extract next paths");
+  for (const call of nextPathCalls) {
+    assert.equal(
+      call,
+      "extractNextPaths(attentionSplit.visible)",
+      "next-paths must run on the attention-stripped text and nothing else — any upstream argument flashes a raw or partial marker",
+    );
+  }
 });
 
-test("the shared projection never strips GitHub/image markers before attention extraction", () => {
+test("the shared projection never strips preview/GitHub/image markers before attention extraction", () => {
   // The order test above only pins that attention sits between auto-status and
   // next-path textually — it says nothing about whether an EARLIER step (e.g.
-  // a pending-turn GitHub/image pre-clean feeding extractSkillMarkers) already
+  // a pending-turn preview/GitHub/image pre-clean feeding extractSkillMarkers) already
   // stripped markers out of the text before skill/auto-status/attention ever
   // ran. Pin the actual head of the pipeline: extractSkillMarkers must consume
   // reasoningSplit.visible directly, with no intermediate stripped variable.
@@ -215,25 +231,29 @@ test("the shared projection never strips GitHub/image markers before attention e
   assert.match(
     pipeline,
     /const skillSplit = extractSkillMarkers\(reasoningSplit\.visible\);/,
-    "skill markers must extract directly from reasoningSplit.visible — nothing may strip GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
+    "skill markers must extract directly from reasoningSplit.visible — nothing may strip preview/GitHub/image markers out of the marker-bearing text before skill/auto-status/attention/next-path all see it",
   );
   const attentionIndex = pipeline.indexOf(
-    "const attentionSplit = extractChatAttentionMarker(autoStatusSplit.visible, {",
+    "const attentionSplit = extractChatAttentionMarker(resultSplit.visible, {",
   );
+  const stripPreviewIndex = pipeline.indexOf("stripPreviewMarkers(");
   const stripGitHubIndex = pipeline.indexOf("stripGitHubMarkers(");
   const stripImageIndex = pipeline.indexOf("stripImageMarkers(");
   assert.notEqual(attentionIndex, -1, "attention extraction should remain present in the pipeline");
+  assert.notEqual(stripPreviewIndex, -1, "preview-marker stripping should still happen later in the pipeline");
   assert.notEqual(stripGitHubIndex, -1, "GitHub-marker stripping should still happen later in the pipeline");
   assert.notEqual(stripImageIndex, -1, "image-marker stripping should still happen later in the pipeline");
   assert.ok(
-    attentionIndex < stripGitHubIndex && attentionIndex < stripImageIndex,
-    "stripGitHubMarkers/stripImageMarkers must not appear anywhere in the pipeline before extractChatAttentionMarker",
+    attentionIndex < stripPreviewIndex
+      && attentionIndex < stripGitHubIndex
+      && attentionIndex < stripImageIndex,
+    "marker stripping must not appear anywhere in the pipeline before extractChatAttentionMarker",
   );
 });
 
-test("the shared projection strips GitHub/image markers only after next-path extraction", () => {
+test("the shared projection strips preview/GitHub/image markers only after next-path extraction", () => {
   // Complements the two tests above: this pins the TAIL of the pipeline.
-  // GitHub/image cleanup must consume `visibleWithGh` (next-path extraction's
+  // Marker cleanup must consume the next-path extraction's visible output
   // output) unconditionally — not gated behind `turn.pending ? visibleWithGh :
   // strip(...)`, which would mean the settled path cleans up post-next-paths
   // while the pending path (streaming) never gets this late cleanup at all
@@ -241,19 +261,21 @@ test("the shared projection strips GitHub/image markers only after next-path ext
   const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)/,
-    "GitHub/image cleanup must run unconditionally, immediately after next-path extraction resolves visibleWithGh, on both pending and settled turns",
+    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)\)/,
+    "preview/GitHub/image cleanup must run unconditionally after next-path extraction on both pending and settled turns",
   );
 });
 
-test("ChatView does not render an inline attention card yet", () => {
-  // Task 3 persists the request and strips its marker from view only. Session
-  // sidebar attention derives from `attentionRequest` in a later task — no
-  // inline per-turn card should consume the parsed request here.
-  assert.doesNotMatch(
+test("ChatView counts current or persisted attention as meaningful output", () => {
+  assert.match(
     chatView,
-    /attentionRequest/,
-    "the parsed request must not be consumed for rendering in this task — only the marker-stripped visible text is used",
+    /const durableAttentionRequest = attentionRequest \?\? turn\.responseMetadata\?\.attentionRequest \?\? null;/,
+    "reload should recover a persisted attention request when its marker is no longer present",
+  );
+  assert.match(
+    chatView,
+    /hasAttentionRequest: durableAttentionRequest != null/,
+    "an attention-only successful turn must not fall through to the empty-response state",
   );
 });
 

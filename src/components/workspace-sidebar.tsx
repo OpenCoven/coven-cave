@@ -22,9 +22,6 @@ import {
 import {
   isSessionPinned,
   toggleStoredPinnedSession,
-  readChatSidebarView,
-  writeChatSidebarView,
-  type ChatSidebarView,
 } from "@/lib/chat-session-prefs";
 import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
@@ -41,11 +38,11 @@ import {
   emitChatSessionDragStart,
 } from "@/lib/chat-split";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
-import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import { type CreateProjectOptions } from "@/lib/chat-add-project";
 import { NavSectionTabs } from "@/components/nav-section-tabs";
 import type { NavSection } from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { CaveProject } from "@/lib/cave-projects-types";
 
 type WorkspaceSidebarMode = "home";
 
@@ -56,6 +53,7 @@ type Props = {
   /** Selected familiar (null = "All familiars"). Scopes the project list, the
    *  per-project session rows, and the project grant when registering. */
   activeFamiliarId?: string | null;
+  selectedFamiliarIds: ReadonlySet<string>;
   activeSessionId?: string | null;
   responseNeeded?: Set<string>;
   /** Change the familiar scope from the header switcher (`null` = All). */
@@ -71,7 +69,7 @@ type Props = {
   /** Global section switcher (Home | Chat). This sidebar hosts the Code room,
    *  so the tabs ride at its top too — leaving Code returns to the Home rail. */
   onSectionChange?: (section: NavSection) => void;
-  onNewChat: (projectRoot: string | null) => void;
+  onNewChat: () => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Refresh the workspace sessions poll after an archive/unarchive PATCH so
    *  the row leaves (or re-enters) the live list without waiting a cycle. */
@@ -82,23 +80,27 @@ type Props = {
   /** Opens Settings — powers the shared footer so Chat keeps the same
    *  Dashboard/Settings footer as every other surface. */
   onOpenSettings: () => void;
+  // ── Project / workspace context (Task 6) ──────────────────────────────────
+  projects: CaveProject[];
+  projectId: string | null;
+  project: CaveProject | null;
+  projectLoading: boolean;
+  projectError: string | null;
+  reloadProjects: () => void;
+  onProjectChange: (projectId: string | null) => void;
+  createProjectOrThrow?: (
+    name: string,
+    root: string,
+    options?: CreateProjectOptions,
+  ) => Promise<CaveProject>;
+  projectCrew: ResolvedFamiliar[];
+  projectCrewLoading: boolean;
+  projectCrewError: string | null;
+  reloadProjectCrew: () => void;
+  contextNotice: string | null;
 };
 
 const THREADS_PREVIEW = 6;
-const CHAT_SIDEBAR_TABS: ReadonlyArray<TabItem<ChatSidebarView>> = [
-  {
-    id: "recent",
-    label: "Recent",
-    icon: "ph:clock-counter-clockwise",
-    controlsId: "chat-sidebar-group-panel",
-  },
-  {
-    id: "projects",
-    label: "Projects",
-    icon: "ph:folders-bold",
-    controlsId: "chat-sidebar-group-panel",
-  },
-];
 
 function normalizeSessionAttention(session: SessionRow): SessionRow {
   return session.attention ? session : { ...session, attention: NO_CHAT_ATTENTION };
@@ -116,39 +118,10 @@ function statusDotClass(status: string): string {
   return "";
 }
 
-// A stable key per group for expand/collapse state. The ungrouped ("No project")
-// bucket has a null root, so it gets its own sentinel.
-function groupKey(group: ChatProjectGroup): string {
-  return group.projectRoot ?? "__no-project__";
-}
-
 function folderLabel(group: ChatProjectGroup): string {
   if (group.projectName) return group.projectName;
-  if (group.projectRoot) return projectNameForRoot(group.projectRoot);
+  if (group.projectRoot) return group.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? group.projectRoot;
   return "No project";
-}
-
-// A registered project shows a solid folder; an unregistered cwd (a real dir
-// that maps to no project) and the null "No project" bucket read as a dashed
-// folder — the visual cue that these threads live outside a project context.
-function folderIcon(group: ChatProjectGroup, expanded: boolean): IconName {
-  if (group.projectId) return expanded ? "ph:folder-open" : "ph:folder";
-  return "ph:folder-simple-dashed";
-}
-
-// Activity meta line under the folder name: "2 running · 12m" while sessions
-// run, else "6 chats · 3h". Subsumes the old count badge, so the header keeps
-// a single right-aligned slot for the hover actions.
-function groupMeta(group: ChatProjectGroup, now: number): string {
-  const awaiting = group.sessions.filter((session) => session.attention.state !== "none" && !session.archived_at).length;
-  const running = group.sessions.filter((s) => s.status === "running").length;
-  const count =
-    running > 0
-      ? `${running} running`
-      : `${group.sessions.length} ${group.sessions.length === 1 ? "chat" : "chats"}`;
-  const age = group.updatedAt ? bareTimeAt(group.updatedAt, now) : null;
-  const meta = age ? `${count} · ${age}` : count;
-  return awaiting > 0 ? `${awaiting} awaiting · ${meta}` : meta;
 }
 
 // Archived rows always read as settled regardless of their stored attention —
@@ -497,6 +470,7 @@ export function WorkspaceSidebar({
   sessions,
   familiars,
   activeFamiliarId = null,
+  selectedFamiliarIds,
   activeSessionId,
   responseNeeded,
   onSelectFamiliar,
@@ -509,21 +483,31 @@ export function WorkspaceSidebar({
   onSessionsChanged,
   onOpenUrl,
   onOpenSettings,
+  projects: workspaceProjects,
+  projectId: workspaceProjectId,
+  project: workspaceProject,
+  projectLoading: workspaceProjectLoading,
+  projectError: workspaceProjectError,
+  reloadProjects: reloadWorkspaceProjects,
+  onProjectChange,
+  createProjectOrThrow: createWorkspaceProjectOrThrow,
+  projectCrew: workspaceProjectCrew,
+  projectCrewLoading: workspaceProjectCrewLoading,
+  projectCrewError: workspaceProjectCrewError,
+  reloadProjectCrew: reloadWorkspaceProjectCrew,
+  contextNotice: workspaceContextNotice,
 }: Props) {
-  const { projects, createProject, createProjectOrThrow, reload } = useProjects({ familiarId: activeFamiliarId });
+  const { projects } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
   const minuteTick = useMinuteTick();
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
   const [showAllByKey, setShowAllByKey] = useState<Set<string>>(() => new Set());
   // Pins come from the shared cross-surface store (chat list + thread rail +
   // this sidebar all read and write the same subscribable list).
   const pinnedIds = usePinnedSessions();
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
-  const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
-  const [registerError, setRegisterError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // Archived rows are excluded server-side by /api/sessions/list; the Organize
   // menu's "Show archived" option opts in with its own includeArchived fetch,
@@ -533,7 +517,6 @@ export function WorkspaceSidebar({
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveNonce, setArchiveNonce] = useState(0);
   const [archiveError, setArchiveError] = useState<string | null>(null);
-  const [view, setView] = useState<ChatSidebarView>("recent");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
   const menuBodyRef = useRef<HTMLDivElement>(null);
@@ -550,15 +533,8 @@ export function WorkspaceSidebar({
   // stale buckets alongside a fresher bare time for the same session).
   const now = useMemo(() => Date.now(), [minuteTick]);
 
-  // Trap focus inside the Organize menu while it is open (same convention as
-  // the GitHub action popover, #2288). Also hydrates the organize-view preference.
+  // Trap focus inside the sidebar options menu while it is open.
   useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
-
-  // The organize-view preference loads after mount so SSR and first client
-  // render agree (same idiom as the chat list).
-  useEffect(() => {
-    setView(readChatSidebarView());
-  }, []);
 
   // Archived sessions only load while "Show archived" is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change (same
@@ -637,22 +613,7 @@ export function WorkspaceSidebar({
     [visibleSessions],
   );
   const attentionIds = useMemo(() => new Set(attentionSessions.map((session) => session.id)), [attentionSessions]);
-  const visibleGroups = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return groups;
-    return groups
-      .map((group) => ({
-        ...group,
-        sessions: group.sessions.filter((s) => sessionRailTitle(s).toLowerCase().includes(q)),
-      }))
-      .filter(
-        (group) =>
-          group.sessions.length > 0 ||
-          folderLabel(group).toLowerCase().includes(q),
-      );
-  }, [groups, query]);
-
-  // Recent view: search filters rows (empty buckets drop out via derive).
+  // Search filters the single recency-oriented chat list.
   const recentSessions = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = hasSearch ? visibleSessions : visibleSessions.filter((session) => !attentionIds.has(session.id));
@@ -667,27 +628,12 @@ export function WorkspaceSidebar({
   // exhaustive-deps AND guarantees buckets are derived from the exact same
   // instant as the bare row times and attention descriptions rendered below.
   const recentBuckets = useMemo(
-    () => (view === "recent" ? deriveChatRecencyBuckets(recentSessions, now) : []),
-    [view, recentSessions, now],
+    () => deriveChatRecencyBuckets(recentSessions, now),
+    [recentSessions, now],
   );
-
-  const toggleCollapse = (key: string) => {
-    setCollapsedKeys((cur) => {
-      const next = new Set(cur);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
 
   const togglePin = (sessionId: string) => {
     toggleStoredPinnedSession(sessionId);
-  };
-
-  const selectView = (next: ChatSidebarView) => {
-    setView(next);
-    writeChatSidebarView(next);
-    setMenuOpen(false);
   };
 
   async function handleDeleteSession(session: SessionRow) {
@@ -728,24 +674,6 @@ export function WorkspaceSidebar({
     }
   }
 
-  async function handleRegister(group: ChatProjectGroup) {
-    if (!group.projectRoot) return;
-    setRegisteringRoot(group.projectRoot);
-    setRegisterError(null);
-    try {
-      const result = await addChatProject({
-        root: group.projectRoot,
-        familiarId: activeFamiliarId ?? null,
-        createProject,
-        createProjectOrThrow,
-      });
-      if (result.ok) reload();
-      else setRegisterError(result.error);
-    } finally {
-      setRegisteringRoot(null);
-    }
-  }
-
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
@@ -763,29 +691,45 @@ export function WorkspaceSidebar({
         <SidebarRailHeader
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
+          selectedFamiliarIds={selectedFamiliarIds}
           sessions={sessions}
           responseNeeded={responseNeeded}
           onSelectFamiliar={onSelectFamiliar}
-          onNewChat={() => onNewChat(null)}
+          onNewChat={onNewChat}
           newChatTitle="New chat (⌘N)"
           newChatTrailing={<kbd className="rail-header__new-kbd">⌘N</kbd>}
+          projects={workspaceProjects}
+          projectId={workspaceProjectId}
+          project={workspaceProject}
+          projectLoading={workspaceProjectLoading}
+          projectError={workspaceProjectError}
+          reloadProjects={reloadWorkspaceProjects}
+          onProjectChange={onProjectChange}
+          createProjectOrThrow={createWorkspaceProjectOrThrow}
+          projectCrew={workspaceProjectCrew}
+          projectCrewLoading={workspaceProjectCrewLoading}
+          projectCrewError={workspaceProjectCrewError}
+          reloadProjectCrew={reloadWorkspaceProjectCrew}
+          contextNotice={workspaceContextNotice}
         />
 
-        {/* Grouping tabs share their row with the overflow menu. The standalone
-            utilities band (Scheduled / Plugins icon chips) is retired — both
-            destinations live in the Home rail's list, and dropping the band
-            gives Chat the same tabs → switcher → New chat rhythm as Home. */}
-        <div className="cnav__tabs-row">
-          <Tabs<ChatSidebarView>
-            items={CHAT_SIDEBAR_TABS}
-            value={view}
-            onChange={selectView}
-            ariaLabel="Group chats"
-            className="cnav__tabs"
-            size="sm"
-            idPrefix="chat-sidebar-group"
-            fill
-          />
+        <div className="cnav__search-wrap">
+          <label className="cnav__search">
+            <Icon name="ph:magnifying-glass" width={13} className="cnav__search-icon" aria-hidden />
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search chats…"
+              aria-label="Search chats"
+            />
+            {query ? (
+              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="cnav__search-clear">
+                <Icon name="ph:x-bold" width={9} aria-hidden />
+              </button>
+            ) : null}
+          </label>
           {/* The Home tab above owns the exit now; the icon button only remains
               when the section switcher is not mounted (standalone hosts). */}
           {onSectionChange ? null : (
@@ -825,6 +769,7 @@ export function WorkspaceSidebar({
                 <PopoverItem
                   icon="ph:archive"
                   checked={showArchived}
+                  checkedRole="checkbox"
                   onSelect={() => {
                     setShowArchived((v) => !v);
                     setMenuOpen(false);
@@ -836,35 +781,6 @@ export function WorkspaceSidebar({
             </div>
           </Popover>
         </div>
-
-        <div className="cnav__search-wrap">
-          <label className="cnav__search">
-            <Icon name="ph:magnifying-glass" width={13} className="cnav__search-icon" aria-hidden />
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search chats…"
-              aria-label="Search projects and threads"
-            />
-            {query ? (
-              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="cnav__search-clear">
-                <Icon name="ph:x-bold" width={9} aria-hidden />
-              </button>
-            ) : null}
-          </label>
-        </div>
-
-        {registerError ? (
-          <div role="alert" className="cnav__error">
-            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
-            <span className="cnav__error-text">{registerError}</span>
-            <button type="button" onClick={() => setRegisterError(null)} aria-label="Dismiss" className="shrink-0">
-              <Icon name="ph:x-bold" width={9} aria-hidden />
-            </button>
-          </div>
-        ) : null}
         {deleteError ? (
           <div role="alert" className="cnav__error">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
@@ -886,8 +802,6 @@ export function WorkspaceSidebar({
 
         <div
           id="chat-sidebar-group-panel"
-          role="tabpanel"
-          aria-labelledby={`chat-sidebar-group-tab-${view}`}
           className="cnav__scroll focus-ring-inset"
         >
           <nav aria-label="Chat threads">
@@ -915,8 +829,7 @@ export function WorkspaceSidebar({
             </section>
           ) : null}
 
-          {view === "recent" ? (
-            <>
+          <>
               {!hasSearch && attentionSessions.length > 0 ? (
                 <section aria-label="Awaiting you">
                   <div className="cnav__label">
@@ -1028,125 +941,7 @@ export function WorkspaceSidebar({
                 );
               })
             )}
-            </>
-          ) : visibleGroups.length === 0 ? (
-            <p className="cnav__empty">
-              {hasSearch ? "No threads match your search." : "No conversations yet."}
-            </p>
-          ) : (
-            <ul>
-              {visibleGroups.map((group) => {
-                const key = groupKey(group);
-                const expanded = !collapsedKeys.has(key) || hasSearch;
-                const label = folderLabel(group);
-                const unregistered = Boolean(group.projectRoot) && !group.projectId;
-                const registering = registeringRoot === group.projectRoot;
-                const rows = showAllByKey.has(key) || hasSearch
-                  ? group.sessions
-                  : group.sessions.slice(0, THREADS_PREVIEW);
-                return (
-                  <li key={key} className={`cnav__group${expanded ? "" : " is-collapsed"}`}>
-                    <div className="cnav__group-head">
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-label={`${expanded ? "Collapse" : "Expand"} ${label} threads`}
-                        onClick={() => toggleCollapse(key)}
-                        className="cnav__group-toggle focus-ring"
-                      >
-                        <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
-                        {group.projectId ? (
-                          <ProjectAvatar name={label} root={group.projectRoot} color={group.projectColor} size="sm" className="cnav__folder" />
-                        ) : (
-                          <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
-                        )}
-                        <span className="cnav__group-text">
-                          <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
-                            {label}
-                          </span>
-                          <span className="cnav__group-meta">{groupMeta(group, now)}</span>
-                        </span>
-                      </button>
-                      {unregistered ? (
-                        <button
-                          type="button"
-                          disabled={registering}
-                          onClick={() => handleRegister(group)}
-                          title={`Register ${label} as a project`}
-                          aria-label={`Register ${label} as a project`}
-                          className="cnav__icon-btn is-accent focus-ring"
-                        >
-                          <Icon name={registering ? "ph:arrows-clockwise" : "ph:folders-bold"} width={13} className={registering ? "animate-spin" : undefined} aria-hidden />
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        // (cave-gg5d) A "cave:code-select-project" dispatch used
-                        // to precede this — its only listener lived in the
-                        // retired (now deleted) ComuxView; onNewChat does the work.
-                        onClick={() => onNewChat(group.projectRoot)}
-                        title={`New chat in ${label}`}
-                        aria-label={`New chat in ${label}`}
-                        className="cnav__icon-btn focus-ring"
-                      >
-                        <Icon name="ph:plus" width={12} aria-hidden />
-                      </button>
-                    </div>
-                    {expanded ? (
-                      group.sessions.length === 0 ? (
-                        <p className="cnav__thread-empty">No threads yet.</p>
-                      ) : (
-                        <ul>
-                          {rows.map((session) => {
-                            const title = sessionRailTitle(session);
-                            const glyph = threadLeadingIcon(title);
-                            return (
-                              <li key={session.id}>
-                                <ThreadRow
-                                  session={session}
-                                  active={activeSessionId === session.id}
-                                  pinned={isSessionPinned(pinnedIds, session.id)}
-                                  confirming={confirmingSessionId === session.id}
-                                  deleting={deletingSessionId === session.id}
-                                  indent="folder"
-                                  glyph={glyph}
-                                  onOpenUrl={onOpenUrl}
-                                  onOpen={() => onOpenSession(session)}
-                                  onOpenInSplit={
-                                    onOpenSessionInSplit
-                                      ? () => onOpenSessionInSplit(session)
-                                      : undefined
-                                  }
-                                  onTogglePin={() => togglePin(session.id)}
-                                  onToggleArchive={() => void setSessionArchived(session, !session.archived_at)}
-                                  archiving={archivingId !== null}
-                                  onRequestDelete={() => setConfirmingSessionId(session.id)}
-                                  onCancelDelete={() => setConfirmingSessionId(null)}
-                                  onConfirmDelete={() => void handleDeleteSession(session)}
-                                  now={now}
-                                />
-                              </li>
-                            );
-                          })}
-                          {group.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
-                                className="cnav__more focus-ring"
-                              >
-                                Show {group.sessions.length - THREADS_PREVIEW} more
-                              </button>
-                              </li>
-                            ) : null}
-                          </ul>
-                        )
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+          </>
           </nav>
         </div>
 

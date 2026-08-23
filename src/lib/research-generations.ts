@@ -13,6 +13,14 @@
  * an asynchronous kind.
  */
 
+import {
+  isValidElevenLabsModelId,
+  isValidElevenLabsSeed,
+  validateElevenLabsVoiceSettings,
+  ELEVENLABS_MAX_SEED,
+  type ElevenLabsVoiceSettings,
+} from "./voice/elevenlabs-shared.ts";
+
 export const RESEARCH_GENERATION_KINDS = [
   "diagram",
   "blog",
@@ -142,6 +150,24 @@ export type ResearchMediaRenderConfig = {
    * configs keep validating and re-draft exactly as the default style.
    */
   style?: ResearchPodcastStyle;
+  /**
+   * Podcast only (ElevenLabs): the synthesis model id. Absent means the
+   * offline quality-tier default (DEFAULT_ELEVENLABS_PODCAST_MODEL_ID),
+   * decoupled from the live-voice default.
+   */
+  model?: string;
+  /**
+   * Podcast only (ElevenLabs): delivery controls for synthesis. Absent means
+   * the shared baseline settings. Stored normalized so the renderer sends
+   * them verbatim.
+   */
+  voiceSettings?: ElevenLabsVoiceSettings;
+  /**
+   * Podcast only (ElevenLabs): pins provider sampling so re-rendering the same
+   * script is reproducible and two renders stay comparable. Absent means the
+   * provider samples freely, which is the previous behaviour.
+   */
+  seed?: number;
 };
 
 export type ResearchGenerationProgress = {
@@ -235,6 +261,49 @@ export function validateResearchMediaRenderConfig(
     }
     style = value.style;
   }
+  let model: string | undefined;
+  if (value.model !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast model is only valid for podcasts" };
+    }
+    if (value.provider !== "elevenlabs") {
+      return { ok: false, error: "podcast model is only valid for the ElevenLabs provider" };
+    }
+    if (!isValidElevenLabsModelId(value.model)) {
+      return { ok: false, error: "podcast model must be a valid ElevenLabs model id" };
+    }
+    model = value.model;
+  }
+  let voiceSettings: ElevenLabsVoiceSettings | undefined;
+  if (value.voiceSettings !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast voice settings are only valid for podcasts" };
+    }
+    if (value.provider !== "elevenlabs") {
+      return { ok: false, error: "podcast voice settings are only valid for the ElevenLabs provider" };
+    }
+    const normalized = validateElevenLabsVoiceSettings(value.voiceSettings);
+    if (!normalized) {
+      return { ok: false, error: "podcast voice settings are malformed" };
+    }
+    voiceSettings = normalized;
+  }
+  let seed: number | undefined;
+  if (value.seed !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast seed is only valid for podcasts" };
+    }
+    if (value.provider !== "elevenlabs") {
+      return { ok: false, error: "podcast seed is only valid for the ElevenLabs provider" };
+    }
+    if (!isValidElevenLabsSeed(value.seed)) {
+      return {
+        ok: false,
+        error: `podcast seed must be an integer between 0 and ${ELEVENLABS_MAX_SEED}`,
+      };
+    }
+    seed = value.seed;
+  }
   return {
     ok: true,
     value: {
@@ -243,6 +312,9 @@ export function validateResearchMediaRenderConfig(
       length: value.length,
       ...(voices ? { voices } : {}),
       ...(style ? { style } : {}),
+      ...(model ? { model } : {}),
+      ...(voiceSettings ? { voiceSettings } : {}),
+      ...(seed !== undefined ? { seed } : {}),
     },
   };
 }
@@ -528,7 +600,7 @@ export function isResearchGenerationContent(
 const FAMILIAR_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-export const RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH = 2_000;
+export const RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH = 10_000;
 
 export function isValidResearchGenerationFamiliarId(value: unknown): value is string {
   return (

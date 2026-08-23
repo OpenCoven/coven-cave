@@ -236,6 +236,49 @@ test("a resume root inside the familiar's own workspace stays auth-free", () => 
   }
 });
 
+// ── cave-g8fqc: the exemption describes an UNREGISTERED workspace directory.
+// Nothing enforced that: a user can register a project whose root lives under
+// ~/.coven/workspaces/familiars/<id>/, and the containment test alone then
+// handed a genuinely registered project an auth-free launch.
+
+test("a registered project inside the familiar's workspace is gated, not exempt", () => {
+  for (const resume of [
+    "/home/val/.coven/workspaces/familiars/milo",
+    "/home/val/.coven/workspaces/familiars/milo/registered-repo",
+  ]) {
+    assert.deepEqual(
+      launch({ resumeCwd: resume, resumeCwdIsRegisteredProject: true }),
+      { kind: "gated" },
+      `${resume} maps to a registered project, so its grant must be checked`,
+    );
+  }
+});
+
+test("registration does not widen the exemption beyond the workspace", () => {
+  // The containment test still runs first. A root outside the workspace is
+  // gated whether or not it is registered, so this flag can only ever REMOVE
+  // an exemption, never grant one.
+  for (const registered of [true, false, undefined]) {
+    assert.deepEqual(
+      launch({ resumeCwd: "/home/val/code/other", resumeCwdIsRegisteredProject: registered }),
+      { kind: "gated" },
+      `an outside root stays gated with resumeCwdIsRegisteredProject=${String(registered)}`,
+    );
+  }
+});
+
+test("an unregistered workspace root keeps its auth-free launch", () => {
+  // The multi-turn canvas case this exemption exists for must be untouched.
+  const resume = "/home/val/.coven/workspaces/familiars/milo/scratch";
+  for (const registered of [false, undefined]) {
+    assert.deepEqual(
+      launch({ resumeCwd: resume, resumeCwdIsRegisteredProject: registered }),
+      { kind: "workspace", root: resume },
+      `an unregistered workspace root stays exempt with registered=${String(registered)}`,
+    );
+  }
+});
+
 test("a daemon-derived resume root outside the workspace is gated", () => {
   for (const resume of [
     "/home/val/code/someone-elses-project",

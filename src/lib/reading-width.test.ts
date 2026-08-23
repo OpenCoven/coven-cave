@@ -37,7 +37,7 @@ test("normalize falls back to default for junk/unknown", () => {
   assert.equal(normalizeReadingWidth(undefined), DEFAULT_READING_WIDTH);
 });
 
-test("apply(non-default) sets the var to the level's px value and persists", () => {
+test("apply(non-default) sets the var to the character-based measure and persists", () => {
   const { store, props } = setupDom();
   applyReadingWidth("medium");
   assert.equal(props.get("--cave-reading-width"), READING_WIDTH_VALUES.medium);

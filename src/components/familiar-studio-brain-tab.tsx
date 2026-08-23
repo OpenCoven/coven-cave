@@ -43,6 +43,7 @@ import { isTauri } from "@/lib/tauri-platform";
 import { loadNativeSttBridge, nativeSttAvailability } from "@/lib/voice/native-stt";
 import { isLocalTtsVoiceName } from "@/lib/voice/local-tts";
 import { VOICE_PROVIDER_CATALOG } from "@/lib/voice/provider-catalog";
+import { showSettingsSavedToast } from "@/lib/settings-save-feedback";
 
 type Props = { familiar: ResolvedFamiliar };
 const LOCAL_VOICE_CATALOG_TIMEOUT_MS = 15_000;
@@ -392,6 +393,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         // up now instead of waiting for the next 4s poll, like every other
         // /api/config writer (chat runtime chip, home model state).
         window.dispatchEvent(new Event("cave:familiars-refresh"));
+        showSettingsSavedToast();
       }
     } catch (err) {
       setToast(`Couldn't save: ${(err as Error).message}`);

@@ -14,6 +14,24 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 const NOW = Date.now();
 const iso = (daysAgo: number) => new Date(NOW - daysAgo * 86_400_000).toISOString();
 const NO_ATTENTION = { state: "none", since: null, reason: null } as const;
+const PROJECTS = [
+  {
+    id: "project-alpha",
+    name: "alpha",
+    root: "/repo/alpha",
+    repoUrl: "https://github.com/OpenCoven/alpha",
+    createdAt: iso(60),
+    updatedAt: iso(0),
+  },
+  {
+    id: "project-beta",
+    name: "beta",
+    root: "/repo/beta",
+    repoUrl: "https://github.com/Acme/beta",
+    createdAt: iso(60),
+    updatedAt: iso(4),
+  },
+];
 const SESSIONS = [
   { id: "s1", title: "Refactor auth flow", status: "running", origin: "chat", project_root: "/repo/alpha", updated_at: iso(0), attention: NO_ATTENTION },
   { id: "s2", title: "Fix eslint config", status: "completed", origin: "board", project_root: "/repo/alpha", updated_at: iso(1), attention: NO_ATTENTION },
@@ -170,7 +188,10 @@ async function gotoChat(page: Page) {
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
   );
-  await page.goto("/?mode=chat");
+  await page.route("**/api/projects**", (route) =>
+    route.fulfill({ json: { ok: true, projects: PROJECTS } }),
+  );
+  await page.goto("/?mode=chat", { waitUntil: "domcontentloaded" });
   // Deep-link to Chat, with a sidebar click fallback if the shell restores Home
   // before the mode param is applied.
   await ensureChatSurface(page);
@@ -181,7 +202,7 @@ test.describe("chat sidebar (session navigator)", () => {
     await gotoChat(page);
     const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
     const nav = page.locator('aside[aria-label="Sidebar"]');
-    const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
+    const search = sidebar.getByRole("searchbox", { name: "Search chats" });
     const collapseToggle = page.getByRole("button", { name: "Collapse Chat sidebar" });
 
     // WorkspaceSidebar is the contextual primary nav in Chat.
@@ -205,12 +226,11 @@ test.describe("chat sidebar (session navigator)", () => {
     await expect.poll(() => page.evaluate(() => window.localStorage.getItem("cave:shell:nav-open"))).toBe("1");
   });
 
-  test("defaults to the Recent view; grouping tabs switch to project folders", async ({ page }) => {
+  test("uses one compact recency list beneath the global project filter", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
 
-    // Search control survives in both views.
-    await expect(sidebar.getByRole("searchbox", { name: "Search projects and threads" })).toBeVisible();
+    await expect(sidebar.getByRole("searchbox", { name: "Search chats" })).toBeVisible();
 
     // Recent is the default: time-bucket headers, no project folder toggles.
     await expect(sidebar.getByText("Today", { exact: true })).toBeVisible();
@@ -222,26 +242,35 @@ test.describe("chat sidebar (session navigator)", () => {
     // Bare row times — no "ago" suffix anywhere in the sidebar.
     await expect(sidebar.locator(".cnav__time").filter({ hasText: /\bago\b/ })).toHaveCount(0);
 
-    // The sidebar-owned grouping tabs replace the old Organize menu choice.
-    const groupingTabs = sidebar.getByRole("tablist", { name: "Group chats" });
-    await expect(groupingTabs.getByRole("tab", { name: "Recent" })).toHaveAttribute("aria-selected", "true");
-    await groupingTabs.getByRole("tab", { name: "Projects" }).click();
-    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
-    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toBeVisible();
+    await expect(sidebar.getByRole("tablist", { name: "Group chats" })).toHaveCount(0);
+    await expect(sidebar.getByRole("tab", { name: "Projects" })).toHaveCount(0);
+    await expect(sidebar.locator("section.cnav__organization")).toHaveCount(0);
 
-    // The organize choice persists across a reload.
     await page.reload();
     await ensureChatSurface(page);
     const reloadedSidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
     await expect(page.getByRole("button", { name: "Collapse Chat sidebar" })).toHaveAttribute("aria-expanded", "true");
-    await expect(reloadedSidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
-    await expect(reloadedSidebar.getByText("Today", { exact: true })).toHaveCount(0);
+    await expect(reloadedSidebar.getByText("Today", { exact: true })).toBeVisible();
+  });
+
+  test("search filters the complete recency list without project-group chrome", async ({ page }) => {
+    await gotoChat(page);
+    const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
+    const search = sidebar.getByRole("searchbox", { name: "Search chats" });
+    await search.fill("Refactor auth flow");
+    await expect(sidebar.getByText("Refactor auth flow", { exact: true })).toBeVisible();
+    await expect(sidebar.getByText("Wire deploy pipeline")).toHaveCount(0);
+    await expect(sidebar.locator("section.cnav__organization")).toHaveCount(0);
+    await search.clear();
+    for (const s of SESSIONS) {
+      await expect(sidebar.getByText(s.title, { exact: false }).first()).toBeVisible();
+    }
   });
 
   test("search filters threads to matches, with an empty state", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
-    const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
+    const search = sidebar.getByRole("searchbox", { name: "Search chats" });
 
     await search.fill("deploy");
     await expect(sidebar.getByText("Wire deploy pipeline").first()).toBeVisible();
@@ -327,7 +356,7 @@ test.describe("chat sidebar on mobile", () => {
     await gotoChat(page);
     const shell = page.locator(".shell-root");
     const sidebar = page.locator('aside[aria-label="Sidebar"] .chat-sidebar');
-    const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
+    const search = sidebar.getByRole("searchbox", { name: "Search chats" });
     const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
 
     await expect(openNav).toBeVisible();

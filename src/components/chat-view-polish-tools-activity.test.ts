@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  activityCss,
   attachmentsLib,
   attachStagingHook,
   emptyStateSource,
@@ -11,6 +12,7 @@ import {
   source,
   splitReasoning,
   styles,
+  toolRunDisclosureSource,
   turnRow,
 } from "./chat-view-polish-fixtures.ts";
 
@@ -80,26 +82,84 @@ assert.match(
   "The menu model flips the thinking item label and checkmark with the preference",
 );
 
+// ToolGroup's accessible name is a dedicated helper: the compact activity
+// summary plus the running/error counts a sighted reader gets only from a
+// tinted (color-only) chip.
 assert.match(
   source,
-  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*Tool activity[\s\S]*<ToolRuns tools=\{tools\}/,
-  "ToolGroup should render tool calls through the shared grouped disclosure path",
+  /function toolGroupAriaLabel\(summary: string, running: number, errors: number\): string \{[\s\S]*?Tool activity: \$\{summary\}/,
+  "toolGroupAriaLabel states the compact summary as the disclosure's accessible name",
 );
 
 assert.match(
   source,
-  /function ToolRuns[\s\S]*groupConsecutiveTools\(tools\)[\s\S]*<ToolRunGroup[\s\S]*<ToolBlock/,
-  "adjacent repeated tool calls roll into an expandable run while one-off calls retain their existing block",
+  /function toolGroupAriaLabel[\s\S]*?running \? `\$\{running\} running` : ""[\s\S]*?errors \? `\$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""/,
+  "toolGroupAriaLabel body appends '${running} running' and singular/plural error count — not just the base summary",
+);
+
+assert.match(
+  source,
+  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*aria-label=\{toolGroupAriaLabel\(summary, running, errors\)\}[\s\S]*<ToolRuns tools=\{tools\}/,
+  "ToolGroup wraps ONE collapsed disclosure — named by toolGroupAriaLabel — around ToolRuns per assistant turn",
+);
+const toolGroup = source.match(/function ToolGroup[\s\S]*?function ToolRuns/)?.[0] ?? "";
+assert.equal(
+  toolGroup.match(/<ToolRuns tools=\{tools\} \/>/g)?.length,
+  1,
+  "ToolGroup renders the shared ToolRuns path exactly once",
+);
+
+assert.match(
+  source,
+  /function ToolRuns[\s\S]*groupConsecutiveTools\(tools\)[\s\S]*containsEdit[\s\S]*<ToolBlock[\s\S]*<ToolRunGroup/,
+  "adjacent non-edit calls share a stable run shell while edit calls retain standalone blocks",
 );
 assert.match(
   source,
-  /function ToolRunGroup[\s\S]*<details[\s\S]*\{tools\.length\} \{tools\.length === 1 \? "call" : "calls"\}[\s\S]*tools\.map\(\(tool\) => <ToolBlock/,
-  "a tool run advertises its call count and expands to every underlying tool block",
+  /function ToolRuns[\s\S]*?containsEdit = run\.tools\.some\(\(tool\) => toolInputAsDiff\(tool\.name, tool\.input\) != null\)[\s\S]*?const body = containsEdit\s*\? run\.tools\.map\(\(tool\) => <ToolBlock[\s\S]*: <ToolRunGroup/,
+  "ToolRuns keeps edits standalone and gives every non-edit run the same stable ToolRunGroup component",
 );
 assert.match(
   source,
-  /function ToolRunGroup[\s\S]*onToggle=\{\(event\) => setOpen\(event\.currentTarget\.open\)\}/,
-  "a tool run derives disclosure state from its own details element, not a nested toggle target",
+  /function ToolRunGroup[\s\S]*<ChatToolRunDisclosure[\s\S]*×\{tools\.length\}[\s\S]*tools\.map\(\(tool\) => <ToolBlock/,
+  "a tool run's compact summary states its call count as ×N and expands to every underlying tool block",
+);
+assert.match(
+  toolRunDisclosureSource,
+  /useToolRunDisclosure\(statuses, repeated\)/,
+  "the stable run shell delegates disclosure state to the shared hook",
+);
+assert.match(
+  toolRunDisclosureSource,
+  /"details"[\s\S]*ref: disclosure\.detailsRef[\s\S]*open: disclosure\.open[\s\S]*onToggle:[\s\S]*disclosure\.onToggle[\s\S]*onBlurCapture: disclosure\.onBlurCapture/,
+  "the stable run shell controls its details element and defers focused collapse",
+);
+assert.match(
+  toolRunDisclosureSource,
+  /hidden: !repeated[\s\S]*className: repeated \? "cave-tool-run__list" : undefined/,
+  "the same details and list nodes stay mounted while the repeated summary becomes visible",
+);
+assert.match(
+  source,
+  /function ToolRunGroup[\s\S]*ariaLabel=\{`\$\{displayName\}, \$\{tools\.length\} \$\{tools\.length === 1 \? "call" : "calls"\}\$\{running \? `, \$\{running\} running` : ""\}\$\{errors \? `, \$\{errors\} \$\{errors === 1 \? "error" : "errors"\}` : ""\}`\}/,
+  "a repeated run's accessible name includes its call, running, and error counts",
+);
+
+// Task 3 cont.: Status spans are scoped to their <summary> and wrap the chip markup.
+// Narrow to just the <summary> block so neither assertion can cross </summary>
+// or reach into ToolRuns / ToolRunGroup.
+const toolGroupSummary = toolGroup.match(/<summary[\s\S]*?<\/summary>/)?.[0] ?? "";
+assert.match(
+  toolGroupSummary,
+  /cave-work-line__status">[^]*?cave-tool-count--running[^]*?cave-tool-count--error[^]*?<\/span>\s*<\/summary>/,
+  "ToolGroup summary: cave-work-line__status span contains the running/error chips before the span closes",
+);
+
+const toolRunGroupSrc = source.match(/function ToolRunGroup[\s\S]*?const ToolProjectRootContext/)?.[0] ?? "";
+assert.match(
+  toolRunGroupSrc,
+  /summary=\{[\s\S]*?cave-tool-run__status">[^]*?cave-tool-count--running[^]*?cave-tool-count--error[^]*?<\/span>[\s\S]*?\}\s*>/,
+  "ToolRunGroup summary content contains the running/error chips",
 );
 
 assert.match(
@@ -129,16 +189,34 @@ assert.match(
   "ToolBlock should color-code by tool category (data-tool-category + per-category icon)",
 );
 
+// Both ToolBlock <summary> variants must carry focus-ring so keyboard nav
+// can reach the disclosure without custom :focus-visible overrides.
+assert.match(
+  source,
+  /cave-edit-card__summary focus-ring/,
+  "edit-card summary (isEditTool path) must carry focus-ring",
+);
+assert.match(
+  source,
+  /className="cave-tool-block"[\s\S]{0,200}<summary[^>]*focus-ring/,
+  "generic ToolBlock summary (non-edit path) must carry focus-ring",
+);
+
 // Tool-use disclosures must never default open (the transcript stays clean).
-// ReasoningBlock is the one exception — its `open` is a controlled binding to
-// the global Show-thinking preference (asserted above), not a hardcoded default.
+// ReasoningBlock and ChatToolRunDisclosure are the two exceptions — each open
+// state is controlled by a preference/hook, not hardcoded.
 assert.doesNotMatch(
   [
-    source.match(/function ToolGroup[\s\S]*?function ToolBlock/)?.[0] ?? "",
+    source.match(/function ToolGroup[\s\S]*?function ToolRunGroup/)?.[0] ?? "",
     source.match(/function ToolBlock[\s\S]*?function ToolInputView/)?.[0] ?? "",
   ].join("\n"),
   /<details[^>]*\sopen(?:=|\s|>)/,
   "Tool-use disclosures must not default open",
+);
+assert.match(
+  toolRunDisclosureSource,
+  /open: disclosure\.open/,
+  "ChatToolRunDisclosure uses only the hook-controlled open state",
 );
 // A hardcoded `open` (open with no binding) on the reasoning block would defeat
 // the toggle — only the controlled `open={showThinking || undefined}` is allowed.
@@ -148,10 +226,10 @@ assert.doesNotMatch(
   "ReasoningBlock must not hardcode the disclosure open",
 );
 
-// --- Tool activity renders in a designated section on settled turns ---
+// --- Tool activity keeps designated slots throughout the turn lifecycle ---
 
-// No per-turn show/hide toggle: the designated section is always present
-// (collapsed) instead, so prose and tool usage are cleanly separated.
+// No per-turn show/hide toggle: the designated section is present whenever
+// non-edit activity exists, including while the assistant turn is running.
 assert.doesNotMatch(
   turnRow,
   /showTools|showToolsOverride|cave-turn-tools-toggle/,
@@ -160,21 +238,21 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /const proseContent =[\s\S]*?!pending && renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node/,
-  "settled artifact-aware segments render as one ordered prose sequence",
+  /const proseContent =[\s\S]*?!pending[\s\S]*?\? renderSegments[\s\S]*?renderSegments\.map[\s\S]*?segment\.kind === "text"[\s\S]*?<ProgressiveMarkdownBlock[\s\S]*?segment\.node[\s\S]*?: <ProgressiveMarkdownBlock text=\{visible\} \/>/,
+  "settled responses preserve an ordered rich sequence or one decorated prose block",
 );
 
 assert.match(
   turnRow,
-  /renderSegments = split\.some\(\(s\) => s\.kind === "block"\) \? split : undefined/,
-  "settled turns override prose only when a rich block exists",
+  /renderSegments = split\.some\(\((segment|s)\) => (?:segment|s)\.kind === "block"\) \? split : undefined/,
+  "settled turns render prose (+ artifacts) only — tool blocks are not woven into the text",
 );
 const supplementary = turnRow.match(
   /const supplementaryContent = \([\s\S]*?\n  \);\n\n  return \(/,
 )?.[0] ?? "";
 assert.doesNotMatch(
   supplementary,
-  /renderSegments|segment\.node/,
+  /renderSegments|segment\.node|s\.node/,
   "inline rich blocks are not duplicated in supplementaryContent",
 );
 
@@ -202,7 +280,7 @@ assert.match(
 );
 assert.match(
   turnRow,
-  /\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  /\{!pending && turn\.tools\?\.length && editCards\.length[\s\S]*?const editedFiles = Array\.from[\s\S]*?\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
   "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
 );
 assert.match(
@@ -215,9 +293,81 @@ assert.match(
   /const activityDetails =[\s\S]*?otherTools\.length \? \(\s*<ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the activityDetails ToolGroup",
 );
+// Exclusivity, not just existence. The assertion above proves the rollup is fed
+// `otherTools`; it does not stop a second ToolGroup being handed the unfiltered
+// set. That is the specific regression the edit/non-edit partition exists to
+// prevent — edit cards swept back into the collapsed rollup, where the whole
+// point is that they stay visible.
+assert.doesNotMatch(
+  turnRow,
+  /<ToolGroup tools=\{(?:editCards|settledTools|turn\.tools)/,
+  "edit cards and unpartitioned tools must never be swept into the collapsed activity rollup",
+);
+assert.match(
+  turnRow,
+  /<StreamingTurnResponse[\s\S]*?activityDetails=\{activityDetails\}[\s\S]*?supplementaryContent=\{supplementaryContent\}/,
+  "TurnRowImpl sends grouped activity before supplementary edit cards through the shared response",
+);
 
 assert.match(
   turnRow,
   /<MessageBubble[\s\S]*role="assistant"[\s\S]*content=\{visible \|\| \(turn\.pending \? "…" : ""\)\}[\s\S]*assistantBody=\{[\s\S]*?<StreamingTurnResponse/,
   "MessageBubble keeps filtered source ownership while the shared response owns presentation",
+);
+
+// ── Task 4: CSS density contract ────────────────────────────────────────────
+
+// The per-turn "N tools" show/hide toggle (CHAT-D13-01) was removed when tools
+// got a designated always-present activity slot; its CSS is dead and must be
+// pruned to prevent ghost selector confusion.
+assert.doesNotMatch(
+  activityCss,
+  /\.cave-turn-tools-toggle/,
+  "cave-turn-tools-toggle CSS is removed — the per-turn toggle is gone",
+);
+
+assert.match(
+  styles,
+  /\.cave-tool-group\.cave-work-line > \.cave-tool-summary\s*\{[^}]*min-height:\s*var\(--space-8\)/,
+  "compact work-line summary must have min-height: var(--space-8) for 32px touch target",
+);
+
+// Base standalone framing: ToolRunGroup outside .cave-work-line keeps card framing.
+assert.match(
+  styles,
+  /\.cave-tool-run\s*\{[^}]*border:\s*1px solid[^}]*background:/,
+  "base .cave-tool-run must retain standalone card framing (border and background) for use outside .cave-work-line",
+);
+
+// Scoped flat override: only flatten when nested inside the work-line disclosure
+assert.match(
+  styles,
+  /\.cave-work-line\s+\.cave-tool-run\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/,
+  ".cave-work-line .cave-tool-run must remove nested framing (border: 0, background: transparent) inside the work-line",
+);
+
+assert.match(
+  styles,
+  /\.cave-tool-run__list\s*\{[^}]*gap:\s*var\(--space-1\)/,
+  ".cave-tool-run__list must use tight gap: var(--space-1) (4px) between tool blocks",
+);
+
+// Scope to activity.css directly and extract each @media (prefers-reduced-motion: reduce)
+// block using a one-level brace-bounded regex — prevents crossing into later rules or
+// into rules from other concatenated stylesheets.
+const reducedMotionBlockRe =
+  /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+const reducedMotionBlocks = Array.from(
+  activityCss.matchAll(reducedMotionBlockRe),
+  (m) => m[0],
+).join("\n");
+assert.match(
+  activityCss,
+  /\.cave-tool-summary::before\s*\{[^}]*transition:\s*transform\s+var\(--duration-fast\)\s+var\(--ease-standard\)/,
+  "chevron transition must use design motion tokens, not hardcoded values",
+);
+assert.match(
+  reducedMotionBlocks,
+  /\.cave-tool-summary::before\s*\{[^}]*transition:\s*none/,
+  "reduced-motion must disable the .cave-tool-summary::before chevron transition",
 );

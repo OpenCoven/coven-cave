@@ -15,6 +15,18 @@
  * Activity/PRs/Issues/Reviews tabs; the dock's GitHub tab mounts a second,
  * session-scoped copy so triage never has to displace a running shell.
  * Workspace routing lives outside this component.
+ *
+ * TWO GITHUB SURFACES ARE INTENTIONAL (cave-xxp9f, owner decision 2026-08-15).
+ * The 2026-07-26 Coding Room design said "there is no top-level GitHub page",
+ * and cave-uod42 (#4319) built the dock tab without removing these top tabs.
+ * That split is now the decision rather than drift:
+ *   - top tabs  — full-width triage, for scanning a long list
+ *   - dock tab  — a session-scoped glance that never displaces a running shell
+ * Pending-GitHub navigation (pending-code-navigation.ts) therefore keeps
+ * routing to the TOP tabs, and tests/code-surface.spec.ts pins that landing.
+ * Do not "reconcile" either to the spec line above without a new owner call —
+ * note the design doc itself is not in this repository, so this comment is the
+ * record.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";

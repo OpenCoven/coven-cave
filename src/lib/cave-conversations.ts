@@ -110,6 +110,10 @@ export type ConversationFile = {
   runtimeAccessFingerprint?: string;
   familiarId: string;
   harness: string;
+  /** Non-secret inference connection used by the latest successful launch. */
+  inferenceRouteId?: string;
+  /** Launch-authority fingerprint used to prevent cross-route native resume. */
+  inferenceRouteFingerprint?: string;
   model?: string;
   modelIntent?: ConversationModelIntent;
   runtime?: string;
@@ -154,6 +158,7 @@ export type ConversationSummary = {
   harnessSessionId?: string;
   familiarId: string;
   harness?: string;
+  inferenceRouteId?: string;
   model?: string;
   runtime?: string;
   title?: string;
@@ -557,6 +562,7 @@ export type ConversationStubSeed = {
   sessionId: string;
   familiarId: string;
   harness: string;
+  inferenceRouteId?: string;
   model?: string;
   runtime?: string;
   title?: string;
@@ -582,6 +588,7 @@ export type QueuedOfflineConversationSeed = {
   sessionId: string;
   familiarId: string;
   harness: string;
+  inferenceRouteId?: string;
   model?: string;
   runtime?: string;
   title?: string;
@@ -626,6 +633,7 @@ export async function createConversationStub(seed: ConversationStubSeed): Promis
       sessionId: seed.sessionId,
       familiarId: seed.familiarId,
       harness: seed.harness,
+      ...(seed.inferenceRouteId ? { inferenceRouteId: seed.inferenceRouteId } : {}),
       ...(seed.model ? { model: seed.model } : {}),
       ...(seed.runtime ? { runtime: seed.runtime } : {}),
       ...(seed.title ? { title: seed.title } : {}),
@@ -680,6 +688,7 @@ export async function persistQueuedOfflineConversation(
       sessionId: seed.sessionId,
       familiarId: seed.familiarId,
       harness: seed.harness,
+      ...(seed.inferenceRouteId ? { inferenceRouteId: seed.inferenceRouteId } : {}),
       ...(seed.model ? { model: seed.model } : {}),
       ...(seed.runtime ? { runtime: seed.runtime } : {}),
       ...(seed.title ? { title: seed.title } : {}),
@@ -691,6 +700,7 @@ export async function persistQueuedOfflineConversation(
     };
     conv.familiarId = seed.familiarId;
     conv.harness = seed.harness;
+    if (seed.inferenceRouteId !== undefined) conv.inferenceRouteId = seed.inferenceRouteId;
     if (seed.model !== undefined) conv.model = seed.model;
     if (seed.runtime !== undefined) conv.runtime = seed.runtime;
     if (!conv.title && seed.title) conv.title = seed.title;
@@ -820,6 +830,7 @@ async function readConversationSummary(
         ...(conv.harnessSessionId ? { harnessSessionId: conv.harnessSessionId } : {}),
         familiarId: conv.familiarId,
         harness: conv.harness,
+        ...(conv.inferenceRouteId ? { inferenceRouteId: conv.inferenceRouteId } : {}),
         model: conv.model,
         runtime: conv.runtime,
         title: conv.title,

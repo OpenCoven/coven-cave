@@ -34,6 +34,7 @@ import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { copyText } from "@/lib/clipboard";
+import { useResearchMediaUrl } from "@/lib/research-media-client";
 import {
   RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
   RESEARCH_GENERATION_MEDIA_KINDS,
@@ -474,7 +475,7 @@ export function GenerationReviewModal({
           <span className="research-studio__kicker">Studio · review draft</span>
           <h4 id="research-studio-review-title">Review before rendering</h4>
         </div>
-        <button type="button" className="research-studio-modal__close" onClick={onClose} aria-label="Close dialog">✕</button>
+        <button type="button" className="research-studio-modal__close focus-ring" onClick={onClose} aria-label="Close dialog">✕</button>
       </header>
       <div className="research-studio-modal__body">
         <p className="research-studio-config__note">
@@ -545,7 +546,7 @@ export function GenerationReviewModal({
       </div>
       <footer className="research-studio-modal__footer">
         <button type="button" className="research-studio-act research-studio-act--ghost" onClick={onClose}>Keep draft</button>
-        <button type="button" className="research-studio-act research-studio-act--primary" onClick={onRender} disabled={rendering}>
+        <button type="button" className="research-studio-act research-studio-act--primary focus-ring" onClick={onRender} disabled={rendering}>
           {rendering ? "Queueing…" : "Render media"}
         </button>
       </footer>
@@ -603,7 +604,7 @@ export function GenerationConfigModal({
 }) {
   const meta = studioMetaForKind(kind);
   const isMedia = !isResearchGenerationKind(kind);
-  const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH - 200;
+  const nearCap = directions.length >= RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH * 0.9;
   const mediaConfigurationError = (() => {
     if (!isMedia) return null;
     if (!readiness) return "Media readiness is still loading.";
@@ -663,7 +664,7 @@ export function GenerationConfigModal({
         </div>
         <button
           type="button"
-          className="research-studio-modal__close"
+          className="research-studio-modal__close focus-ring"
           onClick={onClose}
           aria-label="Close dialog"
         >
@@ -680,7 +681,7 @@ export function GenerationConfigModal({
           </label>
           <select
             id="research-studio-config-source"
-            className="research-studio__select"
+            className="research-studio__select focus-ring"
             value={selectedSourceId ?? ""}
             onChange={(event) => onSelectSource(event.target.value)}
           >
@@ -700,17 +701,19 @@ export function GenerationConfigModal({
           </label>
           <textarea
             id="research-studio-directions"
-            className="research-studio-config__textarea"
+            className="research-studio-config__textarea focus-ring"
             value={directions}
             maxLength={RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
             onChange={(event) => onDirectionsChange(event.target.value)}
+            aria-describedby="research-studio-directions-count"
             placeholder="Audience, tone, emphasis — kept with the generation for future pipelines"
           />
-          {nearCap ? (
-            <span className="research-studio-config__count" aria-live="polite">
-              {directions.length} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
-            </span>
-          ) : null}
+          <span
+            id="research-studio-directions-count"
+            className={`research-studio-config__count${nearCap ? " research-studio-config__count--near" : ""}`}
+          >
+            {directions.length.toLocaleString()} / {RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH.toLocaleString()}
+          </span>
         </div>
         {isMedia ? (
           <div className="research-studio-config__media">
@@ -987,7 +990,7 @@ export function GenerationConfigModal({
         </button>
         <button
           type="button"
-          className="research-studio-act research-studio-act--primary"
+          className="research-studio-act research-studio-act--primary focus-ring"
           onClick={onSubmit}
           disabled={
             creating ||
@@ -1151,7 +1154,20 @@ export function GenerationViewerModal({
     content?.kind === "diagram" ? content.mermaid : generationContentToMarkdown(generation);
   const footerCopyLabel =
     content?.kind === "diagram" ? "Copy Mermaid" : content?.kind === "thread" ? "Copy thread" : "Copy";
-  const mediaUrl = `/api/research/generations/media?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`;
+  const hasMedia = Boolean(
+    (content?.kind === "podcast" && content.audio) ||
+      ((content?.kind === "short-video" || content?.kind === "long-video") && content.video),
+  );
+  const {
+    url: mediaUrl,
+    status: mediaStatus,
+    retry: retryMedia,
+    reportPlaybackFailure,
+  } = useResearchMediaUrl(
+    generation.familiarId,
+    generation.id,
+    hasMedia,
+  );
   const infographicUrl =
     content?.kind === "infographic" && content.stats.length > 0
       ? `/api/research/generations/infographic?familiarId=${encodeURIComponent(generation.familiarId)}&id=${encodeURIComponent(generation.id)}`
@@ -1233,14 +1249,24 @@ export function GenerationViewerModal({
         {content?.kind === "podcast" && content.audio ? (
           <div className="research-studio-viewer__media">
             <span className="research-studio-viewer__label">Podcast audio</span>
-            <audio
-              className="research-studio-viewer__audio"
-              controls
-              preload="metadata"
-              src={mediaUrl}
-            >
-              Your browser cannot play this audio file.
-            </audio>
+            {mediaStatus === "loading" ? <p className="research-studio__note" role="status">Loading podcast audio…</p> : null}
+            {mediaStatus === "error" ? (
+              <div role="alert">
+                <p className="research-studio__error">Couldn’t load podcast audio.</p>
+                <button type="button" className="research-studio-act" onClick={retryMedia}>Retry</button>
+              </div>
+            ) : null}
+            {mediaUrl ? (
+              <audio
+                className="research-studio-viewer__audio"
+                controls
+                preload="metadata"
+                src={mediaUrl}
+                onError={reportPlaybackFailure}
+              >
+                Your browser cannot play this audio file.
+              </audio>
+            ) : null}
           </div>
         ) : null}
 
@@ -1261,14 +1287,24 @@ export function GenerationViewerModal({
         {(content?.kind === "short-video" || content?.kind === "long-video") && content.video ? (
           <div className="research-studio-viewer__media">
             <span className="research-studio-viewer__label">Video preview</span>
-            <video
-              className="research-studio-viewer__video"
-              controls
-              preload="metadata"
-              src={mediaUrl}
-            >
-              Your browser cannot play this video file.
-            </video>
+            {mediaStatus === "loading" ? <p className="research-studio__note" role="status">Loading video preview…</p> : null}
+            {mediaStatus === "error" ? (
+              <div role="alert">
+                <p className="research-studio__error">Couldn’t load video preview.</p>
+                <button type="button" className="research-studio-act" onClick={retryMedia}>Retry</button>
+              </div>
+            ) : null}
+            {mediaUrl ? (
+              <video
+                className="research-studio-viewer__video"
+                controls
+                preload="metadata"
+                src={mediaUrl}
+                onError={reportPlaybackFailure}
+              >
+                Your browser cannot play this video file.
+              </video>
+            ) : null}
           </div>
         ) : null}
 
@@ -1339,8 +1375,7 @@ export function GenerationViewerModal({
             ⤓ Download .md
           </button>
         ) : null}
-        {(content?.kind === "podcast" && content.audio) ||
-        ((content?.kind === "short-video" || content?.kind === "long-video") && content.video) ? (
+        {hasMedia && mediaUrl ? (
           <a
             className="research-studio-act"
             href={`${mediaUrl}&download=1`}

@@ -12,6 +12,7 @@ import {
   LINK_CATEGORY_ORDER,
   MAX_LINKS_PER_SAVE,
   normalizeLinkUrl,
+  savedLinkDedupeKey,
   summarizeLinkIntake,
   type SavedLink,
 } from "./link-organizer.ts";
@@ -81,6 +82,34 @@ test("normalizeLinkUrl produces one key per page", () => {
     normalizeLinkUrl("https://example.com/a"),
     "query strings stay significant",
   );
+});
+
+test("summarizeLinkIntake collapses X status aliases with the shared saved-link dedupe key", () => {
+  const saved: SavedLink[] = [{
+    id: "saved-x-status",
+    url: "https://twitter.com/i/web/status/123456789",
+    category: "social",
+    title: "Saved X status",
+    addedAt: "2026-07-26T00:00:00Z",
+    source: "desk",
+  }];
+
+  const summary = summarizeLinkIntake(
+    [
+      "https://x.com/OpenCoven/status/123456789?ref=home",
+      "https://twitter.com/OpenCoven/status/123456789#article",
+    ].join("\n"),
+    saved,
+  );
+
+  assert.equal(summary.detectedCount, 2);
+  assert.deepEqual(summary.ready, []);
+  assert.deepEqual(
+    summary.duplicates.map((item) => item.url),
+    ["https://x.com/OpenCoven/status/123456789?ref=home"],
+  );
+  assert.deepEqual(summary.categoryCounts, { social: 1 });
+  assert.equal(summary.canSubmit, false);
 });
 
 // ── intake preview ────────────────────────────────────────────────────────────
@@ -185,6 +214,18 @@ test("groupSavedLinksByUsage omits selected grouping without a selected mission"
   }
 });
 
+test("groupSavedLinksByUsage matches X status aliases in a mission citation index", () => {
+  const saved = savedLink("saved-x", "https://x.com/OpenCoven/status/123456789");
+  const citedBy = new Map<string, { id: string }[]>([
+    [savedLinkDedupeKey("https://twitter.com/i/web/status/123456789"), [{ id: "mission-selected" }]],
+  ]);
+
+  const groups = groupSavedLinksByUsage([saved], citedBy, "mission-selected");
+
+  assert.deepEqual(groups.map((group) => group.id), ["selected"]);
+  assert.deepEqual(groups[0]?.links.map((link) => link.id), ["saved-x"]);
+});
+
 // ── wiring pins ───────────────────────────────────────────────────────────────
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -260,4 +301,13 @@ test("unknown categories degrade to Other instead of crashing a surface", () => 
     assert.match(source, /linkCategoryMeta\(/);
     assert.doesNotMatch(source, /LINK_CATEGORY_META\[/);
   }
+});
+
+test("huggingface.co/papers is a paper, other HF paths are not", () => {
+  assert.equal(categorizeLink("https://huggingface.co/papers/2401.12345"), "paper");
+  assert.equal(categorizeLink("https://huggingface.co/papers"), "paper");
+  assert.equal(categorizeLink("https://huggingface.co/papers/"), "paper");
+  assert.notEqual(categorizeLink("https://huggingface.co/models/meta-llama/Llama-3"), "paper");
+  assert.notEqual(categorizeLink("https://huggingface.co/datasets/squad"), "paper");
+  assert.notEqual(categorizeLink("https://huggingface.co/blog/some-post"), "paper");
 });

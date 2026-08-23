@@ -86,7 +86,9 @@ test("managed Node and the Coven CLI install through the reviewed serialized lan
   assert.equal(result.ok, true);
   assert.deepEqual(starts, ["managed-node", "coven-cli"]);
   assert.deepEqual(progress, [
-    "Setting up Cave’s private Node.js and npm runtime…",
+    "Checking Cave’s local Node.js, npm, and Coven CLI…",
+    "Preparing Cave’s private Node.js and npm runtime…",
+    "Checking Cave’s private Node.js and npm runtime…",
     "Installing and verifying the Coven CLI…",
     "Verifying the local runtime and Coven CLI…",
   ]);

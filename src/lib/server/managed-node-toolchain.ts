@@ -19,6 +19,34 @@ const INSTALL_TIMEOUT_MS = 5 * 60_000;
 const NODE_PROBE_TIMEOUT_MS = 1_500;
 const NPM_PROBE_TIMEOUT_MS = 15_000;
 
+const TRANSIENT_RENAME_ERRORS = new Set(["EACCES", "EBUSY", "EPERM"]);
+
+/**
+ * Rename with a short, bounded retry for Windows transient errors. Antivirus
+ * or another process can briefly hold a handle on the freshly extracted runtime
+ * directory, which Node surfaces as EPERM/EBUSY (or EACCES) on the first
+ * rename. A failed rename leaves the source intact, so retrying the same move
+ * is safe; persistent failures still propagate after the window. This mirrors
+ * the transient-rename retry in `atomic-write.ts`.
+ */
+async function renameWithTransientRetry(
+  move: (source: string, target: string) => Promise<void>,
+  source: string,
+  target: string,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await move(source, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (!TRANSIENT_RENAME_ERRORS.has(code) || attempt >= 6) throw error;
+      const delayMs = Math.min(50, 2 ** (attempt + 1));
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export type ManagedNodePaths = {
   platform: ManagedNodePlatform;
   root: string;
@@ -194,9 +222,20 @@ export function managedNodeSpawnEnv(
   if (!paths) return null;
   const pathOps = pathApi(paths.platform);
   const nodeBin = pathOps.dirname(paths.node);
-  const parts = [paths.npmBin, nodeBin, base.PATH].filter(Boolean);
+  const basePath =
+    base.PATH ??
+    (paths.platform === "win32"
+      ? Object.entries(base).find(([key]) => key.toUpperCase() === "PATH")?.[1]
+      : undefined);
+  const parts = [paths.npmBin, nodeBin, basePath].filter(Boolean);
+  const env = { ...base };
+  if (paths.platform === "win32") {
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "PATH") delete env[key];
+    }
+  }
   return {
-    ...base,
+    ...env,
     PATH: parts.join(paths.platform === "win32" ? ";" : ":"),
     NPM_CONFIG_PREFIX: paths.npmPrefix,
     npm_config_prefix: paths.npmPrefix,
@@ -455,7 +494,9 @@ export async function installManagedNodeToolchain(options: {
   }
   const fetcher = options.fetch ?? fetch;
   const remove = options.dependencies?.remove ?? rm;
-  const move = options.dependencies?.rename ?? rename;
+  const rawRename = options.dependencies?.rename ?? rename;
+  const move = (source: string, target: string): Promise<void> =>
+    renameWithTransientRetry(rawRename, source, target);
   const runtimeDirectory = options.dependencies?.runtimeDirectory ?? onlyRuntimeDirectory;
   const stage = path.join(/* turbopackIgnore: true */ paths.stagingRoot, `node-${randomUUID()}`);
   const installTemporary = `${paths.installDir}.tmp-${randomUUID()}`;

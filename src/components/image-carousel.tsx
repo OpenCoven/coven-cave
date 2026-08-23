@@ -219,7 +219,7 @@ export function ImageCarousel({ images, label }: Props) {
                   // through pictures nobody can see.
                   tabIndex={i === safeIndex ? 0 : -1}
                   aria-hidden={i === safeIndex ? undefined : true}
-                  className={`focus-ring flex w-full cursor-zoom-in items-center justify-center bg-transparent p-0 ${
+                  className={`focus-ring flex aspect-video w-full cursor-zoom-in items-center justify-center overflow-hidden bg-transparent p-0 ${
                     i === safeIndex
                       ? "relative opacity-100"
                       : "pointer-events-none absolute inset-0 opacity-0"
@@ -235,11 +235,11 @@ export function ImageCarousel({ images, label }: Props) {
                     alt={imageLabel(image, i, total)}
                     loading={i === 0 ? undefined : "lazy"}
                     fallback={
-                      <span className="flex h-40 w-full items-center justify-center text-[var(--text-muted)]">
+                      <span className="flex h-full w-full items-center justify-center text-[var(--text-muted)]">
                         <Icon name="ph:image-bold" width={24} />
                       </span>
                     }
-                    className="block max-h-96 w-full object-contain"
+                    className="block h-full w-full object-cover"
                   />
                 </button>
               ))}

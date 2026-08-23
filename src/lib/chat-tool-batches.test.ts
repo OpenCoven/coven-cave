@@ -7,7 +7,7 @@ import test from "node:test";
 import {
   LONG_RUNNING_BATCH_MS,
   formatBatchDuration,
-  toolBatchSummary,
+  toolActivitySummary,
   toolBatches,
   turnSkills,
 } from "./chat-tool-batches.ts";
@@ -109,23 +109,27 @@ test("an offsetless call joins the batch in progress", () => {
   assert.deepEqual(batches[0].toolIds, ["a", "b"]);
 });
 
-test("the rollup counts batches and settled calls, leaving trouble to the tinted counters", () => {
+test("activity summary counts calls and derives unique tool categories in first-use order", () => {
   const tools = [
-    tool({ id: "a", name: "Bash", textOffset: 0 }),
-    tool({ id: "b", name: "Grep", textOffset: 0 }),
-    tool({ id: "c", name: "Read", textOffset: 90, status: "error" }),
+    tool({ id: "a", name: "Grep", textOffset: 0 }),
+    tool({ id: "b", name: "Read", textOffset: 0 }),
+    tool({ id: "c", name: "Glob", textOffset: 0 }),
+    tool({ id: "d", name: "Bash", textOffset: 0 }),
   ];
   assert.equal(
-    toolBatchSummary(tools, toolBatches(tools)),
-    "2 batches · 2 ok",
-    "the failure keeps its own tinted counter rather than reading as neutral mono",
+    toolActivitySummary(tools),
+    "4 calls · search, read, shell",
+    "derives unique categories in first-use order",
   );
+});
 
-  const clean = [tool({ id: "a", name: "Bash", textOffset: 0 })];
-  assert.equal(toolBatchSummary(clean, toolBatches(clean)), "1 ok", "a single batch is not worth saying");
+test("activity summary shows singular 'call' for one tool", () => {
+  const tools = [tool({ id: "a", name: "UnknownTool", textOffset: 0 })];
+  assert.equal(toolActivitySummary(tools), "1 call · other");
+});
 
-  const running = [tool({ id: "a", name: "Bash", textOffset: 0, status: "running" })];
-  assert.equal(toolBatchSummary(running, toolBatches(running)), "", "nothing has settled yet");
+test("activity summary returns empty string for empty array", () => {
+  assert.equal(toolActivitySummary([]), "");
 });
 
 test("a band's duration keeps the precision the number deserves", () => {

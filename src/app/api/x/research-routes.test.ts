@@ -110,4 +110,39 @@ assert.match(
 assert.match(sources, /refreshSavedXSourceFromPost\(familiarId, sourceId, post\)/);
 assert.match(sources, /withXAuthenticatedRead\(familiarId, READ_SCOPES/);
 
+// --- cache lifecycle wiring (cave-1tu16) -----------------------------------
+//
+// x-sources.ts owned three correct, well-tested exports that no production
+// code called, and this file could not see that: a regex over route source can
+// confirm the calls a file makes, never the call it forgot. The behavioural
+// proof now lives in sources-route-behavior.test.ts; these pins keep the wiring
+// from being dropped again, and cover the lookup path that test does not reach.
+
+// A not-found is authoritative news about the post, not just about the
+// request. Both upstream reads must record it, or a deleted post keeps its
+// cached body and its saved record still reads "available" after a reload.
+for (const [name, source] of [["lookup", lookup], ["sources", sources]] as const) {
+  assert.match(
+    source,
+    /markXPostAvailability\(/,
+    `${name} must record a deleted post rather than only reporting the 404`,
+  );
+  assert.match(
+    source,
+    /error\.code === "not-found"/,
+    `${name} must key the deletion mark on the not-found category`,
+  );
+}
+
+// The Research Desk load sweep. Read-time expiry only ever reaches a post
+// someone looks up again, so without this an abandoned entry keeps its text,
+// author id and handle on disk indefinitely.
+assert.match(sources, /sweepExpiredXCache\(\)/);
+{
+  const sweepAt = sources.indexOf("sweepExpiredXCache()");
+  const listAt = sources.indexOf("listSavedXSources(familiarId)");
+  assert.ok(sweepAt >= 0 && listAt > sweepAt,
+    "the sweep must run on the Research Desk load path, before the listing it serves");
+}
+
 console.log("research-routes.test.ts: ok");

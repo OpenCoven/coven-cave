@@ -1,0 +1,42 @@
+{
+  "schema": "opencoven.run-manifest/v1",
+  "id": "manifest_scheduled_null_expiry_01",
+  "runId": "run_scheduled_null_expiry_01",
+  "digest": "2b901c88fa5a524785f3b34e363be0326faa1b88e398b95b8ea19b81d0325143",
+  "revision": 1,
+  "state": "final",
+  "createdAt": "2026-08-16T20:00:00.000Z",
+  "finalizedAt": "2026-08-16T20:04:00.000Z",
+  "sources": [],
+  "artifacts": [
+    {
+      "id": "artifact_scheduled_null_expiry_01",
+      "kind": "research-notes",
+      "title": "Research notes",
+      "mediaType": "text/markdown",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bytes": 128,
+      "placement": "device-local",
+      "contentSync": "not-requested",
+      "createdAt": "2026-08-16T20:03:00.000Z"
+    }
+  ],
+  "modelExecutions": [],
+  "usage": {
+    "inputTokens": null,
+    "outputTokens": null,
+    "costUsd": null,
+    "completeness": "unreported"
+  },
+  "retention": {
+    "policy": "7-days",
+    "effectivePolicy": "7-days",
+    "status": "deletion_scheduled",
+    "contentExpiresAt": null,
+    "updatedAt": "2026-08-16T20:06:00.000Z"
+  },
+  "deletion": {
+    "status": "scheduled",
+    "requestedAt": "2026-08-16T20:06:00.000Z"
+  }
+}

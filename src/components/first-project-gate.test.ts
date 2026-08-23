@@ -89,7 +89,7 @@ test("workspace wires the first-project gate through pending-aware policy and re
     /const \{\s*projects: registeredProjects,\s*loading: projectsLoading,\s*error: projectsError,\s*loadedSuccessfully: projectsLoadedSuccessfully,\s*reload: reloadProjects,\s*createProjectOrThrow,\s*\} = useProjects\(\);/,
     "workspace destructures the unscoped projects hook with collision-safe names",
   );
-  assert.match(src, /const \[onboardingResolved, setOnboardingResolved\] = useState\(false\);/, "onboarding resolution starts false");
+  assert.match(src, /const onboardingResolved = true;/, "Workspace only mounts after the server resolves startup onboarding");
   assert.match(src, /const \[projectsInitiallyResolved, setProjectsInitiallyResolved\] = useState\(false\);/, "project-load resolution starts false");
   assert.match(src, /const archivedFamiliars = useArchivedFamiliars\(\);/, "workspace reads the archived familiar map");
   assert.match(

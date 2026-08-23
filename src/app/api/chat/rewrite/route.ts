@@ -75,6 +75,10 @@ export async function POST(req: Request) {
     "run",
     binding.harness,
     "--stream-json",
+    // Answer text is untrusted model output. Keep prompt injection from turning
+    // this text-only reader aid into a privileged agent run.
+    "--permission",
+    "read-only",
     "--title",
     "Reader rewrite",
     "--labels",

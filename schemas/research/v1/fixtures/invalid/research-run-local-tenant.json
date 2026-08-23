@@ -1,0 +1,36 @@
+{
+  "schema": "opencoven.research-run/v1",
+  "id": "run_local_tenant_01",
+  "tenantOpaqueId": "tenant_alpha",
+  "acceptedTopic": {
+    "question": "How should local execution coordinate this run?",
+    "editedByUser": false
+  },
+  "execution": {
+    "location": "local",
+    "modelExecution": "cave-device",
+    "modelBinding": {
+      "familiarId": "sage",
+      "selection": "resolve-at-run-start"
+    },
+    "strategy": "single-agent"
+  },
+  "privacy": {
+    "remoteQueries": false,
+    "remoteContent": false,
+    "artifactContentSync": false,
+    "retention": "run-only",
+    "allowMemoryPromotion": false
+  },
+  "bounds": {
+    "wallClockMinutes": 30,
+    "maxIterations": 3,
+    "sourceTarget": 6,
+    "checkpointEvery": 1,
+    "stopWhenCostUnavailable": true
+  },
+  "status": "queued",
+  "createdAt": "2026-08-15T20:00:00.000Z",
+  "updatedAt": "2026-08-15T20:01:00.000Z",
+  "nextEventSequence": 1
+}

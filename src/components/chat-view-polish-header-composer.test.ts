@@ -140,11 +140,11 @@ assert.match(
   "composer exposes the permission-mode (Access) control",
 );
 // Context, linked work, prompt-improvement, and response controls collapse into
-// one grouped Tools surface at the composer edge while voice stays one click away.
+// one grouped Tools surface while access and voice stay one click away.
 assert.match(
   source,
-  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*<div className="cave-composer-utility-row">[\s\S]*aria-label="Voice call"/,
-  "composer exposes the grouped Tools trigger at its edge while keeping Voice direct in the lower control row",
+  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-mode-switch"[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
+  "composer exposes the grouped Tools trigger at its edge while keeping Access and Voice direct in the command rail",
 );
 const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
 assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");
@@ -178,8 +178,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
-  "the grouped Response section carries Access, Model, and only selected-model capability controls with prompt guidance labelled",
+  /const composerResponseSections:[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
+  "the grouped Response section carries Model and selected-model capability controls while Access remains direct",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation updated: context chips still construct exactly once.
@@ -212,7 +212,7 @@ assert.doesNotMatch(
 assert.match(
   styles,
   /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
-  "composer footer lays out utility, live context, and submit controls in one minimal row",
+  "composer footer lays out access, live context, and submit controls in one command rail",
 );
 // The extracted response section renders each control inline (no nested
 // popover) and keeps the connect-host dialog available to the grouped surface.
@@ -950,8 +950,8 @@ assert.match(
 );
 assert.equal(
   (workspaceSource.match(/onSlashFromChat=\{handleSlashIntent\}/g) ?? []).length,
-  2,
-  "General chat and task work must both report unhandled slash commands honestly (no unconditional return-true wrappers)",
+  3,
+  "General chat, task work, and the persistent right Chat panel must all report unhandled slash commands honestly (no unconditional return-true wrappers)",
 );
 
 // — CHAT-D1-02: paste-to-attach (clipboard files route through attachFiles) —

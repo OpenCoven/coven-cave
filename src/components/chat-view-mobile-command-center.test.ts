@@ -120,14 +120,14 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-scroll-bottom-button sticky bottom-4/,
-  "Scroll-to-bottom FAB should expose a mobile touch-target hook",
+  /className="cave-new-response-content focus-ring"[\s\S]*updateFollowing\(true\);[\s\S]*schedulePin\(\);/,
+  "The released-reader control should restore following and pin to the latest response",
 );
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*width\s*:\s*var\(--touch-target\)[\s\S]*height\s*:\s*var\(--touch-target\)/,
-  "Mobile scroll-to-bottom FAB should meet the 44px touch target",
+  /\.cave-new-response-content\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "The released-reader control should meet the 44px touch target",
 );
 
 assert.match(
@@ -150,18 +150,24 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*action strip[\s\S]*84px textarea[\s\S]*one compact action footer[\s\S]*214px[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
-  "Mobile scroll-to-bottom FAB should clear the retained composer stack (action strip + textarea + footer + dock padding)",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-new-response-content\s*\{[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
+  "The released-reader control should clear the retained mobile composer stack",
 );
 
-// The FAB must NOT use `float` — float removes it from flow and breaks
-// `position: sticky` (it then renders at the wrong spot / not at all in the
-// iOS WKWebView). Right-align via `ml-auto` instead so sticky keeps working.
-const fabClass = source.match(/className="cave-scroll-bottom-button[^"]*"/)?.[0] ?? "";
-assert.ok(fabClass, "scroll-to-bottom FAB className should be present");
-assert.ok(!/\bfloat-right\b/.test(fabClass), "scroll-to-bottom FAB must not use float-right (breaks position: sticky)");
-assert.match(fabClass, /\bml-auto\b/, "scroll-to-bottom FAB should right-align with ml-auto so sticky still applies");
-assert.match(fabClass, /\bsticky\b/, "scroll-to-bottom FAB stays position: sticky");
+assert.match(
+  styles,
+  /\.cave-new-response-content\s*\{[\s\S]*position\s*:\s*sticky[\s\S]*margin-left\s*:\s*auto/,
+  "The released-reader control should remain sticky and right-aligned without float",
+);
+// The assertion above ends "without float" but only ever proved the sticky and
+// margin-left halves; a `float` added beside them would have satisfied it while
+// taking the control out of flow. Check the clause the message already claims,
+// scoped to the rule body so an unrelated rule cannot answer for it.
+assert.doesNotMatch(
+  styles.match(/\.cave-new-response-content\s*\{[^}]*\}/)?.[0] ?? "",
+  /float\s*:\s*(?!none)/,
+  "The released-reader control must stay in flow — a float would pull it out and strand the sticky offset",
+);
 
 // The chat's linked task is surfaced directly in the mobile header (not just
 // buried in the kebab drawer), so its affiliation is visible at a glance.
