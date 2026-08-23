@@ -4,13 +4,16 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const announce = vi.hoisted(() => vi.fn());
+const pollCallbackRef = vi.hoisted(() => ({ current: null as null | (() => void) }));
 
 vi.mock("@/components/ui/live-region", () => ({
   useAnnouncer: () => ({ announce }),
 }));
 
 vi.mock("@/lib/use-pausable-poll", () => ({
-  usePausablePoll: () => {},
+  usePausablePoll: (callback: () => void) => {
+    pollCallbackRef.current = callback;
+  },
 }));
 
 vi.mock("@/lib/icon", () => ({
@@ -125,6 +128,18 @@ function rootText(renderer: ReactTestRenderer): string {
   return textContent(renderer.toJSON());
 }
 
+function approvePairingLabel(appName: string, installationId: string): string {
+  return `Approve ${appName} pairing request for installation ${installationId}`;
+}
+
+function denyPairingLabel(appName: string, installationId: string): string {
+  return `Deny ${appName} pairing request for installation ${installationId}`;
+}
+
+function revokeCredentialLabel(appName: string, installationId: string): string {
+  return `Revoke ${appName} credential for installation ${installationId}`;
+}
+
 function regionText(renderer: ReactTestRenderer, label: string): string {
   return textContent(
     renderer.root.find((node) => node.props["aria-label"] === label).children,
@@ -134,6 +149,16 @@ function regionText(renderer: ReactTestRenderer, label: string): string {
 async function flushMicrotasks() {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+async function triggerBackgroundRefresh() {
+  if (!pollCallbackRef.current) {
+    throw new Error("ClientAccessSection did not register a background refresh callback.");
+  }
+  await act(async () => {
+    pollCallbackRef.current?.();
+    await flushMicrotasks();
+  });
 }
 
 async function renderSection({ strictMode = false }: { strictMode?: boolean } = {}) {
@@ -174,6 +199,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-22T23:30:52.892Z"));
   announce.mockReset();
+  pollCallbackRef.current = null;
   previousFetch = globalThis.fetch;
 });
 
@@ -394,6 +420,150 @@ test("renders pending pairing and credential metadata without exposing secrets",
   await act(async () => renderer.unmount());
 });
 
+test("skips background refreshes while a ledger load is already in flight", async () => {
+  const firstPairings = deferred<Response>();
+  const firstCredentials = deferred<Response>();
+  const abortedRefreshes: string[] = [];
+  let pairingLoads = 0;
+  let credentialLoads = 0;
+
+  globalThis.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      pairingLoads += 1;
+      if (pairingLoads === 1) {
+        return abortableResponse(
+          firstPairings.promise,
+          init?.signal,
+          () => abortedRefreshes.push("pairings:first"),
+        );
+      }
+    }
+    if (url === CREDENTIALS_URL) {
+      credentialLoads += 1;
+      if (credentialLoads === 1) {
+        return abortableResponse(
+          firstCredentials.promise,
+          init?.signal,
+          () => abortedRefreshes.push("credentials:first"),
+        );
+      }
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+
+  expect(pairingLoads).toBe(1);
+  expect(credentialLoads).toBe(1);
+
+  await triggerBackgroundRefresh();
+  await triggerBackgroundRefresh();
+
+  expect(pairingLoads).toBe(1);
+  expect(credentialLoads).toBe(1);
+  expect(abortedRefreshes).toEqual([]);
+
+  await act(async () => {
+    firstPairings.resolve(success({ pairingRequests: [] }));
+    firstCredentials.resolve(success({ credentials: [] }));
+    await firstPairings.promise;
+    await firstCredentials.promise;
+    await flushMicrotasks();
+  });
+
+  expect(rootText(renderer)).toContain("No pairing requests waiting");
+  expect(rootText(renderer)).toContain("No client credentials issued");
+  expect(findButton(renderer, "Refresh client access").props.disabled).toBe(false);
+
+  expect(abortedRefreshes).toEqual([]);
+
+  await act(async () => renderer.unmount());
+});
+
+test("includes installation identities in action labels for duplicate app names", async () => {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url === PAIRING_REQUESTS_URL) {
+      return success({
+        pairingRequests: [
+          {
+            id: "pair-shared-a",
+            appName: "Shared Client",
+            installationId: "shared-install-a",
+            scopes: ["chat:read"],
+            status: "pending",
+            createdAt: Date.now() - 60_000,
+            expiresAt: Date.now() + 4 * 60_000,
+            decidedAt: null,
+          },
+          {
+            id: "pair-shared-b",
+            appName: "Shared Client",
+            installationId: "shared-install-b",
+            scopes: ["tasks:write"],
+            status: "pending",
+            createdAt: Date.now() - 30_000,
+            expiresAt: Date.now() + 5 * 60_000,
+            decidedAt: null,
+          },
+        ],
+      });
+    }
+    if (url === CREDENTIALS_URL) {
+      return success({
+        credentials: [
+          {
+            id: "cred-shared-a",
+            appName: "Shared Client",
+            installationId: "shared-install-c",
+            scopes: ["github:write"],
+            createdAt: Date.now() - 10 * 60_000,
+            lastUsedAt: Date.now() - 2 * 60_000,
+            revokedAt: null,
+            revocationReason: null,
+          },
+          {
+            id: "cred-shared-b",
+            appName: "Shared Client",
+            installationId: "shared-install-d",
+            scopes: ["attachments:write"],
+            createdAt: Date.now() - 20 * 60_000,
+            lastUsedAt: Date.now() - 3 * 60_000,
+            revokedAt: null,
+            revocationReason: null,
+          },
+        ],
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as FetchMock;
+
+  const renderer = await renderSection();
+  const sharedLabels = renderer.root
+    .findAll(
+      (node) =>
+        node.type === "button"
+        && typeof node.props["aria-label"] === "string"
+        && node.props["aria-label"].includes("Shared Client"),
+    )
+    .map((node) => node.props["aria-label"]);
+
+  expect(sharedLabels).toEqual(
+    expect.arrayContaining([
+      approvePairingLabel("Shared Client", "shared-install-a"),
+      denyPairingLabel("Shared Client", "shared-install-a"),
+      approvePairingLabel("Shared Client", "shared-install-b"),
+      denyPairingLabel("Shared Client", "shared-install-b"),
+      revokeCredentialLabel("Shared Client", "shared-install-c"),
+      revokeCredentialLabel("Shared Client", "shared-install-d"),
+    ]),
+  );
+  expect(new Set(sharedLabels).size).toBe(sharedLabels.length);
+
+  await act(async () => renderer.unmount());
+});
+
 test("approves, denies, and revokes through authoritative refreshes", async () => {
   const queue = [
     success({
@@ -580,19 +750,19 @@ test("approves, denies, and revokes through authoritative refreshes", async () =
   const renderer = await renderSection();
 
   await act(async () => {
-    findButton(renderer, "Approve Alpha Client pairing request").props.onClick();
+    findButton(renderer, approvePairingLabel("Alpha Client", "alpha-install")).props.onClick();
     await flushMicrotasks();
   });
   expect(rootText(renderer)).not.toContain("alpha-install");
 
   await act(async () => {
-    findButton(renderer, "Deny Beta Client pairing request").props.onClick();
+    findButton(renderer, denyPairingLabel("Beta Client", "beta-install")).props.onClick();
     await flushMicrotasks();
   });
   expect(rootText(renderer)).not.toContain("beta-install");
 
   await act(async () => {
-    findButton(renderer, "Revoke Gamma Client credential").props.onClick();
+    findButton(renderer, revokeCredentialLabel("Gamma Client", "gamma-install")).props.onClick();
     await flushMicrotasks();
   });
   expect(rootText(renderer)).not.toContain("RevokeGamma Client credential");
@@ -727,13 +897,13 @@ test("overlapping successful mutations wait for the newest authoritative refresh
   const renderer = await renderSection();
 
   await act(async () => {
-    findButton(renderer, "Approve Alpha Client pairing request").props.onClick();
+    findButton(renderer, approvePairingLabel("Alpha Client", "alpha-install")).props.onClick();
     await flushMicrotasks();
   });
   expect(rootText(renderer)).not.toContain("alpha-install");
 
   await act(async () => {
-    findButton(renderer, "Revoke Gamma Client credential").props.onClick();
+    findButton(renderer, revokeCredentialLabel("Gamma Client", "gamma-install")).props.onClick();
     await flushMicrotasks();
   });
 
@@ -1026,7 +1196,7 @@ test("blocks duplicate terminal mutations, refreshes, and preserves the failure 
   }) as unknown as FetchMock;
 
   const renderer = await renderSection();
-  const approve = findButton(renderer, "Approve Pair Client pairing request");
+  const approve = findButton(renderer, approvePairingLabel("Pair Client", "pair-install"));
 
   await act(async () => {
     approve.props.onClick();
@@ -1035,7 +1205,7 @@ test("blocks duplicate terminal mutations, refreshes, and preserves the failure 
   });
 
   expect(decisionCalls).toBe(1);
-  expect(findButton(renderer, "Approve Pair Client pairing request").props.disabled).toBe(true);
+  expect(findButton(renderer, approvePairingLabel("Pair Client", "pair-install")).props.disabled).toBe(true);
 
   await act(async () => {
     pendingDecision.resolve(failure("Pairing request was already decided.", 409));
@@ -1095,7 +1265,7 @@ test("refreshes terminal not-found pairing failures without dropping the failure
   const renderer = await renderSection();
 
   await act(async () => {
-    findButton(renderer, "Deny Pair Client pairing request").props.onClick();
+    findButton(renderer, denyPairingLabel("Pair Client", "pair-install")).props.onClick();
     await flushMicrotasks();
   });
 
@@ -1148,7 +1318,7 @@ test("keeps nonterminal pairing failures actionable without forcing a refresh", 
   const renderer = await renderSection();
 
   await act(async () => {
-    findButton(renderer, "Approve Pair Client pairing request").props.onClick();
+    findButton(renderer, approvePairingLabel("Pair Client", "pair-install")).props.onClick();
     await flushMicrotasks();
   });
 
@@ -1157,7 +1327,7 @@ test("keeps nonterminal pairing failures actionable without forcing a refresh", 
   expect(rootText(renderer)).toContain("Pairing service timed out.");
   expect(pairingLoads).toBe(1);
   expect(credentialLoads).toBe(1);
-  expect(findButton(renderer, "Approve Pair Client pairing request").props.disabled).toBe(false);
+  expect(findButton(renderer, approvePairingLabel("Pair Client", "pair-install")).props.disabled).toBe(false);
   expect(announce.mock.calls).toEqual([
     ["Couldn't approve Pair Client pairing request: Pairing service timed out.", "assertive"],
   ]);

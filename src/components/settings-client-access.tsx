@@ -364,6 +364,14 @@ function formatPendingCount(count: number): string {
   return `${count} pending`;
 }
 
+function pairingRequestActionLabel(action: "Approve" | "Deny", item: PairingRequestRecord): string {
+  return `${action} ${item.appName} pairing request for installation ${item.installationId}`;
+}
+
+function revokeCredentialActionLabel(item: CredentialRecord): string {
+  return `Revoke ${item.appName} credential for installation ${item.installationId}`;
+}
+
 function summarizeLedger(
   pairings: PairingRequestRecord[],
   credentials: CredentialRecord[],
@@ -499,7 +507,7 @@ function PairingRequestItem({
           <Button
             variant="primary"
             size="xs"
-            aria-label={`Approve ${item.appName} pairing request`}
+            aria-label={pairingRequestActionLabel("Approve", item)}
             loading={busyAction === "approved"}
             disabled={Boolean(busyAction)}
             onClick={onApprove}
@@ -509,7 +517,7 @@ function PairingRequestItem({
           <Button
             variant="danger-ghost"
             size="xs"
-            aria-label={`Deny ${item.appName} pairing request`}
+            aria-label={pairingRequestActionLabel("Deny", item)}
             loading={busyAction === "denied"}
             disabled={Boolean(busyAction)}
             onClick={onDeny}
@@ -573,7 +581,7 @@ function CredentialItem({
             <Button
               variant="danger-ghost"
               size="xs"
-              aria-label={`Revoke ${item.appName} credential`}
+              aria-label={revokeCredentialActionLabel(item)}
               loading={busyAction === "revoke"}
               disabled={Boolean(busyAction)}
               onClick={onRevoke}
@@ -621,6 +629,7 @@ export function ClientAccessSection() {
   const [confirmedSummary, setConfirmedSummary] = useState<LedgerSummary | null>(null);
   const [busyActions, setBusyActions] = useState<Record<string, BusyAction>>({});
   const loadControllerRef = useRef<AbortController | null>(null);
+  const loadInFlightRef = useRef(false);
   const loadRequestIdRef = useRef(0);
   const latestLoadPromiseRef = useRef<Promise<LedgerLoadOutcome> | null>(null);
   const mountedRef = useRef(false);
@@ -671,6 +680,7 @@ export function ClientAccessSection() {
     const loadPromise = (async (): Promise<LedgerLoadOutcome> => {
       const requestId = loadRequestIdRef.current + 1;
       loadRequestIdRef.current = requestId;
+      loadInFlightRef.current = true;
       loadControllerRef.current?.abort();
       const controller = new AbortController();
       loadControllerRef.current = controller;
@@ -722,8 +732,14 @@ export function ClientAccessSection() {
         }
         return succeeded ? "succeeded" : "failed";
       } finally {
-        if (mountedRef.current && requestId === loadRequestIdRef.current) {
-          setRefreshing(false);
+        if (requestId === loadRequestIdRef.current) {
+          loadInFlightRef.current = false;
+          if (loadControllerRef.current === controller) {
+            loadControllerRef.current = null;
+          }
+          if (mountedRef.current) {
+            setRefreshing(false);
+          }
         }
       }
     })();
@@ -742,6 +758,7 @@ export function ClientAccessSection() {
     return () => {
       mountedRef.current = false;
       loadControllerRef.current?.abort();
+      loadInFlightRef.current = false;
       latestLoadPromiseRef.current = null;
       for (const controller of mutationControllersRef.current.values()) {
         controller.abort();
@@ -751,10 +768,12 @@ export function ClientAccessSection() {
     };
   }, [loadLedger]);
 
-  usePausablePoll(() => {
-    if (busyActionsRef.current.size > 0) return;
+  const refreshLedgerInBackground = useCallback(() => {
+    if (busyActionsRef.current.size > 0 || loadInFlightRef.current) return;
     void loadLedger();
-  }, 30_000, {
+  }, [loadLedger]);
+
+  usePausablePoll(refreshLedgerInBackground, 30_000, {
     pauseWhileInputActive: true,
   });
 
