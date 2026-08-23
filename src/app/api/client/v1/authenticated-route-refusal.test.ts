@@ -356,12 +356,72 @@ function handlerFactories(module: RouteModule, probe: string, file: string): [st
   return factories;
 }
 
+/**
+ * The parameter list a factory declares, as source text.
+ *
+ * `Function.prototype.toString` returns the definition verbatim. Under Node's
+ * type stripper the annotations are blanked to whitespace rather than removed,
+ * so a default value's `=` and a rest parameter's `...` both survive while a
+ * type's punctuation does not.
+ */
+function parameterSource(factory: Function): string {
+  const source = Function.prototype.toString.call(factory);
+  const open = source.indexOf("(");
+  if (open < 0) return "";
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "(") depth += 1;
+    else if (source[index] === ")") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, index);
+    }
+  }
+  return "";
+}
+
+/**
+ * Refuse a factory whose `length` cannot be trusted as a dependency count.
+ *
+ * `builtHandlers` derives the number of tripwires to install from
+ * `factory.length`, and `Function.length` counts only the parameters BEFORE the
+ * first one with a default value or a rest parameter. So a route that gave its
+ * data dependency a default —
+ * `(clientV1: ClientV1Runtime, sources: ClientV1ReadSources = clientV1ReadSources())`
+ * — reports `length === 1`, gets ZERO tripwires, and every
+ * `assertNothingConsulted` in this file then passes trivially against an empty
+ * array. The route would also be handed its REAL production sources instead of
+ * the instrumented ones, so the whole second layer silently stops testing
+ * anything.
+ *
+ * Measured: applying exactly that default to
+ * `createClientV1ConversationsGetHandler` left this file green.
+ *
+ * This is the "seeded mechanism that degrades to a no-op" shape, so it fails
+ * closed and names the remedy rather than being detected by whatever downstream
+ * assertion happens to notice.
+ */
+function assertTrustworthyArity(factory: Function, name: string, probe: string): void {
+  const parameters = parameterSource(factory);
+  assert.equal(
+    /[^=!<>]=[^=>]/.test(parameters) || parameters.includes("..."),
+    false,
+    `${probe}: ${name} declares a default or rest parameter, so Function.length undercounts its`
+      + ` dependencies and this file would install no tripwires for them — every`
+      + ` "nothing was consulted before the credential settled" assertion below would then pass`
+      + ` against an empty list, and the factory would be handed its real production sources.`
+      + `\nDeclare every dependency as a plain required parameter and let the HTTP export supply`
+      + ` the production binding, as createClientV1FamiliarsGetHandler does in ${REFERENCE_ROUTE}.`
+      + `\nDeclared parameters: ${parameters.replace(/\s+/g, " ").trim()}`,
+  );
+}
+
 function builtHandlers(
   factory: Function,
   name: string,
   runtime: ClientV1Runtime,
   probe: string,
 ): { handlers: [string, Handler][]; deps: { touched: string[] }[] } {
+  assertTrustworthyArity(factory, name, probe);
   const deps = Array.from({ length: Math.max(0, factory.length - 1) }, (_unused, index) =>
     tripwire(`${name}#dep${index + 1}`),
   );

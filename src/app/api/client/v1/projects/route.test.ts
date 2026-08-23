@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import type { CaveProject } from "@/lib/cave-projects-types.ts";
+import { CLIENT_V1_LIMITS } from "@/lib/server/client-v1/contract.ts";
 import { encodeClientV1Cursor } from "@/lib/server/client-v1/pagination.ts";
 import type { ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
 import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
@@ -171,6 +172,98 @@ test("an empty continuation page still echoes the cursor the client sent", async
     assert.equal(body.cursor.hasMore, false);
     assert.equal(body.cursor.next, undefined);
     assert.equal(body.cursor.current, exhausted);
+  });
+});
+
+test("the route refuses a query it does not serve instead of guessing a page", async () => {
+  // Every other list route on this surface had this test and this one did not,
+  // so the whole refusal path was unguarded HERE while the shared helper it
+  // delegates to stayed green: replacing this route's `catch` with a silent
+  // fallback to the default page survived the entire suite. A shared helper
+  // being covered is not the same claim as this route calling it.
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1ProjectsGetHandler(runtime, sources());
+    const authorization = `Bearer ${bearer}`;
+    for (const query of [
+      `?limit=${CLIENT_V1_LIMITS.maxPageSize + 1}`,
+      "?limit=0",
+      "?limit=1e2",
+      "?cursor=not%2Ba%2Bcursor",
+      "?offset=10",
+      "?limit=2&limit=3",
+    ]) {
+      const response = await handler(request(query, { authorization }));
+      assert.equal(response.status, 400, query);
+      const body = await response.json() as {
+        error: { code: string; retryable: boolean; details?: { reason?: unknown } };
+      };
+      assert.equal(body.error.code, "invalid_request", query);
+      assert.equal(body.error.retryable, false, query);
+      // The reason is asserted as a VALUE, not merely as a defined field: a
+      // route answering `details: {}` tells a client author nothing about
+      // which parameter was wrong, and `notEqual(details, undefined)` would
+      // pass for it.
+      assert.equal(typeof body.error.details?.reason, "string", query);
+      assert.ok((body.error.details!.reason as string).length > 0, query);
+    }
+    // The ceiling itself is served rather than refused — the refusals above
+    // are a boundary, not a blanket.
+    const atCeiling = await handler(
+      request(`?limit=${CLIENT_V1_LIMITS.maxPageSize}`, { authorization }),
+    );
+    assert.equal(atCeiling.status, 200);
+    const body = await atCeiling.json() as { data: { projects: { id: string }[] } };
+    assert.deepEqual(body.data.projects.map((row) => row.id), ["delta", "bravo", "alpha"]);
+  });
+});
+
+test("an unprojectable registry row answers an envelope, not a Next error page", async () => {
+  // `loadProjects` returns whatever `projects.json` parsed to, so a
+  // hand-edited row missing `createdAt` reaches the projection as `undefined`
+  // and is refused there. Uncaught, that refusal escapes the handler and Next
+  // answers with its own error body — not a Client v1 envelope, on a surface
+  // whose whole contract is that every response is one.
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1ProjectsGetHandler(
+      runtime,
+      sources({
+        listProjects: async () => [
+          ...REGISTRY,
+          { id: "broken", name: "Broken", root: "/Users/me/code/broken" } as CaveProject,
+        ],
+      }),
+    );
+    const response = await handler(request("", { authorization: `Bearer ${bearer}` }));
+    assert.equal(response.status, 500);
+    const body = await response.json() as {
+      apiVersion: string;
+      error: { code: string; message: string; retryable: boolean; details?: unknown };
+    };
+    assert.equal(body.error.code, "internal_error");
+    assert.equal(body.error.retryable, false);
+    assert.equal(body.apiVersion, "1.0");
+    assert.equal(body.error.details, undefined);
+    // The refusal names no field of a stored record.
+    assert.equal(body.error.message.includes("createdAt"), false);
+  });
+});
+
+test("a registry read that throws answers an envelope too", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1ProjectsGetHandler(
+      runtime,
+      sources({
+        listProjects: async () => {
+          throw new Error("EACCES: permission denied, open '/home/me/.coven/cave/projects.json'");
+        },
+      }),
+    );
+    const response = await handler(request("", { authorization: `Bearer ${bearer}` }));
+    assert.equal(response.status, 500);
+    const body = await response.json() as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "internal_error");
+    // The path the store named must not reach the wire.
+    assert.equal(body.error.message.includes("/home/me"), false);
   });
 });
 
