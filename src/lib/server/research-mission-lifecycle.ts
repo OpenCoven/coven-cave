@@ -54,6 +54,7 @@ export function createMissionRecord(
     id,
     familiarId: input.familiarId,
     title: missionTitle(input),
+    titleSource: input.title?.trim() ? "explicit" : "generated",
     intent: input.intent.trim(),
     mode: input.mode,
     modeSource: input.modeSource,

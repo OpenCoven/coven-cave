@@ -955,6 +955,7 @@ export const SUITES = {
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
     "src/components/project-picker.test.ts",
+    "src/components/project-picker-focus.test.tsx",
     "src/components/chat-project-launch-gate.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
@@ -2179,6 +2180,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
   "src/lib/home-composer-context.test.ts",
+  "src/components/project-picker-focus.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
