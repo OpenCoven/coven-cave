@@ -15,14 +15,14 @@ const shouldRejectUnauthenticatedPtyUpgrade = new Function(
 
 for (const [name, input, expected] of [
   [
-    "packaged sidecar rejects credential-less loopback clients",
+    "packaged sidecar permits direct loopback browser clients",
     {
       sidecarTokenConfigured: true,
       accessTokenConfigured: false,
       tokenAuthenticated: false,
       directLoopback: true,
     },
-    true,
+    false,
   ],
   [
     "packaged sidecar accepts its authenticated webview",
@@ -45,14 +45,14 @@ for (const [name, input, expected] of [
     false,
   ],
   [
-    "access-token-only servers reject credential-less loopback clients",
+    "access-token-only servers permit direct loopback browser clients",
     {
       sidecarTokenConfigured: false,
       accessTokenConfigured: true,
       tokenAuthenticated: false,
       directLoopback: true,
     },
-    true,
+    false,
   ],
   [
     "access-token-only forwarded clients still need authentication",

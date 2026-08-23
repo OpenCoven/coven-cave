@@ -280,7 +280,7 @@ work.
 | No cross-component correlation/export contract | `cave-58eoq.3` |
 | Full OS fault-injection and lifecycle stress matrix is incomplete | `cave-58eoq.4` |
 | Exhaustive remaining CLI spawn and socket/pipe security proof is incomplete after closing the PTY and remote tokenless-development authentication bypasses | `cave-58eoq.6` |
-| Access-token-only loopback mode still treats a verified local TCP peer as sufficient for REST and PTY, which does not distinguish OS users on shared machines | `cave-ruw4z` |
+| Direct loopback is intentionally sufficient for prompt-free browser REST and PTY access; this does not distinguish OS users on shared machines | Accepted product tradeoff in `cave-99eon` |
 | One-click repairs are not yet implemented for every classified failure | Follow from the issue whose evidence identifies the repair boundary |
 | Hardware-only Windows installer/Defender and macOS signing/quarantine behavior still require release-host validation | Release validation checklist |
 ## Reliability measurement contract

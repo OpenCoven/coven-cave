@@ -121,8 +121,8 @@ assert.match(source, /missing request source/, "tokenless GET webhooks should re
 // extend to mobile-cookie-authenticated requests in exchange.
 assert.match(
   source,
-  /if \(!sidecarAuthenticated && !mobileAccessVerified\) \{/,
-  "the final sidecar gate must independently admit a verified access token",
+  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalPeer\) \{/,
+  "the final sidecar gate must independently admit a verified access token or trusted direct loopback",
 );
 assert.match(
   source,
@@ -206,19 +206,14 @@ assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
 assert.match(
   source,
-  /const accessPromptRequested =\s*req\.nextUrl\.searchParams\.get\(ACCESS_PROMPT_QUERY_PARAM\) === "1"/,
-  "proxy should recognize the explicit browser access-prompt marker",
-);
-assert.match(
-  source,
-  /url\.searchParams\.delete\(ACCESS_TOKEN_QUERY_PARAM\)[\s\S]*url\.searchParams\.delete\(ACCESS_PROMPT_QUERY_PARAM\)/,
-  "successful access-token exchange should remove both authentication query parameters",
+  /url\.searchParams\.delete\(ACCESS_TOKEN_QUERY_PARAM\)[\s\S]*url\.searchParams\.delete\(LEGACY_ACCESS_PROMPT_QUERY_PARAM\)/,
+  "successful access-token exchange should remove the token and any retired prompt marker",
 );
 
-// ── User-bound local authentication (cave-ruw4z) ──────────────────────────
-// The local-peer stamp still distinguishes direct from forwarded ingress, but
-// cannot bypass authentication because TCP loopback does not identify an OS
-// user. Only the per-launch sidecar credential exempts the owning Tauri app.
+// ── Prompt-free trusted local browser access (cave-99eon) ─────────────────
+// The server-stamped peer proof distinguishes direct loopback from forwarded
+// ingress. Direct local browser traffic stays prompt-free; remote traffic still
+// needs the mobile or sidecar credential.
 assert.match(
   source,
   /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
@@ -232,26 +227,17 @@ assert.doesNotMatch(
 assert.match(
   source,
   /shouldRequireMobileAccessCredential\(\s*req\.headers\.get\("host"\),\s*suppliedTokens\.length > 0,\s*trustedLocalPeer,\s*tailnetPeerVerified,\s*sidecarAuthenticated,?\s*\)/,
-  "the mobile gate must require user-bound sidecar or mobile credentials even for local peers",
+  "the mobile gate should share the trusted local and sidecar evidence",
 );
-// ...with exactly one exemption: a stamped direct-loopback DOCUMENT navigation.
-// That request cannot carry a credential (a navigation is not a fetch, so
-// SidecarAuthBridge never sees it, and the sidecar token gets no cookie), so
-// gating it serves the access page instead of the app on every hard reload —
-// the v0.3.0 lockout. The stamp is only ever applied to unforwarded loopback
-// sockets, so Serve/tailnet traffic can never reach this branch.
 assert.match(
   source,
-  /if \(\s*shouldBypassMobileAccessGate\(\s*trustedLocalPeer,\s*accessPromptRequested,\s*req\.method,\s*req\.nextUrl\.pathname,\s*req\.headers\.get\("accept"\),?\s*\)\s*\) \{\s*return null;/,
-  "a stamped local-peer document navigation must skip the mobile gate unless it explicitly requests the prompt",
+  /if \(\s*shouldBypassMobileAccessGate\(\s*trustedLocalPeer,\s*req\.method,\s*req\.nextUrl\.pathname,\s*req\.headers\.get\("accept"\),?\s*\)\s*\) \{\s*return null;/,
+  "a stamped local-peer document navigation must always skip the mobile gate",
 );
-// The exemption must be navigation-scoped, never a blanket local-peer bypass:
-// `/api/*` keeps requiring the sidecar credential, which is what distinguishes
-// this user from other OS users on a shared machine.
-assert.doesNotMatch(
+assert.match(
   source,
-  /if \(trustedLocalPeer\) return null;/,
-  "the local-peer exemption must not extend past document navigations to the API surface",
+  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalPeer\) \{/,
+  "the final API credential gate must preserve prompt-free trusted loopback access",
 );
 assert.match(
   source,

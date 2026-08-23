@@ -7,6 +7,8 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+- Remove the recurring fresh-pairing-token interruption for trusted local browser REST and terminal access.
+
 ## [0.3.9] - 2026-08-21
 
 > Restores the release pipeline and ships the refreshed desktop chrome.
