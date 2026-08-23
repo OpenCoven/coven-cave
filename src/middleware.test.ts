@@ -241,6 +241,11 @@ assert.match(
 );
 assert.match(
   source,
+  /const queryToken = req\.nextUrl\.searchParams\.get\(ACCESS_TOKEN_QUERY_PARAM\);[\s\S]*?if \(\s*trustedLocalPeer\s*&& queryToken\s*&& \(req\.method === "GET" \|\| req\.method === "HEAD"\)\s*\) \{\s*return mobileAccessQueryTokenRedirect\(req, expected, queryToken\);\s*\}[\s\S]*?shouldBypassMobileAccessGate/,
+  "trusted local pairing links must exchange and remove query credentials before the prompt-free bypass",
+);
+assert.match(
+  source,
   /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi\) \{/,
   "the final API credential gate must preserve prompt-free trusted loopback access outside Client v1",
 );
