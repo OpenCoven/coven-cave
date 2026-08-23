@@ -467,10 +467,14 @@ assert.match(
 // second stale key ahead of the prepended directory would health-check a
 // different toolchain than the one being admitted (cave-6bb4m).
 {
-  const probeDir = "C:\\virtual\\fnm\\v24.15.0\\bin";
+  // `runnableNodeToolchainDirs` joins with the AMBIENT `path`, not a
+  // platform-aware one, so the fixture must too — the sibling win32 case above
+  // does the same. Building the set with `path.win32` instead passes on
+  // Windows and finds nothing on Linux.
+  const probeDir = path.join("/virtual", "fnm", "v24.15.0", "bin");
   const existing = new Set([
-    path.win32.join(probeDir, "node.exe"),
-    path.win32.join(probeDir, "npm.cmd"),
+    path.join(probeDir, "node.exe"),
+    path.join(probeDir, "npm.cmd"),
   ]);
   const seen: NodeJS.ProcessEnv[] = [];
   runnableNodeToolchainDirs([probeDir], {
@@ -485,7 +489,7 @@ assert.match(
     assert.deepEqual(keys, ["Path"], "exactly one search-path key reaches the probe");
     assert.equal(
       env.Path,
-      `${probeDir};C:\\stale`,
+      [probeDir, "C:\\stale"].join(path.delimiter),
       "the directory under test leads, ahead of the inherited value it must outrank",
     );
   }
