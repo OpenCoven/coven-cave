@@ -5,6 +5,7 @@ import {
   readdir,
   realpath,
   rm,
+  rmdir,
   unlink,
 } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -622,11 +623,12 @@ async function removeMissionXRuntimeUnlocked(missionDirectory: string): Promise<
     await rm(/* turbopackIgnore: true */ directory, { recursive: true, force: true });
   }
   // Leave no empty scaffolding behind, but never disturb a `runtime/`
-  // directory something else is using.
-  await rm(
-    path.join(/* turbopackIgnore: true */ missionDirectory, "runtime"),
-    { recursive: false, force: true },
-  ).catch(() => {});
+  // directory something else is using. `rmdir` is the operation that expresses
+  // exactly that: it removes an empty directory and refuses a populated one
+  // with ENOTEMPTY. `rm(..., { recursive: false })` cannot be used here — Node
+  // throws ERR_FS_EISDIR for ANY directory, empty or not, so that form removed
+  // nothing at all and left the empty `runtime/` behind on every call.
+  await rmdir(path.join(/* turbopackIgnore: true */ missionDirectory, "runtime")).catch(() => {});
 }
 
 /**

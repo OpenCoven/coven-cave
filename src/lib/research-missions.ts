@@ -603,11 +603,15 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
   // be resolved against a value Cave does not understand.
   const externalId = optionalString(value, "externalId");
   if (externalId === null) return null;
-  if (value.provider !== undefined && !RESEARCH_SOURCE_PROVIDERS.has(String(value.provider))) {
+  // Membership is tested on the RAW value, exactly as `status` is above.
+  // Coercing with String() first would admit `["x"]` and `["deleted"]` — JSON
+  // an agent can write — as the provider and availability they stringify to,
+  // storing an array behind a type that promises a string literal.
+  if (value.provider !== undefined && !RESEARCH_SOURCE_PROVIDERS.has(value.provider as string)) {
     return null;
   }
   if (value.availability !== undefined
-    && !RESEARCH_SOURCE_AVAILABILITIES.has(String(value.availability))) {
+    && !RESEARCH_SOURCE_AVAILABILITIES.has(value.availability as string)) {
     return null;
   }
   return {

@@ -78,7 +78,13 @@ export type ResearchMissionXAttachments = {
   files: ReadonlyArray<{
     postId: string;
     canonicalUrl: string;
-    authorUsername: string;
+    /**
+     * Null when the stored canonical URL carries no handle. This prompt is
+     * persisted verbatim as the flow run's `flowSnapshot`, so the handle is
+     * only ever the one already durable in that URL — never one read off the
+     * fetched post.
+     */
+    authorUsername: string | null;
     relativePath: string;
   }>;
   unavailable: ReadonlyArray<{
@@ -95,7 +101,9 @@ function xAttachmentContext(attachments: ResearchMissionXAttachments): string[] 
   const lines = ["Attached X sources (requested by the user for this mission):"];
   for (const file of attachments.files) {
     lines.push(
-      `- ${file.relativePath} — @${file.authorUsername}, post ${file.postId}, ${file.canonicalUrl}`,
+      file.authorUsername
+        ? `- ${file.relativePath} — @${file.authorUsername}, post ${file.postId}, ${file.canonicalUrl}`
+        : `- ${file.relativePath} — post ${file.postId}, ${file.canonicalUrl}`,
     );
   }
   for (const missing of attachments.unavailable) {

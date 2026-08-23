@@ -49,7 +49,17 @@ export function researchMissionHoldsXRuntime(status: ResearchMission["status"]):
 export type HydratedXSourceFile = {
   postId: string;
   canonicalUrl: string;
-  authorUsername: string;
+  /**
+   * Read back out of the SAVED canonical URL, never off the fetched post, and
+   * null when that URL carries no handle (the `/i/web/status/<id>` form).
+   *
+   * The prompt this feeds is snapshotted verbatim into the durable flow-run
+   * record (`recordFlowRun({ flowSnapshot })`), so a handle taken from the
+   * fetched post would put author display data into a durable Cave record —
+   * the same exclusion `xSourceLedgerRef` is careful about. Deriving it from
+   * the stored URL keeps the promise on both surfaces.
+   */
+  authorUsername: string | null;
   /** POSIX-joined, relative to the mission workspace. */
   relativePath: string;
 };
@@ -291,8 +301,11 @@ export async function hydrateMissionXSources(
     pending.push({ fileName, content: renderRuntimePost(post, source.note) });
     files.push({
       postId: source.postId,
-      canonicalUrl: post.canonicalUrl,
-      authorUsername: post.author.username,
+      // Both from the SAVED source, not the fetched post: this record is
+      // rendered into the iteration prompt, which is persisted verbatim as the
+      // flow run's `flowSnapshot`.
+      canonicalUrl: source.canonicalUrl,
+      authorUsername: usernameFromCanonicalUrl(source.canonicalUrl),
       relativePath: `${RESEARCH_MISSION_X_RUNTIME_DIR}/${fileName}`,
     });
     sources.push(xSourceLedgerRef(source, "available"));

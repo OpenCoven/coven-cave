@@ -83,6 +83,36 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
   }), null);
 });
 
+// cave-v3ajh. The X identity fields are refused exactly as strictly as
+// `status` is, and this had no coverage: deleting both validation branches
+// outright left every suite green.
+test("mission parser refuses unknown external-provider identity on a source", () => {
+  const source = {
+    id: "x-post-1",
+    title: "X post 1",
+    url: "https://x.com/opencoven/status/1",
+    sourceType: "x-post",
+    status: "candidate",
+  } as const;
+  const withSource = (extra: Record<string, unknown>) => parseResearchMission({
+    ...validMission(),
+    sources: [{ ...source, ...extra }],
+  });
+
+  assert.equal(
+    withSource({ provider: "x", externalId: "1", availability: "deleted" })?.sources[0]?.provider,
+    "x",
+  );
+  assert.equal(withSource({ provider: "mastodon" }), null);
+  assert.equal(withSource({ availability: "maybe" }), null);
+  assert.equal(withSource({ externalId: 1 }), null);
+  // Membership must be tested on the raw value. `String(["x"]) === "x"`, so a
+  // coercing check would store an array behind a `"x"` literal type — and an
+  // array is exactly what an agent writing sources.json can put there.
+  assert.equal(withSource({ provider: ["x"] }), null);
+  assert.equal(withSource({ availability: ["deleted"] }), null);
+});
+
 test("mission parser preserves valid title provenance and rejects unknown values", () => {
   const explicit = { ...validMission(), titleSource: "explicit" } as const;
   assert.deepEqual(parseResearchMission(explicit), explicit);

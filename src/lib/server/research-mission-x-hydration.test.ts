@@ -67,6 +67,7 @@ const {
   ResearchMissionXHydrationError,
   dropMissionXRuntime,
   hydrateMissionXSources,
+  researchMissionHoldsXRuntime,
   sweepResearchMissionXRuntime,
 } = await import("./research-mission-x-runtime.ts");
 const {
@@ -205,12 +206,13 @@ async function attachSource(
   missionId: string,
   postId: string,
   note = "",
+  canonicalUrl = `https://x.com/opencoven/status/${postId}`,
 ): Promise<string> {
   const saved = await upsertSavedXSource({
     familiarId,
     postId,
-    canonicalUrl: `https://x.com/opencoven/status/${postId}`,
-    originalUrl: `https://x.com/opencoven/status/${postId}`,
+    canonicalUrl,
+    originalUrl: canonicalUrl,
     note,
     tags: [],
   });
@@ -609,6 +611,28 @@ function runnerFor(overrides: Partial<ResearchMissionRunnerDeps> = {}): RunnerHa
   return harness;
 }
 
+/**
+ * A runner that observes the launched session as finished with a checkpoint
+ * decision, so `reconcile` takes the ordinary completed-run path rather than
+ * the failed-run one.
+ */
+function settlingRunner(
+  overrides: Partial<ResearchMissionRunnerDeps> = {},
+): ReturnType<typeof makeResearchMissionRunner> {
+  return runnerFor({
+    sessionState: async () => "finished",
+    readSessionTranscript: async () => [
+      "@@research-control",
+      '{"decision":"checkpoint","reason":"More to gather","confidence":0.5}',
+      "@@research-artifacts-written",
+    ].join("\n"),
+    readMissionFile: async (_id, relativePath) => (
+      relativePath === "artifacts/primary.md" ? "# Findings\n\nEvidence gathered so far.\n" : null
+    ),
+    ...overrides,
+  }).runner;
+}
+
 test("continuing a mission hydrates before the iteration starts and names the files in its prompt", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "5001");
@@ -734,4 +758,155 @@ test("a deleted attached post lets the run proceed, visibly short of that source
   assert.ok(prompt.includes("Do not cite, infer, or invent its content"));
   const ref = updated.sources.find((item) => item.externalId === "5006");
   assert.equal(ref!.availability, "deleted");
+});
+
+// The settle above is a FAILED run. The modal outcome of a research iteration
+// is a normal completion into `checkpoint`, and nothing covered it: widening
+// the active-status set to include `checkpoint` and `paused` — one line, and
+// the obvious shape of a future regression — left all 21 tests green.
+test("a normal iteration completion settles to checkpoint and removes the hydrated post text", async () => {
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "6001");
+  await cacheNormalizedXPosts([post("6001")], NOW);
+  const harness = runnerFor();
+  await harness.runner.act(mission.id, { action: "continue" });
+  assert.equal((await runtimeFiles(mission.id)).length, 1, "hydrated before the settle under test");
+
+  const settled = await settlingRunner().reconcile((await loadResearchMission(mission.id))!);
+
+  assert.equal(settled.status, "checkpoint");
+  assert.equal(
+    await exists(runtimeDir(mission.id)),
+    false,
+    "an iteration that ended normally must not leave its post text behind",
+  );
+});
+
+// The choke point is a single predicate over mission status, so the whole
+// removal guarantee reduces to this set being exactly right. Pinned directly
+// because the runner tests above can only reach three of the nine statuses,
+// and adding `checkpoint` or `paused` to the active set is the cheapest
+// possible regression.
+test("only an active mission may hold hydrated post text", () => {
+  for (const status of ["queued", "planning", "running"] as const) {
+    assert.equal(researchMissionHoldsXRuntime(status), true, `${status} is a live run`);
+  }
+  for (const status of [
+    "checkpoint",
+    "paused",
+    "completed",
+    "failed",
+    "cancelled",
+    "archived",
+  ] as const) {
+    assert.equal(
+      researchMissionHoldsXRuntime(status),
+      false,
+      `${status} is settled — its post text must be dropped on the same write`,
+    );
+  }
+});
+
+// The agent owns sources.json and its entries displace stored refs wholesale
+// (mergeFileSources). The prompt tells the agent to record each attached post
+// there, so without an identity carry-forward the entry it writes silently
+// drops provider/externalId/availability — and a COMPLETED mission never
+// hydrates again, so nothing would ever restore them.
+test("an agent's own sources.json entry cannot strip the X identity off an attached post", async () => {
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "6003");
+  await cacheNormalizedXPosts([post("6003")], NOW);
+  const harness = runnerFor();
+  await harness.runner.act(mission.id, { action: "continue" });
+
+  const settled = await settlingRunner({
+    // Exactly what the iteration prompt asks for: the canonical URL, recorded
+    // by the agent with no knowledge of Cave's provider fields.
+    readSources: async () => [{
+      id: "agent-written-1",
+      title: "A post worth citing",
+      url: "https://x.com/opencoven/status/6003",
+      sourceType: "web",
+      status: "used" as const,
+    }],
+  }).reconcile((await loadResearchMission(mission.id))!);
+
+  const ref = settled.sources.find((item) => item.url === "https://x.com/opencoven/status/6003");
+  assert.ok(ref, "the agent's entry survives — it owns the ledger");
+  assert.equal(ref!.title, "A post worth citing", "every field the agent owns is the agent's");
+  assert.equal(ref!.provider, "x", "but the provider identity is Cave's and must survive");
+  assert.equal(ref!.externalId, "6003");
+  assert.equal(ref!.availability, "available");
+  assert.equal(
+    settled.sources.filter((item) => item.externalId === "6003").length,
+    1,
+    "carrying the identity forward must not also leave the displaced ref behind",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Redaction — what a DURABLE record may hold
+// ---------------------------------------------------------------------------
+
+test("no author display data reaches a durable record, on either surface", async () => {
+  // A handle-free canonical URL is the case that separates "derived from the
+  // saved source" from "read off the fetched post": the post carries
+  // @opencoven / "Open Coven", the stored URL carries neither.
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "7001", "", "https://x.com/i/web/status/7001");
+  await cacheNormalizedXPosts([post("7001")], NOW);
+
+  const hydration = await hydrateMissionXSources(mission);
+  assert.equal(
+    hydration.files[0]!.authorUsername,
+    null,
+    "a handle absent from the stored URL must not be recovered from the fetched post",
+  );
+  assert.equal(hydration.sources[0]!.title, "X post 7001");
+
+  const harness = runnerFor();
+  await harness.runner.act(mission.id, { action: "continue" });
+
+  // The iteration prompt is persisted verbatim as the flow run's flowSnapshot,
+  // so it is a durable record too — not just a message.
+  const prompt = String(harness.flows[0]!.nodes[1]!.params!.prompt);
+  const missionJson = await readFile(
+    path.join(researchMissionWorkspacePath(mission.id), "mission.json"),
+    "utf8",
+  );
+  for (const [surface, text] of [["the iteration prompt", prompt], ["mission.json", missionJson]] as const) {
+    assert.ok(!text.includes("Open Coven"), `${surface} must not carry the author's display name`);
+    assert.ok(!text.includes("opencoven"), `${surface} must not carry a handle the stored URL lacks`);
+    assert.ok(!text.includes(POST_TEXT), `${surface} must not carry the post body`);
+  }
+  assert.ok(prompt.includes("runtime/x/x-post-7001.md"), "the file is still named to the iteration");
+});
+
+test("removal leaves no empty runtime/ scaffolding in the workspace", async () => {
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "7002");
+  await cacheNormalizedXPosts([post("7002")], NOW);
+  await hydrateMissionXSources(mission);
+
+  await dropMissionXRuntime(mission.id);
+
+  assert.equal(
+    await exists(path.join(researchMissionWorkspacePath(mission.id), "runtime")),
+    false,
+    "the runtime/ parent is removed once it is empty",
+  );
+});
+
+test("a populated runtime/ directory survives removal of runtime/x", async () => {
+  const mission = await makeMission();
+  await attachSource("nova", mission.id, "7003");
+  await cacheNormalizedXPosts([post("7003")], NOW);
+  await hydrateMissionXSources(mission);
+  const sibling = path.join(researchMissionWorkspacePath(mission.id), "runtime", "notes.md");
+  await writeFile(sibling, "something else is using runtime/", "utf8");
+
+  await dropMissionXRuntime(mission.id);
+
+  assert.equal(await exists(runtimeDir(mission.id)), false);
+  assert.equal(await exists(sibling), true, "removal is scoped to runtime/x");
 });

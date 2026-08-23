@@ -308,12 +308,31 @@ function mergeFileSources(
   stored: ResearchSourceRef[],
   file: ResearchSourceRef[],
 ): ResearchSourceRef[] {
-  const matchesFileEntry = (item: ResearchSourceRef) => file.some((source) => (
+  const matches = (source: ResearchSourceRef, item: ResearchSourceRef) => (
     source.url && item.url === source.url
   ) || (
     source.localPath && item.localPath === source.localPath
-  ) || source.id === item.id);
-  return [...file, ...stored.filter((item) => !matchesFileEntry(item))];
+  ) || source.id === item.id;
+  const matchesFileEntry = (item: ResearchSourceRef) => file.some((source) => matches(source, item));
+  // The agent's sources.json wins on every field it owns, but external-provider
+  // IDENTITY is Cave's, not the agent's: it is written by the attach route and
+  // by hydration, and the agent is never told to reproduce it. Without this
+  // carry-forward the entry an agent records for an attached X post displaces
+  // the identity-only ref and silently drops provider/externalId/availability,
+  // so a COMPLETED mission — which never hydrates again — would keep no record
+  // that the source was an X post at all (cave-v3ajh, #4816 criterion 4).
+  const merged = file.map((source) => {
+    if (source.provider !== undefined) return source;
+    const displaced = stored.find((item) => item.provider !== undefined && matches(source, item));
+    if (!displaced) return source;
+    return {
+      ...source,
+      provider: displaced.provider,
+      ...(displaced.externalId !== undefined ? { externalId: displaced.externalId } : {}),
+      ...(displaced.availability !== undefined ? { availability: displaced.availability } : {}),
+    };
+  });
+  return [...merged, ...stored.filter((item) => !matchesFileEntry(item))];
 }
 
 const PATCHABLE_SOURCE_FIELDS = [
