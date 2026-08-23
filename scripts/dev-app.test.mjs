@@ -99,6 +99,14 @@ assert.match(
   /case "\$dev_node_options" in[\s\S]*?\*--max-old-space-size=\[0-9\]\*\)[\s\S]*?exit 1/,
   "a NODE_OPTIONS value carrying no ceiling must fail loudly rather than start an uncapped dev server",
 );
+// Only a server this launcher STARTS gets a ceiling it can announce; an
+// attached pre-existing server keeps whatever it was launched with, so the
+// resolution has to live inside the start branch rather than run unconditionally.
+assert.match(
+  source,
+  /if \[ "\$should_start_server" = true \]; then[\s\S]*?dev_node_options="\$\(/,
+  "the heap ceiling must be resolved only for a server this launcher owns",
+);
 
 assert.match(
   source,

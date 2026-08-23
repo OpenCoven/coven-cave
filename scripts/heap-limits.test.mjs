@@ -146,7 +146,7 @@ assert.ok(
 // real node. This is the whole path from the shared contract to a running
 // process, minus only the shell's env prefix.
 const devApp = await readFile(new URL("./dev-app.sh", import.meta.url), "utf8");
-const heapCapture = devApp.match(/^dev_node_options="\$\((node -e "[\s\S]*?")\)"$/m);
+const heapCapture = devApp.match(/^\s*dev_node_options="\$\((node -e "[\s\S]*?")\)"$/m);
 assert.ok(heapCapture, "the launcher must capture its NODE_OPTIONS from a node one-liner");
 const capturedOptions = execFileSync("bash", ["-c", heapCapture[1]], {
   cwd: path.dirname(path.dirname(fileURLToPath(import.meta.url))),
