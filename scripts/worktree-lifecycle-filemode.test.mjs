@@ -183,9 +183,13 @@ async function makeRepo() {
   await mkdir(path.join(root, "scripts"), { recursive: true });
   writeFileSync(path.join(root, "scripts", "tool.sh"), "#!/bin/sh\necho hi\n");
   writeFileSync(path.join(root, "plain.txt"), "hello\n");
+  // Set the bit on disk first: real on a filesystem that holds it, a no-op on
+  // one that does not. Then force it in the index too, so HEAD and the index
+  // record 100755 on BOTH platforms. The result is a fixture that is genuinely
+  // clean on ext4, and carries the executable-bit artifact on NTFS — which is
+  // exactly the difference under test.
+  chmodSync(path.join(root, "scripts", "tool.sh"), 0o755);
   requireGit(root, ["add", "."]);
-  // Record 100755 in the index independently of what the filesystem can hold,
-  // so the fixture is identical on NTFS and on ext4.
   requireGit(root, ["update-index", "--chmod=+x", "scripts/tool.sh"]);
   requireGit(root, ["commit", "--quiet", "-m", "seed"]);
   return root;
