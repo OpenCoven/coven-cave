@@ -175,13 +175,15 @@ public static class CovenCwdProbe {
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add('#probe windows-process-cwd v1')
 
-# The self-check. This process's current directory is a fact the caller already
-# knows — it chose it — so re-deriving it through the same PEB path proves the
-# struct offsets above are right for THIS Windows build and this bitness. The
-# caller refuses the whole probe when it does not match, which is what stops a
-# future layout change from silently reporting "no live process anywhere".
-$self = [CovenCwdProbe]::CurrentDirectory([System.Diagnostics.Process]::GetCurrentProcess().Id)
-if ($self) { $lines.Add("#self $self") }
+# The self-check, and note what is NOT emitted here: this line carries only the
+# probe's pid, never its directory. The caller already knows what directory this
+# process is in — it chose it — and it goes looking for that pid among the
+# ordinary records below, which are produced by the same memory reads as every
+# other process. So the check passes only if the read path actually works: a
+# probe that emitted its own directory from a cheap local call would answer
+# correctly while every real read failed, which is precisely the silent
+# degradation — "no live process anywhere" — that this exists to catch.
+$lines.Add("#selfpid $([System.Diagnostics.Process]::GetCurrentProcess().Id)")
 
 $total = 0
 $read = 0

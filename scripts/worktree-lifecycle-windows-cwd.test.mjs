@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 const { classifyLifecycleUnit, classifyWorktree } = await import(
   "../src/lib/worktree-lifecycle.ts"
 );
-const { parseWindowsCwdProbeOutput, reconcileHoldVerdicts } = await import(
+const { evaluateWindowsCwdProbe, parseWindowsCwdProbeOutput, reconcileHoldVerdicts } = await import(
   "./worktree-lifecycle-inventory.ts"
 );
 
@@ -166,7 +166,7 @@ test("a probe error keeps the unit non-retirable rather than silently free", () 
 
 const COMPLETE = [
   "#probe windows-process-cwd v1",
-  "#self C:\\",
+  "#selfpid 1234",
   "#processes total=10 read=7 unreadable=3",
   "#hold HELD C:\\repo\\.worktrees\\busy",
   "#hold FREE C:\\repo\\.worktrees\\quiet",
@@ -183,7 +183,7 @@ const COMPLETE = [
 test("a complete probe output yields every part of the answer", () => {
   const probe = parseWindowsCwdProbeOutput(COMPLETE);
   assert.equal(probe.complete, true);
-  assert.equal(probe.selfCwd, "C:\\");
+  assert.equal(probe.selfPid, 1234);
   assert.deepEqual(probe.totals, { total: 10, read: 7, unreadable: 3 });
   assert.equal(probe.holds.get("C:\\repo\\.worktrees\\busy"), true);
   assert.equal(probe.holds.get("C:\\repo\\.worktrees\\quiet"), false);
@@ -213,15 +213,15 @@ test("a command name starting with # is a record, not a directive", () => {
   // The split between directives and records is positional, on the #records
   // marker, precisely so a process named like a directive cannot delete itself
   // from the inventory. A prefix-based split would drop this process entirely.
-  const raw = COMPLETE.replace("cbash", "c#self C:\\elsewhere");
+  const raw = COMPLETE.replace("cbash", "c#selfpid 999");
   const probe = parseWindowsCwdProbeOutput(raw);
-  assert.equal(probe.selfCwd, "C:\\", "a record must not overwrite the self-check");
-  assert.match(probe.ownerRecords, /c#self C:\\elsewhere/);
+  assert.equal(probe.selfPid, 1234, "a record must not overwrite the self-check");
+  assert.match(probe.ownerRecords, /c#selfpid 999/);
 });
 
 test("directory paths with spaces round-trip verbatim", () => {
   const probe = parseWindowsCwdProbeOutput(
-    "#self C:\\\n#hold HELD C:\\my repo\\.worktrees\\a b\n#records\n#end\n",
+    "#selfpid 1\n#hold HELD C:\\my repo\\.worktrees\\a b\n#records\n#end\n",
   );
   assert.equal(probe.holds.get("C:\\my repo\\.worktrees\\a b"), true);
 });
@@ -229,7 +229,7 @@ test("directory paths with spaces round-trip verbatim", () => {
 test("CRLF output parses identically", () => {
   const probe = parseWindowsCwdProbeOutput(COMPLETE.replace(/\n/g, "\r\n"));
   assert.equal(probe.complete, true);
-  assert.equal(probe.selfCwd, "C:\\");
+  assert.equal(probe.selfPid, 1234);
   assert.equal(probe.holds.get("C:\\repo\\.worktrees\\busy"), true);
 });
 
@@ -276,34 +276,43 @@ test("an existing error is never overwritten by the missing-verdict default", ()
 // Real processes, the real probe script. Windows only.
 // ---------------------------------------------------------------------------
 
-function runProbe(directories, launchCwd) {
+function runProbeRaw(directories, launchCwd) {
   const pathsFile = path.join(tmpdir(), `cwd-probe-test-${process.pid}-${Date.now()}.txt`);
   writeFileSync(pathsFile, `${directories.join("\n")}\n`, "utf8");
   try {
-    const stdout = execFileSync(
+    return execFileSync(
       "powershell.exe",
       ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", probeScript, pathsFile],
       { cwd: launchCwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
     );
-    return parseWindowsCwdProbeOutput(stdout);
   } finally {
     rmSync(pathsFile, { force: true });
   }
 }
 
-/** Every pid the probe reports with a cwd at or under `root`. */
-function occupants(probe, root) {
-  const prefix = `${root}${path.sep}`;
-  const pids = [];
+function runProbe(directories, launchCwd) {
+  return parseWindowsCwdProbeOutput(runProbeRaw(directories, launchCwd));
+}
+
+/** Every (pid, cwd) pair the probe reported. */
+function reportedCwds(probe) {
+  const pairs = new Map();
   let pid = null;
   for (const line of probe.ownerRecords.split("\n")) {
     if (/^p\d+$/.test(line)) pid = Number(line.slice(1));
     else if (line.startsWith("n") && pid !== null) {
-      const cwd = line.slice(1).replace(/[\\/]+$/, "");
-      if (cwd === root || `${cwd}${path.sep}`.startsWith(prefix)) pids.push(pid);
+      pairs.set(pid, line.slice(1).replace(/[\\/]+$/, ""));
     }
   }
-  return pids;
+  return pairs;
+}
+
+/** Every pid the probe reports with a cwd at or under `root`. */
+function occupants(probe, root) {
+  const prefix = `${root}${path.sep}`;
+  return [...reportedCwds(probe)]
+    .filter(([, cwd]) => cwd === root || `${cwd}${path.sep}`.startsWith(prefix))
+    .map(([pid]) => pid);
 }
 
 test(
@@ -330,11 +339,6 @@ test(
     try {
       const probe = runProbe([busy, quiet], path.parse(process.cwd()).root);
       assert.equal(probe.complete, true, "the probe must produce a complete answer");
-      assert.equal(
-        probe.selfCwd.replace(/[\\/]+$/, "") || probe.selfCwd,
-        path.parse(process.cwd()).root.replace(/[\\/]+$/, "") || probe.selfCwd,
-        "the self-check must recover the directory the probe was launched in",
-      );
       assert.ok(
         occupants(probe, busy).includes(child.pid),
         `pid ${child.pid} works in ${busy} and must be reported; the probe read ` +
@@ -373,19 +377,100 @@ test(
 );
 
 test(
-  "the probe reads its own working directory back out of process memory",
+  "a healthy real probe run is accepted, and every damaged form of it is refused",
   { skip: isWindows ? false : "the Windows cwd probe only runs on Windows" },
   () => {
-    // The self-check the caller refuses on. Launched somewhere OTHER than the
-    // filesystem root so the assertion cannot pass by accident on a default.
-    const here = mkdtempSync(path.join(tmpdir(), "cwd-probe-self-"));
+    // The healthy case is a REAL run of the real script, so the accept path is
+    // not proven against a fixture someone hand-wrote to match the parser. Each
+    // refusal below then damages exactly one thing about that same output.
+    const launchCwd = realpathSync(mkdtempSync(path.join(tmpdir(), "cwd-probe-eval-")));
+    const quiet = path.join(launchCwd, "quiet");
+    mkdirSync(quiet);
+    const asked = [launchCwd, quiet];
+    try {
+      const stdout = runProbeRaw(asked, launchCwd);
+      const ok = { ok: true, stdout, stderr: "" };
+
+      const accepted = evaluateWindowsCwdProbe(ok, launchCwd, asked);
+      assert.equal(accepted.error, null, "a healthy run must be accepted");
+      assert.ok(accepted.owners.length > 0, "a healthy run reports the processes it read");
+      assert.equal(accepted.holds.get(quiet), false, "an empty directory must read free");
+      // The probe is itself a live process, so wherever it is launched reads as
+      // held — which is why the caller launches it at the filesystem root and
+      // never inside the checkout. Pinned here so that choice is not quietly
+      // undone: pointing it at the repository would make the patrol report its
+      // own working directory occupied on every run.
+      assert.equal(
+        accepted.holds.get(launchCwd),
+        true,
+        "the probe occupies its own launch directory",
+      );
+      assert.equal(accepted.holdErrors.size, 0);
+
+      const refusals = [
+        ["a failed spawn", { ok: false, stdout, stderr: "spawnSync powershell.exe ENOENT" }],
+        ["anything on stderr", { ok: true, stdout, stderr: "some warning" }],
+        ["truncated output", { ok: true, stdout: stdout.replace("#end\n", ""), stderr: "" }],
+        ["no owner records at all", {
+          ok: true,
+          stdout: `${stdout.slice(0, stdout.indexOf("#records"))}#records\n#end\n`,
+          stderr: "",
+        }],
+        ["a missing self-check pid", {
+          ok: true,
+          stdout: stdout.replace(/^#selfpid \d+\n/m, ""),
+          stderr: "",
+        }],
+        ["a self-check pid nothing read", {
+          ok: true,
+          stdout: stdout.replace(/^#selfpid \d+$/m, "#selfpid 999999999"),
+          stderr: "",
+        }],
+        ["empty output", { ok: true, stdout: "", stderr: "" }],
+      ];
+      for (const [label, damaged] of refusals) {
+        const outcome = evaluateWindowsCwdProbe(damaged, launchCwd, asked);
+        assert.ok(
+          typeof outcome.error === "string" && outcome.error.length > 0,
+          `${label} must be refused, not answered`,
+        );
+        assert.deepEqual(outcome.owners, [], `${label} must report no owners`);
+        assert.equal(outcome.holds.size, 0, `${label} must report no hold verdicts`);
+      }
+
+      // The self-check must reject a run launched somewhere other than where we
+      // think it was: that is the shape a wrong memory read produces.
+      const elsewhere = evaluateWindowsCwdProbe(ok, path.parse(launchCwd).root, [
+        path.parse(launchCwd).root,
+      ]);
+      assert.match(elsewhere.error ?? "", /self-check failed/);
+    } finally {
+      rmSync(launchCwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  },
+);
+
+test(
+  "the probe's own working directory comes back through the ordinary records",
+  { skip: isWindows ? false : "the Windows cwd probe only runs on Windows" },
+  () => {
+    // The self-check the caller refuses on, and the reason it is shaped this
+    // way. The probe reports only its pid; the directory has to arrive in the
+    // same records every other process produces, so a probe that answered from
+    // a cheap local call while the memory reads were broken cannot pass here.
+    // Launched somewhere OTHER than the filesystem root so the assertion cannot
+    // succeed against a default.
+    const here = realpathSync(mkdtempSync(path.join(tmpdir(), "cwd-probe-self-")));
     try {
       const probe = runProbe([], here);
       assert.equal(probe.complete, true);
+      assert.ok(Number.isInteger(probe.selfPid), "the probe must identify its own process");
+      const reported = reportedCwds(probe).get(probe.selfPid);
       assert.equal(
-        probe.selfCwd.replace(/[\\/]+$/, ""),
+        reported,
         here.replace(/[\\/]+$/, ""),
-        "a mismatch here means the memory offsets are wrong on this Windows build",
+        "the probe's own pid must appear among the records with the directory it was launched in; " +
+          "a mismatch means the memory offsets are wrong on this Windows build",
       );
       assert.ok(probe.totals.read > 0, "a probe that reads no process at all is not working");
     } finally {
