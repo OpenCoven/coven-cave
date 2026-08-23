@@ -13,6 +13,7 @@ const CONTROL_HEAVY_ASSISTANT_TEXT = [
   "```",
   "<thinking>private chain of thought</thinking>",
   "The ordinary visible answer remains.",
+  '<coven:research run-id="research-42" title="Dependency research" status="running" activity="Reviewing incidents" step="2" total="5" />',
   '<coven:skill name="research" stage="done" />',
   '<coven:auto-status state="done" />',
   '<coven:attention reason="decision" />',
@@ -29,6 +30,9 @@ test("rendered assistant text keeps prose while removing every non-prose control
 
   assert.equal(result.visible.trim(), "The ordinary visible answer remains.");
   assert.equal(result.inlineReasoning, "private chain of thought");
+  assert.equal(result.researchRuns.length, 1);
+  assert.equal(result.researchRuns[0]?.runId, "research-42");
+  assert.equal(result.researchRuns[0]?.activity, "Reviewing incidents");
   assert.deepEqual(result.skillUpdates, [{ name: "research", stage: "done" }]);
   assert.deepEqual(result.autoStatusUpdate, { state: "done" });
   assert.deepEqual(result.attentionRequest, { reason: "decision" });
@@ -43,6 +47,8 @@ test("rendered assistant text keeps prose while removing every non-prose control
   assert.match(result.cardText, /<coven:github/);
   assert.match(result.cardText, /<coven:image/);
   assert.match(result.cardText, /<coven:preview/);
+  assert.doesNotMatch(result.visible, /coven:research/);
+  assert.doesNotMatch(result.cardText, /coven:research/);
 });
 
 test("find and reply projections cannot expose assistant control markers", () => {
@@ -55,6 +61,7 @@ test("find and reply projections cannot expose assistant control markers", () =>
   const visible = chatTurnVisibleText(turn);
 
   assert.equal(findTranscriptHits([{ ...turn, text: visible }], "attention").length, 0);
+  assert.equal(findTranscriptHits([{ ...turn, text: visible }], "research-42").length, 0);
   assert.equal(findTranscriptHits([{ ...turn, text: visible }], "ordinary").length, 1);
   assert.equal(buildReplySnippet(visible), "The ordinary visible answer remains.");
 });
@@ -89,6 +96,16 @@ test("streaming preview fragments never enter visible assistant text", () => {
     assert.equal(rendered.visible, "Visible before ");
     assert.equal(rendered.cardText, "Visible before ");
   }
+});
+
+test("streaming research fragments never enter visible assistant text", () => {
+  const rendered = extractChatRenderedText(
+    'Visible before <coven:research run-id="run-1" title="Dependency',
+    { pending: true },
+  );
+  assert.equal(rendered.visible, "Visible before ");
+  assert.equal(rendered.cardText, "Visible before ");
+  assert.deepEqual(rendered.researchRuns, []);
 });
 
 test("user and system text remains unchanged", () => {
