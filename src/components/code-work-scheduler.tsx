@@ -44,7 +44,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
-import { PopoverItem, PopoverLabel, PopoverSeparator, PopoverSubmenu } from "@/components/ui/popover";
+import { PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
@@ -586,30 +586,38 @@ function QueueTable({
                       Open bead
                     </PopoverItem>
                     <PopoverSeparator />
-                    <PopoverSubmenu icon="ph:flag" label="Priority">
-                      <PopoverLabel>Stored on the bead</PopoverLabel>
-                      {PRIORITY_BANDS.map((band) => (
-                        <PopoverItem
-                          key={band.value}
-                          checked={row.bead.priority === band.value}
-                          onSelect={() => onSetPriority(row, band.value)}
-                        >
-                          {band.label}
-                        </PopoverItem>
-                      ))}
-                    </PopoverSubmenu>
-                    <PopoverSubmenu icon="ph:user" label="Reassign" disabled={familiars.length === 0}>
-                      <PopoverLabel>Claims the bead on their behalf</PopoverLabel>
-                      {familiars.map((familiar) => (
-                        <PopoverItem
-                          key={familiar.id}
-                          checked={row.familiarId === familiar.id}
-                          onSelect={() => onReassign(row, familiar)}
-                        >
-                          {familiar.display_name || familiar.id}
-                        </PopoverItem>
-                      ))}
-                    </PopoverSubmenu>
+                    {/*
+                      Flat sections rather than PopoverSubmenu: OverflowMenu
+                      closes on any click that lands on a `role="menuitem"`,
+                      and a submenu's own trigger carries that role — so a
+                      submenu inside an OverflowMenu shuts the whole menu
+                      instead of opening. Filed as cave-y2oxb; this
+                      surface does not work around it by hand.
+                    */}
+                    <PopoverLabel>Priority · stored on the bead</PopoverLabel>
+                    {PRIORITY_BANDS.map((band) => (
+                      <PopoverItem
+                        key={band.value}
+                        checked={row.bead.priority === band.value}
+                        onSelect={() => onSetPriority(row, band.value)}
+                      >
+                        {band.label}
+                      </PopoverItem>
+                    ))}
+                    {familiars.length > 0 ? <PopoverSeparator /> : null}
+                    {familiars.length > 0 ? (
+                      <PopoverLabel>Reassign · claims on their behalf</PopoverLabel>
+                    ) : null}
+                    {familiars.map((familiar) => (
+                      <PopoverItem
+                        key={familiar.id}
+                        icon="ph:user"
+                        checked={row.familiarId === familiar.id}
+                        onSelect={() => onReassign(row, familiar)}
+                      >
+                        {familiar.display_name || familiar.id}
+                      </PopoverItem>
+                    ))}
                   </OverflowMenu>
                 </td>
               </tr>
