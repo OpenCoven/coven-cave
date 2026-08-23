@@ -10,7 +10,7 @@ import {
   stripPreviewMarkers,
 } from "./preview-blocks.ts";
 import { extractNextPaths } from "./next-paths.ts";
-import { extractResearchRunMarkers } from "./research-run-surface.ts";
+import { extractResearchRunMarkers, type ResearchRunMarker } from "./research-run-surface.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
 
 export type ChatRenderedTextProjection = {
@@ -24,6 +24,28 @@ export type ChatRenderedTextProjection = {
   attentionRequest: ReturnType<typeof extractChatAttentionMarker>["request"];
   nextPaths: ReturnType<typeof extractNextPaths>["suggestions"];
 };
+
+const RESEARCH_PREVIEW_ORIGIN = "http://127.0.0.1";
+const RESEARCH_PREVIEW_PREFIX = "/__coven/research/";
+
+/**
+ * ChatView already has a mature rich-block pipeline for local preview markers.
+ * Feed research projections through that pipeline as an internal, reserved
+ * local-preview descriptor so the huge transcript renderer does not need a
+ * second parallel segmentation implementation. ChatPreviewCard recognizes the
+ * reserved path and renders ResearchRunInlineCard instead of a web preview.
+ *
+ * This marker is renderer-internal. The public skill protocol remains
+ * `<coven:research ... />`; providers never depend on this representation.
+ */
+function researchPreviewMarker(run: ResearchRunMarker): string {
+  const url = new URL(
+    `${RESEARCH_PREVIEW_ORIGIN}${RESEARCH_PREVIEW_PREFIX}${encodeURIComponent(run.runId)}`,
+  );
+  url.searchParams.set("status", run.status);
+  url.searchParams.set("title", run.title);
+  return `<coven:preview url="${url.toString()}" title="Research run" />`;
+}
 
 /**
  * Project an assistant turn through the exact control-marker pipeline used by
@@ -47,10 +69,14 @@ export function extractChatRenderedText(
     pending: Boolean(options.pending),
   });
   const nextPathSplit = extractNextPaths(attentionSplit.visible);
+  const researchCards = researchSplit.runs.map(researchPreviewMarker);
+  const cardSource = researchCards.length > 0
+    ? `${nextPathSplit.visible.trimEnd()}\n${researchCards.join("\n")}`
+    : nextPathSplit.visible;
 
   return {
     visible: stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(nextPathSplit.visible))),
-    cardText: stripIncompletePreviewMarker(nextPathSplit.visible),
+    cardText: stripIncompletePreviewMarker(cardSource),
     inlineReasoning: reasoningSplit.reasoning,
     skillUpdates: skillSplit.updates,
     researchRuns: researchSplit.runs,
