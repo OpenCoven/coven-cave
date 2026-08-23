@@ -911,3 +911,82 @@
     opacity: 0.35;
   }
 }
+
+/*
+ * The likeness rite (cave-5lsve) — drop, paste, or pick a picture and let a
+ * local runtime propose the familiar. Sits at the head of Rite II, above the
+ * name it fills in.
+ */
+
+.likeness-rite__label {
+  margin-bottom: var(--space-1);
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.likeness-rite__optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.likeness-rite {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard);
+}
+
+.likeness-rite--drop {
+  border-color: var(--accent-presence);
+  border-style: solid;
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+
+.likeness-rite--disabled {
+  opacity: var(--opacity-disabled);
+}
+
+.likeness-rite__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+}
+
+.likeness-rite__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--text-secondary);
+}
+
+.likeness-rite__note--fail {
+  color: var(--color-warning);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .likeness-rite {
+    transition: none;
+  }
+}
+
+/* Narrow panes stack the rite's control above its hint so a phone never has a
+   button and two lines of copy fighting over the same row. */
+@media (max-width: 720px) {
+  .likeness-rite {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

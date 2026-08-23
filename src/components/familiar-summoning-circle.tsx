@@ -8,6 +8,10 @@ import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { FamiliarHoloCard } from "@/components/familiar-holo-card";
+import { FamiliarLikenessRite } from "@/components/familiar-likeness-rite";
+import { isScryCapableHarness, type ScryReading } from "@/lib/scry";
+import { composeScryDescription } from "@/lib/scry";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { COMPATIBILITY_ADAPTERS, isSummonableLocalHarness } from "@/lib/harness-adapters";
@@ -457,6 +461,31 @@ function SummoningRite({
     setName(pick);
   }, [name, existing]);
 
+  /**
+   * Apply a reading to the rite.
+   *
+   * Every value lands in the field the person is already looking at, so the
+   * reading is a filled-in form rather than a commitment — a scry that got the
+   * name wrong is one keystroke from being right. The likeness itself becomes
+   * the portrait through the avatar upload `handleSummon` already performs; a
+   * scry introduces no second route for image bytes to reach a familiar.
+   *
+   * The reading's own `pronouns` are ignored here as well as in the parser:
+   * nothing in this flow infers gender from a picture, and the rite says so.
+   */
+  const applyScryReading = useCallback((reading: ScryReading, likeness: File) => {
+    if (reading.name) setName(reading.name);
+    if (reading.office) setRole(reading.office);
+    const composed = composeScryDescription(reading);
+    if (composed) setDescription(composed);
+    if (reading.glyph) setGlyph(reading.glyph);
+    if (reading.auraLabel) {
+      const preset = AURA_PRESETS.find((candidate) => candidate.label === reading.auraLabel);
+      if (preset) setAura(preset.color);
+    }
+    setAvatarFile(likeness);
+  }, []);
+
   const modelPreview =
     vessel === "openclaw"
       ? "chosen by the agent"
@@ -563,14 +592,29 @@ function SummoningRite({
 
       <div className="summoning-layout">
         <div className="summoning-stagecol">
-          <CircleSigil
-            accent={aura}
-            completed={stageComplete}
-            active={summoned ? null : stage}
-            summoning={submitting}
-            flare={summoned !== null}
-            center={centerNode}
-          />
+          {avatarPreviewUrl ? (
+            // Once there is a likeness the column shows the card it produced:
+            // the familiar assembling as the rite is answered, rather than an
+            // empty sigil beside a portrait that already exists.
+            <FamiliarHoloCard
+              identity={derivedId || name}
+              name={name.trim()}
+              office={role.trim() || null}
+              line={description.trim() || null}
+              glyph={glyph}
+              aura={aura}
+              portraitUrl={avatarPreviewUrl}
+            />
+          ) : (
+            <CircleSigil
+              accent={aura}
+              completed={stageComplete}
+              active={summoned ? null : stage}
+              summoning={submitting}
+              flare={summoned !== null}
+              center={centerNode}
+            />
+          )}
           <p className="summoning-progress" role="status">
             {summoned
               ? "The circle is complete."
@@ -673,6 +717,9 @@ function SummoningRite({
                     idTaken={idTaken}
                     idLocked={vessel === "openclaw"}
                     onSuggest={suggestName}
+                    scryHarness={harness}
+                    canScry={vessel === "local" && isScryCapableHarness(harness)}
+                    onReading={applyScryReading}
                   />
                 ) : stage === 2 ? (
                   <StageForm
@@ -1123,6 +1170,9 @@ function StageName({
   idTaken,
   idLocked,
   onSuggest,
+  scryHarness,
+  canScry,
+  onReading,
 }: {
   name: string;
   setName: (v: string) => void;
@@ -1134,9 +1184,13 @@ function StageName({
   idTaken: boolean;
   idLocked: boolean;
   onSuggest: () => void;
+  scryHarness: string | null;
+  canScry: boolean;
+  onReading: (reading: ScryReading, likeness: File) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
+      <FamiliarLikenessRite harness={scryHarness} canScry={canScry} onReading={onReading} />
       <div>
         <label className={labelClass} htmlFor="summon-name">Name</label>
         <div className="flex items-stretch gap-2">

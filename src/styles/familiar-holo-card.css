@@ -1,0 +1,268 @@
+/**
+ * Holographic familiar card (cave-5lsve).
+ *
+ * A trading card that assembles as the summoning rite is answered. Every
+ * surface, ink, radius, and duration below is a token, and the foil itself is
+ * derived from the familiar's own aura rather than from a hue this sheet
+ * invents — so the card reads correctly across all 42 theme x mode
+ * combinations without a single literal colour.
+ *
+ * Two deliberate mechanics:
+ *
+ *   1. **The foil never uses `background-blend-mode`.** WebKit drops that
+ *      property as soon as a second instance of a tiled background layer is
+ *      painted, which makes a pointer-driven effect work in one quadrant and
+ *      break in the other three. `mix-blend-mode` on a separate layer has no
+ *      such behaviour, and the plate is oversized so it never tiles anyway.
+ *   2. **The plate is fixed; only the mask moves.** `--holo-sweep`,
+ *      `--holo-plate-phase`, and `--holo-plate-pitch` come from the identity
+ *      seed (`src/lib/familiar-holo.ts`) and never change while a card is on
+ *      screen. `--holo-x` / `--holo-y` track the pointer and drive nothing but
+ *      a mask, so a colour can never drift because someone looked at the card.
+ */
+
+/*
+ * The slot establishes the containment context the card's narrow-pane rules
+ * query. Without it the `@container` block at the foot of this sheet can never
+ * match, because nothing else in the summoning layout declares a container.
+ */
+.holo-card-slot {
+  container-type: inline-size;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.holo-card {
+  /* Aura, and the sheen derived from it. The component overrides --holo-aura
+   * with the chosen aura; the fallback is the app accent, which every theme
+   * defines. */
+  --holo-aura: var(--accent-presence);
+  --holo-sheen-high: color-mix(in oklch, var(--holo-aura) 26%, white 74%);
+  --holo-sheen-mid: color-mix(in oklch, var(--holo-aura) 78%, white 22%);
+  --holo-sheen-low: color-mix(in oklch, var(--holo-aura) 50%, var(--card) 50%);
+  --holo-edge: color-mix(in oklch, var(--holo-aura) 40%, var(--border) 60%);
+  --holo-ink-dim: var(--text-muted);
+  /* Pointer position as a percentage of the card box. The resting value is the
+   * centre, so a card that is never pointed at still shows a plausible sheen. */
+  --holo-x: 50%;
+  --holo-y: 42%;
+  --holo-tilt-x: 0deg;
+  --holo-tilt-y: 0deg;
+  /* Seeded plate geometry. Overridden per identity; these are the base plate. */
+  --holo-sweep: 0turn;
+  --holo-plate-phase: 0turn;
+  --holo-plate-pitch: 1;
+
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 268px;
+  aspect-ratio: 5 / 7;
+  border: 1px solid var(--holo-edge);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  color: var(--card-foreground);
+  overflow: hidden;
+  isolation: isolate;
+  transform: perspective(900px) rotateX(var(--holo-tilt-x)) rotateY(var(--holo-tilt-y));
+  transform-style: preserve-3d;
+  transition:
+    transform var(--duration-base) var(--ease-decelerate),
+    border-color var(--duration-base) var(--ease-standard);
+}
+
+/* The portrait, or the sigil plate that stands in until there is one. */
+.holo-card__art {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-sunken);
+}
+
+.holo-card__portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.holo-card__sigil {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in oklch, var(--holo-aura) 70%, var(--text-muted) 30%);
+}
+
+/*
+ * The foil plate. A conic sweep of the aura's own sheen, rotated by the
+ * identity seed, masked to a soft lobe that follows the pointer.
+ */
+.holo-card__foil {
+  position: absolute;
+  /* Oversized so the layer is painted exactly once. A tiled foil is the
+   * WebKit failure described at the top of this sheet. */
+  inset: -30%;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: screen;
+  background: conic-gradient(
+    from var(--holo-sweep) at var(--holo-x) var(--holo-y),
+    var(--holo-sheen-low),
+    var(--holo-sheen-mid),
+    var(--holo-sheen-high),
+    var(--holo-sheen-mid),
+    var(--holo-sheen-low),
+    var(--holo-sheen-mid),
+    var(--holo-sheen-high),
+    var(--holo-sheen-mid),
+    var(--holo-sheen-low)
+  );
+  -webkit-mask-image: radial-gradient(
+    circle at var(--holo-x) var(--holo-y),
+    black 0%,
+    transparent 62%
+  );
+  mask-image: radial-gradient(
+    circle at var(--holo-x) var(--holo-y),
+    black 0%,
+    transparent 62%
+  );
+  transition: opacity var(--duration-base) var(--ease-standard);
+}
+
+/* Light mode paints on paper, not on glass: screen washes the card out, so the
+ * same plate is multiplied instead. */
+:root[data-mode="light"] .holo-card__foil {
+  mix-blend-mode: multiply;
+  opacity: 0.34;
+}
+
+/*
+ * The halftone rake. A fine repeating sweep whose pitch and phase come from
+ * the seed, so two familiars never ring at the same frequency.
+ */
+.holo-card__plate {
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  background: repeating-conic-gradient(
+    from var(--holo-plate-phase) at 50% 50%,
+    var(--holo-sheen-high) 0deg,
+    transparent calc(1.2deg * var(--holo-plate-pitch)),
+    transparent calc(3.4deg * var(--holo-plate-pitch))
+  );
+  -webkit-mask-image: radial-gradient(
+    circle at var(--holo-x) var(--holo-y),
+    black 0%,
+    transparent 70%
+  );
+  mask-image: radial-gradient(
+    circle at var(--holo-x) var(--holo-y),
+    black 0%,
+    transparent 70%
+  );
+}
+
+/* The scrim keeps the caption legible over an arbitrary photograph. */
+.holo-card__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--card) 0%,
+    color-mix(in oklch, var(--card) 80%, transparent) 34%,
+    transparent 62%
+  );
+}
+
+.holo-card__caption {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+}
+
+.holo-card__office {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--holo-ink-dim);
+}
+
+.holo-card__name {
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+  font-weight: 600;
+  color: var(--card-foreground);
+}
+
+.holo-card__line {
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--holo-ink-dim);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.holo-card__stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--holo-ink-dim);
+}
+
+.holo-card__stat-value {
+  color: var(--card-foreground);
+}
+
+/*
+ * Motion story. Everything that moves is driven by --duration-*, which
+ * foundations.css already collapses to 0ms under reduced motion — but the
+ * tilt is a transform a person can feel rather than a fade, so it is removed
+ * outright rather than merely made instant, and the foil settles to its
+ * resting centre.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .holo-card {
+    transform: none;
+    transition: none;
+  }
+
+  .holo-card__foil,
+  .holo-card__plate {
+    transition: none;
+    --holo-x: 50%;
+    --holo-y: 42%;
+  }
+}
+
+/*
+ * Narrow panes. The card sits beside the rite on a laptop and above it on a
+ * phone, where 268px would crowd the questions it is meant to illustrate.
+ */
+@container (max-width: 420px) {
+  .holo-card {
+    max-width: 180px;
+  }
+
+  .holo-card__caption {
+    padding: var(--space-2);
+  }
+
+  .holo-card__name {
+    font-size: var(--text-md);
+  }
+}
