@@ -327,6 +327,8 @@ export const SUITES = {
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/auto-mission-state.test.ts",
+    "src/lib/auto-mission-presence.test.ts",
+    "src/components/running-sessions-mission-row.test.ts",
     "src/lib/auto-mode-preferences.test.ts",
     "src/lib/reader-rewrite.test.ts",
     "src/lib/reader-provenance.test.ts",
@@ -1892,6 +1894,9 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // Renders RunningSessionList, which resolves "@/lib/icon", "@/lib/types"
+  // and friends, and the spec itself imports "@/lib/auto-mission-state".
+  "src/components/running-sessions-mission-row.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",
   "src/app/api/client/v1/pairing/requests/route.test.ts",
