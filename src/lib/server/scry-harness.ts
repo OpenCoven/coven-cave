@@ -44,7 +44,9 @@ export const SCRY_TIMEOUT_MS = 120_000;
 export type ScrySpawn = (
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; windowsHide: boolean },
+  // `windowsHide` is the literal `true`, not `boolean`: an injected spawn must
+  // not be able to satisfy this type while leaving a console window on Windows.
+  options: { cwd: string; env: NodeJS.ProcessEnv; windowsHide: true },
 ) => ChildProcess;
 
 export type ScryRunResult =
@@ -92,8 +94,22 @@ export async function runScry(options: {
     options.instruction,
   ];
   const cwd = path.dirname(options.likenessPath);
+  // `windowsHide: true` sits AFTER the spread deliberately. The Tauri shell
+  // starts the Node sidecar with CREATE_NO_WINDOW, so a console-subsystem child
+  // launched from this console-less parent allocates a real, visible conhost
+  // window unless it carries the flag too — a black terminal over the app on
+  // every summon. Putting it last means no caller-supplied option can drop it;
+  // `src/lib/child-spawn-window.test.ts` treats `{ windowsHide: true, ...rest }`
+  // as unsafe for precisely that reason. The shim half of that contract is
+  // already covered above: `covenLaunchCommand()` resolves a `.cmd`/`.bat` shim
+  // to a direct executable, and an unresolved one refuses rather than handing
+  // `cmd.exe` a batch file (whose window belongs to the shell, not the child).
   const spawn = options.spawn ?? ((command, spawnArgs, spawnOptions) =>
-    nodeSpawn(command, spawnArgs, { ...spawnOptions, stdio: ["ignore", "pipe", "pipe"] }));
+    nodeSpawn(command, spawnArgs, {
+      ...spawnOptions,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    }));
 
   let child: ChildProcess;
   try {
