@@ -128,6 +128,13 @@ export async function loadProjects(): Promise<CaveProject[]> {
   return withProjectsStore(loadProjectsUnlocked);
 }
 
+/** Registry mutex for callers that already reconcile every involved store. */
+export function withProjectRegistryMutex<T>(
+  operation: (projects: CaveProject[]) => Promise<T>,
+): Promise<T> {
+  return withWriteMutex(async () => operation(await loadProjectsUnlocked()));
+}
+
 /**
  * Coordinate a project-registry snapshot with a dependent durable write.
  *
@@ -140,7 +147,7 @@ export async function loadProjects(): Promise<CaveProject[]> {
 export function withProjectRegistryLock<T>(
   operation: (projects: CaveProject[]) => Promise<T>,
 ): Promise<T> {
-  return withProjectsStore(() => withWriteMutex(async () => operation(await loadProjectsUnlocked())));
+  return withProjectsStore(() => withProjectRegistryMutex(operation));
 }
 
 async function saveProjects(projects: CaveProject[]): Promise<void> {

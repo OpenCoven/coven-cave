@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -503,6 +503,50 @@ try {
     ),
     "a concurrent registry restore cannot lose its existing permission record",
   );
+
+  // Production storage shares one reconciliation lock. Repair acquires both
+  // stores together instead of nesting the permissions store under the
+  // already-held projects store.
+  {
+    const productionRoot = await mkdtemp(path.join(tmpdir(), "project-permissions-reconciled-repair-"));
+    const saved = {
+      covenHome: process.env.COVEN_HOME,
+      projectsOverride: process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+      permissionsOverride: process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE,
+    };
+    try {
+      process.env.COVEN_HOME = path.join(productionRoot, ".coven");
+      delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
+      delete process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE;
+      globalThis.__caveHomeMigration = undefined;
+      const cave = path.join(process.env.COVEN_HOME, "cave");
+      await mkdir(cave, { recursive: true });
+      await writeFile(path.join(cave, "projects.json"), JSON.stringify({ version: 1, projects }), "utf8");
+      await grantProjectToFamiliar({ familiarId: "valid", projectId: "cave", source: "human" });
+      await grantProjectToFamiliar({ familiarId: "orphan", projectId: "missing", source: "human" });
+      assert.deepEqual(await repairOrphanProjectPermissions(), {
+        directGrants: 1,
+        groupGrants: 0,
+        proposals: 0,
+        orphanProjectIds: ["missing"],
+      });
+      assert.deepEqual(await inspectProjectPermissionIntegrity(), {
+        directGrants: 0,
+        groupGrants: 0,
+        proposals: 0,
+        orphanProjectIds: [],
+      });
+    } finally {
+      if (saved.covenHome === undefined) delete process.env.COVEN_HOME;
+      else process.env.COVEN_HOME = saved.covenHome;
+      if (saved.projectsOverride === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
+      else process.env.CAVE_PROJECTS_PATH_OVERRIDE = saved.projectsOverride;
+      if (saved.permissionsOverride === undefined) delete process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE;
+      else process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = saved.permissionsOverride;
+      globalThis.__caveHomeMigration = undefined;
+      await rm(productionRoot, { recursive: true, force: true });
+    }
+  }
 
   console.log("project-permissions.test.ts: ok");
 } finally {
