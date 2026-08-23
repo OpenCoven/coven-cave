@@ -922,6 +922,92 @@
   opacity: 0.38;
 }
 
+@media (max-width: 767px) {
+  .cave-chat-linear[data-auto-mode] {
+    background:
+      radial-gradient(
+        ellipse at 12% 100%,
+        color-mix(in oklch, var(--accent-presence) 18%, transparent),
+        transparent 46%
+      ),
+      radial-gradient(
+        ellipse at 92% 18%,
+        color-mix(in oklch, var(--accent-presence) 10%, transparent),
+        transparent 38%
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklch, var(--accent-presence) 7%, var(--bg-base)),
+        var(--bg-base) 42%
+      );
+  }
+
+  .cave-chat-linear[data-auto-mode="running"] {
+    background:
+      radial-gradient(
+        ellipse at 16% 100%,
+        color-mix(in oklch, var(--accent-presence) 24%, transparent),
+        transparent 48%
+      ),
+      radial-gradient(
+        ellipse at 88% 12%,
+        color-mix(in oklch, var(--accent-presence) 14%, transparent),
+        transparent 42%
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklch, var(--accent-presence) 9%, var(--bg-base)),
+        var(--bg-base) 46%
+      );
+  }
+
+  .cave-chat-linear[data-auto-mode] .cave-chat-linear-header::after {
+    background: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in oklch, var(--accent-presence) 70%, transparent) 24%,
+      var(--accent-presence) 50%,
+      color-mix(in oklch, var(--accent-presence) 70%, transparent) 76%,
+      transparent
+    );
+    box-shadow: 0 0 18px color-mix(in oklch, var(--accent-presence) 28%, transparent);
+  }
+
+  .cave-chat-linear[data-auto-mode] .cave-composer-dock {
+    background:
+      radial-gradient(
+        ellipse at 50% 118%,
+        color-mix(in oklch, var(--accent-presence) 20%, transparent),
+        transparent 58%
+      ),
+      linear-gradient(
+        to top,
+        color-mix(in oklch, var(--accent-presence) 8%, var(--bg-base)) 0%,
+        var(--bg-base) 76%,
+        color-mix(in oklch, var(--bg-base) 94%, var(--accent-presence)) 100%
+      );
+    box-shadow: 0 -18px 36px color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  }
+
+  .cave-mobile-action-chip--auto[data-auto-mode="true"] {
+    border-color: color-mix(in oklch, var(--accent-presence) 42%, var(--border-hairline));
+    background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+    color: var(--accent-presence);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 12%, transparent),
+      0 0 18px color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  }
+
+  .cave-mobile-action-chip--auto[data-auto-running="true"]::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: currentColor;
+    box-shadow: 0 0 10px color-mix(in oklch, var(--accent-presence) 64%, transparent);
+  }
+}
+
 @media (max-width: 767px) and (prefers-reduced-motion: reduce) {
   .cave-composer-dock {
     transition: none;

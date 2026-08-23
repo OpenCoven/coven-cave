@@ -34,8 +34,26 @@ assert.match(
 
 assert.match(
   source,
-  /<div className="cave-mobile-action-strip"[\s\S]*Retry[\s\S]*Stop[\s\S]*Summarize[\s\S]*Attach/s,
-  "Mobile composer should provide thumb-friendly retry, stop, summarize, and attach actions",
+  /<div className="cave-mobile-action-strip"[\s\S]*Auto[\s\S]*Retry[\s\S]*Stop[\s\S]*Summarize[\s\S]*Attach/s,
+  "Mobile composer should provide thumb-friendly Auto, retry, stop, summarize, and attach actions",
+);
+
+assert.match(
+  source,
+  /aria-pressed=\{autoSelected\}[\s\S]*data-auto-running=\{autoRunning \? "true" : undefined\}/,
+  "Mobile Auto should expose selected and running state without relying on color",
+);
+
+assert.match(
+  source,
+  /data-auto-mode=\{autoMissionActive \? "running" : autoModeSelected \? "selected" : undefined\}/,
+  "The chat surface should expose Auto selection for its visual treatment",
+);
+
+assert.match(
+  styles,
+  /\.cave-chat-linear\[data-auto-mode\][\s\S]*var\(--accent-presence\)[\s\S]*\.cave-mobile-action-chip--auto\[data-auto-mode="true"\]/,
+  "Auto mode should use the theme accent for the conversation aura and selected button",
 );
 
 assert.match(

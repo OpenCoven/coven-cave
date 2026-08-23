@@ -84,4 +84,34 @@ test.describe("mobile command center pages", () => {
     expect(header.top, "Chat detail header should stay below the app top bar").toBeGreaterThanOrEqual(topBar.bottom - 1);
     expect(composer.bottom, "Composer should stay above the mobile bottom tabs").toBeLessThanOrEqual(detailTabs.top + 1);
   });
+
+  test("Auto selects autonomous mission mode and gives the chat a visible aura", async ({ page }) => {
+    await page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "Chat", exact: true }).click();
+    await page.waitForSelector(".chat-surface");
+    await page.locator(".chat-surface").getByRole("button", { name: "New session", exact: true }).first().click();
+
+    const chat = page.locator(".cave-chat-linear");
+    const composer = page.locator(".cave-composer-input");
+    const auto = page.locator(".cave-mobile-action-chip--auto");
+    const baseButtonBackground = await auto.evaluate((element) => getComputedStyle(element).backgroundColor);
+
+    await expect(auto).toHaveAccessibleName("Select Auto mode");
+    await expect(auto).toHaveAttribute("aria-pressed", "false");
+    await auto.click();
+
+    await expect(composer).toHaveValue("/auto ");
+    await expect(auto).toHaveAccessibleName("Leave Auto mode");
+    await expect(auto).toHaveAttribute("aria-pressed", "true");
+    await expect(chat).toHaveAttribute("data-auto-mode", "selected");
+    await expect.poll(
+      () => auto.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).not.toBe(baseButtonBackground);
+
+    await composer.fill("/auto finish the mobile polish");
+    await auto.click();
+    await expect(composer).toHaveValue("finish the mobile polish");
+    await expect(auto).toHaveAccessibleName("Select Auto mode");
+    await expect(auto).toHaveAttribute("aria-pressed", "false");
+    await expect(chat).not.toHaveAttribute("data-auto-mode");
+  });
 });
