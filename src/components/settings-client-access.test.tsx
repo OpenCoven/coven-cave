@@ -104,6 +104,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   return Response.json(body, { status });
 }
 
+function clientV1SuccessResponse(data: Record<string, unknown>): Response {
+  return jsonResponse({
+    apiVersion: "1.0",
+    requestId: "request-test",
+    capabilities: [],
+    data,
+  });
+}
+
 async function flush(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -179,6 +188,17 @@ describe("SettingsClientAccess", () => {
     ]) {
       expect(rendered).toContain(value);
     }
+    expect(
+      renderer.root
+        .findAll((node) => node.type === "ul" && node.props.className === "settings-client-access__scopes")
+        .map((node) => node.props["aria-label"]),
+    ).toEqual([
+      "Requested scopes",
+      "Requested scopes",
+      "Requested scopes",
+      "Granted scopes",
+      "Granted scopes",
+    ]);
 
     expect(
       renderer.root.findAll(
@@ -278,16 +298,15 @@ describe("SettingsClientAccess", () => {
     let credentials = [activeCredential];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
-        return jsonResponse({ ok: true, pairingRequests: requests });
+        return clientV1SuccessResponse({ pairingRequests: requests });
       }
       if (url === "/api/client/v1/admin/credentials" && !init?.method) {
-        return jsonResponse({ ok: true, credentials });
+        return clientV1SuccessResponse({ credentials });
       }
       if (url.endsWith("/request-pending/decision") && init?.method === "POST") {
         expect(JSON.parse(String(init.body))).toEqual({ decision: "approved" });
         requests = requests.filter((request) => request.id !== "request-pending");
-        return jsonResponse({
-          ok: true,
+        return clientV1SuccessResponse({
           pairingRequest: { ...pendingRequest, status: "approved", decidedAt: CREATED_AT + 1_000 },
         });
       }
@@ -295,8 +314,7 @@ describe("SettingsClientAccess", () => {
         expect(JSON.parse(String(init.body))).toEqual({ decision: "denied" });
         const request = requests.find((entry) => entry.id === "request-2");
         requests = requests.filter((entry) => entry.id !== "request-2");
-        return jsonResponse({
-          ok: true,
+        return clientV1SuccessResponse({
           pairingRequest: { ...request, status: "denied", decidedAt: CREATED_AT + 2_000 },
         });
       }
@@ -307,7 +325,7 @@ describe("SettingsClientAccess", () => {
           revokedAt: REVOKED_AT,
           revocationReason: "Revoked in Cave settings",
         }];
-        return jsonResponse({ ok: true, credential: credentials[0] });
+        return clientV1SuccessResponse({ credential: credentials[0] });
       }
       throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
     });
@@ -353,10 +371,10 @@ describe("SettingsClientAccess", () => {
     });
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
-        return jsonResponse({ ok: true, pairingRequests: [pendingRequest] });
+        return clientV1SuccessResponse({ pairingRequests: [pendingRequest] });
       }
       if (url === "/api/client/v1/admin/credentials" && !init?.method) {
-        return jsonResponse({ ok: true, credentials: [] });
+        return clientV1SuccessResponse({ credentials: [] });
       }
       if (url.endsWith("/request-pending/decision") && init?.method === "POST") {
         return decision;
@@ -399,10 +417,10 @@ describe("SettingsClientAccess", () => {
     vi.setSystemTime(CREATED_AT);
     const fetchMock = vi.fn(async (url: string) => {
       if (url === "/api/client/v1/admin/pairing-requests") {
-        return jsonResponse({ ok: true, pairingRequests: [] });
+        return clientV1SuccessResponse({ pairingRequests: [] });
       }
       if (url === "/api/client/v1/admin/credentials") {
-        return jsonResponse({ ok: true, credentials: [] });
+        return clientV1SuccessResponse({ credentials: [] });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
