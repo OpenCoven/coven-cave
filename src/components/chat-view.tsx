@@ -93,6 +93,7 @@ import {
 } from "@/lib/chat-turn-state";
 import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
 import { generateChatTitle } from "@/lib/chat-title-generation";
+import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
 import {
   chatFoldAriaLabel,
@@ -3913,6 +3914,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // down. Null when the thread has nothing nameable yet; the control then
   // leaves the current title alone.
   const generateTitleFromTranscript = useCallback(() => generateChatTitle(turns), [turns]);
+
+  // A freshly launched session is absent from the caller's sessions roster
+  // until its next poll, and the header used to hide the subject line entirely
+  // for that whole window (`session ? <ChatTitleEditable/> : null`). Synthesize
+  // a stub row carrying the server's default title so a new chat shows its
+  // subject line — editable, PATCH targets the real session id — from the first
+  // paint; the authoritative roster row replaces it as soon as it arrives.
+  const launchStubSession = useMemo<SessionRow | null>(() => {
+    if (!sessionId) return null;
+    const now = new Date().toISOString();
+    return {
+      id: sessionId,
+      project_root: projectRoot ?? "",
+      harness: familiar.harness ?? "cave",
+      model: familiar.model ?? null,
+      title: defaultChatTitleForSession(sessionId),
+      status: "running",
+      exit_code: null,
+      archived_at: null,
+      created_at: now,
+      updated_at: now,
+      attention: { state: "none", since: null, reason: null },
+      familiarId: familiar.id ?? null,
+    };
+  }, [sessionId, projectRoot, familiar.harness, familiar.model, familiar.id]);
 
   // Active branch path: when activeLeafId is set (branched conversation), only
   // the turns on the path from the root to that leaf are rendered. For linear
@@ -7800,7 +7826,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <MobileHeaderTask task={linkedContext.task} onOpenTask={onOpenTask} />
         ) : null}
         <MetaLine
-          session={session ?? null}
+          session={session ?? launchStubSession}
           linkedContext={linkedContext}
           busy={busy}
           lifecycle={activeLifecycle}
