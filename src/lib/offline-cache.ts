@@ -230,6 +230,7 @@ function isValidName(value: string): boolean {
   return (
     value.length > 0 &&
     utf8Length(value) <= MAX_NAME_LENGTH &&
+    // The native layer rejects Unicode controls; validate here to avoid a round-trip rejection.
     !/[\p{Cc}]/u.test(value)
   );
 }
