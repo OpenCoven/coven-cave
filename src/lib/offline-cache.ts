@@ -288,7 +288,8 @@ export async function writeOfflineCache(
   } catch {
     return false;
   }
-  if (typeof payload !== "string" || payload.length > OFFLINE_CACHE_MAX_ENTRY_BYTES) return false;
+  const payloadBytes = typeof TextEncoder !== "undefined" ? new TextEncoder().encode(payload).length : payload.length;
+  if (payloadBytes > OFFLINE_CACHE_MAX_ENTRY_BYTES) return false;
   const invoke = await resolveInvoke(dependencies);
   if (!invoke) return false;
   try {
