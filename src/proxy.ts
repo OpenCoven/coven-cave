@@ -105,6 +105,34 @@ async function mobileAccessVerification(
   return null;
 }
 
+async function mobileAccessQueryTokenRedirect(
+  req: NextRequest,
+  expected: string,
+  queryToken: string,
+) {
+  const url = req.nextUrl.clone();
+  url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
+  url.searchParams.delete(LEGACY_ACCESS_PROMPT_QUERY_PARAM);
+  const res = NextResponse.redirect(url);
+  const queryVerification = await isValidMobileAccessCredential({
+    supplied: queryToken,
+    expectedSecret: expected,
+  });
+  if (queryVerification.ok) {
+    const maxAge = queryVerification.legacy
+      ? undefined
+      : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
+    res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: req.nextUrl.protocol === "https:",
+      path: "/",
+      maxAge,
+    });
+  }
+  return res;
+}
+
 async function mobileAccessGate(
   req: NextRequest,
   trustedLocalPeer: boolean,
@@ -113,6 +141,18 @@ async function mobileAccessGate(
 ) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
+  const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
+
+  // A local pairing link is already trusted for app access, but its query
+  // credential still needs the audited cookie exchange and URL cleanup before
+  // the prompt-free loopback bypass runs.
+  if (
+    trustedLocalPeer
+    && queryToken
+    && (req.method === "GET" || req.method === "HEAD")
+  ) {
+    return mobileAccessQueryTokenRedirect(req, expected, queryToken);
+  }
 
   // A server.ts-stamped direct loopback DOCUMENT navigation is this machine's
   // own window asking for a page, and it is the one request shape that cannot
@@ -152,7 +192,6 @@ async function mobileAccessGate(
     return null;
   }
 
-  const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
   const verification = await mobileAccessVerification(req, expected, suppliedTokens);
   if (!verification) {
     // Browser page navigations get an HTML access page instead of a raw JSON
@@ -173,27 +212,7 @@ async function mobileAccessGate(
   }
 
   if (queryToken && (req.method === "GET" || req.method === "HEAD")) {
-    const url = req.nextUrl.clone();
-    url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
-    url.searchParams.delete(LEGACY_ACCESS_PROMPT_QUERY_PARAM);
-    const res = NextResponse.redirect(url);
-    const queryVerification = await isValidMobileAccessCredential({
-      supplied: queryToken,
-      expectedSecret: expected,
-    });
-    if (queryVerification.ok) {
-      const maxAge = queryVerification.legacy
-        ? undefined
-        : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
-      res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: req.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge,
-      });
-    }
-    return res;
+    return mobileAccessQueryTokenRedirect(req, expected, queryToken);
   }
 
   return null;
