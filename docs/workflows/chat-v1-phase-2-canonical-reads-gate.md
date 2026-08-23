@@ -63,7 +63,7 @@ already publishing `familiars`, `projects`, `conversations`, `conversation-messa
 generated `contract-fixture.json`, so the advertisement and the surface cannot drift apart
 silently. #4882 made that check operational rather than declarative.
 
-### 2. No second conversation database or browser canonical storage exists — ⚠️ **holds for the canonical read surface; one adjacent surface is not covered by it**
+### 2. No second conversation database or browser canonical storage exists — ✅ **for this surface**, ⚠️ **one adjacent surface keeps structure the server does not**
 
 See *Second-store audit* below.
 
@@ -235,24 +235,57 @@ elsewhere and rewriting them would be churn:
 ## Second-store audit
 
 Criterion 2 asks that no second conversation database and no browser canonical storage
-exists. For the surface this gate is about, it holds:
+exists.
+
+### No second conversation database — holds
 
 - The five client-v1 read routes take their stores through one injectable seam
   (`src/lib/server/client-v1/read-sources.ts`) bound to `cave-conversations.ts`,
-  `cave-projects.ts` and the familiar roster. There is no second read path.
-- `src/lib/search-index-store.ts` is a SQLite/FTS5 index and is **derivative by
-  construction** — its own header states every row is rebuildable from an authoritative
-  source, which is why a corrupt database is quarantined and recreated rather than
-  repaired. It is not a second canonical store.
+  `cave-projects.ts` and the familiar roster. There is no second read path, and the route
+  modules import nothing else.
+- `src/lib/search-index-store.ts` (SQLite/FTS5) is **derivative by construction** — its
+  header states every row is rebuildable from an authoritative source, which is why a
+  corrupt database is quarantined and recreated rather than repaired. Two facts beyond the
+  comment: the sessions provider indexes metadata only, never turn text
+  (`search-indexed-providers.ts:238-245`), and `openSearchIndex` has no production caller
+  at all today (`/api/search` passes `providers: []`).
+- `~/.coven/coven.sqlite3`, the Coven daemon's own database, is foreign, opened
+  `readOnly: true`, and deliberately excluded from backup as disposable
+  (`backup-manifest.ts:96-99`).
+- `~/.openclaw/agents/<familiarId>/sessions/<sessionId>.jsonl` is a genuine second on-disk
+  transcript store, but it belongs to the harness: Cave only reads it, only as a fallback
+  when the ledger has no record, and only from `/api/chat/conversation/:id`. **It is not
+  reachable from any client-v1 route** — `/api/client/v1/conversations/:id` reads the
+  ledger on purpose, because `status` and `exitCode` are derived while the ledger is built.
 
-One adjacent surface is outside that guarantee and is recorded here so the gate is not
-read as covering it: **group chat transcripts live only in the browser**.
-`src/lib/group-chat.ts:16` defines `cave:group-chat:transcript:<groupId>` and
-`saveTranscript`/`loadTranscript` (`:1055-1096`) are `localStorage` wrappers with a
-`TRANSCRIPT_CAP` that silently discards the oldest turns. That content is not in
-`<caveHome>/conversations/`, is not served by any client-v1 route, and is not reachable by
-any canonical read. Whether group chat is in scope for Chat v1 is a program question, not
-a Cave one — but if it is, criterion 2 is not satisfied by this gate's evidence.
+### No browser canonical storage — holds for this surface and for 1:1 chat; group chat is a partial exception
+
+The Cache API is explicitly out (`public/sw.js` returns early for any `/api/` path and
+its header names chat sessions as not cached), and IndexedDB holds only images.
+
+**Group chat is the exception, and it is narrower than it first looks.** Every settled
+coven reply — and the user's prompt — is POSTed to `/api/chat/send` with the coven's
+per-familiar `sessionId` (`group-chat-view.tsx:810-819`), and that route writes an
+ordinary conversation file per familiar into `<caveHome>/conversations/`. So the *text* is
+on disk and is served by the canonical reads like any other conversation.
+
+What is browser-only, in `cave:group-chat:groups:v1` and
+`cave:group-chat:transcript:<groupId>` (`group-chat.ts:16`), is the **structure**: the
+coven's identity and membership, speaking order, response mode, the map linking a coven to
+its per-familiar conversation ids, and the transcript's assembly — which reply answers
+which turn, delegation lineage, per-reply status and cost — plus the user's text as typed
+rather than as wrapped in the roster framing, and anything past `TRANSCRIPT_CAP = 200`.
+There is no `/api/coven` route to persist any of it.
+
+Clearing that key does not lose the replies; it loses the ability to read them *as a
+group*, leaving N orphaned 1:1 conversations. That is an index loss rather than a content
+loss — but it is not covered by backup either, and `backup-manifest.ts:110-112` describes
+what browser state it omits as *"localStorage preferences"*, which is not what a coven
+definition is.
+
+So: criterion 2 holds for the canonical read surface this gate is about. Whether group
+chat's structure counts as "browser canonical storage" for Chat v1 is a program question,
+and it is recorded here rather than decided.
 
 ---
 
