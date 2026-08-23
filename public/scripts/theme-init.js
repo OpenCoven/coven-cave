@@ -294,9 +294,12 @@
     if (weight !== "normal" && WEIGHT[weight]) html.style.setProperty("--cave-reading-weight", WEIGHT[weight]);
     if (hyphens === "on") html.style.setProperty("--cave-reading-hyphens", "auto");
 
+    // [base, control, card, panel, pill] — mirrors CORNER_RADIUS_VALUES in
+    // src/lib/appearance-corner-radius.ts. Keep both in sync; the parity is
+    // asserted by src/components/theme-script.test.ts.
     var RADII = {
-      sharp: ["0.125rem","2px","4px","4px"],
-      round: ["0.875rem","12px","16px","999px"]
+      sharp: ["0.125rem","2px","4px","6px","4px"],
+      round: ["0.875rem","12px","16px","20px","999px"]
     };
     var radiusLevel = String(stored("cave:corner-radius", appearance.cornerRadius || "default"));
     var radii = RADII[radiusLevel];
@@ -304,7 +307,8 @@
       html.style.setProperty("--radius", radii[0]);
       html.style.setProperty("--radius-control", radii[1]);
       html.style.setProperty("--radius-card", radii[2]);
-      html.style.setProperty("--radius-pill", radii[3]);
+      html.style.setProperty("--radius-panel", radii[3]);
+      html.style.setProperty("--radius-pill", radii[4]);
     }
 
     var backdropRaw = initialized ? backdrop : stored("cave:backdrop:v1", backdrop);
