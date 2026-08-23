@@ -253,18 +253,24 @@ function assertRefused(outcome: Outcome, label: string, probe: string, situation
   );
 }
 
-/**
- * Nothing may be read before the credential is settled.
- *
- * Checked BEFORE the refusal assertion on the same probe, and deliberately so:
- * a dependency reached this early usually makes the handler throw, and "it
- * THREW" is a true but useless answer next to "it consulted listConversations
- * while refusing".
- */
+/** Every dependency consultation recorded so far, in order. */
 function consultations(deps: { touched: string[] }[]): string[] {
   return deps.flatMap((dep) => dep.touched);
 }
 
+/**
+ * Nothing may be read before the credential is settled.
+ *
+ * Compared against `before` rather than against emptiness, because the
+ * credential that DOES hold the required scope is supposed to get through and
+ * trip a tripwire on its way — one probe's legitimate consultation must not
+ * fail the next probe.
+ *
+ * Called BEFORE the refusal assertion on the same probe, and deliberately so: a
+ * dependency reached this early usually makes the handler throw, and "it THREW"
+ * is a true but useless answer next to "it consulted listConversations while
+ * refusing".
+ */
 function assertNothingConsulted(
   deps: { touched: string[] }[],
   before: string[],
