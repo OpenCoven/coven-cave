@@ -7,6 +7,7 @@ import {
 import { extractChatResultMarkers } from "./chat-result-markers.ts";
 import { extractNextPaths } from "./next-paths.ts";
 import type { NextPath } from "./next-paths.ts";
+import { extractResearchRunMarkers, type ResearchRunMarker } from "./research-run-surface.ts";
 import {
   extractSkillMarkers,
   type SkillStageUpdate,
@@ -17,6 +18,7 @@ export type QuickChatAssistantMessage = {
   visibleProse: string;
   pieces: GitHubTextPiece[];
   skillUpdates: SkillStageUpdate[];
+  researchRuns: ResearchRunMarker[];
   authoredResults: ReturnType<typeof extractChatResultMarkers>["results"];
   suggestions: NextPath[];
 };
@@ -25,7 +27,8 @@ export function formatQuickChatAssistantMessage(
   text: string,
   streaming: boolean,
 ): QuickChatAssistantMessage {
-  const skillSplit = extractSkillMarkers(text);
+  const researchSplit = extractResearchRunMarkers(text);
+  const skillSplit = extractSkillMarkers(researchSplit.visible);
   const resultSplit = extractChatResultMarkers(skillSplit.visible, {
     pending: streaming,
   });
@@ -55,6 +58,7 @@ export function formatQuickChatAssistantMessage(
     visibleProse,
     pieces,
     skillUpdates: skillSplit.updates,
+    researchRuns: researchSplit.runs,
     authoredResults: resultSplit.results,
     suggestions: streaming ? [] : nextPaths.suggestions,
   };
