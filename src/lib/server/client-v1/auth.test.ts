@@ -19,6 +19,7 @@ import {
   ACCESS_TOKEN_QUERY_PARAM,
   CLIENT_V1_AUTHENTICATED_PATHS,
   CLIENT_V1_PUBLIC_INGRESS,
+  LEGACY_ACCESS_PROMPT_QUERY_PARAM,
   LOCAL_PEER_HEADER,
   TAILNET_PEER_HEADER,
   TOKEN_HEADER,
@@ -640,6 +641,46 @@ test("client-v1 ingress is classified before legacy mobile query-token redirects
 
     assert.equal(response.status, 403);
     assert.equal(response.headers.has("location"), false);
+  } finally {
+    restoreProxyEnv();
+  }
+});
+
+test("trusted loopback pairing query tokens are stripped before the prompt-free bypass", async () => {
+  try {
+    setProxyEnv({
+      COVEN_CAVE_ACCESS_TOKEN: "configured-mobile-secret",
+      COVEN_CAVE_LOCAL_PEER_SECRET: "loopback-secret",
+    });
+
+    for (const [token, shouldSetCookie] of [
+      ["configured-mobile-secret", true],
+      ["wrong-secret", false],
+    ] as const) {
+      const query = new URLSearchParams({
+        [ACCESS_TOKEN_QUERY_PARAM]: token,
+        [LEGACY_ACCESS_PROMPT_QUERY_PARAM]: "1",
+        mode: "focus",
+      });
+      const response = await proxy(proxyRequest(`/chat?${query}`, {
+        headers: {
+          accept: "text/html",
+          [LOCAL_PEER_HEADER]: "loopback-secret",
+        },
+      }));
+
+      assert.equal(response.status, 307);
+      assert.equal(response.headers.get("location"), `${ORIGIN}/chat?mode=focus`);
+      const cookie = response.headers.get("set-cookie");
+      if (shouldSetCookie) {
+        assert.match(cookie ?? "", /coven_cave_access=configured-mobile-secret/);
+        assert.match(cookie ?? "", /Path=\//);
+        assert.match(cookie ?? "", /HttpOnly/);
+        assert.match(cookie ?? "", /SameSite=lax/);
+      } else {
+        assert.equal(cookie, null);
+      }
+    }
   } finally {
     restoreProxyEnv();
   }
