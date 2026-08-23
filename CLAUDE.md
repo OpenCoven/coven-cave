@@ -769,7 +769,7 @@ A **foreign** lock still stands: `active cave-1c8zf PR completion` is a claim
 the tool cannot evaluate, so it is reported, never released. What changed is
 that it is reported *usefully*. Git's own message names neither the lock nor the
 remedy and recommends `worktree remove -f -f` — the one action that destroys the
-work the lock protects. Take the message's advice instead: confirm with the
+work the lock protects. Ignore that advice; instead, confirm with the
 owner, then `git worktree unlock <path>`. Never `-f -f`.
 
 **Retention push (automatic, NON-blocking).** A PostToolUse hook —
