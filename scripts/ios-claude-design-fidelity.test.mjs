@@ -298,7 +298,7 @@ assert.match(
 );
 assert.match(
   caveApp,
-  /guard !app\.isConnectingPreview else \{ return \}[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?await app\.connectWithRetry\(\)/,
+  /guard !app\.isConnectingPreview else \{ return \}[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?app\.setConnectionSupervisorActive\(true\)/,
   "connecting preview skips only live connection work",
 );
 assert.match(
@@ -635,7 +635,7 @@ assert.match(
 );
 assert.match(
   chat,
-  /case \.checking: return \(Color\.orange, "reconnecting"\)/,
+  /case \.checking, \.degraded: return \(Color\.orange, "reconnecting"\)/,
   "the chat header reports reconnecting state instead of claiming readiness",
 );
 assert.match(

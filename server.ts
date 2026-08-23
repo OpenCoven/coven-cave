@@ -147,6 +147,96 @@ function clientV1DiscoveryFile(): string {
 const WINDOWS_SYSTEM_SID = "S-1-5-18";
 const WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544";
 
+// The unverified-ownership waiver, inlined from path-ownership.ts for the same
+// reason as the script below. See that module for why it is shaped this way;
+// discovery.test.ts pins every part of it byte-for-byte, because a copy that
+// drifts is a copy that opts out on terms the module never agreed to.
+const UNVERIFIED_OWNERSHIP_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP";
+const UNVERIFIED_OWNERSHIP_REASON_ENV = "COVEN_CAVE_UNVERIFIED_PATH_OWNERSHIP_REASON";
+const UNVERIFIED_OWNERSHIP_TOKEN = "i-accept-unverified-path-ownership";
+const UNVERIFIED_OWNERSHIP_MIN_REASON = 12;
+
+type UnverifiedOwnershipWaiver =
+  | { granted: true; reason: string }
+  | { granted: false; note: string };
+
+function resolveUnverifiedOwnershipWaiver(
+  env: Record<string, string | undefined>,
+): UnverifiedOwnershipWaiver {
+  const requested = env[UNVERIFIED_OWNERSHIP_ENV]?.trim() ?? "";
+  if (!requested) {
+    return {
+      granted: false,
+      note:
+        `If the DACL genuinely cannot be read on this host — PowerShell in `
+        + `Constrained Language Mode, or no powershell.exe under %SystemRoot% — `
+        + `set ${UNVERIFIED_OWNERSHIP_ENV}=${UNVERIFIED_OWNERSHIP_TOKEN} and `
+        + `${UNVERIFIED_OWNERSHIP_REASON_ENV} to a sentence naming who accepted `
+        + `that and why. It waives only an unreadable DACL, never one that was `
+        + `read and found shared.`,
+    };
+  }
+  if (requested !== UNVERIFIED_OWNERSHIP_TOKEN) {
+    return {
+      granted: false,
+      note:
+        `${UNVERIFIED_OWNERSHIP_ENV} is set, but not to the waiver: the only `
+        + `accepted value is the exact string ${UNVERIFIED_OWNERSHIP_TOKEN}. A `
+        + `boolean-shaped value ("1", "true", "yes") never waives this check.`,
+    };
+  }
+  const reason = env[UNVERIFIED_OWNERSHIP_REASON_ENV]?.trim() ?? "";
+  if (reason.length < UNVERIFIED_OWNERSHIP_MIN_REASON) {
+    return {
+      granted: false,
+      note:
+        `${UNVERIFIED_OWNERSHIP_ENV} is set, but ${UNVERIFIED_OWNERSHIP_REASON_ENV} `
+        + `must carry at least ${UNVERIFIED_OWNERSHIP_MIN_REASON} characters naming `
+        + `who accepted an unverified path and why. The waiver stays closed `
+        + `without that attribution.`,
+    };
+  }
+  return { granted: true, reason };
+}
+
+function unverifiableOwnershipRefusal(
+  subject: string,
+  path: string,
+  cause: Error,
+  note: string,
+): string {
+  return `${subject} ownership could not be verified on Windows: ${cause.message}. `
+    + `Refusing ${path}; inspect it with: icacls "${path}". ${note}`;
+}
+
+function unverifiedOwnershipDisclosure(
+  subject: string,
+  path: string,
+  cause: Error,
+  reason: string,
+): string {
+  return `SECURITY WAIVER — ${subject} is being used UNVERIFIED. Its DACL could not `
+    + `be read on this host (${cause.message}), and ${UNVERIFIED_OWNERSHIP_ENV} is `
+    + `set, so ${path} is trusted on the operator's word alone: reason given — `
+    + `${reason}. Any principal that can write ${path} can mint credentials or `
+    + `point a paired client at another server. Unset ${UNVERIFIED_OWNERSHIP_ENV} `
+    + `to restore the check.`;
+}
+
+function sharedOwnershipRefusal(
+  subject: string,
+  path: string,
+  findings: string[],
+  waiver: UnverifiedOwnershipWaiver,
+): string {
+  return `${subject} is not exclusive to the current user: ${findings.join("; ")}. `
+    + `Refusing ${path}; inspect it with: icacls "${path}"`
+    + (waiver.granted
+      ? `. ${UNVERIFIED_OWNERSHIP_ENV} does not cover a DACL that was read: this `
+        + `one was, and it is shared. Repair it with: icacls "${path}" /reset`
+      : "");
+}
+
 const WINDOWS_ACL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 $item = Get-Item -LiteralPath $env:COVEN_CAVE_CLIENT_V1_ACL_PATH -Force
@@ -212,9 +302,18 @@ if (-not (Test-Exclusive $state)) {
 `;
 
 const standaloneVerifiedWindowsPaths = new Set<string>();
+// Paths admitted UNVERIFIED under the operator's waiver. Separate from the set
+// above because nothing here was verified — and cached for the same reason the
+// module caches it: on a host where the probe can never answer, re-driving it
+// would fork a doomed subprocess per request and repeat a disclosure nobody
+// would then read.
+const standaloneWaivedWindowsPaths = new Set<string>();
 
 function assertStandaloneWindowsExclusive(path: string, label: string): void {
   if (standaloneVerifiedWindowsPaths.has(path)) return;
+  if (standaloneWaivedWindowsPaths.has(path)) return;
+  const subject = `Client v1 discovery ${label}`;
+  const waiver = resolveUnverifiedOwnershipWaiver(process.env);
   const systemRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
   // The smallest environment PowerShell needs, never this server's own: it
   // holds COVEN_CAVE_ACCESS_TOKEN and COVEN_CAVE_AUTH_TOKEN, and a subprocess
@@ -282,11 +381,19 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
       throw new Error("the ACL probe returned a malformed report");
     }
   } catch (cause) {
-    throw new Error(
-      `Client v1 discovery ${label} ownership could not be verified on Windows: `
-      + `${(cause as Error).message}. Refusing ${path}; inspect it with: icacls "${path}"`,
-      { cause },
+    // The ONE condition the waiver covers: the host cannot answer the
+    // question. Everything below this point had an answer.
+    if (!waiver.granted) {
+      throw new Error(
+        unverifiableOwnershipRefusal(subject, path, cause as Error, waiver.note),
+        { cause },
+      );
+    }
+    standaloneWaivedWindowsPaths.add(path);
+    console.warn(
+      unverifiedOwnershipDisclosure(subject, path, cause as Error, waiver.reason),
     );
+    return;
   }
 
   const trusted = new Set([report.self, WINDOWS_SYSTEM_SID, WINDOWS_ADMINISTRATORS_SID]);
@@ -302,14 +409,11 @@ function assertStandaloneWindowsExclusive(path: string, label: string): void {
     findings.push(`access granted to ${[...new Set(foreign)].join(", ")}`);
   }
   if (findings.length > 0) {
-    throw new Error(
-      `Client v1 discovery ${label} is not exclusive to the current user: `
-      + `${findings.join("; ")}. Refusing ${path}; inspect it with: icacls "${path}"`,
-    );
+    throw new Error(sharedOwnershipRefusal(subject, path, findings, waiver));
   }
   if (report.repaired) {
     console.warn(
-      `Client v1 discovery ${label} had no enforced access control on Windows; `
+      `${subject} had no enforced access control on Windows; `
       + `restricted ${path} to the current user and revoked `
       + `${report.removed.length > 0 ? report.removed.join(", ") : "inherited entries"}.`,
     );
@@ -1654,13 +1758,51 @@ server.on("upgrade", (req, socket, head) => {
 server.keepAliveTimeout = 75_000;
 server.headersTimeout = 80_000;
 
+/**
+ * Turn off client v1 — loudly — instead of refusing to boot (cave-37fxr).
+ *
+ * Publishing was fail-closed to `server.close(() => process.exit(1))`, which
+ * is right about the record and wrong about the process. The guard learned to
+ * read a Windows DACL in #4852, which made it able to throw on win32 for the
+ * first time, and on a host where the DACL cannot be read at all — PowerShell
+ * in Constrained Language Mode, or no `powershell.exe` under `%SystemRoot%`,
+ * both measured — that throw is permanent and there is no remedy reachable
+ * from inside an app that will not start.
+ *
+ * Withholding the record is the correct fail-closed response and it costs
+ * exactly one surface: the discovery file is what a paired client reads to
+ * find this server, and the request-side guard refuses every client v1 call on
+ * such a host anyway. Nothing else here — the terminal, chat, the board — has
+ * anything to do with client v1 or with that path. So the degraded state is
+ * "client v1 off, everything else up", and the crash is replaced by a banner
+ * loud enough to be the thing that gets noticed. `clientV1DiscoveryPublished`
+ * stays false, so shutdown will not try to unlink a record this process does
+ * not own.
+ */
+function reportClientV1DiscoveryUnavailable(error: unknown): void {
+  clientV1DiscoveryPublished = false;
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error("[cave] ─────────────── CLIENT V1 DISABLED ───────────────");
+  console.error(`[cave] ${detail}`);
+  console.error(
+    "[cave] The client v1 discovery record was NOT published, so paired clients"
+    + " cannot find this server and every client v1 request stays refused."
+    + " Everything else on this server is running normally.",
+  );
+  console.error(
+    `[cave] Repair the path and restart. If — and only if — this host cannot`
+    + ` read a DACL at all, ${UNVERIFIED_OWNERSHIP_ENV}=${UNVERIFIED_OWNERSHIP_TOKEN}`
+    + ` with ${UNVERIFIED_OWNERSHIP_REASON_ENV} set admits an unreadable one; it`
+    + ` never admits a DACL that was read and found shared.`,
+  );
+  console.error("[cave] ────────────────────────────────────────────────────");
+}
+
 server.listen(port, hostname, () => {
   try {
     publishStandaloneClientV1DiscoveryRecord(loopbackHttpEndpoint(hostname, port));
   } catch (error) {
-    console.error("[cave] failed to publish client-v1 discovery", error);
-    server.close(() => process.exit(1));
-    return;
+    reportClientV1DiscoveryUnavailable(error);
   }
   console.log(`> Ready on ${loopbackHttpEndpoint(hostname, port)}`);
 });

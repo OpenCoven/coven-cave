@@ -49,21 +49,17 @@ assert.match(
   "ChatList must filter its visible rows by the familiar",
 );
 
-// 5. The chat-mode left project navigator (WorkspaceSidebar) counts per-project
-//    sessions too, so its project list + count badges must be scoped to the same
-//    familiar — otherwise "proj 4" tallies every familiar's chats next to a
-//    familiar-filtered thread list.
+// 5. The chat-mode session navigator receives the same familiar scope.
 assert.match(
   workspace,
   /const chatSidebar = \([\s\S]*?<WorkspaceSidebar[\s\S]*?activeFamiliarId=\{activeId\}/,
   "workspace must pass the active familiar id into the chat-mode WorkspaceSidebar",
 );
 
-// 6. WorkspaceSidebar scopes the sessions that drive its project list + per-project
-//    counts/rows to the active familiar (null = count everything), then derives
-//    the project tiles and rows from that scoped set. (`includeArchived` is its
-//    own Show-archived toggle — familiar scoping applies either way; see
-//    chat-siderail-hide-archived.test.ts.)
+// 6. WorkspaceSidebar scopes the sessions that drive its unified recency list
+//    and project metadata to the active familiar (null = show everything).
+//    Global project selection belongs to WorkspaceContextSwitcher/ProjectPicker;
+//    the sidebar no longer renders a duplicate per-project branch.
 assert.match(
   workspaceSidebar,
   /filterVisibleChatSessions\(rows, activeFamiliarId \?\? null, \{ includeArchived: showArchived \}\)/,
@@ -72,12 +68,12 @@ assert.match(
 assert.match(
   workspaceSidebar,
   /deriveChatProjectGroups\(applyProjectOverrides\(visibleSessions, overrides\), projects\)/,
-  "WorkspaceSidebar project list + counts must come from the familiar-scoped sessions",
+  "WorkspaceSidebar project metadata must come from the familiar-scoped sessions",
 );
 assert.match(
   workspaceSidebar,
-  /group\.sessions\.length/,
-  "WorkspaceSidebar per-project rows/counts must use grouped familiar-scoped sessions",
+  /const rows = hasSearch \? visibleSessions : visibleSessions\.filter/,
+  "WorkspaceSidebar recency rows must come from the familiar-scoped sessions",
 );
 
 console.log("code-surface-familiar-scope.test.ts: ok");

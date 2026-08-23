@@ -197,6 +197,8 @@ export type ResearchMission = {
   id: string;
   familiarId: string;
   title: string;
+  /** Whether the title was supplied by the caller or derived from intent. */
+  titleSource?: "explicit" | "generated";
   intent: string;
   direction?: string;
   mode: ResearchMissionMode;
@@ -673,6 +675,9 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     || typeof value.familiarId !== "string"
     || !FAMILIAR_ID_RE.test(value.familiarId)
     || !validResearchPromptText(value.title, RESEARCH_TITLE_MAX_LENGTH)
+    || (value.titleSource !== undefined
+      && (typeof value.titleSource !== "string"
+        || !["explicit", "generated"].includes(value.titleSource)))
     || !validResearchPromptText(value.intent, RESEARCH_INTENT_MAX_LENGTH)
     || !RESEARCH_MISSION_MODES.includes(value.mode as ResearchMissionMode)
     || !["auto", "user"].includes(String(value.modeSource))
@@ -748,6 +753,9 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     id: value.id,
     familiarId: value.familiarId,
     title: value.title,
+    ...(value.titleSource !== undefined
+      ? { titleSource: value.titleSource as ResearchMission["titleSource"] }
+      : {}),
     intent: value.intent,
     ...(direction !== undefined ? { direction } : {}),
     mode: value.mode as ResearchMissionMode,

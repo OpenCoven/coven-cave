@@ -98,3 +98,32 @@ enum ChatNotifications {
             .removeDeliveredNotifications(withIdentifiers: [idPrefix + threadId])
     }
 }
+
+/// A quiet confirmation when opportunistic background maintenance discovers
+/// that a previously disconnected Cave is reachable again. Authorization is
+/// never requested from a background launch; this only uses permission the
+/// user already granted for Cave notifications.
+@MainActor
+enum ConnectionNotifications {
+    private static let identifier = "cave.connection.reconnected"
+
+    static func postReconnected() async {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        let canNotify = settings.authorizationStatus == .authorized
+            || settings.authorizationStatus == .provisional
+        guard !Task.isCancelled, canNotify else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Cave reconnected"
+        content.body = "Your desktop Cave is reachable from this phone again."
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: nil
+        )
+        guard !Task.isCancelled else { return }
+        try? await center.add(request)
+    }
+}

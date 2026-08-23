@@ -66,6 +66,35 @@ enum ProbeFailure: Int, Equatable, Comparable, Sendable {
     }
 }
 
+/// How a failed foreground operation should affect the app-wide connection
+/// state. Chat streams report their terminal transport error through this
+/// classifier after resume and transcript resync have both failed. Keeping the
+/// decision pure prevents a project-level 403 or a cancelled task from
+/// masquerading as a dead Cave while still making real URL transport failures
+/// kick the reconnect supervisor immediately.
+enum ConnectionFailureDisposition: Equatable, Sendable {
+    case ignore
+    case needsAuth
+    case reconnect(ProbeFailure)
+
+    static func classify(_ error: any Error) -> ConnectionFailureDisposition {
+        if error is CancellationError { return .ignore }
+        if CaveError.isAuthFailure(error) { return .needsAuth }
+        if let urlError = error as? URLError {
+            // URLSession reports ordinary task cancellation as URLError rather
+            // than Swift CancellationError. Treat both representations alike:
+            // navigation/background cancellation is not evidence that Cave died.
+            if urlError.code == .cancelled { return .ignore }
+            return .reconnect(ProbeFailure(classifying: urlError))
+        }
+        if let caveError = error as? CaveError,
+           case .transport = caveError {
+            return .reconnect(.transport)
+        }
+        return .ignore
+    }
+}
+
 /// What the connect screen should say when discovery fails: a titled recovery
 /// callout derived from the strongest probe signal instead of one generic
 /// "couldn't reach the desktop" shrug for every distinct failure.

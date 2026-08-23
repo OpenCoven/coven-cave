@@ -87,6 +87,7 @@ export const SUITES = {
     "scripts/onboarding-feedback-report.test.mjs",
     "scripts/beads-jsonl-merge-driver.test.mjs",
     "scripts/beads-create.test.mjs",
+    "scripts/beads-sync.test.mjs",
     "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
@@ -956,6 +957,7 @@ export const SUITES = {
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
     "src/components/project-picker.test.ts",
+    "src/components/project-picker-focus.test.tsx",
     "src/components/chat-project-launch-gate.test.ts",
     "src/components/project-setup-modal.test.ts",
     "src/components/directory-picker.test.ts",
@@ -1743,6 +1745,8 @@ export const SUITES = {
     "src/lib/mobile-handoff.test.ts",
     "src/lib/mobile-mode-reconcile.test.ts",
     "src/lib/mobile-token-refresh.test.ts",
+    "src/lib/desktop-reachability.test.ts",
+    "src/lib/server/mobile-paired.test.ts",
     "scripts/ios-build-ci.test.mjs",
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
@@ -1776,6 +1780,7 @@ export const SUITES = {
     "scripts/ios-export-selected-zip.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-auto-reconnect.test.mjs",
+    "scripts/ios-background-refresh.test.mjs",
     "scripts/ios-ats-protections.test.mjs",
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
@@ -2039,6 +2044,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/passkey-store.test.ts",
   // reaches "@/proxy-helpers" and the store through the ceremony module
   "src/lib/server/passkey-ceremony.test.ts",
+  // mobile-paired resolves the Cave state path, atomic writer, and proxy marker.
+  "src/lib/server/mobile-paired.test.ts",
   "src/lib/server/preferences-store.test.ts",
   "src/lib/server/backdrop-store.test.ts",
   "src/lib/server/beads-cli.test.ts",
@@ -2174,6 +2181,7 @@ const RAW_SOURCE_SCANNER_TESTS = new Set([
 // than Node's type stripper, which intentionally does not transform JSX.
 const VITEST_TESTS = new Set([
   "src/lib/home-composer-context.test.ts",
+  "src/components/project-picker-focus.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/chat-preview-card.test.tsx",

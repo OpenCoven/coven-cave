@@ -178,11 +178,6 @@
     },
     {
       "rule": "copy/no-ascii-ellipsis",
-      "path": "src/components/mobile-handoff-modal.tsx",
-      "excerpt": "{loading ? \"Starting...\" : \"No QR\"}"
-    },
-    {
-      "rule": "copy/no-ascii-ellipsis",
       "path": "src/components/open-coven-tools-update.tsx",
       "excerpt": "..."
     },

@@ -206,6 +206,7 @@ const ROUTED_SCRIPTS = [
   "scripts/beads-create.ts",
   "scripts/beads-pr-shared.ts",
   "scripts/beads-surface-audit.ts",
+  "scripts/beads-sync.ts",
   "scripts/worktree-lifecycle-create.ts",
   "scripts/worktree-lifecycle-inventory.ts",
   "scripts/worktree-lifecycle-metadata-repair.ts",
@@ -220,7 +221,7 @@ for (const script of ROUTED_SCRIPTS) {
   const source = await readFile(new URL(script, ROOT), "utf8");
   assert.match(
     source,
-    /import \{ withBdLaunch \} from "\.\.\/src\/lib\/bd-bin\.ts";/,
+    /import \{[^}]*\bwithBdLaunch\b[^}]*\} from "\.\.\/src\/lib\/bd-bin\.ts";/,
     `${script} must route bd through the resolver`,
   );
   assert.doesNotMatch(

@@ -37,7 +37,7 @@ const store = fs.readFileSync(
 // ── 1. The write is tracked, not fire-and-forget ─────────────────────────────
 assert.match(
   appModel,
-  /private var threadWriteTask: Task<Void, Never>\?/,
+  /private var threadWriteTask: Task<Bool, Never>\?/,
   "the in-flight snapshot write must be held so a newer flush can supersede it",
 );
 const flushBody = appModel.slice(
@@ -65,8 +65,13 @@ assert.match(
 // ── 3. Lifecycle durability is actually awaitable ────────────────────────────
 assert.match(
   appModel,
-  /func flushThreadsAndWait\(\) async \{[\s\S]*?_ = await threadWriteTask\?\.value/,
-  "flushThreadsAndWait must await the write, not just spawn it",
+  /func flushThreadsAndWait\(\) async -> Bool \{[\s\S]*?return await threadWriteTask\?\.value \?\? false/,
+  "flushThreadsAndWait must await and report the write result, not just spawn it",
+);
+assert.match(
+  flushBody,
+  /do \{[\s\S]*?try await threadStore\.save\(snapshots\)[\s\S]*?return true[\s\S]*?catch \{[\s\S]*?return false/,
+  "a failed durability checkpoint must be observable so callers can fail closed before POST",
 );
 
 // ── 4. The scene-phase caller waits, and holds background time ───────────────

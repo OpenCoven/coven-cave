@@ -356,3 +356,13 @@ test("prompt tab styles are token-driven and container-responsive", () => {
   assert.match(css, /\.research-topic-recommendations__card \.agentic-recommendation-card__actions \{/);
   assert.match(css, /@container research-desk \(max-width: 560px\) \{[\s\S]*\.research-topic-recommendations/);
 });
+
+test("the autosized mission prompt owns scrolling without native resize collisions", () => {
+  assert.match(css, /\.research-intake__prompt > textarea \{[^}]*resize: none/);
+  assert.match(css, /\.research-intake__prompt > textarea \{[^}]*scrollbar-gutter: stable/);
+  assert.match(css, /\.research-intake__prompt > textarea \{[^}]*padding-right: calc\(var\(--space-3\) \+ var\(--space-3\)\)/);
+  assert.match(css, /\.research-intent-count \{[^}]*right: calc\(var\(--space-3\) \+ var\(--space-2\)\)/);
+  assert.match(css, /\.research-builder__field textarea \{[^}]*resize: vertical/);
+  assert.doesNotMatch(composer, /title=\{value \|\| "not set"\}/);
+  assert.match(composer, /title=\{value \|\| undefined\}/);
+});
