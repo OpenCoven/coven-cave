@@ -15,6 +15,10 @@ import {
   installedPdfjsVersion,
   resolvePdfWorkerSource,
 } from "./copy-pdf-worker.mjs";
+// The restart-regression preference set. Shared with
+// scripts/sidecar-preference-fixture.test.mjs, which keeps it in step with the
+// schema so a new field fails in ordinary CI rather than mid-release.
+import { SIDECAR_PREFERENCE_PATCH } from "./sidecar-preference-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stagedSidecarRoot = path.join(root, "src-tauri", "resources", "server");
@@ -569,42 +573,7 @@ async function main() {
     // Regression for random WebView origins: write the full representative
     // preference set through one sidecar port, stop that process completely,
     // then prove a fresh sidecar on another OS-assigned port restores it.
-    const preferencePatch = {
-      appearance: {
-        theme: {
-          id: "tide",
-          modePreference: "light",
-          resolvedMode: "light",
-          tokens: { "--background": "#112233", "--foreground": "#f8fafc" },
-        },
-        fonts: { serif: "eb-garamond", sans: "source-sans-3", mono: "source-code-pro" },
-        screenScale: 125,
-        reading: {
-          leading: "relaxed",
-          tracking: "wide",
-          align: "justify",
-          width: "narrow",
-          weight: "medium",
-          hyphens: "on",
-        },
-        datetime: { clock: "24h", date: "ddmm", density: "verbose" },
-        recentColors: ["#112233", "#aabbcc"],
-        cornerRadius: "round",
-        backdrop: {
-          enabled: true,
-          intensity: 67,
-          matchAccent: false,
-          accentSeed: { L: 0.63, a: 0.12, b: -0.08 },
-        },
-      },
-      general: { stopPhrase: "halt", celebrations: false },
-      phone: { mobileMode: false },
-      voice: {
-        defaultProvider: "elevenlabs",
-        defaultModel: "eleven_turbo_v2_5",
-        defaultVoice: "21m00Tcm4TlvDq8ikWAM",
-      },
-    };
+    const preferencePatch = SIDECAR_PREFERENCE_PATCH;
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
       method: "PATCH",
       headers: authenticatedHeaders(baseUrl, "application/json"),

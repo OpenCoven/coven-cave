@@ -72,6 +72,7 @@ export const SUITES = {
     "src/lib/canonical-memory-client.test.ts",
     "src/lib/canonical-memory-resources.test.ts",
     "src/lib/canonical-memory-consumer-contract.test.ts",
+    "scripts/sidecar-preference-fixture.test.mjs",
     "scripts/canonical-memory-smoke-helpers.test.mjs",
     "scripts/canonical-memory-smoke-lifecycle.test.mjs",
     "scripts/test-alias-loader.test.mjs",
@@ -1797,6 +1798,8 @@ export const SUITES = {
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).
 const STRIP_TYPES_MJS = new Set([
   "scripts/release-macos-signing.test.mjs",
+  // imports ../src/lib/preferences-schema.ts
+  "scripts/sidecar-preference-fixture.test.mjs",
   "scripts/research-media-ffmpeg.integration.test.mjs",
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
