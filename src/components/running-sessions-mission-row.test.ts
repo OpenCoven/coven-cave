@@ -126,6 +126,60 @@ test("an ordinary running chat is untouched — no tag, no mission wording, its 
   assert.ok(html.includes("Open this chat — Draft the release notes"));
 });
 
+// The three tests below supersede the source-regex assertion that used to live
+// in running-sessions-popover.test.ts:
+//
+//   assert.match(source, /started <RelativeTime iso=\{session\.created_at\} fallback="—" \/>/)
+//
+// That regex pinned the literal expression, which legitimately changed when a
+// mission row started reporting the MISSION's clock. It could never have
+// distinguished the two row kinds anyway — it only saw that the characters
+// "session.created_at" appeared somewhere in the file — and it would have
+// passed just as happily if the row had stopped rendering altogether. These
+// assert the rendered output instead, per row kind, including the fallback.
+
+test("an ordinary row reports the session's OWN start time", () => {
+  const html = render(
+    [session({ id: "plain", title: "Draft the release notes", created_at: "2026-08-23T08:00:00.000Z" })],
+    storageWith({}),
+  );
+  const lower = html.toLowerCase();
+  assert.ok(
+    lower.includes('datetime="2026-08-23t08:00:00.000z"'),
+    "an ordinary process is timed from when the session was created",
+  );
+  assert.ok(html.includes("started <time"), "and it renders a real timestamp, not the fallback");
+});
+
+test("a row with no usable timestamp renders the em-dash fallback, not a broken clock", () => {
+  for (const created of [null, "not-a-date"]) {
+    const html = render(
+      [session({ id: "plain", title: "Draft the release notes", created_at: created as string })],
+      storageWith({}),
+    );
+    assert.ok(
+      html.includes("started <span>—</span>"),
+      `an unusable created_at (${String(created)}) falls back to the em dash`,
+    );
+    assert.ok(!html.includes("<time"), "and emits no <time> element at all");
+  }
+});
+
+test("a mission row with an unusable mission start falls back — it never borrows the session's clock", () => {
+  // The session has a perfectly good created_at. A mission row must still not
+  // report it: that would silently misattribute the chat's age to the mission.
+  const html = render(
+    [session({ created_at: "2026-08-23T08:00:00.000Z" })],
+    storageWith({ "sess-a": record({ startedAt: "not-a-date" }) }),
+  );
+  assert.ok(html.includes(">Mission<"), "still a mission row");
+  assert.ok(html.includes("started <span>—</span>"), "an unusable mission start falls back");
+  assert.ok(
+    !html.toLowerCase().includes('datetime="2026-08-23t08:00:00.000z"'),
+    "and the session's own created_at is never substituted in",
+  );
+});
+
 test("a session whose mission already finished renders as an ordinary chat", () => {
   // The record is still in storage — nothing outside the chat clears it. The
   // row must fall back rather than claim finished work is in flight.
