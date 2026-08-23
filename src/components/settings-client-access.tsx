@@ -12,6 +12,10 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 export const CLIENT_ACCESS_POLL_MS = 10_000;
+// Client access reads stay on the local admin surface, but can still outlast
+// one poll window when the app is busy. Give them two poll intervals so slow
+// loads still coalesce; after that, treat the read as wedged and recover.
+export const CLIENT_ACCESS_LOAD_TIMEOUT_MS = CLIENT_ACCESS_POLL_MS * 2;
 const CLIENT_ACCESS_REVOCATION_REASON = "Revoked in Cave settings";
 
 export type ClientAccessRequestStatus =
@@ -346,17 +350,22 @@ function createActionIdentityResolver(
 function createLoadErrorState(
   hasLocalMutationState: boolean,
   hasSnapshot: boolean,
+  timedOut = false,
 ): ClientAccessErrorState {
   if (!hasSnapshot) {
     return {
       source: "load",
-      headline: "Couldn’t load client access",
+      headline: timedOut
+        ? "Client access took too long to load"
+        : "Couldn’t load client access",
       subtitle: "Retry to fetch the latest client access state.",
     };
   }
   return {
     source: "load",
-    headline: "Couldn’t refresh client access",
+    headline: timedOut
+      ? "Client access took too long to refresh"
+      : "Couldn’t refresh client access",
     subtitle: hasLocalMutationState
       ? "Some client access details may still be stale. Retry to fetch the latest client access state."
       : "Showing the last confirmed snapshot. Retry to fetch the latest client access state.",
@@ -681,6 +690,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       currentLoad.controller.abort();
     }
     const controller = new AbortController();
+    let timedOut = false;
     const loadId = loadIdRef.current + 1;
     loadIdRef.current = loadId;
     if (options.showLoading) setLoading(true);
@@ -689,6 +699,10 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         currentError?.source === "load" ? null : currentError);
     }
     const promise = (async () => {
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, CLIENT_ACCESS_LOAD_TIMEOUT_MS);
       try {
         const [pairingResponse, credentialResponse] = await Promise.all([
           fetch("/api/client/v1/admin/pairing-requests", {
@@ -757,7 +771,7 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
             : null);
       } catch {
         if (
-          controller.signal.aborted
+          (!timedOut && controller.signal.aborted)
           || !mountedRef.current
           || loadRef.current?.id !== loadId
         ) {
@@ -771,12 +785,14 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
             : createLoadErrorState(
                 hasLocalMutationStateRef.current,
                 hasConfirmedSnapshotRef.current,
+                timedOut,
               ),
         );
       } finally {
+        clearTimeout(timeoutId);
         if (loadRef.current?.id === loadId) loadRef.current = null;
         if (
-          !controller.signal.aborted
+          (timedOut || !controller.signal.aborted)
           && mountedRef.current
           && loadIdRef.current === loadId
         ) {

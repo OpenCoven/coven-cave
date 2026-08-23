@@ -20,6 +20,7 @@ vi.mock("@/lib/icon", () => ({
 
 import { SECTIONS, SETTINGS_INDEX } from "./settings-sections";
 import {
+  CLIENT_ACCESS_LOAD_TIMEOUT_MS,
   CLIENT_ACCESS_POLL_MS,
   SettingsClientAccess,
 } from "./settings-client-access";
@@ -169,6 +170,25 @@ function deferred<T>() {
     resolve = nextResolve;
   });
   return { promise, resolve };
+}
+
+function createAbortError(): DOMException {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+
+function hangingResponse(signal?: AbortSignal): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    if (!signal) return;
+    if (signal.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(createAbortError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 async function flush(): Promise<void> {
@@ -750,7 +770,38 @@ describe("SettingsClientAccess", () => {
     ).toHaveLength(2);
   });
 
-  test("coalesces poll and focus refreshes while the initial ledger load is in flight", async () => {
+  test("times out a hung initial load into a retryable error", async () => {
+    vi.useFakeTimers();
+    const documentNode = globalThis.document as TestDocument;
+    documentNode.hidden = true;
+    documentNode.visibilityState = "hidden";
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests") {
+        return hangingResponse(init?.signal as AbortSignal | undefined);
+      }
+      if (url === "/api/client/v1/admin/credentials") {
+        return hangingResponse(init?.signal as AbortSignal | undefined);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+    expect(text(renderer)).toContain("Loading client access…");
+
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_LOAD_TIMEOUT_MS);
+      await flush();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(text(renderer)).toContain("Client access took too long to load");
+    expect(text(renderer)).toContain("Retry");
+    expect(text(renderer)).not.toContain("Loading client access…");
+    expect(text(renderer)).not.toContain("No pending requests.");
+    expect(text(renderer)).not.toContain("No client credentials issued.");
+  });
+
+  test("coalesces poll and focus refreshes while a slow initial ledger load stays within timeout", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(CREATED_AT);
     const pairing = deferred<Response>();
@@ -773,7 +824,7 @@ describe("SettingsClientAccess", () => {
     expect(signals.every((signal) => signal.aborted === false)).toBe(true);
 
     await act(async () => {
-      vi.advanceTimersByTime(CLIENT_ACCESS_POLL_MS * 2);
+      vi.advanceTimersByTime(CLIENT_ACCESS_LOAD_TIMEOUT_MS - 1);
       globalThis.window.dispatchEvent(new Event("focus"));
       await flush();
     });
@@ -805,6 +856,125 @@ describe("SettingsClientAccess", () => {
     expect(text(renderer)).toContain("Retry");
     expect(text(renderer)).not.toContain("No pending requests.");
     expect(text(renderer)).not.toContain("No client credentials issued.");
+  });
+
+  test("keeps the last confirmed snapshot when a refresh times out", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    let phase: "initial" | "refresh-timeout" = "initial";
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (phase === "initial") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return Promise.resolve(clientV1SuccessResponse({ pairingRequests: [pendingRequest] }));
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return Promise.resolve(clientV1SuccessResponse({ credentials: [activeCredential] }));
+        }
+      }
+      if (phase === "refresh-timeout") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return hangingResponse(init?.signal as AbortSignal | undefined);
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return hangingResponse(init?.signal as AbortSignal | undefined);
+        }
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+    expect(text(renderer)).toContain("OpenCoven Chat");
+
+    phase = "refresh-timeout";
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      globalThis.window.dispatchEvent(new Event("focus"));
+      await flush();
+    });
+    (globalThis.document as TestDocument).hidden = true;
+    (globalThis.document as TestDocument).visibilityState = "hidden";
+
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_LOAD_TIMEOUT_MS);
+      await flush();
+    });
+
+    expect(text(renderer)).toContain("Client access took too long to refresh");
+    expect(text(renderer)).toContain("Showing the last confirmed snapshot.");
+    expect(text(renderer)).toContain("OpenCoven Chat");
+    expect(text(renderer)).toContain("Retry");
+  });
+
+  test("recovers with a fresh retry after a timed-out refresh", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    let phase: "initial" | "refresh-timeout" | "retry-success" = "initial";
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (phase === "initial") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return Promise.resolve(clientV1SuccessResponse({ pairingRequests: [pendingRequest] }));
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return Promise.resolve(clientV1SuccessResponse({ credentials: [] }));
+        }
+      }
+      if (phase === "refresh-timeout") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return hangingResponse(init?.signal as AbortSignal | undefined);
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return hangingResponse(init?.signal as AbortSignal | undefined);
+        }
+      }
+      if (phase === "retry-success") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return Promise.resolve(clientV1SuccessResponse({ pairingRequests: [] }));
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return Promise.resolve(clientV1SuccessResponse({ credentials: [activeCredential] }));
+        }
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+    expect(text(renderer)).toContain("OpenCoven Chat");
+
+    phase = "refresh-timeout";
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      globalThis.window.dispatchEvent(new Event("focus"));
+      await flush();
+    });
+    (globalThis.document as TestDocument).hidden = true;
+    (globalThis.document as TestDocument).visibilityState = "hidden";
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_LOAD_TIMEOUT_MS);
+      await flush();
+    });
+    expect(text(renderer)).toContain("Client access took too long to refresh");
+
+    phase = "retry-success";
+    (globalThis.document as TestDocument).hidden = false;
+    (globalThis.document as TestDocument).visibilityState = "visible";
+    await act(async () => {
+      await buttonByText(renderer, "Retry").props.onClick();
+      await flush();
+    });
+
+    expect(text(renderer)).not.toContain("Client access took too long to refresh");
+    expect(text(renderer)).toContain("No pending requests.");
+    expect(text(renderer)).toContain("OpenCoven Chat");
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url === "/api/client/v1/admin/pairing-requests" && !init?.method,
+      ),
+    ).toHaveLength(3);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url === "/api/client/v1/admin/credentials" && !init?.method,
+      ),
+    ).toHaveLength(3);
   });
 
   test("keeps confirmed empty guidance visible when a later refresh fails", async () => {
@@ -884,6 +1054,124 @@ describe("SettingsClientAccess", () => {
     expect(text(renderer)).toContain("Showing the last confirmed snapshot.");
     expect(buttonByLabel(renderer, "Approve access for OpenCoven Chat")).toBeDefined();
     expect(text(renderer)).not.toContain("No pending requests.");
+  });
+
+  test("keeps a cancelled initial load quiet when the section deactivates", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests") {
+        return hangingResponse(init?.signal as AbortSignal | undefined);
+      }
+      if (url === "/api/client/v1/admin/credentials") {
+        return hangingResponse(init?.signal as AbortSignal | undefined);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+
+    await act(async () => {
+      renderer.update(<SettingsClientAccess active={false} />);
+      await flush();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_LOAD_TIMEOUT_MS);
+      await flush();
+    });
+
+    expect(announce).not.toHaveBeenCalled();
+    expect(text(renderer)).not.toContain("Client access took too long");
+    expect(text(renderer)).not.toContain("Couldn’t load client access");
+  });
+
+  test("keeps a cancelled initial load quiet after unmount", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests") {
+        return hangingResponse(init?.signal as AbortSignal | undefined);
+      }
+      if (url === "/api/client/v1/admin/credentials") {
+        return hangingResponse(init?.signal as AbortSignal | undefined);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+
+    await act(async () => {
+      renderer.unmount();
+      await flush();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_LOAD_TIMEOUT_MS);
+      await flush();
+    });
+
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  test("keeps a superseded hung refresh quiet while authoritative reconciliation succeeds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    let phase: "initial" | "background-hung" | "authoritative" = "initial";
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (phase === "initial") {
+        if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+          return Promise.resolve(clientV1SuccessResponse({ pairingRequests: [pendingRequest] }));
+        }
+        if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+          return Promise.resolve(clientV1SuccessResponse({ credentials: [] }));
+        }
+      }
+      if (phase === "background-hung") {
+        if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+          return hangingResponse(init?.signal as AbortSignal | undefined);
+        }
+        if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+          return hangingResponse(init?.signal as AbortSignal | undefined);
+        }
+      }
+      if (phase === "authoritative") {
+        if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+          return Promise.resolve(clientV1SuccessResponse({ pairingRequests: [] }));
+        }
+        if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+          return Promise.resolve(clientV1SuccessResponse({ credentials: [] }));
+        }
+      }
+      if (url.endsWith("/request-pending/decision") && init?.method === "POST") {
+        phase = "authoritative";
+        return Promise.resolve(clientV1SuccessResponse({
+          pairingRequest: { ...pendingRequest, status: "approved", decidedAt: CREATED_AT + 1_000 },
+        }));
+      }
+      throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+    phase = "background-hung";
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      globalThis.window.dispatchEvent(new Event("focus"));
+      await flush();
+    });
+    (globalThis.document as TestDocument).hidden = true;
+    (globalThis.document as TestDocument).visibilityState = "hidden";
+
+    await act(async () => {
+      await buttonByLabel(renderer, "Approve access for OpenCoven Chat").props.onClick();
+      await flush();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_LOAD_TIMEOUT_MS);
+      await flush();
+    });
+
+    expect(announce).toHaveBeenCalledWith("Approved access for OpenCoven Chat.", "polite");
+    expect(text(renderer)).not.toContain("Client access took too long");
+    expect(text(renderer)).not.toContain("Couldn’t refresh client access");
+    expect(text(renderer)).toContain("Approved");
   });
 
   test.each([
