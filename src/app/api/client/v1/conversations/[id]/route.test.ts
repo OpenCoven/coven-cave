@@ -131,6 +131,64 @@ test("an id no conversation carries is not_found, whatever shape it has", async 
   });
 });
 
+test("an unprojectable ledger row answers an envelope, not a Next error page", async () => {
+  // The list route had this test and the detail route did not, so removing
+  // this route's guard left the whole suite green. A transcript that PARSES
+  // but carries no `updatedAt` does not take listConversations' fallback row —
+  // that substitution is keyed on a parse failure — so the field reaches the
+  // projection as `undefined` and is refused there. Uncaught, Next answers
+  // with its own error body on a surface whose contract is that every response
+  // is an envelope.
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1ConversationGetHandler(
+      runtime,
+      sources({
+        listConversations: async () => [
+          { sessionId: "conversation-broken", familiarId: "scribe" } as ConversationSummary,
+        ],
+      }),
+    );
+    const response = await handler(
+      request("conversation-broken", { authorization: `Bearer ${bearer}` }),
+      context("conversation-broken"),
+    );
+    assert.equal(response.status, 500);
+    const body = await response.json() as {
+      apiVersion: string;
+      error: { code: string; message: string; retryable: boolean; details?: unknown };
+    };
+    assert.equal(body.error.code, "internal_error");
+    // Not `not_found`: the row exists and the client asked for it by its real
+    // id. Answering `not_found` would tell a client the conversation is gone.
+    assert.equal(body.error.retryable, false);
+    assert.equal(body.apiVersion, "1.0");
+    assert.equal(body.error.details, undefined);
+    assert.equal(body.error.message.includes("updatedAt"), false);
+  });
+});
+
+test("a ledger read that throws answers an envelope too", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1ConversationGetHandler(
+      runtime,
+      sources({
+        listConversations: async () => {
+          throw new Error("EACCES: permission denied, scandir '/home/me/.coven/cave/conversations'");
+        },
+      }),
+    );
+    const response = await handler(
+      request("conversation-1", { authorization: `Bearer ${bearer}` }),
+      context("conversation-1"),
+    );
+    assert.equal(response.status, 500);
+    const body = await response.json() as { error: { code: string; message: string } };
+    assert.equal(body.error.code, "internal_error");
+    // The path the store named must not reach the wire.
+    assert.equal(body.error.message.includes("/home/me"), false);
+  });
+});
+
 test("the detail route serves no page parameters at all", async () => {
   // A single record has nothing to page, so `limit` and `cursor` are as
   // meaningless here as `offset` — and answering a request that carries one as
