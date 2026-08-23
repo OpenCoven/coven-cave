@@ -26,7 +26,9 @@ import { fileURLToPath } from "node:url";
 const { classifyLifecycleUnit, classifyWorktree } = await import(
   "../src/lib/worktree-lifecycle.ts"
 );
-const { parseWindowsCwdProbeOutput } = await import("./worktree-lifecycle-inventory.ts");
+const { parseWindowsCwdProbeOutput, reconcileHoldVerdicts } = await import(
+  "./worktree-lifecycle-inventory.ts"
+);
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const probeScript = path.join(sourceRoot, "scripts", "windows-process-cwd.ps1");
@@ -229,6 +231,45 @@ test("CRLF output parses identically", () => {
   assert.equal(probe.complete, true);
   assert.equal(probe.selfCwd, "C:\\");
   assert.equal(probe.holds.get("C:\\repo\\.worktrees\\busy"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Reconciliation: a directory nobody answered for must never read as free.
+// ---------------------------------------------------------------------------
+
+test("a directory the probe never answered for becomes an error, not a free verdict", () => {
+  const probe = parseWindowsCwdProbeOutput(COMPLETE);
+  const asked = [
+    "C:\\repo\\.worktrees\\busy",
+    "C:\\repo\\.worktrees\\quiet",
+    "C:\\repo\\.worktrees\\denied",
+    "C:\\repo\\.worktrees\\unanswered",
+  ];
+  const { holds, holdErrors } = reconcileHoldVerdicts(asked, probe);
+  assert.equal(holds.get("C:\\repo\\.worktrees\\busy"), true);
+  assert.equal(holds.get("C:\\repo\\.worktrees\\quiet"), false);
+  assert.equal(holds.has("C:\\repo\\.worktrees\\unanswered"), false);
+  assert.equal(holdErrors.get("C:\\repo\\.worktrees\\unanswered"), "no verdict returned");
+  assert.equal(holdErrors.get("C:\\repo\\.worktrees\\denied"), "win32 error 5");
+});
+
+test("a probe that answered for nothing leaves every directory carrying an error", () => {
+  // The shape that matters most: silence must not read as an empty checkout.
+  const asked = ["C:\\a", "C:\\b", "C:\\c"];
+  const { holds, holdErrors } = reconcileHoldVerdicts(asked, {
+    holds: new Map(),
+    holdErrors: new Map(),
+  });
+  assert.equal(holds.size, 0);
+  assert.deepEqual([...holdErrors.keys()].sort(), asked);
+});
+
+test("an existing error is never overwritten by the missing-verdict default", () => {
+  const { holdErrors } = reconcileHoldVerdicts(["C:\\a"], {
+    holds: new Map(),
+    holdErrors: new Map([["C:\\a", "win32 error 5"]]),
+  });
+  assert.equal(holdErrors.get("C:\\a"), "win32 error 5");
 });
 
 // ---------------------------------------------------------------------------
