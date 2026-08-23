@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
+import { NO_CHAT_ATTENTION } from "./chat/chat-attention.ts";
 import {
   codeSessionActivity,
   codeSessionBranch,

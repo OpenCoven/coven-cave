@@ -43,8 +43,8 @@ import dynamic from "next/dynamic";
 import { CodeInspector } from "@/components/code-inspector";
 import { RailFilePreview } from "@/components/rail-file-preview";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useIsMobile } from "@/lib/use-viewport";
-import { useMeasuredWidth } from "@/lib/use-measured-width";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
+import { useMeasuredWidth } from "@/lib/hooks/use-measured-width";
 import {
   CODE_STEP_ANNOUNCEMENT,
   CODE_WORKBENCH_STEPS,
@@ -71,7 +71,7 @@ import {
   mergeCodeKeymap,
   type CodeShortcutId,
 } from "@/lib/code-shortcuts";
-import { useWorktreeChanges } from "@/lib/use-worktree-changes";
+import { useWorktreeChanges } from "@/lib/hooks/use-worktree-changes";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import type { SessionRow } from "@/lib/types";
 

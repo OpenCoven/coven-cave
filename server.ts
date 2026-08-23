@@ -354,7 +354,7 @@ function isExpectedPtyToken(value: string | undefined | null): boolean {
   return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
 }
 
-// Mirrors src/lib/mobile-access-token.ts (server.mjs is transpiled standalone,
+// Mirrors src/lib/surfaces/mobile-access-token.ts (server.mjs is transpiled standalone,
 // so it can't import from src/): `v1.<expiresAtMs>.<nonce>.<sig>` where
 // sig = base64url(HMAC-SHA256(secret, "v1.<expiresAtMs>.<nonce>")). Paired
 // phones and QR-paired browsers hold these SIGNED tokens — not the raw secret

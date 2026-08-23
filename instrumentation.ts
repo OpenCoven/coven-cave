@@ -21,7 +21,7 @@ export async function register() {
   }
   const mod = await import("@/lib/inbox-scheduler");
   mod.startScheduler();
-  const watcher = await import("@/lib/github-watcher");
+  const watcher = await import("@/lib/github/github-watcher");
   watcher.startGithubWatcher();
   const backupSync = await import("@/lib/server/backup-sync");
   backupSync.startBackupSyncScheduler();

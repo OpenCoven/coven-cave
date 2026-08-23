@@ -1,10 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { buildCovenMarkersDirective } from "./coven-marker-directive.ts";
-import { sliceGitHubBlocks } from "./github-blocks.ts";
+import { sliceGitHubBlocks } from "./github/github-blocks.ts";
 import { isRenderableImageSrc, sliceImageBlocks } from "./image-blocks.ts";
 import { isRenderablePreviewUrl, slicePreviewBlocks } from "./preview-blocks.ts";
-import { extractSkillMarkers } from "./skill-blocks.ts";
+import { extractSkillMarkers } from "./skills/skill-blocks.ts";
 import { sliceSpecBlocks } from "./spec-blocks.ts";
 
 const directive = buildCovenMarkersDirective();
@@ -33,7 +33,7 @@ for (const reason of ["input", "approval", "credentials", "decision"]) {
 }
 const attentionExample = directive.match(/Choose a release channel\.\n<coven:attention reason="decision" \/>/)?.[0];
 assert.ok(attentionExample, "directive carries a concrete parseable attention example");
-const { extractChatAttentionMarker } = await import("./chat-attention-marker.ts");
+const { extractChatAttentionMarker } = await import("./chat/chat-attention-marker.ts");
 assert.deepEqual(
   extractChatAttentionMarker(attentionExample),
   {

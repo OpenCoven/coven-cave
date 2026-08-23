@@ -1,0 +1,249 @@
+import { isTrustedOnboardingHarness } from "../runtime/harness-adapters.ts";
+import {
+  isSshRuntime,
+  normalizeFamiliarRuntime,
+  type FamiliarRuntime,
+} from "../familiars/familiar-runtime.ts";
+import { normalizeHermesProfileBinding, type HermesProfileBinding } from "../integrations/hermes/hermes-profiles.ts";
+import { modelForRuntimeSwitch } from "../runtime/runtime-models.ts";
+ 
+
+export type OnboardingFamiliarDraft = {
+  id: string;
+  displayName: string;
+  role: string;
+  description: string;
+  glyph: string;
+  harness: string;
+  model: string;
+  openclawAgentId?: string;
+  hermesProfile?: HermesProfileBinding;
+  /** Optional runtime override. Persisted to cave-config.json (the binding
+   *  source chat reads), never to familiars.toml. */
+  runtime?: FamiliarRuntime;
+};
+
+export type OnboardingFamiliarInput = {
+  id?: string | null;
+  displayName?: string | null;
+  role?: string | null;
+  description?: string | null;
+  glyph?: string | null;
+  harness?: string | null;
+  model?: string | null;
+  openclawAgentId?: string | null;
+  hermesProfile?: { id?: string | null; homePath?: string | null } | null;
+  runtime?: {
+    kind?: string | null;
+    host?: string | null;
+    cwd?: string | null;
+    command?: string | null;
+  } | null;
+};
+
+function cleanText(value: string | null | undefined): string {
+  return (value ?? "").trim();
+}
+
+/** Derive a familiar id slug from free text. Exported so the create-familiar
+ *  dialog can show a live `id:` preview that matches what the server will
+ *  persist (the route calls this again via normalizeFamiliarDraft). */
+export function slugifyFamiliarId(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "");
+  // Trim trailing dashes without a regex anchored to $ (avoids ReDoS on long dash runs)
+  let end = slug.length;
+  while (end > 0 && slug[end - 1] === "-") end--;
+  return slug.slice(0, Math.min(end, 48));
+}
+
+function tomlString(value: string): string {
+  return `"${value.replace(/[\\"\b\t\n\f\r\u0000-\u001f\u007f]/g, (character) => {
+    switch (character) {
+      case "\\":
+        return "\\\\";
+      case '"':
+        return '\\"';
+      case "\b":
+        return "\\b";
+      case "\t":
+        return "\\t";
+      case "\n":
+        return "\\n";
+      case "\f":
+        return "\\f";
+      case "\r":
+        return "\\r";
+      default:
+        return `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`;
+    }
+  })}"`;
+}
+
+export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): OnboardingFamiliarDraft {
+  const displayName = cleanText(input.displayName);
+  if (!displayName) throw new Error("Familiar name is required.");
+
+  const id = slugifyFamiliarId(cleanText(input.id) || displayName);
+  if (!id) throw new Error("Familiar id is required.");
+
+  const description = cleanText(input.description);
+  if (!description) throw new Error("Familiar description is required.");
+
+  const openclawAgentId = slugifyFamiliarId(cleanText(input.openclawAgentId));
+  const hermesProfile = normalizeHermesProfileBinding(input.hermesProfile);
+  if (input.hermesProfile && !hermesProfile) {
+    throw new Error("Choose a valid Hermes profile before summoning this familiar.");
+  }
+  const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
+  if (!isTrustedOnboardingHarness(harness)) {
+    throw new Error(`Unsupported harness: ${harness}.`);
+  }
+  if (hermesProfile && harness !== "hermes") {
+    throw new Error("A Hermes profile can only be bound to the Hermes runtime.");
+  }
+  const model = modelForRuntimeSwitch(harness, cleanText(input.model));
+
+  // A runtime request is all-or-nothing: a partial/invalid SSH config must
+  // fail loudly here instead of silently degrading to a local familiar the
+  // user believes is remote.
+  let runtime: FamiliarRuntime | undefined;
+  const runtimeKind = cleanText(input.runtime?.kind);
+  if (input.runtime && runtimeKind === "ssh") {
+    const normalized = normalizeFamiliarRuntime({
+      kind: "ssh",
+      host: input.runtime.host ?? "",
+      cwd: input.runtime.cwd ?? "",
+      command: input.runtime.command ?? "",
+    });
+    if (!isSshRuntime(normalized)) {
+      throw new Error(
+        "SSH runtime needs a host (letters, digits, dots, dashes) and a remote working directory.",
+      );
+    }
+    runtime = normalized;
+  } else if (runtimeKind === "local") {
+    runtime = { kind: "local" };
+  }
+
+  return {
+    id,
+    displayName,
+    role: cleanText(input.role) || "Familiar",
+    description,
+    glyph: cleanText(input.glyph) || "ph:sparkle-fill",
+    harness,
+    model,
+    openclawAgentId: openclawAgentId || undefined,
+    ...(hermesProfile ? { hermesProfile } : {}),
+    runtime,
+  };
+}
+
+export function buildFamiliarsToml(draft: OnboardingFamiliarDraft | null): string {
+  const header = "# User familiars for this Coven.\n";
+  if (!draft) return header;
+
+  const lines = [
+    header.trimEnd(),
+    "",
+    "[[familiar]]",
+    `id = ${tomlString(draft.id)}`,
+    `display_name = ${tomlString(draft.displayName)}`,
+    `emoji = ${tomlString(draft.glyph)}`,
+    `role = ${tomlString(draft.role)}`,
+    `description = ${tomlString(draft.description)}`,
+  ];
+
+  lines.push(`harness = ${tomlString(draft.harness)}`);
+  if (draft.model) lines.push(`model = ${tomlString(draft.model)}`);
+  if (draft.openclawAgentId) lines.push(`openclaw_agent = ${tomlString(draft.openclawAgentId)}`);
+
+  return `${lines.join("\n")}\n`;
+}
+
+export function familiarsTomlContainsId(toml: string, id: string): boolean {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\s*id\\s*=\\s*"${escaped}"\\s*$`, "m").test(toml);
+}
+
+export type FamiliarsTomlEntry = {
+  id: string;
+  displayName?: string;
+  role?: string;
+  description?: string;
+  emoji?: string;
+};
+
+/** Reverse of `tomlString` for the escapes it writes. */
+function unescapeTomlString(value: string): string {
+  return value.replace(/\\(u[0-9A-Fa-f]{4}|.)/g, (_, esc: string) => {
+    if (esc[0] === "u" && esc.length === 5) {
+      return String.fromCodePoint(Number.parseInt(esc.slice(1), 16));
+    }
+    switch (esc) {
+      case "\\":
+        return "\\";
+      case '"':
+        return '"';
+      case "b":
+        return "\b";
+      case "t":
+        return "\t";
+      case "n":
+        return "\n";
+      case "f":
+        return "\f";
+      case "r":
+        return "\r";
+      default:
+        return esc;
+    }
+  });
+}
+
+/**
+ * Minimal parser for the `[[familiar]]` blocks `buildFamiliarsToml` writes
+ * (basic-string values only — the exact shape this module produces). Used to
+ * surface familiars the user has declared locally even while the daemon's
+ * in-memory roster hasn't re-read the file (or, in hub mode, doesn't know
+ * this machine's file at all), so the visible list always covers every id the
+ * duplicate check can reject.
+ */
+export function parseFamiliarsToml(toml: string): FamiliarsTomlEntry[] {
+  const entries: FamiliarsTomlEntry[] = [];
+  let current: Record<string, string> | null = null;
+  const flush = () => {
+    const id = (current?.id ?? "").trim();
+    if (current && id) {
+      entries.push({
+        id,
+        displayName: current.display_name,
+        role: current.role,
+        description: current.description,
+        emoji: current.emoji,
+      });
+    }
+    current = null;
+  };
+  for (const rawLine of toml.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "[[familiar]]") {
+      flush();
+      current = {};
+      continue;
+    }
+    if (line.startsWith("[")) {
+      // Some other table — stop collecting so its keys don't bleed in.
+      flush();
+      continue;
+    }
+    if (!current) continue;
+    const match = line.match(/^([A-Za-z0-9_]+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/);
+    if (match) current[match[1]!] = unescapeTomlString(match[2] ?? "");
+  }
+  flush();
+  return entries;
+}

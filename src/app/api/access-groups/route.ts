@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createAccessGroup, listAccessGroups } from "@/lib/project-permissions";
+import { createAccessGroup, listAccessGroups } from "@/lib/projects/project-permissions";
 import {
   invalidShapeResponse,
   memberIdsInput,

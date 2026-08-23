@@ -15,7 +15,7 @@ import {
   summarizeTracePayload,
   traceEventTone,
   type SessionTraceEvent,
-} from "@/lib/session-trace";
+} from "@/lib/chat/session-trace";
 // Trace-overlay CSS rides this component (its 3 consumers: familiar analytics
 // + the familiars roster), keeping it out of the global bundle (cave-5rqi).
 import "@/styles/session-trace-overlay.css";

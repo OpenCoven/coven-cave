@@ -12,7 +12,7 @@
 // that helper deliberately drops.
 
 import { useEffect, useState } from "react";
-import type { CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-types";
+import type { CardLifecycle, CardPriority, CardStatus } from "@/lib/board/cave-board-types";
 
 export type DashboardCard = {
   id: string;

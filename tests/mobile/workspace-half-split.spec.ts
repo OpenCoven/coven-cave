@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { BUILT_IN_WORKSPACE_PAGE_IDS } from "../../src/lib/workspace-page-registry";
+import { BUILT_IN_WORKSPACE_PAGE_IDS } from "../../src/lib/projects/workspace-page-registry";
 
 for (const pageId of BUILT_IN_WORKSPACE_PAGE_IDS) {
   test(`${pageId} uses the container-width tab fallback`, async ({ page }) => {

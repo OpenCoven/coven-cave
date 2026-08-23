@@ -11,7 +11,7 @@
 
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 
 export type CovenRosterEntry = {
   familiar: ResolvedFamiliar;

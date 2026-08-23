@@ -11,7 +11,7 @@
  * with the raw text inside, rather than either leaking as prose or vanishing.
  */
 
-import { markdownCodeRanges } from "./github-blocks.ts";
+import { markdownCodeRanges } from "./github/github-blocks.ts";
 
 /**
  * Control blocks this build parses into components. A tag NOT in this set is

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 const read = (rel) => readFile(new URL(`../${rel}`, import.meta.url), "utf8");
 const iosRoot = "apps/ios/CovenCave/CovenCave";
 
-const desktopSlash = await read("src/lib/slash-commands.ts");
+const desktopSlash = await read("src/lib/chat/slash-commands.ts");
 const iosSlash = await read(`${iosRoot}/Models/SlashCommand.swift`);
 const chatView = await read(`${iosRoot}/Views/ChatView.swift`);
 const commandsSheet = await read(`${iosRoot}/Views/CommandsSheet.swift`);

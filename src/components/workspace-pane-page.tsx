@@ -3,7 +3,7 @@
 import { Component, Fragment, createRef, useRef, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { workspacePaneErrorMessage, workspacePaneResetKey } from "@/lib/workspace-pane-error";
+import { workspacePaneErrorMessage, workspacePaneResetKey } from "@/lib/projects/workspace-pane-error";
 
 export type WorkspacePaneUnavailable = {
   reason: string;

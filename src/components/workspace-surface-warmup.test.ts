@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const surfaceWarmup = await readFile(
-  new URL("../lib/use-surface-warmup.ts", import.meta.url),
+  new URL("../lib/hooks/use-surface-warmup.ts", import.meta.url),
   "utf8",
 );
 

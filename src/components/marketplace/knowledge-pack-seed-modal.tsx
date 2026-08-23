@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";
 import { ProjectPicker } from "@/components/project-picker";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
 import { buildSeedRequest, summarizeSeedResult, validateSubfolderInput } from "@/lib/knowledge-pack-ui";
 import type { KnowledgePackManifest, KnowledgePackSeedResult } from "@/lib/knowledge-pack-types";
-import { invalidateIfDefined } from "@/lib/surface-warm-cache";
+import { invalidateIfDefined } from "@/lib/surfaces/surface-warm-cache";
 
 export type SkillInstallResult = {
   skillId: string;

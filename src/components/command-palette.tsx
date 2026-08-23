@@ -2,17 +2,17 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
+import { SLASH_COMMANDS, canonicalize } from "@/lib/chat/slash-commands";
 import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
 import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { WORKSPACE_NAV_ITEMS, type WorkspaceNavMode } from "@/lib/workspace-navigation";
-import { useProjects } from "@/lib/use-projects";
+import { WORKSPACE_NAV_ITEMS, type WorkspaceNavMode } from "@/lib/projects/workspace-navigation";
+import { useProjects } from "@/lib/hooks/use-projects";
 import {
   PALETTE_CATEGORIES,
   PALETTE_CATEGORY_LABEL,
@@ -34,7 +34,7 @@ import {
 import { paletteGroup, shortProjectRoot } from "@/lib/command-palette-grouping";
 import { buildSalemSearchContext, isSalemContextRow } from "@/lib/command-palette-salem-context";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
+import { loadCanonicalMemoryList } from "@/lib/memory/canonical-memory-resources";
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
 // "notable" states get a dot (running pulses green, failed/queued/paused tint);

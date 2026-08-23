@@ -6,7 +6,7 @@ import { Icon } from "@/lib/icon";
 import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 import type { KnowledgePackManifest, KnowledgePackTemplateMeta } from "@/lib/knowledge-pack-types";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { KnowledgePackSeedModal } from "@/components/marketplace/knowledge-pack-seed-modal";
 
 type Props = {

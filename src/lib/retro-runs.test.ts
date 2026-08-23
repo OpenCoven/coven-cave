@@ -4,7 +4,7 @@ import {
   buildRetroRunsSnapshot,
   normalizeRetroRunState,
 } from "./retro-runs.ts";
-import { unwrapDaemonEvalState } from "./eval-loop-daemon.ts";
+import { unwrapDaemonEvalState } from "./daemon/eval-loop-daemon.ts";
 
 const daemonState = {
   familiar_id: "nova",

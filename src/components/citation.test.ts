@@ -124,7 +124,7 @@ test("the Citation UI exposes inline provider previews through the shared Popove
 });
 
 test("chat renders inline source previews without a numbered Sources footer", () => {
-  assert.match(bubble, /renderCitedBody,[\s\S]*?from "@\/lib\/citations"/, "the bubble lifts footnote citations from the body");
+  assert.match(bubble, /renderCitedBody,[\s\S]*?from "@\/lib\/reading\/citations"/, "the bubble lifts footnote citations from the body");
   assert.match(bubble, /import \{ InlineCitationPreviews \} from "@\/components\/ui\/citation"/, "renders inline source previews");
   assert.match(bubble, /const cited = useMemo\(\(\) => renderCitedBody\(content\), \[content\]\)/, "citations are parsed once per body");
   assert.match(
@@ -142,7 +142,7 @@ test("chat renders inline source previews without a numbered Sources footer", ()
 
 test("research cites the mission's used sources under the synthesis", () => {
   assert.match(research, /import \{ CitationSources \} from "@\/components\/ui\/citation"/, "reuses the shared component");
-  assert.match(research, /import \{ sourcesToCitations \} from "@\/lib\/citations"/, "adapts research source rows to citations");
+  assert.match(research, /import \{ sourcesToCitations \} from "@\/lib\/reading\/citations"/, "adapts research source rows to citations");
   assert.match(
     research,
     /sourcesToCitations\(mission\.sources\.filter\(\(source\) => source\.status === "used"\)\)/,

@@ -16,9 +16,9 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import type { RoleSurfaceContext } from "@/lib/role-surfaces";
-import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { useLatestAsyncData } from "@/lib/use-role-surfaces";
+import type { RoleSurfaceContext } from "@/lib/familiars/role-surfaces";
+import { useRoleSurfaceState } from "@/lib/familiars/role-surface-state";
+import { useLatestAsyncData } from "@/lib/hooks/use-role-surfaces";
 import {
   RailSection,
   SurfaceCanvas,

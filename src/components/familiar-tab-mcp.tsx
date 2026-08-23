@@ -27,7 +27,7 @@ import { TextInput } from "@/components/ui/text-input";
 import { TextArea } from "@/components/ui/text-area";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
-import type { FamiliarSectionData } from "@/lib/familiar-tab-section-model";
+import type { FamiliarSectionData } from "@/lib/familiars/familiar-tab-section-model";
 import type { CapabilitiesResponse, HarnessCapabilityManifest, HarnessPlugin } from "@/app/api/capabilities/route";
 import type { McpServerInfo } from "@/app/api/mcp/route";
 import type { McpHealthResponse, McpServerHealth } from "@/app/api/mcp/health/route";

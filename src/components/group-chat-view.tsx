@@ -24,27 +24,27 @@ import {
   useState,
 } from "react";
 import { Icon } from "@/lib/icon";
-import { extractNextPaths } from "@/lib/next-paths";
-import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
+import { extractNextPaths } from "@/lib/projects/next-paths";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat/chat-attention-stream";
 import { createCanonicalResponseBuffer } from "@/lib/canonical-response-buffer";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker } from "@/components/project-picker";
-import { modelForRuntimeSwitch } from "@/lib/runtime-models";
+import { modelForRuntimeSwitch } from "@/lib/runtime/runtime-models";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
 import { SearchInput } from "@/components/ui/search-input";
 import { SurfaceRail } from "@/components/ui/surface-rail";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useStickToBottom } from "@/lib/use-stick-to-bottom";
+import { useStickToBottom } from "@/lib/hooks/use-stick-to-bottom";
 import { MessageBubble } from "@/components/message-bubble";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
-import { consumeCovenGroupPending } from "@/lib/chat-tab-events";
+import { consumeCovenGroupPending } from "@/lib/chat/chat-tab-events";
 import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   MAX_COVEN_DELEGATION_DEPTH,
   MAX_COVEN_DELEGATIONS_PER_TURN,
@@ -89,8 +89,8 @@ import {
   type RosterParticipant,
   type CovenResponseMode,
 } from "@/lib/group-chat";
-import { newId, nowIso } from "@/lib/group-chat-ids";
-import { groupChatTranscriptThreads } from "@/lib/group-chat-transcript";
+import { newId, nowIso } from "@/lib/chat/group-chat-ids";
+import { groupChatTranscriptThreads } from "@/lib/chat/group-chat-transcript";
 import {
   COVEN_RUN_STATUS,
   buildCovenRunFromThread,
@@ -119,8 +119,8 @@ import {
   unregisterActiveGroupReplyRun,
   updateActiveGroupReplyRunSession,
   type ActiveGroupReplyRun,
-} from "@/lib/group-chat-stop";
-import { useGroupProjects } from "@/lib/use-group-projects";
+} from "@/lib/chat/group-chat-stop";
+import { useGroupProjects } from "@/lib/hooks/use-group-projects";
 
 type Props = {
   familiars: ResolvedFamiliar[];

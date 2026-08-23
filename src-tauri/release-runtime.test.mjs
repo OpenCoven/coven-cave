@@ -325,7 +325,7 @@ test("macOS reachability daemon uses the managed Piper runtime", async () => {
 });
 
 test("clean release runners have resource glob placeholders", async () => {
-  const gitignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
+  const gitignore = await readFile(new URL("../../..", import.meta.url), "utf8");
 
   await Promise.all([
     access(new URL("./resources/server/placeholder.txt", import.meta.url)),

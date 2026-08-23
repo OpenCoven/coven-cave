@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { allowedResearchActions } from "../../../../../../lib/research-missions.ts";
-import type { ResearchMissionStatus } from "../../../../../../lib/research-missions.ts";
+import { allowedResearchActions } from "../../../../../../lib/research/research-missions.ts";
+import type { ResearchMissionStatus } from "../../../../../../lib/research/research-missions.ts";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 

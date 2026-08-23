@@ -25,7 +25,7 @@ import {
   ACTIVE_SESSION_STATUSES,
   underExtension,
   type AutoArchiveContext,
-} from "./chat-auto-archive.ts";
+} from "./chat/chat-auto-archive.ts";
 import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
 
 export const MERGED_AUTO_ARCHIVE_DISABLE_ENV = "COVEN_CAVE_NO_MERGED_AUTO_ARCHIVE";

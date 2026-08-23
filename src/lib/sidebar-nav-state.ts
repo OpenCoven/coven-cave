@@ -13,7 +13,7 @@
  * Kept as a pure function (no React) so the highlight rules are unit-testable.
  */
 
-import { MODE_ALIASES, isAliasWorkspaceMode } from "./workspace-mode.ts";
+import { MODE_ALIASES, isAliasWorkspaceMode } from "./projects/workspace-mode.ts";
 
 export type SidebarRowState = "active" | "split" | "idle";
 

@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { ProjectPicker } from "@/components/project-picker";
-import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import { useProjects } from "@/lib/use-projects";
+import { NO_PROJECT_ID } from "@/lib/chat/chat-projects";
+import { useProjects } from "@/lib/hooks/use-projects";
 import { publishQueueProjectSelection } from "@/lib/queue-project-selection";
 
 type QueueReadinessView = {

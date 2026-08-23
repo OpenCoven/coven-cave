@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useAnnouncer } from "@/components/ui/live-region";
-import type { PromptOption } from "@/lib/slash-prompt";
+import type { PromptOption } from "@/lib/chat/slash-prompt";
 
 // Save-as-template (cave-jg6k): turn the current draft into a reusable
 // ~/.coven/prompts template, or edit an existing user template in place. One

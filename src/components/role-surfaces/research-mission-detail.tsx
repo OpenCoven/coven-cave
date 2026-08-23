@@ -26,7 +26,7 @@ import { Modal } from "@/components/ui/modal";
 import { CitationSources } from "@/components/ui/citation";
 import { ClampedText } from "@/components/ui/clamped-text";
 import { Tabs } from "@/components/ui/tabs";
-import { sourcesToCitations } from "@/lib/citations";
+import { sourcesToCitations } from "@/lib/reading/citations";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
 import {
@@ -43,10 +43,10 @@ import {
   type ResearchMission,
   type ResearchMissionAction,
   type ResearchMissionActionInput,
-} from "@/lib/research-missions";
-import { generateResearchRefineDirection } from "@/lib/research-refine-direction";
+} from "@/lib/research/research-missions";
+import { generateResearchRefineDirection } from "@/lib/research/research-refine-direction";
 import { relativeTime } from "@/lib/relative-time";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import { fetchResearchWorkspacePath } from "./research-artifact-actions";
 import { ResearchEvidenceLedger, type ResearchOutputTab } from "./research-evidence-ledger";
 

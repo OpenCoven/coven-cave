@@ -10,13 +10,13 @@ import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { corruptAsidePath } from "./server/corrupt-aside.ts";
 
-import type { CanvasPosition, CanvasPositions } from "@/lib/canvas-layout";
+import type { CanvasPosition, CanvasPositions } from "@/lib/canvas/canvas-layout";
 import {
   sanitizeAnnotation,
   sanitizeArtifacts,
   type CanvasAnnotation,
   type CanvasArtifact,
-} from "@/lib/canvas-artifacts";
+} from "@/lib/canvas/canvas-artifacts";
 
 const CANVAS_PATH = path.join(caveHome(), "canvas.json");
 
@@ -495,4 +495,4 @@ export async function deleteCanvasArtifact(id: string): Promise<CanvasFile> {
   });
 }
 
-export type { CanvasArtifact } from "@/lib/canvas-artifacts";
+export type { CanvasArtifact } from "@/lib/canvas/canvas-artifacts";

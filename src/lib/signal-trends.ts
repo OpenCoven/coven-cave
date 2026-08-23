@@ -7,8 +7,8 @@
 // (src/lib/server/familiar-self-reports.ts) and backfills legacy reports that
 // predate snapshot persistence, so old data always loads.
 
-import type { ContextPressure, ThreadSelfReport } from "@/lib/thread-self-report";
-import { THREAD_METRIC_KEYS, THREAD_METRIC_WEIGHTS, type ThreadMetricKey } from "@/lib/thread-confidence";
+import type { ContextPressure, ThreadSelfReport } from "@/lib/chat/thread-self-report";
+import { THREAD_METRIC_KEYS, THREAD_METRIC_WEIGHTS, type ThreadMetricKey } from "@/lib/chat/thread-confidence";
 
 /** Compact metric snapshot of one thread self-report, keyed by reflection time. */
 export type ThreadMetricSnapshot = {

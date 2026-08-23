@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { CHAT_SIDEBAR_VIEW_KEY } from "@/lib/chat-session-prefs";
+import { CHAT_SIDEBAR_VIEW_KEY } from "@/lib/chat/chat-session-prefs";
 import { relativeTime } from "@/lib/relative-time";
 
 const sidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
@@ -252,11 +252,11 @@ const sidebarPrefs = vi.hoisted(() => ({
   view: null as string | null,
 }));
 
-vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => undefined }));
-vi.mock("@/lib/use-minute-tick", () => ({ useMinuteTick: () => 0 }));
-vi.mock("@/lib/use-projects", () => ({ useProjects: () => mockProjects.state }));
-vi.mock("@/lib/use-project-overrides", () => ({ useProjectOverrides: () => ({}) }));
-vi.mock("@/lib/use-pinned-sessions", () => ({ usePinnedSessions: () => sidebarPrefs.pinnedIds }));
+vi.mock("@/lib/hooks/use-focus-trap", () => ({ useFocusTrap: () => undefined }));
+vi.mock("@/lib/hooks/use-minute-tick", () => ({ useMinuteTick: () => 0 }));
+vi.mock("@/lib/hooks/use-projects", () => ({ useProjects: () => mockProjects.state }));
+vi.mock("@/lib/hooks/use-project-overrides", () => ({ useProjectOverrides: () => ({}) }));
+vi.mock("@/lib/hooks/use-pinned-sessions", () => ({ usePinnedSessions: () => sidebarPrefs.pinnedIds }));
 vi.mock("@/components/familiar-switcher", async () => {
   const { createElement } = await import("react");
   return { FamiliarSwitcher: () => createElement("div", { "data-testid": "familiar-switcher" }) };

@@ -6,13 +6,13 @@ import { bindingFor, saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
-import { filterFamiliarsForProject, loadProjectPermissions } from "@/lib/project-permissions";
+import { filterFamiliarsForProject, loadProjectPermissions } from "@/lib/projects/project-permissions";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
   normalizeFamiliarDraft,
   type OnboardingFamiliarInput,
-} from "@/lib/onboarding-familiars";
+} from "@/lib/onboarding/onboarding-familiars";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";

@@ -2182,7 +2182,7 @@ var CovenCave = (() => {
   var import_react6 = __toESM(require_react_shim());
   var import_react_dom = __toESM(require_react_dom_shim());
 
-  // src/lib/use-focus-trap.ts
+  // src/lib/hooks/use-focus-trap.ts
   init_define_import_meta_env();
   var import_react5 = __toESM(require_react_shim());
   var FOCUSABLE = [
@@ -7117,7 +7117,7 @@ var CovenCave = (() => {
   // src/components/ui/origin-chip.tsx
   init_define_import_meta_env();
 
-  // src/lib/session-origin.ts
+  // src/lib/chat/session-origin.ts
   init_define_import_meta_env();
   var ORIGIN_LABEL = {
     chat: "chat",
@@ -7378,7 +7378,7 @@ var CovenCave = (() => {
     { id: "inconsolata", label: "Inconsolata", slot: "mono", cssVar: "--font-inconsolata" }
   ];
 
-  // src/lib/theme-palettes.ts
+  // src/lib/themes/theme-palettes.ts
   init_define_import_meta_env();
   var THEME_IDS = [
     "coven",
@@ -8521,7 +8521,7 @@ var CovenCave = (() => {
   // src/components/ui/session-initiator-chip.tsx
   init_define_import_meta_env();
 
-  // src/lib/session-initiator.ts
+  // src/lib/chat/session-initiator.ts
   init_define_import_meta_env();
   function labelFromAgentId(agentId) {
     return agentId.split(/[-_]+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") || "Familiar";
@@ -8741,7 +8741,7 @@ var CovenCave = (() => {
   init_define_import_meta_env();
   var import_react30 = __toESM(require_react_shim());
 
-  // src/lib/use-roving-tabindex.ts
+  // src/lib/hooks/use-roving-tabindex.ts
   init_define_import_meta_env();
   var import_react29 = __toESM(require_react_shim());
   function useRovingTabIndex({

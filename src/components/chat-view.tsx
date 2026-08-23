@@ -7,7 +7,7 @@ import "@/styles/cave-composer.css";
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import dynamic from "next/dynamic";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
-import type { FeedbackContext } from "@/lib/message-feedback";
+import type { FeedbackContext } from "@/lib/chat/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
 import { extractLinks } from "@/lib/link-extractor";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
@@ -35,17 +35,17 @@ import {
   readCodeReadingPin,
   writeCodeReadingPin,
 } from "@/lib/code-reading-pref";
-import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
+import { resolveFileRefTarget, type FileRef } from "@/lib/projects/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
 import { ChatThreadMinimap, ChatThreadSpine } from "@/components/chat-thread-instruments";
 import { ChatRunRail } from "@/components/chat-run-rail";
-import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
+import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas/canvas-artifacts";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { SETTLE_MIN_RUN_MS, shouldFlare } from "@/lib/flare-cooldown";
 import { groupConsecutiveTools } from "@/lib/turn-segments";
-import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat-tool-batches";
+import { formatBatchDuration, toolActivitySummary, toolBatches, turnSkills, type ToolBatch } from "@/lib/chat/chat-tool-batches";
 import { ChatToolActivityLayout } from "@/components/chat-tool-activity-layout";
 import { ChatToolRunDisclosure } from "@/components/chat-tool-run-disclosure";
 import {
@@ -53,7 +53,7 @@ import {
   CHAT_OPEN_PROJECTS_EVENT,
   markCovenGroupPending,
   markCovenTabPending,
-} from "@/lib/chat-tab-events";
+} from "@/lib/chat/chat-tab-events";
 import { addableFamiliars, promoteSessionToCoven } from "@/lib/coven-promotion";
 import {
   FAMILIAR_DRAG_END,
@@ -61,11 +61,11 @@ import {
   canDropFamiliar,
   readFamiliarDrag,
   type FamiliarDragDetail,
-} from "@/lib/familiar-drag";
+} from "@/lib/familiars/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
-import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
-import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import { isLiveSnapshotActive } from "@/lib/chat/live-chat-snapshot";
+import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/chat/conversation-cache";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
 import {
   advanceLiveChatGeneration,
   clearLiveChatGeneration,
@@ -85,37 +85,37 @@ import {
   type ProgressEvent,
   type ToolEvent,
   type Turn,
-} from "@/lib/chat-turn-state";
-import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat-transcript-groups";
-import { generateChatTitle } from "@/lib/chat-title-generation";
-import { chatTurnGapLabel } from "@/lib/chat-turn-gap";
+} from "@/lib/chat/chat-turn-state";
+import { groupTranscriptTurns, type TranscriptGroup } from "@/lib/chat/chat-transcript-groups";
+import { generateChatTitle } from "@/lib/chat/chat-title-generation";
+import { chatTurnGapLabel } from "@/lib/chat/chat-turn-gap";
 import {
   chatFoldAriaLabel,
   chatFoldLabel,
   chatTranscriptFold,
-} from "@/lib/chat-transcript-fold";
-import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat-composer-prefs";
+} from "@/lib/chat/chat-transcript-fold";
+import { readChatComposerPrefs, writeChatComposerPrefs } from "@/lib/chat/chat-composer-prefs";
 import {
   newSessionDefaults,
   newSessionDefaultsMatch,
   readNewSessionDefaults,
   writeNewSessionDefaults,
-} from "@/lib/chat-new-session-defaults";
+} from "@/lib/chat/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
-import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
-import { canonicalize, formatHelp } from "@/lib/slash-commands";
+import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat/chat-reply";
+import { canonicalize, formatHelp } from "@/lib/chat/slash-commands";
 import { Icon } from "@/lib/icon";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
   claimInitialPromptHandoff,
   initialPromptHandoffClaimed,
 } from "@/lib/initial-prompt-handoff";
-import { useCopy } from "@/lib/use-copy";
-import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
+import { useCopy } from "@/lib/hooks/use-copy";
+import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/runtime/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useVisualViewport } from "@/lib/use-viewport";
+import { useVisualViewport } from "@/lib/hooks/use-viewport";
 import { ChatFindBand } from "@/components/chat-find-band";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ChatEmptyState } from "@/components/chat-empty-state";
@@ -126,14 +126,14 @@ import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
-import type { SessionRemovalReason } from "@/lib/chat-session-removal";
+import type { SessionRemovalReason } from "@/lib/chat/chat-session-removal";
 import {
   isChatArchiveNudgeDismissed,
   markChatArchiveNudgeDismissed,
   shouldShowChatArchiveNudge,
-} from "@/lib/chat-archive-nudge";
-import type { ChatLinkedContext } from "@/lib/chat-linked-context";
-import type { Card } from "@/lib/cave-board-types";
+} from "@/lib/chat/chat-archive-nudge";
+import type { ChatLinkedContext } from "@/lib/chat/chat-linked-context";
+import type { Card } from "@/lib/board/cave-board-types";
 import {
   cancelSystemBrowserUrlWindow,
   openExternalUrl,
@@ -147,43 +147,43 @@ import {
   cleanImageDataUrl,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
-} from "@/lib/chat-attachments";
+} from "@/lib/chat/chat-attachments";
 import {
   FILE_MENTION_RESULT_LIMIT,
   fileMentionToken,
   filterFileMentions,
   MAX_FILE_MENTIONS,
-} from "@/lib/file-mention";
+} from "@/lib/projects/file-mention";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { LOCAL_HOST_ID, parseConversationRuntime } from "@/lib/chat-hosts";
+import { LOCAL_HOST_ID, parseConversationRuntime } from "@/lib/chat/chat-hosts";
 import { isOmnigentHostOptionId } from "@/lib/omnigent/ids";
 import { startOmnigentRunFromBrowser } from "@/lib/omnigent/browser-run";
 import type { ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerActionsMenu } from "@/components/composer-actions-menu";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { DebugPane } from "@/components/debug-pane";
-import { isRuntimeDefaultModelArg, resolveModelArg, formatModelList } from "@/lib/slash-model";
+import { isRuntimeDefaultModelArg, resolveModelArg, formatModelList } from "@/lib/chat/slash-model";
 import {
   resolveSkillInvocation,
   formatSkillList,
   buildSkillPrompt,
   type SkillOption,
-} from "@/lib/slash-skill";
+} from "@/lib/chat/slash-skill";
 import {
   resolvePromptArg,
   formatPromptList,
   promptInsertion,
   type PromptOption,
-} from "@/lib/slash-prompt";
+} from "@/lib/chat/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
 import {
   modelForRuntimeSwitch,
-} from "@/lib/runtime-models";
-import { createModelSelectionMutationQueue } from "@/lib/model-selection-mutation-queue";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
-import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
+} from "@/lib/runtime/runtime-models";
+import { createModelSelectionMutationQueue } from "@/lib/runtime/model-selection-mutation-queue";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/hooks/use-runtime-model-options";
+import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat/chat-debug-store";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import {
   discardVoiceSessionIfEmpty,
@@ -199,26 +199,26 @@ import {
   chatUsagePlanTooltip,
   formatChatUsagePlanSummary,
   type ChatUsagePlanSnapshot,
-} from "@/lib/chat-usage-plan";
+} from "@/lib/chat/chat-usage-plan";
 import { formatChatRecency, formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
 import { computeContextMeter } from "@/lib/context-meter";
 import {
   formatRuntime,
   type ChatResponseMetadata,
-} from "@/lib/chat-response-metadata";
+} from "@/lib/chat/chat-response-metadata";
 import type { StreamEvent, ToolOffsetCorrection } from "@/lib/stream-events";
 import { rebaseToolTextOffsets } from "@/lib/tool-offset-correction";
-import { contextualizeNextPaths, type NextPath } from "@/lib/next-paths";
+import { contextualizeNextPaths, type NextPath } from "@/lib/projects/next-paths";
 import { FollowUpCards } from "@/components/chat-follow-up-cards";
 import { FollowUpTaskReview } from "@/components/chat-follow-up-task-review";
-import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { sliceGitHubBlocks, unfurlUserMessage, descriptorUrl } from "@/lib/github/github-blocks";
 import { imageCarouselKey, sliceImageBlocks } from "@/lib/image-blocks";
 import { slicePreviewBlocks } from "@/lib/preview-blocks";
-import { parseSkillInvocation } from "@/lib/skill-blocks";
+import { parseSkillInvocation } from "@/lib/skills/skill-blocks";
 import {
   chatTurnVisibleText,
   extractChatRenderedText,
-} from "@/lib/chat-rendered-text";
+} from "@/lib/chat/chat-rendered-text";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
@@ -229,21 +229,21 @@ import {
   touchAutoMission,
   writeAutoMission,
   type AutoMissionRecord,
-} from "@/lib/auto-mission-state";
-import { buildAutoModeDirective } from "@/lib/auto-mode-directive";
+} from "@/lib/automations/auto-mission-state";
+import { buildAutoModeDirective } from "@/lib/automations/auto-mode-directive";
 import {
   emitChatAttentionClear,
   emitChatAttentionSettlement,
-} from "@/lib/chat-attention-events";
+} from "@/lib/chat/chat-attention-events";
 import {
   createAdoptedAttentionSettlementRegistry,
   createChatAttentionAdoptionTracker,
   createChatAttentionSettlementTracker,
   createExternallySettledGenerationRegistry,
-} from "@/lib/chat-attention-lifecycle";
+} from "@/lib/chat/chat-attention-lifecycle";
 import {
   chatAttentionProjectionScopeKey,
-} from "@/lib/chat-attention-projection";
+} from "@/lib/chat/chat-attention-projection";
 import { GitHubCard } from "@/components/github-card";
 import { ImageCarousel } from "@/components/image-carousel";
 import { ChatSpecCard } from "@/components/chat-spec-card";
@@ -258,9 +258,9 @@ import {
   projectIdForRoot,
   recentChatProjectRoot,
   resolveChatProjectSelection,
-} from "@/lib/chat-projects";
-import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
-import { projectAccessLabel } from "@/lib/project-access-levels";
+} from "@/lib/chat/chat-projects";
+import { addChatProject, projectNameForRoot } from "@/lib/chat/chat-add-project";
+import { projectAccessLabel } from "@/lib/projects/project-access-levels";
 import {
   COMMAND_CONTROL_DEFAULTS,
   DEFAULT_PERMISSION_MODE,
@@ -271,50 +271,50 @@ import {
   type CommandThinkingEffort,
   type InitialCommandControls,
 } from "@/lib/command-controls";
-import type { ModelControlCapability, ModelControlValues } from "@/lib/model-control-capabilities";
-import { useProjects } from "@/lib/use-projects";
-import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
+import type { ModelControlCapability, ModelControlValues } from "@/lib/runtime/model-control-capabilities";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { useAutogrowTextarea } from "@/lib/hooks/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
+import { readComposerDraft, useDraftPersistence } from "@/lib/hooks/use-composer-draft";
 import { useAddProjectFlow } from "@/components/project-picker";
-import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/project-setup-offer";
+import { projectSetupCandidateRoot, projectSetupDismissKey } from "@/lib/projects/project-setup-offer";
 import { ProjectSetupModal } from "@/components/project-setup-modal";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
-import { useChangesSummary } from "@/lib/use-changes-summary";
+import { useChangesSummary } from "@/lib/hooks/use-changes-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
+import { useThreadInstrumentsVisible } from "@/lib/chat/thread-instruments-visibility";
 import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findTranscriptHits } from "@/lib/transcript-find";
-import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
-import { useComposerHistory } from "@/lib/use-composer-history";
-import { useAttachmentStaging } from "@/lib/use-attachment-staging";
-import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
+import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat/chat-model-state";
+import { useComposerHistory } from "@/lib/hooks/use-composer-history";
+import { useAttachmentStaging } from "@/lib/hooks/use-attachment-staging";
+import { useInlineSlashMenus } from "@/lib/hooks/use-inline-slash-menus";
+import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/chat/conversation-tree";
 import { createChunkCoalescer } from "@/lib/chunk-coalescer";
 import {
   createCanonicalResponseBuffer,
   type CanonicalResponseBuffer,
 } from "@/lib/canonical-response-buffer";
-import { consumeChatSse } from "@/lib/chat-sse";
+import { consumeChatSse } from "@/lib/chat/chat-sse";
 import {
   EMPTY_CHAT_STREAM_CLIENT_HEALTH,
   chatStreamHealthReducer,
   type ChatStreamClientHealth,
   type ChatStreamHealthAction,
-} from "@/lib/chat-stream-health";
-import { stripStepMarkers } from "@/lib/workflow-step-progress";
+} from "@/lib/chat/chat-stream-health";
+import { stripStepMarkers } from "@/lib/automations/workflow-step-progress";
 import {
   buildReflectTranscript,
   buildThreadReflectPrompt,
   type ThreadSelfReport,
-} from "@/lib/thread-self-report";
-import { streamFamiliarText } from "@/lib/familiar-stream";
-import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+} from "@/lib/chat/thread-self-report";
+import { streamFamiliarText } from "@/lib/familiars/familiar-stream";
+import { usePromptEnhance } from "@/lib/hooks/use-prompt-enhance";
 import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { AttachmentList, AttachmentThumb, InlineImageAttachments, InlineMediaAttachments, formatAttachmentBytes, isInlineImageAttachment, isInlineMediaAttachment } from "./chat-attachment-cards";
 import { preloadMarkdownPreview } from "@/lib/markdown-preview";
@@ -325,9 +325,9 @@ import {
   onDoneCreationRefresh,
   onCreationRunTerminated,
   shouldReplacementRefreshOnDone,
-} from "@/lib/chat-creation-refresh";
-import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat-session-ownership";
-import type { ChatSessionPromotionRequest } from "@/lib/chat-router-promotion";
+} from "@/lib/chat/chat-creation-refresh";
+import { canPromoteDisplayedSession, ownsDisplayedView } from "@/lib/chat/chat-session-ownership";
+import type { ChatSessionPromotionRequest } from "@/lib/chat/chat-router-promotion";
 
 // Chat history commonly arrives before syntax highlighting is needed. Warm the
 // lightweight browser-only serializer while that request is in flight so
@@ -343,7 +343,7 @@ preloadMarkdownPreview();
 // value is a pure function of the turn, so sharing across instances is safe.
 const replyableTurnCache = new WeakMap<Turn, boolean>();
 
-// `isLiveSnapshotActive` lives in @/lib/live-chat-snapshot so the staleness rule
+// `isLiveSnapshotActive` lives in @/lib/chat/live-chat-snapshot so the staleness rule
 // (the guard that stops a remounted view from inheriting a zombie "Streaming…"
 // state) can be unit-tested without React. The full LiveChatGenerationSnapshot
 // is structurally assignable to the helper's minimal SnapshotLiveness shape.

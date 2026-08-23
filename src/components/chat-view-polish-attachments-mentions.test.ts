@@ -39,9 +39,9 @@ assert.match(
   /role="dialog"[\s\S]*aria-modal="true"/,
   "Attachment lightbox should expose modal dialog semantics",
 );
-// Behavioral: mention token parsing + fuzzy ranking (src/lib/file-mention.ts)
+// Behavioral: mention token parsing + fuzzy ranking (src/lib/projects/file-mention.ts)
 const { fileMentionToken, filterFileMentions, MAX_FILE_MENTIONS, FILE_MENTION_RESULT_LIMIT } =
-  await import("../lib/file-mention.ts");
+  await import("../lib/projects/file-mention.ts");
 
 assert.deepEqual(
   fileMentionToken("@", 1),
@@ -81,8 +81,8 @@ assert.equal(
 
 const mentionIndexFixture = [
   "src/components/chat-view.tsx",
-  "src/lib/chat-attachments.ts",
-  "src/lib/file-mention.ts",
+  "src/lib/chat/chat-attachments.ts",
+  "src/lib/projects/file-mention.ts",
   "docs/changelog.md",
   "chat.ts",
 ];

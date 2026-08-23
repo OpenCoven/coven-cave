@@ -6,7 +6,7 @@ const read = (rel) => readFile(new URL(rel, import.meta.url), "utf8");
 const card = await read("./salem-pathfinder-card.tsx");
 const widget = await read("./salem-widget.tsx");
 const sidebar = await read("../sidebar-minimal.tsx");
-const navigation = await read("../../lib/workspace-navigation.ts");
+const navigation = await read("../../lib/projects/workspace-navigation.ts");
 const projects = await read("../projects-view.tsx");
 const boardRoute = await read("../../app/api/board/route.ts");
 

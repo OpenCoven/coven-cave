@@ -22,12 +22,12 @@ import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Tabs } from "@/components/ui/tabs";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
 import { Button } from "@/components/ui/button";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { deriveFamiliarTabState } from "@/lib/familiar-tab-state";
-import { deriveFamiliarSectionData } from "@/lib/familiar-tab-section-model";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
+import { deriveFamiliarTabState } from "@/lib/familiars/familiar-tab-state";
+import { deriveFamiliarSectionData } from "@/lib/familiars/familiar-tab-section-model";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
@@ -35,12 +35,12 @@ import {
   canonicalHarnessId,
   isBindableRuntimeChoice,
   type AdapterReport,
-} from "@/lib/harness-adapters";
-import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/chat-tab-events";
-import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
+} from "@/lib/runtime/harness-adapters";
+import { consumeFamiliarSettingsPending, type FamiliarSettingsTab } from "@/lib/chat/chat-tab-events";
+import { openFamiliarStudioSettingsTab } from "@/lib/familiars/familiar-studio-context";
 import { listVoiceProviders } from "@/lib/voice/registry";
-import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
-import { modelForRuntimeSwitch } from "@/lib/runtime-models";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/hooks/use-runtime-model-options";
+import { modelForRuntimeSwitch } from "@/lib/runtime/runtime-models";
 import { relativeTime } from "@/lib/relative-time";
 import { FamiliarSkillsSection } from "@/components/familiar-tab-skills";
 import { FamiliarIdentitySection } from "@/components/familiar-tab-identity";

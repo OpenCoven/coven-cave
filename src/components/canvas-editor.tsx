@@ -21,23 +21,23 @@ import {
   type CanvasAnnotation,
   type CanvasArtifact,
   type CanvasComponentTarget,
-} from "@/lib/canvas-artifacts";
-import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
-import { generateArtifactCode } from "@/lib/canvas-generate";
-import { buildCanvasCommentsRequest } from "@/lib/canvas-comments";
-import { resolveEscapeAction } from "@/lib/canvas-editor-escape";
+} from "@/lib/canvas/canvas-artifacts";
+import { buildReactSrcDoc } from "@/lib/canvas/canvas-react-harness";
+import { generateArtifactCode } from "@/lib/canvas/canvas-generate";
+import { buildCanvasCommentsRequest } from "@/lib/canvas/canvas-comments";
+import { resolveEscapeAction } from "@/lib/canvas/canvas-editor-escape";
 import {
   CANVAS_INSPECTOR_READY_MESSAGE_TYPE,
   createCanvasInspectorChannel,
   isCanvasComponentSelectedMessage,
-} from "@/lib/canvas-inspector";
+} from "@/lib/canvas/canvas-inspector";
 import {
   CANVAS_VIEWPORT_PRESETS,
   canvasViewportPreset,
   describeViewport,
   resolveViewportScale,
   type CanvasViewportPresetId,
-} from "@/lib/canvas-viewport";
+} from "@/lib/canvas/canvas-viewport";
 
 type EditorMode = "interact" | "select" | "comment" | "edit";
 

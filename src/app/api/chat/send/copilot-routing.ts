@@ -2,12 +2,12 @@ import {
   copilotDirectStreamConfigured,
   copilotStreamSpec,
   type CopilotStreamSpec,
-} from "../../../../lib/copilot-stream.ts";
+} from "../../../../lib/integrations/copilot/copilot-stream.ts";
 import {
   RUNTIME_AVAILABILITY_ERROR_CODES,
   type RuntimeAvailability,
   type RuntimeAvailabilityErrorCode,
-} from "../../../../lib/runtime-availability.ts";
+} from "../../../../lib/runtime/runtime-availability.ts";
 import {
   copilotCapabilityFailureMessage,
   type CopilotCapabilityDiagnostic,

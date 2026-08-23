@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseCodexRrule } from "@/lib/codex-automation-form";
+import { parseCodexRrule } from "@/lib/integrations/codex/codex-automation-form";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   makeProductionResearchMissionRunner,

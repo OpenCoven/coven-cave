@@ -11,7 +11,7 @@
  * remediation text on the chip and on the card it blocks are the same string.
  */
 
-import type { ResearchGenerationReadiness } from "@/lib/research-generations";
+import type { ResearchGenerationReadiness } from "@/lib/research/research-generations";
 
 export type ProviderChipState = "ready" | "blocked" | "unknown";
 

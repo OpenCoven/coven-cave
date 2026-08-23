@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server.js";
 
 import { isLocalOrigin } from "@/lib/server/local-origin";
-import { loadMobileWriteAccess, updateMobileWriteAccess } from "@/lib/project-permissions";
+import { loadMobileWriteAccess, updateMobileWriteAccess } from "@/lib/projects/project-permissions";
 
 export const dynamic = "force-dynamic";
 

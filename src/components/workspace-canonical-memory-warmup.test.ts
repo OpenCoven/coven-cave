@@ -7,9 +7,9 @@ import { act, create } from "react-test-renderer";
 import {
   clearCanonicalMemoryResources,
   readCanonicalMemoryList,
-} from "../lib/canonical-memory-resources.ts";
-import { canonicalMemoryLocalAccessEligible } from "../lib/canonical-memory-local-access.ts";
-import { useCanonicalMemoryWarmup } from "../lib/use-canonical-memory-warmup.ts";
+} from "../lib/memory/canonical-memory-resources.ts";
+import { canonicalMemoryLocalAccessEligible } from "../lib/memory/canonical-memory-local-access.ts";
+import { useCanonicalMemoryWarmup } from "../lib/hooks/use-canonical-memory-warmup.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 

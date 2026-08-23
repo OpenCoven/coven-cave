@@ -16,14 +16,14 @@ const {
   migrateAdHocMissionGrants,
   RESEARCH_LANDING_PROJECT_NAME,
 } = await import("./research-landing.ts");
-const { createProject, loadProjects } = await import("../cave-projects.ts");
+const { createProject, loadProjects } = await import("../projects/cave-projects.ts");
 const {
   createAccessGroup,
   effectiveProjectAccess,
   grantProjectToFamiliar,
   listProjectGrants,
   loadProjectPermissions,
-} = await import("../project-permissions.ts");
+} = await import("../projects/project-permissions.ts");
 const { researchMissionsRoot } = await import("./research-mission-store.ts");
 
 test.after(async () => {

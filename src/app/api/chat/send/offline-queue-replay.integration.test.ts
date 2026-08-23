@@ -81,16 +81,16 @@ try {
   const config = await import("@/lib/cave-config");
   const conversations = await import("@/lib/cave-conversations");
   const replay = await import("@/lib/travel-offline-replay.ts");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const {
     applyChatAttentionProjections,
     chatAttentionProjectionScopeKey,
     createChatAttentionProjectionState,
     recordChatAttentionClear,
     settleChatAttentionClear,
-  } = await import("@/lib/chat-attention-projection.ts");
-  const { mergeSessionRows } = await import("@/lib/session-list-merge.ts");
+  } = await import("@/lib/chat/chat-attention-projection.ts");
+  const { mergeSessionRows } = await import("@/lib/chat/session-list-merge.ts");
 
   await config.saveConfig({
     defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },

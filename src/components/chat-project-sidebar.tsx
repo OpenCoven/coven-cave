@@ -4,47 +4,47 @@ import "@/styles/chat-list.css";
 
 import { useEffect, useMemo, useState, type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import type { SessionRow } from "@/lib/types";
-import { type ChatProjectGroup } from "@/lib/chat-projects";
-import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
-import { setProjectOverride } from "@/lib/chat-project-overrides";
+import { type ChatProjectGroup } from "@/lib/chat/chat-projects";
+import { selectionKey, type ProjectSelection } from "@/lib/chat/chat-project-selection";
+import { setProjectOverride } from "@/lib/chat/chat-project-overrides";
 import {
   chatProjectOrganizationGroups,
   organizationExpansionKey,
-} from "@/lib/project-organizations";
-import { sessionRailTitle } from "@/lib/session-rail-title";
-import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
+} from "@/lib/projects/project-organizations";
+import { sessionRailTitle } from "@/lib/chat/session-rail-title";
+import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/chat/conversation-cache";
 import { relativeTime } from "@/lib/relative-time";
 import {
   isSessionPinned,
   toggleStoredPinnedSession,
-} from "@/lib/chat-session-prefs";
-import { usePinnedSessions } from "@/lib/use-pinned-sessions";
+} from "@/lib/chat/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/hooks/use-pinned-sessions";
 import {
   applyManualOrder,
   partitionPinnedFirst,
   mergeVisibleOrder,
   readSessionOrder,
   writeSessionOrder,
-} from "@/lib/chat-session-order";
+} from "@/lib/chat/chat-session-order";
 import {
   CHAT_RAIL_MODE_KEY,
   normalizeChatRailMode,
   railGroupPreview,
   railMoreLabel,
   type ChatRailMode,
-} from "@/lib/chat-session-grouping";
+} from "@/lib/chat/chat-session-grouping";
 import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchInput } from "@/components/ui/search-input";
 import { SurfaceRail } from "@/components/ui/surface-rail";
 import { ProjectAvatar } from "@/components/project-avatar";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat/chat-tab-events";
 import {
   CHAT_SESSION_DRAG_MIME,
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
-} from "@/lib/chat-split";
+} from "@/lib/chat/chat-split";
 import {
   DndContext,
   PointerSensor,

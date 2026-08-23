@@ -4,8 +4,8 @@
 // api.github.com. Returns null (section absent, never an error) when neither
 // a PAT nor GITHUB_USERNAME is configured.
 
-import { resolveGitHubToken } from "@/lib/github-token";
-import { resolveSecret } from "@/lib/vault";
+import { resolveGitHubToken } from "@/lib/github/github-token";
+import { resolveSecret } from "@/lib/grimoire/vault";
 import type { MergedPr } from "@/lib/daily-report-facts";
 
 const GH = "https://api.github.com";

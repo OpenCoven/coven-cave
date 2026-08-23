@@ -20,7 +20,7 @@ const styles = [
 
 assert.match(
   component,
-  /import\s+\{[^}]*useFocusTrap[^}]*\}\s+from\s+["']@\/lib\/use-focus-trap["']/,
+  /import\s+\{[^}]*useFocusTrap[^}]*\}\s+from\s+["']@\/lib\/hooks\/use-focus-trap["']/,
   "VoiceCallOverlay imports the shared focus trap",
 );
 

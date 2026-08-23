@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { hasConfiguredSecretMetadata, resolveSecret } from "../vault.ts";
+import { hasConfiguredSecretMetadata, resolveSecret } from "../grimoire/vault.ts";
 
 const execFileAsync = promisify(execFile);
 

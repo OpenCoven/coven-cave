@@ -5,7 +5,7 @@
  */
 
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { GitHubItem } from "@/lib/github-tasks";
+import type { GitHubItem } from "@/lib/github/github-tasks";
 import type { SparkPoint } from "@/components/ui/sparkline";
 import type { TrendSeries } from "@/components/ui/charts/trend-chart";
 import type { FamiliarInsightRow } from "@/lib/coven-analytics";

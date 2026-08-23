@@ -18,7 +18,7 @@ import {
   ConnectHostDialog,
   useComposerHosts,
 } from "@/components/composer-host-chip";
-import { LOCAL_HOST_ID, type ChatHostOption } from "@/lib/chat-hosts";
+import { LOCAL_HOST_ID, type ChatHostOption } from "@/lib/chat/chat-hosts";
 
 export type ComposerOptionChoice = { value: string; label: string };
 

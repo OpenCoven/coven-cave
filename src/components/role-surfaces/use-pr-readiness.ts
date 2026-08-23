@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { summarizeChecks } from "@/lib/github-checks";
+import { summarizeChecks } from "@/lib/github/github-checks";
 import { createReviewRequestGate, type ReviewRequest } from "./review-deck";
 import type { LatestReview, PrFacts, ReadinessCheckRun, ReadinessThread, ReviewTally } from "./review-readiness";
 

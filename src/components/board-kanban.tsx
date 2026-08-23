@@ -3,21 +3,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
-import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
-import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
+import type { Card, CardStatus, CardPriority } from "@/lib/board/cave-board-types";
+import { scheduleLabel, scheduleUrgency } from "@/lib/board/board-schedule";
+import { smoothScrollBehavior } from "@/lib/hooks/use-prefers-reduced-motion";
 import { useDateTimePrefs } from "@/lib/datetime-format";
-import type { CaveProject } from "@/lib/cave-projects";
+import type { CaveProject } from "@/lib/projects/cave-projects";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Popover } from "@/components/ui/popover";
-import { type WipLimits, wipState } from "@/lib/board-wip";
-import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
+import { type WipLimits, wipState } from "@/lib/board/board-wip";
+import { sessionStatusTone, sessionStatusWord } from "@/lib/chat/session-status";
 
 const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "backlog",  label: "Backlog",  hint: "Ideas and work not ready to dispatch." },

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { listMemoryFileEntries } from "@/lib/server/memory-file-inventory";
-import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
+import { scopeMemoryFilesToFamiliar } from "@/lib/memory/memory-file-scope";
 
 export const dynamic = "force-dynamic";
 

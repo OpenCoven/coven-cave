@@ -9,9 +9,9 @@ import { PopoverItem } from "@/components/ui/popover";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
-import { useIsCoarsePointer } from "@/lib/use-viewport";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
-import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useIsCoarsePointer } from "@/lib/hooks/use-viewport";
+import { useRovingTabIndex } from "@/lib/hooks/use-roving-tabindex";
+import { useUndoDelete } from "@/lib/hooks/use-undo-delete";
 import {
   addSignalDismissal,
   clearSignalDismissals,
@@ -19,9 +19,9 @@ import {
   partitionDismissedSignals,
   signalIdentity,
   type SignalDismissalMap,
-} from "@/lib/thread-signal-dismissals";
+} from "@/lib/chat/thread-signal-dismissals";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
@@ -31,7 +31,7 @@ import {
   type ThreadSignalsAggregate,
   type ThreadSignalReviewItem,
   type ThreadSelfReport,
-} from "@/lib/thread-self-report";
+} from "@/lib/chat/thread-self-report";
 
 type ThreadSignalTableRow = {
   id: string;

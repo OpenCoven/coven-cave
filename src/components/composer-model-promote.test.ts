@@ -57,7 +57,7 @@ test("the row is offered only when it would do something", () => {
   // familiar default. That made the row a no-op in that case and left it on
   // screen after a successful promotion (promoting does not clear the session
   // intent). The comparison against the stored default is the fix — see the
-  // executable proof in src/lib/chat-model-state.test.ts.
+  // executable proof in src/lib/chat/chat-model-state.test.ts.
   assert.match(
     chatView,
     /modelState\.effectiveModel !== modelState\.familiarDefaultModel/,

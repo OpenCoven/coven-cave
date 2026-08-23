@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import type { CreateResearchMissionInput } from "@/lib/research-missions";
-import { validateCreateResearchMissionInput } from "@/lib/research-missions";
+import type { CreateResearchMissionInput } from "@/lib/research/research-missions";
+import { validateCreateResearchMissionInput } from "@/lib/research/research-missions";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   listAndReconcileResearchMissions,

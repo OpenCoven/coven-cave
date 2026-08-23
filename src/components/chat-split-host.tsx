@@ -12,7 +12,7 @@
  *     each secondary pane with its own slim header (title · open as main · ✕).
  *
  * The chat sibling of DetailSplitHost (workspace pages); geometry and layout
- * rules live in `@/lib/chat-split`.
+ * rules live in `@/lib/chat/chat-split`.
  */
 
 import React from "react";
@@ -34,7 +34,7 @@ import {
   type ChatSessionDragDetail,
   type ChatSplitAxis,
   type ChatSplitSizes,
-} from "@/lib/chat-split";
+} from "@/lib/chat/chat-split";
 
 export type ChatSplitTile = {
   /** CHAT_SPLIT_PRIMARY or a session id. */

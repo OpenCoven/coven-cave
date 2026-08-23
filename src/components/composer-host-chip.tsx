@@ -18,7 +18,7 @@ import {
   PopoverBody,
   PopoverLabel,
 } from "@/components/ui/popover";
-import { LOCAL_HOST_ID, type ChatHostOption } from "@/lib/chat-hosts";
+import { LOCAL_HOST_ID, type ChatHostOption } from "@/lib/chat/chat-hosts";
 import "@/styles/composer-host-chip.css";
 
 export function hostStatusKind(option: ChatHostOption): "online" | "offline" | "unknown" {

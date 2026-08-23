@@ -11,7 +11,7 @@ import {
   resolveRoomVisibility,
   type RoomVisibilityEnv,
 } from "./room-flags.ts";
-import { FAMILIAR_TYPES } from "./familiar-types.ts";
+import { FAMILIAR_TYPES } from "./familiars/familiar-types.ts";
 import { CODE_SURFACE_ID } from "../components/role-surfaces/ids.ts";
 
 const CODE = CODE_SURFACE_ID;
@@ -149,7 +149,7 @@ test("the Coding familiar's room is registered for the coder role", () => {
   // …while its id stays the persisted `surface:code` mode the aliases resolve into.
   assert.equal(CODE_SURFACE_ID, "code", "renaming the room must not rename its stored mode");
 
-  const types = repoFile("src/lib/familiar-types.ts");
+  const types = repoFile("src/lib/familiars/familiar-types.ts");
   assert.match(
     types,
     /id: "coding",[^}]*roleToken: "coder"/,
@@ -160,7 +160,7 @@ test("the Coding familiar's room is registered for the coder role", () => {
 // ── The gate is applied where it can't be routed around ──────────────────────
 
 test("build visibility filters the registry at the single visibleSurfaces choke point", () => {
-  const hook = repoFile("src/lib/use-role-surfaces.ts");
+  const hook = repoFile("src/lib/hooks/use-role-surfaces.ts");
   assert.match(hook, /import \{ roomEnabledInBuild \} from "@\/lib\/room-flags";/);
   assert.match(
     hook,

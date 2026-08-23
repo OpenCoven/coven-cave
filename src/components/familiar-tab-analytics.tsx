@@ -31,9 +31,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { IconButton } from "@/components/ui/icon-button";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { pulseDelta, pulseTotal, type PulseDay } from "@/lib/session-pulse";
-import type { CardLifecycle } from "@/lib/cave-board-types";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { pulseDelta, pulseTotal, type PulseDay } from "@/lib/chat/session-pulse";
+import type { CardLifecycle } from "@/lib/board/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import "@/styles/familiar-tab-analytics.css";
 

@@ -12,7 +12,7 @@
 import { useId, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import { COVEN_RUN_STATUS, type CovenHistoryFold } from "@/lib/coven-run";
 
 export function CovenHistoryFoldView({

@@ -3,13 +3,13 @@ import {
   stripGitHubMarkers,
   stripIncompleteGitHubMarker,
   type GitHubTextPiece,
-} from "./github-blocks.ts";
-import { extractNextPaths } from "./next-paths.ts";
-import type { NextPath } from "./next-paths.ts";
+} from "./github/github-blocks.ts";
+import { extractNextPaths } from "./projects/next-paths.ts";
+import type { NextPath } from "./projects/next-paths.ts";
 import {
   extractSkillMarkers,
   type SkillStageUpdate,
-} from "./skill-blocks.ts";
+} from "./skills/skill-blocks.ts";
 
 export type QuickChatAssistantMessage = {
   copyText: string;

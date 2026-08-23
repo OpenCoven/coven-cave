@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { FamiliarsMemoryView, type MemoryFeed } from "./familiars-memory-view";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
-import type { CanonicalMemoryListLoad } from "@/lib/canonical-memory-resources";
+import { CanonicalMemoryRequestError } from "@/lib/memory/canonical-memory-client";
+import type { CanonicalMemoryListLoad } from "@/lib/memory/canonical-memory-resources";
 
 const resourceMocks = vi.hoisted(() => ({
   loadList: vi.fn(),
@@ -23,17 +23,17 @@ const pollMock = vi.hoisted(() => ({
   callback: null as null | (() => void),
 }));
 
-vi.mock("@/lib/canonical-memory-resources", () => ({
+vi.mock("@/lib/memory/canonical-memory-resources", () => ({
   loadCanonicalMemoryList: resourceMocks.loadList,
   loadCanonicalMemoryOverview: resourceMocks.loadOverview,
   refreshCanonicalMemory: resourceMocks.refresh,
 }));
 
-vi.mock("@/lib/surface-warmup-registry", () => ({
+vi.mock("@/lib/surfaces/surface-warmup-registry", () => ({
   readSurfaceResource: resourceMocks.readSurface,
 }));
 
-vi.mock("@/lib/use-pausable-poll", () => ({
+vi.mock("@/lib/hooks/use-pausable-poll", () => ({
   usePausablePoll: (
     callback: () => void,
     _intervalMs: number,

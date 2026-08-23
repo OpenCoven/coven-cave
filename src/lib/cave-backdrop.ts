@@ -16,7 +16,7 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { contrastRatio, oklabToRgb, parseThemeColor, rgbToOklab } from "@/lib/theme-contrast";
+import { contrastRatio, oklabToRgb, parseThemeColor, rgbToOklab } from "@/lib/themes/theme-contrast";
 import {
   readAppPreferences,
   refreshAppPreferences,
@@ -32,7 +32,7 @@ import {
   type CaveBackdropStyle,
   type CaveMode,
 } from "@/lib/preferences-schema";
-import { activeCustomThemeVariables } from "@/lib/theme-runtime";
+import { activeCustomThemeVariables } from "@/lib/themes/theme-runtime";
 
 const PREFS_KEY = "cave:backdrop:v1";
 const DB_NAME = "cave-backdrop";

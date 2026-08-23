@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
-import { COMPATIBILITY_ADAPTERS, canonicalHarnessId } from "@/lib/harness-adapters";
+import { COMPATIBILITY_ADAPTERS, canonicalHarnessId } from "@/lib/runtime/harness-adapters";
 import {
   openClawBridgeCapabilities,
   type OpenClawBridgeCapabilities,
-} from "@/lib/openclaw-bridge";
+} from "@/lib/openclaw/openclaw-bridge";
 import { scanClaudeUserSkills } from "@/lib/server/skill-scan";
 
 export const dynamic = "force-dynamic";

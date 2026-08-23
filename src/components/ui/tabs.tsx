@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useRovingTabIndex } from "@/lib/hooks/use-roving-tabindex";
 
 /**
  * Shared Vercel-style tabs — one coherent tab visual language for the whole app.

@@ -6,7 +6,7 @@ const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 // [1] Windows path normalization must use a SINGLE backslash. The prior
 // `replace(/\//g, "\\\\")` emitted doubled backslashes, producing malformed
 // paths that broke the spawn cwd + the allow-list comparison on Windows.
-const scope = read("../lib/chat-runtime-scope.ts");
+const scope = read("../lib/chat/chat-runtime-scope.ts");
 assert.doesNotMatch(scope, /\\{4,}/, "chat-runtime-scope has no doubled-backslash Windows path replacement");
 assert.match(scope, /SINGLE backslash/, "the Windows path fix documents single-backslash normalization");
 

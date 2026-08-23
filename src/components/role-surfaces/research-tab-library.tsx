@@ -32,12 +32,12 @@ import { MarkdownBlock } from "@/components/message-bubble";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { formatDate, useDateTimePrefs } from "@/lib/datetime-format";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { openGrimoireDoc } from "@/lib/grimoire/grimoire-link";
 import { Icon } from "@/lib/icon";
 import {
   isAutoresearchSnapshot,
   type AutoresearchRow,
-} from "@/lib/research-autoloop";
+} from "@/lib/research/research-autoloop";
 import {
   researchBoundReadings,
   researchPhaseStatuses,
@@ -46,9 +46,9 @@ import {
   type ResearchMission,
   type ResearchMissionMode,
   type ResearchMissionStatus,
-} from "@/lib/research-missions";
+} from "@/lib/research/research-missions";
 import { relativeTime } from "@/lib/relative-time";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import type { ResearchTabProps } from "./researcher-surface";
 import { ResearchArtifactActions } from "./research-artifact-actions";
 

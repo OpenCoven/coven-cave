@@ -21,7 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { harnessSpawnEnv } from "../runtime/harness-spawn-env.ts";
 
 export type AssistInvocation = {
   command: string;

@@ -7,8 +7,8 @@ import "@/styles/cave-composer.css";
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
-import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surface-history";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
+import { CHAT_SESSION_LEVEL, registerSurfaceHistoryGate } from "@/lib/surfaces/surface-history";
 import {
   ChatCanvasView,
   ChatFamiliarView,
@@ -16,14 +16,14 @@ import {
   ProjectsView,
   WorkspaceRail,
 } from "@/components/lazy-surfaces";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat-tab-events";
-import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_SKILLS_EVENT, consumeCovenTabPending, consumeProjectsTabPending, consumeSkillsTabPending } from "@/lib/chat/chat-tab-events";
+import { requestDebugOpen, useChatDebugSnapshot } from "@/lib/chat/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
-import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useWorkspaceRailController } from "@/lib/hooks/use-workspace-rail-controller";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import type { InitialCommandControls } from "@/lib/command-controls";

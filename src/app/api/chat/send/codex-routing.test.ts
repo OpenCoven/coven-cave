@@ -5,7 +5,7 @@ import {
   CODEX_BOOTSTRAP_SCHEMAS,
   parseCodexStreamEvent,
   resolveCodexSchema,
-} from "../../../../lib/codex-compatibility.ts";
+} from "../../../../lib/integrations/codex/codex-compatibility.ts";
 import {
   buildCodexExecArgs,
   isSafeCodexResumeSessionId,

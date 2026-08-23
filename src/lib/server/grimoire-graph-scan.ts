@@ -19,10 +19,10 @@ import { open } from "node:fs/promises";
 import { listKnowledgeEntries } from "./knowledge-vault";
 import { listMemoryFileEntries } from "./memory-file-inventory";
 import { listJournalEntries, readJournalEntry } from "./journal-store";
-import { familiarInScope } from "../familiar-multiselect";
+import { familiarInScope } from "../familiars/familiar-multiselect";
 import { parseMdDocument } from "../md-frontmatter";
-import { buildDocGraph, type DocGraph, type GraphSourceDoc } from "../grimoire-graph";
-import type { WikiDocIndex } from "../wiki-link-resolve";
+import { buildDocGraph, type DocGraph, type GraphSourceDoc } from "../grimoire/grimoire-graph";
+import type { WikiDocIndex } from "../reading/wiki-link-resolve";
 
 export type GrimoireGraphMeta = {
   knowledge: { scanned: number };

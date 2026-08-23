@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { Card } from "@/lib/cave-board-types";
+import type { Card } from "@/lib/board/cave-board-types";
 import { Icon } from "@/lib/icon";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/lib/hooks/use-copy";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 

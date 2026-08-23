@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
-import type { CardStatus } from "@/lib/cave-board-types";
+import type { CardStatus } from "@/lib/board/cave-board-types";
 
 export type FilterOption = { id: string; label: string; checked: boolean };
 

@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./project-grant-targets.ts", import.meta.ur
 
 assert.match(
   source,
-  /import \{ loadProjects, projectById \} from "@\/lib\/cave-projects";/,
+  /import \{ loadProjects, projectById \} from "@\/lib\/projects\/cave-projects";/,
   "grant-target validation uses the shared project loader helpers",
 );
 assert.match(

@@ -29,7 +29,7 @@ import { invalidateOpenCovenToolUpdateCache } from "@/lib/opencoven-tools-update
 import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verification";
 import { resolveStaleOpenCovenLaunchers } from "@/lib/opencoven-tools-resolve";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
-import { startLocalDaemon } from "@/lib/daemon-start";
+import { startLocalDaemon } from "@/lib/daemon/daemon-start";
 import {
   markDaemonCliInstalling,
   daemonUpdateTraceLine,
@@ -38,7 +38,7 @@ import {
   type DaemonCommandResult,
   type DaemonUpdateDependencies,
   type DaemonUpdateLifecycle,
-} from "@/lib/daemon-update-lifecycle";
+} from "@/lib/daemon/daemon-update-lifecycle";
 import {
   appendOutput,
   appendTrace,
@@ -46,7 +46,7 @@ import {
   type InstallJobOutput,
 } from "./install-job-output";
 import { runInstallProcess } from "./install-process";
-import { prerequisiteById, type PrerequisiteId } from "@/lib/onboarding-prerequisites";
+import { prerequisiteById, type PrerequisiteId } from "@/lib/onboarding/onboarding-prerequisites";
 import {
   installManagedNodeToolchain,
   managedNpmLaunch,

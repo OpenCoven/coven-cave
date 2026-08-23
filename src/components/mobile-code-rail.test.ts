@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const chat = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const task = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
-const controller = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
+const controller = await readFile(new URL("../lib/hooks/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const sheet = await readFile(new URL("./workspace-rail-sheet.tsx", import.meta.url), "utf8");
 const rail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
 const combined = `${chat}\n${task}\n${controller}\n${sheet}`;

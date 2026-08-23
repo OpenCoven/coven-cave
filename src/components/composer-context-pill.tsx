@@ -22,15 +22,15 @@ import {
 } from "@/components/composer-runtime-chip";
 import { GitBranchMenuPopover, useBranchPr } from "@/components/composer-git-chip";
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
-import { useChangesSummary } from "@/lib/use-changes-summary";
-import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
-import type { CreateProjectOptions } from "@/lib/chat-add-project";
-import { projectAccessLabel } from "@/lib/project-access-levels";
+import { useChangesSummary } from "@/lib/hooks/use-changes-summary";
+import { NO_PROJECT_ID } from "@/lib/chat/chat-projects";
+import { sortProjectsAlphabetically, type CaveProject } from "@/lib/projects/cave-projects-types";
+import type { CreateProjectOptions } from "@/lib/chat/chat-add-project";
+import { projectAccessLabel } from "@/lib/projects/project-access-levels";
 import {
   runtimeOwnsModelDefault,
   type RuntimeModelOption,
-} from "@/lib/runtime-models";
+} from "@/lib/runtime/runtime-models";
 
 export type ComposerContextView = null | "project" | "model" | "branch" | "worktree";
 

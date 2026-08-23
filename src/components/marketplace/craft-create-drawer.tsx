@@ -5,10 +5,10 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
+import { openFamiliarStudioSettingsTab } from "@/lib/familiars/familiar-studio-context";
 import { buildCraftAgentPrompt } from "@/lib/craft-agent-prompt";
 import {
   clearCraftArrivalWatch,

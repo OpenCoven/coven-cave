@@ -41,7 +41,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /import \{ VISIBLE_WORKSPACE_NAV_ITEMS \} from "@\/lib\/workspace-navigation"/,
+  /import \{ VISIBLE_WORKSPACE_NAV_ITEMS \} from "@\/lib\/projects\/workspace-navigation"/,
   "standalone routes consume the same navigation registry as the workspace sidebar",
 );
 assert.match(

@@ -18,7 +18,7 @@ const chatViewSrc = readFileSync(
   "utf8",
 );
 const libSrc = readFileSync(
-  new URL("../lib/chat-archive-nudge.ts", import.meta.url),
+  new URL("../lib/chat/chat-archive-nudge.ts", import.meta.url),
   "utf8",
 );
 
@@ -91,7 +91,7 @@ assert.match(
 );
 assert.match(
   chatViewSrc,
-  /import \{[\s\S]*isChatArchiveNudgeDismissed,[\s\S]*markChatArchiveNudgeDismissed,[\s\S]*shouldShowChatArchiveNudge,[\s\S]*\} from "@\/lib\/chat-archive-nudge"/,
+  /import \{[\s\S]*isChatArchiveNudgeDismissed,[\s\S]*markChatArchiveNudgeDismissed,[\s\S]*shouldShowChatArchiveNudge,[\s\S]*\} from "@\/lib\/chat\/chat-archive-nudge"/,
   "chat-view imports all three nudge helpers from the lib",
 );
 assert.match(

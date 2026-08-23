@@ -10,7 +10,7 @@ import {
 import {
   classifyDaemonFailureAvailability,
   type DaemonAvailability,
-} from "../daemon-status-classification.ts";
+} from "../daemon/daemon-status-classification.ts";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "./daemon-health-request.ts";
 import { classifyHubFailure } from "./daemon-probe.ts";
 

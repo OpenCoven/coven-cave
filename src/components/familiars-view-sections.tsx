@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
@@ -25,15 +25,15 @@ import {
   type CanonicalMemoryAvailability,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
-import { deriveRenown } from "@/lib/familiar-renown";
+import { deriveRenown } from "@/lib/familiars/familiar-renown";
 import { compactCount } from "@/lib/profile-card";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
+import { useFamiliarStudio } from "@/lib/familiars/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { useDetailOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { useDetailOverlayHistory, useTrackedSurfaceValue } from "@/lib/hooks/use-surface-history";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
 import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
 
 export function emptyStats(

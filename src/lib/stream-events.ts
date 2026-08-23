@@ -1,5 +1,5 @@
-import type { ChatAttachment } from "@/lib/chat-attachments";
-import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { ChatAttachment } from "@/lib/chat/chat-attachments";
+import type { ChatResponseMetadata } from "@/lib/chat/chat-response-metadata";
 import type { TurnUsage } from "@/lib/usage-format";
 
 export type ToolOffsetCorrection = { after: number; delta: number };

@@ -1,4 +1,4 @@
-import type { PromptOption } from "./slash-prompt";
+import type { PromptOption } from "./chat/slash-prompt";
 
 /**
  * Built-in prompt templates — always available, even before the user authors

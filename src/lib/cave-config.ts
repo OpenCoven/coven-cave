@@ -16,23 +16,23 @@ import {
   type ReflectionTrigger,
   shouldAutoArchiveOnReflection,
   SUMMON_GRACE_DAYS,
-} from "./chat-auto-archive.ts";
+} from "./chat/chat-auto-archive.ts";
 import {
   type ChatAutoRenamePolicy,
   normalizeChatAutoRenamePolicy,
-} from "./chat-auto-rename.ts";
+} from "./chat/chat-auto-rename.ts";
 import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
-} from "./familiar-runtime.ts";
+} from "./familiars/familiar-runtime.ts";
 import { loadConversation } from "./cave-conversations.ts";
-import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./hermes-profiles.ts";
+import { normalizeHermesProfileBinding, type HermesProfileBinding } from "./integrations/hermes/hermes-profiles.ts";
 import {
   implicitNativeInferenceRoute,
   normalizeInferenceRoute,
   type InferenceRoute,
 } from "./inference-routes.ts";
-import { runtimeOwnsModelDefault } from "./runtime-models.ts";
+import { runtimeOwnsModelDefault } from "./runtime/runtime-models.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
 import {
   defaultTravelState,

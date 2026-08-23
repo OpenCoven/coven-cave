@@ -1,19 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   reportDaemonSyncFailure,
   reportDaemonSyncSuccess,
-} from "@/lib/daemon-sync-status";
+} from "@/lib/daemon/daemon-sync-status";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
-import { canonicalHarnessId, isBindableRuntimeChoice } from "@/lib/harness-adapters";
-import { createModelSelectionMutationQueue } from "@/lib/model-selection-mutation-queue";
-import { modelForRuntimeSwitch, runtimeOwnsModelDefault } from "@/lib/runtime-models";
-import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
-import type { RuntimeModelOption } from "@/lib/grok-build";
-import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
+import { canonicalHarnessId, isBindableRuntimeChoice } from "@/lib/runtime/harness-adapters";
+import { createModelSelectionMutationQueue } from "@/lib/runtime/model-selection-mutation-queue";
+import { modelForRuntimeSwitch, runtimeOwnsModelDefault } from "@/lib/runtime/runtime-models";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime/runtime-availability";
+import type { RuntimeModelOption } from "@/lib/integrations/grok/grok-build";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/hooks/use-runtime-model-options";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { FamiliarXSection } from "@/components/familiar-x-section";
 import { IconButton } from "@/components/ui/icon-button";

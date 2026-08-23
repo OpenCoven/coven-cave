@@ -5,7 +5,7 @@ import {
   READING_LEADING_KEY,
   applyReadingLeading,
   readReadingLeading,
-} from "@/lib/reading-leading";
+} from "@/lib/reading/reading-leading";
 
 /**
  * Applies the saved reading line-spacing on load and keeps it in sync across

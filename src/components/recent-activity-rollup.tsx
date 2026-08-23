@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { familiarInScope } from "@/lib/familiar-multiselect";
+import { familiarInScope } from "@/lib/familiars/familiar-multiselect";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
-import { modelIcon } from "@/lib/model-label";
+import { modelIcon } from "@/lib/runtime/model-label";
 import type { SessionRow } from "@/lib/types";
 
 /**

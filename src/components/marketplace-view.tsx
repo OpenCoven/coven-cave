@@ -28,11 +28,11 @@ import {
   readCraftArrivalWatch,
   type CraftArrivalWatch,
 } from "@/lib/craft-arrival";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
 import { SkillsComingSoon } from "@/components/marketplace/skills-coming-soon";
-import { type SkillBrowserEntry } from "@/lib/skill-directory";
+import { type SkillBrowserEntry } from "@/lib/skills/skill-directory";
 import { SkillExploreCard } from "@/components/marketplace/skill-explore-card";
 import { SkillExploreDrawer } from "@/components/marketplace/skill-explore-drawer";
 import {
@@ -55,10 +55,10 @@ import {
   type MarketplaceStatusFilter,
   type MarketplaceSection,
 } from "@/components/marketplace/marketplace-view-model";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { useSurfaceHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
+import { useSurfaceHistory, useTrackedSurfaceValue } from "@/lib/hooks/use-surface-history";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surfaces/surface-warmup-registry";
 import { caveCrafts } from "@/lib/feature-flags";
 
 export type { MarketplaceSection } from "@/components/marketplace/marketplace-view-model";

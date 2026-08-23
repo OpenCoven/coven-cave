@@ -6,15 +6,15 @@ import type {
   FamiliarExecutionAnalytics,
   FamiliarExecutionAnalyticsWindow,
   FamiliarExecutionSlice,
-} from "@/lib/familiar-execution-analytics";
-import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
+} from "@/lib/familiars/familiar-execution-analytics";
+import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/chat/message-feedback-rollup";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import {
   FamiliarAnalyticsDock,
@@ -36,27 +36,27 @@ import {
   type LensId,
   type WindowId,
 } from "@/components/familiar-analytics-stage";
-import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
+import { escalateBlockers, type SelfHealRequest } from "@/lib/familiars/familiar-heal-requests";
 import {
   deriveThreadConfidence,
   THREAD_CONFIDENCE_EMPTY_STATE,
   type ThreadConfidence,
   type ThreadMetricKey,
-} from "@/lib/thread-confidence";
+} from "@/lib/chat/thread-confidence";
 import {
   deriveSignalTrends,
   type MetricTrend,
   type SignalTrends,
   type TrendDirection,
 } from "@/lib/signal-trends";
-import type { ContractReport, FamiliarProperty } from "@/lib/familiar-contract";
+import type { ContractReport, FamiliarProperty } from "@/lib/familiars/familiar-contract";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { formatTimeToFirstReply, timeToFirstReplyMs } from "@/lib/first-run-stamps";
 import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
-import { sessionDayKey, type PulseDay } from "@/lib/session-pulse";
+import { sessionDayKey, type PulseDay } from "@/lib/chat/session-pulse";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
-import { buildRehabilitationBrief } from "@/lib/familiar-rehabilitation";
+import { buildRehabilitationBrief } from "@/lib/familiars/familiar-rehabilitation";
 import { formatCost, formatTokens } from "@/lib/usage-format";
 import {
   aggregateThreadSignals,
@@ -65,7 +65,7 @@ import {
   deriveThreadScore,
   type ContextPressure,
   type ThreadSelfReport,
-} from "@/lib/thread-self-report";
+} from "@/lib/chat/thread-self-report";
 
 // Plain-language meaning for each thread-analysis metric (0–100 average across
 // this familiar's thread self-reports). Presentation-only — the averages and

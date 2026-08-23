@@ -26,7 +26,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { Icon } from "@/lib/icon";
-import { useChangesSummary } from "@/lib/use-changes-summary";
+import { useChangesSummary } from "@/lib/hooks/use-changes-summary";
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import {
   Popover,

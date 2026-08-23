@@ -14,7 +14,7 @@ import {
   relativeTime,
 } from "@/lib/daily-report";
 import { buildDayModel } from "@/lib/daily-report-day";
-import { extractNextPaths } from "@/lib/next-paths";
+import { extractNextPaths } from "@/lib/projects/next-paths";
 
 export const dynamic = "force-dynamic";
 

@@ -193,7 +193,7 @@ assert.doesNotMatch(
 // in (a mis-rooted task chat displayed "Coven Cave" for a task belonging to a
 // different project).
 const linkedContextLib = readFileSync(
-  new URL("../lib/chat-linked-context.ts", import.meta.url),
+  new URL("../lib/chat/chat-linked-context.ts", import.meta.url),
   "utf8",
 );
 assert.match(

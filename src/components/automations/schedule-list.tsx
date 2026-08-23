@@ -4,12 +4,12 @@ import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
-import type { AutomationRunRecord } from "@/lib/automation-runs";
-import type { CodexAutomation } from "@/lib/codex-automations-types";
+import type { AutomationRunRecord } from "@/lib/automations/automation-runs";
+import type { CodexAutomation } from "@/lib/integrations/codex/codex-automations-types";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { runStatusColor } from "@/lib/automations/run-status";
 

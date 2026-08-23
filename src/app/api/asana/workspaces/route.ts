@@ -8,7 +8,7 @@
 
 import { NextResponse } from "next/server";
 import type { AsanaWorkspace } from "@/lib/asana-tasks";
-import { resolveSecret } from "@/lib/vault";
+import { resolveSecret } from "@/lib/grimoire/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

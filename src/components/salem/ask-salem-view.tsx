@@ -13,16 +13,16 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
-import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
+import { smoothScrollBehavior } from "@/lib/hooks/use-prefers-reduced-motion";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { useIsCoarsePointer } from "@/lib/use-viewport";
-import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
+import { useIsCoarsePointer } from "@/lib/hooks/use-viewport";
+import { runtimeOwnsModelDefault } from "@/lib/runtime/runtime-models";
 import {
   inventoryProvenanceLabel,
   useRuntimeModelInventory,
   type RuntimeModelInventoryResult,
-} from "@/lib/use-runtime-model-options";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
+} from "@/lib/hooks/use-runtime-model-options";
+import { loadCanonicalMemoryList } from "@/lib/memory/canonical-memory-resources";
 import { SalemCat, type SalemMood } from "./salem-cat";
 import {
   clearThread,

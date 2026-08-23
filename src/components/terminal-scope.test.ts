@@ -4,12 +4,12 @@ import { readFileSync } from "node:fs";
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-const workspaceMode = read("../lib/workspace-mode.ts");
+const workspaceMode = read("../lib/projects/workspace-mode.ts");
 const workspace = read("./workspace.tsx");
-const navigation = read("../lib/workspace-navigation.ts");
+const navigation = read("../lib/projects/workspace-navigation.ts");
 const settings = read("./settings-shell.tsx");
 const config = read("../lib/cave-config.ts");
-const slashCommands = read("../lib/slash-commands.ts");
+const slashCommands = read("../lib/chat/slash-commands.ts");
 const screenshotCapture = read("../../scripts/capture-screenshots.mjs");
 
 assert.doesNotMatch(workspaceMode, /[|]\s*"terminal"/, "terminal is not a standalone WorkspaceMode");

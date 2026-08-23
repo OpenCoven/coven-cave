@@ -10,7 +10,7 @@ const styles = ["cave-md", "cave-md/code", "cave-composer", "chat-list", "calend
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
   .join("\n");
 const bubbleSource = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
-const codeFenceSource = readFileSync(new URL("../lib/message-code-fences.ts", import.meta.url), "utf8");
+const codeFenceSource = readFileSync(new URL("../lib/chat/message-code-fences.ts", import.meta.url), "utf8");
 
 // After the streamline refactor the header is MetaLine (title + status meta);
 // linked-work actions are extracted, but ChatView does not mount them directly

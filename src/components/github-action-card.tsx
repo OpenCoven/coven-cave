@@ -13,7 +13,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
-import { classifyGitHubAction, type GitHubActionDescriptor } from "@/lib/github-blocks";
+import { classifyGitHubAction, type GitHubActionDescriptor } from "@/lib/github/github-blocks";
 
 type Phase = "proposed" | "firing" | "done" | "error" | "dismissed";
 

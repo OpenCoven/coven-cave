@@ -6,9 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
-import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
+import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/github/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
-import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { normalizeGitHubRepoUrl } from "@/lib/github/github-repo-link";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 
 export const dynamic = "force-dynamic";

@@ -7,7 +7,7 @@ import type { SessionRow } from "@/lib/types";
 // erased at runtime, but this is a value import — via the alias it would need
 // the test alias loader, and any test whose graph reaches this file without it
 // would fail to resolve.
-import { normalizeProjectRoot } from "./cave-projects-types.ts";
+import { normalizeProjectRoot } from "./projects/cave-projects-types.ts";
 
 export type ComuxProject = {
   name: string;

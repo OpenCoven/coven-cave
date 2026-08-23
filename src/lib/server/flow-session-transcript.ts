@@ -9,7 +9,7 @@
 import { loadConversation } from "../cave-conversations.ts";
 import { loadState } from "../cave-config.ts";
 import { callDaemon, callDaemonTarget, type DaemonTarget } from "../coven-daemon.ts";
-import { loadConversationFromJsonl } from "../openclaw-conversation.ts";
+import { loadConversationFromJsonl } from "../openclaw/openclaw-conversation.ts";
 import { stripAnsi } from "../ansi.ts";
 
 type CovenEvent = {

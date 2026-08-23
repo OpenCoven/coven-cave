@@ -4,7 +4,7 @@ import {
   isResearchGenerationMediaKind,
   isValidResearchGenerationFamiliarId,
   validateCreateResearchGenerationInput,
-} from "@/lib/research-generations";
+} from "@/lib/research/research-generations";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   createResearchGenerationFromMission,

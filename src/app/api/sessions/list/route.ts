@@ -7,26 +7,26 @@ import { hasActiveChatRun } from "@/lib/server/chat-stop-registry";
 import {
   sweepAutoArchive,
   sweepMergedPrAutoArchive,
-} from "@/lib/chat-auto-archive-sweep";
+} from "@/lib/chat/chat-auto-archive-sweep";
 import {
   localConversationSessionRows,
   mergeSessionRows,
-} from "@/lib/session-list-merge";
-import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
+} from "@/lib/chat/session-list-merge";
+import { NO_CHAT_ATTENTION } from "@/lib/chat/chat-attention";
 import {
   applyStaleRunningPresentation,
   sweepStaleRunningGhosts,
 } from "@/lib/server/stale-running-sweep";
-import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
-import { collapseFamiliarWorkspaceSessions } from "@/lib/familiar-workspace-sessions";
+import { enrichSessionsWithGitContext } from "@/lib/chat/session-git-enrich";
+import { collapseFamiliarWorkspaceSessions } from "@/lib/familiars/familiar-workspace-sessions";
 import { familiarWorkspacesRoot, readFamiliarWorkspaces } from "@/lib/coven-paths";
 import {
   sessionsListCache,
   type SessionsListResult,
 } from "@/lib/server/sessions-list-cache";
-import { loadProjects, projectForRoot } from "@/lib/cave-projects";
-import { filterProjectsForFamiliar } from "@/lib/project-permissions";
-import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
+import { loadProjects, projectForRoot } from "@/lib/projects/cave-projects";
+import { filterProjectsForFamiliar } from "@/lib/projects/project-permissions";
+import { scopeSessionsToFamiliarProjects } from "@/lib/chat/session-project-scope";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import type { SessionInitiator, SessionRow } from "@/lib/types";
 
@@ -61,7 +61,7 @@ function isTrueProjectCwd(projectRoot: string): boolean {
 }
 
 // Git enrichment (branch/worktree context, diffstat vs base, PR context) lives
-// in @/lib/session-git-enrich — fully async so the polled list request never
+// in @/lib/chat/session-git-enrich — fully async so the polled list request never
 // blocks the event loop on git subprocesses (cave-n37w).
 
 /**
@@ -89,7 +89,7 @@ function applySweptRows(
  * unarchived, non-active session whose branch PR is merged gets archived in
  * cave state. One-shot per (session, PR) — summoning the chat later sticks —
  * and the shared opt-outs (keep marks, extension windows) gate it like the
- * policy sweep. IO wiring lives in @/lib/chat-auto-archive-sweep;
+ * policy sweep. IO wiring lives in @/lib/chat/chat-auto-archive-sweep;
  * best-effort — a sweep failure never breaks the listing.
  */
 async function applyMergedPrAutoArchive(

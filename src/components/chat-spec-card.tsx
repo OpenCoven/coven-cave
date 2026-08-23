@@ -13,9 +13,9 @@ import {
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
-import { readerOutline } from "@/lib/reader-outline";
+import { readerOutline } from "@/lib/reading/reader-outline";
 import type { SpecBlock } from "@/lib/spec-blocks";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { MarkdownBlock } from "@/components/message-bubble";
 
 const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6";

@@ -7,7 +7,7 @@
  * instantly and predictably.
  */
 
-import { RRULE_DAY_ORDER } from "./codex-automation-form.ts";
+import { RRULE_DAY_ORDER } from "./integrations/codex/codex-automation-form.ts";
 
 export type CronPromptSchedule = {
   mode?: "daily" | "weekly";

@@ -9,7 +9,7 @@
 //
 // Pure and unit-tested; the rendering lives in familiar-activity-lattice.tsx.
 
-import { buildSessionPulse, type PulseDay } from "./session-pulse.ts";
+import { buildSessionPulse, type PulseDay } from "./chat/session-pulse.ts";
 import type { SessionRow } from "./types.ts";
 
 /** One day cell — the same shape the existing pulse uses. */

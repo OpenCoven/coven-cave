@@ -31,7 +31,7 @@ const read = (rel) => readFileSync(path.join(process.cwd(), rel), "utf8");
 
   assert.match(
     src,
-    /from\s+["']@\/lib\/memory-file-scope["']/,
+    /from\s+["']@\/lib\/memory\/memory-file-scope["']/,
     "inspector must import the scoping helper",
   );
 

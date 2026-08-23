@@ -178,7 +178,7 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{ advanceOnboardingAutoFinishGate \} from "@\/lib\/onboarding-gate"/,
+  /import \{ advanceOnboardingAutoFinishGate \} from "@\/lib\/onboarding\/onboarding-gate"/,
   "OnboardingOverlay keeps the shared auto-finish gate",
 );
 assert.match(

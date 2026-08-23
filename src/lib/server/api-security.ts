@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server.js";
 
-import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
+import { LOCAL_REQUEST_REQUIRED_CODE } from "../projects/project-errors.ts";
 import { isLocalOrigin } from "./local-origin.ts";
 import { MOBILE_ACCESS_HEADER } from "../../proxy-helpers.ts";
-import { isValidResearchMediaTicketRequest } from "../research-media-ticket.ts";
+import { isValidResearchMediaTicketRequest } from "../research/research-media-ticket.ts";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
 

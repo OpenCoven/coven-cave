@@ -7,7 +7,7 @@ import {
   createOnboardingBootstrapState,
   runOnboardingBootstrapStages,
   type OnboardingSetupDiagnostics,
-} from "../onboarding-bootstrap.ts";
+} from "../onboarding/onboarding-bootstrap.ts";
 import {
   bootstrapRunFailureState,
   persistOnboardingBootstrapState,

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { BUILT_IN_WORKSPACE_PAGE_IDS } from "../src/lib/workspace-page-registry";
+import { BUILT_IN_WORKSPACE_PAGE_IDS } from "../src/lib/projects/workspace-page-registry";
 
 const PAGES = [...BUILT_IN_WORKSPACE_PAGE_IDS, "surface:researcher-desk"] as const;
 

@@ -6,9 +6,9 @@ import { Modal } from "@/components/ui/modal";
 import { PairingStepsList } from "@/components/pairing-steps-list";
 import { TailscaleRecoveryActions } from "@/components/tailscale-recovery-actions";
 import { copyText } from "@/lib/clipboard";
-import type { PairingStep } from "@/lib/mobile-handoff";
+import type { PairingStep } from "@/lib/surfaces/mobile-handoff";
 import { openExternalUrl } from "@/lib/open-external";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 
 type HandoffReady = {
   ok: true;

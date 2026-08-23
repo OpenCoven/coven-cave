@@ -1,7 +1,7 @@
 import Foundation
 
-// Mirrors the desktop permission protocol (src/lib/project-permissions.ts +
-// src/lib/project-access-levels.ts). Decoding is deliberately lenient where
+// Mirrors the desktop permission protocol (src/lib/projects/project-permissions.ts +
+// src/lib/projects/project-access-levels.ts). Decoding is deliberately lenient where
 // the server is (unknown access levels normalize to "write", exactly like
 // normalizeAccessLevel — v1 grants predate levels and unlocked everything).
 

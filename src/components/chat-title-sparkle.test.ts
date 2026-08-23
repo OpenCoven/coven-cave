@@ -64,7 +64,7 @@ test("a null derivation leaves the existing title alone", () => {
 test("the chat view supplies the title from the transcript it already holds", () => {
   assert.match(
     chatView,
-    /import \{ generateChatTitle \} from "@\/lib\/chat-title-generation";/,
+    /import \{ generateChatTitle \} from "@\/lib\/chat\/chat-title-generation";/,
     "the pure heuristic is the naming engine",
   );
   assert.match(

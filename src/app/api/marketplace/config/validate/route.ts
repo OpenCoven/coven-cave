@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveSecret } from "@/lib/vault";
+import { resolveSecret } from "@/lib/grimoire/vault";
 import { hasValidator, validateSecret } from "@/lib/secret-validators";
 import { resolveCatalogName, requiredConfigFor } from "../catalog-config";
 

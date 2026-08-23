@@ -2,16 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { Card, CardStatus } from "@/lib/cave-board-types";
-import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
+import type { Card, CardStatus } from "@/lib/board/cave-board-types";
+import { scheduleLabel, scheduleUrgency } from "@/lib/board/board-schedule";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 
 // Order mirrors BoardKanban's COLUMNS so users get a consistent left-to-
 // right reading on desktop translating to top-to-bottom on phone.

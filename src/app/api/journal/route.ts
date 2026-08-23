@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isValidNoteDate } from "@/lib/daily-note";
-import { extractNextPaths } from "@/lib/next-paths";
+import { extractNextPaths } from "@/lib/projects/next-paths";
 import {
   buildJournalMemoryContext,
   buildJournalMemoryStats,

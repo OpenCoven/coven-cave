@@ -11,9 +11,9 @@
 import { Icon } from "@/lib/icon";
 import { StatusPill } from "@/components/weave-rail";
 import { StrandInspector } from "@/components/strand-inspector";
-import { channelLabel, paneModel, pillForTension } from "@/lib/weave-rail";
-import type { AuditEntryView, ThreadView, WeaveDetail } from "@/lib/threads-read";
-import type { SurfaceState } from "@/lib/weave-rail";
+import { channelLabel, paneModel, pillForTension } from "@/lib/grimoire/weave-rail";
+import type { AuditEntryView, ThreadView, WeaveDetail } from "@/lib/chat/threads-read";
+import type { SurfaceState } from "@/lib/grimoire/weave-rail";
 
 function ChannelChips({ thread }: { thread: ThreadView }) {
   if (thread.holdsUnder.length === 0) {

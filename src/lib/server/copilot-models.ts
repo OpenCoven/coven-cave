@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { normalizeCopilotModels } from "../copilot-models.ts";
-import { copilotStreamSpec } from "../copilot-stream.ts";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
-import type { RuntimeModelOption } from "../runtime-models.ts";
+import { normalizeCopilotModels } from "../integrations/copilot/copilot-models.ts";
+import { copilotStreamSpec } from "../integrations/copilot/copilot-stream.ts";
+import { harnessSpawnEnv } from "../runtime/harness-spawn-env.ts";
+import type { RuntimeModelOption } from "../runtime/runtime-models.ts";
 import {
   resolveCopilotRuntimeLaunch,
   type CopilotRuntimeLaunch,

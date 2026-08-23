@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import type { GitHubItem } from "@/lib/github-tasks";
-import { resolveGitHubToken } from "@/lib/github-token";
+import type { GitHubItem } from "@/lib/github/github-tasks";
+import { resolveGitHubToken } from "@/lib/github/github-token";
 import {
   failedSource,
   isPartial,
@@ -9,7 +9,7 @@ import {
   searchSource,
   type AssignedSourceMeta,
   type AssignedSourcesMeta,
-} from "@/lib/github-assigned-meta";
+} from "@/lib/github/github-assigned-meta";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

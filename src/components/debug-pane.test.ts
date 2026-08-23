@@ -482,7 +482,7 @@ const changesPanel = await readFile(
   "utf8",
 );
 const changesRows = await readFile(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
-const changesFormat = await readFile(new URL("../lib/session-changes-format.ts", import.meta.url), "utf8");
+const changesFormat = await readFile(new URL("../lib/chat/session-changes-format.ts", import.meta.url), "utf8");
 
 assert.match(
   changesRows,

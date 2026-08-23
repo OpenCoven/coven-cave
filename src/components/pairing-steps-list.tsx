@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
-import type { PairingStep } from "@/lib/mobile-handoff";
+import type { PairingStep } from "@/lib/surfaces/mobile-handoff";
 
 /** One glyph per checklist state — never color alone (cave-jr4r.1). */
 const PAIRING_STEP_GLYPH: Record<PairingStep["state"], { icon: IconName; className: string; announce: string }> = {

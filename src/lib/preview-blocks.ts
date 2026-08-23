@@ -1,4 +1,4 @@
-import { markdownCodeRanges } from "./github-blocks.ts";
+import { markdownCodeRanges } from "./github/github-blocks.ts";
 
 export type PreviewBlock = {
   url: string;

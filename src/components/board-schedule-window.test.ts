@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const boardTypes = readFileSync("src/lib/cave-board-types.ts", "utf8");
+const boardTypes = readFileSync("src/lib/board/cave-board-types.ts", "utf8");
 const boardStore = readFileSync("src/lib/cave-board.ts", "utf8");
 const createRoute = readFileSync("src/app/api/board/route.ts", "utf8");
 const updateRoute = readFileSync("src/app/api/board/[id]/route.ts", "utf8");
@@ -23,7 +23,7 @@ const styles = [
   "mobile-card-stack.css",
   "gantt-fallbacks.css",
 ].map((name) => readFileSync(`src/styles/board/${name}`, "utf8")).join("\n");
-const surfacePreferences = readFileSync("src/lib/surface-preference-specs.ts", "utf8");
+const surfacePreferences = readFileSync("src/lib/surfaces/surface-preference-specs.ts", "utf8");
 
 assert.match(boardTypes, /startDate\?: string \| null/, "Task cards persist an optional start date");
 assert.match(boardTypes, /endDate\?: string \| null/, "Task cards persist an optional end date");

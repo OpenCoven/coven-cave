@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Source pins for the weave rail wiring (threads-986.17.3, redesigned in
-// cave-f8rdi). The behavior itself is tested in src/lib/weave-rail.test.ts;
+// cave-f8rdi). The behavior itself is tested in src/lib/grimoire/weave-rail.test.ts;
 // these assertions pin the React layer to the fail-closed contract so a
 // refactor cannot quietly reintroduce healthy-by-default rendering.
 import assert from "node:assert/strict";

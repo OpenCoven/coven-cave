@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const routerSource = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
-const turnStateSource = readFileSync(new URL("../lib/chat-turn-state.ts", import.meta.url), "utf8");
-const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
+const turnStateSource = readFileSync(new URL("../lib/chat/chat-turn-state.ts", import.meta.url), "utf8");
+const draftHook = readFileSync(new URL("../lib/hooks/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
 const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat", "cave-chat/activity"]
   .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
@@ -346,11 +346,11 @@ assert.match(
 // without running cleanup) is never cleared from the registry; without a
 // staleness guard, every later mount on that session inherits a zombie
 // `busy = true` and shows "Streaming…" forever with nothing streaming. The
-// liveness rule itself lives in @/lib/live-chat-snapshot (unit-tested there);
+// liveness rule itself lives in @/lib/chat/live-chat-snapshot (unit-tested there);
 // ChatView imports and applies it at both adoption sites.
 assert.match(
   source,
-  /import \{ isLiveSnapshotActive \} from "@\/lib\/live-chat-snapshot"/,
+  /import \{ isLiveSnapshotActive \} from "@\/lib\/chat\/live-chat-snapshot"/,
   "ChatView should consume the extracted, unit-tested liveness rule",
 );
 
@@ -822,7 +822,7 @@ assert.match(
 // ownsDisplayedView is imported from the pure helper module and called in both events.
 assert.match(
   source,
-  /import \{[\s\S]*?ownsDisplayedView[\s\S]*?\} from "@\/lib\/chat-session-ownership"/,
+  /import \{[\s\S]*?ownsDisplayedView[\s\S]*?\} from "@\/lib\/chat\/chat-session-ownership"/,
   "ChatView imports the pure ownsDisplayedView predicate from chat-session-ownership",
 );
 // displayedCreationRunIdRef tracks which run owns the displayed view.

@@ -1,5 +1,5 @@
 import type { SessionRow } from "./types.ts";
-import { filterVisibleChatSessions } from "./chat-projects.ts";
+import { filterVisibleChatSessions } from "./chat/chat-projects.ts";
 
 export function eligibleRightChatSessions(
   sessions: SessionRow[],

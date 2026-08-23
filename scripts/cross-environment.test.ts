@@ -23,8 +23,8 @@ import path from "node:path";
 
 import { resolveSidecarTarget } from "./sidecar-target.mjs";
 import { covenLaunchCommandForBinary } from "../src/lib/coven-bin.ts";
-import { tailnetDiscoveryProof } from "../src/lib/mobile-handoff.ts";
-import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir } from "../src/lib/opencode-bin.ts";
+import { tailnetDiscoveryProof } from "../src/lib/surfaces/mobile-handoff.ts";
+import { openCodeCommand, openCodeLaunch, openCodeNeedsTmpRuntimeDir } from "../src/lib/integrations/opencode/opencode-bin.ts";
 import { researchMediaOpenFlags } from "../src/lib/server/research-media-store.ts";
 
 const skips: string[] = [];

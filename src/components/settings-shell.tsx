@@ -5,7 +5,7 @@ import "@/styles/dashboard.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
 import { relativeTime } from "@/lib/relative-time";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
@@ -15,12 +15,12 @@ import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
-import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { prefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
-import type { Mode, ModePref } from "@/lib/theme-storage";
+import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/themes/theme-palettes";
+import type { Mode, ModePref } from "@/lib/themes/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
-import { useIsMobile } from "@/lib/use-viewport";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
 import { useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
 import {
@@ -34,7 +34,7 @@ import {
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
-import { rgbaBytesToHex } from "@/lib/theme-token-hex";
+import { rgbaBytesToHex } from "@/lib/themes/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
 import { DaemonSection } from "./settings-daemon";
 import { SettingsTabbed } from "./settings-section-tabs";
@@ -56,7 +56,7 @@ import {
   applyCornerRadius,
   readCornerRadius,
   type CornerRadius,
-} from "@/lib/appearance-corner-radius";
+} from "@/lib/themes/appearance-corner-radius";
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 import { getBackupPassphraseGuidance } from "@/lib/backup-passphrase-strength";
@@ -73,7 +73,7 @@ import {
 import {
   clearCustomThemeVariables,
   reapplyIndependentAppearance,
-} from "@/lib/appearance-restore";
+} from "@/lib/themes/appearance-restore";
 import type { CustomThemeData } from "@/lib/preferences-schema";
 import { publishFleetTokenStatus } from "@/lib/omnigent/use-fleet-gate";
 import {

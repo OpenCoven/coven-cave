@@ -24,12 +24,12 @@ import {
   useDaemonAutomation,
   writeDaemonAutomation,
   type DaemonAutomationKey,
-} from "@/lib/daemon-automation-pref";
-import { createDaemonStatusRequestGate } from "@/lib/daemon-desktop-auto-start";
+} from "@/lib/daemon/daemon-automation-pref";
+import { createDaemonStatusRequestGate } from "@/lib/daemon/daemon-desktop-auto-start";
 import {
   describeDaemonAvailability,
   type DaemonAvailability,
-} from "@/lib/daemon-status-classification";
+} from "@/lib/daemon/daemon-status-classification";
 import { parseExecutorUrls, suggestedHubEndpoint } from "./settings-multihost";
 
 type DaemonStatus = {

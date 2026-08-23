@@ -31,7 +31,7 @@ const fontSettings = await readFile(
   "utf8",
 );
 const appearanceRestore = await readFile(
-  new URL("../lib/appearance-restore.ts", import.meta.url),
+  new URL("../lib/themes/appearance-restore.ts", import.meta.url),
   "utf8",
 );
 

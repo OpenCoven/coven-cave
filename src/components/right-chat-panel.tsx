@@ -9,15 +9,15 @@ import { ErrorState } from "@/components/ui/error-state";
 import { StandardSelect } from "@/components/ui/select";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { FocusTrapOwnerHiddenContext } from "@/lib/use-focus-trap";
+import { FocusTrapOwnerHiddenContext } from "@/lib/hooks/use-focus-trap";
 import {
   eligibleRightChatSessions,
   isCurrentRightChatSessionsScope,
   resolveLatestRightChatSessionId,
   type RightChatSessionsScope,
 } from "@/lib/right-chat-session";
-import { sessionRailTitle } from "@/lib/session-rail-title";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { sessionRailTitle } from "@/lib/chat/session-rail-title";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 /**

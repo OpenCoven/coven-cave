@@ -6,7 +6,7 @@ import { act, create } from "react-test-renderer";
 
 import { ChatToolActivityLayout } from "./chat-tool-activity-layout.ts";
 import { source, turnRow } from "./chat-view-polish-fixtures.ts";
-import { useToolRunDisclosure } from "../lib/use-tool-run-disclosure.ts";
+import { useToolRunDisclosure } from "../lib/hooks/use-tool-run-disclosure.ts";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 

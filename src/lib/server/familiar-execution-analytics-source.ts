@@ -5,7 +5,7 @@ import {
 import {
   buildFamiliarExecutionAnalytics,
   type FamiliarExecutionAnalytics,
-} from "../familiar-execution-analytics.ts";
+} from "../familiars/familiar-execution-analytics.ts";
 import {
   backfillFamiliarExecutionAttempts,
   type ExecutionAnalyticsBackfillDependencies,

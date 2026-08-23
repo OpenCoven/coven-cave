@@ -4,8 +4,8 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/pro
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { deriveThreadConfidence } from "@/lib/thread-confidence";
-import type { ThreadSelfReport } from "@/lib/thread-self-report";
+import { deriveThreadConfidence } from "@/lib/chat/thread-confidence";
+import type { ThreadSelfReport } from "@/lib/chat/thread-self-report";
 import {
   appendSelfReport,
   findSelfReport,

@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { THEME_IDS } from "../lib/theme-palettes.ts";
+import { THEME_IDS } from "../lib/themes/theme-palettes.ts";
 
 const base = new URL("../../apps/ios/CovenCave/CovenCave/", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, base), "utf8");

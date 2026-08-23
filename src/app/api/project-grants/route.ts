@@ -16,7 +16,7 @@ import {
   inspectProjectPermissionIntegrity,
   repairOrphanProjectPermissions,
   revokeProjectFromFamiliar,
-} from "@/lib/project-permissions";
+} from "@/lib/projects/project-permissions";
 
 export const dynamic = "force-dynamic";
 

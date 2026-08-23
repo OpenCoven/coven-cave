@@ -3,7 +3,7 @@ import {
   allowedResearchActions,
   type ResearchMissionActionInput,
   type ResearchMissionStatus,
-} from "@/lib/research-missions";
+} from "@/lib/research/research-missions";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   makeProductionResearchMissionRunner,

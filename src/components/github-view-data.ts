@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Familiar } from "@/lib/types";
-import type { Card } from "@/lib/cave-board-types";
-import type { ActivityCollections } from "@/lib/github-activity";
-import type { GitHubItem } from "@/lib/github-tasks";
-import { readSurfaceResource } from "@/lib/surface-warmup-registry";
+import type { Card } from "@/lib/board/cave-board-types";
+import type { ActivityCollections } from "@/lib/github/github-activity";
+import type { GitHubItem } from "@/lib/github/github-tasks";
+import { readSurfaceResource } from "@/lib/surfaces/surface-warmup-registry";
 
 export type ActivityResult = {
   ok: true;

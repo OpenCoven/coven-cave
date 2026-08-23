@@ -5,7 +5,7 @@ import {
   READING_WEIGHT_KEY,
   applyReadingWeight,
   readReadingWeight,
-} from "@/lib/reading-weight";
+} from "@/lib/reading/reading-weight";
 
 /**
  * Applies the saved reading font-weight on load and keeps it in sync across

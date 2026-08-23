@@ -4,8 +4,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 
-import { loadProjects, projectById } from "@/lib/cave-projects";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import { loadProjects, projectById } from "@/lib/projects/cave-projects";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
 import { caveHome } from "@/lib/coven-paths";
 import { caveToolSpawnEnv } from "@/lib/coven-bin";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";

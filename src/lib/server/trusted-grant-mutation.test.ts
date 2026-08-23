@@ -24,7 +24,7 @@ try {
     requireTrustedHumanCanvasMutation,
     isVerifiedMobileRequest,
   } = await import("./trusted-grant-mutation.ts");
-  const { updateMobileWriteAccess } = await import("../project-permissions.ts");
+  const { updateMobileWriteAccess } = await import("../projects/project-permissions.ts");
   const { GET: getMobilePermissions, PATCH: patchMobilePermissions } = await import(
     "../../app/api/mobile-permissions/route.ts"
   );

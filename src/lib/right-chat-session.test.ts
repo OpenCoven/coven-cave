@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { filterVisibleChatSessions } from "./chat-projects.ts";
+import { filterVisibleChatSessions } from "./chat/chat-projects.ts";
 import {
   eligibleRightChatSessions,
   isCurrentRightChatSessionsScope,

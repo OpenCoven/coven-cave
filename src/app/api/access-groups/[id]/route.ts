@@ -4,7 +4,7 @@ import {
   AccessGroupNotFoundError,
   deleteAccessGroup,
   updateAccessGroup,
-} from "@/lib/project-permissions";
+} from "@/lib/projects/project-permissions";
 import {
   invalidShapeResponse,
   memberIdsInput,

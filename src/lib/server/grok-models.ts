@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
+import { grokBin, grokLaunchCommandForBinary } from "@/lib/integrations/grok/grok-bin";
+import { harnessSpawnEnv } from "@/lib/runtime/harness-spawn-env";
+import { parseGrokModels, type RuntimeModelOption } from "@/lib/integrations/grok/grok-build";
 
 const MODEL_LIST_TIMEOUT_MS = 2_500;
 const MAX_MODEL_LIST_OUTPUT_BYTES = 64 * 1024;

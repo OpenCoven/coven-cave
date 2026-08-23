@@ -1,4 +1,4 @@
-import type { ArtifactKind } from "@/lib/canvas-artifacts";
+import type { ArtifactKind } from "@/lib/canvas/canvas-artifacts";
 
 /**
  * Refine suggestions power the artifact "Refine" space: a couple of one-tap

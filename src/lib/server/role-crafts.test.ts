@@ -6,7 +6,7 @@ import {
 } from "./role-crafts.ts";
 import type { CraftDefinition } from "./craft-install.ts";
 import type { InstalledMap } from "../marketplace-catalog.ts";
-import { parseRoleListField } from "../role-manifest.ts";
+import { parseRoleListField } from "../familiars/role-manifest.ts";
 import { createKeyedTransactionLock } from "./keyed-transaction-lock.ts";
 
 const NOW = "2026-07-10T01:00:00.000Z";

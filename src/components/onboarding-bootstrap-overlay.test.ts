@@ -7,7 +7,7 @@ const source = [
     new URL("./onboarding-bootstrap-overlay.tsx", import.meta.url),
     "utf8",
   ),
-  await readFile(new URL("../lib/onboarding-bootstrap.ts", import.meta.url), "utf8"),
+  await readFile(new URL("../lib/onboarding/onboarding-bootstrap.ts", import.meta.url), "utf8"),
 ].join("\n");
 const lazy = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
 const diagnostics = await readFile(

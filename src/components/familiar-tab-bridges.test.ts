@@ -21,7 +21,7 @@ test("memory bridge: the familiar's memory is a first-class section, not a redir
 test("studio bridge: Edit in Studio preselects this familiar's identity tab", () => {
   assert.match(
     src,
-    /import \{ openFamiliarStudioSettingsTab \} from "@\/lib\/familiar-studio-context"/,
+    /import \{ openFamiliarStudioSettingsTab \} from "@\/lib\/familiars\/familiar-studio-context"/,
     "uses the shared Studio redirect helper",
   );
   assert.match(

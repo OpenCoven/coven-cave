@@ -4,11 +4,11 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import { familiarWorkspace, familiarWorkspacesRoot } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
-import type { ContractFiles } from "@/lib/familiar-contract";
+import type { ContractFiles } from "@/lib/familiars/familiar-contract";
 import {
   buildFamiliarContractFiles,
   type IdentityScaffoldInput,
-} from "@/lib/familiar-identity-scaffold";
+} from "@/lib/familiars/familiar-identity-scaffold";
 
 /**
  * Loader for a familiar's Familiar Contract files, used by

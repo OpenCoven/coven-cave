@@ -8,40 +8,40 @@ import type {
   CardLifecycle,
   CardPriority,
   CardStatus,
-} from "@/lib/cave-board-types";
-import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
-import type { CaveProject } from "@/lib/cave-projects";
+} from "@/lib/board/cave-board-types";
+import { STATUSES, PRIORITIES } from "@/lib/board/cave-board-types";
+import type { CaveProject } from "@/lib/projects/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { assignedDisclosure, isPartial, type AssignedSourcesMeta } from "@/lib/github-assigned-meta";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import { assignedDisclosure, isPartial, type AssignedSourcesMeta } from "@/lib/github/github-assigned-meta";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
 import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import type { GitHubItem } from "@/lib/github-tasks";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
+import type { GitHubItem } from "@/lib/github/github-tasks";
 import {
   mergeLinksWithGitHub,
   mergeTaskGitHubLinks,
   taskGitHubLinkFromGitHubItem,
-} from "@/lib/task-github";
+} from "@/lib/github/task-github";
 import type { AsanaItem } from "@/lib/asana-tasks";
 import {
   mergeLinksWithAsana,
   mergeTaskAsanaLinks,
   taskAsanaLinkFromAsanaItem,
-} from "@/lib/task-asana";
+} from "@/lib/tasks/task-asana";
 import { Icon } from "@/lib/icon";
-import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { useIsCoarsePointer } from "@/lib/hooks/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/hooks/use-runtime-model-options";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
-import { parseHarnessFailure } from "@/lib/harness-failure";
-import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
+import { parseHarnessFailure } from "@/lib/runtime/harness-failure";
+import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import {
   cancelSystemBrowserUrlWindow,
@@ -50,12 +50,12 @@ import {
   reserveSystemBrowserUrlWindow,
 } from "@/lib/open-external";
 import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
-import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
-import type { CardPatch } from "@/lib/board-card-ops";
-import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
+import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat/chat-attachments";
+import type { CardPatch } from "@/lib/board/board-card-ops";
+import { sessionStatusTone, sessionStatusWord } from "@/lib/chat/session-status";
 import { BoardInspectorDebug } from "@/components/board-inspector-debug";
-import { useProjectFamiliars } from "@/lib/use-project-familiars";
-import { useProjects } from "@/lib/use-projects";
+import { useProjectFamiliars } from "@/lib/hooks/use-project-familiars";
+import { useProjects } from "@/lib/hooks/use-projects";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAnnouncer } from "@/components/ui/live-region";

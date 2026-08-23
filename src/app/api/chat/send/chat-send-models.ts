@@ -7,14 +7,14 @@ import {
   cleanModelId,
   resolveChatModelState,
   type ChatModelState,
-} from "@/lib/chat-model-state";
-import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { CLAUDE_OPUS_5_CAVE_ID } from "@/lib/claude-models";
-import { buildNextPathsDirective } from "@/lib/next-paths";
+} from "@/lib/chat/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime/runtime-models";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
+import { CLAUDE_OPUS_5_CAVE_ID } from "@/lib/integrations/claude/claude-models";
+import { buildNextPathsDirective } from "@/lib/projects/next-paths";
 import { buildCovenMarkersDirective } from "@/lib/coven-marker-directive";
 import { buildCitationsDirective } from "@/lib/citations-directive";
-import type { ModelControlValues } from "@/lib/model-control-capabilities";
+import type { ModelControlValues } from "@/lib/runtime/model-control-capabilities";
 
 type ModelRequest = {
   familiarId: string;

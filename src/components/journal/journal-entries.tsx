@@ -7,19 +7,19 @@ import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { UndoToast } from "@/components/ui/undo-toast";
-import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useUndoDelete } from "@/lib/hooks/use-undo-delete";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { MdEditor } from "@/components/md-editor/md-editor";
-import { extractNextPaths } from "@/lib/next-paths";
+import { extractNextPaths } from "@/lib/projects/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
 import { DEFAULT_JOURNAL_PROMPT, readStoredJournalPrompt, splitPromptSegments, writeStoredJournalPrompt } from "@/lib/journal-prompt";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { openGrimoireDoc } from "@/lib/grimoire/grimoire-link";
 import { JournalConstellation } from "@/components/journal/journal-constellation";
-import { familiarInScope } from "@/lib/familiar-multiselect";
-import { invalidateIfDefined } from "@/lib/surface-warm-cache";
+import { familiarInScope } from "@/lib/familiars/familiar-multiselect";
+import { invalidateIfDefined } from "@/lib/surfaces/surface-warm-cache";
 import type { Familiar } from "@/lib/types";
 
 // Stable empty-scope fallback so the filteredDays memo's identity is steady

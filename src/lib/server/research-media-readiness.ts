@@ -6,12 +6,12 @@ import type {
   ResearchMediaReadiness,
   ResearchMediaReadyVoice,
   ResearchMediaRenderConfig,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import {
   DEFAULT_ELEVENLABS_VOICE_ID,
   isValidElevenLabsVoiceId,
 } from "../voice/elevenlabs-shared.ts";
-import { resolveSecret } from "../vault.ts";
+import { resolveSecret } from "../grimoire/vault.ts";
 import { speechEnginesReadiness } from "../voice/speech-models.ts";
 
 const execFileAsync = promisify(execFile);

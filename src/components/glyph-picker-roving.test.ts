@@ -9,7 +9,7 @@ const source = readFileSync(
 
 assert.match(
   source,
-  /import\s+\{[^}]*useRovingTabIndex[^}]*\}\s+from\s+["']@\/lib\/use-roving-tabindex["']/,
+  /import\s+\{[^}]*useRovingTabIndex[^}]*\}\s+from\s+["']@\/lib\/hooks\/use-roving-tabindex["']/,
   "imports useRovingTabIndex",
 );
 

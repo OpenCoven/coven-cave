@@ -1,4 +1,4 @@
-import type { RuntimeModelOption } from "@/lib/runtime-models";
+import type { RuntimeModelOption } from "@/lib/runtime/runtime-models";
 
 export type CommandThinkingEffort = "low" | "medium" | "high";
 export type CommandResponseSpeed = "fast" | "balanced" | "careful";

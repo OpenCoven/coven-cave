@@ -79,7 +79,7 @@ assert.match(
   "ChatView should distinguish a missing SSE body from an HTTP rejection",
 );
 
-const menuModel = readFileSync(new URL("../lib/chat-session-menu-model.ts", import.meta.url), "utf8");
+const menuModel = readFileSync(new URL("../lib/chat/chat-session-menu-model.ts", import.meta.url), "utf8");
 assert.match(
   menuModel,
   /Reflect on this thread/,

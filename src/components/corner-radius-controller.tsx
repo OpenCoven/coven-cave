@@ -5,7 +5,7 @@ import {
   CORNER_RADIUS_KEY,
   applyCornerRadius,
   readCornerRadius,
-} from "@/lib/appearance-corner-radius";
+} from "@/lib/themes/appearance-corner-radius";
 
 /**
  * Applies the saved UI corner radius on load and keeps it in sync across tabs.

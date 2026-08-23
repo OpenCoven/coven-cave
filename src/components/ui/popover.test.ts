@@ -264,7 +264,7 @@ assert.equal(
 // e2e specs pin these as menuitemradio (chat-response-output, chat-sessions-
 // surface, composer-runtime-chip), so a stray conversion breaks them far from
 // here.
-for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "../ui/select.tsx"]) {
+for (const file of ["../composer-runtime-chip.tsx", "../project-picker.tsx", "./select.tsx"]) {
   const caller = readFileSync(new URL(file, import.meta.url), "utf8");
   const elements = jsxElements(file, caller, "PopoverItem");
   assert.ok(

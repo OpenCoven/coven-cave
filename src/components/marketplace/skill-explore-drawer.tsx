@@ -8,9 +8,9 @@ import { IconButton } from "@/components/ui/icon-button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
-import type { SkillBrowserEntry } from "@/lib/skill-directory";
-import { stripFrontmatter } from "@/lib/skill-directory";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import type { SkillBrowserEntry } from "@/lib/skills/skill-directory";
+import { stripFrontmatter } from "@/lib/skills/skill-directory";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 
 export type SkillExploreDrawerProps = {

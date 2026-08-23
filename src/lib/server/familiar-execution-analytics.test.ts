@@ -10,7 +10,7 @@ import {
   executionAttemptLedgerRecord,
   normalizeExecutionAttemptSnapshot,
   type ExecutionAttemptSnapshotV1,
-} from "../familiar-execution-analytics.ts";
+} from "../familiars/familiar-execution-analytics.ts";
 import { backfillFamiliarExecutionAttempts } from "./familiar-execution-analytics-backfill.ts";
 import { projectConversationExecutionAttempts } from "./familiar-execution-analytics-projection.ts";
 import {

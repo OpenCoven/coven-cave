@@ -9,7 +9,7 @@ const source = [
 // The sectioned triage list lives in its own module; its markup pins belong
 // here with the rest of the surface's contract.
 const stream = readFileSync(new URL("./github-stream.tsx", import.meta.url), "utf8");
-const stage = readFileSync(new URL("../lib/github-stage.ts", import.meta.url), "utf8");
+const stage = readFileSync(new URL("../lib/github/github-stage.ts", import.meta.url), "utf8");
 const boardCss = [
   "chrome-table.css",
   "kanban-inspector.css",
@@ -524,7 +524,7 @@ assert.doesNotMatch(
 assert.match(source, /useCopy/, "GitHub view copies via the shared useCopy hook");
 
 // ── Free-text search over the activity list ──
-assert.match(source, /import \{ githubItemMatchesQuery \} from "@\/lib\/github-search"/, "uses the pure search matcher");
+assert.match(source, /import \{ githubItemMatchesQuery \} from "@\/lib\/github\/github-search"/, "uses the pure search matcher");
 assert.match(source, /const \[query, setQuery\] = useState\(""\)/, "tracks a search query");
 assert.match(source, /githubItemMatchesQuery\(i, query\)/, "the scoped list filters by the query");
 assert.match(source, /\[filtered, orgFilter, repoFilter, query\]/, "query is a dependency of the scoped memo");

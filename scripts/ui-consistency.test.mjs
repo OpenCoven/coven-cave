@@ -130,8 +130,8 @@ assert.doesNotMatch(
 );
 
 // 3. Palette count: the doc and AGENTS.md state the number that
-//    src/lib/theme-palettes.ts actually ships.
-const themeIdsSource = readFileSync(new URL("src/lib/theme-palettes.ts", repoRoot), "utf8");
+//    src/lib/themes/theme-palettes.ts actually ships.
+const themeIdsSource = readFileSync(new URL("src/lib/themes/theme-palettes.ts", repoRoot), "utf8");
 const themeIdsBlock = themeIdsSource.match(/THEME_IDS = \[([\s\S]*?)\] as const/);
 assert.ok(themeIdsBlock, "theme-palettes.ts declares THEME_IDS");
 const paletteCount = (themeIdsBlock[1].match(/"[a-z0-9-]+"/g) ?? []).length;

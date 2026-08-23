@@ -5,7 +5,7 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import {
   createBoardCardFromAsanaItem,
   fileAsanaItemAsBead,

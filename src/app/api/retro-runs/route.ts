@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
-import { unwrapDaemonEvalState } from "@/lib/eval-loop-daemon";
+import { unwrapDaemonEvalState } from "@/lib/daemon/eval-loop-daemon";
 import { buildRetroRunsSnapshot, normalizeRetroRunState } from "@/lib/retro-runs";
 import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 

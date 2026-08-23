@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { isStale } from "./threads-read.ts";
-import type { SurfaceState } from "./weave-rail.ts";
+import { isStale } from "./chat/threads-read.ts";
+import type { SurfaceState } from "./grimoire/weave-rail.ts";
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const STALE_BANNER = {

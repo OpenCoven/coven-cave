@@ -9,7 +9,7 @@ import {
   type ResearchMission,
   type ResearchMissionActionInput,
   type ResearchSourceRef,
-} from "@/lib/research-missions";
+} from "@/lib/research/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { ResearchArtifactActions } from "./research-artifact-actions";
 

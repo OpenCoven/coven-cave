@@ -18,12 +18,12 @@
 //
 // Source-string pins, same convention as chat-thread-rail.test.ts. The
 // behavioral half (default drop / opt-in keep) lives in
-// src/lib/chat-projects.test.ts.
+// src/lib/chat/chat-projects.test.ts.
 //
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const chatProjects = readFileSync(new URL("../lib/chat-projects.ts", import.meta.url), "utf8");
+const chatProjects = readFileSync(new URL("../lib/chat/chat-projects.ts", import.meta.url), "utf8");
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspaceSidebar = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");

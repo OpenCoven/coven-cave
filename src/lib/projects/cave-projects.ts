@@ -1,0 +1,283 @@
+import { randomBytes } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+
+export type { CaveProject } from "./cave-projects-types.ts";
+export {
+  dedupeProjectsByRoot,
+  normalizeProjectRoot,
+  sortProjectsAlphabetically,
+} from "./cave-projects-types.ts";
+import type { CaveProject } from "./cave-projects-types.ts";
+import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
+import { caveHome } from "../coven-paths.ts";
+import { withCaveHomeReconciledStore } from "../server/cave-home-migration.ts";
+
+type ProjectsFile = {
+  version: 1;
+  projects: CaveProject[];
+};
+
+function projectsFilePath(): string {
+  return (
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE ??
+    path.join(caveHome(), "projects.json")
+  );
+}
+
+/**
+ * Server-side project root: {@link normalizeProjectRoot} PLUS `~` expansion.
+ *
+ * Deliberately NOT merged into the display normalizer (cave-zz12). Expanding
+ * `~` changes what a root normalizes to, and roots are the keys of persisted
+ * stores — IDB projectAvatars, cave:chat:project-overrides, comux pins and
+ * order — so folding this into the shared normalizer silently re-keys them and
+ * avatars and pins vanish for existing users. Unifying the two needs a
+ * migration pass, tracked separately; until then the divergence is explicit
+ * and named rather than an anonymous private duplicate.
+ *
+ * Not a security boundary either: resolveAllowedProjectPath / trustedProjectCwd
+ * do their own validation and must not be routed through any display path.
+ */
+function normalizeRootExpandingHome(root: string): string {
+  let trimmed = root.trim();
+  // Expand a leading ~ — a manually-typed ~/code/app was stored literally and
+  // never matched the daemon's absolute project_root, so Sessions/Git/Tasks
+  // stayed empty and the project looked dead (cave-psp8).
+  if (trimmed === "~") trimmed = homedir();
+  else if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    trimmed = path.join(homedir(), trimmed.slice(2));
+  }
+  const normalized = trimmed.replace(/\\/g, "/");
+  let endIndex = normalized.length;
+  while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
+  return normalized.slice(0, endIndex) || "/";
+}
+
+function nanoid(len = 10): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = randomBytes(len);
+  return Array.from(bytes, (byte) => chars[byte % chars.length]).join("");
+}
+
+async function readFileOrNull(filePath: string): Promise<string | null> {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function writeProjectsFile(filePath: string, data: string): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, data, "utf8");
+}
+
+// Serialize mutating operations so concurrent API calls don't clobber each other.
+let writeMutex: Promise<unknown> = Promise.resolve();
+function withWriteMutex<T>(fn: () => Promise<T>): Promise<T> {
+  const next = writeMutex.then(fn, fn);
+  writeMutex = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+function withProjectsStore<T>(operation: () => Promise<T>): Promise<T> {
+  if (process.env.CAVE_PROJECTS_PATH_OVERRIDE) return operation();
+  return withCaveHomeReconciledStore("cave-projects.json", operation);
+}
+
+async function loadProjectsUnlocked(): Promise<CaveProject[]> {
+  const raw = await readFileOrNull(projectsFilePath());
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Partial<ProjectsFile>;
+    if (!Array.isArray(parsed.projects)) return [];
+    // Dedupe at the source of truth: the normalized path IS the project
+    // identity. createProject/patchProject keep new writes one-per-root, but
+    // duplicates persisted before that guard (or written by hand) would
+    // otherwise leak into every server consumer (projectById,
+    // trustedProjectCwd, permission filtering) while the UI hid them via
+    // dedupeProjectsByRoot — a client/server divergence. Newest record wins;
+    // the next mutation persists the deduped list, self-healing the file.
+    // Serve ONE root form (cave-2x1em). createProject has persisted the
+    // expanded root since cave-psp8, but records written before that still
+    // hold a literal `~/...`, so the same folder reaches clients as two
+    // different strings depending on when it was added — and roots are the
+    // keys of the client's avatar, chat-override and comux stores.
+    //
+    // The display normalizer deliberately does NOT expand `~`: it runs in the
+    // browser, which has no home directory. So the split is closed here, on
+    // the side that knows the homedir, rather than by shipping one to the
+    // client. `legacyRoot` carries the old key so the client can re-key what
+    // it already stored; it is response-only and never written back.
+    return dedupeByRoot(parsed.projects, normalizeRootExpandingHome).map((project) => {
+      const expanded = normalizeRootExpandingHome(project.root);
+      if (expanded === project.root) return project;
+      return { ...project, root: expanded, legacyRoot: project.root };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function loadProjects(): Promise<CaveProject[]> {
+  return withProjectsStore(loadProjectsUnlocked);
+}
+
+/**
+ * Coordinate a project-registry snapshot with a dependent durable write.
+ *
+ * The callback receives a registry snapshot while the same mutex that guards
+ * create/patch/delete owns the registry. Consumers that persist a decision
+ * based on project IDs must use this rather than loading first and writing a
+ * different store later; otherwise a concurrent registration can turn a
+ * valid permission record into a stale one between those two operations.
+ */
+export function withProjectRegistryLock<T>(
+  operation: (projects: CaveProject[]) => Promise<T>,
+): Promise<T> {
+  return withProjectsStore(() => withWriteMutex(async () => operation(await loadProjectsUnlocked())));
+}
+
+async function saveProjects(projects: CaveProject[]): Promise<void> {
+  // Strip legacyRoot before it reaches disk. loadProjectsUnlocked attaches it
+  // in memory so the client can follow a moved root, and every mutation path
+  // (create/patch/delete) writes back the array that load returned — so without
+  // this the transitional marker would be persisted, and then re-attached on
+  // the next read of a record that no longer needs it. A response-only field
+  // has to be stripped at the boundary that writes, not merely documented as
+  // response-only.
+  const file: ProjectsFile = {
+    version: 1,
+    projects: projects.map(({ legacyRoot: _legacyRoot, ...project }) => project),
+  };
+  await writeProjectsFile(projectsFilePath(), JSON.stringify(file, null, 2));
+}
+
+export function createProject(input: {
+  name: string;
+  root: string;
+  color?: string;
+  /** Canonical GitHub repository link — callers validate/normalize first. */
+  repoUrl?: string;
+}): Promise<CaveProject> {
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked();
+    const root = normalizeRootExpandingHome(input.root);
+    // One project per root. Creating at an already-registered root would persist
+    // a duplicate on disk that the UI hides via dedupeProjectsByRoot but the
+    // server (projectById / trustedProjectCwd) can still resolve to — a
+    // client/server divergence. Return the existing project idempotently instead
+    // ("this folder is already a project → here it is").
+    const existing = projects.find((entry) => normalizeRootExpandingHome(entry.root) === root);
+    if (existing) return existing;
+    const now = new Date().toISOString();
+    const project: CaveProject = {
+      id: nanoid(),
+      name: input.name.trim(),
+      root,
+      color: input.color,
+      createdAt: now,
+      updatedAt: now,
+    };
+    if (input.repoUrl) project.repoUrl = input.repoUrl;
+    await saveProjects([...projects, project]);
+    return project;
+  }));
+}
+
+export function patchProject(
+  id: string,
+  // color: string sets an explicit tint; null clears it (back to the auto
+  // root-hash tint); undefined leaves it untouched. repoUrl follows the same
+  // string-sets / null-clears / undefined-keeps contract.
+  patch: { name?: string; root?: string; color?: string | null; repoUrl?: string | null },
+): Promise<CaveProject | null> {
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked();
+    const idx = projects.findIndex((project) => project.id === id);
+    if (idx < 0) return null;
+    const current = projects[idx];
+    // A root change that would collide with a *different* project is dropped —
+    // it keeps the one-project-per-root invariant that createProject enforces, so
+    // a rename-onto-another-root can't fork the on-disk store into two entries
+    // for one path. Name/color still apply.
+    let nextRoot = current.root;
+    if (patch.root !== undefined) {
+      const candidate = normalizeRootExpandingHome(patch.root);
+      const collides = projects.some(
+        (entry) => entry.id !== id && normalizeRootExpandingHome(entry.root) === candidate,
+      );
+      if (!collides) nextRoot = candidate;
+    }
+    const updated: CaveProject = {
+      ...current,
+      name: patch.name !== undefined ? patch.name.trim() : current.name,
+      root: nextRoot,
+      updatedAt: new Date().toISOString(),
+    };
+    if (patch.color !== undefined) {
+      if (patch.color === null) delete updated.color;
+      else updated.color = patch.color;
+    }
+    if (patch.repoUrl !== undefined) {
+      if (patch.repoUrl === null) delete updated.repoUrl;
+      else updated.repoUrl = patch.repoUrl;
+    }
+    const next = [...projects];
+    next[idx] = updated;
+    await saveProjects(next);
+    return updated;
+  }));
+}
+
+export function deleteProject(id: string): Promise<boolean> {
+  return withProjectsStore(() => withWriteMutex(async () => {
+    const projects = await loadProjectsUnlocked();
+    const next = projects.filter((project) => project.id !== id);
+    if (next.length === projects.length) return false;
+    await saveProjects(next);
+    return true;
+  }));
+}
+
+export async function seedDefaultProjectsIfEmpty(): Promise<void> {
+  // No-op: seeding with hard-coded developer paths makes no sense for other users.
+  // Projects are created via the UI or POST /api/projects.
+}
+
+export function projectForRoot(
+  root: string | null | undefined,
+  projects: CaveProject[],
+): CaveProject | null {
+  if (!root?.trim()) return null;
+  const normalized = normalizeRootExpandingHome(root);
+  return projects.find((project) => normalizeRootExpandingHome(project.root) === normalized) ?? null;
+}
+
+export function projectById(
+  id: string | null | undefined,
+  projects: CaveProject[],
+): CaveProject | null {
+  if (!id) return null;
+  return projects.find((project) => project.id === id) ?? null;
+}
+
+/**
+ * The server-trusted working directory for a card assigned to `projectId`: the
+ * project's own root, loaded server-side. A card's `cwd` must never be taken
+ * from a client body alongside a `projectId` — the two could contradict, and a
+ * mismatched cwd then feeds board search (`cwd:` token), display, and the
+ * no-project chat fallback (cave-pw83). Returns `{ ok: false }` when the id
+ * doesn't resolve so the caller can reject with a 409.
+ */
+export async function trustedProjectCwd(
+  projectId: string,
+): Promise<{ ok: true; root: string } | { ok: false }> {
+  const project = projectById(projectId, await loadProjects());
+  return project ? { ok: true, root: project.root } : { ok: false };
+}

@@ -4,11 +4,11 @@ import { delimiter, isAbsolute, join } from "node:path";
 import {
   COPILOT_NO_AUTO_UPDATE_ARG,
   parseRuntimeClientVersion,
-} from "../copilot-stream.ts";
-import { type CopilotLaunchCommand } from "../copilot-bin.ts";
+} from "../integrations/copilot/copilot-stream.ts";
+import { type CopilotLaunchCommand } from "../integrations/copilot/copilot-bin.ts";
 import { vaultFreeDiscoveryEnv } from "../child-spawn-env.ts";
-import type { RuntimeAvailability } from "../runtime-availability.ts";
-import { loadVaultMap } from "../vault.ts";
+import type { RuntimeAvailability } from "../runtime/runtime-availability.ts";
+import { loadVaultMap } from "../grimoire/vault.ts";
 import {
   copilotLaunchProbeFailureAvailability,
   resolveCopilotRuntimeLaunch,

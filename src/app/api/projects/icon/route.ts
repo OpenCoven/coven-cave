@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { resolveSecret } from "@/lib/vault";
+import { resolveSecret } from "@/lib/grimoire/vault";
 import { readJsonBody } from "@/lib/server/api-security";
 import { loadConfig } from "@/lib/cave-config";
-import { buildProjectIconPrompt } from "@/lib/project-icon-prompt";
+import { buildProjectIconPrompt } from "@/lib/projects/project-icon-prompt";
 import {
   resolveIconImageProvider,
   type IconImageProvider,
-} from "@/lib/project-icon-image-provider";
+} from "@/lib/projects/project-icon-image-provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

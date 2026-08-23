@@ -12,7 +12,7 @@ import { useRef } from "react";
 
 import { GitHubCard } from "@/components/github-card";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import "@/styles/daily-report-pr-modal.css";
 
 export type PrTarget = {

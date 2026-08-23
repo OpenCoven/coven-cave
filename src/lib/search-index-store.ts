@@ -12,7 +12,7 @@
  * FTS5 availability was verified before this was planned — `node:sqlite` ships
  * it with no third-party dependency (SQLite 3.53.1). `node:sqlite` is still
  * experimental, so it is imported lazily, following the pattern already used in
- * src/lib/threads-adapters.ts.
+ * src/lib/chat/threads-adapters.ts.
  *
  * Spec: docs/superpowers/specs/2026-08-03-global-intelligent-search-design.md
  */
@@ -118,7 +118,7 @@ type DatabaseHandle = {
 /**
  * Lazy import so the experimental-module warning is paid only by callers that
  * actually open an index — importing this module must stay free. Same pattern
- * as src/lib/threads-adapters.ts.
+ * as src/lib/chat/threads-adapters.ts.
  */
 async function loadSqlite(): Promise<{ DatabaseSync: new (file: string) => DatabaseHandle }> {
   return (await import("node:sqlite")) as unknown as {

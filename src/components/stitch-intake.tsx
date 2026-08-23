@@ -27,8 +27,8 @@ import {
   type StitchPinRef,
   type StitchThread,
 } from "@/lib/stitch";
-import { STITCH_PATTERNS, stitchPatternById } from "@/lib/stitch-patterns";
-import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { STITCH_PATTERNS, stitchPatternById } from "@/lib/grimoire/stitch-patterns";
+import { useRefreshOnFocus } from "@/lib/hooks/use-refresh-on-focus";
 
 const KIND_ICON: Record<PinKind, IconName> = {
   url: "ph:globe",

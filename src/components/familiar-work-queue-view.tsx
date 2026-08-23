@@ -8,12 +8,12 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { SearchInput } from "@/components/ui/search-input";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import { relativeTime } from "@/lib/relative-time";
 import { subscribeToQueueProjectSelection, type QueueProjectSelection } from "@/lib/queue-project-selection";
 import { QueueProjectSetup } from "@/components/queue-project-setup";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   buildWorkQueue,
   hasVerificationEvidence,

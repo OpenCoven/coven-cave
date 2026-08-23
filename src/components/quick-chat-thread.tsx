@@ -9,8 +9,8 @@ import { copyText } from "@/lib/clipboard";
 import { Icon, type IconName } from "@/lib/icon";
 import { formatQuickChatAssistantMessage } from "@/lib/quick-chat-message-format";
 import type { Familiar } from "@/lib/types";
-import { useStickToBottom } from "@/lib/use-stick-to-bottom";
-import type { QuickChatMessage } from "@/lib/use-quick-chat";
+import { useStickToBottom } from "@/lib/hooks/use-stick-to-bottom";
+import type { QuickChatMessage } from "@/lib/hooks/use-quick-chat";
 import { FamiliarMark, QUICK_CHAT_SUGGESTIONS } from "./quick-chat-primitives";
 import { lastRegenerableQuickChatMessageId } from "@/lib/quick-chat-thread-state";
 

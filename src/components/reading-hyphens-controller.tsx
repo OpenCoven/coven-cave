@@ -5,7 +5,7 @@ import {
   READING_HYPHENS_KEY,
   applyReadingHyphens,
   readReadingHyphens,
-} from "@/lib/reading-hyphens";
+} from "@/lib/reading/reading-hyphens";
 
 /**
  * Applies the saved reading hyphenation on load and keeps it in sync across

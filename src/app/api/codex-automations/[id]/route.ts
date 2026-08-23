@@ -6,7 +6,7 @@ import {
   getCodexAutomation,
   toCodexAutomationPayload,
   updateCodexAutomation,
-} from "@/lib/codex-automations";
+} from "@/lib/integrations/codex/codex-automations";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";

@@ -13,9 +13,9 @@ import type {
   CardGitHubLink,
   TaskDependency,
   TaskNextStep,
-} from "@/lib/cave-board-types";
-import type { ChatAttachment } from "@/lib/chat-attachments";
-import { trustedProjectCwd } from "@/lib/cave-projects";
+} from "@/lib/board/cave-board-types";
+import type { ChatAttachment } from "@/lib/chat/chat-attachments";
+import { trustedProjectCwd } from "@/lib/projects/cave-projects";
 
 export const dynamic = "force-dynamic";
 

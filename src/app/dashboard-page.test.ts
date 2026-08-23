@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Source-regex pins for the /dashboard bento surface (Claude Design import,
 // cave-g9os). The pure derivations behind every panel are behavior-tested in
-// src/lib/bento-dashboard.test.ts; these pins cover the React wiring — which
+// src/lib/surfaces/bento-dashboard.test.ts; these pins cover the React wiring — which
 // data sources feed the surface, which helpers drive each panel, and the
 // interaction/a11y contract of the design (collapsibles, carousel, roster).
 import assert from "node:assert/strict";

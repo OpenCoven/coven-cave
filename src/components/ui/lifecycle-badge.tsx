@@ -1,6 +1,6 @@
 "use client";
 
-import type { CardLifecycle } from "@/lib/cave-board-types";
+import type { CardLifecycle } from "@/lib/board/cave-board-types";
 
 const LABEL: Record<CardLifecycle, string> = {
   queued: "queued",

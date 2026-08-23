@@ -52,7 +52,7 @@ vi.mock("@/components/chat-project-sidebar", () => ({ ChatProjectSidebar: () => 
 vi.mock("@/components/new-chat-launch", () => ({ NewChatLaunch: () => null }));
 vi.mock("@/components/familiar-chatout-codex", () => ({ FamiliarChatoutCodexSurface: () => null }));
 vi.mock("@/lib/feature-flags", () => ({ caveChatoutCodex: () => false }));
-vi.mock("@/lib/use-viewport", () => ({ useIsMobile: () => false, useIsCoarsePointer: () => false }));
+vi.mock("@/lib/hooks/use-viewport", () => ({ useIsMobile: () => false, useIsCoarsePointer: () => false }));
 // Stable (module-level, not freshly literal-constructed per call) return
 // values throughout: several of these feed useMemo/useEffect dependency
 // arrays by reference in the real hooks (useSyncExternalStore snapshots,
@@ -62,10 +62,10 @@ vi.mock("@/lib/use-viewport", () => ({ useIsMobile: () => false, useIsCoarsePoin
 const noArchivedFamiliars = {};
 const noProjectOverrides = {};
 const noProjects = { projects: [] as never[] };
-vi.mock("@/lib/use-project-overrides", () => ({ useProjectOverrides: () => noProjectOverrides }));
-vi.mock("@/lib/cave-familiar-archive", () => ({ useArchivedFamiliars: () => noArchivedFamiliars }));
-vi.mock("@/lib/use-projects", () => ({ useProjects: () => noProjects }));
-vi.mock("@/lib/use-auto-expand-new-groups", () => ({ useAutoExpandNewGroups: () => {} }));
+vi.mock("@/lib/hooks/use-project-overrides", () => ({ useProjectOverrides: () => noProjectOverrides }));
+vi.mock("@/lib/familiars/cave-familiar-archive", () => ({ useArchivedFamiliars: () => noArchivedFamiliars }));
+vi.mock("@/lib/hooks/use-projects", () => ({ useProjects: () => noProjects }));
+vi.mock("@/lib/hooks/use-auto-expand-new-groups", () => ({ useAutoExpandNewGroups: () => {} }));
 vi.mock("@/components/ui/live-region", () => ({ useAnnouncer: () => ({ announce: vi.fn() }) }));
 
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";

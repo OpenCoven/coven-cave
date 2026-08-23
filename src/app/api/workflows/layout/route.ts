@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadWorkflowLayout, saveWorkflowLayout, type WorkflowLayout } from "@/lib/workflow-source";
+import { loadWorkflowLayout, saveWorkflowLayout, type WorkflowLayout } from "@/lib/automations/workflow-source";
 
 export const dynamic = "force-dynamic";
 

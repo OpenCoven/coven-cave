@@ -1,18 +1,18 @@
 import { mkdir } from "node:fs/promises";
-import type { CaveProject } from "../cave-projects.ts";
-import { createProject, deleteProject, loadProjects, projectForRoot } from "../cave-projects.ts";
+import type { CaveProject } from "../projects/cave-projects.ts";
+import { createProject, deleteProject, loadProjects, projectForRoot } from "../projects/cave-projects.ts";
 import {
   accessLevelSatisfies,
   maxAccessLevel,
   normalizeAccessLevel,
   type ProjectAccessLevel,
-} from "../project-access-levels.ts";
+} from "../projects/project-access-levels.ts";
 import {
   effectiveProjectAccess,
   grantProjectToFamiliar,
   loadProjectPermissions,
   revokeAllGrantsForProject,
-} from "../project-permissions.ts";
+} from "../projects/project-permissions.ts";
 import { researchMissionsRoot } from "./research-mission-store.ts";
 
 /**

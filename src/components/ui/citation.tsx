@@ -12,13 +12,13 @@ import {
 } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { Popover, PopoverBody } from "@/components/ui/popover";
-import { createCitationPreviewCoordinator } from "@/lib/citation-preview";
+import { createCitationPreviewCoordinator } from "@/lib/reading/citation-preview";
 import {
   citationSourcePresentation,
   lineRangeLabel,
   type Citation,
   type CitationSourceKind,
-} from "@/lib/citations";
+} from "@/lib/reading/citations";
 
 const SOURCE_ICONS: Record<CitationSourceKind, IconName> = {
   repo: "ph:file-text",

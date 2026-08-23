@@ -29,7 +29,7 @@
  * resets the reducer to `idle` and blanks "Page 3 of 14" down to "Page 3" with
  * both Prev and Next disabled.
  *
- * State lives in `reducePaperView` (src/lib/research-paper-view.ts). It refuses
+ * State lives in `reducePaperView` (src/lib/research/research-paper-view.ts). It refuses
  * `ready`/`fail` from `idle` — the status only `cancel` produces — so a
  * resolution arriving after teardown cannot revive a dead viewer, while a
  * genuine failure after the document opened still reaches the reader.
@@ -50,7 +50,7 @@ import {
   paperPdfUrl,
   paperViewErrorMessage,
   reducePaperView,
-} from "@/lib/research-paper-view";
+} from "@/lib/research/research-paper-view";
 
 export type ResearchPaperViewerProps = {
   arxivId: string;

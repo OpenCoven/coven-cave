@@ -14,7 +14,7 @@ const openStudio = vi.hoisted(() => vi.fn());
 vi.mock("@/components/ui/live-region", () => ({
   useAnnouncer: () => ({ announce }),
 }));
-vi.mock("@/lib/familiar-studio-context", () => ({
+vi.mock("@/lib/familiars/familiar-studio-context", () => ({
   openFamiliarStudioSettingsTab: openStudio,
 }));
 vi.mock("@/lib/icon", () => ({

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/cave-projects";
+import { loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/projects/cave-projects";
 
 export const dynamic = "force-dynamic";
 

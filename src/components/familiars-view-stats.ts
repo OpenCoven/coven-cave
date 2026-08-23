@@ -1,4 +1,4 @@
-import { ritualStreak } from "@/lib/familiar-renown";
+import { ritualStreak } from "@/lib/familiars/familiar-renown";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import type { Familiar, SessionRow } from "@/lib/types";
 

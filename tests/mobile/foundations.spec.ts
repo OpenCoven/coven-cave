@@ -254,7 +254,7 @@ test.describe("mobile foundations", () => {
     // the default per-test budget. Triple it so a slow compile reads as slow,
     // not broken.
     test.slow();
-    // The in-shell WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
+    // The in-shell WorkspaceMode set (src/lib/projects/workspace-mode.ts). Keep in sync
     // when a new surface is added — a new mode with a render crash should turn
     // this red. Two modes are intentionally excluded: "journal" now opens the
     // Grimoire surface on its Journal tab (swept separately after the loop);

@@ -132,13 +132,13 @@ const {
   windowsCommandLineUtf16Length,
   windowsQuotedArgUtf16Length,
 } = await import("./flow-copilot-session.ts");
-const { buildCopilotStreamArgs, copilotIdentityPreamble, copilotStreamSpec } = await import("../copilot-stream.ts");
+const { buildCopilotStreamArgs, copilotIdentityPreamble, copilotStreamSpec } = await import("../integrations/copilot/copilot-stream.ts");
 const { compileFlowPrompt } = await import("../flow/flow-compile.ts");
-const { buildResearchMissionFlow } = await import("../research-mission-flow.ts");
+const { buildResearchMissionFlow } = await import("../research/research-mission-flow.ts");
 const {
   RESEARCH_INTENT_MAX_LENGTH,
   validateCreateResearchMissionInput,
-} = await import("../research-missions.ts");
+} = await import("../research/research-missions.ts");
 const protocol = copilotStreamSpec()?.protocol;
 assert.ok(protocol, "the registered Copilot flow fixture uses a validated event protocol");
 

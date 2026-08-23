@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AutomationRunRecord } from "../automation-runs.ts";
+import type { AutomationRunRecord } from "../automations/automation-runs.ts";
 import type { FlowRunRecord } from "../flows.ts";
-import type { ResearchMission } from "../research-missions.ts";
+import type { ResearchMission } from "../research/research-missions.ts";
 import {
   makeResearchMissionRunner,
   type ResearchMissionRunnerDeps,

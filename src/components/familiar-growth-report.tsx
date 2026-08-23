@@ -6,8 +6,8 @@ import type { IconName } from "@/lib/icon";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { FamiliarCardStats } from "@/components/familiars-view-stats";
-import type { FamiliarGrowthReport as FamiliarGrowthReportModel, GrowthSignal } from "@/lib/familiar-growth-signals";
-import { buildSessionPulse, pulseDelta, pulseTotal } from "@/lib/session-pulse";
+import type { FamiliarGrowthReport as FamiliarGrowthReportModel, GrowthSignal } from "@/lib/familiars/familiar-growth-signals";
+import { buildSessionPulse, pulseDelta, pulseTotal } from "@/lib/chat/session-pulse";
 import type { RetroOutcome, RetroRun, RetroTrack } from "@/lib/retro-runs";
 import type { Familiar, SessionRow } from "@/lib/types";
 

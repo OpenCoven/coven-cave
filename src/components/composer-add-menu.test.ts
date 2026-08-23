@@ -16,7 +16,7 @@ const read = (relativePath: string) => {
 const menu = read("./composer-add-menu.tsx");
 const plusMenu = read("./composer-plus-menu.tsx");
 const home = read("./home-composer.tsx");
-const events = read("../lib/chat-tab-events.ts");
+const events = read("../lib/chat/chat-tab-events.ts");
 const styles = read("../styles/cave-composer.css");
 
 // ── Root structure: attach → project › → github → skills ›/connectors › ────

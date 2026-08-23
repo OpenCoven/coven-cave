@@ -16,8 +16,8 @@ import { SearchInput } from "@/components/ui/search-input";
 import {
   archiveFamiliar,
   unarchiveFamiliar,
-} from "@/lib/cave-familiar-archive";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+} from "@/lib/familiars/cave-familiar-archive";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   familiarRosterCountLabel,
   filterSettingsFamiliars,

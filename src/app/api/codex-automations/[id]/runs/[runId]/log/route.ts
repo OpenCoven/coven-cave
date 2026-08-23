@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
-import { listRuns } from "@/lib/automation-runs";
+import { listRuns } from "@/lib/automations/automation-runs";
 import { isAllowedAutomationLogPath, MAX_RUN_LOG_BYTES } from "@/lib/server/automation-log-paths";
 
 export const dynamic = "force-dynamic";

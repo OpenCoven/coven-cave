@@ -539,7 +539,7 @@ assert.match(
 );
 assert.match(
   source,
-  /import type \{ RuntimeAvailabilitySummary \} from "@\/lib\/runtime-availability";[\s\S]*?availability\?: RuntimeAvailabilitySummary;/,
+  /import type \{ RuntimeAvailabilitySummary \} from "@\/lib\/runtime\/runtime-availability";[\s\S]*?availability\?: RuntimeAvailabilitySummary;/,
   "the runtime picker receives the launchability summary returned by /api/harnesses",
 );
 assert.match(

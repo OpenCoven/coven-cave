@@ -12,10 +12,10 @@ import {
   parseGlyphString,
   serializeGlyph,
   type FamiliarGlyph,
-} from "@/lib/familiar-glyph";
+} from "@/lib/familiars/familiar-glyph";
 import { FamiliarGlyph as GlyphView } from "@/components/familiar-glyph";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
+import { useRovingTabIndex } from "@/lib/hooks/use-roving-tabindex";
 import type { Familiar } from "@/lib/types";
 
 type Props = {

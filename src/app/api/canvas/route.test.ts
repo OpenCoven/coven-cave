@@ -213,7 +213,7 @@ test("POST protects ambiguous create retries with expected-absent", async () => 
 
 test("every mutating verb is view-mode gated: verified phone 403s until the desktop opts in", async () => {
   const { MOBILE_ACCESS_HEADER } = await import("../../../proxy-helpers.ts");
-  const { updateMobileWriteAccess } = await import("../../../lib/project-permissions.ts");
+  const { updateMobileWriteAccess } = await import("../../../lib/projects/project-permissions.ts");
   const { GET } = await import("./route.ts");
 
   const mobileRequest = (method: string, body: unknown) =>

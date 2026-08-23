@@ -6,14 +6,14 @@ import {
   IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE,
   MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
-} from "../../../../lib/chat-attachments.ts";
+} from "../../../../lib/chat/chat-attachments.ts";
 import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
   ToolCallTracker,
   toPersistedTools,
-} from "../../../../lib/chat-tool-events.ts";
+} from "../../../../lib/chat/chat-tool-events.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -28,7 +28,7 @@ const streamEvents = await readFile(
   "utf8",
 );
 const openclawBridge = await readFile(
-  new URL("../../../../lib/openclaw-bridge.ts", import.meta.url),
+  new URL("../../../../lib/openclaw/openclaw-bridge.ts", import.meta.url),
   "utf8",
 );
 const boardRoute = await readFile(

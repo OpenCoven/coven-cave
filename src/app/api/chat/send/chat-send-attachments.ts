@@ -4,7 +4,7 @@ import {
   cleanMediaDataUrl,
   MAX_ATTACHMENT_IMAGE_BYTES,
   type ChatAttachment,
-} from "@/lib/chat-attachments";
+} from "@/lib/chat/chat-attachments";
 import {
   saveChatImageAttachment,
   saveChatMediaAttachment,

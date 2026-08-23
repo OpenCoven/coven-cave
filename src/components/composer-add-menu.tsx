@@ -21,13 +21,13 @@ import { ENHANCE_INTENTS, type EnhanceIntent } from "@/lib/prompt-enhancer";
 import {
   useComposerConnectors,
   useComposerSkills,
-} from "@/lib/composer-add-menu-data";
-import type { SkillOption } from "@/lib/slash-skill";
-import { CHAT_OPEN_SKILLS_EVENT, markSkillsTabPending } from "@/lib/chat-tab-events";
+} from "@/lib/chat/composer-add-menu-data";
+import type { SkillOption } from "@/lib/chat/slash-skill";
+import { CHAT_OPEN_SKILLS_EVENT, markSkillsTabPending } from "@/lib/chat/chat-tab-events";
 import {
   projectAccessLabel,
   type ProjectAccessLevel,
-} from "@/lib/project-access-levels";
+} from "@/lib/projects/project-access-levels";
 
 /** Route "Browse skills" / "Manage connectors" to the Marketplace surface. */
 function openMarketplace() {

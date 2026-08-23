@@ -1,6 +1,6 @@
 import sharp from "sharp";
 
-import type { ResearchGenerationStat } from "../research-generations.ts";
+import type { ResearchGenerationStat } from "../research/research-generations.ts";
 
 /**
  * Research infographic renderer — turns an infographic generation's extracted

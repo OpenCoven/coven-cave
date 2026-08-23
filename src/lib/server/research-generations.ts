@@ -58,9 +58,9 @@ import {
   type ResearchMediaRenderConfig,
   type ResearchPodcastSpeaker,
   type ResearchPodcastStyle,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import { LOCAL_TTS_MAX_CHARS } from "../voice/local-tts.ts";
-import type { ResearchArtifactRef, ResearchMission } from "../research-missions.ts";
+import type { ResearchArtifactRef, ResearchMission } from "../research/research-missions.ts";
 import { caveHome } from "../coven-paths.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 import { corruptAsidePath } from "./corrupt-aside.ts";

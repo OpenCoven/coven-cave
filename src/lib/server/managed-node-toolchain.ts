@@ -10,7 +10,7 @@ import {
   nodeArchiveFor,
   type PrerequisiteArchitecture,
   type PrerequisitePlatform,
-} from "../onboarding-prerequisites.ts";
+} from "../onboarding/onboarding-prerequisites.ts";
 import { extractSafeTarGz, extractSafeZip } from "./managed-node-archive.ts";
 import { probeOwnedDirectoryWrite } from "./owned-directory-write.ts";
 

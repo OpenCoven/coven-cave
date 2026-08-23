@@ -4,12 +4,12 @@ import { readFile } from "node:fs/promises";
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
+const slashCommands = await readFile(new URL("../lib/chat/slash-commands.ts", import.meta.url), "utf8");
 // b7ecf460e ("decouple heartbeat from daemon diagnostics") moved daemon-status
 // staleness out of workspace.tsx and into the connection supervisor, so the
 // guard has to be asserted where it now lives.
 const daemonSupervisor = await readFile(
-  new URL("../lib/daemon-connection-supervisor.ts", import.meta.url),
+  new URL("../lib/daemon/daemon-connection-supervisor.ts", import.meta.url),
   "utf8",
 );
 

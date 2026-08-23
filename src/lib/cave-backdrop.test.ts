@@ -14,7 +14,7 @@ import {
 } from "./cave-backdrop.ts";
 import { createBackdropImageState } from "./backdrop-image-state.ts";
 import { createDefaultPreferences } from "./preferences-schema.ts";
-import { parseThemeColor, contrastRatio } from "./theme-contrast.ts";
+import { parseThemeColor, contrastRatio } from "./themes/theme-contrast.ts";
 
 // Known-missing familiar bytes are fetched once during normal navigation, but
 // an in-app mutation invalidates the bounded negative cache immediately.

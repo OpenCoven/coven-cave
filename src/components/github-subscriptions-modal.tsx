@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 /**
  * Event subscriptions modal for the GitHub surface: pick repos to watch and

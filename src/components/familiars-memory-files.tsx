@@ -1,15 +1,15 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { DocumentReader } from "@/components/document-reader";
 import { MarkdownReaderBlock } from "@/components/canonical-memory-markdown";
-import { useMemoryFile } from "@/lib/use-memory-file";
+import { useMemoryFile } from "@/lib/hooks/use-memory-file";
 import { parseMarkdownReaderDocument } from "@/lib/document-reader";
-import { classifyProtection } from "@/lib/memory-management";
+import { classifyProtection } from "@/lib/memory/memory-management";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import {

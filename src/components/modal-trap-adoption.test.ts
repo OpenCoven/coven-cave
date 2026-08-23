@@ -18,7 +18,7 @@ for (const file of FILES) {
 
   assert.match(
     source,
-    /import\s+\{[^}]*useFocusTrap[^}]*\}\s+from\s+["']@\/lib\/use-focus-trap["']/,
+    /import\s+\{[^}]*useFocusTrap[^}]*\}\s+from\s+["']@\/lib\/hooks\/use-focus-trap["']/,
     `${file} imports useFocusTrap from @/lib/use-focus-trap`,
   );
 

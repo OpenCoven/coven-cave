@@ -22,8 +22,8 @@ import {
   type ChatContextChip,
   type ChatContextStat,
   type ChatContextTurn,
-} from "@/lib/chat-session-context";
-import type { CaveProject } from "@/lib/cave-projects";
+} from "@/lib/chat/chat-session-context";
+import type { CaveProject } from "@/lib/projects/cave-projects";
 import type { TurnUsage } from "@/lib/usage-format";
 import { Popover, PopoverBody } from "@/components/ui/popover";
 

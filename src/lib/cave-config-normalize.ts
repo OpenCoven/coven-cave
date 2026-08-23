@@ -1,7 +1,7 @@
 import {
   isSshRuntime,
   normalizeFamiliarRuntime,
-} from "./familiar-runtime.ts";
+} from "./familiars/familiar-runtime.ts";
 import type {
   CaveMultiHostConfig,
   CaveOmnigentConfig,

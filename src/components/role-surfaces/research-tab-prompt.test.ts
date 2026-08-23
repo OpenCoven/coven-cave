@@ -5,13 +5,13 @@ import test from "node:test";
 import {
   defaultResearchPlan,
   inferResearchMissionMode,
-} from "../../lib/research-mission-routing.ts";
+} from "../../lib/research/research-mission-routing.ts";
 import { buildPromptEnhancement } from "../../lib/prompt-enhancer.ts";
 
 const promptTab = readFileSync(new URL("./research-tab-prompt.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./research-mission-composer.tsx", import.meta.url), "utf8");
 const recommendationContext = readFileSync(
-  new URL("../../lib/research-recommendation-context.ts", import.meta.url),
+  new URL("../../lib/research/research-recommendation-context.ts", import.meta.url),
   "utf8",
 );
 // The prompt sheet rides with the mode-gated surface (bundle budget, #3264

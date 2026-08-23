@@ -231,7 +231,7 @@ test("groupSavedLinksByUsage matches X status aliases in a mission citation inde
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
 test("/save (alias /link) is a first-class slash command", () => {
-  const registry = readFileSync(path.join(repoRoot, "src/lib/slash-commands.ts"), "utf8");
+  const registry = readFileSync(path.join(repoRoot, "src/lib/chat/slash-commands.ts"), "utf8");
   assert.match(registry, /name: "\/save", aliases: \["\/link"\]/);
 
   const chat = readFileSync(path.join(repoRoot, "src/components/chat-view.tsx"), "utf8");

@@ -12,13 +12,13 @@ import {
   type CaveTravelQueueItem,
 } from "@/lib/cave-config";
 import { chatSummaryTitle, defaultChatTitleForSession } from "@/lib/cave-chat-titles";
-import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
+import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat/chat-attachments";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
-import type { CodexAutomation } from "@/lib/codex-automations-types";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { isSshRuntime } from "@/lib/familiar-runtime";
-import { cleanModelId } from "@/lib/chat-model-state";
-import { isModelAllowedByRuntime } from "@/lib/runtime-models";
+import type { CodexAutomation } from "@/lib/integrations/codex/codex-automations-types";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
+import { isSshRuntime } from "@/lib/familiars/familiar-runtime";
+import { cleanModelId } from "@/lib/chat/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime/runtime-models";
 import { persistQueuedOfflineConversation } from "@/lib/cave-conversations";
 import { flowExecutionOrder, flowPartialExecutionOrder, compileFlowPrompt } from "@/lib/flow/flow-compile";
 import type { FlowExecutionMode } from "@/lib/flow/flow-compile";
@@ -26,17 +26,17 @@ import type { FlowDoc } from "@/lib/flow/flow-doc";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import { flowRunRedactsData } from "@/lib/flow/flow-doc";
-import { isResearchMissionFlowSnapshot } from "@/lib/research-mission-flow";
+import { isResearchMissionFlowSnapshot } from "@/lib/research/research-mission-flow";
 import type { FlowRunStepStatus } from "@/lib/flows";
 import { startAutomationRun } from "@/lib/server/automation-runner";
 import { recordFlowRun, updateFlowRun } from "@/lib/server/flow-store";
-import { assertProjectRootAccess } from "@/lib/project-permissions";
+import { assertProjectRootAccess } from "@/lib/projects/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
-import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
-import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
-import { recordRun } from "@/lib/workflow-runs";
-import { loadLocalWorkflowList } from "@/lib/workflow-source";
-import type { WorkflowSummary } from "@/lib/workflows";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/integrations/hermes/hermes-profiles";
+import { buildWorkflowRunPrompt } from "@/lib/automations/workflow-run-prompt";
+import { recordRun } from "@/lib/automations/workflow-runs";
+import { loadLocalWorkflowList } from "@/lib/automations/workflow-source";
+import type { WorkflowSummary } from "@/lib/automations/workflows";
 
 export type TravelOfflineReplayResult = {
   attempted: number;

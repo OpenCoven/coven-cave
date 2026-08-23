@@ -20,44 +20,44 @@ import {
   useState,
 } from "react";
 import type { SessionRow } from "@/lib/types";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { Icon } from "@/lib/icon";
-import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
+import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/chat/slash-model";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   resolveSkillInvocation,
   buildSkillPrompt,
   type SkillOption,
-} from "@/lib/slash-skill";
+} from "@/lib/chat/slash-skill";
 import {
   resolvePromptArg,
   promptInsertion,
   type PromptOption,
-} from "@/lib/slash-prompt";
+} from "@/lib/chat/slash-prompt";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
-import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
+import { useAutogrowTextarea } from "@/lib/hooks/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
-import { useComposerHistory } from "@/lib/use-composer-history";
+import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/hooks/use-composer-draft";
+import { useComposerHistory } from "@/lib/hooks/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
-import { useAttachmentStaging } from "@/lib/use-attachment-staging";
-import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { canonicalize, inlineSlashCommandPrompt } from "@/lib/slash-commands";
-import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
-import { useProjects } from "@/lib/use-projects";
-import { NO_PROJECT_ID, recentChatProjectRoot } from "@/lib/chat-projects";
+import { useAttachmentStaging } from "@/lib/hooks/use-attachment-staging";
+import { useInlineSlashMenus } from "@/lib/hooks/use-inline-slash-menus";
+import { canonicalize, inlineSlashCommandPrompt } from "@/lib/chat/slash-commands";
+import { useArchivedFamiliars } from "@/lib/familiars/cave-familiar-archive";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { NO_PROJECT_ID, recentChatProjectRoot } from "@/lib/chat/chat-projects";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
 import { useAddProjectFlow } from "@/components/project-picker";
-import { sortProjectsAlphabetically } from "@/lib/cave-projects-types";
+import { sortProjectsAlphabetically } from "@/lib/projects/cave-projects-types";
 import { ComposerContextChips } from "@/components/composer-context-pill";
-import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
+import { LOCAL_HOST_ID } from "@/lib/chat/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
-import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/hooks/use-runtime-model-options";
+import { canonicalHarnessId, COMPATIBILITY_ADAPTERS } from "@/lib/runtime/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
@@ -68,8 +68,8 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
   type ChatAttachment,
-} from "@/lib/chat-attachments";
-import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+} from "@/lib/chat/chat-attachments";
+import { usePromptEnhance } from "@/lib/hooks/use-prompt-enhance";
 import { EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 import { DESTINATIONS, placeholderFor, type Destination } from "@/components/home/home-destinations";
@@ -81,7 +81,7 @@ import {
   resolveHomeComposerProject,
   shouldClearHomeComposerProjectSelection,
 } from "@/lib/home-composer-context";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
 import {
   cancelSystemBrowserUrlWindow,
   openSystemBrowserUrl,

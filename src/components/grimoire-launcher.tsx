@@ -8,14 +8,14 @@
  * Shown by grimoire-view when the Knowledge tab has no open tabs; all data
  * (knowledge/memory/journal/graph) is what the view already loaded — this
  * component fetches nothing. Pure derivations live in
- * src/lib/grimoire-launcher-data.ts (unit-tested there).
+ * src/lib/grimoire/grimoire-launcher-data.ts (unit-tested there).
  */
 
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
-import { STITCH_PATTERNS } from "@/lib/stitch-patterns";
-import type { DocGraph } from "@/lib/grimoire-graph";
+import { STITCH_PATTERNS } from "@/lib/grimoire/stitch-patterns";
+import type { DocGraph } from "@/lib/grimoire/grimoire-graph";
 import {
   buildLauncherItems,
   detectLauncherCapture,
@@ -29,7 +29,7 @@ import {
   type LauncherJournalInput,
   type LauncherKnowledgeInput,
   type LauncherMemoryInput,
-} from "@/lib/grimoire-launcher-data";
+} from "@/lib/grimoire/grimoire-launcher-data";
 
 /** One-line template hooks, after the prototype's new-stitch row. */
 const PATTERN_HOOKS: Record<string, string> = {

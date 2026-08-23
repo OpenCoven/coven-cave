@@ -7,7 +7,7 @@
 // - Lineage walks strand → ward_audit entries → source; entries with
 //   unresolvable refs are marked, never silently dropped (R7).
 
-import type { AuditEntryView, StrandView, TensionView } from "./threads-read.ts";
+import type { AuditEntryView, StrandView, TensionView } from "./chat/threads-read.ts";
 
 export type StrandDetailRow = { label: string; value: string; mono?: boolean };
 

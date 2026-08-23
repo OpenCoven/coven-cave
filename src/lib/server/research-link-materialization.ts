@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ResearchMission, ResearchSourceRef } from "../research-missions.ts";
+import type { ResearchMission, ResearchSourceRef } from "../research/research-missions.ts";
 import { getSavedLinkById } from "./research-links.ts";
 import {
   restoreResearchMissionSourceFile,

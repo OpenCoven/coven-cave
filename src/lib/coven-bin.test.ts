@@ -9,7 +9,7 @@ import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, write
 import os from "node:os";
 import path from "node:path";
 import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenOverrideRejection, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
-import { harnessSpawnEnv } from "./harness-spawn-env.ts";
+import { harnessSpawnEnv } from "./runtime/harness-spawn-env.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 const childSpawnEnvSource = await readFile(
@@ -314,9 +314,9 @@ assert.match(
 for (const rel of [
   "../app/api/skills/directory/install/route.ts",
   "../app/api/skills/directory/use/route.ts",
-  "./branch-pr-context.ts",
-  "./mobile-handoff.ts",
-  "./vault.ts",
+  "./projects/branch-pr-context.ts",
+  "./surfaces/mobile-handoff.ts",
+  "./grimoire/vault.ts",
 ]) {
   const spawnSite = await readFile(new URL(rel, import.meta.url), "utf8");
   assert.match(

@@ -46,7 +46,7 @@ const THEMES = [
 const MODES = ["dark", "light"];
 
 // The palette switch and the measurement happen in ONE evaluate, with no await
-// between them. src/lib/theme-runtime.ts reconciles data-theme/data-mode from
+// between them. src/lib/themes/theme-runtime.ts reconciles data-theme/data-mode from
 // stored preferences, so attributes written in a separate round-trip get
 // reverted before the measurement lands — silently, which is worse than
 // loudly. Everything below is synchronous, and reading getComputedStyle forces

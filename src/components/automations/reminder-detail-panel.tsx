@@ -8,10 +8,10 @@ import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
 import { inboxKindLabel } from "@/lib/inbox-feed";
 import { formatClock, formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
-import { parseGitHubItemUrl } from "@/lib/github-item-url";
+import { parseGitHubItemUrl } from "@/lib/github/github-item-url";
 import { humanRecurrence } from "@/lib/automations/automation-entry";
 import { relativeTimeSigned } from "@/lib/relative-time";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { Icon } from "@/lib/icon";
 
 function linkLabel(link: LinkRef): string {

@@ -20,7 +20,7 @@
  * the wiring that consumes it).
  */
 
-import { parseFenceInfo } from "./message-code-fences.ts";
+import { parseFenceInfo } from "./chat/message-code-fences.ts";
 
 // ── Provenance ───────────────────────────────────────────────────────────────
 

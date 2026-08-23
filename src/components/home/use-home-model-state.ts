@@ -8,12 +8,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatModelState } from "@/lib/chat-model-state";
+import type { ChatModelState } from "@/lib/chat/chat-model-state";
 import {
   createModelSelectionMutationQueue,
   type ModelSelectionMutationQueue,
-} from "@/lib/model-selection-mutation-queue";
-import { modelForRuntimeSwitch } from "@/lib/runtime-models";
+} from "@/lib/runtime/model-selection-mutation-queue";
+import { modelForRuntimeSwitch } from "@/lib/runtime/runtime-models";
 
 export function useHomeModelState(selectedFamiliarId: string) {
   const [modelState, setModelState] = useState<ChatModelState | null>(null);

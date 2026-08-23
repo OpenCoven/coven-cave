@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { githubApiFailure } from "@/lib/github-activity";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { githubApiFailure } from "@/lib/github/github-activity";
+import { resolveGitHubToken } from "@/lib/github/github-token";
 import type { RepoItem } from "@/lib/home-feed";
 
 export const dynamic = "force-dynamic";

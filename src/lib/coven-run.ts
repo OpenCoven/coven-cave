@@ -23,7 +23,7 @@ import type {
   GroupReply,
   GroupUserTurn,
 } from "./group-chat.ts";
-import { groupChatTranscriptThreads, type GroupChatThread } from "./group-chat-transcript.ts";
+import { groupChatTranscriptThreads, type GroupChatThread } from "./chat/group-chat-transcript.ts";
 import type { GroupTurn } from "./group-chat.ts";
 
 /**

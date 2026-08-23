@@ -9,18 +9,18 @@ import "@/styles/projects.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
-import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
+import { normalizeProjectRoot, type CaveProject } from "@/lib/projects/cave-projects-types";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { useProjects } from "@/lib/use-projects";
-import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
-import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
-import { gitHubRepoSlug } from "@/lib/github-repo-link";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { useRefreshOnFocus } from "@/lib/hooks/use-refresh-on-focus";
+import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat/chat-tab-events";
+import { gitHubRepoSlug } from "@/lib/github/github-repo-link";
 import { isSupreme, type ConsoleAccessGroup, type ConsoleGrant } from "@/lib/permissions-console";
 import {
   normalizeAccessLevel,
   resolveEffectiveAccess,
   type ProjectAccessLevel,
-} from "@/lib/project-access-levels";
+} from "@/lib/projects/project-access-levels";
 import {
   accessCounts,
   accessStateMeta,
@@ -30,7 +30,7 @@ import {
   type AccessOp,
   type AccessState,
 } from "@/lib/projects/access-page";
-import { projectOrganizationGroups } from "@/lib/project-organizations";
+import { projectOrganizationGroups } from "@/lib/projects/project-organizations";
 import {
   accessLedger,
   grantChips,
@@ -43,8 +43,8 @@ import {
   treeGroups,
   type ProjectViewMode,
 } from "@/lib/projects/access-views";
-import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { smoothScrollBehavior } from "@/lib/hooks/use-prefers-reduced-motion";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";

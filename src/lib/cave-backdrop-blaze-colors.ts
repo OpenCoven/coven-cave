@@ -7,7 +7,7 @@
  * accent can't be parsed, the exact Canvas UI playground values apply.
  */
 
-import { parseThemeColor } from "@/lib/theme-contrast";
+import { parseThemeColor } from "@/lib/themes/theme-contrast";
 
 export type BlazeRgb = [number, number, number];
 

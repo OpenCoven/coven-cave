@@ -1,4 +1,4 @@
-import type { PairingStep } from "./mobile-handoff.ts";
+import type { PairingStep } from "./surfaces/mobile-handoff.ts";
 import { classifyTailscaleFailureKind, type TailscaleFailureKind } from "./tailscale-failure.ts";
 import { isTauri } from "./tauri-platform.ts";
 

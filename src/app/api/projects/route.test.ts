@@ -6,8 +6,8 @@ const listRoute = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const itemRoute = readFileSync(new URL("./[id]/route.ts", import.meta.url), "utf8");
 const seedRoute = readFileSync(new URL("./seed/route.ts", import.meta.url), "utf8");
 const securitySource = readFileSync(new URL("../../../lib/server/api-security.ts", import.meta.url), "utf8");
-const guidanceModuleUrl = new URL("../../../lib/project-root-guidance.ts", import.meta.url);
-const localRequestModuleUrl = new URL("../../../lib/project-errors.ts", import.meta.url);
+const guidanceModuleUrl = new URL("../../../lib/projects/project-root-guidance.ts", import.meta.url);
+const localRequestModuleUrl = new URL("../../../lib/projects/project-errors.ts", import.meta.url);
 const guidanceSource = readFileSync(guidanceModuleUrl, "utf8");
 const {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
@@ -85,7 +85,7 @@ assert.match(
 );
 assert.match(
   listRoute,
-  /from "@\/lib\/project-root-guidance"/,
+  /from "@\/lib\/projects\/project-root-guidance"/,
   "POST /api/projects should import shared project-root guidance",
 );
 assert.match(
@@ -98,7 +98,7 @@ assert.match(listRoute, /validateCaveProjectRoot/, "POST /api/projects should re
 assert.match(listRoute, /status:\s*201/, "POST /api/projects should return 201 when creating");
 assert.match(
   listRoute,
-  /from "@\/lib\/github-repo-link"/,
+  /from "@\/lib\/github\/github-repo-link"/,
   "POST /api/projects should import the shared GitHub repo-link normalizer",
 );
 assert.match(
@@ -127,7 +127,7 @@ assert.match(itemRoute, /export async function DELETE/, "project item route shou
 assert.match(itemRoute, /isAllowedNewProjectRoot\(trimmed\)/, "PUT /api/projects/[id] should validate root patches before persisting them");
 assert.match(
   itemRoute,
-  /from "@\/lib\/project-root-guidance"/,
+  /from "@\/lib\/projects\/project-root-guidance"/,
   "PUT /api/projects/\\[id\\] should import shared project-root guidance",
 );
 assert.match(
@@ -140,7 +140,7 @@ assert.match(itemRoute, /validateCaveProjectRoot/, "PUT /api/projects/[id] shoul
 assert.match(itemRoute, /nothing to update/, "PUT /api/projects/[id] should reject empty patches");
 assert.match(
   itemRoute,
-  /from "@\/lib\/github-repo-link"/,
+  /from "@\/lib\/github\/github-repo-link"/,
   "PUT /api/projects/[id] should import the shared GitHub repo-link normalizer",
 );
 assert.match(

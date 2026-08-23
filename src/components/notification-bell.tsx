@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RelativeTime } from "@/components/ui/relative-time";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { InboxItem, ItemKind } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
@@ -10,7 +10,7 @@ import { MUTABLE_KINDS, type InboxPrefs, type MutableKind, type SoundMode } from
 import { collapseInboxSeries, isInboxItemPastDue, isInboxItemUnread, unreadInboxCount } from "@/lib/inbox-feed";
 import { normalizeInboxTitle } from "@/lib/inbox-title";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 
 type Props = {

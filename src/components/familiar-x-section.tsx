@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { XScope } from "@/lib/x-api";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import {
@@ -10,7 +10,7 @@ import {
   reserveSystemBrowserWindow,
   type SystemBrowserReservation,
 } from "@/lib/open-system-browser";
-import { useArmedConfirm } from "@/lib/use-armed-confirm";
+import { useArmedConfirm } from "@/lib/hooks/use-armed-confirm";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { useAnnouncer } from "@/components/ui/live-region";

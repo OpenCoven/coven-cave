@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import { arrayContentEqual } from "@/lib/array-content-equal";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import {
@@ -18,8 +18,8 @@ import type {
   AutomationStatus,
   CodexAutomation,
   CodexAutomationPatch,
-} from "@/lib/codex-automations-types";
-import type { AutomationRunRecord } from "@/lib/automation-runs";
+} from "@/lib/integrations/codex/codex-automations-types";
+import type { AutomationRunRecord } from "@/lib/automations/automation-runs";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { relativeTimeSigned } from "@/lib/relative-time";
@@ -27,15 +27,15 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { UndoToast } from "@/components/ui/undo-toast";
-import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useUndoDelete } from "@/lib/hooks/use-undo-delete";
 import { SearchInput } from "@/components/ui/search-input";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
-import { useMultiSelect } from "@/lib/use-multi-select";
+import { useMultiSelect } from "@/lib/hooks/use-multi-select";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { automationMatchesFilter } from "@/lib/familiar-multiselect";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
+import { automationMatchesFilter } from "@/lib/familiars/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
 import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
 import { CodexDetailPanel } from "@/components/automations/cron-detail-panel";
@@ -50,10 +50,10 @@ import {
   type RitualOverviewPane,
   useRitualNow,
 } from "@/components/automations/ritual-overview";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/hooks/use-surface-history";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surfaces/surface-warmup-registry";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:

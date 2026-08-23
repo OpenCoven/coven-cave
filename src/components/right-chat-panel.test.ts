@@ -405,7 +405,7 @@ assert.match(
 // bus, and no change needed to any of those components themselves.
 assert.match(
   source,
-  /import \{ FocusTrapOwnerHiddenContext \} from "@\/lib\/use-focus-trap";/,
+  /import \{ FocusTrapOwnerHiddenContext \} from "@\/lib\/hooks\/use-focus-trap";/,
   "imports the shared owner-hidden context rather than inventing a parallel mechanism",
 );
 assert.match(

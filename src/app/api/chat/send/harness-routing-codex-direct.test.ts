@@ -156,13 +156,13 @@ async function loggedCalls(file) {
 
 try {
   const { refreshCovenBin } = await import("@/lib/coven-bin");
-  const { clearCodexRuntimeDiscoveryCache } = await import("@/lib/codex-compatibility");
+  const { clearCodexRuntimeDiscoveryCache } = await import("@/lib/integrations/codex/codex-compatibility");
   const { loadState, saveConfig } = await import("@/lib/cave-config");
   const { chatSummaryTitle, defaultChatTitleForSession } = await import("@/lib/cave-chat-titles");
   const { createCard } = await import("@/lib/cave-board");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { POST } = await import("./route.ts");
 
   process.env.COVEN_BIN = covenShim;

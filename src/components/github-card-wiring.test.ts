@@ -7,12 +7,12 @@ import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("./github-card.tsx", import.meta.url), "utf8");
-const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
+const renderedText = readFileSync(new URL("../lib/chat/chat-rendered-text.ts", import.meta.url), "utf8");
 
 // chat-view: imports and render paths.
 assert.match(
   chatView,
-  /import \{ sliceGitHubBlocks, unfurlUserMessage, descriptorUrl \} from "@\/lib\/github-blocks"/,
+  /import \{ sliceGitHubBlocks, unfurlUserMessage, descriptorUrl \} from "@\/lib\/github\/github-blocks"/,
   "chat-view imports the github-blocks lib",
 );
 assert.match(chatView, /import \{ GitHubCard \} from "@\/components\/github-card"/, "chat-view imports GitHubCard");
@@ -195,7 +195,7 @@ assert.doesNotMatch(
   /generateReviewDraft\([\s\S]*?\)[\s\S]{0,400}?await postJson\("\/api\/github\/(comment|review|merge)"/,
   "no path takes a familiar draft straight to a write route",
 );
-const reviewDraft = readFileSync(new URL("../lib/gh-review-draft.ts", import.meta.url), "utf8");
+const reviewDraft = readFileSync(new URL("../lib/github/gh-review-draft.ts", import.meta.url), "utf8");
 assert.match(reviewDraft, /permissionMode: "read"/, "draft runs are read-only — the prompt embeds attacker-influenceable text");
 assert.match(
   reviewDraft,
@@ -205,7 +205,7 @@ assert.match(
 assert.match(reviewDraft, /replace\(\/```\/g, "'''"\)/, "fences in untrusted text are defused so they cannot escape the block");
 
 // Draft persistence is per item, so two cards never share a body.
-const draftLib = readFileSync(new URL("../lib/gh-card-draft.ts", import.meta.url), "utf8");
+const draftLib = readFileSync(new URL("../lib/github/gh-card-draft.ts", import.meta.url), "utf8");
 assert.match(draftLib, /`\$\{PREFIX\}\$\{repo\}#\$\{number\}`/, "one draft key per repo#number");
 
 const actionCard = readFileSync(new URL("./github-action-card.tsx", import.meta.url), "utf8");

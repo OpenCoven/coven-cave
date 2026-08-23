@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import { Icon } from "@/lib/icon";
-import type { SkillBrowserEntry } from "@/lib/skill-directory";
+import type { SkillBrowserEntry } from "@/lib/skills/skill-directory";
 import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 
 export type SkillExploreCardProps = {

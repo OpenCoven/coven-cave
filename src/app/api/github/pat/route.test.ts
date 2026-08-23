@@ -7,7 +7,7 @@ const githubView = readFileSync(new URL("../../../../components/github-view.tsx"
 
 assert.match(
   route,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
+  /import \{ resolveGitHubToken \} from "@\/lib\/github\/github-token"/,
   "PAT status should use the shared resolver used by all GitHub routes",
 );
 assert.match(

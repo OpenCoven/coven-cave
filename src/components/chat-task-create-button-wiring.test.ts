@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Chat "Create task" button wiring. The pure autofill derivation (links,
 // GitHub links, priority, due dates, subtasks) is unit-tested in
-// src/lib/chat-task-autofill.test.ts; this guards the UI side: chat-view's
+// src/lib/chat/chat-task-autofill.test.ts; this guards the UI side: chat-view's
 // LinkedContextRow renders a one-click "Create task" button when it has a
 // handoff context, posts through the shared createSmartTaskFromChat helper,
 // and routes the created card through the same onAssigned path as the picker
@@ -13,7 +13,7 @@ const linkedWork = await readFile(new URL("./composer-linked-work-actions.tsx", 
 
 assert.match(
   linkedWork,
-  /import \{ createSmartTaskFromChat \} from "@\/lib\/chat-task-autofill"/,
+  /import \{ createSmartTaskFromChat \} from "@\/lib\/chat\/chat-task-autofill"/,
   "composer-linked-work-actions uses the shared smart-autofill helper, not an inline fetch",
 );
 assert.match(

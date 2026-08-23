@@ -28,7 +28,7 @@ const {
   writeImageAttachmentsToRuntime,
 } = await import("./chat-send-attachments.ts");
 const { normalizeChatAttachments, stripPreviewOnlyAttachmentFields, chatAttachmentSrc } =
-  await import("@/lib/chat-attachments");
+  await import("@/lib/chat/chat-attachments");
 
 after(() => rmSync(ROOT, { recursive: true, force: true }));
 

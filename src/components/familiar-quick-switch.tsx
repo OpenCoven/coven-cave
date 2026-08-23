@@ -1,7 +1,7 @@
 "use client";
 
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
 type Props = {

@@ -12,8 +12,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FamiliarSectionData, FamiliarSkillRow } from "@/lib/familiar-tab-section-model";
-import { navigateFamiliarSurface } from "@/lib/familiar-surface-navigation";
+import type { FamiliarSectionData, FamiliarSkillRow } from "@/lib/familiars/familiar-tab-section-model";
+import { navigateFamiliarSurface } from "@/lib/familiars/familiar-surface-navigation";
 import { Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
 import { Modal } from "@/components/ui/modal";

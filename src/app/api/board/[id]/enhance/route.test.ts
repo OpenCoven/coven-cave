@@ -11,7 +11,7 @@ process.env.COVEN_HOME = path.join(testHome, ".coven");
 
 try {
   const board = await import("../../../../../lib/cave-board.ts");
-  const enhance = await import("../../../../../lib/board-agentic-enhance.ts");
+  const enhance = await import("../../../../../lib/board/board-agentic-enhance.ts");
   const { POST: productionPOST, createBoardEnhanceRoute } = await import("./route.ts");
 
   function request(

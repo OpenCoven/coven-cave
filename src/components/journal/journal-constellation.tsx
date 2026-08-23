@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
 import {
   CONSTELLATION_VIEW,
   constellationPoints,

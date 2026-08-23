@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import type { ProjectPermissionSurface } from "../project-access-levels.ts";
+import type { ProjectPermissionSurface } from "../projects/project-access-levels.ts";
 import type { SessionOrigin } from "../types.ts";
 
 const PROJECTLESS_GENERATION_ORIGINS: ReadonlySet<SessionOrigin> = new Set([

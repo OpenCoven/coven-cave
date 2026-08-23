@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 // Grimoire launcher ("Memories Prototype" redesign) — source pins for the
 // React wiring; the pure derivations behind the tiles are behaviorally
-// tested in src/lib/grimoire-launcher-data.test.ts.
+// tested in src/lib/grimoire/grimoire-launcher-data.test.ts.
 
 const launcher = await readFile(new URL("./grimoire-launcher.tsx", import.meta.url), "utf8");
 const view = await readFile(new URL("./grimoire-view.tsx", import.meta.url), "utf8");

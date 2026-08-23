@@ -25,7 +25,7 @@
 
 import { execFile } from "node:child_process";
 import path from "node:path";
-import { parseRipgrepJson } from "./project-search.ts";
+import { parseRipgrepJson } from "./projects/project-search.ts";
 import { resolveAllowedProjectPath } from "./server/project-paths.ts";
 import { normalizeSearchDocument, type SearchDocument } from "./search-document.ts";
 import {

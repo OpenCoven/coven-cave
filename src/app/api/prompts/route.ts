@@ -27,7 +27,7 @@ import { writeFileAtomic } from "@/lib/server/atomic-write";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 import { PROMPT_SLUG_RE, promptSlug, serializePromptTemplate } from "@/lib/server/prompt-file";
 import { mergePrompts, scanPromptsDir } from "@/lib/server/prompt-scan";
-import type { PromptOption } from "@/lib/slash-prompt";
+import type { PromptOption } from "@/lib/chat/slash-prompt";
 
 export const dynamic = "force-dynamic";
 

@@ -8,8 +8,8 @@ import type {
   ResearchGeneration,
   ResearchGenerationContent,
   ResearchMediaRenderConfig,
-} from "../research-generations.ts";
-import type { ResearchMission } from "../research-missions.ts";
+} from "../research/research-generations.ts";
+import type { ResearchMission } from "../research/research-missions.ts";
 import type {
   ResearchMediaJobDefinition,
   ResearchMediaJobFactory,

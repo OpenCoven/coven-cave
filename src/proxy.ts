@@ -26,9 +26,9 @@ import {
   verifiedTailnetNode,
   requiresPasskeyPresence,
 } from "./proxy-helpers";
-import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
+import { isValidMobileAccessCredential } from "./lib/surfaces/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
-import { isValidResearchMediaTicketRequest } from "./lib/research-media-ticket.ts";
+import { isValidResearchMediaTicketRequest } from "./lib/research/research-media-ticket.ts";
 
 // Re-exported here so existing call sites (and tests) that imported these
 // from "./proxy" keep working.
@@ -417,5 +417,8 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // The pdf.js module worker is a public, immutable build asset. Worker module
+  // requests cannot carry the Tauri sidecar header, so gating this one file
+  // makes every authenticated desktop PDF load fail before parsing begins.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|pdf\\.worker\\.min\\.mjs$).*)"],
 };

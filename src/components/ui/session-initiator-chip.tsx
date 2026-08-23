@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon, type IconName } from "@/lib/icon";
-import { sessionInitiatorLabel } from "@/lib/session-initiator";
+import { sessionInitiatorLabel } from "@/lib/chat/session-initiator";
 import type { SessionInitiator } from "@/lib/types";
 
 type Props = {

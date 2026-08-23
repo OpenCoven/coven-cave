@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Icon, type IconName } from "@/lib/icon";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
 import type { Familiar } from "@/lib/types";
 import {
   buildPreviewSrcDoc,
@@ -10,8 +10,8 @@ import {
   buildSketchPrompt,
   titleFromPrompt,
   type CanvasArtifact,
-} from "@/lib/canvas-artifacts";
-import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
+} from "@/lib/canvas/canvas-artifacts";
+import { buildReactSrcDoc } from "@/lib/canvas/canvas-react-harness";
 import {
   INITIAL_ADD_TILE_STATE,
   addTileReducer,
@@ -21,7 +21,7 @@ import {
   focusTargetForState,
   generationStatusText,
   type AddTileMode,
-} from "@/lib/canvas-add";
+} from "@/lib/canvas/canvas-add";
 import {
   consumeCanvasGeneration,
   getCanvasGenerationSnapshot,
@@ -30,7 +30,7 @@ import {
   stopCanvasGeneration,
   subscribeCanvasGeneration,
   type CanvasGenerationSnapshot,
-} from "@/lib/canvas-generation-registry";
+} from "@/lib/canvas/canvas-generation-registry";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";

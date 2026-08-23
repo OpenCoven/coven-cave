@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
-import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
+import { smoothScrollBehavior } from "@/lib/hooks/use-prefers-reduced-motion";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { useIsCoarsePointer } from "@/lib/hooks/use-viewport";
 
 type Message = { role: "user" | "salem"; text: string };
 

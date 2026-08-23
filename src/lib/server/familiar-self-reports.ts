@@ -10,7 +10,7 @@ import {
 import {
   isThreadSelfReport,
   type ThreadSelfReport,
-} from "@/lib/thread-self-report";
+} from "@/lib/chat/thread-self-report";
 import { isValidFamiliarId } from "./familiar-id";
 
 export const SELF_REPORT_SESSION_ID_RE = /^[a-z0-9_-]+$/i;

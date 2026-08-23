@@ -1,6 +1,6 @@
 "use client";
 
-import type { PulseDay } from "@/lib/session-pulse";
+import type { PulseDay } from "@/lib/chat/session-pulse";
 import "@/styles/pulse-bars.css";
 
 /**

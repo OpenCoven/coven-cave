@@ -7,8 +7,8 @@ import {
 import {
   normalizeChatAutoArchivePolicy,
   type ReflectionTrigger,
-} from "@/lib/chat-auto-archive";
-import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
+} from "@/lib/chat/chat-auto-archive";
+import { resolveArchiveNudges } from "@/lib/tasks/task-archive-nudge-emit";
 import { loadConversation } from "@/lib/cave-conversations";
 import {
   appendSelfReport,
@@ -24,7 +24,7 @@ import type {
   CapabilityState,
   ContextPressure,
   ThreadSelfReport,
-} from "@/lib/thread-self-report";
+} from "@/lib/chat/thread-self-report";
 import { callDaemon } from "@/lib/coven-daemon";
 
 export const dynamic = "force-dynamic";

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 // ChatEnvironmentPanel (cave-68vv) — the floating Environment HUD on wide chat
 // panes. React wiring is pinned by source shape; the visibility / labelling /
 // PR-row / diff-total logic is behavioral in
-// src/lib/chat-environment-panel-model.test.ts.
+// src/lib/chat/chat-environment-panel-model.test.ts.
 
 const panel = readFileSync(
   new URL("./chat-environment-panel.tsx", import.meta.url),

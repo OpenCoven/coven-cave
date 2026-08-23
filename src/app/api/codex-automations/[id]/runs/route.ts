@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRuns } from "@/lib/automation-runs";
+import { listRuns } from "@/lib/automations/automation-runs";
 
 export const dynamic = "force-dynamic";
 

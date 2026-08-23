@@ -6,14 +6,14 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { SettingsGroup } from "@/components/ui/settings-group";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   accessLevelMeta,
   isSupreme,
   type ConsoleAccessGroup,
   type ConsoleProject,
 } from "@/lib/permissions-console";
-import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import type { ProjectAccessLevel } from "@/lib/projects/project-access-levels";
 
 /**
  * Settings → Familiars → Access groups — manage named groups of familiars that

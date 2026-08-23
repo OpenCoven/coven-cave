@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { ProjectTree } from "@/components/project-tree";
 import { Button } from "@/components/ui/button";
 import { parseListInput } from "@/lib/automations/list-input";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
 
 /**
  * Working-directories field: a free-text list (one path per line) plus a

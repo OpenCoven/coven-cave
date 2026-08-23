@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SALEM_PRELOAD_CONTEXT, summarizePreload } from "@/components/salem/salem-context";
 import { COVEN_IDENTITY_CANON } from "@/lib/coven-identity-canon";
-import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat/chat-attention-stream";
 import { stripMdxLeakage } from "./strip-mdx";
 
 /**

@@ -1,4 +1,4 @@
-import { sessionDayKey, type PulseDay } from "@/lib/session-pulse";
+import { sessionDayKey, type PulseDay } from "@/lib/chat/session-pulse";
 import type { SessionRow } from "@/lib/types";
 
 /** Time-window contract shared by the analytics scope controls and evidence reads. */

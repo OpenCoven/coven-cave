@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-const ctx = read("../lib/familiar-studio-context.tsx");
+const ctx = read("../lib/familiars/familiar-studio-context.tsx");
 
 // ── Studio context: journal is no longer a studio tab ────────────────────────
 assert.doesNotMatch(ctx, /"journal"/, "FamiliarStudioTab union no longer includes journal");
@@ -60,10 +60,10 @@ assert.doesNotMatch(entriesSrc, /standalone/, "journal-entries no longer carries
 
 const ws = read("./workspace.tsx");
 const sidebar = read("./sidebar-minimal.tsx");
-const navigation = read("../lib/workspace-navigation.ts");
+const navigation = read("../lib/projects/workspace-navigation.ts");
 const pageDrag = read("../lib/page-drag.ts");
-const pageRegistry = read("../lib/workspace-page-registry.ts");
-const slash = read("../lib/slash-commands.ts");
+const pageRegistry = read("../lib/projects/workspace-page-registry.ts");
+const slash = read("../lib/chat/slash-commands.ts");
 
 // ── Workspace: "journal" is a redirect-only mode (like groupchat) ────────────
 // It opens the Grimoire surface on its Journal tab.

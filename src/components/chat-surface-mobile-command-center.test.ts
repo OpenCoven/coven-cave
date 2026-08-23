@@ -59,7 +59,7 @@ assert.doesNotMatch(
   "the retired session-panel sheet must not come back",
 );
 const railController = readFileSync(
-  new URL("../lib/use-workspace-rail-controller.ts", import.meta.url),
+  new URL("../lib/hooks/use-workspace-rail-controller.ts", import.meta.url),
   "utf8",
 );
 assert.match(

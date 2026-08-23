@@ -7,8 +7,8 @@ import {
   type Section,
 } from "@/components/settings-sections";
 import { settingsGroupId } from "@/components/ui/settings-group";
-import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { prefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import {
   createGeneralSummaryLoader,
   resolveGeneralSummaryState,

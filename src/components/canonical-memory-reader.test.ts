@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { createElement, type ReactElement } from "react";
 // @ts-expect-error react-test-renderer does not ship declarations.
 import { act, create } from "react-test-renderer";
-import { CanonicalMemoryRequestError } from "../lib/canonical-memory-client.ts";
+import { CanonicalMemoryRequestError } from "../lib/memory/canonical-memory-client.ts";
 import type {
   CanonicalMemoryDetail,
   CanonicalMemoryErrorCode,

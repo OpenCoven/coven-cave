@@ -1,8 +1,8 @@
 import { createContext, useEffect, useRef } from "react";
 import { copyText } from "@/lib/clipboard";
-import { parseFileRef, type FileRef } from "@/lib/file-ref";
+import { parseFileRef, type FileRef } from "@/lib/projects/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
-import { FOCUSABLE } from "@/lib/use-focus-trap";
+import { FOCUSABLE } from "@/lib/hooks/use-focus-trap";
 import {
   isCodeProvenance,
   stalenessForRead,

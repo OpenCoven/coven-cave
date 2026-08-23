@@ -15,7 +15,7 @@ import { completedCardsForDay, unionMergedPrs } from "@/lib/daily-report-facts";
 import { fetchMergedPrsForDay } from "@/lib/server/github-merged";
 import { loadBoard } from "@/lib/cave-board";
 import type { SessionRow } from "@/lib/types";
-import { extractNextPaths } from "@/lib/next-paths";
+import { extractNextPaths } from "@/lib/projects/next-paths";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";

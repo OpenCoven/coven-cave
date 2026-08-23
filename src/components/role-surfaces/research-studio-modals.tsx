@@ -34,7 +34,7 @@ import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { copyText } from "@/lib/clipboard";
-import { useResearchMediaUrl } from "@/lib/research-media-client";
+import { useResearchMediaUrl } from "@/lib/research/research-media-client";
 import {
   RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH,
   RESEARCH_GENERATION_MEDIA_KINDS,
@@ -48,9 +48,9 @@ import {
   type ResearchMediaLength,
   type ResearchMediaProvider,
   type ResearchPodcastStyle,
-} from "@/lib/research-generations";
-import type { ResearchMission } from "@/lib/research-missions";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+} from "@/lib/research/research-generations";
+import type { ResearchMission } from "@/lib/research/research-missions";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 
 // ── kind presentation (real kinds — the creatable union) ─────────────────────

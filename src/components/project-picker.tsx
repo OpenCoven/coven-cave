@@ -16,16 +16,16 @@ import {
   loadFrecencyStore,
   rankProjectsByFrecency,
   rememberProjectPick,
-} from "@/lib/project-frecency";
+} from "@/lib/projects/project-frecency";
 import { ProjectAvatar } from "@/components/project-avatar";
-import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
-import { NO_PROJECT_ID } from "@/lib/chat-projects";
+import { addChatProject, type CreateProjectOptions } from "@/lib/chat/chat-add-project";
+import { NO_PROJECT_ID } from "@/lib/chat/chat-projects";
 import {
   projectForPickerQuery,
   sortProjectsAlphabetically,
   type CaveProject,
-} from "@/lib/cave-projects-types";
-import { projectAccessLabel } from "@/lib/project-access-levels";
+} from "@/lib/projects/cave-projects-types";
+import { projectAccessLabel } from "@/lib/projects/project-access-levels";
 import { isTauri } from "@/lib/tauri-platform";
 
 export type AddProjectFlow = {

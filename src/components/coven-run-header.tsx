@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   COVEN_RUN_STATUS,
   covenModeIcon,

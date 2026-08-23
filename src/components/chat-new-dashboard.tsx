@@ -30,17 +30,17 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import { groupInboxFeed } from "@/lib/inbox-feed";
 import { greetingForHour } from "@/lib/home-greeting";
 import { relativeAge } from "@/lib/rss";
-import { filterVisibleChatSessions } from "@/lib/chat-projects";
-import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat-start-from";
+import { filterVisibleChatSessions } from "@/lib/chat/chat-projects";
+import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat/chat-start-from";
 import {
   ChatStartFromBands,
   type StartFromBand,
   type StartFromTile,
 } from "@/components/chat-start-from-bands";
-import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
-import { useQueueFollowUps } from "@/lib/use-queue-followups";
-import { reviewRequestLabel } from "@/lib/chat-review-requests";
-import { useReviewRequests } from "@/lib/use-review-requests";
+import { queueFollowUpLabel } from "@/lib/chat/chat-queue-followups";
+import { useQueueFollowUps } from "@/lib/hooks/use-queue-followups";
+import { reviewRequestLabel } from "@/lib/chat/chat-review-requests";
+import { useReviewRequests } from "@/lib/hooks/use-review-requests";
 import { useDashboardBoard } from "@/components/home/use-dashboard-board";
 import {
   filterFamiliarOwned,
@@ -49,7 +49,7 @@ import {
   runningTimeoutBadge,
   type OpenWorkFilter,
 } from "@/components/home/dashboard-open-work";
-import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { useRefreshOnFocus } from "@/lib/hooks/use-refresh-on-focus";
 
 /** Hard caps that keep the no-scroll board inside the pane — the overflow
  *  stays reachable through each band's trailing "All in …" tile. */

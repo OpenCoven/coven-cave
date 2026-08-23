@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Wiring pins for frecency in the project picker (cave-ow9f). The scoring and
-// store behaviour is covered behaviourally in src/lib/project-frecency.test.ts;
+// store behaviour is covered behaviourally in src/lib/projects/project-frecency.test.ts;
 // this pins how the picker uses it, because the design tradeoff lives here.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

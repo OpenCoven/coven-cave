@@ -8,8 +8,8 @@ import {
   resolveThemeColor,
   themeTokens,
   type Rgba,
-} from "../lib/theme-contrast.ts";
-import { THEME_IDS } from "../lib/theme-palettes.ts";
+} from "../lib/themes/theme-contrast.ts";
+import { THEME_IDS } from "../lib/themes/theme-palettes.ts";
 
 const componentUrl = new URL("./settings-about.tsx", import.meta.url);
 const component = existsSync(componentUrl) ? readFileSync(componentUrl, "utf8") : "";

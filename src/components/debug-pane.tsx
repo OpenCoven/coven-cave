@@ -2,18 +2,18 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import { useCopy } from "@/lib/use-copy";
+import { useCopy } from "@/lib/hooks/use-copy";
 import { formatClock, formatTimestamp, useDateTimePrefs, type DateTimePrefs } from "@/lib/datetime-format";
-import { formatRuntime } from "@/lib/chat-response-metadata";
+import { formatRuntime } from "@/lib/chat/chat-response-metadata";
 import { usageBreakdown } from "@/lib/usage-format";
 import { APP_VERSION } from "@/lib/app-version";
-import { type ChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { type ChatDebugSnapshot } from "@/lib/chat/chat-debug-store";
 import {
   streamHealthSummary,
   type ChatStreamClientHealth,
   type RunBufferStatus,
-} from "@/lib/chat-stream-health";
-import { formatBytes } from "@/lib/session-changes-format";
+} from "@/lib/chat/chat-stream-health";
+import { formatBytes } from "@/lib/chat/session-changes-format";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   appendEvents,
@@ -31,7 +31,7 @@ import {
   type CovenEvent,
   type DebugStreamHealth,
   type DebugTurn,
-} from "@/lib/session-debug";
+} from "@/lib/chat/session-debug";
 
 const POLL_MS = 2000;
 type DebugPaneProps = ChatDebugSnapshot & { streamHealth: ChatStreamClientHealth };

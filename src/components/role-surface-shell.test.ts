@@ -2,7 +2,7 @@
  * Role Surface acceptance guard: the Cave shell must never branch on a
  * specific role. All role-specific behavior lives in registered Role Surface
  * modules; the shell handles only the generic `surface:<id>` mode via the
- * registry (see src/lib/role-surfaces.ts). If this test fails, someone
+ * registry (see src/lib/familiars/role-surfaces.ts). If this test fails, someone
  * hard-wired a role into shell code — move that logic into the surface's
  * module (or the registration manifest) instead.
  */
@@ -29,9 +29,9 @@ const SHELL_FILES = [
   "src/components/sidebar-minimal.tsx",
   "src/components/shell.tsx",
   "src/components/role-surface-host.tsx",
-  "src/lib/workspace-mode.ts",
-  "src/lib/role-surfaces.ts",
-  "src/lib/use-role-surfaces.ts",
+  "src/lib/projects/workspace-mode.ts",
+  "src/lib/familiars/role-surfaces.ts",
+  "src/lib/hooks/use-role-surfaces.ts",
 ];
 
 // Any *code* reference to a specific initial role: a quoted role/surface id

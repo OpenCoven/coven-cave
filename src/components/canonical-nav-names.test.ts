@@ -9,8 +9,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
-const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+const registry = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/projects/workspace-page-registry.ts", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
 
 // Extract `id -> label` pairs from `{ id: "...", label: "..." }` object rows.
@@ -38,7 +38,7 @@ const registryLabels = extractLabels(
 // the canonical label as both the visible label and accessible name.
 assert.match(
   mobileTabs,
-  /import \{ PRIMARY_WORKSPACE_NAV_ITEMS \} from "@\/lib\/workspace-navigation";/,
+  /import \{ PRIMARY_WORKSPACE_NAV_ITEMS \} from "@\/lib\/projects\/workspace-navigation";/,
   "mobile tabs must import the shared primary navigation registry",
 );
 const tabsDeclaration = mobileTabs.match(

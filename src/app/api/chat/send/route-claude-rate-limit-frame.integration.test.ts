@@ -178,8 +178,8 @@ try {
     await import("@/lib/server/claude-runtime-compatibility");
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { POST } = await import("./route.ts");
 
   process.env.COVEN_BIN = covenShim;

@@ -26,7 +26,7 @@ assert.match(source, /Archive hides a familiar/, "archive-vs-remove semantics ar
 
 // Remove defers through the shared undo hook — nothing hits the server while
 // the toast's undo window is open.
-assert.match(source, /import \{ useUndoDelete \} from "@\/lib\/use-undo-delete"/);
+assert.match(source, /import \{ useUndoDelete \} from "@\/lib\/hooks\/use-undo-delete"/);
 assert.match(source, /import \{ UndoToast \} from "@\/components\/ui\/undo-toast"/);
 assert.match(source, /useUndoDelete<ResolvedFamiliar>/);
 assert.match(

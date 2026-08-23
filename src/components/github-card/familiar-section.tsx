@@ -11,7 +11,7 @@
  */
 
 import { Icon } from "@/lib/icon";
-import { type GhDraftScopes } from "@/lib/gh-review-draft";
+import { type GhDraftScopes } from "@/lib/github/gh-review-draft";
 
 export type FamiliarSectionProps = {
   /** True when this section owns the sheet's single open slot. */

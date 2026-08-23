@@ -3,8 +3,8 @@ import { SyntaxBlock } from "@/components/message-bubble";
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatBytes, splitFilePath, checkpointLabel } from "@/lib/session-changes-format";
-import type { ChangedFile, CheckpointMeta, DiffState, FileStatus } from "@/lib/session-changes-api";
+import { formatBytes, splitFilePath, checkpointLabel } from "@/lib/chat/session-changes-format";
+import type { ChangedFile, CheckpointMeta, DiffState, FileStatus } from "@/lib/chat/session-changes-api";
 
 const STATUS_META: Record<FileStatus, { letter: string; label: string; color: string }> = {
   modified: { letter: "M", label: "modified", color: "var(--color-warning)" },

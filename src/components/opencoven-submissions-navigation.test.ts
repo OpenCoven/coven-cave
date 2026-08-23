@@ -2,9 +2,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
-const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+const workspaceMode = readFileSync(new URL("../lib/projects/workspace-mode.ts", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/projects/workspace-page-registry.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./opencoven-submission-page.tsx", import.meta.url), "utf8");
 

@@ -11,9 +11,9 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { diagnoseRegistry, systemDoctorDeps, type McpServerHealth } from "@/lib/mcp-doctor";
+import { diagnoseRegistry, systemDoctorDeps, type McpServerHealth } from "@/lib/integrations/mcp/mcp-doctor";
 
-export type { McpServerHealth } from "@/lib/mcp-doctor";
+export type { McpServerHealth } from "@/lib/integrations/mcp/mcp-doctor";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

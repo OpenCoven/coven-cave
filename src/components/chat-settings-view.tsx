@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   normalizeChatAutoArchivePolicy,
   type ChatAutoArchivePolicy,
-} from "@/lib/chat-auto-archive";
+} from "@/lib/chat/chat-auto-archive";
 import {
   MAX_RENAME_TURNS,
   MIN_RENAME_TURNS,
   normalizeChatAutoRenamePolicy,
   type ChatAutoRenamePolicy,
-} from "@/lib/chat-auto-rename";
+} from "@/lib/chat/chat-auto-rename";
 
 /**
  * Consolidated chat settings — the chat page's Settings tab. One place for the

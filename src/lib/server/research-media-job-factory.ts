@@ -2,7 +2,7 @@ import {
   isResearchGenerationMediaKind,
   validateResearchMediaRenderConfig,
   type ResearchGeneration,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import type { ResearchMediaJobDefinition } from "./research-media-job-contract.ts";
 import {
   createLongVideoMediaJobDefinition,

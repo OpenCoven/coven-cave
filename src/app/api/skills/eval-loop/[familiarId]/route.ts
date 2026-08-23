@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
-import { unwrapDaemonEvalState } from "@/lib/eval-loop-daemon";
+import { unwrapDaemonEvalState } from "@/lib/daemon/eval-loop-daemon";
 import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 
 export const dynamic = "force-dynamic";

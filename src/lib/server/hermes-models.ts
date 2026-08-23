@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { cleanModelId, isSyntheticLocalModel } from "../chat-model-state.ts";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { cleanModelId, isSyntheticLocalModel } from "../chat/chat-model-state.ts";
+import { harnessSpawnEnv } from "../runtime/harness-spawn-env.ts";
 import {
   hermesApiConfig,
   hermesResponsesUrl,
   type HermesApiConfig,
-} from "../hermes-responses-stream.ts";
-import type { RuntimeModelOption } from "../runtime-models.ts";
+} from "../integrations/hermes/hermes-responses-stream.ts";
+import type { RuntimeModelOption } from "../runtime/runtime-models.ts";
 
 const MODEL_LIST_TIMEOUT_MS = 2_500;
 const MAX_MODEL_LIST_BYTES = 512 * 1024;

@@ -18,9 +18,9 @@ import { readFile } from "node:fs/promises";
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
-const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
+const modeType = await readFile(new URL("../lib/projects/workspace-mode.ts", import.meta.url), "utf8");
+const pageRegistry = await readFile(new URL("../lib/projects/workspace-page-registry.ts", import.meta.url), "utf8");
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const githubView = await readFile(new URL("./github-view.tsx", import.meta.url), "utf8");
 const lazySurfaces = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");

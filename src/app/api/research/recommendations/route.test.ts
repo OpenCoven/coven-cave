@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { SavedLink } from "@/lib/link-organizer.ts";
-import type { ResearchMission } from "@/lib/research-missions.ts";
+import type { ResearchMission } from "@/lib/research/research-missions.ts";
 import type { KnowledgeEntry } from "@/lib/server/knowledge-vault.ts";
 import type { AgenticDiagnosticEvent } from "@/lib/agentic-diagnostics.ts";
 import {

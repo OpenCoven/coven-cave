@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   adapterManifestScaffoldForHarness,
   isLegacyWindowsHermesManifest,
-} from "../harness-adapters.ts";
+} from "../runtime/harness-adapters.ts";
 import { covenAdaptersDir, isManifestShadowedByBuiltin } from "./adapter-conflict-heal.ts";
 
 type ManifestPathKind = "missing" | "file" | "other";

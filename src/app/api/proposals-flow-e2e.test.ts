@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, afterEach, describe, it } from "node:test";
 
-import { activeThreadsAdapter, httpStatusForEnvelope } from "../../lib/threads-adapters.ts";
+import { activeThreadsAdapter, httpStatusForEnvelope } from "../../lib/chat/threads-adapters.ts";
 import { parseProposalDecisionBody } from "../../lib/proposal-decision-body.ts";
 
 const { POST: approveProposal } = await import("./proposals/[id]/approve/route.ts");

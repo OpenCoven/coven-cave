@@ -1,4 +1,4 @@
-import type { PromptOption } from "./slash-prompt.ts";
+import type { PromptOption } from "./chat/slash-prompt.ts";
 
 // Prompt-template preferences (cave-jg6k): favorites and a most-recently-used
 // list, both Cave-local UI state (localStorage, chat-session-prefs pattern —

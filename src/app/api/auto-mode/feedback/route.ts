@@ -3,7 +3,7 @@ import {
   buildPreferenceDigest,
   getMissionFeedback,
   recordMissionFeedback,
-} from "@/lib/auto-mode-preferences";
+} from "@/lib/automations/auto-mode-preferences";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";

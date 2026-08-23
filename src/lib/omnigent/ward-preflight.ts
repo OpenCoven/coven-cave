@@ -13,7 +13,7 @@ import {
   evaluateFamiliarContract,
   type ContractReport,
   type ContractViolation,
-} from "../familiar-contract.ts";
+} from "../familiars/familiar-contract.ts";
 import {
   isValidFamiliarId,
   readFamiliarContractFiles,

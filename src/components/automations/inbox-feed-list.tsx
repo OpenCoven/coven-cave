@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { StatusIcon } from "@/components/automations/status-icon";
 import { InboxDailyReportRow } from "@/components/automations/inbox-daily-report-row";
 import type { InboxItem } from "@/lib/cave-inbox";
-import { repoFromGithubSubTag } from "@/lib/github-sub-tags";
+import { repoFromGithubSubTag } from "@/lib/github/github-sub-tags";
 import type { IconName } from "@/lib/icon";
 import { Icon } from "@/lib/icon";
 import { inboxKindLabel, type InboxFeedGroup } from "@/lib/inbox-feed";

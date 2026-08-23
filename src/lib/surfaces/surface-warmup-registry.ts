@@ -1,0 +1,135 @@
+"use client";
+
+import { preloadSidebarSurface, type WarmableSidebarSurface } from "@/components/lazy-surfaces";
+import { defineResource, invalidate, read, warm, type SurfaceWarmCacheRead } from "@/lib/surfaces/surface-warm-cache";
+
+export type SurfaceWarmupSurface = WarmableSidebarSurface;
+export type SurfaceWarmResult = { backpressured: boolean };
+
+class SurfaceWarmupBackpressureError extends Error {
+  readonly retryAfterSeconds: number;
+
+  constructor(message: string, retryAfterSeconds: number) {
+    super(message);
+    this.name = "SurfaceWarmupBackpressureError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function responseRetryAfterSeconds(response: Response, payload: unknown): number {
+  const bodySeconds = (payload as { retryAfterSeconds?: unknown } | null)?.retryAfterSeconds;
+  if (typeof bodySeconds === "number" && Number.isFinite(bodySeconds) && bodySeconds >= 0) {
+    return Math.ceil(bodySeconds);
+  }
+  const header = response.headers.get("retry-after");
+  if (!header) return 0;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds);
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? 0 : Math.max(0, Math.ceil((date - Date.now()) / 1000));
+}
+
+export function surfaceWarmupRetryAfterSeconds(error: unknown): number {
+  return error instanceof SurfaceWarmupBackpressureError ? error.retryAfterSeconds : 0;
+}
+
+export const surfaceWarmupResources = {
+  marketplace: ["marketplace:catalog", "marketplace:skills"],
+  board: ["board:cards"],
+  schedules: ["schedules:inbox", "schedules:automations"],
+  grimoire: ["grimoire:knowledge", "grimoire:collections", "memory:list", "grimoire:journal"],
+  agents: ["memory:list"],
+} as const satisfies Record<SurfaceWarmupSurface, readonly string[]>;
+
+async function json(
+  signal: AbortSignal,
+  url: string,
+  options: { allowError?: (response: Response, payload: unknown) => boolean } = {},
+): Promise<unknown> {
+  const response = await fetch(url, { cache: "no-store", signal });
+  const payload = await response.json().catch(() => null);
+  // A Retry-After response, an exhausted upstream allowance, or the standard
+  // 429 response are explicit back-pressure signals. Do not turn one failed
+  // background request into a burst against the remaining landing resources.
+  if (
+    response.status === 429 ||
+    response.headers.has("retry-after") ||
+    response.headers.get("x-ratelimit-remaining") === "0"
+  ) {
+    throw new SurfaceWarmupBackpressureError(
+      (payload as { error?: string } | null)?.error ?? `${url} is rate limited (${response.status})`,
+      responseRetryAfterSeconds(response, payload),
+    );
+  }
+  if ((!response.ok || !payload || (payload as { ok?: boolean }).ok === false) && !options.allowError?.(response, payload)) {
+    throw new Error((payload as { error?: string } | null)?.error ?? `${url} failed (${response.status})`);
+  }
+  return payload;
+}
+
+// Resource definitions deliberately contain only landing data. Detail panes,
+// mutation dialogs, graph scans, and run histories stay demand-loaded.
+defineResource("github:pat", (signal) => json(signal, "/api/github/pat"), 5 * 60_000);
+defineResource(
+  "github:activity",
+  (signal) => json(signal, "/api/github/activity", {
+    // No configured GitHub identity is a normal setup state, not a failed
+    // load. Keep the response so GitHubView can render its setup CTA.
+    allowError: (response, payload) => response.status === 401 && (payload as { error?: unknown } | null)?.error === "no_user",
+  }),
+  60_000,
+);
+defineResource("github:familiars", (signal) => json(signal, "/api/familiars"), 30_000);
+defineResource("board:cards", (signal) => json(signal, "/api/board"), 30_000);
+defineResource("marketplace:catalog", (signal) => json(signal, "/api/marketplace"), 2 * 60_000);
+defineResource(
+  "marketplace:skills",
+  (signal) => json(signal, "/api/skills/directory?scope=local"),
+  2 * 60_000,
+);
+defineResource("schedules:inbox", (signal) => json(signal, "/api/inbox"), 15_000);
+defineResource("schedules:automations", (signal) => json(signal, "/api/codex-automations"), 15_000);
+defineResource("grimoire:knowledge", (signal) => json(signal, "/api/knowledge"), 45_000);
+defineResource("grimoire:collections", (signal) => json(signal, "/api/knowledge/collections"), 45_000);
+defineResource("memory:list", (signal) => json(signal, "/api/memory"), 30_000);
+defineResource("grimoire:journal", (signal) => json(signal, "/api/journal"), 45_000);
+
+export async function readSurfaceResource<T>(key: string, force = false): Promise<SurfaceWarmCacheRead<T>> {
+  const result = await read<T>(key, { force });
+  if (!result.cache.stale) return result;
+
+  // Surface components consume a point-in-time result rather than subscribing
+  // to cache updates. Join the revalidation before returning so a navigation
+  // that crosses a TTL boundary does not present stale landing data as current.
+  // If it fails, let the surface's established loading/error path be truthful.
+  return read<T>(key, { force: true });
+}
+
+export function invalidateSurfaceResources(...keys: string[]): void {
+  for (const key of keys) invalidate(key);
+}
+
+/** Warm a complete canonical landing surface without rendering it. */
+export async function warmSurface(
+  surface: SurfaceWarmupSurface,
+  canContinue: () => boolean = () => true,
+): Promise<SurfaceWarmResult> {
+  if (!canContinue()) return { backpressured: false };
+  await preloadSidebarSurface(surface);
+  // Chunk imports cannot be aborted. Re-check after they settle so a tab that
+  // was hidden or taken offline during the import never starts its data warm.
+  if (!canContinue()) return { backpressured: false };
+  // Serial landing requests keep background pressure bounded. Every individual
+  // resource is coalesced with a concurrent navigation/read by the cache.
+  for (const resource of surfaceWarmupResources[surface]) {
+    if (!canContinue()) return { backpressured: false };
+    try {
+      await warm<{ rateLimit?: { remaining?: number } | null }>(resource);
+    } catch (error) {
+      if (error instanceof SurfaceWarmupBackpressureError) return { backpressured: true };
+      // Landing resources are independent. A transient failure in one API
+      // must not leave the rest of this surface cold until a visibility cycle.
+    }
+  }
+  return { backpressured: false };
+}

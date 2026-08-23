@@ -88,7 +88,7 @@ assert.match(
 // ── Session context in visible titles ────────────────────────────────────────
 assert.match(
   source,
-  /import \{ sessionRailTitle \} from "@\/lib\/session-rail-title"/,
+  /import \{ sessionRailTitle \} from "@\/lib\/chat\/session-rail-title"/,
   "Rail uses the shared, unit-tested session title formatter (git/PR/worktree behavior lives in session-rail-title.test.ts)",
 );
 assert.match(source, /const title = sessionRailTitle\(session\)/, "Flat search rows use the shared session title formatter");
@@ -111,7 +111,7 @@ assert.match(
 );
 
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-const railController = readFileSync(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
+const railController = readFileSync(new URL("../lib/hooks/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 // The inspector right panel is retired: Git/Changes lands on the code rail's

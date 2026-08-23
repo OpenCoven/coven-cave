@@ -26,10 +26,10 @@ import {
   type ActivityCollection,
   type ActivityCollections,
   type GitHubApiFailure,
-} from "@/lib/github-activity";
-import { resolveGitHubToken } from "@/lib/github-token";
-import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
-import { resolveSecret } from "@/lib/vault";
+} from "@/lib/github/github-activity";
+import { resolveGitHubToken } from "@/lib/github/github-token";
+import { summarizeChecks, type CheckSummary } from "@/lib/github/github-checks";
+import { resolveSecret } from "@/lib/grimoire/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

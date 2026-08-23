@@ -12,7 +12,7 @@ import {
   resolveEffectiveAccess,
   type EffectiveProjectAccess,
   type ProjectAccessLevel,
-} from "./project-access-levels.ts";
+} from "./projects/project-access-levels.ts";
 
 export type ConsoleFamiliar = { id: string; displayName?: string; name?: string };
 export type ConsoleProject = { id: string; name: string; root: string; color?: string };

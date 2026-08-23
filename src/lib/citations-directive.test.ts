@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { buildCitationsDirective } from "./citations-directive.ts";
-import { parseCitations } from "./citations.ts";
+import { parseCitations } from "./reading/citations.ts";
 
 test("the directive teaches the footnote syntax and stays non-visible", () => {
   const d = buildCitationsDirective();

@@ -5,12 +5,12 @@ import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { openExternalUrl } from "@/lib/open-external";
-import { HOME_DRAFT_KEY, writeComposerDraft } from "@/lib/use-composer-draft";
+import { HOME_DRAFT_KEY, writeComposerDraft } from "@/lib/hooks/use-composer-draft";
 import { promptIconName } from "@/components/prompt-snippets-modal";
-import type { PromptOption } from "@/lib/slash-prompt";
+import type { PromptOption } from "@/lib/chat/slash-prompt";
 import {
   buildCraftPublishPrompt,
   buildCraftRefinePrompt,

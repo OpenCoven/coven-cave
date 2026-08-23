@@ -5,7 +5,7 @@ import {
   transitionCard,
   type CardLifecycle,
 } from "@/lib/cave-board";
-import { handleTaskCompletion } from "@/lib/task-archive-nudge-emit";
+import { handleTaskCompletion } from "@/lib/tasks/task-archive-nudge-emit";
 
 export const dynamic = "force-dynamic";
 

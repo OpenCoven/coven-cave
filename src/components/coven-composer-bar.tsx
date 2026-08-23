@@ -14,7 +14,7 @@ import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Popover } from "@/components/ui/popover";
 import { Segmented } from "@/components/ui/settings-controls";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import { COVEN_RESPONSE_MODES, type CovenResponseMode } from "@/lib/group-chat";
 import type { CovenComposerRouting } from "@/lib/coven-composer-routing";
 

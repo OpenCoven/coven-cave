@@ -5,11 +5,11 @@ import { readFileSync } from "node:fs";
 
 const view = readFileSync(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
-const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/projects/workspace-page-registry.ts", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const transcript = readFileSync(new URL("../lib/group-chat-transcript.ts", import.meta.url), "utf8");
+const mode = readFileSync(new URL("../lib/projects/workspace-mode.ts", import.meta.url), "utf8");
+const transcript = readFileSync(new URL("../lib/chat/group-chat-transcript.ts", import.meta.url), "utf8");
 const covenStyles = readFileSync(new URL("../styles/coven-tab.css", import.meta.url), "utf8");
 const inspector = readFileSync(new URL("./coven-inspector.tsx", import.meta.url), "utf8");
 const composerBar = readFileSync(new URL("./coven-composer-bar.tsx", import.meta.url), "utf8");
@@ -711,7 +711,7 @@ test("coven bubbles strip attention markers before next-paths/delegations/Messag
   // MessageBubble — same order the single-chat surface (chat-view.tsx) uses.
   assert.match(
     view,
-    /import \{ createAttentionSafeTextAccumulator \} from "@\/lib\/chat-attention-stream";/,
+    /import \{ createAttentionSafeTextAccumulator \} from "@\/lib\/chat\/chat-attention-stream";/,
     "imports the shared raw-text accumulator",
   );
   assert.match(

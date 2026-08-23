@@ -212,7 +212,7 @@ assert.match(modal, /id="new-reminder-plan-summary"/, "plan echo should have a s
 assert.match(modal, /link,/, "draft submitted to create/update should include the link");
 
 // Accessible dialog: role/aria-modal/labelled heading + focus trap.
-assert.ok(modal.includes('import { useFocusTrap } from "@/lib/use-focus-trap"'), "imports useFocusTrap");
+assert.ok(modal.includes('import { useFocusTrap } from "@/lib/hooks/use-focus-trap"'), "imports useFocusTrap");
 assert.ok(modal.includes("useFocusTrap(open, dialogRef, { onEscape: onClose })"), "traps focus + closes on Escape");
 assert.ok(modal.includes('role="dialog"') && modal.includes('aria-modal="true"'), "overlay exposes dialog semantics");
 assert.ok(modal.includes('aria-labelledby="new-reminder-title"'), "dialog labelled by heading");

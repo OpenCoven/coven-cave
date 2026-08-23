@@ -16,13 +16,13 @@ import "@/styles/cave-chat.css";
 // the same shape — ChatNewDashboard (a brand-new chat, `sessionId === null`) and
 // ChatEmptyState (an existing zero-turn session) — so the two pages can no
 // longer disagree about what starting a session looks like. Counts and notes
-// come from the shared pure model in `@/lib/chat-start-from`, never from the
+// come from the shared pure model in `@/lib/chat/chat-start-from`, never from the
 // caller's own arithmetic.
 
 import { useCallback, useState, type ReactNode } from "react";
 
 import { Icon } from "@/lib/icon";
-import type { StartFromGroupMeta, StartFromKind } from "@/lib/chat-start-from";
+import type { StartFromGroupMeta, StartFromKind } from "@/lib/chat/chat-start-from";
 
 /** One tile in a band — a single piece of work you can start from. */
 export type StartFromTile = {

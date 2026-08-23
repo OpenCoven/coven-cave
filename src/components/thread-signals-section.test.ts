@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { aggregateThreadSignals, buildThreadSignalReviewQueue, THREAD_SIGNALS_EMPTY_STATE } from "@/lib/thread-self-report";
-import type { ThreadSelfReport } from "@/lib/thread-self-report";
+import { aggregateThreadSignals, buildThreadSignalReviewQueue, THREAD_SIGNALS_EMPTY_STATE } from "@/lib/chat/thread-self-report";
+import type { ThreadSelfReport } from "@/lib/chat/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
 const analyticsSource = readFileSync(new URL("./familiar-analytics-content.tsx", import.meta.url), "utf8");
@@ -294,7 +294,7 @@ describe("review queue UX — filters, dismiss with undo, keyboard parity", () =
   });
 
   it("gives the queue roving-tabindex keyboard parity with Delete-to-dismiss", () => {
-    assert.match(source, /import \{ useRovingTabIndex \} from "@\/lib\/use-roving-tabindex"/, "uses the shared roving hook");
+    assert.match(source, /import \{ useRovingTabIndex \} from "@\/lib\/hooks\/use-roving-tabindex"/, "uses the shared roving hook");
     assert.match(source, /itemSelector: "\.fa-thread-review-item"/, "the resolve buttons are the roving items");
     assert.match(source, /orientation: "vertical"/, "arrows move vertically through the queue");
     assert.match(source, /event\.key !== "Delete" && event\.key !== "Backspace"/, "Delete/Backspace dismisses the focused item");
@@ -310,7 +310,7 @@ describe("review queue UX — filters, dismiss with undo, keyboard parity", () =
   });
 
   it("severity-first ordering is pinned in the lib", () => {
-    const lib = readFileSync(new URL("../lib/thread-self-report.ts", import.meta.url), "utf8");
+    const lib = readFileSync(new URL("../lib/chat/thread-self-report.ts", import.meta.url), "utf8");
     assert.match(lib, /REVIEW_SEVERITY_ORDER\[a\.severity\] - REVIEW_SEVERITY_ORDER\[b\.severity\]/, "queue sorts by severity tier before rank");
   });
 });

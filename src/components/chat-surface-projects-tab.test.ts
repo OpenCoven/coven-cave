@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const surface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-const events = readFileSync(new URL("../lib/chat-tab-events.ts", import.meta.url), "utf8");
+const events = readFileSync(new URL("../lib/chat/chat-tab-events.ts", import.meta.url), "utf8");
 
 assert.match(events, /CHAT_OPEN_PROJECTS_EVENT = "cave:chat-open-projects"/, "event constant defined");
 

@@ -6,7 +6,7 @@ import {
   clearGlyphOverride,
   useGlyphOverrides,
 } from "@/lib/cave-glyph-overrides";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
 import { FamiliarGlyph as GlyphView } from "@/components/familiar-glyph";
 import { FamiliarGlyphPickerPanel } from "@/components/familiar-glyph-picker-panel";
 import type { GlyphCatalogEntry } from "@/lib/glyph-catalog";

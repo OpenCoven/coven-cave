@@ -6,52 +6,52 @@ import { Fragment, useMemo, useState, useEffect, useRef, useCallback } from "rea
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
-import { modelIcon, modelLabel } from "@/lib/model-label";
+import { modelIcon, modelLabel } from "@/lib/runtime/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
+import { useIsMobile, useIsCoarsePointer } from "@/lib/hooks/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
-import { sessionPrStatus } from "@/lib/session-pr-status";
-import { requestDebugOpen } from "@/lib/chat-debug-store";
+import { sessionPrStatus } from "@/lib/chat/session-pr-status";
+import { requestDebugOpen } from "@/lib/chat/chat-debug-store";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
-import { useUndoDelete } from "@/lib/use-undo-delete";
-import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
-import { successfulSessionIds } from "@/lib/session-list-deletes";
+import { useUndoDelete } from "@/lib/hooks/use-undo-delete";
+import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/chat/conversation-cache";
+import { successfulSessionIds } from "@/lib/chat/session-list-deletes";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
 import { relativeTime } from "@/lib/relative-time";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
-} from "@/lib/chat-projects";
-import { applyProjectOverrides } from "@/lib/chat-project-overrides";
-import { useProjectOverrides } from "@/lib/use-project-overrides";
+} from "@/lib/chat/chat-projects";
+import { applyProjectOverrides } from "@/lib/chat/chat-project-overrides";
+import { useProjectOverrides } from "@/lib/hooks/use-project-overrides";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
-import { useProjects } from "@/lib/use-projects";
+import { useProjects } from "@/lib/hooks/use-projects";
 import {
   applyProjectScope,
   normalizeSelection,
   type ProjectSelection,
-} from "@/lib/chat-project-selection";
+} from "@/lib/chat/chat-project-selection";
 import {
   isSessionPinned,
   sortPinnedFirst,
   toggleStoredPinnedSession,
-} from "@/lib/chat-session-prefs";
-import { usePinnedSessions } from "@/lib/use-pinned-sessions";
+} from "@/lib/chat/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/hooks/use-pinned-sessions";
 import {
   applyManualOrder,
   mergeVisibleOrder,
   partitionPinnedFirst,
   readSessionOrder,
   writeSessionOrder,
-} from "@/lib/chat-session-order";
+} from "@/lib/chat/chat-session-order";
 import {
   DndContext,
   PointerSensor,
@@ -68,14 +68,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ChatListSection, HighlightedSnippet, SortableChatListItem } from "./chat-list-primitives";
-import { chatListCandidates, filterChatListRows } from "@/lib/chat-list-model";
+import { chatListCandidates, filterChatListRows } from "@/lib/chat/chat-list-model";
 import {
   CHAT_GROUP_BY_KEY,
   deriveChatDaySections,
   normalizeChatGroupBy,
   sessionCountLine,
   type ChatSessionGroupBy,
-} from "@/lib/chat-session-grouping";
+} from "@/lib/chat/chat-session-grouping";
 import {
   CHAT_SESSION_STATUS,
   CHAT_SESSION_STATUS_ORDER,
@@ -85,8 +85,8 @@ import {
   countChatSessionStatuses,
   filterChatRowsByStatus,
   type ChatSessionStatusFilter,
-} from "@/lib/chat-session-status";
-import { groupChatRowsByActivity } from "@/lib/chat-session-activity";
+} from "@/lib/chat/chat-session-status";
+import { groupChatRowsByActivity } from "@/lib/chat/chat-session-activity";
 import {
   CHAT_SESSION_SORT_HEADING,
   CHAT_SESSION_SORT_KEY,
@@ -97,7 +97,7 @@ import {
   normalizeChatSessionSort,
   sortChatSessionRows,
   type ChatSessionSort,
-} from "@/lib/chat-session-sort";
+} from "@/lib/chat/chat-session-sort";
 
 type Props = {
   familiar: Familiar | null;

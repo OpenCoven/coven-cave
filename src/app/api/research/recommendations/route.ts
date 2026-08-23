@@ -5,9 +5,9 @@ import {
   MAX_RESEARCH_TOPIC_X_SOURCES,
   recommendResearchTopics,
   researchTopicContextRevision,
-} from "../../../../lib/research-topic-recommendations.ts";
+} from "../../../../lib/research/research-topic-recommendations.ts";
 import type { SavedLink } from "../../../../lib/link-organizer.ts";
-import type { ResearchMission } from "../../../../lib/research-missions.ts";
+import type { ResearchMission } from "../../../../lib/research/research-missions.ts";
 import {
   isValidFamiliarId,
 } from "../../../../lib/server/familiar-id.ts";

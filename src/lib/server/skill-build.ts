@@ -11,13 +11,13 @@ import {
   SKILL_BUILD_ROOTS,
   slugifySkillName,
   type SkillBuildRootId,
-} from "@/lib/skill-build-format";
+} from "@/lib/skills/skill-build-format";
 
 /**
  * Skill authoring for the Marketplace "Build" tab.
  *
  * Composes a SKILL.md (via the shared client/server formatter in
- * src/lib/skill-build-format.ts, so the live preview and the written file are
+ * src/lib/skills/skill-build-format.ts, so the live preview and the written file are
  * the same artifact) and writes it to `<root>/<slug>/SKILL.md` inside one of
  * the four local skill roots the app already scans — a built skill is
  * immediately visible in the Skills tab and to the harnesses that load that

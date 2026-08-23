@@ -76,12 +76,12 @@ test("the registered-project default never overwrites an explicit create-new sel
 test("workspace wires the first-project gate through pending-aware policy and renders it inside the detail area", () => {
   const src = read("./workspace.tsx");
   assert.match(src, /import \{ FirstProjectGate \} from "@\/components\/first-project-gate";/, "workspace eagerly imports the first-project gate");
-  assert.match(src, /import \{ useProjects \} from "@\/lib\/use-projects";/, "workspace eagerly imports useProjects");
-  assert.match(src, /import \{ useArchivedFamiliars \} from "@\/lib\/cave-familiar-archive";/, "workspace reuses the archived familiar filter for the gate target");
-  assert.match(src, /import \{ resolveFirstProjectGatePolicy \} from "@\/lib\/first-project-gate-policy";/, "workspace uses a shared gate policy helper");
+  assert.match(src, /import \{ useProjects \} from "@\/lib\/hooks\/use-projects";/, "workspace eagerly imports useProjects");
+  assert.match(src, /import \{ useArchivedFamiliars \} from "@\/lib\/familiars\/cave-familiar-archive";/, "workspace reuses the archived familiar filter for the gate target");
+  assert.match(src, /import \{ resolveFirstProjectGatePolicy \} from "@\/lib\/onboarding\/first-project-gate-policy";/, "workspace uses a shared gate policy helper");
   assert.match(
     src,
-    /import \{[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*resolvePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
+    /import \{[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*readPendingFirstProjectAccessSnapshot,[\s\S]*resolvePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/onboarding\/first-project-gate-retry";/,
     "workspace owns pending retry hydration and reconciliation",
   );
   assert.match(
@@ -160,11 +160,11 @@ test("the gate browses with native shell fallback and seeds the drafts from the 
 
 test("the gate keeps drafts through failures, blocks blank or busy submits, and surfaces retryable alerts", () => {
   const src = read("./first-project-gate.tsx");
-  assert.match(src, /import \{ addChatProject, type CreateProjectOptions \} from "@\/lib\/chat-add-project"/, "uses the shared register+grant helper");
+  assert.match(src, /import \{ addChatProject, type CreateProjectOptions \} from "@\/lib\/chat\/chat-add-project"/, "uses the shared register+grant helper");
   assert.match(src, /const project = await createProjectOrThrow\(name, root, options\);/, "forwards createProject options so addChatProject can suppress the creation-time registry emission");
   assert.match(
     src,
-    /import \{[\s\S]*canPersistPendingFirstProjectAccessSnapshot,[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/first-project-gate-retry";/,
+    /import \{[\s\S]*canPersistPendingFirstProjectAccessSnapshot,[\s\S]*clearPendingFirstProjectAccessSnapshot,[\s\S]*writePendingFirstProjectAccessSnapshot,[\s\S]*type PendingFirstProjectAccessSnapshot,[\s\S]*\} from "@\/lib\/onboarding\/first-project-gate-retry";/,
     "the gate uses shared helpers for pending-grant persistence",
   );
   assert.doesNotMatch(src, /useState<PendingFirstProjectAccessSnapshot \| null>\(\(\) => readPendingFirstProjectAccessSnapshot\(\)\);/, "pending-grant hydration now lives in Workspace");

@@ -7,8 +7,8 @@ import {
   buildSkillWalkthroughPrompt,
   parseTriggerCheckOutput,
   parseWalkthroughOutput,
-} from "@/lib/skill-dryrun";
-import { MAX_SKILL_DESCRIPTION_CHARS, MAX_SKILL_INSTRUCTIONS_BYTES, MAX_SKILL_NAME_CHARS } from "@/lib/skill-build-format";
+} from "@/lib/skills/skill-dryrun";
+import { MAX_SKILL_DESCRIPTION_CHARS, MAX_SKILL_INSTRUCTIONS_BYTES, MAX_SKILL_NAME_CHARS } from "@/lib/skills/skill-build-format";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

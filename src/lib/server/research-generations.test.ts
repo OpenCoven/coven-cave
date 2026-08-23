@@ -9,8 +9,8 @@ import { after, test } from "node:test";
 import type {
   ResearchArtifactRef,
   ResearchMission,
-} from "../research-missions.ts";
-import { RESEARCH_THREAD_POST_MAX_CHARS } from "../research-generations.ts";
+} from "../research/research-missions.ts";
+import { RESEARCH_THREAD_POST_MAX_CHARS } from "../research/research-generations.ts";
 
 const tmp = await mkdtemp(path.join(tmpdir(), "cave-research-generations-"));
 const originalGenerationsDir = process.env.COVEN_RESEARCH_GENERATIONS_DIR;

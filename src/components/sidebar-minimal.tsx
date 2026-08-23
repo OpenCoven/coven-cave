@@ -11,7 +11,7 @@
 
 import React from "react";
 import { SidebarRailHeader } from "@/components/sidebar-rail-header";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useRovingTabIndex } from "@/lib/hooks/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import {
   PAGE_DRAG_MIME,
@@ -28,15 +28,15 @@ import {
   navItemsForSection,
   roomBelongsToSection,
   type NavSection,
-} from "@/lib/nav-section";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+} from "@/lib/surfaces/nav-section";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import {
   type WorkspaceNavItem,
   type WorkspaceNavMode,
-} from "@/lib/workspace-navigation";
+} from "@/lib/projects/workspace-navigation";
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
    *  interprets it, only round-trips it through navigation callbacks. */

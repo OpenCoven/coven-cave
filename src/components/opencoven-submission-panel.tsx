@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
 
 type SubmissionType = "runtime" | "harness";
 type ValidationStatus = "pass" | "warning" | "fail" | "review-required";

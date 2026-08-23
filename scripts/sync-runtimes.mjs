@@ -1,5 +1,5 @@
 // Sync the accepted runtime registry from OpenCoven/coven-runtimes into a
-// committed, reviewable module: src/lib/runtime-registry.gen.ts.
+// committed, reviewable module: src/lib/runtime/runtime-registry.gen.ts.
 //
 // Source of truth is the registry's committed canonical index
 // (crates/coven-runtime-registry/canonical/index.json) — the same bytes
@@ -292,7 +292,7 @@ export async function main(argv = process.argv.slice(2)) {
       console.log(`sync-runtimes: up to date (${picked.length} runtimes, blob ${source.blobSha.slice(0, 12)})`);
       return 0;
     }
-    console.error("sync-runtimes: src/lib/runtime-registry.gen.ts is stale — run `pnpm sync:runtimes`");
+    console.error("sync-runtimes: src/lib/runtime/runtime-registry.gen.ts is stale — run `pnpm sync:runtimes`");
     return 1;
   }
 

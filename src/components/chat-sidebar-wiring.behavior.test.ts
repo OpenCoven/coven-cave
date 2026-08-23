@@ -2,8 +2,8 @@
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { PINNED_SESSIONS_KEY } from "@/lib/chat-session-prefs";
-import { sessionRailTitle } from "@/lib/session-rail-title";
+import { PINNED_SESSIONS_KEY } from "@/lib/chat/chat-session-prefs";
+import { sessionRailTitle } from "@/lib/chat/session-rail-title";
 
 const dragSignals = vi.hoisted(() => ({
   start: vi.fn(),
@@ -29,10 +29,10 @@ const mockProjects = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/lib/use-focus-trap", () => ({ useFocusTrap: () => undefined }));
-vi.mock("@/lib/use-projects", () => ({ useProjects: () => mockProjects.state }));
-vi.mock("@/lib/use-project-overrides", () => ({ useProjectOverrides: () => ({}) }));
-vi.mock("@/lib/use-pinned-sessions", () => ({ usePinnedSessions: () => [] }));
+vi.mock("@/lib/hooks/use-focus-trap", () => ({ useFocusTrap: () => undefined }));
+vi.mock("@/lib/hooks/use-projects", () => ({ useProjects: () => mockProjects.state }));
+vi.mock("@/lib/hooks/use-project-overrides", () => ({ useProjectOverrides: () => ({}) }));
+vi.mock("@/lib/hooks/use-pinned-sessions", () => ({ usePinnedSessions: () => [] }));
 vi.mock("@/components/familiar-switcher", async () => {
   const { createElement } = await import("react");
   return { FamiliarSwitcher: () => createElement("div", { "data-testid": "familiar-switcher" }) };
@@ -70,7 +70,7 @@ vi.mock("@/components/ui/tabs", async () => {
     Tabs: () => createElement("div", { "data-testid": "tabs" }),
   };
 });
-vi.mock("@/lib/chat-split", () => ({
+vi.mock("@/lib/chat/chat-split", () => ({
   CHAT_SESSION_DRAG_MIME: "application/x-cave-chat-session",
   emitChatSessionDragStart: dragSignals.start,
   emitChatSessionDragEnd: dragSignals.end,

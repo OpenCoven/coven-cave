@@ -13,7 +13,7 @@
  */
 
 import type { IconName } from "@/lib/icon";
-import { countChecks, isFailConclusion, type CheckSummary } from "@/lib/github-checks";
+import { countChecks, isFailConclusion, type CheckSummary } from "@/lib/github/github-checks";
 import { deriveReviewLandingState } from "@/lib/review-landing";
 
 export type ReviewTone = "success" | "warning" | "danger" | "accent" | "muted";

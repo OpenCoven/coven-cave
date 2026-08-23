@@ -10,7 +10,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { UndoToast } from "@/components/ui/undo-toast";
-import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useUndoDelete } from "@/lib/hooks/use-undo-delete";
 import {
   normalizeVaultKey,
   parseVaultPaste,
@@ -18,7 +18,7 @@ import {
   vaultStorageForValue,
   vaultStorageProvider,
   type VaultStorageId,
-} from "@/lib/vault-storage";
+} from "@/lib/grimoire/vault-storage";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

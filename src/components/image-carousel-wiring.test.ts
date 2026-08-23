@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const carousel = readFileSync(new URL("./image-carousel.tsx", import.meta.url), "utf8");
 const attachmentCards = readFileSync(new URL("./chat-attachment-cards.tsx", import.meta.url), "utf8");
-const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
+const renderedText = readFileSync(new URL("../lib/chat/chat-rendered-text.ts", import.meta.url), "utf8");
 
 // ── chat-view: imports and render paths ─────────────────────────────────────
 assert.match(

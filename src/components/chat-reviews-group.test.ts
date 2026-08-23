@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 
-const hook = readFileSync(new URL("../lib/use-review-requests.ts", import.meta.url), "utf8");
+const hook = readFileSync(new URL("../lib/hooks/use-review-requests.ts", import.meta.url), "utf8");
 const emptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const dashboard = readFileSync(new URL("./chat-new-dashboard.tsx", import.meta.url), "utf8");
 

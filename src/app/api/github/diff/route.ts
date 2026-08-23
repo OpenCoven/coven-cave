@@ -20,7 +20,7 @@
 // and route.test.ts can exercise the bounds directly, as the other tested API
 // routes do.
 import { NextResponse } from "next/server.js";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubToken } from "@/lib/github/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

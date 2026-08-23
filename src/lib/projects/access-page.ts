@@ -10,8 +10,8 @@
  * removes it).
  */
 
-import { normalizeProjectRoot } from "../cave-projects-types.ts";
-import type { ProjectAccessLevel } from "../project-access-levels.ts";
+import { normalizeProjectRoot } from "./cave-projects-types.ts";
+import type { ProjectAccessLevel } from "./project-access-levels.ts";
 
 /** Tri-state a row pill can show: no grant, read, or full ("write"). */
 export type AccessState = "none" | ProjectAccessLevel;

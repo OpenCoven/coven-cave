@@ -1,5 +1,5 @@
 import type { InitialCommandControls } from "@/lib/command-controls";
-import type { ChatAttachment } from "@/lib/chat-attachments";
+import type { ChatAttachment } from "@/lib/chat/chat-attachments";
 
 export type PendingChatAction =
   | {

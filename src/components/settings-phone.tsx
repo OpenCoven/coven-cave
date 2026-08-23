@@ -17,12 +17,12 @@ import {
   type DesktopReachabilityStatus,
 } from "@/lib/desktop-reachability";
 import { Icon } from "@/lib/icon";
-import type { PairingStep } from "@/lib/mobile-handoff";
-import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import type { PairingStep } from "@/lib/surfaces/mobile-handoff";
+import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/surfaces/mobile-mode-pref";
 import {
   reconcileMobileModeRequest,
   type MobileModeResponse,
-} from "@/lib/mobile-mode-reconcile";
+} from "@/lib/surfaces/mobile-mode-reconcile";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   PasskeyError,
@@ -35,7 +35,7 @@ import {
 } from "@/lib/passkey-client";
 import { relativeTime } from "@/lib/relative-time";
 import { classifyTailscaleFailureKind } from "@/lib/tailscale-failure";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { suggestedHubEndpoint } from "./settings-multihost";
 
 type MobileHandoffCardState = {

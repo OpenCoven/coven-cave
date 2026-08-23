@@ -2,7 +2,7 @@
 
 import { WorkspaceRail } from "@/components/lazy-surfaces";
 import type { Familiar } from "@/lib/types";
-import type { WorkspaceRailController } from "@/lib/use-workspace-rail-controller";
+import type { WorkspaceRailController } from "@/lib/hooks/use-workspace-rail-controller";
 
 export function WorkspaceRailSheet({
   controller,

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
 import { settingsGroupId } from "@/components/ui/settings-group";
 import { tabForScrollTarget } from "@/lib/settings-section-tab-map";
 

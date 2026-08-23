@@ -34,7 +34,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SearchInput } from "@/components/ui/search-input";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/lib/icon";
-import { paperArxivUrl, paperDownloadUrl } from "@/lib/research-paper-view";
+import { paperArxivUrl, paperDownloadUrl } from "@/lib/research/research-paper-view";
 import {
   groupSavedLinksByUsage,
   linkCategoryMeta,
@@ -45,8 +45,8 @@ import {
   type LinkCategory,
   type SavedLinkSummary,
 } from "@/lib/link-organizer";
-import type { ResearchMission } from "@/lib/research-missions";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import type { ResearchMission } from "@/lib/research/research-missions";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import {
   MAX_X_ARTICLES_PER_INGEST,
   parseXArticleCandidateUrl,
@@ -118,6 +118,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
   // sits below a 60vh PDF stage. Someone who opened the resource to read that
   // should not pay for the reader they never asked for.
   const [reading, setReading] = useState(false);
+  const [readerExpanded, setReaderExpanded] = useState(false);
   const [articleDetail, setArticleDetail] = useState<Awaited<ReturnType<typeof loadDetail>>>(null);
   const [articleLoading, setArticleLoading] = useState(false);
   const [articleError, setArticleError] = useState<string | null>(null);
@@ -353,7 +354,14 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     articleRequestRef.current += 1;
     setOpenId(null);
   }, []);
-  useFocusTrap(Boolean(openLink), dialogRef, { onEscape: closeOverlay });
+  const handleOverlayEscape = useCallback(() => {
+    if (readerExpanded) {
+      setReaderExpanded(false);
+      return;
+    }
+    closeOverlay();
+  }, [closeOverlay, readerExpanded]);
+  useFocusTrap(Boolean(openLink), dialogRef, { onEscape: handleOverlayEscape });
 
   // A fresh overlay never inherits the previous one's confirm/copied/reading
   // state — closing the overlay or opening a different resource both land
@@ -365,6 +373,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
     setConfirmingRemove(false);
     setCopied(false);
     setReading(false);
+    setReaderExpanded(false);
     setArticleDetail(null);
     setArticleLoading(false);
     setArticleError(null);
@@ -734,6 +743,7 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
             aria-modal="true"
             aria-labelledby="research-res-overlay-title"
             className="research-res-overlay__dialog"
+            data-expanded={readerExpanded || undefined}
             tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
@@ -771,14 +781,33 @@ export function ResearchTabResources({ research, context, onNavigate }: Research
                 </h3>
                 <span className="research-res-overlay__sub">{linkDomain(openLink.url)}</span>
               </div>
-              <button
-                type="button"
-                className="research-res-overlay__close"
-                onClick={closeOverlay}
-                aria-label="Close resource details"
-              >
-                <Icon name="ph:x" width={13} height={13} aria-hidden />
-              </button>
+              <div className="research-res-overlay__head-actions">
+                {openPaperId && reading ? (
+                  <button
+                    type="button"
+                    className="research-res-overlay__close focus-ring"
+                    onClick={() => setReaderExpanded((current) => !current)}
+                    aria-label={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
+                    aria-pressed={readerExpanded}
+                    title={readerExpanded ? "Collapse paper reader" : "Expand paper reader"}
+                  >
+                    <Icon
+                      name={readerExpanded ? "ph:corners-in" : "ph:corners-out"}
+                      width={13}
+                      height={13}
+                      aria-hidden
+                    />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="research-res-overlay__close focus-ring"
+                  onClick={closeOverlay}
+                  aria-label="Close resource details"
+                >
+                  <Icon name="ph:x" width={13} height={13} aria-hidden />
+                </button>
+              </div>
             </header>
 
             <div className="research-res-overlay__source">

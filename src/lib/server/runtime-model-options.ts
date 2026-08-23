@@ -1,5 +1,5 @@
-import { canonicalHarnessId } from "../harness-adapters.ts";
-import { cleanModelId, isSyntheticLocalModel } from "../chat-model-state.ts";
+import { canonicalHarnessId } from "../runtime/harness-adapters.ts";
+import { cleanModelId, isSyntheticLocalModel } from "../chat/chat-model-state.ts";
 import {
   catalogForRuntime,
   runtimeModelInventoryAvailability,
@@ -9,7 +9,7 @@ import {
   type RuntimeModelInventory,
   type RuntimeModelInventoryProvenance,
   type RuntimeModelOption,
-} from "../runtime-models.ts";
+} from "../runtime/runtime-models.ts";
 import { listClaudeModelInventory, listClaudeModels } from "./claude-models.ts";
 import { listCopilotModelInventory, listCopilotModels } from "./copilot-models.ts";
 import { listGrokModels } from "./grok-models.ts";

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
-import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
+import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github/github-review";
 import {
   draftChangeRequest,
   evidenceItems,

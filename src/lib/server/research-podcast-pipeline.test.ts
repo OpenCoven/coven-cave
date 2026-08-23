@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import {
   RESEARCH_MEDIA_LENGTH_LIMITS,
   type ResearchMediaRenderConfig,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import type { ResearchMediaJobContext } from "./research-media-job-contract.ts";
 import {
   DEFAULT_ELEVENLABS_MODEL_ID,

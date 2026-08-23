@@ -9,7 +9,7 @@ import {
   resolveMarketplaceLogo,
   type MarketplaceLogoIdentity,
 } from "./marketplace-logo.ts";
-import { INTERNAL_COVEN_FAMILIAR_IDS } from "./familiar-roster-guard.ts";
+import { INTERNAL_COVEN_FAMILIAR_IDS } from "./familiars/familiar-roster-guard.ts";
 
 export type RoleAffinity = { familiar: string; roles: string[] };
 

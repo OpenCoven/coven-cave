@@ -1,4 +1,4 @@
-import type { ChatAttention } from "./chat-attention.ts";
+import type { ChatAttention } from "./chat/chat-attention.ts";
 
 export type Familiar = {
   id: string;

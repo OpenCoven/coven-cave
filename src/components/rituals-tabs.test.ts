@@ -10,8 +10,8 @@ const automations = [
   readFileSync(new URL("./automations/ritual-overview.tsx", import.meta.url), "utf8"),
 ].join("\n");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
-const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
-const pageRegistry = readFileSync(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = readFileSync(new URL("../lib/projects/workspace-page-registry.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const calendar = readFileSync(new URL("./calendar-view.tsx", import.meta.url), "utf8");
 const compactCalendarStyles = readFileSync(
@@ -20,7 +20,7 @@ const compactCalendarStyles = readFileSync(
 );
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
 const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
-const slashCommands = readFileSync(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
+const slashCommands = readFileSync(new URL("../lib/chat/slash-commands.ts", import.meta.url), "utf8");
 
 // ── The surface is "Rituals" everywhere it's named ──────────────────────────
 assert.match(

@@ -15,7 +15,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SearchInput } from "@/components/ui/search-input";
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
-import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
+import { openFamiliarStudioSettingsTab } from "@/lib/familiars/familiar-studio-context";
 import type { Familiar } from "@/lib/types";
 import {
   parseXPostUrl,
@@ -25,7 +25,7 @@ import {
 import {
   parseResearchMission,
   type ResearchMission,
-} from "@/lib/research-missions";
+} from "@/lib/research/research-missions";
 import "@/styles/globals/surface-research-resources.css";
 
 type XConnection = {

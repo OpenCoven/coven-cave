@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
-import type { SessionPrStatus } from "@/lib/session-pr-status";
+import type { SessionPrStatus } from "@/lib/chat/session-pr-status";
 import { formatCovenDuration, type CovenRunPill } from "@/lib/coven-run";
 
 /**

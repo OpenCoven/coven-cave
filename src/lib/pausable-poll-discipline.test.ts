@@ -87,7 +87,7 @@ assert.deepEqual(
   offenders,
   [],
   `Unguarded setInterval in client code. Recurring network polls must use ` +
-    `usePausablePoll (src/lib/use-pausable-poll.ts) — it pauses while hidden ` +
+    `usePausablePoll (src/lib/hooks/use-pausable-poll.ts) — it pauses while hidden ` +
     `and refreshes on return. Cheap non-network tickers can be added to the ` +
     `allowlist in this test WITH a reason. Offenders:\n  ${offenders.join("\n  ")}`,
 );

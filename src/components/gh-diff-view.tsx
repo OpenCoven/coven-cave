@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ThemedToken } from "shiki";
-import { parseDiff, diffStats, diffLineClass, type DiffLine } from "@/lib/gh-diff";
+import { parseDiff, diffStats, diffLineClass, type DiffLine } from "@/lib/github/gh-diff";
 import { resolveShikiLang } from "@/lib/code-lang";
 import { getShikiHighlighter } from "@/lib/shiki-highlighter";
 

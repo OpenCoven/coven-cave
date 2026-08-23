@@ -9,7 +9,7 @@ const automationRunRoute = await readFile(
 );
 const travelHelper = await readFile(new URL("../../../lib/travel-offline-queue.ts", import.meta.url), "utf8");
 const flows = await readFile(new URL("../../../lib/flows.ts", import.meta.url), "utf8");
-const automationRuns = await readFile(new URL("../../../lib/automation-runs.ts", import.meta.url), "utf8");
+const automationRuns = await readFile(new URL("../../../lib/automations/automation-runs.ts", import.meta.url), "utf8");
 const automationsView = [
   await readFile(new URL("../../../components/automations-view.tsx", import.meta.url), "utf8"),
   await readFile(new URL("../../../components/automations/cron-detail-panel.tsx", import.meta.url), "utf8"),

@@ -4,9 +4,9 @@ import "@/styles/cave-composer.css";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import type { Card } from "@/lib/cave-board-types";
-import { createTaskFromChat, type ChatHandoffContext } from "@/lib/chat-task-handoff";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import type { Card } from "@/lib/board/cave-board-types";
+import { createTaskFromChat, type ChatHandoffContext } from "@/lib/chat/chat-task-handoff";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
 
 /**
  * Popover for linking an existing board task to the current chat. Lists the

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 
 const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const lib = readFileSync(new URL("../../../../lib/server/skill-build.ts", import.meta.url), "utf8");
-const format = readFileSync(new URL("../../../../lib/skill-build-format.ts", import.meta.url), "utf8");
+const format = readFileSync(new URL("../../../../lib/skills/skill-build-format.ts", import.meta.url), "utf8");
 
 assert.match(route, /rejectNonLocalRequest\(req\)/, "skill authoring is local-origin gated");
 assert.match(route, /readJsonBody<BuildBody>\(req, MAX_BODY_BYTES\)/, "body is size-capped and parsed defensively");

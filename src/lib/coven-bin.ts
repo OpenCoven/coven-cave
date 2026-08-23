@@ -32,7 +32,7 @@ import {
   vaultFreeDiscoveryEnv,
 } from "./child-spawn-env.ts";
 import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
-import { loadVaultMap } from "./vault.ts";
+import { loadVaultMap } from "./grimoire/vault.ts";
 
 export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
 

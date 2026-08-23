@@ -9,7 +9,7 @@ import {
   ONBOARDING_BOOTSTRAP_STAGES,
   type OnboardingComponentReadiness,
   type OnboardingSetupDiagnostics,
-} from "@/lib/onboarding-bootstrap";
+} from "@/lib/onboarding/onboarding-bootstrap";
 
 type Props = {
   diagnostics: OnboardingSetupDiagnostics;

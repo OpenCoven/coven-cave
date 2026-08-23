@@ -7,7 +7,7 @@
  * `node --experimental-strip-types`.
  */
 
-import type { CardLifecycle } from "@/lib/cave-board-types";
+import type { CardLifecycle } from "@/lib/board/cave-board-types";
 import type { IconName } from "@/lib/icon";
 import type { SessionRow } from "@/lib/types";
 

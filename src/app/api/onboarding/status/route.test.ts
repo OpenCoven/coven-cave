@@ -5,11 +5,11 @@
 // checks call the live daemon socket, so we don't execute them here).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { onboardingStatusPayload } from "../../../../lib/onboarding-status-probes.ts";
+import { onboardingStatusPayload } from "../../../../lib/onboarding/onboarding-status-probes.ts";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 const probesSource = readFileSync(
-  new URL("../../../../lib/onboarding-status-probes.ts", import.meta.url),
+  new URL("../../../../lib/onboarding/onboarding-status-probes.ts", import.meta.url),
   "utf8",
 );
 

@@ -7,7 +7,7 @@ import {
   projectAccessDeniedBody,
   projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
-import { ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { ProjectAccessDeniedError } from "@/lib/projects/project-permissions";
 
 const MAX_TEXT_SIZE = 512 * 1024; // 512KB
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8MB

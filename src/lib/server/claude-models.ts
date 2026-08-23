@@ -3,9 +3,9 @@ import {
   CLAUDE_OPUS_5_CAVE_ID,
   parseClaudeCodeVersion,
   withClaudeOpus5,
-} from "../claude-models.ts";
-import { canonicalProbeSpawnEnv, harnessSpawnEnv } from "../harness-spawn-env.ts";
-import { catalogForRuntime, type RuntimeModelOption } from "../runtime-models.ts";
+} from "../integrations/claude/claude-models.ts";
+import { canonicalProbeSpawnEnv, harnessSpawnEnv } from "../runtime/harness-spawn-env.ts";
+import { catalogForRuntime, type RuntimeModelOption } from "../runtime/runtime-models.ts";
 import { claudeProbeEnvironment } from "./claude-runtime-compatibility.ts";
 
 const VERSION_TIMEOUT_MS = 2_500;

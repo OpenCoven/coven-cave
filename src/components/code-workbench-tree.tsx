@@ -18,7 +18,7 @@
 import { useCallback, useMemo } from "react";
 import { Icon } from "@/lib/icon";
 import { ProjectTree, type TreeDecoration } from "@/components/project-tree";
-import type { ChangedFile, FileStatus } from "@/lib/session-changes-api";
+import type { ChangedFile, FileStatus } from "@/lib/chat/session-changes-api";
 
 /** Porcelain letters, matching what `git status --short` prints. */
 const STATUS_LETTER: Record<FileStatus, string> = {

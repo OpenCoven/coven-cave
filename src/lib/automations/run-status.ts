@@ -1,4 +1,4 @@
-import type { AutomationRunStatus } from "@/lib/automation-runs";
+import type { AutomationRunStatus } from "@/lib/automations/automation-runs";
 
 /**
  * Shared run-status → CSS-color-var mapping for the Automations surface, so the

@@ -9,8 +9,8 @@ import { ProjectTree } from "@/components/project-tree";
 import { RailFilePreview } from "@/components/rail-file-preview";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { useSurfacePreference } from "@/lib/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
 
 /**
  * Files tab of the code rail: a scrollable project tree stacked over a

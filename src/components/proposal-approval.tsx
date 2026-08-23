@@ -32,8 +32,8 @@ import {
   responseEnvelopeStateAt,
   useResponseEnvelopeFreshness,
 } from "@/lib/response-envelope-freshness";
-import type { ProposalView } from "@/lib/threads-read";
-import { blockedMessage, surfaceStateFromPayload, type SurfaceState } from "@/lib/weave-rail";
+import type { ProposalView } from "@/lib/chat/threads-read";
+import { blockedMessage, surfaceStateFromPayload, type SurfaceState } from "@/lib/grimoire/weave-rail";
 
 async function fetchProposals(): Promise<SurfaceState<ProposalView[]>> {
   try {

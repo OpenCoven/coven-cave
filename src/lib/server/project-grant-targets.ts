@@ -1,4 +1,4 @@
-import { loadProjects, projectById } from "@/lib/cave-projects";
+import { loadProjects, projectById } from "@/lib/projects/cave-projects";
 import { loadVisibleFamiliarRoster } from "@/lib/server/familiar-roster";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 

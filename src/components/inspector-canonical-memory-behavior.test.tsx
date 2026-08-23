@@ -8,7 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { InspectorPane } from "./inspector-pane";
-import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
+import { CanonicalMemoryRequestError } from "@/lib/memory/canonical-memory-client";
 import type {
   CanonicalMemoryDetail,
   CanonicalMemorySummary,
@@ -18,7 +18,7 @@ const resourceMocks = vi.hoisted(() => ({
   loadList: vi.fn(),
 }));
 
-vi.mock("@/lib/canonical-memory-resources", () => ({
+vi.mock("@/lib/memory/canonical-memory-resources", () => ({
   loadCanonicalMemoryList: resourceMocks.loadList,
 }));
 

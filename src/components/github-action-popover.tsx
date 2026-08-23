@@ -3,16 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import type { Card } from "@/lib/cave-board-types";
-import type { GitHubItem } from "@/lib/github-tasks";
+import type { Card } from "@/lib/board/cave-board-types";
+import type { GitHubItem } from "@/lib/github/github-tasks";
 import {
   attachGitHubItemToCard,
   createBoardCardFromGitHubItem,
   itemToContext,
-} from "@/lib/github-tasks";
+} from "@/lib/github/github-tasks";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

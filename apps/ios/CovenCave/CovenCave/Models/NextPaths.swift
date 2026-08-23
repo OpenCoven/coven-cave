@@ -1,7 +1,7 @@
 import Foundation
 
 /// Splits the `<coven:next-paths>` suggestion block out of an assistant message,
-/// mirroring the desktop's `src/lib/next-paths.ts` so the parsed chips match.
+/// mirroring the desktop's `src/lib/projects/next-paths.ts` so the parsed chips match.
 /// Streaming-safe: if the open tag is absent the text is returned unchanged.
 enum NextPaths {
     private static let open = "<coven:next-paths>"

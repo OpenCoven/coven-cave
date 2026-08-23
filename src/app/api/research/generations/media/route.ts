@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import {
   isValidResearchGenerationFamiliarId,
   type ResearchGenerationMediaFileRef,
-} from "@/lib/research-generations";
+} from "@/lib/research/research-generations";
 import { rejectResearchMediaRequest } from "@/lib/server/api-security";
 import { listResearchGenerations } from "@/lib/server/research-generations";
 import {

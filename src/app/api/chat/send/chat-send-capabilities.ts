@@ -13,16 +13,16 @@ import {
   covenRunSupportsAddDirFlag,
   covenRunSupportsModelFlag,
   covenRunSupportsPermissionFlag,
-} from "@/lib/harness-adapters";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+} from "@/lib/runtime/harness-adapters";
+import { harnessSpawnEnv } from "@/lib/runtime/harness-spawn-env";
 import {
   isOpenCodeLaunchSpawnable,
   openCodeAvailabilityProbe,
   openCodeLaunch,
   openCodeSpawnEnv,
-} from "@/lib/opencode-bin";
-import type { OpenCodeRunCapabilities } from "@/lib/opencode-compatibility";
-import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
+} from "@/lib/integrations/opencode/opencode-bin";
+import type { OpenCodeRunCapabilities } from "@/lib/integrations/opencode/opencode-compatibility";
+import { evaluateRuntimeAvailability } from "@/lib/runtime/runtime-availability";
 
 let modelFlagProbe: Promise<HelpProbeOutcome> | null = null;
 let permissionFlagProbe: Promise<boolean> | null = null;

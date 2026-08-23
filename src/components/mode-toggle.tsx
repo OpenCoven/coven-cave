@@ -9,7 +9,7 @@
 
 import { Button } from "@/components/ui/button";
 import type { IconName } from "@/lib/icon";
-import type { ModePref } from "@/lib/theme-storage";
+import type { ModePref } from "@/lib/themes/theme-storage";
 
 interface ModeToggleProps {
   value: ModePref;

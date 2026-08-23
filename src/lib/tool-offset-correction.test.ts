@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { ToolCallTracker } from "./chat-tool-events.ts";
+import { ToolCallTracker } from "./chat/chat-tool-events.ts";
 import { rebaseToolTextOffsets } from "./tool-offset-correction.ts";
 
 const inserted = [

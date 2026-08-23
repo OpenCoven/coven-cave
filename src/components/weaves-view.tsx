@@ -28,7 +28,7 @@ import type {
   WeaveDetail,
   WeaveSummary,
   WeaveListEntry,
-} from "@/lib/threads-read";
+} from "@/lib/chat/threads-read";
 import {
   ALL_WEAVES_SCOPE,
   blockedMessage,
@@ -47,7 +47,7 @@ import {
   type StatusTrace,
   type SurfaceState,
   type WeaveScope,
-} from "@/lib/weave-rail";
+} from "@/lib/grimoire/weave-rail";
 
 async function fetchSurface<T>(url: string): Promise<SurfaceState<T>> {
   try {

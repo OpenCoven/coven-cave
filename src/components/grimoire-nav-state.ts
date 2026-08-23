@@ -1,4 +1,4 @@
-import { GRIMOIRE_HASH_PREFIX } from "../lib/grimoire-link.ts";
+import { GRIMOIRE_HASH_PREFIX } from "../lib/grimoire/grimoire-link.ts";
 import { knowledgeDocKey } from "./grimoire-helpers.ts";
 
 export type GrimoireSelection =

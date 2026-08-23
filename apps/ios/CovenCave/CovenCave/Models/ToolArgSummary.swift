@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Tool inputs reach the app as *pretty-printed* JSON: the server stringifies
 /// them with two-space indentation (`formatToolInputValue`, see
-/// `src/lib/chat-tool-events.ts`), so the first line of a real payload is a
+/// `src/lib/chat/chat-tool-events.ts`), so the first line of a real payload is a
 /// bare `{`. Reading the first line — what the activity fold used to do — put
 /// a literal "{" under every tool call in the app.
 ///

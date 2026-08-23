@@ -6,7 +6,7 @@ import { loadConfig, saveConfig } from "@/lib/cave-config";
 import {
   displayNameFromTomlBlock,
   removeFamiliarBlockFromToml,
-} from "@/lib/familiar-removal";
+} from "@/lib/familiars/familiar-removal";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { addTombstone } from "@/lib/server/familiar-tombstones";
 

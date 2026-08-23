@@ -10,7 +10,7 @@
  * the sessions' ISO timestamps everywhere activity is displayed.
  */
 
-import { sessionDayKey } from "@/lib/session-pulse";
+import { sessionDayKey } from "@/lib/chat/session-pulse";
 import type { SessionRow } from "@/lib/types";
 
 export type ProfileKind = "familiar" | "human";

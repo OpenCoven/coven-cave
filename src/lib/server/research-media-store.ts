@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import {
   isValidResearchGenerationFamiliarId,
   type ResearchGenerationMediaFileRef,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import { caveHome } from "../coven-paths.ts";
 
 export const RESEARCH_AUDIO_MAX_BYTES = 50 * 1024 * 1024;

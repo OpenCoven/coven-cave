@@ -61,7 +61,7 @@ assert.doesNotMatch(
 // transport via an explicit kill frame (otherwise the old shell leaks for
 // the full detach grace, ~5 min) (cave-c3yt).
 {
-  const railController = readFileSync(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
+  const railController = readFileSync(new URL("../lib/hooks/use-workspace-rail-controller.ts", import.meta.url), "utf8");
   assert.match(
     railController,
     /function stopRailTerminal[\s\S]*invoke\("pty_stop", \{ threadId \}\)/,

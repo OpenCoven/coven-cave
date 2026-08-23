@@ -7,7 +7,7 @@ import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem } from "@/components/ui/popover";
 import { useKeySymbols } from "@/lib/platform-keys";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 

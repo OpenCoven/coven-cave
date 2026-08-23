@@ -5,14 +5,14 @@ import "@/styles/cave-chat.css";
 import { useEffect, useState } from "react";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
-import { useFamiliarImages } from "@/lib/cave-familiar-images";
-import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
-import { resolveFamiliar } from "@/lib/familiar-resolve";
-import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { useFamiliarImages } from "@/lib/familiars/cave-familiar-images";
+import { useFamiliarOverrides } from "@/lib/familiars/cave-familiar-overrides";
+import { resolveFamiliar } from "@/lib/familiars/familiar-resolve";
+import { useFamiliarStudio } from "@/lib/familiars/familiar-studio-context";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { openGrimoireDoc } from "@/lib/grimoire/grimoire-link";
 import type { Familiar } from "@/lib/types";
 import {
   loadFamiliarAnalyticsData,
@@ -22,7 +22,7 @@ import {
   deriveFamiliarCardInsights,
   type FamiliarCardInsights,
   type CardAction,
-} from "@/lib/familiar-card-insights";
+} from "@/lib/familiars/familiar-card-insights";
 import {
   pickFamiliarMemory,
   formatRelTime,
@@ -30,7 +30,7 @@ import {
   type FamiliarStatusInfo,
   type MemoryPeekEntry,
   type RawMemoryEntry,
-} from "@/lib/familiar-card-data";
+} from "@/lib/familiars/familiar-card-data";
 
 // Module-level caches keep repeated card opens cheap, but a FAILED load must
 // not be cached for the app's lifetime — that turned one transient error into

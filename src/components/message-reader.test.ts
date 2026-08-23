@@ -110,7 +110,7 @@ test("3a — cited sources are interactive chips, not bare links", () => {
 test("3a — the rail and the reading estimate come from the pure model", () => {
   assert.match(
     reader,
-    /import \{ outlineBaseLevel, readerOutline, readingStats \} from "@\/lib\/reader-outline";/,
+    /import \{ outlineBaseLevel, readerOutline, readingStats \} from "@\/lib\/reading\/reader-outline";/,
     "no second heading parser in the component",
   );
   assert.match(
@@ -183,7 +183,7 @@ test("3a — a batch is the same colour in the footer as in the stream", () => {
 test("3a — the Tools tab offers three readings of the same calls", () => {
   assert.match(
     reader,
-    /import \{ skillGroups, toolRollups, toolSteps \} from "@\/lib\/reader-provenance";/,
+    /import \{ skillGroups, toolRollups, toolSteps \} from "@\/lib\/reading\/reader-provenance";/,
     "each view is a regrouping from the pure model, not a second derivation in the component",
   );
   for (const view of ["batches", "tools", "timeline"]) {
@@ -306,7 +306,7 @@ test("3a — the chrome is tokenised and survives reduced motion", () => {
   );
   assert.match(
     reader,
-    /import \{ smoothScrollBehavior \} from "@\/lib\/use-prefers-reduced-motion";/,
+    /import \{ smoothScrollBehavior \} from "@\/lib\/hooks\/use-prefers-reduced-motion";/,
     "imperative scrolling should reuse the shared reduced-motion helper",
   );
   assert.match(

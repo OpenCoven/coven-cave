@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import type {
   ResearchGenerationStoryboardScene,
   ResearchMediaRenderConfig,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import type { ResearchMediaJobContext } from "./research-media-job-contract.ts";
 
 const mediaRoot = await mkdtemp(path.join(tmpdir(), "cave-short-video-pipeline-"));

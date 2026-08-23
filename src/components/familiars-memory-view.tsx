@@ -37,14 +37,14 @@ import {
   canonicalMemorySelectionRowId,
   isCanonicalMemorySelectionApplied,
 } from "@/lib/canonical-memory";
-import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
+import { CanonicalMemoryRequestError } from "@/lib/memory/canonical-memory-client";
 import {
   loadCanonicalMemoryList,
   loadCanonicalMemoryOverview,
   refreshCanonicalMemory,
   type CanonicalMemoryListLoad,
   type CanonicalMemoryOverviewLoad,
-} from "@/lib/canonical-memory-resources";
+} from "@/lib/memory/canonical-memory-resources";
 import {
   formatTimestamp,
   readDateTimePrefs,
@@ -55,7 +55,7 @@ import {
   detectStale,
   normalizeFileEntry,
   type GroupBy,
-} from "@/lib/memory-management";
+} from "@/lib/memory/memory-management";
 import {
   buildMemoryRows,
   excludeMissingCanonicalMemory,
@@ -66,15 +66,15 @@ import {
   type CanonicalMemoryRow,
   type FileMemoryRow,
   type MemoryRow,
-} from "@/lib/memory-rows";
+} from "@/lib/memory/memory-rows";
 import { relativeTime as age } from "@/lib/relative-time";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { invalidateIfDefined } from "@/lib/surface-warm-cache";
-import { readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { invalidateIfDefined } from "@/lib/surfaces/surface-warm-cache";
+import { readSurfaceResource } from "@/lib/surfaces/surface-warmup-registry";
 import type { Familiar } from "@/lib/types";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { useUndoDelete } from "@/lib/use-undo-delete";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { useUndoDelete } from "@/lib/hooks/use-undo-delete";
 import { UndoToast } from "@/components/ui/undo-toast";
 
 export type { FileMemoryEntry } from "@/components/familiars-memory-utils";

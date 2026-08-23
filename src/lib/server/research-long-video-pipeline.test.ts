@@ -5,7 +5,7 @@ import test from "node:test";
 import type {
   ResearchGenerationVideoChapter,
   ResearchMediaRenderConfig,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import type { ResearchMediaJobContext } from "./research-media-job-contract.ts";
 import type { ResearchVideoProbe } from "./research-video-renderer.ts";
 

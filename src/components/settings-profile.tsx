@@ -18,10 +18,10 @@ import { StandardSelect } from "@/components/ui/select";
 import { settingsGroupId } from "@/components/ui/settings-group";
 import { TextArea } from "@/components/ui/text-area";
 import { TextInput } from "@/components/ui/text-input";
-import { extractNextPaths } from "@/lib/next-paths";
-import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-image-upload";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { streamFamiliarText } from "@/lib/familiar-stream";
+import { extractNextPaths } from "@/lib/projects/next-paths";
+import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiars/familiar-image-upload";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
+import { streamFamiliarText } from "@/lib/familiars/familiar-stream";
 import { hasLegacySvgUserAvatar } from "@/lib/legacy-svg-avatar-hint";
 import { Icon } from "@/lib/icon";
 import { openExternalUrl } from "@/lib/open-external";
@@ -43,8 +43,8 @@ import {
   type ProfileLinkSite,
 } from "@/lib/settings-profile-form";
 import type { Familiar } from "@/lib/types";
-import { useArmedConfirm } from "@/lib/use-armed-confirm";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { useArmedConfirm } from "@/lib/hooks/use-armed-confirm";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import {
   removeUserProfileAvatar,
   saveUserProfile,

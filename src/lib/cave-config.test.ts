@@ -10,7 +10,7 @@ process.env.HOME = tempHome;
 
 const config = await import("./cave-config.ts");
 const conversations = await import("./cave-conversations.ts");
-const { DEFAULT_CHAT_AUTO_ARCHIVE_POLICY } = await import("./chat-auto-archive.ts");
+const { DEFAULT_CHAT_AUTO_ARCHIVE_POLICY } = await import("./chat/chat-auto-archive.ts");
 const { sessionsListCache } = await import("./server/sessions-list-cache.ts");
 
 try {

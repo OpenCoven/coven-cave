@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createOnboardingBootstrapState } from "../../../../lib/onboarding-bootstrap.ts";
+import { createOnboardingBootstrapState } from "../../../../lib/onboarding/onboarding-bootstrap.ts";
 import { createOnboardingBootstrapHandlers } from "../../../../lib/server/onboarding-bootstrap-route.ts";
 
 const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");

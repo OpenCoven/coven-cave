@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const { FILE_REF_RE, resolveFileRefTarget } = await import("../lib/file-ref.ts");
+const { FILE_REF_RE, resolveFileRefTarget } = await import("../lib/projects/file-ref.ts");
 
 // ── FILE_REF_RE: matches real file refs, ignores ordinary prose/code ─────────
 const matches = (s) => FILE_REF_RE.exec(s);

@@ -8,7 +8,7 @@ import {
   resolveRuntimeCompatibility,
   validateRuntimeCompatibilitySnapshot,
 } from "./runtime-compatibility-registry.ts";
-import { COPILOT_EVENT_PROTOCOL_SCHEMAS } from "../copilot-stream.ts";
+import { COPILOT_EVENT_PROTOCOL_SCHEMAS } from "../integrations/copilot/copilot-stream.ts";
 
 const root = await mkdtemp(path.join(tmpdir(), "coven-runtime-compatibility-"));
 const cachePath = path.join(root, "copilot.json");

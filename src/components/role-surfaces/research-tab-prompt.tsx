@@ -41,15 +41,15 @@ import {
   buildResearchRecommendationContext,
   researchRecommendationContextKey,
   type ResearchRecommendationClientContext,
-} from "@/lib/research-recommendation-context";
-import type { ResearchMissionMode } from "@/lib/research-missions";
-import { promptRecommendations } from "@/lib/research-prompt-brief";
+} from "@/lib/research/research-recommendation-context";
+import type { ResearchMissionMode } from "@/lib/research/research-missions";
+import { promptRecommendations } from "@/lib/research/research-prompt-brief";
 import type {
   ResearchTopicRecommendation,
   ResearchTopicRecommendationPayload,
-} from "@/lib/research-topic-recommendations";
+} from "@/lib/research/research-topic-recommendations";
 import { relativeTime } from "@/lib/relative-time";
-import { useAgenticRecommendations } from "@/lib/use-agentic-recommendations";
+import { useAgenticRecommendations } from "@/lib/hooks/use-agentic-recommendations";
 import { matchSavedLinks, type QuickSaveGroup } from "./research-quick-saves";
 import {
   createRecommendedResearchMissionInput,

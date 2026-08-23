@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 // SurfaceRail — the shared collapsible/resizable list rail primitive that the
 // design-handoff surfaces (Sessions / Projects / Group / Familiar) reuse.
 // Pure logic (clamp, persistence, keyboard resize) is exercised directly from
-// src/lib/surface-rail-state.ts; the component + stylesheet contracts are
+// src/lib/surfaces/surface-rail-state.ts; the component + stylesheet contracts are
 // pinned as source text per repo convention.
 
 import {
@@ -22,7 +22,7 @@ import {
   surfaceRailWidthKey,
   surfaceRailOpenKey,
   surfaceRailKeyboardResize,
-} from "../lib/surface-rail-state.ts";
+} from "../lib/surfaces/surface-rail-state.ts";
 
 const src = readFileSync(new URL("./ui/surface-rail.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/surface-rail.css", import.meta.url), "utf8");

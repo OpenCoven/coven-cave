@@ -9,8 +9,8 @@ const settingsShell = await readFile(new URL("./settings-shell.tsx", import.meta
 const settingsPhone = await readFile(new URL("./settings-phone.tsx", import.meta.url), "utf8");
 const settings = `${settingsShell}\n${settingsPhone}`;
 const stepsList = await readFile(new URL("./pairing-steps-list.tsx", import.meta.url), "utf8");
-const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
-const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+const mobileModePref = await readFile(new URL("../lib/surfaces/mobile-mode-pref.ts", import.meta.url), "utf8");
+const mobileModeReconcile = await readFile(new URL("../lib/surfaces/mobile-mode-reconcile.ts", import.meta.url), "utf8");
 const tailscaleFailure = await readFile(new URL("../lib/tailscale-failure.ts", import.meta.url), "utf8");
 const tailscaleRecovery = await readFile(new URL("../lib/tailscale-recovery.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
@@ -205,7 +205,7 @@ assert.doesNotMatch(settings, /autoRetryBlocked/, "the poll-stopping latch is go
   assert.doesNotMatch(workspaceSrc, /mobileModeAutoRetryBlocked/, "the poll-stopping latch is gone from Workspace");
 }
 {
-  const reconciler = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
+  const reconciler = await readFile(new URL("../lib/surfaces/mobile-mode-reconcile.ts", import.meta.url), "utf8");
   assert.match(reconciler, /RETRY_BLOCK_TTL_MS = 45_000/, "the breaker half-opens on a TTL instead of latching forever");
   assert.match(reconciler, /now\(\) - blocked\.at < RETRY_BLOCK_TTL_MS/, "cached failures expire so the status tracks reality");
 }

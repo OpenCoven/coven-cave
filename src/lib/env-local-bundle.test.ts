@@ -42,7 +42,7 @@ assert.equal(readEnvLocalValue("GITHUB_PAT"), undefined, "missing file → undef
 // 3. resolveSecret falls back to the writable file when not in process.env.
 process.env.COVEN_CAVE_ENV_FILE = envFile;
 delete process.env.GITHUB_PAT;
-const { resolveSecret } = await import("./vault.ts");
+const { resolveSecret } = await import("./grimoire/vault.ts");
 assert.equal(resolveSecret("GITHUB_PAT"), "ghp_abc123", "resolveSecret reads the writable .env.local");
 assert.equal(process.env.GITHUB_PAT, "ghp_abc123", "resolved value is cached into process.env");
 

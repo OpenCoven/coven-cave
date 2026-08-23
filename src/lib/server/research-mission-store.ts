@@ -10,12 +10,12 @@ import {
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
-import type { ResearchMission } from "../research-missions.ts";
+import type { ResearchMission } from "../research/research-missions.ts";
 import {
   ensureStandardArtifactRefs,
   parseResearchMission,
   repairResearchMissionState,
-} from "../research-missions.ts";
+} from "../research/research-missions.ts";
 import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-write.ts";
 import { acquireProcessIntentLock } from "./process-intent-lock.ts";

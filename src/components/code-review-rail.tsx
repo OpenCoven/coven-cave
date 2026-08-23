@@ -31,7 +31,7 @@ import {
   type CodeRailTab,
   type CodeRailViewedState,
 } from "@/lib/code-side-rail";
-import type { ChangedFile } from "@/lib/session-changes-api";
+import type { ChangedFile } from "@/lib/chat/session-changes-api";
 import type { SessionRow } from "@/lib/types";
 
 const LazyPr = dynamic(

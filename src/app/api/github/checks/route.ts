@@ -14,8 +14,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveGitHubToken } from "@/lib/github-token";
-import { summarizeChecks, type CheckRun } from "@/lib/github-checks";
+import { resolveGitHubToken } from "@/lib/github/github-token";
+import { summarizeChecks, type CheckRun } from "@/lib/github/github-checks";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

@@ -36,7 +36,7 @@ vi.mock("@/components/canonical-memory-reader", () => ({
     subtitle: "Try again.",
   }),
 }));
-vi.mock("@/lib/surface-preferences", async () => {
+vi.mock("@/lib/surfaces/surface-preferences", async () => {
   const { useState } = await import("react");
   return {
     useSurfacePreference: (spec: {

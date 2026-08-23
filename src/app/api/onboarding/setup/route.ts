@@ -13,12 +13,12 @@ import {
   normalizeFamiliarDraft,
   type OnboardingFamiliarDraft,
   type OnboardingFamiliarInput,
-} from "@/lib/onboarding-familiars";
+} from "@/lib/onboarding/onboarding-familiars";
 import {
   adapterManifestScaffoldForHarness,
   isTrustedOnboardingHarness,
-} from "@/lib/harness-adapters";
-import { modelForRuntimeSwitch } from "@/lib/runtime-models";
+} from "@/lib/runtime/harness-adapters";
+import { modelForRuntimeSwitch } from "@/lib/runtime/runtime-models";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 
 export const dynamic = "force-dynamic";

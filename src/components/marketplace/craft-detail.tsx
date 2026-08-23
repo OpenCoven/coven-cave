@@ -7,8 +7,8 @@ import { Icon } from "@/lib/icon";
 import { MarketplaceLogo } from "@/components/marketplace/marketplace-logo";
 import { isCraftInstallationVerified, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { openExternalUrl } from "@/lib/open-external";
-import type { RoleEffectiveComposition } from "@/lib/role-craft-composition";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import type { RoleEffectiveComposition } from "@/lib/familiars/role-craft-composition";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 type CraftPlanComponent = {
   id: string;

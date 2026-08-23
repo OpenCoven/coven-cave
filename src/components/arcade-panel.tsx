@@ -25,7 +25,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { ARCADE_TAGLINE, ARCADE_TITLE, buildArcadeSrcDoc } from "@/lib/arcade/glitter-crypt";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
 
 type Props = {
   /** Rendered under the title — say what the caller is waiting on. */

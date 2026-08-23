@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { Card, CardStatus } from "@/lib/board/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
-import type { CardPatch } from "@/lib/board-card-ops";
+import type { CardPatch } from "@/lib/board/board-card-ops";
 
 type ProjectLike = { id: string; name: string };
 

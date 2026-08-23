@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const cardTypes = readFileSync(new URL("../lib/cave-board-types.ts", import.meta.url), "utf8");
+const cardTypes = readFileSync(new URL("../lib/board/cave-board-types.ts", import.meta.url), "utf8");
 const boardStore = readFileSync(new URL("../lib/cave-board.ts", import.meta.url), "utf8");
 const inspector = readFileSync(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const boardView = readFileSync(new URL("./board-view.tsx", import.meta.url), "utf8");

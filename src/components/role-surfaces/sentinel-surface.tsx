@@ -19,9 +19,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
-import type { RoleSurfaceContext } from "@/lib/role-surfaces";
-import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { useLatestAsyncData } from "@/lib/use-role-surfaces";
+import type { RoleSurfaceContext } from "@/lib/familiars/role-surfaces";
+import { useRoleSurfaceState } from "@/lib/familiars/role-surface-state";
+import { useLatestAsyncData } from "@/lib/hooks/use-role-surfaces";
 import { SEVERITIES, SNOOZE_PRESETS, type Escalation } from "@/lib/escalations-types";
 import { relativeTime } from "@/lib/relative-time";
 import {

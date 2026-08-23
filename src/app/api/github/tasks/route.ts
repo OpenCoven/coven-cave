@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { forceGitHubTasksRefresh, getGitHubTasks } from "@/lib/github-tasks-cache";
+import { forceGitHubTasksRefresh, getGitHubTasks } from "@/lib/github/github-tasks-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

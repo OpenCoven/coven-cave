@@ -1,5 +1,5 @@
 import type { IconName } from "@/lib/icon";
-import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime/runtime-availability";
 
 export type VesselKind = "local" | "ssh" | "openclaw" | "hermes";
 

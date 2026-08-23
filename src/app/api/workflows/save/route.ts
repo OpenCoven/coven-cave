@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { saveLocalWorkflow } from "@/lib/workflow-source";
+import { saveLocalWorkflow } from "@/lib/automations/workflow-source";
 
 export const dynamic = "force-dynamic";
 

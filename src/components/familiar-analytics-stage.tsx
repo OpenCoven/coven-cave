@@ -11,8 +11,8 @@ import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-dat
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Icon } from "@/lib/icon";
-import type { SelfHealRequest } from "@/lib/familiar-heal-requests";
-import { pulseTotal, type PulseDay } from "@/lib/session-pulse";
+import type { SelfHealRequest } from "@/lib/familiars/familiar-heal-requests";
+import { pulseTotal, type PulseDay } from "@/lib/chat/session-pulse";
 import { FamiliarActivityLattice } from "@/components/familiar-activity-lattice";
 import type { ActivityLattice } from "@/lib/activity-lattice";
 import type { SessionRow } from "@/lib/types";

@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Contract pins for the run rail (cave-w716g). The behavioural half lives in
-// src/lib/chat-run-rail.test.ts, which exercises the real derivation; this file
+// src/lib/chat/chat-run-rail.test.ts, which exercises the real derivation; this file
 // guards the wiring and the two decisions that are easy to "fix" back into
 // defects.
 import assert from "node:assert/strict";

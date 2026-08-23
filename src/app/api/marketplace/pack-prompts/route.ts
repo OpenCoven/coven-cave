@@ -15,7 +15,7 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import { pluginDir, resolveCatalogName } from "@/lib/server/marketplace-catalog-resolve";
 import { scanPromptsDir } from "@/lib/server/prompt-scan";
-import type { PromptOption } from "@/lib/slash-prompt";
+import type { PromptOption } from "@/lib/chat/slash-prompt";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

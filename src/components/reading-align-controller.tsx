@@ -5,7 +5,7 @@ import {
   READING_ALIGN_KEY,
   applyReadingAlign,
   readReadingAlign,
-} from "@/lib/reading-align";
+} from "@/lib/reading/reading-align";
 
 /**
  * Applies the saved reading text-alignment on load and keeps it in sync across

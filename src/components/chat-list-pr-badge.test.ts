@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from "node:fs";
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const githubTaskContext = readFileSync(new URL("../lib/workspace-github-task-context.ts", import.meta.url), "utf8");
+const githubTaskContext = readFileSync(new URL("../lib/projects/workspace-github-task-context.ts", import.meta.url), "utf8");
 const listRoute = readFileSync(
   new URL("../app/api/sessions/list/route.ts", import.meta.url),
   "utf8",
@@ -79,7 +79,7 @@ for (const state of ["merged", "closed", "draft"]) {
 
 // ── Sessions list: branch PR enrichment never blocks the poll ────────────────
 const gitEnrichLib = readFileSync(
-  new URL("../lib/session-git-enrich.ts", import.meta.url),
+  new URL("../lib/chat/session-git-enrich.ts", import.meta.url),
   "utf8",
 );
 assert.match(
@@ -103,7 +103,7 @@ assert.match(
   "the merged-PR sweep runs over the (async) enriched rows before the payload returns",
 );
 const sweepModule = readFileSync(
-  new URL("../lib/chat-auto-archive-sweep.ts", import.meta.url),
+  new URL("../lib/chat/chat-auto-archive-sweep.ts", import.meta.url),
   "utf8",
 );
 assert.match(

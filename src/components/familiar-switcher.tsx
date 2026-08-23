@@ -3,12 +3,12 @@
 import { useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { useFamiliarStudio } from "@/lib/familiars/familiar-studio-context";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { Popover } from "@/components/ui/popover";
-import { setFamiliarOrder } from "@/lib/cave-familiar-order";
+import { setFamiliarOrder } from "@/lib/familiars/cave-familiar-order";
 import { requestSummonFamiliar } from "@/lib/summon-events";
-import { FAMILIAR_DRAG_MIME, emitFamiliarDragEnd, emitFamiliarDragStart } from "@/lib/familiar-drag";
+import { FAMILIAR_DRAG_MIME, emitFamiliarDragEnd, emitFamiliarDragStart } from "@/lib/familiars/familiar-drag";
 import {
   DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
   type DragEndEvent,
@@ -18,7 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
 type Presence = { label: string; dot: string };

@@ -43,9 +43,9 @@ import {
   probeCopilotCapability,
 } from "@/lib/server/copilot-capability-probe";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
-import { copilotStreamSpec } from "@/lib/copilot-stream";
-import { isSshRuntime } from "@/lib/familiar-runtime";
-import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
+import { copilotStreamSpec } from "@/lib/integrations/copilot/copilot-stream";
+import { isSshRuntime } from "@/lib/familiars/familiar-runtime";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/integrations/hermes/hermes-profiles";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 import { daemonHealthRequest } from "@/lib/server/daemon-health-request";

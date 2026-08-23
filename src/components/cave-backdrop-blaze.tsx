@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { blazeColorsFromAccent, BLAZE_OPTIONS } from "@/lib/cave-backdrop-blaze-colors";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
 
 // The ~22 KB vendored WebGL file loads only when the Blaze style is shown.
 const Blaze = dynamic(() => import("@/components/canvasui/Blaze"), { ssr: false });

@@ -7,12 +7,12 @@ import {
 } from "@/lib/cave-config";
 import { saveConversation } from "@/lib/cave-conversations";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
-import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId } from "@/lib/chat-project-access";
+import { loadProjects } from "@/lib/projects/cave-projects";
+import { chatProjectAccessId } from "@/lib/chat/chat-project-access";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
-} from "@/lib/project-permissions";
+} from "@/lib/projects/project-permissions";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,

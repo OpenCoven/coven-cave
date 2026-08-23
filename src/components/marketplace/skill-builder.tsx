@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { handlePlaceholderTab, placeholderSpans } from "@/lib/prompt-placeholders";
-import { buildSkillAgentPrompt } from "@/lib/skill-agent-prompt";
+import { buildSkillAgentPrompt } from "@/lib/skills/skill-agent-prompt";
 import {
   composeSkillMd,
   formatSkillDraft,
@@ -35,9 +35,9 @@ import {
   SKILL_BUILD_ROOTS,
   slugifySkillName,
   type SkillBuildRootId,
-} from "@/lib/skill-build-format";
-import { SKILL_TEMPLATES, type SkillTemplate } from "@/lib/skill-templates";
-import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+} from "@/lib/skills/skill-build-format";
+import { SKILL_TEMPLATES, type SkillTemplate } from "@/lib/skills/skill-templates";
+import { usePromptEnhance } from "@/lib/hooks/use-prompt-enhance";
 
 const ROOT_HELP: Record<SkillBuildRootId, string> = {
   coven: "Shared Coven root — every familiar in your Cave can load it.",

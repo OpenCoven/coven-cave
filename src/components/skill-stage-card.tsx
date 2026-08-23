@@ -9,7 +9,7 @@
  */
 
 import { Icon } from "@/lib/icon";
-import type { SkillStage } from "@/lib/skill-blocks";
+import type { SkillStage } from "@/lib/skills/skill-blocks";
 
 const STAGE_ORDER: SkillStage[] = ["loaded", "running", "done"];
 

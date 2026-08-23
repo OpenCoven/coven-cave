@@ -4,14 +4,14 @@ import { readFileSync } from "node:fs";
 const source = [
   readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./familiars-view-sections.tsx", import.meta.url), "utf8"),
-  readFileSync(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/surfaces/surface-warmup-registry.ts", import.meta.url), "utf8"),
 ].join("\n");
 const canonicalResources = readFileSync(
-  new URL("../lib/canonical-memory-resources.ts", import.meta.url),
+  new URL("../lib/memory/canonical-memory-resources.ts", import.meta.url),
   "utf8",
 );
 const memoryRequestGate = readFileSync(
-  new URL("../lib/memory-feed-request-gate.ts", import.meta.url),
+  new URL("../lib/memory/memory-feed-request-gate.ts", import.meta.url),
   "utf8",
 );
 

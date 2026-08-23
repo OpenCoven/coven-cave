@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import type { BrowserTab } from "@/components/browser-pane";
 
 // ── BrowserQuickOpen ──────────────────────────────────────────────────────────

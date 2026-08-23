@@ -1,12 +1,12 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import type { CaveProject } from "@/lib/cave-projects";
-import { chatProjectById } from "@/lib/chat-projects";
-import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
+import type { CaveProject } from "@/lib/projects/cave-projects";
+import { chatProjectById } from "@/lib/chat/chat-projects";
+import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
+import { useThreadInstrumentsVisible } from "@/lib/chat/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ProjectPickerPopover } from "@/components/project-picker";

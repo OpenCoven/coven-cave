@@ -6,15 +6,15 @@ import {
   saveConversation,
   withConversationLock,
 } from "@/lib/cave-conversations";
-import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { cleanModelId, resolveChatModelState } from "@/lib/chat/chat-model-state";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";
-import { modelControlCapabilities } from "@/lib/model-control-capabilities";
-import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { hermesApiConfig } from "@/lib/hermes-responses-stream";
-import { isSshRuntime } from "@/lib/familiar-runtime";
+import { modelControlCapabilities } from "@/lib/runtime/model-control-capabilities";
+import { isModelAllowedByRuntime } from "@/lib/runtime/runtime-models";
+import { harnessSpawnEnv } from "@/lib/runtime/harness-spawn-env";
+import { hermesApiConfig } from "@/lib/integrations/hermes/hermes-responses-stream";
+import { isSshRuntime } from "@/lib/familiars/familiar-runtime";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";

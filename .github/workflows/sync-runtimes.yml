@@ -1,5 +1,5 @@
 # Sync the accepted runtime registry from OpenCoven/coven-runtimes into
-# src/lib/runtime-registry.gen.ts and open a PR when it changed.
+# src/lib/runtime/runtime-registry.gen.ts and open a PR when it changed.
 #
 # Triggers:
 #   - repository_dispatch `runtimes-registry-updated` — fired by the
@@ -64,7 +64,7 @@ jobs:
       - name: Detect changes
         id: diff
         run: |
-          if git diff --quiet -- src/lib/runtime-registry.gen.ts; then
+          if git diff --quiet -- src/lib/runtime/runtime-registry.gen.ts; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Registry module already up to date."
           else
@@ -75,8 +75,8 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         run: |
           node scripts/sync-runtimes.test.mjs
-          node --experimental-strip-types src/lib/harness-adapters.test.ts
-          node --experimental-strip-types src/lib/runtime-models.test.ts
+          node --experimental-strip-types src/lib/runtime/harness-adapters.test.ts
+          node --experimental-strip-types src/lib/runtime/runtime-models.test.ts
 
       - name: Require the bot token
         if: steps.diff.outputs.changed == 'true'
@@ -96,7 +96,7 @@ jobs:
           set -euo pipefail
           BRANCH=bot/sync-runtimes
           node --experimental-strip-types -e '
-            import("./src/lib/runtime-registry.gen.ts").then((m) => {
+            import("./src/lib/runtime/runtime-registry.gen.ts").then((m) => {
               const lines = [
                 "Automated sync of the accepted runtime registry from `OpenCoven/coven-runtimes`.",
                 "",
@@ -116,7 +116,7 @@ jobs:
           # push event triggers the required CI workflows on the PR.
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git checkout -B "$BRANCH"
-          git add src/lib/runtime-registry.gen.ts
+          git add src/lib/runtime/runtime-registry.gen.ts
           git commit -m "chore(runtimes): sync accepted registry from coven-runtimes"
           git push -f origin "$BRANCH"
           if gh pr view "$BRANCH" --json state --jq .state 2>/dev/null | grep -q OPEN; then

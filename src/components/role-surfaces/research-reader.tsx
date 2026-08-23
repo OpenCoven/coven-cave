@@ -23,7 +23,7 @@ import {
   DocumentReader,
   type DocumentReaderApi,
 } from "@/components/document-reader";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -32,12 +32,12 @@ import {
   type FindingsBlock,
   type FindingsSpan,
   type FindingsRefTone,
-} from "@/lib/research-findings-doc";
+} from "@/lib/research/research-findings-doc";
 import type {
   ResearchArtifactRef,
   ResearchMission,
   ResearchSourceRef,
-} from "@/lib/research-missions";
+} from "@/lib/research/research-missions";
 import "@/styles/research-reader.css";
 
 const RAIL_MIN = 240;

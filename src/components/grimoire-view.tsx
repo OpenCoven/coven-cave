@@ -28,7 +28,7 @@ import "@/styles/journal.css";
 import "@/styles/grimoire-launcher.css";
 import { GrimoireLauncher } from "@/components/grimoire-launcher";
 import type { Familiar } from "@/lib/types";
-import { familiarInScope } from "@/lib/familiar-multiselect";
+import { familiarInScope } from "@/lib/familiars/familiar-multiselect";
 import { serializeMdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -39,16 +39,16 @@ import {
 } from "@/lib/datetime-format";
 import { SearchInput } from "@/components/ui/search-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { invalidateSurfaceResources, readSurfaceResource } from "@/lib/surfaces/surface-warmup-registry";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useRovingTabIndex } from "@/lib/hooks/use-roving-tabindex";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMemoryFile } from "@/lib/use-memory-file";
-import { resolveOutgoingLinks, type WikiDocIndex, type WikiDocRef } from "@/lib/wiki-link-resolve";
-import { buildDocGraph, type DocGraph, type GraphEdgeType } from "@/lib/grimoire-graph";
-import { buildMemoryOwnerIndex, scopeDocGraph } from "@/lib/grimoire-graph-scope";
+import { useMemoryFile } from "@/lib/hooks/use-memory-file";
+import { resolveOutgoingLinks, type WikiDocIndex, type WikiDocRef } from "@/lib/reading/wiki-link-resolve";
+import { buildDocGraph, type DocGraph, type GraphEdgeType } from "@/lib/grimoire/grimoire-graph";
+import { buildMemoryOwnerIndex, scopeDocGraph } from "@/lib/grimoire/grimoire-graph-scope";
 import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
 import { knowledgeEntryFlags } from "@/lib/knowledge-flags";
 import {
@@ -73,8 +73,8 @@ import {
   writeStoredTabs,
   type GrimoireSelection,
 } from "./grimoire-nav-state";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
 
 export { MAX_OPEN_TABS } from "./grimoire-nav-state";
 export type { GrimoireSelection } from "./grimoire-nav-state";
@@ -746,7 +746,7 @@ export function GrimoireView({
   /** The shell's familiar multiselect. Empty = All. When familiars are
    *  selected, the Memory navigator shows only those familiars' own memory —
    *  ownerless shared pools drop out, matching the app-wide familiar-memory
-   *  rule documented in `@/lib/memory-file-scope`. */
+   *  rule documented in `@/lib/memory/memory-file-scope`. */
   scopeFamiliarIds?: ReadonlySet<string>;
 } = {}) {
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[] | null>(null);

@@ -28,8 +28,8 @@ import {
   type GhStreamEntry,
   type GhStreamSection,
   type GhTone,
-} from "@/lib/github-stage";
-import type { GitHubItem } from "@/lib/github-tasks";
+} from "@/lib/github/github-stage";
+import type { GitHubItem } from "@/lib/github/github-tasks";
 
 /** One glyph per tone, so the badge never relies on colour alone (a11y §). */
 const TONE_ICON: Record<GhTone, IconName> = {

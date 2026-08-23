@@ -4,8 +4,8 @@ import { useLayoutEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
-import { useIsMobile } from "@/lib/use-viewport";
-import { VISIBLE_WORKSPACE_NAV_ITEMS } from "@/lib/workspace-navigation";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
+import { VISIBLE_WORKSPACE_NAV_ITEMS } from "@/lib/projects/workspace-navigation";
 import "@/styles/analytics-page-shell.css";
 
 // Shared with shell.tsx so the nav open/closed preference is consistent across

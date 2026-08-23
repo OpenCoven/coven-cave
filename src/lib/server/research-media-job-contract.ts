@@ -4,7 +4,7 @@ import type {
   ResearchGenerationMediaKind,
   ResearchGenerationProgress,
   ResearchGenerationStage,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 
 export type MediaGenerationContent = Extract<
   ResearchGenerationContent,

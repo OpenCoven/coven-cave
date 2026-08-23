@@ -8,7 +8,7 @@ import {
 import {
   useToolRunDisclosure,
   type ToolRunStatus,
-} from "../lib/use-tool-run-disclosure.ts";
+} from "../lib/hooks/use-tool-run-disclosure.ts";
 
 type ChatToolRunDisclosureProps = {
   repeated: boolean;

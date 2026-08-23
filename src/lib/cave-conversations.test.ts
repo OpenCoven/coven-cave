@@ -21,8 +21,8 @@ const {
 const {
   mapConversationHistoryTurns,
   retryTurnModelRequest,
-} = await import("./chat-turn-state.ts");
-const { deriveChatAttention, NO_CHAT_ATTENTION } = await import("./chat-attention.ts");
+} = await import("./chat/chat-turn-state.ts");
+const { deriveChatAttention, NO_CHAT_ATTENTION } = await import("./chat/chat-attention.ts");
 const { persistedTurnControls } = await import(
   "../app/api/chat/send/chat-send-models.ts"
 );

@@ -19,7 +19,7 @@ const require = createRequire(import.meta.url);
 export const ICON_TSX_URL = new URL("../src/lib/icon.tsx", import.meta.url);
 export const SUBSET_URL = new URL("../src/lib/ph-icons-subset.json", import.meta.url);
 export const GLYPH_URL = new URL("../src/lib/ph-glyph-catalog.json", import.meta.url);
-export const FAMILIAR_GLYPH_TS_URL = new URL("../src/lib/familiar-glyph.ts", import.meta.url);
+export const FAMILIAR_GLYPH_TS_URL = new URL("../src/lib/familiars/familiar-glyph.ts", import.meta.url);
 export const FAMILIAR_CORE_URL = new URL("../src/lib/ph-familiar-core.json", import.meta.url);
 
 // Variant suffixes Phosphor uses; stripping them gives the base glyph name.

@@ -4,7 +4,7 @@
  *
  * Merges three sources by id (`user > pack > built-in`, the /api/prompts
  * precedence):
- *  1. built-in kinds (src/lib/skill-templates.ts)
+ *  1. built-in kinds (src/lib/skills/skill-templates.ts)
  *  2. installed marketplace packs' `skill-templates/*.md` (same file shape as
  *     prompt templates; emitted by scripts/sync-marketplace.py from a
  *     catalog entry's `skillTemplates` array)
@@ -18,8 +18,8 @@ import path from "node:path";
 import { covenHome } from "@/lib/coven-paths";
 import { loadConfig } from "@/lib/cave-config";
 import { scanPromptsDir } from "@/lib/server/prompt-scan";
-import { SKILL_TEMPLATES, mergeSkillTemplates, type SkillTemplate } from "@/lib/skill-templates";
-import type { PromptOption } from "@/lib/slash-prompt";
+import { SKILL_TEMPLATES, mergeSkillTemplates, type SkillTemplate } from "@/lib/skills/skill-templates";
+import type { PromptOption } from "@/lib/chat/slash-prompt";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

@@ -10,9 +10,9 @@ import {
   createOnboardingBootstrapState,
   type OnboardingBootstrapState,
   type OnboardingBootstrapStageStatus,
-} from "@/lib/onboarding-bootstrap";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+} from "@/lib/onboarding/onboarding-bootstrap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 
 type Props = {
   open: boolean;

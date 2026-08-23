@@ -16,7 +16,7 @@
  */
 
 import { Icon } from "@/lib/icon";
-import { PRIMARY_WORKSPACE_NAV_ITEMS } from "@/lib/workspace-navigation";
+import { PRIMARY_WORKSPACE_NAV_ITEMS } from "@/lib/projects/workspace-navigation";
 
 // Primary daily destinations: exactly the rows the desktop sidebar promotes
 // (quiet rows live in the drawer's full sidebar; navHidden are on-demand).

@@ -6,15 +6,15 @@ import {
   IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE,
   MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
-} from "../../../../lib/chat-attachments.ts";
+} from "../../../../lib/chat/chat-attachments.ts";
 import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
   ToolCallTracker,
   toPersistedTools,
-} from "../../../../lib/chat-tool-events.ts";
-import { buildCopilotStreamArgs } from "../../../../lib/copilot-stream.ts";
+} from "../../../../lib/chat/chat-tool-events.ts";
+import { buildCopilotStreamArgs } from "../../../../lib/integrations/copilot/copilot-stream.ts";
 import { prepareCopilotChatRouting, resolveCopilotChatRouting } from "./copilot-routing.ts";
 
 const chatRoute = await readFile(
@@ -26,7 +26,7 @@ const streamEvents = await readFile(
   "utf8",
 );
 const openclawBridge = await readFile(
-  new URL("../../../../lib/openclaw-bridge.ts", import.meta.url),
+  new URL("../../../../lib/openclaw/openclaw-bridge.ts", import.meta.url),
   "utf8",
 );
 const boardRoute = await readFile(
@@ -250,7 +250,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /import \{ grokLaunchCommand \} from "@\/lib\/grok-bin"/,
+  /import \{ grokLaunchCommand \} from "@\/lib\/integrations\/grok\/grok-bin"/,
   "Grok direct chats must use the shared cross-platform launcher resolver",
 );
 assert.match(

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { hostname } from "node:os";
-import { pickVersionLine } from "@/lib/harness-version";
+import { pickVersionLine } from "@/lib/runtime/harness-version";
 import {
   COMPATIBILITY_ADAPTERS,
   covenHelpSupportsAdapterList,
@@ -9,7 +9,7 @@ import {
   openClawAdapterReport,
   type AdapterReport,
   type CovenAdapterSummary,
-} from "@/lib/harness-adapters";
+} from "@/lib/runtime/harness-adapters";
 import {
   COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
   covenLaunchCommand,
@@ -19,13 +19,13 @@ import {
   refreshCovenSpawnEnv,
   type CovenLaunchCommand,
 } from "@/lib/coven-bin";
-import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/copilot-stream";
-import { probeCodexRuntimeAvailability } from "@/lib/codex-runtime-availability";
-import { grokBin, grokLaunchCommandForBinary } from "@/lib/grok-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { openCodeAvailabilityProbe, openCodeLaunch, openCodeSpawnEnv } from "@/lib/opencode-bin";
-import { listOpenClawAgents } from "@/lib/openclaw-bridge";
-import { parseGrokModels, type RuntimeModelOption } from "@/lib/grok-build";
+import { COPILOT_NO_AUTO_UPDATE_ARG, copilotStreamSpec } from "@/lib/integrations/copilot/copilot-stream";
+import { probeCodexRuntimeAvailability } from "@/lib/integrations/codex/codex-runtime-availability";
+import { grokBin, grokLaunchCommandForBinary } from "@/lib/integrations/grok/grok-bin";
+import { harnessSpawnEnv } from "@/lib/runtime/harness-spawn-env";
+import { openCodeAvailabilityProbe, openCodeLaunch, openCodeSpawnEnv } from "@/lib/integrations/opencode/opencode-bin";
+import { listOpenClawAgents } from "@/lib/openclaw/openclaw-bridge";
+import { parseGrokModels, type RuntimeModelOption } from "@/lib/integrations/grok/grok-build";
 import {
   resolveCopilotRuntimeLaunch,
   type CopilotRuntimeLaunch,
@@ -37,7 +37,7 @@ import {
   summarizeRuntimeAvailability,
   type HermesLaunchResolution,
   type RuntimeAvailabilitySummary,
-} from "@/lib/runtime-availability";
+} from "@/lib/runtime/runtime-availability";
 import {
   BoundedProcessOutput,
   terminateProcessTree,

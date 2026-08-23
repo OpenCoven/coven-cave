@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { clearRuns, listRuns, recordRun, type WorkflowRunRecord } from "@/lib/workflow-runs";
-import type { WorkflowRunStepRecord } from "@/lib/workflows";
+import { clearRuns, listRuns, recordRun, type WorkflowRunRecord } from "@/lib/automations/workflow-runs";
+import type { WorkflowRunStepRecord } from "@/lib/automations/workflows";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 import {
   resolveRunSource,

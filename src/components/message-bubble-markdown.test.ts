@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
-const markdownStream = readFileSync(new URL("../lib/message-markdown-stream.ts", import.meta.url), "utf8");
+const markdownStream = readFileSync(new URL("../lib/chat/message-markdown-stream.ts", import.meta.url), "utf8");
 const markdownPreview = readFileSync(new URL("../lib/markdown-preview.ts", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const domWiring = readFileSync(new URL("./message-dom-wiring.ts", import.meta.url), "utf8");

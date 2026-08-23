@@ -13,7 +13,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { after, test } from "node:test";
 
-import type { ResearchGeneration } from "../research-generations.ts";
+import type { ResearchGeneration } from "../research/research-generations.ts";
 import type {
   ResearchMediaJobDefinition,
   ResearchMediaJobFactory,

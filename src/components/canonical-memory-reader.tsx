@@ -13,7 +13,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import {
   CanonicalMemoryRequestError,
   fetchCanonicalMemoryDetail,
-} from "@/lib/canonical-memory-client";
+} from "@/lib/memory/canonical-memory-client";
 import type {
   CanonicalMemoryDetail,
   CanonicalMemoryErrorCode,

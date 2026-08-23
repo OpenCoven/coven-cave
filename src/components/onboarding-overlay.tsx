@@ -8,9 +8,9 @@ import {
   enqueueInstall,
   nextDrainTarget,
   shouldRequeueOn409,
-} from "@/lib/onboarding-install-queue";
+} from "@/lib/onboarding/onboarding-install-queue";
 import type { IconName } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { openExternalUrl } from "@/lib/open-external";
@@ -24,23 +24,23 @@ import {
   classifySetupFailure,
   setupRetryLabel,
   type SetupFailure,
-} from "@/lib/onboarding-setup-failure";
+} from "@/lib/onboarding/onboarding-setup-failure";
 import {
   openCovenToolActionTargets,
   openCovenToolsPrimaryActionLabel,
 } from "@/lib/opencoven-tools-install";
-import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
-import { advanceOnboardingAutoFinishGate } from "@/lib/onboarding-gate";
+import { waitForDaemonUpdateIdle } from "@/lib/daemon/app-update-daemon";
+import { advanceOnboardingAutoFinishGate } from "@/lib/onboarding/onboarding-gate";
 import {
   onboardingContinuationDecision,
   onboardingStepState,
-} from "@/lib/onboarding-readiness";
+} from "@/lib/onboarding/onboarding-readiness";
 import {
   createOnboardingStatusRequestCoordinator,
   onboardingStatusWarningMessage,
   onboardingStepTransitionAnnouncement,
   type OnboardingStatusRequestCoordinator,
-} from "@/lib/onboarding-status-ui";
+} from "@/lib/onboarding/onboarding-status-ui";
 import {
   ALL_INSTALL_TARGETS,
   HARNESS_ONE_CLICK,

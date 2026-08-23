@@ -9,16 +9,16 @@ import test from "node:test";
 import {
   sanitizeDaemonStartDiagnostic,
   startLocalDaemon,
-} from "../src/lib/daemon-start.ts";
+} from "../src/lib/daemon/daemon-start.ts";
 import {
   createDaemonConnectionSupervisor,
   type DaemonConnectionPoll,
-} from "../src/lib/daemon-connection-supervisor.ts";
-import { waitForDaemonReadiness } from "../src/lib/daemon-readiness.ts";
+} from "../src/lib/daemon/daemon-connection-supervisor.ts";
+import { waitForDaemonReadiness } from "../src/lib/daemon/daemon-readiness.ts";
 import {
   RuntimeStartupCoordinator,
   RuntimeStartupThrottle,
-} from "../src/lib/runtime-startup-throttle.ts";
+} from "../src/lib/runtime/runtime-startup-throttle.ts";
 
 const fixtureLaunch = () => ({
   command: process.execPath,

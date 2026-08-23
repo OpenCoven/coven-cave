@@ -95,17 +95,17 @@ function assertNoFabricatedAssistantResponse(body, events) {
 try {
   const { covenLaunchCommand, refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
-  const { grokBin } = await import("@/lib/grok-bin");
+  const { grokBin } = await import("@/lib/integrations/grok/grok-bin");
   assert.equal(grokBin(), pinnedGrok, "the test pins Grok discovery to its isolated override");
   await unlink(pinnedGrok);
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const {
     missingRunnerMessage,
     runtimeLaunchFailedMessage,
-  } = await import("@/lib/runtime-availability");
+  } = await import("@/lib/runtime/runtime-availability");
   const { POST } = await import("./route.ts");
   const project = await createProject({ name: "Availability fixture", root: familiarWorkspace });
   await grantProjectToFamiliar({ familiarId: "opal", projectId: project.id, source: "human", access: "write" });
@@ -324,7 +324,7 @@ try {
   // not isolate this scenario on machines that have Copilot installed.
   {
     const { clearCopilotCapabilityProbeCache } = await import("@/lib/server/copilot-capability-probe");
-    const { REGISTRY_RUNTIMES } = await import("@/lib/runtime-registry.gen");
+    const { REGISTRY_RUNTIMES } = await import("@/lib/runtime/runtime-registry.gen.ts");
     const copilotRuntime = REGISTRY_RUNTIMES.find((runtime) => runtime.id === "copilot");
     const copilotAdapter = copilotRuntime?.adapterManifest?.adapters?.find(
       (adapter) => adapter.id === "copilot",

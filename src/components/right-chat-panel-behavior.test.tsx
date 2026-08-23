@@ -112,7 +112,7 @@ const archivedIds = vi.hoisted(() => new Set<string>());
 // A stand-in for the real resolver: filters out "archived" familiars exactly
 // like useResolvedFamiliars does with includeArchived defaulting to false,
 // without needing the real hook's overrides/images/order dependencies.
-vi.mock("@/lib/familiar-resolve", () => ({
+vi.mock("@/lib/familiars/familiar-resolve", () => ({
   useResolvedFamiliars: (familiars: Array<{ id: string; display_name: string }>) =>
     familiars.filter((familiar) => !archivedIds.has(familiar.id)).map((familiar) => ({ ...familiar })),
 }));

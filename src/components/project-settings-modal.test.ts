@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 // it ties a project to a GitHub repository through the shared repo-link
 // normalizer, persisting only the canonical https link via the caller's
 // updateRepoUrl (PUT /api/projects/[id]). The normalizer itself is
-// behaviorally tested in src/lib/github-repo-link.test.ts.
+// behaviorally tested in src/lib/github/github-repo-link.test.ts.
 
 const modal = readFileSync(new URL("./project-settings-modal.tsx", import.meta.url), "utf8");
 
@@ -20,7 +20,7 @@ test("the sheet is the shared Modal, named for the project", () => {
 test("input normalizes before save and rejects non-GitHub links client-side", () => {
   assert.match(
     modal,
-    /import \{ gitHubRepoSlug, normalizeGitHubRepoUrl \} from "@\/lib\/github-repo-link"/,
+    /import \{ gitHubRepoSlug, normalizeGitHubRepoUrl \} from "@\/lib\/github\/github-repo-link"/,
     "validation goes through the shared normalizer — the same one the API enforces",
   );
   assert.match(modal, /const normalizedRepo = trimmedRepo \? normalizeGitHubRepoUrl\(trimmedRepo\) : null;/, "normalizes the draft");

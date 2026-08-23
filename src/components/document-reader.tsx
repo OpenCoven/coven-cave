@@ -27,7 +27,7 @@ import {
   saveScaleIndex,
   scaleForIndex,
   scaleLabel,
-} from "@/lib/reader-text-scale";
+} from "@/lib/reading/reader-text-scale";
 
 export type DocumentReaderSection<TBlock> = {
   id: string;

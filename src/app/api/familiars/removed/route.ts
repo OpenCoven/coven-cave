@@ -3,8 +3,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { saveConfig, type FamiliarBinding } from "@/lib/cave-config";
-import { buildFamiliarsToml, familiarsTomlContainsId } from "@/lib/onboarding-familiars";
-import { hasNonemptyDescriptionFromTomlBlock } from "@/lib/familiar-removal";
+import { buildFamiliarsToml, familiarsTomlContainsId } from "@/lib/onboarding/onboarding-familiars";
+import { hasNonemptyDescriptionFromTomlBlock } from "@/lib/familiars/familiar-removal";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readTombstones, takeTombstone } from "@/lib/server/familiar-tombstones";
 

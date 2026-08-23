@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const railController = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
+const railController = await readFile(new URL("../lib/hooks/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 
 // (a) the shared rail controller dispatches cave:code-rail-visibility with

@@ -28,7 +28,7 @@ import type { ProfileHeatmap, ProfileKind, ProfileSeriesPoint } from "@/lib/prof
 import { formatHeatTip } from "@/lib/heat-tip";
 import { humanHandle } from "@/lib/profile-card";
 import { relativeTime } from "@/lib/relative-time";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { useUserProfile } from "@/lib/user-profile";
 import { userDisplayName } from "@/lib/user-profile-shared";
 import type { Familiar } from "@/lib/types";

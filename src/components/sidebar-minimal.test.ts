@@ -15,10 +15,10 @@ const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "
 // so their markup and chrome are pinned against the shared files, not this one.
 const railHeaderSource = readFileSync(new URL("./sidebar-rail-header.tsx", import.meta.url), "utf8");
 const railHeaderCss = readFileSync(new URL("../styles/globals/rail-header.css", import.meta.url), "utf8");
-const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
 // The Home/Code split itself — the sidebar reaches the registry only through
 // this module, so a committed artifact here breaks the rail just as badly.
-const navSection = readFileSync(new URL("../lib/nav-section.ts", import.meta.url), "utf8");
+const navSection = readFileSync(new URL("../lib/surfaces/nav-section.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 // The footer (Dashboard + Settings + version) lives in a shared component so it
 // stays identical when Chat replaces SidebarMinimal with WorkspaceSidebar.
@@ -134,7 +134,7 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{[\s\S]*navItemsForSection,[\s\S]*\} from "@\/lib\/nav-section"/,
+  /import \{[\s\S]*navItemsForSection,[\s\S]*\} from "@\/lib\/surfaces\/nav-section"/,
   "the sidebar consumes the shared registry's visible rows through the section split",
 );
 

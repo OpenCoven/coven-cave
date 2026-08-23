@@ -68,7 +68,7 @@ assert.match(
 // they drift and a field goes green on input the submit then rejects.
 assert.match(
   src,
-  /import \{[\s\S]{0,240}?projectSetupBlocked,[\s\S]{0,240}?\} from "@\/lib\/project-setup-validation"/,
+  /import \{[\s\S]{0,240}?projectSetupBlocked,[\s\S]{0,240}?\} from "@\/lib\/projects\/project-setup-validation"/,
   "field rules and the submit gate come from the shared validation module",
 );
 assert.match(

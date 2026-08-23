@@ -25,8 +25,8 @@ import { createPortal } from "react-dom";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { Icon } from "@/lib/icon";
 import { imageLabel, type ImageBlockDescriptor } from "@/lib/image-blocks";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 type Props = {
   images: ImageBlockDescriptor[];

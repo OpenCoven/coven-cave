@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { enqueueOfflineTravelItem, loadConfig } from "@/lib/cave-config";
-import { getCodexAutomation } from "@/lib/codex-automations";
-import { recordRun } from "@/lib/automation-runs";
+import { getCodexAutomation } from "@/lib/integrations/codex/codex-automations";
+import { recordRun } from "@/lib/automations/automation-runs";
 import { startAutomationRun } from "@/lib/server/automation-runner";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";

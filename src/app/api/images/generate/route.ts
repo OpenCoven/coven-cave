@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { resolveSecret } from "@/lib/vault";
+import { resolveSecret } from "@/lib/grimoire/vault";
 import { readJsonBody } from "@/lib/server/api-security";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import {

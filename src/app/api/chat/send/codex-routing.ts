@@ -5,7 +5,7 @@ import {
   type CodexEventSchema,
   type CodexRuntimeReport,
   type CodexSchemaSources,
-} from "../../../../lib/codex-compatibility.ts";
+} from "../../../../lib/integrations/codex/codex-compatibility.ts";
 
 /**
  * Fallback causes worth a one-line compatibility notice. `null` means the

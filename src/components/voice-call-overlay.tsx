@@ -6,8 +6,8 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat/chat-reply";
 import { getVoiceProvider } from "@/lib/voice/registry";
 import {
   applyFinal,

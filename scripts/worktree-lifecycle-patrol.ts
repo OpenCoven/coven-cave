@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   renderWorktreeLifecycleReport,
   summarizeWorktreeLifecycle,
-} from "../src/lib/worktree-lifecycle.ts";
+} from "../src/lib/projects/worktree-lifecycle.ts";
 import {
   acquireMaintenanceGate,
   createFenceRenewal,

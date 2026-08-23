@@ -7,7 +7,7 @@ const styles = readFileSync(
   "utf8",
 );
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const nextPaths = readFileSync(new URL("../lib/next-paths.ts", import.meta.url), "utf8");
+const nextPaths = readFileSync(new URL("../lib/projects/next-paths.ts", import.meta.url), "utf8");
 
 assert.match(
   styles,

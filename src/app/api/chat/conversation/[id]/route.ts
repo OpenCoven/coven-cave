@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { cleanModelId } from "@/lib/chat-model-state";
-import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
-import { cleanModelControlValues } from "@/lib/model-control-capabilities";
+import { cleanModelId } from "@/lib/chat/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime/runtime-models";
+import type { ChatResponseMetadata } from "@/lib/chat/chat-response-metadata";
+import { cleanModelControlValues } from "@/lib/runtime/model-control-capabilities";
 import {
   isSafeConversationSessionId,
   deleteConversation,
@@ -12,14 +12,14 @@ import {
   type ChatTurn,
   type ConversationFile,
 } from "@/lib/cave-conversations";
-import { linkedContextForSession } from "@/lib/chat-linked-context";
+import { linkedContextForSession } from "@/lib/chat/chat-linked-context";
 import { unlinkSessionFromCards } from "@/lib/cave-board";
-import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
+import { loadConversationFromJsonl } from "@/lib/openclaw/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import { normalizeTurnUsage, parseCostUsd } from "@/lib/usage-format";
-import { CHAT_ATTENTION_REASONS } from "@/lib/chat-attention-marker";
-import { isCanonicalIsoInstant } from "@/lib/chat-attention";
+import { CHAT_ATTENTION_REASONS } from "@/lib/chat/chat-attention-marker";
+import { isCanonicalIsoInstant } from "@/lib/chat/chat-attention";
 import {
   checkTurnBounds,
   sanitizeClientTurns,

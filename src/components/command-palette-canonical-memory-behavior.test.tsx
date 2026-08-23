@@ -13,13 +13,13 @@ const resources = vi.hoisted(() => ({
   loadCanonical: vi.fn(),
 }));
 
-vi.mock("@/lib/canonical-memory-resources", () => ({
+vi.mock("@/lib/memory/canonical-memory-resources", () => ({
   loadCanonicalMemoryList: resources.loadCanonical,
 }));
-vi.mock("@/lib/use-projects", () => ({
+vi.mock("@/lib/hooks/use-projects", () => ({
   useProjects: () => ({ projects: [] }),
 }));
-vi.mock("@/lib/use-focus-trap", () => ({
+vi.mock("@/lib/hooks/use-focus-trap", () => ({
   useFocusTrap: () => {},
 }));
 vi.mock("@/lib/datetime-format", () => ({

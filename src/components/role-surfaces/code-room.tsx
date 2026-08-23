@@ -34,7 +34,7 @@ import {
   getPendingCodeNavigation,
   subscribePendingCodeNavigation,
 } from "@/lib/pending-code-navigation";
-import type { RoleSurfaceContext } from "@/lib/role-surfaces";
+import type { RoleSurfaceContext } from "@/lib/familiars/role-surfaces";
 
 export function CodeRoom({ context }: { context: RoleSurfaceContext }) {
   const pendingOpen = useSyncExternalStore(

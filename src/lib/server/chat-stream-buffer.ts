@@ -9,7 +9,7 @@
 // (same exposure as chat-stop-registry and the PTY scrollback ring in
 // server.ts).
 
-import type { RunBufferStatus } from "@/lib/chat-stream-health";
+import type { RunBufferStatus } from "@/lib/chat/chat-stream-health";
 import type { StreamEvent } from "@/lib/stream-events";
 
 export type BufferedStreamEvent = {

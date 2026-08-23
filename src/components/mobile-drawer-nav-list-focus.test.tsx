@@ -20,14 +20,14 @@
 // nav/list-relevant slice — the exact `document.querySelector(".shell-nav-
 // panel"/".shell-list-panel")` ref-population-in-render-body plus the exact
 // `useFocusTrap(open === "nav"/"list", ...)` call shape — driven through the
-// REAL `useFocusTrap` hook (imported from "@/lib/use-focus-trap", never
+// REAL `useFocusTrap` hook (imported from "@/lib/hooks/use-focus-trap", never
 // reimplemented) via act() + real mount/update/cleanup. right-chat-panel.test.ts
 // separately pins that mobile-drawer.tsx's actual source still matches this
 // exact shape, so the two can't silently drift apart.
 import { useRef } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, test } from "vitest";
-import { resetFocusTrapStackForTest, useFocusTrap } from "@/lib/use-focus-trap";
+import { resetFocusTrapStackForTest, useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

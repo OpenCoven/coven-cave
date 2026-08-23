@@ -6,7 +6,7 @@ import {
   normalizeAbsoluteWorktreePath,
   type WorktreeLifecycleItem,
   type WorktreeRemoteRef,
-} from "../src/lib/worktree-lifecycle.ts";
+} from "../src/lib/projects/worktree-lifecycle.ts";
 import { collectWorktreeLifecycleInventory } from "./worktree-lifecycle-inventory.ts";
 import {
   createFenceRenewal,

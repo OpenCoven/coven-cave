@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type {
   FamiliarExecutionAnalyticsErrorResponse,
   FamiliarExecutionAnalyticsSuccessResponse,
-} from "@/lib/familiar-execution-analytics";
+} from "@/lib/familiars/familiar-execution-analytics";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readFamiliarExecutionAnalytics } from "@/lib/server/familiar-execution-analytics-source";
 

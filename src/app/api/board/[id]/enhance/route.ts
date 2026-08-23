@@ -13,7 +13,7 @@ import {
   boardAgenticProposalRecord,
   buildBoardAgenticContext,
   validateBoardAgenticRecommendation,
-} from "@/lib/board-agentic-enhance";
+} from "@/lib/board/board-agentic-enhance";
 import {
   applyBoardAgenticProposal,
   autoApplyBoardAgenticProposalBatch,
@@ -23,12 +23,12 @@ import {
   OrchestrationValidationError,
   revertBoardAgenticProposal,
 } from "@/lib/cave-board";
-import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
+import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/runtime/harness-adapters";
 import { resolveFamiliarWorkspace, runCovenOneShot } from "@/lib/server/coven-oneshot";
-import { extractRewrite } from "@/lib/reader-rewrite";
+import { extractRewrite } from "@/lib/reading/reader-rewrite";
 import { containsSecretText } from "@/lib/secret-redaction";
-import { cleanModelId } from "@/lib/chat-model-state";
-import { isModelAllowedByRuntime, runtimeModelIdForLaunch } from "@/lib/runtime-models";
+import { cleanModelId } from "@/lib/chat/chat-model-state";
+import { isModelAllowedByRuntime, runtimeModelIdForLaunch } from "@/lib/runtime/runtime-models";
 import { covenRunSupportsModel } from "@/app/api/chat/send/chat-send-capabilities";
 
 export const dynamic = "force-dynamic";

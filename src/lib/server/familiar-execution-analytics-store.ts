@@ -6,7 +6,7 @@ import {
   normalizeExecutionAttemptLedgerRecord,
   normalizeExecutionAttemptSnapshot,
   type ExecutionAttemptSnapshotV1,
-} from "../familiar-execution-analytics.ts";
+} from "../familiars/familiar-execution-analytics.ts";
 import { isValidFamiliarId } from "./familiar-id.ts";
 
 function ledgerDir(): string {

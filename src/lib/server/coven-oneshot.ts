@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 
 import { covenLaunchCommand, covenWrapperSpawnEnv } from "@/lib/coven-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { harnessSpawnEnv } from "@/lib/runtime/harness-spawn-env";
 import { familiarWorkspace } from "@/lib/coven-paths";
 
 /** A familiar id safe to pass as a CLI argument. */

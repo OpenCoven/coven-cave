@@ -6,7 +6,7 @@
 import type {
   ResearchGenerationScriptSegment,
   ResearchPodcastSpeaker,
-} from "@/lib/research-generations";
+} from "@/lib/research/research-generations";
 
 /** Consecutive segments sharing a speaker, so attribution prints once. */
 export type SpeakerRun = {

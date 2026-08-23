@@ -20,7 +20,7 @@ const chatView = await readFile(
   "utf8",
 );
 const renderedText = await readFile(
-  new URL("../../../../lib/chat-rendered-text.ts", import.meta.url),
+  new URL("../../../../lib/chat/chat-rendered-text.ts", import.meta.url),
   "utf8",
 );
 
@@ -37,12 +37,12 @@ function renderedTextAttentionPipeline() {
 test("route imports the attention marker parser", () => {
   assert.match(
     route,
-    /import \{[\s\S]*extractChatAttentionMarker[\s\S]*\} from "@\/lib\/chat-attention-marker";/,
+    /import \{[\s\S]*extractChatAttentionMarker[\s\S]*\} from "@\/lib\/chat\/chat-attention-marker";/,
     "the send route should parse explicit attention markers through the shared lib",
   );
   assert.match(
     route,
-    /import \{ splitReasoning \} from "@\/lib\/chat-reasoning";/,
+    /import \{ splitReasoning \} from "@\/lib\/chat\/chat-reasoning";/,
     "the send route should use the same hidden-reasoning semantics as ChatView",
   );
 });
@@ -154,7 +154,7 @@ test("existing response metadata fields are preserved through the conditional cl
 test("ChatView renders through the shared attention-aware text projection", () => {
   assert.match(
     chatView,
-    /extractChatRenderedText,[\s\S]*from "@\/lib\/chat-rendered-text";/,
+    /extractChatRenderedText,[\s\S]*from "@\/lib\/chat\/chat-rendered-text";/,
     "chat-view should use the shared rendered-text projection",
   );
   assert.match(

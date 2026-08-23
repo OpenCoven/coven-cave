@@ -2,7 +2,7 @@ import Foundation
 
 /// Native slash-command catalog for the iOS app.
 ///
-/// Mirrors the web/TUI vocabulary (`src/lib/slash-commands.ts` →
+/// Mirrors the web/TUI vocabulary (`src/lib/chat/slash-commands.ts` →
 /// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`
 /// or `/board` does the same thing on the phone as on the desktop.
 /// Aliases are first-class: `/h`, `/cls`, `/q` resolve to their canonical command.

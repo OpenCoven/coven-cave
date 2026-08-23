@@ -1,7 +1,7 @@
 import type { ConversationFile } from "../cave-conversations.ts";
 import type { FlowDoc } from "../flow/flow-doc.ts";
 import type { FlowRunRecord } from "../flows.ts";
-import type { AutomationRunRecord } from "../automation-runs.ts";
+import type { AutomationRunRecord } from "../automations/automation-runs.ts";
 import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import { daemonSessionAlreadyGone } from "./daemon-session-error.ts";
 import type { KnowledgeEntry } from "./knowledge-vault.ts";
@@ -12,8 +12,8 @@ import {
   researchKnowledgeEntry,
   type ResearchProvenance,
   validateResearchArtifactContent,
-} from "../research-artifact-contract.ts";
-import { buildResearchMissionFlow } from "../research-mission-flow.ts";
+} from "../research/research-artifact-contract.ts";
+import { buildResearchMissionFlow } from "../research/research-mission-flow.ts";
 import {
   allowedResearchActions,
   nextResearchIterationNumber,
@@ -30,7 +30,7 @@ import {
   type ResearchSourcePatch,
   type ResearchSourceRef,
   validateCreateResearchMissionInput,
-} from "../research-missions.ts";
+} from "../research/research-missions.ts";
 import {
   parseResearchSessionAuthority,
   type ResearchSessionAuthority,
@@ -89,7 +89,7 @@ export class ResearchMissionLaunchInputError extends Error {
 
 /**
  * Settled mission statuses — mirrors the settled set in
- * src/lib/research-missions.ts (researchBoundReadings): a mission in one of
+ * src/lib/research/research-missions.ts (researchBoundReadings): a mission in one of
  * these states must never be transitioned by background reconciliation.
  */
 const TERMINAL_RESEARCH_MISSION_STATUSES: ReadonlyArray<ResearchMission["status"]> = [
@@ -2143,19 +2143,19 @@ export function makeProductionResearchMissionRunner() {
       );
     },
     createAutomation: async (input) => {
-      const { createCodexAutomation } = await import("../codex-automations.ts");
+      const { createCodexAutomation } = await import("../integrations/codex/codex-automations.ts");
       return createCodexAutomation(input);
     },
     getAutomation: async (id) => {
-      const { getCodexAutomation } = await import("../codex-automations.ts");
+      const { getCodexAutomation } = await import("../integrations/codex/codex-automations.ts");
       return getCodexAutomation(id);
     },
     updateAutomation: async (id, patch) => {
-      const { updateCodexAutomation } = await import("../codex-automations.ts");
+      const { updateCodexAutomation } = await import("../integrations/codex/codex-automations.ts");
       return updateCodexAutomation(id, patch);
     },
     latestAutomationRun: async (id) => {
-      const { latestRun } = await import("../automation-runs.ts");
+      const { latestRun } = await import("../automations/automation-runs.ts");
       return latestRun(id);
     },
     readAutomationTranscript: async (run) => {
@@ -2232,7 +2232,7 @@ export function makeProductionResearchMissionRunner() {
     },
     checkFamiliarRootAccess: async (familiarId, projectRoot) => {
       const { assertProjectRootAccess, ProjectAccessDeniedError } = await import(
-        "../project-permissions.ts"
+        "../projects/project-permissions.ts"
       );
       try {
         await assertProjectRootAccess({ familiarId }, projectRoot, "session-launch", {

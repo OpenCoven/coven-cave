@@ -7,7 +7,7 @@ const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const githubTaskContext = readFileSync(new URL("../lib/workspace-github-task-context.ts", import.meta.url), "utf8");
+const githubTaskContext = readFileSync(new URL("../lib/projects/workspace-github-task-context.ts", import.meta.url), "utf8");
 
 assert.match(
   chatSurface,

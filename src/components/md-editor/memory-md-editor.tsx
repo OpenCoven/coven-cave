@@ -23,8 +23,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
-import { invalidateIfDefined } from "@/lib/surface-warm-cache";
-import { useMemoryFile } from "@/lib/use-memory-file";
+import { invalidateIfDefined } from "@/lib/surfaces/surface-warm-cache";
+import { useMemoryFile } from "@/lib/hooks/use-memory-file";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 

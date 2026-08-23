@@ -9,7 +9,7 @@
 // waiting on you inside that action instead of in a separate counter.
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import type { SurfaceBanner, SurfaceState } from "@/lib/weave-rail";
+import type { SurfaceBanner, SurfaceState } from "@/lib/grimoire/weave-rail";
 // Imported here rather than from globals.css so the sheet code-splits with the
 // two routes that use it (#3264 pattern) — it is ~22 KB the root layout would
 // otherwise carry on every page, and it pushed the root CSS over budget.

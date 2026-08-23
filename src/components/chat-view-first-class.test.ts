@@ -8,11 +8,11 @@ const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"
   .join("\n");
 // attachmentIcon (and fileToAttachment/isTextLike) moved to the shared lib so
 // the home composer can reuse the exact same capture + glyph logic.
-const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
+const attachmentsLib = readFileSync(new URL("../lib/chat/chat-attachments.ts", import.meta.url), "utf8");
 // The auto-grow routine moved to the shared hook (use-autogrow-textarea) so the
 // chat and home composers can't drift; the growth-behavior pins live against
 // the hook source, with call-site pins keeping both composers on it.
-const autogrowHook = readFileSync(new URL("../lib/use-autogrow-textarea.ts", import.meta.url), "utf8");
+const autogrowHook = readFileSync(new URL("../lib/hooks/use-autogrow-textarea.ts", import.meta.url), "utf8");
 const homeComposerSource = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 
 assert.match(

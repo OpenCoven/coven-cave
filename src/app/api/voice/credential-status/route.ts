@@ -1,4 +1,4 @@
-import { getSecretStatus } from "../../../../lib/vault.ts";
+import { getSecretStatus } from "../../../../lib/grimoire/vault.ts";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

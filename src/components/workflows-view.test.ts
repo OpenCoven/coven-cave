@@ -3,10 +3,10 @@ import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const client = readFileSync(new URL("../lib/workflows.ts", import.meta.url), "utf8");
+const mode = readFileSync(new URL("../lib/projects/workspace-mode.ts", import.meta.url), "utf8");
+const client = readFileSync(new URL("../lib/automations/workflows.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(workspace, /import \{ WorkflowsView \}/, "Workspace should not import the legacy Workflows page");
 assert.doesNotMatch(workspace, /mode === "workflows"/, "Workspace should not route to a Workflows page");

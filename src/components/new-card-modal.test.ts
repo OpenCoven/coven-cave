@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const modal = readFileSync(new URL("./new-card-modal.tsx", import.meta.url), "utf8");
-const projectFamiliars = readFileSync(new URL("../lib/use-project-familiars.ts", import.meta.url), "utf8");
+const projectFamiliars = readFileSync(new URL("../lib/hooks/use-project-familiars.ts", import.meta.url), "utf8");
 
 assert.ok(modal.includes('import { Button } from "@/components/ui/button"'), "new-card modal action buttons use the shared Button primitive");
 assert.ok(modal.includes('import { StandardSelect } from "@/components/ui/select"'), "new-card modal dropdowns use StandardSelect");

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { runBoundedAssist } from "@/lib/server/assist-runner";
-import { buildSkillDraftPrompt, parseSkillDraftOutput, SKILL_DRAFT_DESCRIPTION_MAX } from "@/lib/skill-draft";
+import { buildSkillDraftPrompt, parseSkillDraftOutput, SKILL_DRAFT_DESCRIPTION_MAX } from "@/lib/skills/skill-draft";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

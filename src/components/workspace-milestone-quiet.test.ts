@@ -28,7 +28,7 @@ assert.match(
 );
 
 const watcher = readFileSync(
-  new URL("../lib/use-milestone-watch.ts", import.meta.url),
+  new URL("../lib/hooks/use-milestone-watch.ts", import.meta.url),
   "utf8",
 );
 assert.match(
@@ -43,14 +43,14 @@ assert.match(
 );
 
 const memoryCountsUrl = new URL(
-  "../lib/canonical-memory-milestones.ts",
+  "../lib/memory/canonical-memory-milestones.ts",
   import.meta.url,
 );
 assert.ok(
   existsSync(fileURLToPath(memoryCountsUrl)),
   "canonical milestone count helper must exist",
 );
-const memoryCountsModule = "../lib/canonical-memory-milestones.ts";
+const memoryCountsModule = "../lib/memory/canonical-memory-milestones.ts";
 const { canonicalMemoryCountsForMilestones } = await import(memoryCountsModule);
 
 assert.equal(

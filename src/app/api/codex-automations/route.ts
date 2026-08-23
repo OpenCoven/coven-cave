@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createCodexAutomation, listCodexAutomations, toCodexAutomationPayload } from "@/lib/codex-automations";
+import { createCodexAutomation, listCodexAutomations, toCodexAutomationPayload } from "@/lib/integrations/codex/codex-automations";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";

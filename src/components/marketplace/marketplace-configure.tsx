@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { vaultStorageForValue } from "@/lib/vault-storage";
+import { vaultStorageForValue } from "@/lib/grimoire/vault-storage";
 
 type FieldStatus = {
   key: string;

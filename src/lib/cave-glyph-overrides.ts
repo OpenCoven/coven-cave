@@ -99,7 +99,7 @@ function writeRecent(next: string[]) {
 async function syncToDaemon(familiarId: string, glyph: string | null): Promise<void> {
   if (typeof window === "undefined") return;
   const { reportDaemonSyncFailure, reportDaemonSyncSuccess } = await import(
-    "./daemon-sync-status"
+    "./daemon/daemon-sync-status"
   );
   try {
     const res = await fetch(`/api/familiars/${encodeURIComponent(familiarId)}/icon`, {

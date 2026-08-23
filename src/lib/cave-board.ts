@@ -22,37 +22,37 @@ import {
   type TaskDependency,
   type TaskNextStep,
   type TaskOrchestrationAuditEntry,
-} from "@/lib/cave-board-types";
+} from "@/lib/board/cave-board-types";
 import {
   mergeLinksWithGitHub,
   mergeTaskGitHubLinks as mergeGitHubLinks,
   normalizeTaskGitHubLinks,
   taskGitHubLinkFromUrl,
-} from "@/lib/task-github";
+} from "@/lib/github/task-github";
 import {
   mergeLinksWithAsana,
   mergeTaskAsanaLinks as mergeAsanaLinks,
   normalizeTaskAsanaLinks,
   taskAsanaLinkFromUrl,
-} from "@/lib/task-asana";
-import { loadProjects, projectForRoot } from "@/lib/cave-projects";
+} from "@/lib/tasks/task-asana";
+import { loadProjects, projectForRoot } from "@/lib/projects/cave-projects";
 import {
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
-} from "@/lib/chat-attachments";
-import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+} from "@/lib/chat/chat-attachments";
+import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board/board-card-ops";
 import {
   buildBoardAgenticContext,
   validateBoardAgenticRecommendation,
-} from "@/lib/board-agentic-enhance";
+} from "@/lib/board/board-agentic-enhance";
 import { isAutoApplyAllowed } from "@/lib/agentic-recommendations";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
 import {
   assertValidOrchestration,
   dependenciesOf,
   validateOrchestration,
-} from "@/lib/task-orchestration";
+} from "@/lib/tasks/task-orchestration";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -76,8 +76,8 @@ export {
   type TaskDependency,
   type TaskNextStep,
   type TaskOrchestrationAuditEntry,
-} from "@/lib/cave-board-types";
-export { OrchestrationValidationError } from "@/lib/task-orchestration";
+} from "@/lib/board/cave-board-types";
+export { OrchestrationValidationError } from "@/lib/tasks/task-orchestration";
 
 const BOARD_PATH = path.join(caveHome(), "board.json");
 export const MAX_BOARD_AGENTIC_PROPOSALS = 16;

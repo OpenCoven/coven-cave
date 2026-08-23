@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadMessageFeedback, recordMessageFeedback } from "@/lib/server/message-feedback-store";
-import { rollupMessageFeedback } from "@/lib/message-feedback-rollup";
+import { rollupMessageFeedback } from "@/lib/chat/message-feedback-rollup";
 
 export const dynamic = "force-dynamic";
 

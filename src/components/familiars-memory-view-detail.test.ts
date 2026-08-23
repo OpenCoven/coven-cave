@@ -6,7 +6,7 @@ const source = [
   await readFile(new URL("./familiars-memory-files.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./familiars-memory-utils.ts", import.meta.url), "utf8"),
 ].join("\n");
-const hook = await readFile(new URL("../lib/use-memory-file.ts", import.meta.url), "utf8");
+const hook = await readFile(new URL("../lib/hooks/use-memory-file.ts", import.meta.url), "utf8");
 assert.match(hook, /path=\$\{encodeURIComponent\(path\)\}/,
   "the shared hook must URL-encode the requested path");
 assert.match(hook, /\/api\/memory\/file\?\$\{query\}/,

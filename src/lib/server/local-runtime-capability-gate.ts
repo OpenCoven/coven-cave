@@ -2,7 +2,7 @@ import type {
   DirectRunnerId,
   RuntimeAvailability,
   RuntimeRunnerId,
-} from "../runtime-availability.ts";
+} from "../runtime/runtime-availability.ts";
 
 export type LocalRuntimeCapabilityPlan = {
   runner: DirectRunnerId;

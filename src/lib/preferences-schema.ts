@@ -1,5 +1,5 @@
 import { FONT_OPTIONS } from "./font-catalog.ts";
-import { THEME_IDS } from "./theme-palettes.ts";
+import { THEME_IDS } from "./themes/theme-palettes.ts";
 import {
   isSelectableVoiceProviderId,
   type SelectableVoiceProviderId,

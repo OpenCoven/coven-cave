@@ -10,7 +10,7 @@ import {
   type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
 import { useShellBanners } from "@/lib/shell-banners";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { buildSafeToolDiagnostics } from "@/lib/about-diagnostics";
 import {
   openCovenToolActionLabel,

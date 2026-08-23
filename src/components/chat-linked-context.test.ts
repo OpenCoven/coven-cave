@@ -15,7 +15,7 @@ const linkedWork = await source(new URL("./composer-linked-work-actions.tsx", im
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const conversationRoute = await readFile(new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url), "utf8");
-const contextLib = await source(new URL("../lib/chat-linked-context.ts", import.meta.url));
+const contextLib = await source(new URL("../lib/chat/chat-linked-context.ts", import.meta.url));
 
 assert.match(
   contextLib,

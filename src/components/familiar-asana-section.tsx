@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { AsanaWorkspace, AsanaWorkspacesResponse } from "@/lib/asana-tasks";
 import { StandardSelect } from "@/components/ui/select";
-import { useArmedConfirm } from "@/lib/use-armed-confirm";
+import { useArmedConfirm } from "@/lib/hooks/use-armed-confirm";
 import {
   reportDaemonSyncFailure,
   reportDaemonSyncSuccess,
-} from "@/lib/daemon-sync-status";
+} from "@/lib/daemon/daemon-sync-status";
 
 /**
  * Familiar Studio → Brain → Asana. Connection and per-agent assignment live in

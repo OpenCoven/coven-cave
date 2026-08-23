@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 // Client half of the Board mirror-retention contract (cave-xddxs). The STORE is
-// the retention boundary — see src/lib/cave-board-retention.test.ts, which
+// the retention boundary — see src/lib/board/cave-board-retention.test.ts, which
 // exercises the real guard. These assertions pin the experience around it: both
 // removal paths preserve linked mirrors and say so, and undo goes through the
 // restore endpoint instead of re-creating cards.

@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 const view = await readFile(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
 const model = await readFile(new URL("./marketplace-view-model.ts", import.meta.url), "utf8");
 const builder = await readFile(new URL("./skill-builder.tsx", import.meta.url), "utf8");
-const format = await readFile(new URL("../../lib/skill-build-format.ts", import.meta.url), "utf8");
+const format = await readFile(new URL("../../lib/skills/skill-build-format.ts", import.meta.url), "utf8");
 
 // Section wiring in the hub.
 assert.match(model, /\{ id: "build", label: "Build", icon: "ph:flow-arrow" \}/, "Build is a first-class Marketplace section");
@@ -83,7 +83,7 @@ assert.match(builder, /aria-live="polite"/, "verdicts are announced politely");
 
 // Preview and writer must be the same artifact: the client imports the
 // shared formatter (client-safe module), never a server-only copy.
-assert.match(builder, /from "@\/lib\/skill-build-format"/, "the builder imports the shared client-safe formatter");
+assert.match(builder, /from "@\/lib\/skills\/skill-build-format"/, "the builder imports the shared client-safe formatter");
 assert.doesNotMatch(format, /node:fs|node:os|node:path|@\/lib\/server/, "the shared formatter stays client-safe");
 
 // ── Format button (cave-d00p) ───────────────────────────────────────────────

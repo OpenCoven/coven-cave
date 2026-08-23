@@ -5,7 +5,7 @@ import {
   RESEARCH_GENERATION_KINDS,
   RESEARCH_GENERATION_MEDIA_KINDS,
   RESEARCH_GENERATION_STATUSES,
-} from "../../lib/research-generations.ts";
+} from "../../lib/research/research-generations.ts";
 
 const tab = readFileSync(new URL("./research-tab-studio.tsx", import.meta.url), "utf8");
 const modals = readFileSync(new URL("./research-studio-modals.tsx", import.meta.url), "utf8");

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 
 const chip = readFileSync(new URL("./composer-git-chip.tsx", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const summary = readFileSync(new URL("../lib/use-changes-summary.ts", import.meta.url), "utf8");
+const summary = readFileSync(new URL("../lib/hooks/use-changes-summary.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/composer-git-chip.css", import.meta.url), "utf8");
 const pill = readFileSync(new URL("./composer-context-pill.tsx", import.meta.url), "utf8");
 

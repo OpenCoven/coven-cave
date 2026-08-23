@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 /**
  * The earlier-turns fold (cave-u5lq7, "Chat Session - Prototype.dc.html").
  *
- * The fold's model has unit tests (src/lib/chat-transcript-fold.test.ts) and the
+ * The fold's model has unit tests (src/lib/chat/chat-transcript-fold.test.ts) and the
  * wiring has source-text pins, but neither can tell you the control actually
  * works — a source pin asserts that code LOOKS a certain way and goes stale the
  * moment something is renamed. cave-oqawv had to repair five such pins in one

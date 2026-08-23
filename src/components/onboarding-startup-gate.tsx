@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { OnboardingOverlay } from "@/components/onboarding-bootstrap-overlay";
-import type { OnboardingBootstrapState } from "@/lib/onboarding-bootstrap";
+import type { OnboardingBootstrapState } from "@/lib/onboarding/onboarding-bootstrap";
 
 const WorkspaceApp = dynamic(
   () => import("@/components/workspace-app").then((module) => module.WorkspaceApp),

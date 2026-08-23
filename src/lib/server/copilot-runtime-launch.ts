@@ -1,10 +1,10 @@
-import { resolveCopilotLaunchCommand } from "../copilot-bin.ts";
-import { canonicalProbeSpawnEnv } from "../harness-spawn-env.ts";
+import { resolveCopilotLaunchCommand } from "../integrations/copilot/copilot-bin.ts";
+import { canonicalProbeSpawnEnv } from "../runtime/harness-spawn-env.ts";
 import {
   evaluateRuntimeAvailability,
   RUNTIME_AVAILABILITY_ERROR_CODES,
   type RuntimeAvailability,
-} from "../runtime-availability.ts";
+} from "../runtime/runtime-availability.ts";
 
 const COPILOT_LAUNCH_PHASE_TIMEOUT_MS = 2_500;
 

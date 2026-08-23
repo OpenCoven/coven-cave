@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { ProjectAccessLevel } from "@/lib/project-permissions";
+import type { ProjectAccessLevel } from "@/lib/projects/project-permissions";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
 /**

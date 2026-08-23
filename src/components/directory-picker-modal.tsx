@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/lib/icon";
 import {
   LOCAL_PROJECT_CREATION_MESSAGE,
   LOCAL_REQUEST_REQUIRED_CODE,
-} from "@/lib/project-errors";
+} from "@/lib/projects/project-errors";
 import {
   isPinned,
   readPins,

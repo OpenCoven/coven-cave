@@ -11,8 +11,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { resolveGitHubToken } from "@/lib/github-token";
-import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
+import { resolveGitHubToken } from "@/lib/github/github-token";
+import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github/github-review";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

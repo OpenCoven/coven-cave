@@ -7,8 +7,8 @@ const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", impor
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const chatAttentionEvents = await readFile(new URL("../lib/chat-attention-events.ts", import.meta.url), "utf8");
-const chatAttentionProjection = await readFile(new URL("../lib/chat-attention-projection.ts", import.meta.url), "utf8");
+const chatAttentionEvents = await readFile(new URL("../lib/chat/chat-attention-events.ts", import.meta.url), "utf8");
+const chatAttentionProjection = await readFile(new URL("../lib/chat/chat-attention-projection.ts", import.meta.url), "utf8");
 
 // ── Chat-mode shell wiring: Chats replaces the global nav in the primary shell
 //    nav slot, including the mobile nav drawer. ────────────────────────────────
@@ -123,7 +123,7 @@ assert.match(
 );
 assert.match(
   chatView,
-  /import \{\s*emitChatAttentionClear,\s*emitChatAttentionSettlement,\s*\} from "@\/lib\/chat-attention-events";/,
+  /import \{\s*emitChatAttentionClear,\s*emitChatAttentionSettlement,\s*\} from "@\/lib\/chat\/chat-attention-events";/,
   "chat-view should emit the shared attention clear/settlement events",
 );
 assert.match(
@@ -229,7 +229,7 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /import \{[\s\S]*createAdoptedAttentionSettlementRegistry,[\s\S]*createChatAttentionAdoptionTracker,[\s\S]*createChatAttentionSettlementTracker,[\s\S]*createExternallySettledGenerationRegistry,[\s\S]*\} from "@\/lib\/chat-attention-lifecycle";/,
+  /import \{[\s\S]*createAdoptedAttentionSettlementRegistry,[\s\S]*createChatAttentionAdoptionTracker,[\s\S]*createChatAttentionSettlementTracker,[\s\S]*createExternallySettledGenerationRegistry,[\s\S]*\} from "@\/lib\/chat\/chat-attention-lifecycle";/,
   "chat-view should import the shared chat-attention lifecycle helpers, including adopted-clear settlement ownership",
 );
 assert.match(
@@ -363,12 +363,12 @@ assert.match(
 );
 assert.match(
   workspace,
-  /import \{[\s\S]*applyChatAttentionProjections,[\s\S]*clearSessionAttentionRows,[\s\S]*\} from "@\/lib\/chat-attention-projection";/,
+  /import \{[\s\S]*applyChatAttentionProjections,[\s\S]*clearSessionAttentionRows,[\s\S]*\} from "@\/lib\/chat\/chat-attention-projection";/,
   "workspace should import the targeted clear alongside the retirement-capable apply",
 );
 assert.match(
   workspace,
-  /import \{[\s\S]*CHAT_ATTENTION_CLEAR_EVENT,[\s\S]*CHAT_ATTENTION_SETTLE_EVENT,[\s\S]*attentionClearFromEvent,[\s\S]*attentionClearedSessionId,[\s\S]*attentionSettlementFromEvent,[\s\S]*\} from "@\/lib\/chat-attention-events";/,
+  /import \{[\s\S]*CHAT_ATTENTION_CLEAR_EVENT,[\s\S]*CHAT_ATTENTION_SETTLE_EVENT,[\s\S]*attentionClearFromEvent,[\s\S]*attentionClearedSessionId,[\s\S]*attentionSettlementFromEvent,[\s\S]*\} from "@\/lib\/chat\/chat-attention-events";/,
   "workspace should subscribe to the shared attention clear/settlement events",
 );
 assert.match(

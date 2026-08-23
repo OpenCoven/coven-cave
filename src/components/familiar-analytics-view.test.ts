@@ -6,10 +6,10 @@ import {
   loadFamiliarAnalyticsData,
 } from "./familiar-analytics-data.ts";
 import { deriveScopedActivityCadence, withinWindow } from "../lib/analytics-window.ts";
-import { deriveThreadConfidence } from "../lib/thread-confidence.ts";
+import { deriveThreadConfidence } from "../lib/chat/thread-confidence.ts";
 import { deriveSignalTrends, snapshotFromReport } from "../lib/signal-trends.ts";
-import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/thread-self-report.ts";
-import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
+import { aggregateThreadSignals, buildThreadSignalReviewQueue, type ThreadSelfReport } from "../lib/chat/thread-self-report.ts";
+import { clearCanonicalMemoryResources } from "../lib/memory/canonical-memory-resources.ts";
 import type { SessionRow } from "../lib/types.ts";
 
 // The workbench is three files: the view owns loading, the content composes
@@ -561,7 +561,7 @@ describe("FamiliarAnalyticsView", () => {
   });
 
   it("synthesizes a plain-language needs-attention card in the dock", () => {
-    assert.match(dockSource, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiar-analytics-insight"/, "the dock uses the insight helper");
+    assert.match(dockSource, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiars\/familiar-analytics-insight"/, "the dock uses the insight helper");
     assert.match(
       dockSource,
       /deriveAnalyticsInsight\(model, healRequestCount, \{/,
@@ -708,7 +708,7 @@ describe("FamiliarAnalyticsView", () => {
     // deterministic rehabilitation brief. No confirm modal — direct launch.
     assert.match(
       source,
-      /import \{ buildRehabilitationBrief \} from "@\/lib\/familiar-rehabilitation";/,
+      /import \{ buildRehabilitationBrief \} from "@\/lib\/familiars\/familiar-rehabilitation";/,
       "content reuses the shared rehabilitation brief builder",
     );
     assert.match(
@@ -905,7 +905,7 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
   });
 
   it("keeps the page live with a pausable poll that never spams AT", () => {
-    assert.match(source, /import \{ usePausablePoll \} from "@\/lib\/use-pausable-poll"/);
+    assert.match(source, /import \{ usePausablePoll \} from "@\/lib\/hooks\/use-pausable-poll"/);
     assert.match(source, /usePausablePoll\(\(\) => void load\(\{ quiet: true, silent: true \}\), 60_000\)/, "background refresh every 60s, hidden-tab safe");
     assert.match(source, /if \(quiet && !silent\) announce\("Analytics refreshed\."\)/, "only manual refreshes announce");
   });

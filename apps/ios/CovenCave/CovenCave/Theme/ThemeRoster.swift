@@ -7,7 +7,7 @@ import SwiftUI
 /// resolved hex tokens, which the app then adopts in full fidelity on its next
 /// poll. So these swatches only need to be representative, not pixel-exact.
 ///
-/// SOURCE OF TRUTH: `src/lib/theme-palettes.ts` (`THEME_IDS` + `THEME_META`).
+/// SOURCE OF TRUTH: `src/lib/themes/theme-palettes.ts` (`THEME_IDS` + `THEME_META`).
 /// Names, blurbs, and accent hexes are copied verbatim from there. The two
 /// background hexes per theme are the sRGB resolution of that module's
 /// `bgDark` / `bgLight` (its `oklch(…)` values rasterised to `#RRGGBB`, since

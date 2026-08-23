@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { ImageCarousel } from "@/components/image-carousel";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useAuthedImageState } from "@/lib/authed-image";
-import { attachmentIcon, attachmentMediaKind, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat-attachments";
+import { attachmentIcon, attachmentMediaKind, chatAttachmentSrc, type ChatAttachment } from "@/lib/chat/chat-attachments";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 export function formatAttachmentBytes(size?: number): string {
   if (size == null) return "unknown";

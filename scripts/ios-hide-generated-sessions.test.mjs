@@ -1,5 +1,5 @@
 // iOS thread lists hide generated runs (cave-48aa) — parity with the web's
-// isGeneratedChatSession (src/lib/chat-projects.ts). Source pins on the Swift
+// isGeneratedChatSession (src/lib/chat/chat-projects.ts). Source pins on the Swift
 // files; the two rule sets must not drift apart.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ const appModel = readFileSync(
   new URL("../apps/ios/CovenCave/CovenCave/State/AppModel.swift", import.meta.url),
   "utf8",
 );
-const web = readFileSync(new URL("../src/lib/chat-projects.ts", import.meta.url), "utf8");
+const web = readFileSync(new URL("../src/lib/chat/chat-projects.ts", import.meta.url), "utf8");
 
 // The model decodes the provenance /api/sessions/list already serves.
 assert.match(models, /var origin: String\?/, "SessionRow decodes origin");

@@ -33,7 +33,7 @@ import {
   dividerOffset,
 } from "@/lib/split-snap";
 import { halfSplitGeometry, splitPresentation } from "@/lib/split-geometry";
-import { workspaceTileVariant } from "@/lib/workspace-tiles";
+import { workspaceTileVariant } from "@/lib/projects/workspace-tiles";
 
 export type DetailSplitTile = {
   id: string;

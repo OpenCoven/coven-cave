@@ -13,7 +13,7 @@ import "@/styles/cave-chat/thread-instruments.css";
 //     the caret tracks the reading position; ↑/↓ step events.
 //
 // Both derive everything from the SAME Turn[] the transcript renders (the
-// pure model in src/lib/chat-thread-instruments.ts) — no fetches — and both
+// pure model in src/lib/chat/chat-thread-instruments.ts) — no fetches — and both
 // live in the transcript's existing side gutters as overlays, so they add no
 // layout shift and simply stay home on panes too narrow to have gutters.
 
@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { Icon } from "@/lib/icon";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
-import type { Turn } from "@/lib/chat-turn-state";
+import type { Turn } from "@/lib/chat/chat-turn-state";
 import {
   spineSegmentHeights,
   spineNodes,
@@ -29,7 +29,7 @@ import {
   threadMapEvents,
   type SpineNode,
   type ThreadMapEvent,
-} from "@/lib/chat-thread-instruments";
+} from "@/lib/chat/chat-thread-instruments";
 
 /** Instruments need real side gutters: the reading column is ~860px, the
  *  spine wants 64px and the map 84px, so anything narrower than this keeps

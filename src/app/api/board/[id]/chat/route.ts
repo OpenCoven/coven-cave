@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { loadBoard, updateCard } from "@/lib/cave-board";
-import { loadProjects, projectById } from "@/lib/cave-projects";
-import { chatProjectAccessId } from "@/lib/chat-project-access";
+import { loadProjects, projectById } from "@/lib/projects/cave-projects";
+import { chatProjectAccessId } from "@/lib/chat/chat-project-access";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
-import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/harness-adapters";
-import { cleanModelId } from "@/lib/chat-model-state";
-import { isModelAllowedByRuntime } from "@/lib/runtime-models";
-import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
+import { canonicalHarnessId, isTrustedChatHarness } from "@/lib/runtime/harness-adapters";
+import { cleanModelId } from "@/lib/chat/chat-model-state";
+import { isModelAllowedByRuntime } from "@/lib/runtime/runtime-models";
+import { buildInitialTaskChatPrompt } from "@/lib/tasks/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   authorizeChatProjectLaunch,
@@ -17,9 +17,9 @@ import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
 import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
-import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/projects/project-permissions";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
-import { isSshRuntime } from "@/lib/familiar-runtime";
+import { isSshRuntime } from "@/lib/familiars/familiar-runtime";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested

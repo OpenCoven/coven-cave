@@ -1,8 +1,8 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
-import { buildChatUsagePlanSnapshot } from "../src/lib/chat-usage-plan";
+import { buildChatUsagePlanSnapshot } from "../src/lib/chat/chat-usage-plan";
 import { createDefaultPreferences } from "../src/lib/preferences-schema";
-import { catalogForRuntime, runtimeModelInventoryScope } from "../src/lib/runtime-models";
+import { catalogForRuntime, runtimeModelInventoryScope } from "../src/lib/runtime/runtime-models";
 
 const ISO = "2026-08-11T05:00:00.000Z";
 const PROJECT_ROOT = "/repo/alpha";

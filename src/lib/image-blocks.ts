@@ -19,7 +19,7 @@
  * src/components/image-carousel.tsx.
  */
 
-import { markdownCodeRanges } from "./github-blocks.ts";
+import { markdownCodeRanges } from "./github/github-blocks.ts";
 
 /** One picture in a deck. */
 export type ImageBlockDescriptor = {

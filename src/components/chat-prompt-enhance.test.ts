@@ -11,7 +11,7 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 const actionsMenu = readFileSync(new URL("./composer-actions-menu.tsx", import.meta.url), "utf8");
 
 assert.match(chatView, /const promptEnhance = usePromptEnhance\(\{/, "ChatView mounts the shared enhance hook");
-assert.match(chatView, /import \{ usePromptEnhance \} from "@\/lib\/use-prompt-enhance"/, "enhance goes through the shared model-backed hook");
+assert.match(chatView, /import \{ usePromptEnhance \} from "@\/lib\/hooks\/use-prompt-enhance"/, "enhance goes through the shared model-backed hook");
 assert.doesNotMatch(chatView, /fetch\("\/api\/prompt\/enhance"/, "enhance must not round-trip through the dead API route");
 assert.match(chatView, /mode: activeProjectRoot \? "code" : "chat"/, "enhance request is mode-aware for code/project chats");
 assert.match(chatView, /selectedFiles: \[\.\.\.mentionedFiles, \.\.\.attachments\.map\(\(attachment\) => attachment\.name\)\]/, "enhance request forwards mentioned and attached file context");

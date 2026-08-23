@@ -27,42 +27,42 @@ import {
   applyReadingLeading,
   readReadingLeading,
   type ReadingLeading,
-} from "@/lib/reading-leading";
+} from "@/lib/reading/reading-leading";
 import {
   DEFAULT_READING_TRACKING,
   READING_TRACKING_OPTIONS,
   applyReadingTracking,
   readReadingTracking,
   type ReadingTracking,
-} from "@/lib/reading-tracking";
+} from "@/lib/reading/reading-tracking";
 import {
   DEFAULT_READING_ALIGN,
   READING_ALIGN_OPTIONS,
   applyReadingAlign,
   readReadingAlign,
   type ReadingAlign,
-} from "@/lib/reading-align";
+} from "@/lib/reading/reading-align";
 import {
   DEFAULT_READING_WIDTH,
   READING_WIDTH_OPTIONS,
   applyReadingWidth,
   readReadingWidth,
   type ReadingWidth,
-} from "@/lib/reading-width";
+} from "@/lib/reading/reading-width";
 import {
   DEFAULT_READING_WEIGHT,
   READING_WEIGHT_OPTIONS,
   applyReadingWeight,
   readReadingWeight,
   type ReadingWeight,
-} from "@/lib/reading-weight";
+} from "@/lib/reading/reading-weight";
 import {
   DEFAULT_READING_HYPHENS,
   READING_HYPHENS_OPTIONS,
   applyReadingHyphens,
   readReadingHyphens,
   type ReadingHyphens,
-} from "@/lib/reading-hyphens";
+} from "@/lib/reading/reading-hyphens";
 import {
   CLOCK_LABEL,
   CLOCK_OPTIONS,

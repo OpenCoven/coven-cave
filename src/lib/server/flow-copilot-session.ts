@@ -18,7 +18,7 @@ import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { saveConversation, type ConversationFile } from "../cave-conversations.ts";
-import { formatToolInputValue, toPersistedTools, ToolCallTracker } from "../chat-tool-events.ts";
+import { formatToolInputValue, toPersistedTools, ToolCallTracker } from "../chat/chat-tool-events.ts";
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
@@ -26,8 +26,8 @@ import {
   CopilotTextAssembler,
   parseCopilotChatEvent,
   type CopilotStreamSpec,
-} from "../copilot-stream.ts";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+} from "../integrations/copilot/copilot-stream.ts";
+import { harnessSpawnEnv } from "../runtime/harness-spawn-env.ts";
 import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import {
   COVEN_PROCESS_SUPERVISOR_CONTROL_PREFIX,

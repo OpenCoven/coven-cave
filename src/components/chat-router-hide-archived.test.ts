@@ -25,7 +25,7 @@ assert.match(
 
 assert.match(
   source,
-  /from\s+["']@\/lib\/cave-familiar-archive["']/,
+  /from\s+["']@\/lib\/familiars\/cave-familiar-archive["']/,
   "chat-router should import the archive hook from cave-familiar-archive",
 );
 

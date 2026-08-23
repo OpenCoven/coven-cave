@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/lib/icon";
-import type { CaveProject } from "@/lib/cave-projects-types";
-import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
+import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "@/lib/github/github-repo-link";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 

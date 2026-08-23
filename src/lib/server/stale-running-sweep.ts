@@ -28,7 +28,7 @@
 import { callDaemon } from "@/lib/coven-daemon";
 import { hasActiveChatRun } from "@/lib/server/chat-stop-registry";
 import { parseDaemonTime } from "@/lib/server/stuck-created-sweep";
-import { sessionStatusTone } from "@/lib/session-status";
+import { sessionStatusTone } from "@/lib/chat/session-status";
 
 /** Minimal structural cut of the daemon session row the sweep reads. */
 export type StaleRunningRow = {

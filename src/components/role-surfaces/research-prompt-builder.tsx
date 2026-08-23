@@ -4,7 +4,7 @@
  * Prompt builder — the handoff's "Structure the question" dialog.
  *
  * Five stacked fields on the left, a live assembled preview plus coaching on
- * the right. Everything is pure text (src/lib/research-prompt-brief.ts); Apply
+ * the right. Everything is pure text (src/lib/research/research-prompt-brief.ts); Apply
  * hands the assembled prompt back to the composer, which owns the textarea.
  *
  * Opening it parses whatever is already in the composer, so a hand-typed
@@ -23,7 +23,7 @@ import {
   promptStrength,
   type ResearchBrief,
   type ResearchBriefKey,
-} from "@/lib/research-prompt-brief";
+} from "@/lib/research/research-prompt-brief";
 import { ResearchPromptStrengthMeter } from "./research-prompt-strength";
 
 type Props = {

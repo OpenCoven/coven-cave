@@ -12,8 +12,8 @@ import {
   provisionMobileAccessSecret,
   retireMobileAccessSecret,
 } from "@/lib/server/mobile-access-provision";
-import { signMobileAccessToken } from "@/lib/mobile-access-token";
-import { appTokenTtlMs } from "@/lib/mobile-token-refresh";
+import { signMobileAccessToken } from "@/lib/surfaces/mobile-access-token";
+import { appTokenTtlMs } from "@/lib/surfaces/mobile-token-refresh";
 import { ACCESS_TOKEN_COOKIE } from "@/proxy-helpers";
 import {
   buildPairingSteps,
@@ -29,7 +29,7 @@ import {
   tailscaleBin,
   tailscaleSpawnEnv,
   type PairingStep,
-} from "@/lib/mobile-handoff";
+} from "@/lib/surfaces/mobile-handoff";
 
 export const dynamic = "force-dynamic";
 

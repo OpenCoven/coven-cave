@@ -14,11 +14,11 @@ import { Button } from "@/components/ui/button";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MessageBubble } from "@/components/message-bubble";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
-import { parseHarnessFailure } from "@/lib/harness-failure";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { parseHarnessFailure } from "@/lib/runtime/harness-failure";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import { COVEN_RUN_STATUS, formatCovenDuration, type CovenRunAgent } from "@/lib/coven-run";
 import { unrecognizedCovenBlocks } from "@/lib/coven-raw-output";
-import type { NextPath } from "@/lib/next-paths";
+import type { NextPath } from "@/lib/projects/next-paths";
 
 /**
  * Tool activity: one quiet inset row, never a floating card.

@@ -3,7 +3,7 @@ import { Icon } from "@/lib/icon";
 import type {
   CanonicalMemoryRow,
   FileMemoryRow,
-} from "@/lib/memory-rows";
+} from "@/lib/memory/memory-rows";
 
 function formatBytes(n: number | undefined): string {
   if (!n || n < 0 || !Number.isFinite(n)) return "";

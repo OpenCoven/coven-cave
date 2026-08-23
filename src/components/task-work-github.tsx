@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
-import type { CardGitHubLink } from "@/lib/cave-board-types";
+import type { CardGitHubLink } from "@/lib/board/cave-board-types";
 
 type HydratedItem = {
   title: string;

@@ -8,7 +8,7 @@ import {
   resetClaudeCompatibilityCacheForTest,
   resolveInstalledClaudeCompatibility,
 } from "./claude-runtime-compatibility.ts";
-import { CLAUDE_COMPATIBILITY_PROFILES } from "../runtime-compatibility.ts";
+import { CLAUDE_COMPATIBILITY_PROFILES } from "../runtime/runtime-compatibility.ts";
 
 const compatibilitySource = await readFile(
   new URL("./claude-runtime-compatibility.ts", import.meta.url),

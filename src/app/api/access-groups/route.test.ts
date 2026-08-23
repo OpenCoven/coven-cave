@@ -6,7 +6,7 @@ const listRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8")
 const itemRoute = await readFile(new URL("./[id]/route.ts", import.meta.url), "utf8");
 const shared = await readFile(new URL("./access-groups-route-shared.ts", import.meta.url), "utf8");
 const permissions = await readFile(
-  new URL("../../../lib/project-permissions.ts", import.meta.url),
+  new URL("../../../lib/projects/project-permissions.ts", import.meta.url),
   "utf8",
 );
 

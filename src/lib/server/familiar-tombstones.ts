@@ -6,7 +6,7 @@ import {
   normalizeTombstones,
   pruneTombstones,
   type RemovedFamiliarTombstone,
-} from "@/lib/familiar-removal";
+} from "@/lib/familiars/familiar-removal";
 
 /**
  * ~/.coven/cave/removed-familiars.json — tombstones for removed familiars.

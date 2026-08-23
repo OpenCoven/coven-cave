@@ -11,7 +11,7 @@
  * list that reorders while you read it.
  */
 
-import type { ResearchArtifactRef, ResearchMission } from "@/lib/research-missions";
+import type { ResearchArtifactRef, ResearchMission } from "@/lib/research/research-missions";
 
 export type LibrarySort = "newest" | "oldest" | "title" | "state";
 

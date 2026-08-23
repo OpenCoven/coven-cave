@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { tailscaleBin, tailscaleSpawnEnv } from "../mobile-handoff.ts";
+import { tailscaleBin, tailscaleSpawnEnv } from "../surfaces/mobile-handoff.ts";
 
 export type TailscaleDevice = {
   name: string;

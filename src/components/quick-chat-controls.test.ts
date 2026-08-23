@@ -216,7 +216,7 @@ assert.match(
   "a new turn re-engages follow-along scrolling",
 );
 {
-  const hook = readFileSync(new URL("../lib/use-stick-to-bottom.ts", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("../lib/hooks/use-stick-to-bottom.ts", import.meta.url), "utf8");
   assert.match(hook, /e\.deltaY < 0 && stuckRef\.current && scrollable\(\)/, "wheel-up releases the stick");
   assert.match(hook, /clientHeight <= 4\) setStuck\(true\)/, "only the true bottom re-sticks");
   assert.match(hook, /cancelAnimationFrame\(pinFrameRef\.current\);[\s\S]{0,400}pinFrameRef\.current = null;/, "the rAF guard nulls on cancel (StrictMode wedge)");
@@ -282,7 +282,7 @@ assert.match(
 // composer footer is the drop target, the textarea takes paste-to-attach, and
 // the send strips the chip-row-local id before handing files to the hook.
 assert.ok(
-  source.includes('import { useAttachmentStaging } from "@/lib/use-attachment-staging"'),
+  source.includes('import { useAttachmentStaging } from "@/lib/hooks/use-attachment-staging"'),
   "quick chat stages files through the shared hook — no bespoke drag state",
 );
 assert.match(
@@ -351,7 +351,7 @@ assert.match(
 
 // ── The hook side of queueing + attachments (use-quick-chat) ─────────────────
 {
-  const hook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("../lib/hooks/use-quick-chat.ts", import.meta.url), "utf8");
   assert.match(
     hook,
     /if \(abortRef\.current\) \{[\s\S]*?queuedRef\.current = \[\.\.\.queuedRef\.current, item\]/,
@@ -439,7 +439,7 @@ assert.match(
     /modelControlsRef\.current = \{\};[\s\S]*?setModelOverrideState\(id\)/,
     "a model mutation clears controls synchronously so a stale capability cannot reach the first send",
   );
-  const stream = readFileSync(new URL("../lib/familiar-stream.ts", import.meta.url), "utf8");
+  const stream = readFileSync(new URL("../lib/familiars/familiar-stream.ts", import.meta.url), "utf8");
   assert.match(
     stream,
     /\.\.\.\(opts\.attachments\?\.length \? \{ attachments: opts\.attachments \} : \{\}\)/,

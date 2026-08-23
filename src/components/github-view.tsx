@@ -25,7 +25,7 @@ import {
   type PanelImperativeHandle,
 } from "react-resizable-panels";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
-import { useIsMobile } from "@/lib/use-viewport";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
 import { useAppPreferences } from "@/lib/app-preferences";
 import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
@@ -36,10 +36,10 @@ import {
   activityCountLabel,
   activityRetryAfterSeconds,
   mergeFailedActivityItems,
-} from "@/lib/github-activity";
+} from "@/lib/github/github-activity";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useArmedConfirm } from "@/lib/use-armed-confirm";
+import { useArmedConfirm } from "@/lib/hooks/use-armed-confirm";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -48,19 +48,19 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { StandardSelect } from "@/components/ui/select";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useCopy } from "@/lib/use-copy";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useCopy } from "@/lib/hooks/use-copy";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import type { Familiar } from "@/lib/types";
-import type { Card } from "@/lib/cave-board-types";
-import type { GitHubItem } from "@/lib/github-tasks";
-import type { GitHubItemTarget } from "@/lib/github-item-url";
-import { githubItemMatchesQuery } from "@/lib/github-search";
+import type { Card } from "@/lib/board/cave-board-types";
+import type { GitHubItem } from "@/lib/github/github-tasks";
+import type { GitHubItemTarget } from "@/lib/github/github-item-url";
+import { githubItemMatchesQuery } from "@/lib/github/github-search";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { DiffHunk } from "@/components/gh-diff-view";
 import { GhReviewActions } from "@/components/gh-review-actions";
 import { gfmAutolink } from "@/lib/gfm-autolink";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   GitHubActionPopover,
   type PopoverMode,
@@ -68,15 +68,15 @@ import {
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import { openExternalUrl } from "@/lib/open-external";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { useSurfacePreference } from "@/lib/surface-preferences";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
 import {
   invalidateSurfaceResources,
   readSurfaceResource,
   surfaceWarmupRetryAfterSeconds,
-} from "@/lib/surface-warmup-registry";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { useTrackedSurfaceValue } from "@/lib/use-surface-history";
+} from "@/lib/surfaces/surface-warmup-registry";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
+import { useTrackedSurfaceValue } from "@/lib/hooks/use-surface-history";
 import { GitHubStream } from "@/components/github-stream";
 import {
   deriveStage,
@@ -86,7 +86,7 @@ import {
   type GhSectionKey,
   type GhStreamEntry,
   type GhTone,
-} from "@/lib/github-stage";
+} from "@/lib/github/github-stage";
 import {
   GITHUB_PAT_URL, KIND_COLOR, KIND_DETAIL_LABEL, KIND_ICON,
   linkedCardsForItem, orgOf, useCards, useFamiliars,

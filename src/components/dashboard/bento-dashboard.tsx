@@ -4,27 +4,27 @@ import "@/styles/bento-dashboard.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildDashboardModel, type DashboardModel } from "@/lib/dashboard-model";
-import type { Card } from "@/lib/cave-board-types";
+import type { Card } from "@/lib/board/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { GitHubItem } from "@/lib/github-tasks";
+import type { GitHubItem } from "@/lib/github/github-tasks";
 import {
   activityCollectionsComplete,
   activityRetryAfterSeconds,
   type ActivityCollections,
-} from "@/lib/github-activity";
+} from "@/lib/github/github-activity";
 import type { InboxItem } from "@/lib/cave-inbox";
-import { covenStreak } from "@/lib/familiar-renown";
+import { covenStreak } from "@/lib/familiars/familiar-renown";
 import { relativeTime } from "@/lib/relative-time";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profile";
-import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
+import { useFamiliarContracts } from "@/lib/hooks/use-familiar-contracts";
 import {
   buildFamiliarCardStats,
   type CanonicalMemoryAvailability,
 } from "@/components/familiars-view-stats";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
+import { loadCanonicalMemoryList } from "@/lib/memory/canonical-memory-resources";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { useHeatTip } from "@/components/ui/heat-tip";
 import { formatHeatTip } from "@/lib/heat-tip";
@@ -47,7 +47,7 @@ import {
   streakPips,
   topCollaborators,
   type BoardEntry,
-} from "@/lib/bento-dashboard";
+} from "@/lib/surfaces/bento-dashboard";
 
 // ─── Client-fetched data (same source APIs as the rest of the cave) ───────────
 

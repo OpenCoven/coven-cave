@@ -5,12 +5,12 @@ import {
   normalizeExecutionAttemptSnapshot,
   type ExecutionAttemptSnapshotV1,
   type ExecutionModelSelection,
-} from "../familiar-execution-analytics.ts";
-import { canonicalHarnessId } from "../harness-adapters.ts";
+} from "../familiars/familiar-execution-analytics.ts";
+import { canonicalHarnessId } from "../runtime/harness-adapters.ts";
 import type {
   ModelControlFamily,
   ModelControlValues,
-} from "../model-control-capabilities.ts";
+} from "../runtime/model-control-capabilities.ts";
 import type { SessionOrigin } from "../types.ts";
 
 function text(value: unknown): string | undefined {

@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { AsanaItem } from "@/lib/asana-tasks";
-import { resolveSecret } from "@/lib/vault";
+import { resolveSecret } from "@/lib/grimoire/vault";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 
 export const dynamic = "force-dynamic";

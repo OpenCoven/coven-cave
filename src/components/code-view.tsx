@@ -50,12 +50,12 @@ import { CodeNewSession } from "@/components/code-new-session";
 import { CodeSourceContext } from "@/components/code-source-context";
 import { GithubOrganizationSettings } from "@/components/settings-github";
 import { SurfaceRail } from "@/components/ui/surface-rail";
-import type { GitHubItemTarget } from "@/lib/github-item-url";
+import type { GitHubItemTarget } from "@/lib/github/github-item-url";
 import type { PendingCodeOpen } from "@/lib/pending-code-open";
 import { codeTopTabForGitHubTarget, type PendingCodeNavigation } from "@/lib/pending-code-navigation";
 import type { SessionRow } from "@/lib/types";
-import { useIsMobile } from "@/lib/use-viewport";
-import { useMeasuredWidth } from "@/lib/use-measured-width";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
+import { useMeasuredWidth } from "@/lib/hooks/use-measured-width";
 
 // GitHubView keeps its own chunk: CodeView opens far more often than its
 // GitHub tabs, and github-view is a 3k-line surface (same split posture as

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server.js";
 import { parseProposalDecisionBody } from "@/lib/proposal-decision-body";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
-import { activeThreadsAdapter, httpStatusForEnvelope } from "@/lib/threads-adapters";
+import { activeThreadsAdapter, httpStatusForEnvelope } from "@/lib/chat/threads-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

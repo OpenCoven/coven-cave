@@ -1,5 +1,5 @@
 import type { CodeTopTab } from "./code-surface.ts";
-import type { GitHubItemTarget } from "./github-item-url.ts";
+import type { GitHubItemTarget } from "./github/github-item-url.ts";
 
 export type PendingCodeNavigation =
   | { kind: "tab"; topTab: CodeTopTab; nonce: number }

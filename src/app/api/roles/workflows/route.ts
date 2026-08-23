@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile, writeFile } from "node:fs/promises";
-import { parseRoleListField, setRoleListField } from "@/lib/role-manifest";
-import { discoverRoleFiles } from "@/lib/role-source";
+import { parseRoleListField, setRoleListField } from "@/lib/familiars/role-manifest";
+import { discoverRoleFiles } from "@/lib/familiars/role-source";
 
 export const dynamic = "force-dynamic";
 

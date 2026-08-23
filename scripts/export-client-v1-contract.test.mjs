@@ -12,7 +12,7 @@ import {
   renderClientV1ContractFixture,
 } from "./export-client-v1-contract.mjs";
 
-const gitAttributes = readFileSync(new URL("../.gitattributes", import.meta.url), "utf8");
+const gitAttributes = readFileSync(new URL("../../..", import.meta.url), "utf8");
 
 function runExporter(...args) {
   return spawnSync(process.execPath, ["scripts/export-client-v1-contract.mjs", ...args], {

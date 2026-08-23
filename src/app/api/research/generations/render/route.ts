@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isResearchGenerationMediaKind, isValidResearchGenerationFamiliarId } from "@/lib/research-generations";
+import { isResearchGenerationMediaKind, isValidResearchGenerationFamiliarId } from "@/lib/research/research-generations";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { queueResearchMediaGeneration } from "@/lib/server/research-media-jobs";
 import { listResearchGenerations } from "@/lib/server/research-generations";

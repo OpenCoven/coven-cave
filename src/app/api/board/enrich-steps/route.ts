@@ -13,13 +13,13 @@ import {
   type CardPriority,
   type CardStatus,
   type CardStep,
-} from "@/lib/cave-board-types";
-import { normalizeTaskGitHubLinks } from "@/lib/task-github";
+} from "@/lib/board/cave-board-types";
+import { normalizeTaskGitHubLinks } from "@/lib/github/task-github";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { runCovenOneShot, resolveFamiliarWorkspace } from "@/lib/server/coven-oneshot";
-import { isTrustedChatHarness } from "@/lib/harness-adapters";
+import { isTrustedChatHarness } from "@/lib/runtime/harness-adapters";
 import { stripAnsi } from "@/lib/ansi";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubToken } from "@/lib/github/github-token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

@@ -5,9 +5,9 @@ import dynamic from "next/dynamic";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
-import { getResearchMissionFile, type ResearchMissionFile } from "@/lib/research-mission-client";
-import type { ResearchArtifactKind, ResearchArtifactRef, ResearchMission } from "@/lib/research-missions";
+import { openGrimoireDoc } from "@/lib/grimoire/grimoire-link";
+import { getResearchMissionFile, type ResearchMissionFile } from "@/lib/research/research-mission-client";
+import type { ResearchArtifactKind, ResearchArtifactRef, ResearchMission } from "@/lib/research/research-missions";
 
 // The typeset reader is interaction-only and carries its own stylesheet; lazy
 // so its JS+CSS stay out of the researcher route's first-load bundle.

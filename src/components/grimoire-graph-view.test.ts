@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 const view = readFileSync(new URL("./grimoire-graph-view.tsx", import.meta.url), "utf8");
 
 // ── Rendering: hand-rolled canvas + the shared force sim ─────────────────────
-assert.match(view, /from "@\/lib\/grimoire-force"/, "layout comes from the shared force simulation lib");
+assert.match(view, /from "@\/lib\/grimoire\/grimoire-force"/, "layout comes from the shared force simulation lib");
 assert.match(view, /<canvas\b/, "the graph renders to a canvas (no diagram dep)");
 assert.match(view, /window\.devicePixelRatio/, "the canvas is DPR-aware");
 assert.match(view, /new ResizeObserver\(/, "the canvas resizes with its container");

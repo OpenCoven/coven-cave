@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "@/lib/cave-config";
-import { hasConfiguredSecretMetadata } from "@/lib/vault";
+import { hasConfiguredSecretMetadata } from "@/lib/grimoire/vault";
 import { readCraftDrafts } from "@/lib/server/craft-drafts";
 import {
   mergeCatalog,

@@ -12,7 +12,7 @@ import {
   type ManagedCreationException,
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
-} from "../src/lib/worktree-lifecycle.ts";
+} from "../src/lib/projects/worktree-lifecycle.ts";
 import {
   collectWorktreeLifecycleInventory,
   type OrphanedWorktreeMetadataRecord,

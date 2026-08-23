@@ -13,7 +13,7 @@ import type { InboxItem } from "./cave-inbox";
 import type { DailyReportBreakdown, DailyReportStats, RecentReport } from "./daily-report";
 import { dateSlug, isSameLocalDay } from "./daily-report.ts";
 import type { DailyReportPayload, MergedPr, SessionGroup } from "./daily-report-facts";
-import { repoFromGithubSubTag } from "./github-sub-tags.ts";
+import { repoFromGithubSubTag } from "./github/github-sub-tags.ts";
 
 // ── shapes ──────────────────────────────────────────────────────────────────
 

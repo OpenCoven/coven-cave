@@ -23,7 +23,7 @@ vi.mock("@/lib/open-system-browser", () => ({
   cancelSystemBrowserOpen: browserMocks.cancel,
   openSystemBrowser: browserMocks.open,
 }));
-vi.mock("@/lib/use-armed-confirm", () => ({
+vi.mock("@/lib/hooks/use-armed-confirm", () => ({
   useArmedConfirm: () => ({
     armed: false,
     trigger: (callback: () => void) => callback(),

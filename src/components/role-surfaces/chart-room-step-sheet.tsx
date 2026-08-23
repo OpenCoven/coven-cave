@@ -11,7 +11,7 @@
 
 import { useRef, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { ChartDot, ChartSelect, StateTag } from "./chart-room-parts";
 import {
   CHART_STAGES,

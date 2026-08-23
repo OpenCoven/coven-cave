@@ -9,7 +9,7 @@ import {
   projectAccessDeniedBody,
   projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
-import { ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { ProjectAccessDeniedError } from "@/lib/projects/project-permissions";
 
 export const dynamic = "force-dynamic";
 

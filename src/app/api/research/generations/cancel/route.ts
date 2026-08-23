@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isValidResearchGenerationFamiliarId } from "@/lib/research-generations";
+import { isValidResearchGenerationFamiliarId } from "@/lib/research/research-generations";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { cancelResearchMediaJob } from "@/lib/server/research-media-jobs";
 

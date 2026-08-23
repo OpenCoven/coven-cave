@@ -1,6 +1,6 @@
-import type { CaveProject } from "./cave-projects-types";
+import type { CaveProject } from "./projects/cave-projects-types";
 import type { Familiar } from "./types";
-import { projectForRoot } from "./chat-projects.ts";
+import { projectForRoot } from "./chat/chat-projects.ts";
 
 /**
  * The home composer uses the operator registry before familiar setup, then

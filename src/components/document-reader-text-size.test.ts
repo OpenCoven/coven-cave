@@ -19,7 +19,7 @@ import {
   saveScaleIndex,
   scaleForIndex,
   scaleLabel,
-} from "@/lib/reader-text-scale.ts";
+} from "@/lib/reading/reader-text-scale.ts";
 
 const doc: DocumentReaderDocument<Block, Block> = {
   title: "Shared document",

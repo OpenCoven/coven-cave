@@ -12,7 +12,7 @@ import {
   readPromptRecents,
   togglePromptFavorite,
 } from "@/lib/prompt-prefs";
-import type { PromptOption } from "@/lib/slash-prompt";
+import type { PromptOption } from "@/lib/chat/slash-prompt";
 import { SaveTemplateModal, broadcastPromptsRefresh } from "@/components/save-template-modal";
 
 const FALLBACK_ICON: IconName = "ph:chat-centered-text";

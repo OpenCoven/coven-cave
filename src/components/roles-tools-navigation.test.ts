@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
 const palette = await readFile(new URL("./command-palette.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
@@ -20,11 +20,11 @@ const rolesRoute = [
   await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8"),
   await readFile(new URL("../lib/server/role-entries.ts", import.meta.url), "utf8"),
 ].join("\n");
-const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const workspacePageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
+const workspaceMode = await readFile(new URL("../lib/projects/workspace-mode.ts", import.meta.url), "utf8");
+const workspacePageRegistry = await readFile(new URL("../lib/projects/workspace-page-registry.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
-const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
+const slashCommands = await readFile(new URL("../lib/chat/slash-commands.ts", import.meta.url), "utf8");
 
 // ── Roles + Marketplace are ONE merged hub surface ──────────────────────────
 // Owned inventory (Yours), the curated Skills preview, and Build live on a
@@ -76,7 +76,7 @@ assert.doesNotMatch(palette, /addons\?\.roles/, "The roles add-on gate is retire
 // helper (lib/sidebar-nav-state) that the sidebar derives every row from
 // imports it.
 const sidebarNavState = await readFile(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
-const workspaceModeLib = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const workspaceModeLib = await readFile(new URL("../lib/projects/workspace-mode.ts", import.meta.url), "utf8");
 assert.match(
   workspaceModeLib,
   /roles: "marketplace",\s*\n\s*capabilities: "marketplace",/,
@@ -140,7 +140,7 @@ assert.match(
   /initialSection === "roles" \|\| initialSection === "capabilities"\s*\? "browse"/,
   "'roles' and 'capabilities' deep links land on Yours",
 );
-assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/lib\/skill-directory"/, "hub consumes the canonical skill entry type for Yours");
+assert.match(marketplaceView, /import \{ type SkillBrowserEntry \} from "@\/lib\/skills\/skill-directory"/, "hub consumes the canonical skill entry type for Yours");
 assert.match(marketplaceView, /SkillExploreDrawer/, "hub mounts the owned-skill detail drawer");
 assert.doesNotMatch(marketplaceView, /CapabilitiesViewSurface|capabilities-view/, "the hub no longer imports or renders the Capabilities surface");
 assert.match(

@@ -12,7 +12,7 @@ import {
   covenLaunchCommand,
   type CovenLaunchCommand,
 } from "../coven-bin.ts";
-import { canonicalProbeSpawnEnv } from "../harness-spawn-env.ts";
+import { canonicalProbeSpawnEnv } from "../runtime/harness-spawn-env.ts";
 
 export const COVEN_PROCESS_SUPERVISOR_PROTOCOL = "coven.process-supervisor.v1";
 export const COVEN_PROCESS_SUPERVISOR_CONTROL_PREFIX = "COVEN_PROCESS_SUPERVISOR_V1 ";

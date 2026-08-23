@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 // separate async chunk and is only fetched when an uncommon selected glyph or
 // the picker itself needs it.
 import phFamiliarCore from "@/lib/ph-familiar-core.json";
-import { DEFAULT_FAMILIAR_GLYPH, type FamiliarGlyph as Glyph } from "@/lib/familiar-glyph";
+import { DEFAULT_FAMILIAR_GLYPH, type FamiliarGlyph as Glyph } from "@/lib/familiars/familiar-glyph";
 
 type PhosphorCollection = Parameters<typeof addCollection>[0] & {
   icons?: Record<string, unknown>;

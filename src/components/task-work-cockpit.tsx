@@ -9,10 +9,10 @@ import { WorkspaceRail } from "@/components/lazy-surfaces";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { WorkspaceRailSheet } from "@/components/workspace-rail-sheet";
 import { Icon } from "@/lib/icon";
-import { resolveTaskWorkTarget } from "@/lib/task-work-target";
+import { resolveTaskWorkTarget } from "@/lib/tasks/task-work-target";
 import { CHAT_VIEW_HANDOFF_SCOPE, releaseInitialPromptHandoff } from "@/lib/initial-prompt-handoff";
-import { useWorkspaceRailController } from "@/lib/use-workspace-rail-controller";
-import type { Card } from "@/lib/cave-board-types";
+import { useWorkspaceRailController } from "@/lib/hooks/use-workspace-rail-controller";
+import type { Card } from "@/lib/board/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type Props = {

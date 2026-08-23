@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { startLocalDaemonOperation } from "@/lib/daemon-start";
+import { startLocalDaemonOperation } from "@/lib/daemon/daemon-start";
 import {
   daemonDiagnosticContextFromRequest,
   DAEMON_DIAGNOSTIC_CORRELATION_HEADER,

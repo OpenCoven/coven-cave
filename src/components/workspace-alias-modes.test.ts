@@ -7,13 +7,13 @@
 // before a deep link can strand a user on the wrong surface.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { MODE_ALIASES } from "../lib/workspace-mode.ts";
+import { MODE_ALIASES } from "../lib/projects/workspace-mode.ts";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const urlState = readFileSync(new URL("../lib/workspace-url-state.ts", import.meta.url), "utf8");
+const urlState = readFileSync(new URL("../lib/projects/workspace-url-state.ts", import.meta.url), "utf8");
 const navState = readFileSync(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const navigation = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
 
 // ── Rewrite aliases: setMode replaces them, so `mode` never holds them ───────
 
@@ -124,7 +124,7 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /type WorkspaceNavMode,[\s\S]*from "@\/lib\/workspace-navigation"/,
+  /type WorkspaceNavMode,[\s\S]*from "@\/lib\/projects\/workspace-navigation"/,
   "the sidebar consumes the registry's mode type instead of declaring a component-local alias",
 );
 

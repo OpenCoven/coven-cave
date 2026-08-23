@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import type { ResearchGenerationScriptSegment } from "@/lib/research-generations";
+import type { ResearchGenerationScriptSegment } from "@/lib/research/research-generations";
 import { SPEAKER_LABEL, castOf, groupBySpeaker } from "@/lib/podcast-script";
 
 /**

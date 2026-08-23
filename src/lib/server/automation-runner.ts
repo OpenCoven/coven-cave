@@ -4,13 +4,13 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { covenHome } from "@/lib/coven-paths";
-import { harnessSpawnEnv } from "../harness-spawn-env.ts";
+import { harnessSpawnEnv } from "../runtime/harness-spawn-env.ts";
 import {
   codexAutomationLaunchCommand,
   codexBin,
   codexManagedPackageSpawnEnv,
   type CodexManagedPackage,
-} from "../codex-bin.ts";
+} from "../integrations/codex/codex-bin.ts";
 import { sanitizeAboutDiagnosticText } from "../about-diagnostics.ts";
 import { MAX_RUN_LOG_BYTES } from "./automation-log-paths.ts";
 import {
@@ -18,13 +18,13 @@ import {
   safeProcessErrorMessage,
   terminateProcessTree,
 } from "@/lib/process-execution";
-import type { CodexAutomation } from "@/lib/codex-automations-types";
+import type { CodexAutomation } from "@/lib/integrations/codex/codex-automations-types";
 import {
   recordRun,
   updateRun,
   hasRunningRun,
   type AutomationRunRecord,
-} from "@/lib/automation-runs.ts";
+} from "@/lib/automations/automation-runs.ts";
 
 const AUTOMATION_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 

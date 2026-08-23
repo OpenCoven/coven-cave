@@ -7,7 +7,7 @@ import { Modal } from "@/components/ui/modal";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { relativeTime } from "@/lib/relative-time";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { AttentionItem, WorkQueueItem } from "@/lib/beads-work-queue";
 import type { PullRequestSummary } from "@/lib/beads-pr-management";
 

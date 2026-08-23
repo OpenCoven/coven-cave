@@ -7,11 +7,11 @@ import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("./skill-stage-card.tsx", import.meta.url), "utf8");
-const renderedText = readFileSync(new URL("../lib/chat-rendered-text.ts", import.meta.url), "utf8");
+const renderedText = readFileSync(new URL("../lib/chat/chat-rendered-text.ts", import.meta.url), "utf8");
 
 assert.match(
   chatView,
-  /import \{ parseSkillInvocation \} from "@\/lib\/skill-blocks"/,
+  /import \{ parseSkillInvocation \} from "@\/lib\/skills\/skill-blocks"/,
   "chat-view imports the skill-blocks lib",
 );
 assert.match(

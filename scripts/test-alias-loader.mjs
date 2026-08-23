@@ -1,7 +1,7 @@
 // Module-resolution hook that teaches the bare `node --experimental-strip-types`
 // test runner about the project's `@/*` → `./src/*` path alias (see tsconfig.json
 // "paths"). Node doesn't read tsconfig, so colocated tests whose module graph
-// imports `@/...` (e.g. cave-config.ts → "@/lib/familiar-runtime") fail with
+// imports `@/...` (e.g. cave-config.ts → "@/lib/familiars/familiar-runtime") fail with
 // ERR_MODULE_NOT_FOUND. Register this via scripts/test-alias-register.mjs:
 //
 //   node --experimental-strip-types --import ./scripts/test-alias-register.mjs <test>

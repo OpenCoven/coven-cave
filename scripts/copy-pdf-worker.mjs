@@ -16,7 +16,7 @@
 // A missing or stale worker instead raises `UnknownErrorException` ("Setting
 // up fake worker failed") or a bare `Error` ("The API version … does not match
 // the Worker version"), both of which fall through to the generic
-// "Couldn't render this paper" banner in src/lib/research-paper-view.ts. The
+// "Couldn't render this paper" banner in src/lib/research/research-paper-view.ts. The
 // reader is told the paper is broken when the app's own asset is the problem.
 //
 // So the worker is now staged by `prebuild` as well, and both the staged copy

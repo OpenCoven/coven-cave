@@ -19,16 +19,16 @@ import {
   isRenameDueAtTurn,
   normalizeChatAutoRenamePolicy,
   renameTitleFromLatestExchange,
-} from "@/lib/chat-auto-rename";
+} from "@/lib/chat/chat-auto-rename";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
-} from "@/lib/chat-attachments";
+} from "@/lib/chat/chat-attachments";
 import type { SessionOrigin } from "@/lib/types";
-import { normalizeChatAttentionOperationId } from "@/lib/chat-attention";
-import { AssistantFilter } from "@/lib/chat-assistant-filter";
+import { normalizeChatAttentionOperationId } from "@/lib/chat/chat-attention";
+import { AssistantFilter } from "@/lib/chat/chat-assistant-filter";
 import {
   flattenToolResultContent,
   formatToolInputValue,
@@ -36,14 +36,14 @@ import {
   toolTextCorrection,
   toPersistedTools,
   ToolCallTracker,
-} from "@/lib/chat-tool-events";
+} from "@/lib/chat/chat-tool-events";
 import {
   COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC,
   covenLaunchCommand,
   covenWrapperSpawnEnv,
   type CovenLaunchCommand,
 } from "@/lib/coven-bin";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
+import { harnessSpawnEnv } from "@/lib/runtime/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   detectBuiltinAdapterConflict,
@@ -59,7 +59,7 @@ import {
   CopilotTextAssembler,
   isSafeCopilotResumeSessionId,
   parseCopilotChatEvent,
-} from "@/lib/copilot-stream";
+} from "@/lib/integrations/copilot/copilot-stream";
 import { prepareCopilotChatRouting } from "./copilot-routing";
 import {
   buildGrokBuildArgs,
@@ -68,31 +68,31 @@ import {
   grokSandboxProfileForPermission,
   grokShouldUseCliDefault,
   parseGrokStreamEvent,
-} from "@/lib/grok-build";
-import { grokLaunchCommand } from "@/lib/grok-bin";
+} from "@/lib/integrations/grok/grok-build";
+import { grokLaunchCommand } from "@/lib/integrations/grok/grok-bin";
 import {
   parseGrokCompatibilityEvent,
   probeGrokRunCapabilities,
   quarantineGrokSchema,
   redactedGrokEventFingerprint,
   resolveGrokCompatibility,
-} from "@/lib/grok-compatibility";
+} from "@/lib/integrations/grok/grok-compatibility";
 import {
   openCodeAvailabilityProbe,
   openCodeLaunch,
   openCodeSpawnEnv,
-} from "@/lib/opencode-bin";
+} from "@/lib/integrations/opencode/opencode-bin";
 import {
   codexAdapterFailureAvailability,
   probeCodexRuntimeAvailability,
-} from "@/lib/codex-runtime-availability";
+} from "@/lib/integrations/codex/codex-runtime-availability";
 import {
   codexProbeEnv,
   discoverCachedCodexRuntime,
   parseCodexStreamEvent,
   productionCodexSchemaSources,
-} from "@/lib/codex-compatibility";
-import { codexLaunchCommand } from "@/lib/codex-bin";
+} from "@/lib/integrations/codex/codex-compatibility";
+import { codexLaunchCommand } from "@/lib/integrations/codex/codex-bin";
 import { buildCodexExecArgs, prepareCodexChatRouting } from "./codex-routing";
 import {
   evaluateCovenBackedRuntimeAvailability,
@@ -106,26 +106,26 @@ import {
   type DirectRunnerId,
   type RuntimeAvailability,
   type RuntimeRunnerId,
-} from "@/lib/runtime-availability";
+} from "@/lib/runtime/runtime-availability";
 import {
   isModelAllowedByRuntime,
   modelForCaveFromRuntimeEcho,
   modelForRuntimeLaunch,
   runtimeModelIdForLaunch,
-} from "@/lib/runtime-models";
+} from "@/lib/runtime/runtime-models";
 import {
   quarantineOpenCodeSchema,
   redactedOpenCodeEventFingerprint,
   resolveOpenCodeCompatibility,
-} from "@/lib/opencode-compatibility";
-import { handleOpenCodeJsonLine } from "@/lib/opencode-stream";
+} from "@/lib/integrations/opencode/opencode-compatibility";
+import { handleOpenCodeJsonLine } from "@/lib/integrations/opencode/opencode-stream";
 import {
   hasUnsupportedClaudeToolFrame,
   isClaudeStreamJsonFrame,
   parseClaudeMessageEnvelope,
   parseClaudeTextOnlyEnvelope,
-} from "@/lib/claude-stream";
-import { redactedEventFingerprint } from "@/lib/runtime-compatibility";
+} from "@/lib/integrations/claude/claude-stream";
+import { redactedEventFingerprint } from "@/lib/runtime/runtime-compatibility";
 import {
   claudeCompatibilityDiagnostic,
   resolveInstalledClaudeCompatibility,
@@ -139,7 +139,7 @@ import {
   hermesResponsesUrl,
   isHermesInvalidPreviousResponseIdError,
   parseHermesResponsesEvent,
-} from "@/lib/hermes-responses-stream";
+} from "@/lib/integrations/hermes/hermes-responses-stream";
 import { redactSecretText, redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import { buildPromptWithDeliveryEvidenceContract } from "@/lib/delivery-evidence-contract";
@@ -163,7 +163,7 @@ import {
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
 import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
-import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { COMPATIBILITY_ADAPTERS } from "@/lib/runtime/harness-adapters";
 import { ensureAdapterManifestScaffold } from "@/lib/server/adapter-manifest-scaffold";
 import { probeCopilotCapability } from "@/lib/server/copilot-capability-probe";
 import { resolveCopilotRuntimeLaunch } from "@/lib/server/copilot-runtime-launch";
@@ -174,8 +174,8 @@ import {
 } from "@/lib/server/local-runtime-capability-gate";
 import { resolveRuntimeCompatibility } from "@/lib/server/runtime-compatibility-registry";
 import { resolveInferenceLaunchPlan } from "@/lib/server/inference-launch-plan";
-import { loadProjects } from "@/lib/cave-projects";
-import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat-project-access";
+import { loadProjects } from "@/lib/projects/cave-projects";
+import { chatProjectAccessId, taskWorktreeProjectAccessId } from "@/lib/chat/chat-project-access";
 import {
   authorizeChatProjectLaunch,
   ChatProjectLaunchError,
@@ -184,11 +184,11 @@ import {
 import { validateCaveProjectRoot } from "@/lib/server/project-paths";
 import { resolveRuntimeResourceRoots } from "@/lib/server/skill-scan";
 import { resolveBundledCopilotPluginDirs } from "@/lib/server/bundled-copilot-plugins";
-import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw-bin";
+import { openClawLaunchCommand, openClawSpawnEnv } from "@/lib/openclaw/openclaw-bin";
 import {
   dispatchOpenClawGatewayTurn,
   openClawGatewayPairedDeviceAuthStatus,
-} from "@/lib/openclaw-gateway";
+} from "@/lib/openclaw/openclaw-gateway";
 import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
@@ -200,8 +200,8 @@ import {
   openClawSessionKey,
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
-} from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/harness-adapters";
+} from "@/lib/openclaw/openclaw-bridge";
+import { isTrustedChatHarness, canonicalHarnessId } from "@/lib/runtime/harness-adapters";
 import {
   type ChatTurn,
   createConversationStub,
@@ -215,39 +215,39 @@ import {
   captureWorkBranch,
   cwdFromConversationRuntime,
 } from "@/lib/server/chat-work-branch";
-import { latestPrUrlFromText } from "@/lib/chat-pr-link";
-import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
+import { latestPrUrlFromText } from "@/lib/chat/chat-pr-link";
+import { buildResumeRetryPrompt } from "@/lib/chat/chat-history-fallback";
 import {
   cleanModelId,
   modelApplicationForHarness,
   modelApplicationFromRun,
   modelRejectionInError,
   type ChatModelState,
-} from "@/lib/chat-model-state";
+} from "@/lib/chat/chat-model-state";
 import {
   RuntimeScopeError,
   buildRuntimeAccessFingerprint,
   buildPromptWithRuntimeScope,
   resolveLocalRuntimeCwd,
   type RuntimeScope,
-} from "@/lib/chat-runtime-scope";
+} from "@/lib/chat/chat-runtime-scope";
 import {
   buildPromptWithBoundaryReminder,
   createBoundarySentinel,
   formatBoundaryNotice,
   recordBoundaryViolations,
-} from "@/lib/chat-boundary-sentinel";
+} from "@/lib/chat/chat-boundary-sentinel";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
   listAccessibleProjects,
-} from "@/lib/project-permissions";
-import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+} from "@/lib/projects/project-permissions";
+import type { ProjectAccessLevel } from "@/lib/projects/project-access-levels";
 import {
   buildTaskContext,
   buildTaskAwarePrompt,
   taskCardForSession,
-} from "@/lib/task-chat-context";
+} from "@/lib/tasks/task-chat-context";
 import {
   buildPromptWithFamiliarStartupContext,
   readFamiliarDailyMemoryStartupContext,
@@ -256,19 +256,19 @@ import {
 import {
   buildSshSpawnArgs,
   isSshRuntime,
-} from "@/lib/familiar-runtime";
-import { resolveRequestedRuntime, sshHostRegistry } from "@/lib/chat-hosts";
+} from "@/lib/familiars/familiar-runtime";
+import { resolveRequestedRuntime, sshHostRegistry } from "@/lib/chat/chat-hosts";
 import {
   parseCostUsd,
   parseStreamJsonUsage,
   type TurnUsage,
 } from "@/lib/usage-format";
-import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { ChatResponseMetadata } from "@/lib/chat/chat-response-metadata";
 import {
   extractChatAttentionMarker,
   extractIncompleteChatAttentionMarker,
-} from "@/lib/chat-attention-marker";
-import { splitReasoning } from "@/lib/chat-reasoning";
+} from "@/lib/chat/chat-attention-marker";
+import { splitReasoning } from "@/lib/chat/chat-reasoning";
 import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
@@ -306,7 +306,7 @@ import {
   promptOnlyModelControls,
   validateModelControlValues,
   type ModelControlValues,
-} from "@/lib/model-control-capabilities";
+} from "@/lib/runtime/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import {
   conversationCwd,

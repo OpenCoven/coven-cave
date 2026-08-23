@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { describeProviderChips, researchProviderChips } from "./research-studio-providers";
-import type { ResearchGenerationReadiness } from "@/lib/research-generations";
+import type { ResearchGenerationReadiness } from "@/lib/research/research-generations";
 
 function readiness(patch: Partial<ResearchGenerationReadiness> = {}): ResearchGenerationReadiness {
   return {

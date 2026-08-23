@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import type { Card } from "@/lib/cave-board-types";
+import type { Card } from "@/lib/board/cave-board-types";
 import type { Familiar } from "@/lib/types";
-import { parseBoardSearchQuery } from "@/lib/board-search";
+import { parseBoardSearchQuery } from "@/lib/board/board-search";
 
 /** A committed filter chip (key:value) shown inside the search field. */
 type Chip = { key: string; value: string };

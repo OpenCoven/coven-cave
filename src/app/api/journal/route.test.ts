@@ -37,7 +37,7 @@ assert.match(source, /conflict: true/, "the 409 body flags the conflict so the U
 // boundary no matter which client wrote it.
 assert.match(
   source,
-  /import \{ extractNextPaths \} from "@\/lib\/next-paths";/,
+  /import \{ extractNextPaths \} from "@\/lib\/projects\/next-paths";/,
   "the route uses the canonical next-paths extractor",
 );
 assert.match(

@@ -14,7 +14,7 @@ const captured = vi.hoisted(() => ({
   emptyRosterRenders: 0,
 }));
 
-vi.mock("@/lib/canonical-memory-resources", () => ({
+vi.mock("@/lib/memory/canonical-memory-resources", () => ({
   loadCanonicalMemoryList: async () => ({ state: "ready", entries: [] }),
   loadCanonicalMemoryOverview: async () => ({
     state: "error",
@@ -25,21 +25,21 @@ vi.mock("@/lib/canonical-memory-resources", () => ({
     overview: { state: "error", error: new Error("not needed") },
   }),
 }));
-vi.mock("@/lib/surface-warmup-registry", () => ({
+vi.mock("@/lib/surfaces/surface-warmup-registry", () => ({
   readSurfaceResource: async () => ({
     data: { ok: true, entries: [] },
   }),
 }));
-vi.mock("@/lib/use-pausable-poll", () => ({
+vi.mock("@/lib/hooks/use-pausable-poll", () => ({
   usePausablePoll: () => {},
 }));
 vi.mock("@/lib/datetime-format", () => ({
   useDateTimePrefs: () => {},
 }));
-vi.mock("@/lib/familiar-resolve", () => ({
+vi.mock("@/lib/familiars/familiar-resolve", () => ({
   useResolvedFamiliars: (familiars: unknown[]) => familiars,
 }));
-vi.mock("@/lib/surface-preferences", async () => {
+vi.mock("@/lib/surfaces/surface-preferences", async () => {
   const { useState } = await import("react");
   return {
     useSurfacePreference: (spec: { defaultValue: unknown }) =>

@@ -87,8 +87,8 @@ try {
   const { loadState, saveConfig } = await import("@/lib/cave-config");
   const { loadConversation, saveConversation } = await import("@/lib/cave-conversations");
   const { chatSummaryTitle, defaultChatTitleForSession } = await import("@/lib/cave-chat-titles");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { POST } = await import("./route.ts");
 
   const sessionId = "openclaw-resume-contract";

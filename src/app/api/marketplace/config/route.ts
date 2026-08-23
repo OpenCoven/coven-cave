@@ -13,7 +13,7 @@
 import { NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { getVaultMetadataStatuses, hasConfiguredSecretMetadata } from "@/lib/vault";
+import { getVaultMetadataStatuses, hasConfiguredSecretMetadata } from "@/lib/grimoire/vault";
 import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
 import { hasValidator } from "@/lib/secret-validators";
 import { resolveCatalogName, requiredConfigFor } from "./catalog-config";

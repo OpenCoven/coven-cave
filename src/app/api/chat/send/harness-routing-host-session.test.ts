@@ -6,14 +6,14 @@ import {
   IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE,
   MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
-} from "../../../../lib/chat-attachments.ts";
+} from "../../../../lib/chat/chat-attachments.ts";
 import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
   ToolCallTracker,
   toPersistedTools,
-} from "../../../../lib/chat-tool-events.ts";
+} from "../../../../lib/chat/chat-tool-events.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -28,7 +28,7 @@ const streamEvents = await readFile(
   "utf8",
 );
 const openclawBridge = await readFile(
-  new URL("../../../../lib/openclaw-bridge.ts", import.meta.url),
+  new URL("../../../../lib/openclaw/openclaw-bridge.ts", import.meta.url),
   "utf8",
 );
 const boardRoute = await readFile(
@@ -227,7 +227,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ openClawLaunchCommand, openClawSpawnEnv \} from "@\/lib\/openclaw-bin";/,
+  /import \{ openClawLaunchCommand, openClawSpawnEnv \} from "@\/lib\/openclaw\/openclaw-bin";/,
   "OpenClaw native chat should use the spawn-safe Windows-aware launcher",
 );
 assert.match(
@@ -596,13 +596,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/project-permissions";/,
+  /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/projects\/project-permissions";/,
   "Chat send should import the shared project-permission chokepoint",
 );
 
 assert.match(
   chatRoute,
-  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat-project-access";/,
+  /import \{ chatProjectAccessId, taskWorktreeProjectAccessId \} from "@\/lib\/chat\/chat-project-access";/,
   "Chat send should resolve exact, worktree, and Board handoff roots through the shared chat-project-access helpers",
 );
 

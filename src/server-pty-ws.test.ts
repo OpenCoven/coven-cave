@@ -163,7 +163,7 @@ assert.match(
 // construction, field ordering) so that a divergence between the two implementations
 // manifests as a CI failure rather than a silent security regression.
 {
-  const presenceSrc = readFileSync(new URL("../src/lib/passkey-presence.ts", import.meta.url), "utf8");
+  const presenceSrc = readFileSync(new URL("./lib/passkey-presence.ts", import.meta.url), "utf8");
 
   // Both files must agree on the version prefix.
   assert.match(src, /parts\[0\] !== "v1"/, "server.ts presence verifier checks for 'v1' prefix");
@@ -196,7 +196,7 @@ assert.match(
   assert.match(presenceSrc, /SHA-256/, "passkey-presence.ts also uses SHA-256");
 }
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
-// src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
+// src/lib/surfaces/mobile-access-token.ts), not the raw secret: the QR/deep-link
 // pairing flow mints them and the phone renews them monthly. The WS gate must
 // verify those or every paired terminal 401s while REST works fine.
 assert.match(

@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { highlightToHtml } from "@/components/message-bubble";
 import { splitHighlightedLines } from "@/lib/code-lines";
 import { diffLines, type LineDiffOp } from "@/lib/line-diff";

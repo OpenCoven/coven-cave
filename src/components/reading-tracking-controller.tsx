@@ -5,7 +5,7 @@ import {
   READING_TRACKING_KEY,
   applyReadingTracking,
   readReadingTracking,
-} from "@/lib/reading-tracking";
+} from "@/lib/reading/reading-tracking";
 
 /**
  * Applies the saved reading letter-spacing on load and keeps it in sync across

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { probeOnboardingPrerequisites } from "@/lib/server/onboarding-prerequisite-probes";
-import type { PrerequisiteCapability } from "@/lib/onboarding-prerequisites";
+import type { PrerequisiteCapability } from "@/lib/onboarding/onboarding-prerequisites";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

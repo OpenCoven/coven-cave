@@ -5,14 +5,14 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
-import type { CaveProject } from "@/lib/cave-projects-types";
-import { addChatProject, type CreateProjectOptions } from "@/lib/chat-add-project";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
+import { addChatProject, type CreateProjectOptions } from "@/lib/chat/chat-add-project";
 import {
   canPersistPendingFirstProjectAccessSnapshot,
   clearPendingFirstProjectAccessSnapshot,
   writePendingFirstProjectAccessSnapshot,
   type PendingFirstProjectAccessSnapshot,
-} from "@/lib/first-project-gate-retry";
+} from "@/lib/onboarding/first-project-gate-retry";
 import { isTauri } from "@/lib/tauri-platform";
 
 function pathBasename(p: string): string {

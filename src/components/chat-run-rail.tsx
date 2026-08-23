@@ -22,9 +22,9 @@ import {
   runRailModel,
   runRailTicks,
   type RunRailModel,
-} from "@/lib/chat-run-rail";
+} from "@/lib/chat/chat-run-rail";
 import { THREAD_INSTRUMENTS_MIN_WIDTH } from "@/components/chat-thread-instruments";
-import type { InstrumentTurn } from "@/lib/chat-thread-instruments";
+import type { InstrumentTurn } from "@/lib/chat/chat-thread-instruments";
 
 /** A live call's elapsed time moves every second. */
 const LIVE_TICK_MS = 1000;

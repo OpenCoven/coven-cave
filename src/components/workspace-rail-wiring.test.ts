@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const chat = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const task = await readFile(new URL("./task-work-cockpit.tsx", import.meta.url), "utf8");
-const controller = await readFile(new URL("../lib/use-workspace-rail-controller.ts", import.meta.url), "utf8");
+const controller = await readFile(new URL("../lib/hooks/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 
 assert.match(chat, /useWorkspaceRailController\(\{/);
 assert.match(task, /useWorkspaceRailController\(\{/);

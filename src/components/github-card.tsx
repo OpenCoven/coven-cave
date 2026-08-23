@@ -13,9 +13,9 @@ import dynamic from "next/dynamic";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { Icon, type IconName } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
-import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github/github-checks";
+import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github/github-blocks";
 
 // The composer keeps its own chunk. chat-view is in the `/` startup graph, so a
 // static import would drag gh-card-composer.css into the home first load for

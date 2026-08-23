@@ -8,7 +8,7 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const controls = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 // Quick-chat state + send logic lives in the shared useQuickChat hook — one
 // instance per tab, so every quick chat holds its own thread.
-const hook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+const hook = readFileSync(new URL("../lib/hooks/use-quick-chat.ts", import.meta.url), "utf8");
 const glassCss = readFileSync(new URL("../styles/quick-chat-glass.css", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../../src-tauri/src/window_geometry.rs", import.meta.url), "utf8");
 const tauriConf = readFileSync(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8");

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
-import { loadLocalWorkflowList } from "@/lib/workflow-source";
-import type { WorkflowListResponse } from "@/lib/workflows";
+import { loadLocalWorkflowList } from "@/lib/automations/workflow-source";
+import type { WorkflowListResponse } from "@/lib/automations/workflows";
 
 export const dynamic = "force-dynamic";
 

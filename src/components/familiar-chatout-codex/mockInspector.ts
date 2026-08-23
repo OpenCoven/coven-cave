@@ -1,4 +1,4 @@
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 
 export type EnvironmentInspectorData = {
   changes: number;

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import sharp from "sharp";
 
-import type { ResearchGenerationStat } from "../research-generations.ts";
+import type { ResearchGenerationStat } from "../research/research-generations.ts";
 import {
   COVEN_INFOGRAPHIC_RENDER_PALETTE,
   INFOGRAPHIC_WIDTH,

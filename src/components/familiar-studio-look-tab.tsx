@@ -5,8 +5,8 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { Modal } from "./ui/modal";
 import { FamiliarGlyphPickerPanel } from "./familiar-glyph-picker-panel";
-import { useFamiliarImages } from "@/lib/cave-familiar-images";
-import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
+import { useFamiliarImages } from "@/lib/familiars/cave-familiar-images";
+import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiars/familiar-image-upload";
 import { readAppPreferences } from "@/lib/app-preferences";
 import {
   isFamiliarBackdropOn,
@@ -23,9 +23,9 @@ import {
   setFamiliarOverride,
   clearFamiliarOverrideField,
   useFamiliarOverrides,
-} from "@/lib/cave-familiar-overrides";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { useArmedConfirm } from "@/lib/use-armed-confirm";
+} from "@/lib/familiars/cave-familiar-overrides";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
+import { useArmedConfirm } from "@/lib/hooks/use-armed-confirm";
 
 type ColorPreset = {
   label: string;

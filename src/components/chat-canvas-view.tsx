@@ -9,11 +9,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SearchInput } from "@/components/ui/search-input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { CanvasAddTile } from "@/components/canvas-add-tile";
 import { CanvasEditor } from "@/components/canvas-editor";
-import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
-import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
+import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas/canvas-artifacts";
+import { buildReactSrcDoc } from "@/lib/canvas/canvas-react-harness";
 import {
   filterCanvasArtifacts,
   formatArtifactWhen,
@@ -23,7 +23,7 @@ import {
   sortArtifactsForGallery,
   type CanvasArtifactSnapshotMutation,
   type CanvasKindFilter,
-} from "@/lib/canvas-gallery";
+} from "@/lib/canvas/canvas-gallery";
 
 // The Canvas tab: the gallery for sketches saved from chat ("Save to Canvas"
 // in the inline artifact viewer persists to ~/.coven/cave/canvas.json via

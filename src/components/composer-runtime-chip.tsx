@@ -22,7 +22,7 @@ import {
   RUNTIME_MODEL_CATALOG,
   runtimeOwnsModelDefault,
   type RuntimeModelOption,
-} from "@/lib/runtime-models";
+} from "@/lib/runtime/runtime-models";
 import { RuntimeLogo, runtimeDisplayName } from "@/components/runtime-logo";
 import "@/styles/composer-runtime-chip.css";
 

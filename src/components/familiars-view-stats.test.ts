@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { ACTIVITY_DAYS, buildFamiliarCardStats } from "./familiars-view-stats.ts";
-import { NO_CHAT_ATTENTION } from "../lib/chat-attention.ts";
+import { NO_CHAT_ATTENTION } from "../lib/chat/chat-attention.ts";
 import type { CanonicalMemorySummary } from "../lib/canonical-memory.ts";
 
 const NOW = Date.parse("2026-06-08T12:00:00.000Z");

@@ -141,8 +141,8 @@ try {
   refreshCovenBin();
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { requestChatStop } = await import("@/lib/server/chat-stop-registry");
   const { POST } = await import("./route.ts");
   await saveConfig({ familiars: { opal: { harness: "codex" } } });

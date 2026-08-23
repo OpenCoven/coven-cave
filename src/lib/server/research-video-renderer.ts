@@ -7,7 +7,7 @@ import sharp from "sharp";
 import type {
   ResearchGenerationStoryboardScene,
   ResearchMediaProvider,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import { LOCAL_TTS_MAX_CHARS } from "../voice/local-tts.ts";
 import type { ResearchMediaJobContext } from "./research-media-job-contract.ts";
 import { RESEARCH_AUDIO_MAX_BYTES } from "./research-media-store.ts";

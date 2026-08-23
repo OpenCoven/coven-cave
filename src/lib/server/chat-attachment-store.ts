@@ -7,7 +7,7 @@ import {
   MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_MEDIA_BYTES,
   MEDIA_EXT_BY_MIME,
-} from "../chat-attachments.ts";
+} from "../chat/chat-attachments.ts";
 import { caveHome } from "../coven-paths.ts";
 
 /**

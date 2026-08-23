@@ -39,7 +39,7 @@ import {
   type MentionableFamiliar,
   type RosterParticipant,
 } from "./group-chat.ts";
-import { createAttentionSafeTextAccumulator } from "./chat-attention-stream.ts";
+import { createAttentionSafeTextAccumulator } from "./chat/chat-attention-stream.ts";
 
 const ROSTER: MentionableFamiliar[] = [
   { id: "nova", name: "Nova" },

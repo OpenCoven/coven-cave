@@ -24,7 +24,7 @@ import {
   type BrowserNavigationRequest,
   type ExpectedBrowserNavigation,
 } from "@/lib/browser-navigation-queue";
-import { registerSurfaceHistoryDelegate } from "@/lib/surface-history";
+import { registerSurfaceHistoryDelegate } from "@/lib/surfaces/surface-history";
 import { TabFavicon } from "./browser-tab-favicon";
 import {
   HOME_URL,
@@ -37,8 +37,8 @@ import {
   saveRailPinned,
   type BrowserTab,
 } from "./browser-tab-state";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
 
 export type { BrowserTab } from "./browser-tab-state";
 

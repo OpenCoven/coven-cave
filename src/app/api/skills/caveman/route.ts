@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { runBoundedAssist } from "@/lib/server/assist-runner";
-import { buildSkillCavemanPrompt, SKILL_CAVEMAN_INSTRUCTIONS_MAX } from "@/lib/skill-caveman";
-import { MAX_SKILL_DESCRIPTION_CHARS, MAX_SKILL_NAME_CHARS } from "@/lib/skill-build-format";
-import { parseSkillDraftOutput } from "@/lib/skill-draft";
+import { buildSkillCavemanPrompt, SKILL_CAVEMAN_INSTRUCTIONS_MAX } from "@/lib/skills/skill-caveman";
+import { MAX_SKILL_DESCRIPTION_CHARS, MAX_SKILL_NAME_CHARS } from "@/lib/skills/skill-build-format";
+import { parseSkillDraftOutput } from "@/lib/skills/skill-draft";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

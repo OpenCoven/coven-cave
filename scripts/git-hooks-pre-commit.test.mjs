@@ -43,7 +43,7 @@ function runHook(repo) {
 
 {
   const repo = stagedRepo({
-    filePath: "src/lib/mobile-handoff.test.ts",
+    filePath: "src/lib/surfaces/mobile-handoff.test.ts",
     content: 'const url = "https://workstation.private-tailnet.ts.net/";\n',
   });
   const result = runHook(repo);
@@ -53,7 +53,7 @@ function runHook(repo) {
 
 {
   const repo = stagedRepo({
-    filePath: "src/lib/mobile-handoff.test.ts",
+    filePath: "src/lib/surfaces/mobile-handoff.test.ts",
     content: 'const url = "https://cave.tailnet.example.ts.net/";\n',
   });
   const result = runHook(repo);

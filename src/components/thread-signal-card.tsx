@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -18,7 +18,7 @@ import {
   type ThreadSelfReport,
   type ThreadSignalRow,
   type ThreadSignalScoreTile,
-} from "@/lib/thread-self-report";
+} from "@/lib/chat/thread-self-report";
 
 type ThreadSignalCardProps = {
   report: ThreadSelfReport;

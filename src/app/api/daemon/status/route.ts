@@ -12,10 +12,10 @@ import {
 } from "@/lib/coven-daemon";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
-import { classifyDaemonFailureAvailability } from "@/lib/daemon-status-classification";
+import { classifyDaemonFailureAvailability } from "@/lib/daemon/daemon-status-classification";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server/daemon-health-request";
-import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
+import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon/daemon-startup-contract";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
 import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
 import {

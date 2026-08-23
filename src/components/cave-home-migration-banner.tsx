@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useShellBanners } from "@/lib/shell-banners";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 
 type MigrationAction = "merge" | "keep-canonical" | "recover-legacy" | "defer";
 

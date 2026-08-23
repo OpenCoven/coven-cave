@@ -49,8 +49,8 @@ try {
     "utf8",
   );
 
-  const { loadProjects } = await import("./cave-projects.ts");
-  const { loadProjectPermissions } = await import("./project-permissions.ts");
+  const { loadProjects } = await import("./projects/cave-projects.ts");
+  const { loadProjectPermissions } = await import("./projects/project-permissions.ts");
 
   const projects = await loadProjects();
   assert.deepEqual(

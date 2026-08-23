@@ -298,7 +298,7 @@ assert.match(source, /runLogReqRef\.current \+= 1;\s*\n\s*setOpenRunId\(null\);/
 // on Escape, and restore focus to the opening row (useFocusTrap does return-focus).
 // role="dialog" + aria-labelledby name them; aria-modal is deliberately omitted
 // (desktop keeps the list as an interactive sibling; mobile hides it via display:none).
-assert.match(source, /import \{ useFocusTrap \} from "@\/lib\/use-focus-trap"/, "the surface uses the shared focus-trap hook");
+assert.match(source, /import \{ useFocusTrap \} from "@\/lib\/hooks\/use-focus-trap"/, "the surface uses the shared focus-trap hook");
 assert.equal(
   (source.match(/useFocusTrap\(true, panelRef, \{ onEscape: onClose \}\)/g) ?? []).length,
   2,

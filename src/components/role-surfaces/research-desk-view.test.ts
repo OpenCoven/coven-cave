@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ResearchMission } from "@/lib/research-missions";
+import type { ResearchMission } from "@/lib/research/research-missions";
 import {
   filterResearchMissionsByText,
   groupResearchMissions,

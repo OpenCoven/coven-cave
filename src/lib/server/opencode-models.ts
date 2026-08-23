@@ -3,10 +3,10 @@ import {
   openCodeAvailabilityProbe,
   openCodeLaunch,
   openCodeSpawnEnv,
-} from "@/lib/opencode-bin";
-import { parseOpenCodeModels } from "@/lib/opencode-models";
-import { evaluateRuntimeAvailability } from "@/lib/runtime-availability";
-import type { RuntimeModelOption } from "@/lib/runtime-models";
+} from "@/lib/integrations/opencode/opencode-bin";
+import { parseOpenCodeModels } from "@/lib/integrations/opencode/opencode-models";
+import { evaluateRuntimeAvailability } from "@/lib/runtime/runtime-availability";
+import type { RuntimeModelOption } from "@/lib/runtime/runtime-models";
 
 const MODEL_LIST_TIMEOUT_MS = 8_000;
 export const MAX_MODEL_LIST_OUTPUT_BYTES = 512 * 1024;

@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { FamiliarAnalyticsContent } from "@/components/familiar-analytics-content";
 // Surface CSS rides the component (not the global bundle) so it code-splits
 // out of the every-route root + home first load (cave-5rqi, per the CSS

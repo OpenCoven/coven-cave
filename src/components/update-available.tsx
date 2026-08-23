@@ -33,8 +33,8 @@ import {
   adoptNativeUpdateResult,
   nativeUpdateCoordinator,
 } from "@/lib/native-update-coordinator";
-import { updateCovenCli } from "@/lib/app-update-daemon";
-import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
+import { updateCovenCli } from "@/lib/daemon/app-update-daemon";
+import { readDaemonAutomation } from "@/lib/daemon/daemon-automation-pref";
 
 const BANNER_ID = "update-available";
 const DAEMON_ALIGNMENT_BANNER_ID = "daemon-release-alignment";

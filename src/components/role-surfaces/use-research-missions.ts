@@ -10,13 +10,13 @@ import {
   scheduleResearchMission,
   selectStableMission,
   setResearchAutomationStatus,
-} from "@/lib/research-mission-client";
+} from "@/lib/research/research-mission-client";
 import type {
   CreateResearchMissionInput,
   ResearchMission,
   ResearchMissionActionInput,
-} from "@/lib/research-missions";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+} from "@/lib/research/research-missions";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 
 export type ResearchMissionViewState = {
   missions: ResearchMission[];

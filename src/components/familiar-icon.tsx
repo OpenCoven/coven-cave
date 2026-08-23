@@ -6,9 +6,9 @@
 
 import type { Familiar } from "@/lib/types";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
-import { useFamiliarImages } from "@/lib/cave-familiar-images";
-import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
-import { resolveFamiliar } from "@/lib/familiar-resolve";
+import { useFamiliarImages } from "@/lib/familiars/cave-familiar-images";
+import { useFamiliarOverrides } from "@/lib/familiars/cave-familiar-overrides";
+import { resolveFamiliar } from "@/lib/familiars/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 
 export function FamiliarIcon({

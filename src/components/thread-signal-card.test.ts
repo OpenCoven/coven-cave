@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { topPersistentBlocker } from "@/lib/thread-self-report";
-import type { ThreadSelfReport } from "@/lib/thread-self-report";
+import { topPersistentBlocker } from "@/lib/chat/thread-self-report";
+import type { ThreadSelfReport } from "@/lib/chat/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signal-card.tsx", import.meta.url), "utf8");
 const styles = readFileSync(

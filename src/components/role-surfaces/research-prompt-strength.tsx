@@ -8,7 +8,7 @@
  * line carry the same information in text.
  */
 
-import type { ResearchPromptStrength } from "@/lib/research-prompt-brief";
+import type { ResearchPromptStrength } from "@/lib/research/research-prompt-brief";
 
 export function ResearchPromptStrengthMeter({
   strength,

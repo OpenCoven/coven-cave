@@ -6,11 +6,11 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import { fetchChangesSummary } from "@/lib/changes-summary-fetch";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { useChatDebugSnapshot } from "@/lib/chat/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { buildChangesReviewPrompt } from "@/lib/changes-review";
-import { checkpointLabel } from "@/lib/session-changes-format";
+import { checkpointLabel } from "@/lib/chat/session-changes-format";
 import {
   fetchSessionCheckpoints,
   fetchSessionFileDiff,
@@ -18,7 +18,7 @@ import {
   type ChangedFile,
   type CheckpointMeta,
   type DiffState,
-} from "@/lib/session-changes-api";
+} from "@/lib/chat/session-changes-api";
 import { isCodeRailFileViewed, type CodeRailViewedState } from "@/lib/code-side-rail";
 import { ChangesSkeleton, CheckpointSection, FileRow } from "./session-changes-rows";
 

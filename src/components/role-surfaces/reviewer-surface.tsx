@@ -13,7 +13,7 @@
 import "@/styles/review-deck.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
+import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github/github-review";
 import {
   localReviewRevision,
   localReviewWorkItem,
@@ -21,8 +21,8 @@ import {
   type ReviewWorkItem,
 } from "@/lib/review-landing";
 import { relativeTime } from "@/lib/relative-time";
-import type { RoleSurfaceContext } from "@/lib/role-surfaces";
-import { useRoleSurfaceState } from "@/lib/role-surface-state";
+import type { RoleSurfaceContext } from "@/lib/familiars/role-surfaces";
+import { useRoleSurfaceState } from "@/lib/familiars/role-surface-state";
 import {
   countedTotal,
   deckCaption,

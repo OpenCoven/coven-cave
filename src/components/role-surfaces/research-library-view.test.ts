@@ -8,7 +8,7 @@ import {
   paginateLibrary,
   sortLibraryEntries,
 } from "./research-library-view";
-import type { ResearchArtifactRef, ResearchMission } from "@/lib/research-missions";
+import type { ResearchArtifactRef, ResearchMission } from "@/lib/research/research-missions";
 
 type Entry = { artifact: ResearchArtifactRef; mission: ResearchMission };
 

@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Source pins for the thread pane wiring (threads-986.17.4, redesigned in
-// cave-f8rdi). Behavior is tested in src/lib/weave-rail.test.ts; these pins
+// cave-f8rdi). Behavior is tested in src/lib/grimoire/weave-rail.test.ts; these pins
 // hold the React layer to the §2.5-one-layer-up binding rule and the
 // derived-descriptor treatment.
 import assert from "node:assert/strict";

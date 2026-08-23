@@ -15,8 +15,8 @@ const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
 const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.meta.url), "utf8");
 const hook = readFileSync(new URL("./use-research-missions.ts", import.meta.url), "utf8");
-const clientLib = readFileSync(new URL("../../lib/research-mission-client.ts", import.meta.url), "utf8");
-const missionsLib = readFileSync(new URL("../../lib/research-missions.ts", import.meta.url), "utf8");
+const clientLib = readFileSync(new URL("../../lib/research/research-mission-client.ts", import.meta.url), "utf8");
+const missionsLib = readFileSync(new URL("../../lib/research/research-missions.ts", import.meta.url), "utf8");
 const surfaceCss = [
   "../../styles/globals/surface-role-workspaces.css",
   "../../styles/globals/surface-research-desk.css",
@@ -294,7 +294,7 @@ test("timestamps are relative and schedules read as prose, not raw data", () => 
   assert.match(ledger, /relativeTime\(artifact\.updatedAt\)/);
   // Detail must re-render on a minute tick so the running wall-clock reading
   // and relative stamps advance between mission polls (cave-2hdg).
-  assert.match(detail, /import \{ useMinuteTick \} from "@\/lib\/use-minute-tick"/);
+  assert.match(detail, /import \{ useMinuteTick \} from "@\/lib\/hooks\/use-minute-tick"/);
   assert.match(detail, /useMinuteTick\(\)/);
   // Uppercase/capitalize chrome must not distort the relative-time text.
   assert.match(surfaceCss, /\.research-mission-row__meta time \{[^}]*text-transform: none/);

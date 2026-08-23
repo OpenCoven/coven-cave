@@ -10,7 +10,7 @@ import {
   DAEMON_RELIABILITY_OUTCOMES,
   evaluateDaemonReliabilityBudgets,
   normalizeDaemonReliabilityMeasurement,
-} from "../src/lib/daemon-reliability.ts";
+} from "../src/lib/daemon/daemon-reliability.ts";
 
 const FIXTURE_KEYS = new Set([
   "schemaVersion",

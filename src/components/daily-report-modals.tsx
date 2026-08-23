@@ -21,7 +21,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import { itemHasTarget, itemHref } from "@/lib/daily-report";
 import { clockLabel, type Chapter, type DayModel } from "@/lib/daily-report-day";
 import { Icon, type IconName } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 import "@/styles/daily-report-modals.css";
 

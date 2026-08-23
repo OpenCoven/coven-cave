@@ -5,7 +5,7 @@ import {
   buildProfileCardViewModel,
   loadProfileCardData,
 } from "./profile-card-data.ts";
-import { clearCanonicalMemoryResources } from "../lib/canonical-memory-resources.ts";
+import { clearCanonicalMemoryResources } from "../lib/memory/canonical-memory-resources.ts";
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 

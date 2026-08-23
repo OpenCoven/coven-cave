@@ -4,7 +4,7 @@
 // clock-injected (nowMs) so it unit-tests exactly. The component owns the
 // fetch (use-dashboard-board) and the click handlers.
 
-import type { CardPriority, CardStatus } from "@/lib/cave-board-types";
+import type { CardPriority, CardStatus } from "@/lib/board/cave-board-types";
 import type { DashboardCard } from "@/components/home/use-dashboard-board";
 
 /** Row kinds the board renders (board columns minus "done", which is not open work). */

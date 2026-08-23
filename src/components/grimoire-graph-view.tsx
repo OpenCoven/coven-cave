@@ -28,10 +28,10 @@ import {
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import type { DocGraph, DocGraphNode, GraphEdgeType, GraphNodeKind } from "@/lib/grimoire-graph";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
+import type { DocGraph, DocGraphNode, GraphEdgeType, GraphNodeKind } from "@/lib/grimoire/grimoire-graph";
 import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
-import type { WikiDocRef } from "@/lib/wiki-link-resolve";
+import type { WikiDocRef } from "@/lib/reading/wiki-link-resolve";
 import {
   ALPHA_MIN,
   createForceSim,
@@ -44,7 +44,7 @@ import {
   unpinForceSimNode,
   type ForceParams,
   type ForceSim,
-} from "@/lib/grimoire-force";
+} from "@/lib/grimoire/grimoire-force";
 
 // ── Preferences (persisted) ──────────────────────────────────────────────────
 

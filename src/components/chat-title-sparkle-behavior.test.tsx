@@ -6,7 +6,7 @@ vi.mock("@/lib/icon", () => ({ Icon: () => <span /> }));
 vi.mock("@/lib/reasoning-visibility", () => ({
   useShowThinking: () => [false, vi.fn()],
 }));
-vi.mock("@/lib/thread-instruments-visibility", () => ({
+vi.mock("@/lib/chat/thread-instruments-visibility", () => ({
   useThreadInstrumentsVisible: () => [false, vi.fn()],
 }));
 vi.mock("@/components/project-picker", () => ({

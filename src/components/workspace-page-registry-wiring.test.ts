@@ -5,7 +5,7 @@ import { test } from "node:test";
 const source = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 test("workspace stores normalized split pane requests", () => {
-  assert.match(source, /import \{[\s\S]*normalizeWorkspacePaneRequest[\s\S]*workspacePaneRequestKey[\s\S]*\} from "@\/lib\/workspace-pane-request"/);
+  assert.match(source, /import \{[\s\S]*normalizeWorkspacePaneRequest[\s\S]*workspacePaneRequestKey[\s\S]*\} from "@\/lib\/projects\/workspace-pane-request"/);
   assert.match(source, /useState<WorkspacePaneRequest\[\]>\(\[\]\)/);
   assert.match(source, /normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), m\)/);
   assert.match(source, /addSecondaryWorkspaceTile\(prev, target, workspacePaneRequestKey\)/);

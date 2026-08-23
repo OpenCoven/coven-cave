@@ -13,7 +13,7 @@ assert.match(
   /usePausablePoll\(\(\) => setTick\(\(n\) => n \+ 1\), 60_000\)/,
   "TimeoutBadge re-renders once a minute through the shared pausable-poll hook",
 );
-assert.match(src, /import \{ usePausablePoll \} from "@\/lib\/use-pausable-poll"/, "TimeoutBadge uses the centralized hidden-pause poll");
+assert.match(src, /import \{ usePausablePoll \} from "@\/lib\/hooks\/use-pausable-poll"/, "TimeoutBadge uses the centralized hidden-pause poll");
 
 // ── GitHub-attach fetch drops stale / post-close responses ───────────────────
 assert.match(
@@ -35,7 +35,7 @@ assert.match(
 );
 
 // ── Inline-style motion respects prefers-reduced-motion (shared hook) ────────
-assert.match(src, /import \{ usePrefersReducedMotion \} from "@\/lib\/use-prefers-reduced-motion"/, "reduced-motion uses the canonical shared hook, not a local copy");
+assert.match(src, /import \{ usePrefersReducedMotion \} from "@\/lib\/hooks\/use-prefers-reduced-motion"/, "reduced-motion uses the canonical shared hook, not a local copy");
 assert.doesNotMatch(src, /function usePrefersReducedMotion\(\): boolean/, "the local reduced-motion duplicate is removed");
 assert.match(src, /transition: reducedMotion \? "none" : "width 0\.2s/, "the progress bar drops its transition under reduced motion");
 assert.match(src, /transition: reducedMotion \? "none" : "background 0\.15s"/, "the step checkbox drops its transition under reduced motion");

@@ -7,41 +7,41 @@ import { useCallback, useRef, useState } from "react";
 // this stylesheet is global-scoped, so importing it here makes the menu render
 // identically in the tray window (which never mounts the home composer).
 import "@/styles/home-composer.css";
-import type { CaveProject } from "@/lib/cave-projects-types";
-import { projectAccessLabel } from "@/lib/project-access-levels";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
+import { projectAccessLabel } from "@/lib/projects/project-access-levels";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { usePromptEnhance } from "@/lib/use-prompt-enhance";
-import { useReplyRecommendation, type ReplyRecommendationState } from "@/lib/use-reply-recommendation";
+import { usePromptEnhance } from "@/lib/hooks/use-prompt-enhance";
+import { useReplyRecommendation, type ReplyRecommendationState } from "@/lib/hooks/use-reply-recommendation";
 import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { IconButton } from "@/components/ui/icon-button";
-import { attachmentIcon, type ChatAttachment } from "@/lib/chat-attachments";
-import { useAttachmentStaging } from "@/lib/use-attachment-staging";
-import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/use-quick-chat";
-import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import { attachmentIcon, type ChatAttachment } from "@/lib/chat/chat-attachments";
+import { useAttachmentStaging } from "@/lib/hooks/use-attachment-staging";
+import type { QueuedQuickChatMessage, QuickChatMessage } from "@/lib/hooks/use-quick-chat";
+import { useInlineSlashMenus } from "@/lib/hooks/use-inline-slash-menus";
 import type {
   ModelControlCapability,
   ModelControlFamily,
   ModelControlValues,
-} from "@/lib/model-control-capabilities";
-import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
+} from "@/lib/runtime/model-control-capabilities";
+import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/hooks/use-runtime-model-options";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
-import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
-import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
+import { SLASH_COMMANDS, canonicalize } from "@/lib/chat/slash-commands";
+import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/chat/slash-model";
 import {
   buildSkillPrompt,
   formatSkillList,
   resolveSkillInvocation,
   type SkillOption,
-} from "@/lib/slash-skill";
+} from "@/lib/chat/slash-skill";
 import {
   formatPromptList,
   promptInsertion,
   resolvePromptArg,
   type PromptOption,
-} from "@/lib/slash-prompt";
+} from "@/lib/chat/slash-prompt";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import {
   FamiliarMark,

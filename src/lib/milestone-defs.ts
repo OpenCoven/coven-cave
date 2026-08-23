@@ -8,7 +8,7 @@
 // copy celebrates presence and never shames absence (no "you lost your
 // streak" items exist, by design).
 
-import type { RenownTierKey } from "@/lib/familiar-renown";
+import type { RenownTierKey } from "@/lib/familiars/familiar-renown";
 
 export type MilestoneAward = {
   /** Stable ledger key — awarded at most once, ever. */

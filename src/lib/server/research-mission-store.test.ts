@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ResearchMission } from "../research-missions.ts";
+import type { ResearchMission } from "../research/research-missions.ts";
 import {
   MAX_RESEARCH_FILE_BYTES,
   RESEARCH_SESSION_OWNER_WRITE_GRANT_DIAGNOSTIC,

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   ONBOARDING_BOOTSTRAP_BOUNDARIES,
   type OnboardingBootstrapState,
-} from "@/lib/onboarding-bootstrap";
+} from "@/lib/onboarding/onboarding-bootstrap";
 import {
   onboardingBootstrapStatus,
   startOrResumeOnboardingBootstrap,

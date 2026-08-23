@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { deleteProject, patchProject } from "@/lib/cave-projects";
-import { revokeAllGrantsForProject } from "@/lib/project-permissions";
-import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { deleteProject, patchProject } from "@/lib/projects/cave-projects";
+import { revokeAllGrantsForProject } from "@/lib/projects/project-permissions";
+import { normalizeGitHubRepoUrl } from "@/lib/github/github-repo-link";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
-} from "@/lib/project-root-guidance";
+} from "@/lib/projects/project-root-guidance";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";

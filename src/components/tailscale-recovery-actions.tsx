@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { openSystemBrowserUrl } from "@/lib/open-external";
-import type { PairingStep } from "@/lib/mobile-handoff";
+import type { PairingStep } from "@/lib/surfaces/mobile-handoff";
 import {
   launchTailscaleDesktopApp,
   pairingRecoveryFailureKind,

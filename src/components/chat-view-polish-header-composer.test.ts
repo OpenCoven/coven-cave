@@ -347,7 +347,7 @@ assert.match(
 );
 assert.match(
   sessionHeader,
-  /import \{ archiveAction, sessionMenuSections, voiceAction[\s\S]*?\} from "@\/lib\/chat-session-menu-model"/,
+  /import \{ archiveAction, sessionMenuSections, voiceAction[\s\S]*?\} from "@\/lib\/chat\/chat-session-menu-model"/,
   "Header actions derive their items/states from the pure chat-session-menu-model",
 );
 
@@ -830,7 +830,7 @@ assert.match(
 // cave-y7rg0: and a slash typed after prose completes too, whatever the
 // command — running an intent there discards the draft, and /clear wipes the
 // transcript with it. Behavior is covered in
-// src/lib/use-inline-slash-menus-behavior.test.tsx.
+// src/lib/hooks/use-inline-slash-menus-behavior.test.tsx.
 assert.match(
   slashBranch,
   /const commandOwnsDraft = \(activeInvocation\?\.start \?\? 0\) === 0;[\s\S]*\(!commandOwnsDraft \|\|/,

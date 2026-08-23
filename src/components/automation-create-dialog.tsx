@@ -1,21 +1,21 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import {
   RRULE_DAY_ORDER,
   RRULE_DAY_LABEL,
   buildCodexRrule,
   composeAutomationPrompt,
   type ScheduleMode,
-} from "@/lib/codex-automation-form";
+} from "@/lib/integrations/codex/codex-automation-form";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
 import { SkillSelect } from "@/components/automation-skill-select";
 import { CwdPickerField } from "@/components/cwd-picker-field";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { parseListInput } from "@/lib/automations/list-input";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import { CronPromptBar } from "@/components/cron-prompt-bar";
 import type { CronPromptUpdate } from "@/lib/cron-prompt";
 

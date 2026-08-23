@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 import { MOBILE_ACCESS_HEADER, TOKEN_HEADER } from "../../proxy-helpers.ts";
-import { LOCAL_REQUEST_REQUIRED_CODE } from "../project-errors.ts";
-import { signResearchMediaTicket } from "../research-media-ticket.ts";
+import { LOCAL_REQUEST_REQUIRED_CODE } from "../projects/project-errors.ts";
+import { signResearchMediaTicket } from "../research/research-media-ticket.ts";
 import { readJsonBody, rejectNonLocalRequest, rejectResearchMediaRequest } from "./api-security.ts";
 
 const ORIGINAL_SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN;

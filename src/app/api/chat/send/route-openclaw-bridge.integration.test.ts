@@ -147,8 +147,8 @@ async function waitForText(file, timeoutMs = 5_000) {
 try {
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { requestChatStop } = await import("@/lib/server/chat-stop-registry");
   const { POST } = await import("./route.ts");
   // OpenClaw owns model selection and cannot accept a Cave model override;

@@ -1,4 +1,4 @@
-import type { ResearchMission, ResearchMissionStatus } from "@/lib/research-missions";
+import type { ResearchMission, ResearchMissionStatus } from "@/lib/research/research-missions";
 
 const LIVE_RESEARCH_STATUSES: ReadonlySet<ResearchMissionStatus> = new Set([
   "queued",

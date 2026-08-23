@@ -8,7 +8,7 @@
 //
 // The shared component (harness-fix-actions.tsx) offers "Use <Adapter>"
 // switch buttons and "Copy fix command" for quoted `coven adapter …` lines;
-// the parse logic itself is unit-tested in src/lib/harness-failure.test.ts.
+// the parse logic itself is unit-tested in src/lib/runtime/harness-failure.test.ts.
 // Source-string assertions keep this guard light (home-composer.test.ts style).
 //
 import assert from "node:assert/strict";
@@ -47,7 +47,7 @@ import { readFile } from "node:fs/promises";
   const source = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
   assert.match(
     source,
-    /import \{ parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure \} from "@\/lib\/harness-failure"/,
+    /import \{ parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure \} from "@\/lib\/runtime\/harness-failure"/,
     "chat-view should parse harness failures (and auth failures, cave-f6ol) from the shared lib",
   );
   assert.match(

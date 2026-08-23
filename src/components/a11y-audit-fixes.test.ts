@@ -113,7 +113,7 @@ test("table lightbox traps Tab and restores focus to its trigger (CHAT-D11-02)",
   assert.match(fn, /event\.key !== "Tab"/, "keydown handler must intercept Tab");
   assert.match(fn, /querySelectorAll<HTMLElement>\(FOCUSABLE\)/, "trap must cycle the shared FOCUSABLE set");
   assert.match(fn, /\(event\.shiftKey \? last : first\)\.focus\(\);/, "escaped focus must be recaptured into the dialog");
-  assert.match(src, /import \{ FOCUSABLE \} from "@\/lib\/use-focus-trap";/);
+  assert.match(src, /import \{ FOCUSABLE \} from "@\/lib\/hooks\/use-focus-trap";/);
 });
 
 test("backdrop matchAccent switch carries its own accessible name (cave-rc09)", async () => {

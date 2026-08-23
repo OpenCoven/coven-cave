@@ -20,7 +20,7 @@ import path from "node:path";
 // fixture cannot make it disappear (missing) and execvp's PATH search skips a
 // planted non-executable candidate and finds the real install (EACCES race).
 // The missing classification and remediation copy are unit-covered in
-// src/lib/opencode-bin.test.ts; the route's no-spawn mechanics for
+// src/lib/integrations/opencode/opencode-bin.test.ts; the route's no-spawn mechanics for
 // runtime_missing and the post-gate spawn-failure race fallback are proven
 // behaviorally in route-runtime-availability.integration.test.ts (grok pins
 // its launch to an absolute path, so both failures are deterministic there),
@@ -102,8 +102,8 @@ try {
   refreshCovenBin();
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { POST } = await import("./route.ts");
   await saveConfig({ familiars: { opal: { harness: "opencode" } } });
   const project = await createProject({ name: "Preflight fixture", root: familiarWorkspace });

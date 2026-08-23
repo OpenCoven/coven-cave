@@ -44,7 +44,7 @@ for (const [file, label] of [
   ["./home-composer.tsx", "Home hero accent"],
   ["./workspace.tsx", "Workspace sr-only title fallback"],
   ["./settings-shell.tsx", "Settings pairing hint"],
-  ["../lib/gh-review-html.ts", "GH review export footer"],
+  ["../lib/github/gh-review-html.ts", "GH review export footer"],
 ]) {
   const src = readFileSync(new URL(file, import.meta.url), "utf8");
   assert.doesNotMatch(

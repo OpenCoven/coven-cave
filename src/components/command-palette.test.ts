@@ -154,7 +154,7 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/workspace-navigation"/,
+  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/projects\/workspace-navigation"/,
   "surface rows are built from the shared workspace navigation registry",
 );
 assert.match(

@@ -23,7 +23,7 @@
 import type { ReactNode } from "react";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
 export type SidebarRailHeaderProps = {

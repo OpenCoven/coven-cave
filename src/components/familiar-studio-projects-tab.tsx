@@ -11,8 +11,8 @@ import { SettingsGroup } from "@/components/ui/settings-group";
 import { Segmented } from "@/components/ui/settings-controls";
 import { ProjectSettingsModal } from "@/components/project-settings-modal";
 import { useAddProjectFlow } from "@/components/project-picker";
-import { useProjects } from "@/lib/use-projects";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useProjects } from "@/lib/hooks/use-projects";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import {
   accessLevelMeta,
@@ -38,7 +38,7 @@ import {
   type ConsoleProposal,
   type Tone,
 } from "@/lib/permissions-console";
-import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import type { ProjectAccessLevel } from "@/lib/projects/project-access-levels";
 
 /**
  * Which half of the protocol to render.

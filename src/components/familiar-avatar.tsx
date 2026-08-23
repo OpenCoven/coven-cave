@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
 import { AvatarLightbox } from "./ui/avatar-lightbox";
 import { useAuthedImageState } from "@/lib/authed-image";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 
 type Size = "sm" | "md" | "lg" | "xl";
 

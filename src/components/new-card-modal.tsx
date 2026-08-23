@@ -2,9 +2,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { useProjects } from "@/lib/use-projects";
-import { useProjectFamiliars } from "@/lib/use-project-familiars";
-import { isProjectPickerReady } from "@/lib/project-scope";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { useProjectFamiliars } from "@/lib/hooks/use-project-familiars";
+import { isProjectPickerReady } from "@/lib/projects/project-scope";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { PropertyPill } from "@/components/ui/property-pill";
@@ -14,8 +14,8 @@ import {
   PRIORITIES,
   type CardPriority,
   type CardStatus,
-} from "@/lib/cave-board-types";
-import { useIsCoarsePointer } from "@/lib/use-viewport";
+} from "@/lib/board/cave-board-types";
+import { useIsCoarsePointer } from "@/lib/hooks/use-viewport";
 
 export type NewCardDraft = {
   title: string;

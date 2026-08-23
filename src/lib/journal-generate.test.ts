@@ -38,7 +38,7 @@ import { buildReflectionPrompt, generateReflection } from "./journal-generate.ts
   const source = await readFile(new URL("./journal-generate.ts", import.meta.url), "utf8");
   assert.match(
     source,
-    /import \{ extractNextPaths \} from "@\/lib\/next-paths";/,
+    /import \{ extractNextPaths \} from "@\/lib\/projects\/next-paths";/,
     "uses the canonical (streaming-safe) next-paths extractor",
   );
   assert.match(

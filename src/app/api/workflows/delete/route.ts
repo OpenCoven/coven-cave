@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteLocalWorkflow } from "@/lib/workflow-source";
+import { deleteLocalWorkflow } from "@/lib/automations/workflow-source";
 
 export const dynamic = "force-dynamic";
 

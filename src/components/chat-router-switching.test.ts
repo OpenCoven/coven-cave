@@ -103,7 +103,7 @@ assert.match(
 
 const workspaceSource = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurfaceSource = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-const workspaceUrlStateSource = readFileSync(new URL("../lib/workspace-url-state.ts", import.meta.url), "utf8");
+const workspaceUrlStateSource = readFileSync(new URL("../lib/projects/workspace-url-state.ts", import.meta.url), "utf8");
 
 const hashSyncEffect =
   source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[syncUrlHash, view\]\);/)?.[0] ?? "";

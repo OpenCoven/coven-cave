@@ -27,8 +27,8 @@ import {
   createSentenceChunker,
   type SpeechBrain,
 } from "./speech-loop.ts";
-import { streamFamiliarText } from "../familiar-stream.ts";
-import { extractNextPaths } from "../next-paths.ts";
+import { streamFamiliarText } from "../familiars/familiar-stream.ts";
+import { extractNextPaths } from "../projects/next-paths.ts";
 import { resolvePreferredEars } from "./native-stt.ts";
 import {
   createLocalTtsMouth,

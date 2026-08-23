@@ -15,8 +15,8 @@ import { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
-import { streamFamiliarText } from "@/lib/familiar-stream";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import { streamFamiliarText } from "@/lib/familiars/familiar-stream";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
 import type { Familiar } from "@/lib/types";
 
 type Phase = { kind: "idle" } | { kind: "provisioning" } | { kind: "starting" } | { kind: "error"; message: string };

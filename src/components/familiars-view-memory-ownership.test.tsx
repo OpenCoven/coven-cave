@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { FamiliarsView } from "./familiars-view";
-import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
+import { CanonicalMemoryRequestError } from "@/lib/memory/canonical-memory-client";
 
 const resources = vi.hoisted(() => ({
   readFiles: vi.fn(),
@@ -26,17 +26,17 @@ const captured = vi.hoisted(() => ({
 }));
 const preferenceSetter = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/canonical-memory-resources", () => ({
+vi.mock("@/lib/memory/canonical-memory-resources", () => ({
   loadCanonicalMemoryList: resources.loadList,
   loadCanonicalMemoryOverview: resources.loadOverview,
   refreshCanonicalMemory: resources.refresh,
 }));
 
-vi.mock("@/lib/surface-warmup-registry", () => ({
+vi.mock("@/lib/surfaces/surface-warmup-registry", () => ({
   readSurfaceResource: resources.readFiles,
 }));
 
-vi.mock("@/lib/use-pausable-poll", () => ({
+vi.mock("@/lib/hooks/use-pausable-poll", () => ({
   usePausablePoll: (callback: () => void) => {
     const slot = polls.invocations % 2;
     polls.invocations += 1;
@@ -48,11 +48,11 @@ vi.mock("@/lib/datetime-format", () => ({
   useDateTimePrefs: () => {},
 }));
 
-vi.mock("@/lib/familiar-resolve", () => ({
+vi.mock("@/lib/familiars/familiar-resolve", () => ({
   useResolvedFamiliars: (familiars: unknown[]) => familiars,
 }));
 
-vi.mock("@/lib/surface-preferences", () => ({
+vi.mock("@/lib/surfaces/surface-preferences", () => ({
   useSurfacePreference: (spec: { key: string; defaultValue: unknown }) => {
     if (spec.key === "familiars.selectedId") {
       return ["salem", preferenceSetter, true];

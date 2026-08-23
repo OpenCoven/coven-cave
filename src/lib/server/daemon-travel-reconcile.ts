@@ -7,7 +7,7 @@ import {
   type CaveTravelState,
 } from "../cave-config.ts";
 import { daemonTargetForConfig, type DaemonTarget } from "../coven-daemon.ts";
-import { startLocalDaemon } from "../daemon-start.ts";
+import { startLocalDaemon } from "../daemon/daemon-start.ts";
 import { deriveTravelClientStatus, type TravelClientStatus } from "../travel-client-state.ts";
 import { syncOfflineTravelQueue, type TravelOfflineReplayResult } from "../travel-offline-replay.ts";
 import {

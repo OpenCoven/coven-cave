@@ -1,4 +1,4 @@
-import type { ResearchMission } from "@/lib/research-missions";
+import type { ResearchMission } from "@/lib/research/research-missions";
 
 export type ResearchMissionScope =
   | "all"

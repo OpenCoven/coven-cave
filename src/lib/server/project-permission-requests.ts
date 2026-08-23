@@ -1,13 +1,13 @@
 import path from "node:path";
 
-import { loadProjects } from "@/lib/cave-projects";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import { loadProjects } from "@/lib/projects/cave-projects";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
   loadMobileWriteAccess,
   type ProjectPermissionSurface,
-} from "@/lib/project-permissions";
+} from "@/lib/projects/project-permissions";
 import { MOBILE_ACCESS_HEADER } from "@/proxy-helpers";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";

@@ -6,9 +6,9 @@ import {
   type EquippedCraftComposition,
   type RoleDirectComposition,
   type RoleEffectiveComposition,
-} from "../role-craft-composition.ts";
-import { parseRoleListField, setRoleListField } from "../role-manifest.ts";
-import { discoverRoleFiles, parseRoleFrontmatter, type RoleFile } from "../role-source.ts";
+} from "../familiars/role-craft-composition.ts";
+import { parseRoleListField, setRoleListField } from "../familiars/role-manifest.ts";
+import { discoverRoleFiles, parseRoleFrontmatter, type RoleFile } from "../familiars/role-source.ts";
 import { loadCraftDefinition } from "./craft-catalog.ts";
 import type { CraftDefinition } from "./craft-install.ts";
 import {

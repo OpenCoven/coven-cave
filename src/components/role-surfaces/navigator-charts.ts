@@ -9,7 +9,7 @@
  * `node --experimental-strip-types`.
  */
 
-import type { CardStatus } from "@/lib/cave-board-types";
+import type { CardStatus } from "@/lib/board/cave-board-types";
 
 /** Lane order the room charts a course through — mirrors the board's STATUSES. */
 export const COURSE_LANES: CardStatus[] = ["backlog", "inbox", "running", "review", "blocked", "done"];

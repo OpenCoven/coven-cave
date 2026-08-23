@@ -45,9 +45,9 @@ import {
   renderCitedBody,
   renderCitationReferences,
   type Citation,
-} from "@/lib/citations";
+} from "@/lib/reading/citations";
 import { InlineCitationPreviews } from "@/components/ui/citation";
-import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
+import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/chat/message-code-fences";
 import {
   deriveReadingBlock,
   provenanceLabel,
@@ -55,7 +55,7 @@ import {
   canCompare,
   type ReadingBlock,
 } from "@/lib/code-reading";
-import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
+import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/chat/message-feedback";
 import { SpeakBubble, type SpeakBubbleController } from "@/components/speak-bubble";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
@@ -66,7 +66,7 @@ const MessageReader = dynamic(
   () => import("@/components/message-reader").then((m) => m.MessageReader),
   { ssr: false },
 );
-import type { BatchTool } from "@/lib/chat-tool-batches";
+import type { BatchTool } from "@/lib/chat/chat-tool-batches";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { decorateResponseHtml } from "@/lib/response-status-tokens";
@@ -81,7 +81,7 @@ import {
   scanFenceFilenames,
   stabilizeStreamingMarkdown,
   type MarkdownRenderGate,
-} from "@/lib/message-markdown-stream";
+} from "@/lib/chat/message-markdown-stream";
 import { CodeReadingContext, FileLinkResolverContext, useWireCopyButtons } from "./message-dom-wiring";
 export { CodeReadingContext, FileLinkResolverContext } from "./message-dom-wiring";
 export type { CodeReading, CodeReadingRequest } from "./message-dom-wiring";

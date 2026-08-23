@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseFrontmatter, parseListField } from "./skill-scan";
-import type { PromptOption } from "../slash-prompt";
+import type { PromptOption } from "../chat/slash-prompt";
 
 /**
  * Flat prompt-template scanner. A template is a single .md file — YAML

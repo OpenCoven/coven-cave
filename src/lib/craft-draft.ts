@@ -9,7 +9,7 @@ import type {
 import type {
   RoleEffectiveComposition,
   RoleEffectiveEntry,
-} from "./role-craft-composition.ts";
+} from "./familiars/role-craft-composition.ts";
 
 export type CraftDraftRoleInput = {
   id: string;

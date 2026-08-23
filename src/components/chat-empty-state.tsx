@@ -18,26 +18,26 @@ import "@/styles/cave-chat.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { Card } from "@/lib/cave-board-types";
-import type { CaveProject } from "@/lib/cave-projects-types";
-import type { ChatLinkedContext } from "@/lib/chat-linked-context";
+import type { Card } from "@/lib/board/cave-board-types";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
+import type { ChatLinkedContext } from "@/lib/chat/chat-linked-context";
 import { Icon } from "@/lib/icon";
 import { ProjectPicker } from "@/components/project-picker";
-import { NO_PROJECT_ID, chatProjectById, filterVisibleChatSessions } from "@/lib/chat-projects";
-import { cardMatchesProject, deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat-open-tasks";
-import { deriveStarterSuggestions } from "@/lib/chat-starter-suggestions";
-import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat-start-from";
+import { NO_PROJECT_ID, chatProjectById, filterVisibleChatSessions } from "@/lib/chat/chat-projects";
+import { cardMatchesProject, deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat/chat-open-tasks";
+import { deriveStarterSuggestions } from "@/lib/chat/chat-starter-suggestions";
+import { startFromGroup, startFromSub, taskTileBadge } from "@/lib/chat/chat-start-from";
 import {
   ChatStartFromBands,
   type StartFromBand,
   type StartFromTile,
 } from "@/components/chat-start-from-bands";
-import { queueFollowUpLabel } from "@/lib/chat-queue-followups";
-import { useQueueFollowUps } from "@/lib/use-queue-followups";
-import { reviewRequestLabel } from "@/lib/chat-review-requests";
-import { useReviewRequests } from "@/lib/use-review-requests";
+import { queueFollowUpLabel } from "@/lib/chat/chat-queue-followups";
+import { useQueueFollowUps } from "@/lib/hooks/use-queue-followups";
+import { reviewRequestLabel } from "@/lib/chat/chat-review-requests";
+import { useReviewRequests } from "@/lib/hooks/use-review-requests";
 import { arrayContentEqual } from "@/lib/array-content-equal";
-import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { useRefreshOnFocus } from "@/lib/hooks/use-refresh-on-focus";
 import { relativeTime } from "@/lib/relative-time";
 import { greetingForHour } from "@/lib/home-greeting";
 import { useAnnouncer } from "@/components/ui/live-region";

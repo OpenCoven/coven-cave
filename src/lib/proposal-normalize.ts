@@ -6,7 +6,7 @@ import {
   timeArrayToIso,
   type NormalizedProposalView,
   type ProposalView,
-} from "./threads-read.ts";
+} from "./chat/threads-read.ts";
 
 export function normalizeProposal(fileName: string, raw: unknown, daemonSummary?: unknown): NormalizedProposalView {
   const candidate = isRecord(raw) && isRecord(raw.pending) ? raw.pending : raw;

@@ -11,7 +11,7 @@ import {
   TREND_WEEK_WINDOW,
   type ThreadMetricSnapshot,
 } from "./signal-trends.ts";
-import type { ThreadSelfReport } from "./thread-self-report.ts";
+import type { ThreadSelfReport } from "./chat/thread-self-report.ts";
 
 // Fixed clock: Thursday 2026-06-25T20:00Z. All expectations derive from it.
 const NOW = Date.parse("2026-06-25T20:00:00.000Z");

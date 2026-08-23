@@ -42,12 +42,12 @@ const { RoleSurfaceHost } = require("./role-surface-host.tsx");
 const {
   clearRoleSurfacesForTest,
   registerRoleSurface,
-} = require("../lib/role-surfaces.ts");
+} = require("../lib/familiars/role-surfaces.ts");
 const {
   clearRoleSurfaceStateForTest,
   readRoleSurfaceState,
   useRoleSurfaceState,
-} = require("../lib/role-surface-state.ts");
+} = require("../lib/familiars/role-surface-state.ts");
 Module._resolveFilename = originalResolveFilename;
 
 test("a child state patch refreshes host status without a context-owner rerender", async () => {

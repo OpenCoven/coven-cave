@@ -6,13 +6,13 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token";/,
+  /import \{ resolveGitHubToken \} from "@\/lib\/github\/github-token";/,
   "assigned GitHub route should use the shared installation-agnostic token resolver",
 );
 
 assert.match(
   source,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
+  /import \{ resolveGitHubToken \} from "@\/lib\/github\/github-token"/,
   "assigned GitHub route should use the shared token resolver",
 );
 assert.match(

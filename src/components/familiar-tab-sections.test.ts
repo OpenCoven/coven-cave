@@ -42,7 +42,7 @@ test("snapshot-fed sections consume the one shared derivation, not their own pro
     const src = read(`./familiar-tab-${name}.tsx`);
     assert.match(
       src,
-      /from "@\/lib\/familiar-tab-section-model"/,
+      /from "@\/lib\/familiars\/familiar-tab-section-model"/,
       `${name} section types against the shared section model`,
     );
     assert.doesNotMatch(

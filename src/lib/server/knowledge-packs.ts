@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import { loadProjects, projectForRoot } from "../cave-projects.ts";
+import { loadProjects, projectForRoot } from "../projects/cave-projects.ts";
 import { recordKnowledgePackSeed } from "../cave-config.ts";
 import { parseMdDocument } from "../md-frontmatter.ts";
 import {

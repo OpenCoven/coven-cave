@@ -5,8 +5,8 @@ import "@/styles/chat-artifact.css";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 import {
   buildPreviewSrcDoc,
@@ -17,33 +17,33 @@ import {
   type ArtifactKind,
   type CanvasAnnotation,
   type CanvasArtifact,
-} from "@/lib/canvas-artifacts";
-import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
+} from "@/lib/canvas/canvas-artifacts";
+import { buildReactSrcDoc } from "@/lib/canvas/canvas-react-harness";
 import { openArtifactInTab } from "@/lib/artifact-open";
-import { generateArtifactCode } from "@/lib/canvas-generate";
+import { generateArtifactCode } from "@/lib/canvas/canvas-generate";
 import {
   buildCanvasCommentsRequest,
   removeCanvasAnnotationDraft,
   replaceCanvasAnnotationNote,
   upsertCanvasAnnotationDraft,
-} from "@/lib/canvas-comments";
+} from "@/lib/canvas/canvas-comments";
 import {
   CanvasAnnotationOperationQueue,
   overlayCanvasAnnotationOperations,
   readCanvasAnnotationOperations,
   writeCanvasAnnotationOperations,
   type CanvasAnnotationOperation,
-} from "@/lib/canvas-annotation-operation-queue";
+} from "@/lib/canvas/canvas-annotation-operation-queue";
 import {
   adoptCanvasContentSnapshot,
   canvasContentDiffers,
   reconcileCanvasAnnotationSnapshot,
-} from "@/lib/canvas-content-sync";
+} from "@/lib/canvas/canvas-content-sync";
 import {
   CANVAS_INSPECTOR_READY_MESSAGE_TYPE,
   createCanvasInspectorChannel,
   isCanvasComponentSelectedMessage,
-} from "@/lib/canvas-inspector";
+} from "@/lib/canvas/canvas-inspector";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import { highlightToHtml } from "@/components/message-bubble";
 

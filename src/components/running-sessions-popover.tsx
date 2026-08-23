@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { RelativeTime } from "@/components/ui/relative-time";
-import { useMinuteTick } from "@/lib/use-minute-tick";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { sessionDisplayTitle } from "@/lib/session-title";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { sessionDisplayTitle } from "@/lib/chat/session-title";
 import { shortProjectRoot } from "@/lib/command-palette-grouping";
 import type { Familiar, SessionRow } from "@/lib/types";
 

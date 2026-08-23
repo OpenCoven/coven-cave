@@ -8,9 +8,9 @@
 // - corrupt proposal                          -> both actions disabled (R6)
 // - decision failure                          -> visible refusal with its queue consequence
 
-import type { ProposalView } from "./threads-read.ts";
-import type { SurfaceState, TensionPill } from "./weave-rail.ts";
-import { decisionsEnabled } from "./weave-rail.ts";
+import type { ProposalView } from "./chat/threads-read.ts";
+import type { SurfaceState, TensionPill } from "./grimoire/weave-rail.ts";
+import { decisionsEnabled } from "./grimoire/weave-rail.ts";
 
 export type ProposalListModel = {
   /** Parse-ok proposals, oldest staged first (operator clears the queue in order). */

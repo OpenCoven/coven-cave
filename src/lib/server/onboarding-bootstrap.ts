@@ -3,7 +3,7 @@ import path from "node:path";
 import { saveConfig } from "@/lib/cave-config";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
 import { caveHome, covenHome } from "@/lib/coven-paths";
-import { startLocalDaemon } from "@/lib/daemon-start";
+import { startLocalDaemon } from "@/lib/daemon/daemon-start";
 import { sanitizeAboutDiagnosticText } from "@/lib/about-diagnostics";
 import {
   ONBOARDING_BOOTSTRAP_STAGES,
@@ -16,7 +16,7 @@ import {
   type OnboardingBootstrapStageId,
   type OnboardingBootstrapState,
   type OnboardingSetupFailureCode,
-} from "@/lib/onboarding-bootstrap";
+} from "@/lib/onboarding/onboarding-bootstrap";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 import {
   ensureOnboardingCoreTools,

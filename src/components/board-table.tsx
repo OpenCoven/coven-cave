@@ -2,16 +2,16 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
-import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
-import type { CaveProject } from "@/lib/cave-projects";
+import type { Card, CardStatus, CardPriority } from "@/lib/board/cave-board-types";
+import type { CaveProject } from "@/lib/projects/cave-projects";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
+import { useRovingTabIndex } from "@/lib/hooks/use-roving-tabindex";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { StandardSelect } from "@/components/ui/select";
-import { useProjectFamiliarsByProject } from "@/lib/use-project-familiars";
+import { useProjectFamiliarsByProject } from "@/lib/hooks/use-project-familiars";
 
 export type GroupBy = "status" | "familiar" | "project";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "startDate" | "endDate" | "updatedAt";

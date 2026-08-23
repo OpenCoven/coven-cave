@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { isValidResearchGenerationFamiliarId } from "@/lib/research-generations";
+import { isValidResearchGenerationFamiliarId } from "@/lib/research/research-generations";
 import {
   RESEARCH_MEDIA_PATH,
   RESEARCH_MEDIA_TICKET_PARAM,
   signResearchMediaTicket,
-} from "@/lib/research-media-ticket";
+} from "@/lib/research/research-media-ticket";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listResearchGenerations } from "@/lib/server/research-generations";
 

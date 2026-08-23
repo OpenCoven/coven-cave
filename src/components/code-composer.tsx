@@ -11,7 +11,7 @@
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { streamFamiliarText } from "@/lib/familiar-stream";
+import { streamFamiliarText } from "@/lib/familiars/familiar-stream";
 import type { SessionRow } from "@/lib/types";
 
 type Phase = { kind: "idle" } | { kind: "streaming"; runId: string } | { kind: "done" } | { kind: "error"; message: string };

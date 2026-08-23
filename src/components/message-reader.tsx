@@ -47,20 +47,20 @@ import { createPortal } from "react-dom";
 
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
-import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { smoothScrollBehavior } from "@/lib/hooks/use-prefers-reduced-motion";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Segmented } from "@/components/ui/settings-controls";
-import { citationSourcePresentation, parseCitations, type Citation } from "@/lib/citations";
+import { citationSourcePresentation, parseCitations, type Citation } from "@/lib/reading/citations";
 import {
   formatBatchDuration,
   toolBatches,
   turnSkills,
   type BatchTool,
-} from "@/lib/chat-tool-batches";
-import { outlineBaseLevel, readerOutline, readingStats } from "@/lib/reader-outline";
-import { REWRITE_MAX_CHARS, type RewriteTone } from "@/lib/reader-rewrite";
-import { skillGroups, toolRollups, toolSteps } from "@/lib/reader-provenance";
+} from "@/lib/chat/chat-tool-batches";
+import { outlineBaseLevel, readerOutline, readingStats } from "@/lib/reading/reader-outline";
+import { REWRITE_MAX_CHARS, type RewriteTone } from "@/lib/reading/reader-rewrite";
+import { skillGroups, toolRollups, toolSteps } from "@/lib/reading/reader-provenance";
 
 const HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6";
 

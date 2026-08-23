@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server.js";
 
 import { MOBILE_ACCESS_HEADER } from "../../proxy-helpers.ts";
-import { loadMobileWriteAccess } from "../project-permissions.ts";
+import { loadMobileWriteAccess } from "../projects/project-permissions.ts";
 import { isLocalOrigin } from "./local-origin.ts";
 
 /**

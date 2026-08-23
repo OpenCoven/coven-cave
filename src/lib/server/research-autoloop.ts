@@ -9,7 +9,7 @@ import {
   parseAutoresearchLedger,
   type AutoresearchRow,
   type AutoresearchSnapshot,
-} from "../research-autoloop.ts";
+} from "../research/research-autoloop.ts";
 
 const MAX_LEDGER_BYTES = 2 * 1024 * 1024;
 const MAX_EVENT_BYTES = 2 * 1024 * 1024;

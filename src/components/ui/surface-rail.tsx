@@ -19,7 +19,7 @@ import {
   surfaceRailKeyboardResize,
   writeSurfaceRailOpen,
   writeSurfaceRailWidth,
-} from "@/lib/surface-rail-state";
+} from "@/lib/surfaces/surface-rail-state";
 import "@/styles/surface-rail.css";
 
 function localStorageOrNull(): Storage | null {

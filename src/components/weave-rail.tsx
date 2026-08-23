@@ -17,8 +17,8 @@ import {
   type TensionPill,
   type WeaveScope,
   type WeaveStatus,
-} from "@/lib/weave-rail";
-import type { DegradedFamiliarView, ThreadsMeta, WeaveSummary } from "@/lib/threads-read";
+} from "@/lib/grimoire/weave-rail";
+import type { DegradedFamiliarView, ThreadsMeta, WeaveSummary } from "@/lib/chat/threads-read";
 
 const PILL_CLASS: Record<PillTone, string> = {
   holds: "wv-pill--holds",

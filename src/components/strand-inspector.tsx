@@ -15,8 +15,8 @@ import {
   strandDetailRows,
   strandDiff,
 } from "@/lib/strand-inspect";
-import type { AuditEntryView, StrandView, ThreadView } from "@/lib/threads-read";
-import { blockedMessage, surfaceStateFromPayload, type SurfaceState } from "@/lib/weave-rail";
+import type { AuditEntryView, StrandView, ThreadView } from "@/lib/chat/threads-read";
+import { blockedMessage, surfaceStateFromPayload, type SurfaceState } from "@/lib/grimoire/weave-rail";
 
 async function fetchSurface<T>(url: string): Promise<SurfaceState<T>> {
   try {

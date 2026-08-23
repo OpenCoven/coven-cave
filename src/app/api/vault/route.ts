@@ -31,7 +31,7 @@ import {
   validateRef,
   type VaultEntry,
   type VaultMap,
-} from "@/lib/vault";
+} from "@/lib/grimoire/vault";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import {
   normalizeVaultKey,
@@ -40,7 +40,7 @@ import {
   VAULT_STORAGE_IDS,
   vaultStorageForReference,
   type VaultStorageId,
-} from "@/lib/vault-storage";
+} from "@/lib/grimoire/vault-storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

@@ -5,7 +5,7 @@ const view = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.match(
   view,
-  /import \{[\s\S]*?chatTurnVisibleText,[\s\S]*?extractChatRenderedText,[\s\S]*?\} from "@\/lib\/chat-rendered-text";/,
+  /import \{[\s\S]*?chatTurnVisibleText,[\s\S]*?extractChatRenderedText,[\s\S]*?\} from "@\/lib\/chat\/chat-rendered-text";/,
   "ChatView imports the shared rendered-text projection",
 );
 assert.match(

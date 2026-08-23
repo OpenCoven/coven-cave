@@ -1,7 +1,7 @@
 import type {
   CreateResearchMissionInput,
   ResearchMission,
-} from "../research-missions.ts";
+} from "../research/research-missions.ts";
 import type {
   ResearchSessionAuthority,
   ResearchSessionOwnerKind,
@@ -11,7 +11,7 @@ import {
   RESEARCH_COST_UNAVAILABLE_STOP_REASON,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
   STANDARD_RESEARCH_ARTIFACTS,
-} from "../research-missions.ts";
+} from "../research/research-missions.ts";
 import type { FlowRunRecord } from "../flows.ts";
 
 export type ResearchFlowStartResult = {

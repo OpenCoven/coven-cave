@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import {
   canonicalHarnessId,
   runtimeDisplayLabel,
-} from "./harness-adapters.ts";
-import { catalogForRuntime } from "./runtime-models.ts";
+} from "./runtime/harness-adapters.ts";
+import { catalogForRuntime } from "./runtime/runtime-models.ts";
 
 export type InferenceSupportTier =
   | "native-account"

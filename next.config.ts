@@ -53,7 +53,7 @@ const nextConfig: NextConfig = {
       // only this bare entry excludes it.
       "./.git",
       "./.github/**/*",
-      "./.gitignore",
+      "../..",
       // Lifecycle tests use repo-local mkdtemp roots so the inventory can
       // exercise real Git. A killed test can leave one behind; never let NFT
       // turn that disposable fixture into packaged server input.

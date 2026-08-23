@@ -11,7 +11,7 @@
  * plain `node --experimental-strip-types`.
  */
 
-import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { Card, CardStatus } from "@/lib/board/cave-board-types";
 import { COURSE_LANES } from "./navigator-charts.ts";
 
 // ── Stages ───────────────────────────────────────────────────────────────────

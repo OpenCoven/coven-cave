@@ -46,7 +46,7 @@ try {
   await mkdir(path.join(process.env.COVEN_MARKETPLACE_PLUGINS_DIR, "broken"), { recursive: true });
   await writeFile(path.join(process.env.COVEN_MARKETPLACE_PLUGINS_DIR, "broken", "pack.json"), "not json", "utf8");
 
-  const projects = await import("../cave-projects.ts");
+  const projects = await import("../projects/cave-projects.ts");
   const { loadConfig } = await import("../cave-config.ts");
   const vault = await import("./knowledge-vault.ts");
   const packs = await import("./knowledge-packs.ts");

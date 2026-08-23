@@ -8,7 +8,7 @@ import {
   EXECUTION_ATTEMPT_SCHEMA_VERSION,
   normalizeExecutionAttemptSnapshot,
   type ExecutionAttemptSnapshotV1,
-} from "../../lib/familiar-execution-analytics.ts";
+} from "../../lib/familiars/familiar-execution-analytics.ts";
 import { backfillFamiliarExecutionAttempts } from "../../lib/server/familiar-execution-analytics-backfill.ts";
 import {
   deterministicExecutionAttemptId,
@@ -696,7 +696,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListSource,
-    /import \{ loadProjects, projectForRoot \} from "@\/lib\/cave-projects"/,
+    /import \{ loadProjects, projectForRoot \} from "@\/lib\/projects\/cave-projects"/,
     "/sessions/list: session validation should consult the project registry",
   );
   assert.match(
@@ -706,7 +706,7 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListSource,
-    /import \{ enrichSessionsWithGitContext \} from "@\/lib\/session-git-enrich"/,
+    /import \{ enrichSessionsWithGitContext \} from "@\/lib\/chat\/session-git-enrich"/,
     "/sessions/list: sessions should be enriched from local git context (async lib)",
   );
   assert.doesNotMatch(

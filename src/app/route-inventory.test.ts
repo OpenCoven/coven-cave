@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { isWorkspaceMode } from "../lib/workspace-mode.ts";
+import { isWorkspaceMode } from "../lib/projects/workspace-mode.ts";
 
 const appDir = fileURLToPath(new URL(".", import.meta.url));
 

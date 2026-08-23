@@ -1,6 +1,6 @@
 import type { NormalizedXArticle, XArticleProviderId } from "../x-articles.ts";
 import { XArticleProviderError } from "../x-articles.ts";
-import { resolveSecret } from "../vault.ts";
+import { resolveSecret } from "../grimoire/vault.ts";
 import {
   fetchSorsaXArticle,
   type FetchSorsaXArticleOptions,

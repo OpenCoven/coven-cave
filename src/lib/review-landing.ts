@@ -1,4 +1,4 @@
-import type { CheckSummary } from "./github-checks.ts";
+import type { CheckSummary } from "./github/github-checks.ts";
 
 export type ReviewGateState = "pass" | "blocked" | "pending" | "unknown";
 

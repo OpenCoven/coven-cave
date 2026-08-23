@@ -5,7 +5,7 @@
  * drafts via /api/research/generations. Design: "Generations" screen, markup
  * lines 309–533 / logic 877–1109 of the Research Desk App design file.
  *
- * Honesty contract (see src/lib/research-generations.ts):
+ * Honesty contract (see src/lib/research/research-generations.ts):
  * - Sources are ONLY missions with a live markdown artifact (published or
  *   working) — the same rule the server's drafting uses, so the source
  *   dropdown never offers a run the POST would 409.
@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import {
   RESEARCH_GENERATION_CREATABLE_KINDS,
   RESEARCH_GENERATION_MEDIA_KINDS,
@@ -35,7 +35,7 @@ import {
   type ResearchMediaLength,
   type ResearchMediaProvider,
   type ResearchPodcastStyle,
-} from "@/lib/research-generations";
+} from "@/lib/research/research-generations";
 import type { ResearchTabProps } from "./researcher-surface";
 import { describeProviderChips, researchProviderChips } from "./research-studio-providers";
 import {

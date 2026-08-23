@@ -20,10 +20,10 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem } from "@/components/ui/popover";
 import { Icon } from "@/lib/icon";
-import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
-import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { invalidateIfDefined } from "@/lib/surface-warm-cache";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
+import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/familiars/role-surfaces";
+import { useRoleSurfaceState } from "@/lib/familiars/role-surface-state";
+import { invalidateIfDefined } from "@/lib/surfaces/surface-warm-cache";
+import { openGrimoireDoc } from "@/lib/grimoire/grimoire-link";
 import { relativeTime } from "@/lib/relative-time";
 import { countWords, deskSummary, parseTags, readingTimeLabel, type ScribeDraft } from "./scribe-craft";
 import {

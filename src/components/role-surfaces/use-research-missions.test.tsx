@@ -8,14 +8,14 @@ const polling = vi.hoisted(() => ({
   callback: null as null | (() => void),
 }));
 
-vi.mock("@/lib/research-mission-client", async () => {
-  const actual = await vi.importActual("@/lib/research-mission-client");
+vi.mock("@/lib/research/research-mission-client", async () => {
+  const actual = await vi.importActual("@/lib/research/research-mission-client");
   return {
     ...actual,
     listResearchMissions,
   };
 });
-vi.mock("@/lib/use-pausable-poll", () => ({
+vi.mock("@/lib/hooks/use-pausable-poll", () => ({
   usePausablePoll: (callback: () => void) => {
     polling.callback = callback;
   },

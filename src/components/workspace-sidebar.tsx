@@ -1,55 +1,55 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { useMinuteTick } from "@/lib/use-minute-tick";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { useMinuteTick } from "@/lib/hooks/use-minute-tick";
 import { SidebarRailHeader } from "@/components/sidebar-rail-header";
 import { Icon, type IconName } from "@/lib/icon";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { ProjectAvatar } from "@/components/project-avatar";
-import { sessionRailTitle } from "@/lib/session-rail-title";
+import { sessionRailTitle } from "@/lib/chat/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
-import { sessionPrStatus, type SessionPrStatus } from "@/lib/session-pr-status";
+import { sessionPrStatus, type SessionPrStatus } from "@/lib/chat/session-pr-status";
 import type { SessionRow } from "@/lib/types";
-import { useProjects } from "@/lib/use-projects";
-import { useProjectOverrides } from "@/lib/use-project-overrides";
-import { applyProjectOverrides } from "@/lib/chat-project-overrides";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { useProjectOverrides } from "@/lib/hooks/use-project-overrides";
+import { applyProjectOverrides } from "@/lib/chat/chat-project-overrides";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
   type ChatProjectGroup,
-} from "@/lib/chat-projects";
+} from "@/lib/chat/chat-projects";
 import {
   isSessionPinned,
   toggleStoredPinnedSession,
   readChatSidebarView,
   writeChatSidebarView,
   type ChatSidebarView,
-} from "@/lib/chat-session-prefs";
-import { usePinnedSessions } from "@/lib/use-pinned-sessions";
-import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
+} from "@/lib/chat/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/hooks/use-pinned-sessions";
+import { deriveChatRecencyBuckets } from "@/lib/chat/chat-recency";
 import {
   chatAttentionDescription,
   chatAttentionLabel,
   compareChatAttention,
   NO_CHAT_ATTENTION,
   type ChatAttentionState,
-} from "@/lib/chat-attention";
+} from "@/lib/chat/chat-attention";
 import {
   CHAT_SESSION_DRAG_MIME,
   emitChatSessionDragEnd,
   emitChatSessionDragStart,
-} from "@/lib/chat-split";
+} from "@/lib/chat/chat-split";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import { addChatProject, projectNameForRoot } from "@/lib/chat/chat-add-project";
 import {
   chatProjectOrganizationGroups,
   organizationExpansionKey,
-} from "@/lib/project-organizations";
+} from "@/lib/projects/project-organizations";
 import { NavSectionTabs } from "@/components/nav-section-tabs";
-import type { NavSection } from "@/lib/nav-section";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { NavSection } from "@/lib/surfaces/nav-section";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 
 type WorkspaceSidebarMode = "home";
 

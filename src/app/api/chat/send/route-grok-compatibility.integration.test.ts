@@ -31,7 +31,7 @@ process.env.XAI_API_KEY = "probe-must-not-receive-this";
 // make no claim about Grok Build's undocumented tool protocol.
 const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 process.env.COVEN_GROK_SCHEMA_REGISTRY_PUBLIC_KEYS = JSON.stringify({ fixture: publicKey.export({ format: "pem", type: "spki" }).toString() });
-const { grokSchemaBundlePayloadHash, grokSchemaBundleSigningPayload } = await import("@/lib/grok-compatibility");
+const { grokSchemaBundlePayloadHash, grokSchemaBundleSigningPayload } = await import("@/lib/integrations/grok/grok-compatibility");
 const fixtureBundle = {
   format: 1 as const,
   runtime: "grok-build" as const,
@@ -121,8 +121,8 @@ async function readSse(response: Response) {
 try {
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { POST } = await import("./route.ts");
   await saveConfig({ familiars: { opal: { harness: "grok" } } });
   const project = await createProject({ name: "Grok route fixture", root: familiarWorkspace });

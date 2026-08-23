@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 
 import sharp from "sharp";
 
-import type { ResearchGenerationStoryboardScene } from "../research-generations.ts";
+import type { ResearchGenerationStoryboardScene } from "../research/research-generations.ts";
 
 const temporary = await mkdtemp(path.join(tmpdir(), "cave-video-renderer-"));
 

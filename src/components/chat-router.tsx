@@ -12,14 +12,14 @@ import { ChatSplitHost, CHAT_SPLIT_PANE_ATTR, type ChatSplitTile } from "@/compo
 import { NewChatLaunch } from "@/components/new-chat-launch";
 import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex";
 import { caveChatoutCodex } from "@/lib/feature-flags";
-import { useIsMobile } from "@/lib/use-viewport";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
   normalizeChatProjectRoot,
-} from "@/lib/chat-projects";
-import { applyProjectOverrides } from "@/lib/chat-project-overrides";
-import type { ChatAttachment } from "@/lib/chat-attachments";
+} from "@/lib/chat/chat-projects";
+import { applyProjectOverrides } from "@/lib/chat/chat-project-overrides";
+import type { ChatAttachment } from "@/lib/chat/chat-attachments";
 import {
   CHAT_SPLIT_PRIMARY,
   CHAT_SPLIT_STORAGE_KEY,
@@ -38,13 +38,13 @@ import {
   serializeChatSplit,
   type ChatDropZone,
   type ChatSplitSizes,
-} from "@/lib/chat-split";
-import { sessionRailTitle } from "@/lib/session-rail-title";
+} from "@/lib/chat/chat-split";
+import { sessionRailTitle } from "@/lib/chat/session-rail-title";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useProjectOverrides } from "@/lib/use-project-overrides";
-import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
-import { useProjects } from "@/lib/use-projects";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { useProjectOverrides } from "@/lib/hooks/use-project-overrides";
+import { useArchivedFamiliars } from "@/lib/familiars/cave-familiar-archive";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat/chat-tab-events";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   migrateOrganizationExpansionKeys,
@@ -55,13 +55,13 @@ import {
   PROJECT_SIDEBAR_KEYS,
   selectionKey,
   type ProjectSelection,
-} from "@/lib/chat-project-selection";
-import { organizationExpansionKey } from "@/lib/project-organizations";
-import { shouldRouterPromoteSession } from "@/lib/chat-router-promotion";
-import { useAutoExpandNewGroups } from "@/lib/use-auto-expand-new-groups";
+} from "@/lib/chat/chat-project-selection";
+import { organizationExpansionKey } from "@/lib/projects/project-organizations";
+import { shouldRouterPromoteSession } from "@/lib/chat/chat-router-promotion";
+import { useAutoExpandNewGroups } from "@/lib/hooks/use-auto-expand-new-groups";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
-import type { SessionRemovalReason } from "@/lib/chat-session-removal";
+import type { SessionRemovalReason } from "@/lib/chat/chat-session-removal";
 
 type View =
   | { kind: "list" }
@@ -241,7 +241,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }, [activeSessionId, composeInstance]);
   // ── Multi-pane split (drag a convo from the thread rail onto the chat) ────
   // The primary chat is one pane; dropped conversations open beside/above/
-  // below it. Pure layout rules live in @/lib/chat-split; panes for deleted
+  // below it. Pure layout rules live in @/lib/chat/chat-split; panes for deleted
   // sessions are filtered at render (the id simply stops resolving).
   const [split, setSplit] = useState(() => emptyChatSplitLayout());
   // Persisted pane sizes (RRP flex weights by pane id). Restored alongside

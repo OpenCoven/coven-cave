@@ -9,19 +9,19 @@ import { Button } from "@/components/ui/button";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { useFocusTrap } from "@/lib/use-focus-trap";
-import { COMPATIBILITY_ADAPTERS, isSummonableLocalHarness } from "@/lib/harness-adapters";
-import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
-import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
+import { COMPATIBILITY_ADAPTERS, isSummonableLocalHarness } from "@/lib/runtime/harness-adapters";
+import { slugifyFamiliarId } from "@/lib/onboarding/onboarding-familiars";
+import { runtimeOwnsModelDefault } from "@/lib/runtime/runtime-models";
 import {
   inventoryProvenanceLabel,
   useRuntimeModelInventory,
-} from "@/lib/use-runtime-model-options";
-import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
+} from "@/lib/hooks/use-runtime-model-options";
+import { setFamiliarOverride } from "@/lib/familiars/cave-familiar-overrides";
 import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/lib/summoning-draft";
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
-import { filterInternalCovenNameSuggestions } from "@/lib/familiar-roster-guard";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { filterInternalCovenNameSuggestions } from "@/lib/familiars/familiar-roster-guard";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   AURA_PRESETS,
   DEFAULT_GLYPH,

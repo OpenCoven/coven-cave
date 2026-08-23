@@ -5,7 +5,7 @@ import type {
   DaemonResponse,
   DaemonTarget,
 } from "@/lib/coven-daemon";
-import { isSupportedDaemonApiVersion } from "../daemon-startup-contract.ts";
+import { isSupportedDaemonApiVersion } from "../daemon/daemon-startup-contract.ts";
 
 export const SESSION_LAUNCH_POLICY_CAPABILITY = "sessionLaunchPolicy";
 

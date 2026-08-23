@@ -17,7 +17,7 @@ import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { DesktopHistoryNav } from "@/components/desktop-history-nav";
-import { useIsMobile } from "@/lib/use-viewport";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import { ShellPeelReveal } from "@/components/shell-peel-reveal";

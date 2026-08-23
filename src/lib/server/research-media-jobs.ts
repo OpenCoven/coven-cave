@@ -1,7 +1,7 @@
 import {
   isResearchGenerationMediaKind,
   type ResearchGeneration,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import type {
   ResearchMediaCancelResult,
   ResearchMediaJobDefinition,

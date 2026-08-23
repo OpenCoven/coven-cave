@@ -6,10 +6,10 @@ import { readFileSync } from "node:fs";
 const hub = readFileSync(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
 const card = readFileSync(new URL("./skill-explore-card.tsx", import.meta.url), "utf8");
 const drawer = readFileSync(new URL("./skill-explore-drawer.tsx", import.meta.url), "utf8");
-const warmup = readFileSync(new URL("../../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
+const warmup = readFileSync(new URL("../../lib/surfaces/surface-warmup-registry.ts", import.meta.url), "utf8");
 const directoryRoute = readFileSync(new URL("../../app/api/skills/directory/route.ts", import.meta.url), "utf8");
 
-assert.match(hub, /import \{ type SkillBrowserEntry \} from "@\/lib\/skill-directory"/, "the Marketplace hub imports the skill entry type from its canonical home");
+assert.match(hub, /import \{ type SkillBrowserEntry \} from "@\/lib\/skills\/skill-directory"/, "the Marketplace hub imports the skill entry type from its canonical home");
 assert.doesNotMatch(hub, /<SkillBrowser\b/, "the standalone Skills tab (SkillBrowser) stays retired from the hub");
 assert.doesNotMatch(hub, /@\/components\/skill-browser/, "nothing imports the deleted skill-browser module");
 assert.match(hub, /<SkillExploreCard\b/, "local skills render as owned-inventory cards");

@@ -5,7 +5,7 @@ import {
   READING_WIDTH_KEY,
   applyReadingWidth,
   readReadingWidth,
-} from "@/lib/reading-width";
+} from "@/lib/reading/reading-width";
 
 /**
  * Applies the saved max reading width on load and keeps it in sync across tabs.

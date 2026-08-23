@@ -2,12 +2,12 @@
 
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { Button } from "@/components/ui/button";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   isAllSelected,
   selectAll,
   toggleFamiliarSelection,
-} from "@/lib/familiar-multiselect";
+} from "@/lib/familiars/familiar-multiselect";
 
 type Props = {
   /** Resolved familiars (FamiliarAvatar needs ResolvedFamiliar, not raw Familiar). */
@@ -29,7 +29,7 @@ const chipClass = (active: boolean) =>
  * Familiar filter for the Automations tab: an "All" chip (default) plus one chip
  * per familiar. Plain click selects only that familiar; ⌘/Ctrl-click toggles it
  * into a multi-selection. Empty selection = All. Reused by Slice B's create/edit
- * form. Pure selection logic lives in `@/lib/familiar-multiselect`.
+ * form. Pure selection logic lives in `@/lib/familiars/familiar-multiselect`.
  */
 export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
   const all = isAllSelected(selected);

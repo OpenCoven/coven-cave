@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { NO_CHAT_ATTENTION } from "@/lib/chat-attention";
+import { NO_CHAT_ATTENTION } from "@/lib/chat/chat-attention";
 import {
   buildProfileCardModel,
   buildProfileHeatmap,

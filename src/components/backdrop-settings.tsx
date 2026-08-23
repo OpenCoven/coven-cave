@@ -13,7 +13,7 @@ import {
   writeBackdropPrefs,
 } from "@/lib/cave-backdrop";
 import { BACKDROP_STYLES, type CaveBackdropStyle } from "@/lib/preferences-schema";
-import { useArmedConfirm } from "@/lib/use-armed-confirm";
+import { useArmedConfirm } from "@/lib/hooks/use-armed-confirm";
 
 const STYLE_LABELS: Record<CaveBackdropStyle, string> = { off: "Off", image: "Image", blaze: "Blaze" };
 const STYLE_TITLES: Record<CaveBackdropStyle, string> = {

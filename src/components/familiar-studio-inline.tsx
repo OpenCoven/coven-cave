@@ -19,25 +19,25 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { VaultPanel } from "@/components/vault-panel";
-import { useDaemonSyncStatus } from "@/lib/daemon-sync-status";
+import { useDaemonSyncStatus } from "@/lib/daemon/daemon-sync-status";
 import {
   BRAIN_STUDIO_FAMILIAR_KEY,
   useFamiliarStudio,
   type FamiliarStudioTab,
-} from "@/lib/familiar-studio-context";
+} from "@/lib/familiars/familiar-studio-context";
 import {
   FAMILIAR_IMAGE_ACCEPT,
   useFamiliarImageUpload,
-} from "@/lib/familiar-image-upload";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import { resolveFamiliarTypes, FAMILIAR_TYPES } from "@/lib/familiar-types";
-import { streamFamiliarText } from "@/lib/familiar-stream";
-import { runtimeDisplayLabel } from "@/lib/harness-adapters";
+} from "@/lib/familiars/familiar-image-upload";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
+import { resolveFamiliarTypes, FAMILIAR_TYPES } from "@/lib/familiars/familiar-types";
+import { streamFamiliarText } from "@/lib/familiars/familiar-stream";
+import { runtimeDisplayLabel } from "@/lib/runtime/harness-adapters";
 import { Icon, type IconName } from "@/lib/icon";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
+import { loadCanonicalMemoryList } from "@/lib/memory/canonical-memory-resources";
 import type { Familiar } from "@/lib/types";
-import { useProjects } from "@/lib/use-projects";
+import { useProjects } from "@/lib/hooks/use-projects";
 
 type Props = {
   /** Raw daemon roster — fed to tab bodies that diff against pre-override values. */

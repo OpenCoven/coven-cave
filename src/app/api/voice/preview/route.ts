@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server.js";
-import { resolveSecret } from "../../../../lib/vault.ts";
+import { resolveSecret } from "../../../../lib/grimoire/vault.ts";
 import {
   findOpenAiVoice,
   openAiVoicePreviewText,

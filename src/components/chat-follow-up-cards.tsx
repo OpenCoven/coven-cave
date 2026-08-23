@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon, type IconName } from "@/lib/icon";
-import type { NextPath } from "@/lib/next-paths";
+import type { NextPath } from "@/lib/projects/next-paths";
 
 export type FollowUpCardsProps = {
   paths: NextPath[];

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { refreshMobileAccessToken } from "@/lib/mobile-token-refresh";
+import { refreshMobileAccessToken } from "@/lib/surfaces/mobile-token-refresh";
 import { recordMobileSeen } from "@/lib/server/mobile-paired";
 import { ACCESS_TOKEN_COOKIE, ACCESS_TOKEN_QUERY_PARAM } from "@/proxy-helpers";
 

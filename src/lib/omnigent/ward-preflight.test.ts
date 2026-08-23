@@ -7,7 +7,7 @@ import {
   composeOmnigentPrompt,
   WardPreflightError,
 } from "./ward-preflight.ts";
-import { evaluateFamiliarContract } from "../familiar-contract.ts";
+import { evaluateFamiliarContract } from "../familiars/familiar-contract.ts";
 
 const COMPLIANT_SOUL = `# SOUL.md - Who I Am
 

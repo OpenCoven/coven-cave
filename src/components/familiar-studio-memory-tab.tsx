@@ -6,7 +6,7 @@ import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 
 type Props = {

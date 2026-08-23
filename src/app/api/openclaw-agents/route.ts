@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { summarizeOpenClawAgent } from "@/lib/openclaw-agents";
-import { listOpenClawAgents } from "@/lib/openclaw-bridge";
+import { summarizeOpenClawAgent } from "@/lib/openclaw/openclaw-agents";
+import { listOpenClawAgents } from "@/lib/openclaw/openclaw-bridge";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

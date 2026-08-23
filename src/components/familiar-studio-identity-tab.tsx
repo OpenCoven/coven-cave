@@ -10,15 +10,15 @@ import {
   clearFamiliarOverrideField,
   useFamiliarOverrides,
   type FamiliarOverride,
-} from "@/lib/cave-familiar-overrides";
-import { FAMILIAR_TYPES, parseFamiliarTypeIds, type FamiliarTypeSpec } from "@/lib/familiar-types";
+} from "@/lib/familiars/cave-familiar-overrides";
+import { FAMILIAR_TYPES, parseFamiliarTypeIds, type FamiliarTypeSpec } from "@/lib/familiars/familiar-types";
 import { roomEnabledInBuild } from "@/lib/room-flags";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { FamiliarStudioLookTab } from "@/components/familiar-studio-look-tab";
 import { FamiliarLifecycleSection } from "@/components/familiar-lifecycle-section";
-import type { ContractReport } from "@/lib/familiar-contract";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { ContractReport } from "@/lib/familiars/familiar-contract";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 
 type Props = {
   familiar: ResolvedFamiliar;

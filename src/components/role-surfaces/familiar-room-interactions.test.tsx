@@ -7,10 +7,10 @@ import { LiveRegionProvider } from "@/components/ui/live-region";
 import {
   clearRoleSurfaceStateForTest,
   writeRoleSurfaceState,
-} from "@/lib/role-surface-state";
-import type { Card } from "@/lib/cave-board-types";
+} from "@/lib/familiars/role-surface-state";
+import type { Card } from "@/lib/board/cave-board-types";
 import type { Escalation } from "@/lib/escalations-types";
-import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/role-surfaces";
+import type { RoleSurfaceContext, SurfaceMemoryEntry } from "@/lib/familiars/role-surfaces";
 import { IndexerSurface } from "./indexer-surface";
 import {
   MESSENGER_INITIAL_STATE,

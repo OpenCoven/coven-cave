@@ -8,12 +8,12 @@ import { FamiliarStudioMemoryTab } from "@/components/familiar-studio-memory-tab
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { VaultPanel } from "@/components/vault-panel";
 import { Tabs } from "@/components/ui/tabs";
-import type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
-import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { FamiliarSettingsTab } from "@/lib/chat/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat/chat-tab-events";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 
-export type { FamiliarSettingsTab } from "@/lib/chat-tab-events";
+export type { FamiliarSettingsTab } from "@/lib/chat/chat-tab-events";
 
 // Projects is deliberately absent: project access, access groups, and the
 // access history all live on Chat → Projects now. A `projects` target

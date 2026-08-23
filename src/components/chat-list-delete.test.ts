@@ -6,12 +6,12 @@ import {
   readPinnedSessions,
   togglePinnedSession,
   sortPinnedFirst,
-} from "../lib/chat-session-prefs.ts";
+} from "../lib/chat/chat-session-prefs.ts";
 
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./chat-list-primitives.tsx", import.meta.url), "utf8");
-const model = readFileSync(new URL("../lib/chat-list-model.ts", import.meta.url), "utf8");
-const sortModel = readFileSync(new URL("../lib/chat-session-sort.ts", import.meta.url), "utf8");
+const model = readFileSync(new URL("../lib/chat/chat-list-model.ts", import.meta.url), "utf8");
+const sortModel = readFileSync(new URL("../lib/chat/chat-session-sort.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   source,

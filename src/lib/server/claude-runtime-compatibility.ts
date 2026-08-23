@@ -3,7 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import { covenSpawnEnv } from "../coven-bin.ts";
-import { pickVersionLine } from "../harness-version.ts";
+import { pickVersionLine } from "../runtime/harness-version.ts";
 import {
   CLAUDE_COMPATIBILITY_PROFILES,
   resolveRuntimeCompatibility,
@@ -11,7 +11,7 @@ import {
   type CompatibilityResolution,
   type RuntimeCapability,
   type RuntimeCompatibilityReport,
-} from "../runtime-compatibility.ts";
+} from "../runtime/runtime-compatibility.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
 const PROBE_TTL_MS = 60_000;

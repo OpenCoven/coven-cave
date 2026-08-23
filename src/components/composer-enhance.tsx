@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { ENHANCE_INTENTS, type EnhanceIntent } from "@/lib/prompt-enhancer";
-import type { PromptEnhanceState } from "@/lib/use-prompt-enhance";
+import type { PromptEnhanceState } from "@/lib/hooks/use-prompt-enhance";
 
 // Shared Enhance UI (cave-b6c2): the sparkle control + the status strip, used
 // identically by the home, chat, and quick-chat composers so the premium

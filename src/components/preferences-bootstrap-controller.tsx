@@ -8,7 +8,7 @@ import {
   readAppPreferences,
   subscribeAppPreferences,
 } from "@/lib/app-preferences";
-import { reapplyIndependentAppearance } from "@/lib/appearance-restore";
+import { reapplyIndependentAppearance } from "@/lib/themes/appearance-restore";
 import { migrateLegacyBackdropImage } from "@/lib/cave-backdrop";
 
 // Silent bounded auto-retry: a failed or stalled cold-start reconciliation

@@ -47,7 +47,7 @@ const RECOVERY_MEASUREMENT_TIMEOUT: Duration = Duration::from_secs(90);
 /// Revive budget: a burst of attempts, then a cooldown that REFILLS it.
 ///
 /// Mirrors the shape of `createFamiliarLivenessPolicy` in
-/// src/lib/familiar-liveness.ts, and for the same reason: a fixed list of
+/// src/lib/familiars/familiar-liveness.ts, and for the same reason: a fixed list of
 /// attempts that runs out is indistinguishable from giving up permanently,
 /// which is the failure that policy was written to end.
 ///

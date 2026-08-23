@@ -11,7 +11,7 @@ import {
   type ProfileKind,
 } from "@/lib/profile-card";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
+import { loadCanonicalMemoryList } from "@/lib/memory/canonical-memory-resources";
 import type { UserProfile } from "@/lib/user-profile-shared";
 import type { CanonicalMemoryAvailability } from "@/components/familiars-view-stats";
 import type { Familiar, SessionRow } from "@/lib/types";

@@ -1,4 +1,4 @@
-import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { COMPATIBILITY_ADAPTERS } from "@/lib/runtime/harness-adapters";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 export { isValidSessionId } from "./session-id.ts";
 

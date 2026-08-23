@@ -6,14 +6,14 @@
 // assigned task; the helpers turn one into a board card, a card connection, or
 // a bead.
 
-import type { CardAsanaKind, CardAsanaLink } from "@/lib/cave-board-types";
-import { publishBoardChanged } from "@/lib/board-cache-events";
+import type { CardAsanaKind, CardAsanaLink } from "@/lib/board/cave-board-types";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
 import {
   mergeLinksWithAsana,
   mergeTaskAsanaLinks,
   taskAsanaLinkFromAsanaItem,
   taskAsanaLinkFromUrl,
-} from "@/lib/task-asana";
+} from "@/lib/tasks/task-asana";
 
 export type AsanaItem = {
   kind: CardAsanaKind;

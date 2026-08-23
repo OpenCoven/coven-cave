@@ -10,10 +10,10 @@ import {
   buildTaskDraftFromChat,
   createTaskFromDraft,
   type ChatTaskDraft,
-} from "@/lib/chat-task-autofill";
-import type { Card } from "@/lib/cave-board-types";
-import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
-import type { NextPath } from "@/lib/next-paths";
+} from "@/lib/chat/chat-task-autofill";
+import type { Card } from "@/lib/board/cave-board-types";
+import type { ChatHandoffContext } from "@/lib/chat/chat-task-handoff";
+import type { NextPath } from "@/lib/projects/next-paths";
 
 type TaskSuggestion = Extract<NextPath, { kind: "task" }>;
 

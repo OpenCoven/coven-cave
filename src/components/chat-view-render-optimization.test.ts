@@ -14,12 +14,12 @@ const chatViewSource = readFileSync(
   "utf8",
 );
 const transcriptGroupsSource = readFileSync(
-  new URL("../lib/chat-transcript-groups.ts", import.meta.url),
+  new URL("../lib/chat/chat-transcript-groups.ts", import.meta.url),
   "utf8",
 );
 
 const messageMarkdownStreamSource = readFileSync(
-  new URL("../lib/message-markdown-stream.ts", import.meta.url),
+  new URL("../lib/chat/message-markdown-stream.ts", import.meta.url),
   "utf8",
 );
 

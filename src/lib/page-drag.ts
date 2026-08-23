@@ -6,7 +6,7 @@
  * than React props.
  */
 
-import { workspacePageDefinition } from "./workspace-page-registry.ts";
+import { workspacePageDefinition } from "./projects/workspace-page-registry.ts";
 
 /** DataTransfer type carried by a page drag (value = the page/mode id). */
 export const PAGE_DRAG_MIME = "application/x-cave-page";

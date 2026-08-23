@@ -15,8 +15,8 @@
 // copy of the data, and memory READS still draw no edge because none can be
 // verified yet (Phase 5).
 
-import { buildBipartiteWeaveMap, weaveMapRows, type WeaveMapTone } from "@/lib/weave-map";
-import type { AuditEntryView, ProposalView, ThreadView } from "@/lib/threads-read";
+import { buildBipartiteWeaveMap, weaveMapRows, type WeaveMapTone } from "@/lib/grimoire/weave-map";
+import type { AuditEntryView, ProposalView, ThreadView } from "@/lib/chat/threads-read";
 
 const TONE_VAR: Record<WeaveMapTone, string> = {
   holds: "var(--color-success)",

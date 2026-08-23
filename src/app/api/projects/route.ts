@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { createProject, loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/cave-projects";
-import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { createProject, loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/projects/cave-projects";
+import { normalizeGitHubRepoUrl } from "@/lib/github/github-repo-link";
 import {
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_CODE,
   PROJECT_ROOT_OUTSIDE_ALLOWED_WORKSPACE_ERROR,
-} from "@/lib/project-root-guidance";
-import { listAccessibleProjects } from "@/lib/project-permissions";
+} from "@/lib/projects/project-root-guidance";
+import { listAccessibleProjects } from "@/lib/projects/project-permissions";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";

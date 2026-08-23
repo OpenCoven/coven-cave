@@ -3,11 +3,11 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import { Popover, PopoverItem, PopoverBody, type PopoverItemSemantic } from "@/components/ui/popover";
 import { useAnnouncer } from "@/components/ui/live-region";
-import type { ChatLinkedContext } from "@/lib/chat-linked-context";
-import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
-import { createSmartTaskFromChat } from "@/lib/chat-task-autofill";
-import { publishBoardChanged } from "@/lib/board-cache-events";
-import type { Card } from "@/lib/cave-board-types";
+import type { ChatLinkedContext } from "@/lib/chat/chat-linked-context";
+import type { ChatHandoffContext } from "@/lib/chat/chat-task-handoff";
+import { createSmartTaskFromChat } from "@/lib/chat/chat-task-autofill";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
+import type { Card } from "@/lib/board/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
 import { openExternalUrl } from "@/lib/open-external";
 import { Icon, type IconName } from "@/lib/icon";

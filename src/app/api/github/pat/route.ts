@@ -20,13 +20,13 @@ import {
   getLocalEncryptedSecret,
   hasLocalEncryptedSecret,
 } from "@/lib/local-encrypted-vault";
-import { resolveGitHubToken } from "@/lib/github-token";
+import { resolveGitHubToken } from "@/lib/github/github-token";
 import {
   loadVaultMapForMutation,
   resolveSecret,
   saveVaultMap,
   type VaultMap,
-} from "@/lib/vault";
+} from "@/lib/grimoire/vault";
 import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";

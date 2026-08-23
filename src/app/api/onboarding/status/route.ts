@@ -25,8 +25,8 @@ import {
   runtimeSourceSetupState,
   type AdapterReport,
   type CovenAdapterSummary,
-} from "@/lib/harness-adapters";
-import { listOpenClawAgents } from "@/lib/openclaw-bridge";
+} from "@/lib/runtime/harness-adapters";
+import { listOpenClawAgents } from "@/lib/openclaw/openclaw-bridge";
 import {
   bindingReadinessStep,
   classifyCommandPathFailure,
@@ -37,7 +37,7 @@ import {
   type DeadlineResult,
   type EnvironmentDiscoveryState,
   type OnboardingStatusStep,
-} from "@/lib/onboarding-status-probes";
+} from "@/lib/onboarding/onboarding-status-probes";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

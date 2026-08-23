@@ -20,13 +20,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Icon } from "@/lib/icon";
-import type { FamiliarSectionData } from "@/lib/familiar-tab-section-model";
-import type { ContractReport } from "@/lib/familiar-contract";
+import type { FamiliarSectionData } from "@/lib/familiars/familiar-tab-section-model";
+import type { ContractReport } from "@/lib/familiars/familiar-contract";
 import type { RoleEntry } from "@/app/api/roles/route";
 import { relativeTime } from "@/lib/relative-time";
 import { getVoiceProvider } from "@/lib/voice/registry";
-import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
-import { navigateFamiliarSurface } from "@/lib/familiar-surface-navigation";
+import { openFamiliarStudioSettingsTab } from "@/lib/familiars/familiar-studio-context";
+import { navigateFamiliarSurface } from "@/lib/familiars/familiar-surface-navigation";
 import "@/styles/familiar-tab-identity.css";
 
 // ── Identity contract fetch ──────────────────────────────────────────────────

@@ -28,14 +28,14 @@ import {
 } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon, type IconName } from "@/lib/icon";
-import type { Card, CardStatus } from "@/lib/cave-board-types";
-import type { CaveProject } from "@/lib/cave-projects-types";
-import type { RoleSurfaceContext } from "@/lib/role-surfaces";
-import { useRoleSurfaceState } from "@/lib/role-surface-state";
-import { useLatestAsyncData } from "@/lib/use-role-surfaces";
+import type { Card, CardStatus } from "@/lib/board/cave-board-types";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
+import type { RoleSurfaceContext } from "@/lib/familiars/role-surfaces";
+import { useRoleSurfaceState } from "@/lib/familiars/role-surface-state";
+import { useLatestAsyncData } from "@/lib/hooks/use-role-surfaces";
 import { relativeTime } from "@/lib/relative-time";
-import { publishBoardChanged } from "@/lib/board-cache-events";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { publishBoardChanged } from "@/lib/board/board-cache-events";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import {
   SurfaceCanvas,
   SurfaceEmpty,

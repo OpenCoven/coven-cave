@@ -8,10 +8,10 @@ import {
   archiveFamiliar,
   unarchiveFamiliar,
   useArchivedFamiliars,
-} from "@/lib/cave-familiar-archive";
+} from "@/lib/familiars/cave-familiar-archive";
 import { relativeTime } from "@/lib/relative-time";
-import { useUndoDelete } from "@/lib/use-undo-delete";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useUndoDelete } from "@/lib/hooks/use-undo-delete";
+import type { ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 
 type Props = {
   familiar: ResolvedFamiliar;

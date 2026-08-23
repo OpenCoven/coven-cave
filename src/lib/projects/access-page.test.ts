@@ -11,7 +11,7 @@ import {
   setAllOps,
   splitProjectsBySection,
 } from "./access-page.ts";
-import type { ProjectAccessLevel } from "../project-access-levels.ts";
+import type { ProjectAccessLevel } from "./project-access-levels.ts";
 
 describe("classifyProjectSection", () => {
   it("classifies familiar-workspace roots as workspaces", () => {

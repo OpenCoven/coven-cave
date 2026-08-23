@@ -90,7 +90,7 @@ assert.doesNotMatch(
 );
 assert.match(
   src,
-  /import \{ readDaemonAutomation \} from "@\/lib\/daemon-automation-pref"/,
+  /import \{ readDaemonAutomation \} from "@\/lib\/daemon\/daemon-automation-pref"/,
   "the preference is read from its own module, not reconstructed locally",
 );
 assert.doesNotMatch(src, /Update Coven CLI/, "ordinary CLI update actions stay out of the chat header");

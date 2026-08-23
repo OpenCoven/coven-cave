@@ -7,7 +7,7 @@ import {
   type ResearchGenerationContent,
   type ResearchGenerationStoryboardScene,
   type ResearchMediaRenderConfig,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import type { ResearchMediaJobDefinition } from "./research-media-job-contract.ts";
 import {
   publishResearchGenerationMediaFile,

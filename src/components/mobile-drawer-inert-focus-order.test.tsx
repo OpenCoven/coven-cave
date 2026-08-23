@@ -22,7 +22,7 @@
 // What IS genuinely testable without jsdom: the ordering contract itself.
 // react-test-renderer's `createNodeMock` lets a host ref resolve to any
 // plain object, so this file mounts the REAL `useFocusTrap` hook (imported
-// from "@/lib/use-focus-trap", not reimplemented) alongside a mirrored copy
+// from "@/lib/hooks/use-focus-trap", not reimplemented) alongside a mirrored copy
 // of mobile-drawer.tsx's shell-inert effect, in the same relative
 // declaration order production code uses, and drives it through React's
 // actual effect-commit machinery (act() + real mount/update/cleanup) rather
@@ -42,7 +42,7 @@
 import { useEffect, useRef } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, test } from "vitest";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "@/lib/cave-config";
-import { parseRoleListField, parseRoleMcpServers } from "@/lib/role-manifest";
-import { discoverRoleFiles, parseRoleFrontmatter } from "@/lib/role-source";
-import type { RoleEffectiveComposition } from "@/lib/role-craft-composition";
+import { parseRoleListField, parseRoleMcpServers } from "@/lib/familiars/role-manifest";
+import { discoverRoleFiles, parseRoleFrontmatter } from "@/lib/familiars/role-source";
+import type { RoleEffectiveComposition } from "@/lib/familiars/role-craft-composition";
 import { roleCraftService, type RoleCraftState } from "@/lib/server/role-crafts";
 
 export type RoleEntry = {

@@ -4,20 +4,20 @@ import { performance } from "node:perf_hooks";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
-import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
-import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
-import type { ModelControlValues } from "./model-control-capabilities.ts";
-import type { GrokSandboxProfile } from "./grok-build.ts";
+import type { ChatResponseMetadata } from "./chat/chat-response-metadata.ts";
+import type { ModelApplicationState, ModelScope } from "./chat/chat-model-state.ts";
+import type { ModelControlValues } from "./runtime/model-control-capabilities.ts";
+import type { GrokSandboxProfile } from "./integrations/grok/grok-build.ts";
 import type { SessionOrigin } from "./types.ts";
-import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
-import { CHAT_ATTENTION_REASONS } from "./chat-attention-marker.ts";
+import { linearizeLegacy, resolveActivePath } from "./chat/conversation-tree.ts";
+import { CHAT_ATTENTION_REASONS } from "./chat/chat-attention-marker.ts";
 import {
   isCanonicalIsoInstant,
   normalizeChatAttentionOperationId,
   normalizeChatAttentionOperationLineage,
   type ChatAttentionEvidence,
   type ChatAttentionRequest,
-} from "./chat-attention.ts";
+} from "./chat/chat-attention.ts";
 
 const CONV_DIR = path.join(caveHome(), "conversations");
 const conversationLockTails = new Map<string, Promise<void>>();
@@ -34,7 +34,7 @@ export type ChatTurn = {
   harnessSessionId?: string;
   role: "user" | "assistant" | "system";
   text: string;
-  attachments?: import("./chat-attachments").ChatAttachment[];
+  attachments?: import("./chat/chat-attachments").ChatAttachment[];
   reasoning?: string;
   tools?: Array<{
     id: string;
@@ -574,7 +574,7 @@ export type ConversationStubSeed = {
   userTurn: {
     id: string;
     text: string;
-    attachments?: import("./chat-attachments").ChatAttachment[];
+    attachments?: import("./chat/chat-attachments").ChatAttachment[];
     reasoningEffort?: ChatTurn["reasoningEffort"];
     responseSpeed?: ChatTurn["responseSpeed"];
     modelControls?: ChatTurn["modelControls"];
@@ -599,7 +599,7 @@ export type QueuedOfflineConversationSeed = {
   userTurn: {
     id: string;
     text: string;
-    attachments?: import("./chat-attachments").ChatAttachment[];
+    attachments?: import("./chat/chat-attachments").ChatAttachment[];
     reasoningEffort?: ChatTurn["reasoningEffort"];
     responseSpeed?: ChatTurn["responseSpeed"];
     modelControls?: ChatTurn["modelControls"];

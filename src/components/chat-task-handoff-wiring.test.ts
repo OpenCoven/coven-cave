@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Chat → board task handoff wiring (cave-px7). The pure payload logic is
-// unit-tested in src/lib/chat-task-handoff.test.ts; this guards the UI wiring:
+// unit-tested in src/lib/chat/chat-task-handoff.test.ts; this guards the UI wiring:
 // the task-link picker offers "New task from this chat" when the chat surface
 // hands it a handoff context, and chat-view actually supplies that context
 // (turns + familiar + project) so the created card is linked and auditable.
@@ -13,7 +13,7 @@ const linkedWork = await readFile(new URL("./composer-linked-work-actions.tsx", 
 // ── picker: create-from-chat row ─────────────────────────────────────────────
 assert.match(
   picker,
-  /import \{ createTaskFromChat, type ChatHandoffContext \} from "@\/lib\/chat-task-handoff"/,
+  /import \{ createTaskFromChat, type ChatHandoffContext \} from "@\/lib\/chat\/chat-task-handoff"/,
   "picker should use the shared chat-task-handoff helper, not an inline fetch",
 );
 assert.match(
@@ -45,7 +45,7 @@ assert.match(
 // ── linked-work extraction: keep the shared handoff plumbing in the component ─
 assert.match(
   linkedWork,
-  /import type \{ ChatHandoffContext \} from "@\/lib\/chat-task-handoff"/,
+  /import type \{ ChatHandoffContext \} from "@\/lib\/chat\/chat-task-handoff"/,
   "composer-linked-work-actions imports the handoff context type",
 );
 assert.match(

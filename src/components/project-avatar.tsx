@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useProjectImages } from "@/lib/cave-project-images";
-import { normalizeProjectRoot } from "@/lib/cave-projects-types";
+import { useProjectImages } from "@/lib/projects/cave-project-images";
+import { normalizeProjectRoot } from "@/lib/projects/cave-projects-types";
 import { projectMonogram, projectTint } from "@/lib/comux-projects";
 
 const PX = { sm: 16, md: 20, lg: 28, xl: 44 } as const;

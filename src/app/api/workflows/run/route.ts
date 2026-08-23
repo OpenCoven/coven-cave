@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runtimeOwnsModelDefault } from "@/lib/runtime-models";
+import { runtimeOwnsModelDefault } from "@/lib/runtime/runtime-models";
 import {
   bindingFor,
   enqueueOfflineTravelItem,
@@ -8,9 +8,9 @@ import {
   setSessionTitle,
 } from "@/lib/cave-config";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
-import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/copilot-stream";
-import { isSshRuntime } from "@/lib/familiar-runtime";
-import { hermesProfileDaemonLaunchBlockReason } from "@/lib/hermes-profiles";
+import { copilotStreamSpec, type RuntimeEventProtocolSchema } from "@/lib/integrations/copilot/copilot-stream";
+import { isSshRuntime } from "@/lib/familiars/familiar-runtime";
+import { hermesProfileDaemonLaunchBlockReason } from "@/lib/integrations/hermes/hermes-profiles";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { startCopilotFlowRunWithTransportBoundary } from "@/lib/server/flow-copilot-session";
 import {
@@ -23,10 +23,10 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
 import { realpath, stat } from "node:fs/promises";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
-import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
-import { recordRun } from "@/lib/workflow-runs";
-import { loadLocalWorkflowList } from "@/lib/workflow-source";
-import { workflowRunBlockReason, type WorkflowSummary } from "@/lib/workflows";
+import { buildWorkflowRunPrompt } from "@/lib/automations/workflow-run-prompt";
+import { recordRun } from "@/lib/automations/workflow-runs";
+import { loadLocalWorkflowList } from "@/lib/automations/workflow-source";
+import { workflowRunBlockReason, type WorkflowSummary } from "@/lib/automations/workflows";
 import { runWorkflowEngineAfterCopilotGate } from "./copilot-engine-gate";
 
 export const dynamic = "force-dynamic";

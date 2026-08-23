@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 const grantsRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 const proposalsRoute = await readFile(new URL("../grant-proposals/route.ts", import.meta.url), "utf8");
 const proposalItemRoute = await readFile(new URL("../grant-proposals/[id]/route.ts", import.meta.url), "utf8");
-const permissions = await readFile(new URL("../../../lib/project-permissions.ts", import.meta.url), "utf8");
+const permissions = await readFile(new URL("../../../lib/projects/project-permissions.ts", import.meta.url), "utf8");
 const targets = await readFile(new URL("../../../lib/server/project-grant-targets.ts", import.meta.url), "utf8");
 const trustedGate = await readFile(
   new URL("../../../lib/server/trusted-grant-mutation.ts", import.meta.url),
@@ -46,7 +46,7 @@ assert.match(grantsRoute, /export async function GET\(/, "project grants route s
 
 assert.match(
   targets,
-  /import \{ loadProjects, projectById \} from "@\/lib\/cave-projects";/,
+  /import \{ loadProjects, projectById \} from "@\/lib\/projects\/cave-projects";/,
   "grant-target validation should use the shared project loader helpers",
 );
 assert.match(

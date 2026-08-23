@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "@/styles/quick-chat-glass.css";
 import { IconButton } from "@/components/ui/icon-button";
 import { Icon } from "@/lib/icon";
-import type { ModelControlCapability, ModelControlFamily, ModelControlValues } from "@/lib/model-control-capabilities";
+import type { ModelControlCapability, ModelControlFamily, ModelControlValues } from "@/lib/runtime/model-control-capabilities";
 import type { Familiar } from "@/lib/types";
-import { useQuickChat } from "@/lib/use-quick-chat";
+import { useQuickChat } from "@/lib/hooks/use-quick-chat";
 import {
   FamiliarMark,
   QuickChatComposer,

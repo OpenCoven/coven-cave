@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { parseCodexRrule } from "../../../../../../lib/codex-automation-form.ts";
+import { parseCodexRrule } from "../../../../../../lib/integrations/codex/codex-automation-form.ts";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
@@ -17,7 +17,7 @@ test("RRULEs are structurally validated — a prefix check alone let garbage per
   // The route reuses the shared codex parser for the daily/weekly shapes and
   // otherwise requires well-formed KEY=VALUE parts with known RRULE keys and
   // a known FREQ; failures are rejected 400 before the runner persists them.
-  assert.match(source, /import \{ parseCodexRrule \} from "@\/lib\/codex-automation-form"/);
+  assert.match(source, /import \{ parseCodexRrule \} from "@\/lib\/integrations\/codex\/codex-automation-form"/);
   assert.match(source, /parseCodexRrule\(rrule\)\.mode !== "raw"/);
   assert.match(source, /startsWith\("RRULE:"\)/);
   assert.match(source, /RRULE_KNOWN_KEYS\.has\(key\)/);

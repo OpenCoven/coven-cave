@@ -39,7 +39,7 @@ test("both new-session surfaces render through this one component", () => {
 test("counts and notes come from the shared pure model, never from the caller", () => {
   assert.match(
     bands,
-    /import type \{ StartFromGroupMeta, StartFromKind \} from "@\/lib\/chat-start-from";/,
+    /import type \{ StartFromGroupMeta, StartFromKind \} from "@\/lib\/chat\/chat-start-from";/,
     "the band's head is typed by the shared group model",
   );
   assert.match(bands, /className="cave-sf__band-count">\{meta\.count\}/, "the head shows meta.count");

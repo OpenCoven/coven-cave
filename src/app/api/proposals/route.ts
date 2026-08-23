@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { activeThreadsAdapter, httpStatusForEnvelope } from "@/lib/threads-adapters";
+import { activeThreadsAdapter, httpStatusForEnvelope } from "@/lib/chat/threads-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

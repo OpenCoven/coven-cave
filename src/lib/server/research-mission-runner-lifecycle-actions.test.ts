@@ -7,7 +7,7 @@ import {
   RESEARCH_DIRECTION_MAX_LENGTH,
   type ResearchMission,
   type ResearchSourcePatch,
-} from "../research-missions.ts";
+} from "../research/research-missions.ts";
 import {
   CopilotArgvTransportError,
   CopilotPromptTransportError,

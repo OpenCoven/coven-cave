@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { collectMemoryInspector } from "@/lib/memory-inspector";
+import { collectMemoryInspector } from "@/lib/memory/memory-inspector";
 
 export const dynamic = "force-dynamic";
 

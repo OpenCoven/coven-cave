@@ -8,7 +8,7 @@
  */
 
 import { Icon } from "@/lib/icon";
-import type { AutoMissionState } from "@/lib/auto-status-blocks";
+import type { AutoMissionState } from "@/lib/automations/auto-status-blocks";
 
 function stateVisual(state: AutoMissionState): { label: string; cls: string; icon: Parameters<typeof Icon>[0]["name"] } {
   switch (state) {

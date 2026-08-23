@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { evaluateFamiliarContract } from "@/lib/familiar-contract";
+import { evaluateFamiliarContract } from "@/lib/familiars/familiar-contract";
 import { isValidFamiliarId, readFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 
 export const dynamic = "force-dynamic";

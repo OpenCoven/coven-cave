@@ -3,9 +3,9 @@
 // prompt builder is pure and unit-tested; the transport mirrors canvas-generate
 // but returns the assistant's plain text (no artifact extraction).
 
-import { parseSseFrame } from "@/lib/canvas-generate";
-import { createAttentionSafeTextAccumulator } from "@/lib/chat-attention-stream";
-import { extractNextPaths } from "@/lib/next-paths";
+import { parseSseFrame } from "@/lib/canvas/canvas-generate";
+import { createAttentionSafeTextAccumulator } from "@/lib/chat/chat-attention-stream";
+import { extractNextPaths } from "@/lib/projects/next-paths";
 import { DEFAULT_JOURNAL_PROMPT, renderJournalPrompt } from "@/lib/journal-prompt";
 
 /** Wrap the day's activity context into a request for a short first-person

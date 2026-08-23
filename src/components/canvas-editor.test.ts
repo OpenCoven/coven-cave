@@ -6,14 +6,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import * as inspector from "../lib/canvas-inspector.ts";
-import { resolveEscapeAction } from "../lib/canvas-editor-escape.ts";
+import * as inspector from "../lib/canvas/canvas-inspector.ts";
+import { resolveEscapeAction } from "../lib/canvas/canvas-editor-escape.ts";
 import {
   CANVAS_VIEWPORT_PRESETS,
   canvasViewportPreset,
   describeViewport,
   resolveViewportScale,
-} from "../lib/canvas-viewport.ts";
+} from "../lib/canvas/canvas-viewport.ts";
 
 const {
   buildCanvasInspectorScript,
@@ -211,7 +211,7 @@ assert.match(
 // Escape routes through the shared resolver: field → selection → expand.
 assert.match(
   editor,
-  /import \{ resolveEscapeAction \} from "@\/lib\/canvas-editor-escape";/,
+  /import \{ resolveEscapeAction \} from "@\/lib\/canvas\/canvas-editor-escape";/,
   "the editor delegates Escape precedence to the shared resolver",
 );
 assert.match(

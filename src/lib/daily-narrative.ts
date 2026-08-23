@@ -9,8 +9,8 @@
 import type { InboxMedia } from "./cave-inbox";
 import type { DailyReportPayload } from "./daily-report-facts.ts";
 import type { DailyReportStats } from "./daily-report.ts";
-import { extractNextPaths } from "./next-paths.ts";
-import { streamFamiliarText } from "./familiar-stream";
+import { extractNextPaths } from "./projects/next-paths.ts";
+import { streamFamiliarText } from "./familiars/familiar-stream";
 
 /** Don't regenerate for a facts change more often than this. */
 export const NARRATIVE_MIN_REGEN_MS = 60 * 60_000;

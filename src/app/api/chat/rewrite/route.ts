@@ -16,7 +16,7 @@
 // handed the answer text.
 
 import { bindingFor, loadConfig } from "@/lib/cave-config";
-import { isTrustedChatHarness } from "@/lib/harness-adapters";
+import { isTrustedChatHarness } from "@/lib/runtime/harness-adapters";
 import { runCovenOneShot, resolveFamiliarWorkspace } from "@/lib/server/coven-oneshot";
 import {
   REWRITE_MAX_CHARS,
@@ -24,7 +24,7 @@ import {
   isRewriteTone,
   isUsableRewrite,
   rewritePrompt,
-} from "@/lib/reader-rewrite";
+} from "@/lib/reading/reader-rewrite";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

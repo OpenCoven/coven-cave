@@ -30,7 +30,7 @@ assert.doesNotMatch(
   /from "@\/components\/lazy-surfaces"/,
   "Familiar settings should not pull the all-surfaces lazy registry into Chat's client graph",
 );
-assert.match(settings, /import type \{ FamiliarSettingsTab \} from "@\/lib\/chat-tab-events"/);
+assert.match(settings, /import type \{ FamiliarSettingsTab \} from "@\/lib\/chat\/chat-tab-events"/);
 assert.match(settings, /\{ id: "chat", label: "Chat" \}/);
 assert.match(settings, /tab === "chat" \? <ChatSettingsView \/>/);
 assert.match(settings, /<VaultPanel[\s\S]{0,100}familiarId=\{familiar\.id\}/);

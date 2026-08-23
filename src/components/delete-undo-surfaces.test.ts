@@ -13,7 +13,7 @@ for (const rel of [
   "./familiar-lifecycle-section.tsx",
 ]) {
   const src = read(rel);
-  assert.match(src, /import \{ useUndoDelete \} from "@\/lib\/use-undo-delete"/, `${rel} imports useUndoDelete`);
+  assert.match(src, /import \{ useUndoDelete \} from "@\/lib\/hooks\/use-undo-delete"/, `${rel} imports useUndoDelete`);
   assert.match(src, /import \{ UndoToast \} from "@\/components\/ui\/undo-toast"/, `${rel} imports UndoToast`);
   assert.match(src, /useUndoDelete</, `${rel} instantiates the undo hook`);
   assert.match(src, /scheduleDelete\(/, `${rel} schedules a deferred delete`);

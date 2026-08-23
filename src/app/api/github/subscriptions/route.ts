@@ -5,8 +5,8 @@ import {
   loadSubscriptions,
   patchSubscriptions,
   type SubscriptionsPatch,
-} from "@/lib/github-subscriptions";
-import { startGithubWatcher, tickGithubWatcher } from "@/lib/github-watcher";
+} from "@/lib/github/github-subscriptions";
+import { startGithubWatcher, tickGithubWatcher } from "@/lib/github/github-watcher";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

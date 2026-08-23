@@ -5,24 +5,24 @@ import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
-import { parseGitHubItemUrl } from "@/lib/github-item-url";
-import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/session-list-deletes";
-import { sameSessionList } from "@/lib/session-list-equal";
-import { invalidateConversation } from "@/lib/conversation-cache";
+import { parseGitHubItemUrl } from "@/lib/github/github-item-url";
+import { filterDeletedSessions, recordDeletedSessionIds } from "@/lib/chat/session-list-deletes";
+import { sameSessionList } from "@/lib/chat/session-list-equal";
+import { invalidateConversation } from "@/lib/chat/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import {
   isWorkspaceMode,
   type WorkspaceMode as WorkspaceModeFromDaemon,
-} from "@/lib/workspace-mode";
-import { workspacePageDefinition, type WorkspacePageVariant } from "@/lib/workspace-page-registry";
+} from "@/lib/projects/workspace-mode";
+import { workspacePageDefinition, type WorkspacePageVariant } from "@/lib/projects/workspace-page-registry";
 import {
   normalizeWorkspacePaneRequest,
   workspacePaneRequestKey,
   type WorkspacePaneRequest,
-} from "@/lib/workspace-pane-request";
-import { navSectionForMode, type NavSection } from "@/lib/nav-section";
-import { useIsMobile } from "@/lib/use-viewport";
+} from "@/lib/projects/workspace-pane-request";
+import { navSectionForMode, type NavSection } from "@/lib/surfaces/nav-section";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
 import {
   clearChatHash,
   clearModeParam,
@@ -30,7 +30,7 @@ import {
   readModeParam,
   readSplitPageParam,
   readSplitSideParam,
-} from "@/lib/workspace-url-state";
+} from "@/lib/projects/workspace-url-state";
 import {
   canMoveWorkspaceNavigation,
   createWorkspaceNavigationHistory,
@@ -38,22 +38,22 @@ import {
   pushWorkspaceNavigation,
   replaceWorkspaceNavigation,
   restoreWorkspaceNavigation,
-} from "@/lib/workspace-navigation-history";
+} from "@/lib/projects/workspace-navigation-history";
 import {
   CHAT_SESSION_LEVEL,
   canMoveSurfaceHistory,
   moveSurfaceHistory,
   subscribeSurfaceHistory,
   surfaceHistoryGateOpen,
-} from "@/lib/surface-history";
-import { useOverlayHistory, useTrackedSurfaceValue } from "@/lib/use-surface-history";
+} from "@/lib/surfaces/surface-history";
+import { useOverlayHistory, useTrackedSurfaceValue } from "@/lib/hooks/use-surface-history";
 import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface, so JournalView is gone; Grimoire is
 // a new in-shell surface from main.
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
-import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
-import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
+import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/surfaces/mobile-mode-pref";
+import { reconcileMobileModeRequest } from "@/lib/surfaces/mobile-mode-reconcile";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
@@ -61,25 +61,25 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
-import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { openGrimoireDoc } from "@/lib/grimoire/grimoire-link";
+import { FamiliarStudioProvider } from "@/lib/familiars/familiar-studio-context";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   getFamiliarScope,
   setFamiliarScope,
   getLastSurface,
   setLastSurface,
-} from "@/lib/familiar-memory";
-import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+} from "@/lib/familiars/familiar-memory";
+import { toggleFamiliarSelection } from "@/lib/familiars/familiar-multiselect";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
-import { useMilestoneWatch } from "@/lib/use-milestone-watch";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
-import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
-import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
-import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
+import { useMilestoneWatch } from "@/lib/hooks/use-milestone-watch";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
+import { useRefreshOnFocus } from "@/lib/hooks/use-refresh-on-focus";
+import { useSurfaceWarmup } from "@/lib/hooks/use-surface-warmup";
+import { useCanonicalMemoryWarmup } from "@/lib/hooks/use-canonical-memory-warmup";
+import { canonicalMemoryLocalAccessEligible } from "@/lib/memory/canonical-memory-local-access";
 import {
   acknowledgePendingCanonicalMemorySelection,
   isLatestFamiliarRosterRequest,
@@ -90,23 +90,23 @@ import {
 import {
   classifyDaemonConnectionTravelCadence,
   classifyDaemonStatusPoll,
-} from "@/lib/daemon-status-classification";
+} from "@/lib/daemon/daemon-status-classification";
 import {
   createDaemonConnectionSupervisor,
   type DaemonConnectionPoll,
-} from "@/lib/daemon-connection-supervisor";
-import { createTauriDaemonReliabilityObserver } from "@/lib/daemon-reliability";
-import { createDaemonTravelReconcileRequester } from "@/lib/daemon-travel-reconcile-client";
+} from "@/lib/daemon/daemon-connection-supervisor";
+import { createTauriDaemonReliabilityObserver } from "@/lib/daemon/daemon-reliability";
+import { createDaemonTravelReconcileRequester } from "@/lib/daemon/daemon-travel-reconcile-client";
 import {
   createDaemonDesktopAutoStartCoordinator,
   runWorkspaceDaemonStart,
-} from "@/lib/daemon-desktop-auto-start";
+} from "@/lib/daemon/daemon-desktop-auto-start";
 import {
   daemonRecoveryPresentation,
   initialDaemonRecoveryPresentation,
-} from "@/lib/daemon-recovery-presentation";
-import { readDaemonAutomation } from "@/lib/daemon-automation-pref";
-import { waitForDaemonUpdateIdle } from "@/lib/app-update-daemon";
+} from "@/lib/daemon/daemon-recovery-presentation";
+import { readDaemonAutomation } from "@/lib/daemon/daemon-automation-pref";
+import { waitForDaemonUpdateIdle } from "@/lib/daemon/app-update-daemon";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 import {
@@ -120,14 +120,14 @@ import {
   isCurrentSessionListRequest,
   recordChatAttentionClear,
   settleChatAttentionClear,
-} from "@/lib/chat-attention-projection";
+} from "@/lib/chat/chat-attention-projection";
 import {
   CHAT_ATTENTION_CLEAR_EVENT,
   CHAT_ATTENTION_SETTLE_EVENT,
   attentionClearFromEvent,
   attentionClearedSessionId,
   attentionSettlementFromEvent,
-} from "@/lib/chat-attention-events";
+} from "@/lib/chat/chat-attention-events";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
@@ -154,7 +154,7 @@ import {
   RailTerminalPanel,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_CONVERSATION_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { RightChatPanel } from "@/components/right-chat-panel";
@@ -182,17 +182,17 @@ import {
   parseRoleSurfaceMode,
   roleSurfaceMode,
   type RoleSurfaceMode,
-} from "@/lib/role-surfaces";
-import { useRoleSurfaceSession } from "@/lib/use-role-surfaces";
+} from "@/lib/familiars/role-surfaces";
+import { useRoleSurfaceSession } from "@/lib/hooks/use-role-surfaces";
 import { RoleSurfaceHost } from "@/components/role-surface-host";
 import { CODE_SURFACE_ID } from "@/components/role-surfaces/ids";
 // Role Surfaces self-register via this manifest — the shell only ever handles
 // the generic `surface:<id>` mode and never names a role.
 import "@/components/role-surfaces/register";
 import type { InitialCommandControls } from "@/lib/command-controls";
-import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
-import { attachGitHubTaskContext } from "@/lib/workspace-github-task-context";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github/github-tasks";
+import { attachGitHubTaskContext } from "@/lib/projects/workspace-github-task-context";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
@@ -205,17 +205,17 @@ import {
   covenRunPillSnapshot,
   subscribeCovenRunPill,
 } from "@/lib/coven-run-signal";
-import { sessionStatusTone } from "@/lib/session-status";
-import { sessionPrStatus } from "@/lib/session-pr-status";
-import { normalizeProjectRoot } from "@/lib/cave-projects-types";
+import { sessionStatusTone } from "@/lib/chat/session-status";
+import { sessionPrStatus } from "@/lib/chat/session-pr-status";
+import { normalizeProjectRoot } from "@/lib/projects/cave-projects-types";
 import { FirstProjectGate } from "@/components/first-project-gate";
-import { resolveFirstProjectGatePolicy } from "@/lib/first-project-gate-policy";
+import { resolveFirstProjectGatePolicy } from "@/lib/onboarding/first-project-gate-policy";
 import {
   clearPendingFirstProjectAccessSnapshot,
   readPendingFirstProjectAccessSnapshot,
   resolvePendingFirstProjectAccessSnapshot,
   type PendingFirstProjectAccessSnapshot,
-} from "@/lib/first-project-gate-retry";
+} from "@/lib/onboarding/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import { enqueuePendingCodeOpen, type PendingCodeOpen, type PendingCodeOrigin } from "@/lib/pending-code-open";
@@ -223,7 +223,7 @@ import {
   clearPendingCodeNavigation,
   enqueuePendingCodeNavigation,
 } from "@/lib/pending-code-navigation";
-import type { ChatAttachment } from "@/lib/chat-attachments";
+import type { ChatAttachment } from "@/lib/chat/chat-attachments";
 import { startVoiceConversation, voiceChatStartErrorMessage } from "@/lib/voice/start-voice-chat";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
@@ -239,14 +239,14 @@ import { isRenderablePreviewUrl } from "@/lib/preview-blocks";
 import {
   addSecondaryWorkspaceTile,
   removeSecondaryWorkspaceTile,
-} from "@/lib/workspace-tiles";
-import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
-import { useProjects } from "@/lib/use-projects";
-import { publishSchedulesChanged } from "@/lib/board-cache-events";
+} from "@/lib/projects/workspace-tiles";
+import { useArchivedFamiliars } from "@/lib/familiars/cave-familiar-archive";
+import { useProjects } from "@/lib/hooks/use-projects";
+import { publishSchedulesChanged } from "@/lib/board/board-cache-events";
 import {
   resolveLoadedActiveFamiliarId,
   resolveWorkspaceActiveFamiliarId,
-} from "@/lib/active-familiar";
+} from "@/lib/familiars/active-familiar";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
@@ -447,7 +447,7 @@ export function Workspace() {
   // and so the choice persists across Grimoire remounts within a session.
   const [grimoireView, setGrimoireView] = useSurfacePreference(surfacePreferenceSpecs.grimoire.view);
   const [, setBoardViewMode] = useSurfacePreference(surfacePreferenceSpecs.board.viewMode);
-  // Alias funnel: MODE_ALIASES (src/lib/workspace-mode.ts) is the single
+  // Alias funnel: MODE_ALIASES (src/lib/projects/workspace-mode.ts) is the single
   // source of truth for where every compatibility mode lands. groupchat /
   // journal / flow are rewritten HERE so `mode` never holds them (Group Chat
   // is a tab inside the Chat surface; Journal a tab inside Memories; Flow is

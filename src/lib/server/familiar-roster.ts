@@ -5,8 +5,8 @@ import type { CaveConfig } from "@/lib/cave-config";
 import { loadConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
 import { callDaemonTarget, daemonTargetForConfig, type DaemonTarget } from "@/lib/coven-daemon";
-import { filterInstallSeedFamiliars } from "@/lib/familiar-roster-guard";
-import { parseFamiliarsToml } from "@/lib/onboarding-familiars";
+import { filterInstallSeedFamiliars } from "@/lib/familiars/familiar-roster-guard";
+import { parseFamiliarsToml } from "@/lib/onboarding/onboarding-familiars";
 import { removedFamiliarIds } from "./familiar-tombstones";
 
 export type VisibleFamiliarRosterEntry = {

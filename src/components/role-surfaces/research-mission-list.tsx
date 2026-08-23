@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
-import type { ResearchMission } from "@/lib/research-missions";
+import type { ResearchMission } from "@/lib/research/research-missions";
 import { relativeTime } from "@/lib/relative-time";
 import { nextRovingId, resolveRovingId, type RovingKey } from "@/lib/roving-list";
 import {

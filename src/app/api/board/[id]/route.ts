@@ -8,11 +8,11 @@ import {
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
-import type { CardStep, TaskDependency, TaskNextStep } from "@/lib/cave-board-types";
-import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
-import type { ChatAttachment } from "@/lib/chat-attachments";
-import type { CardOps, CardPatch } from "@/lib/board-card-ops";
-import { trustedProjectCwd } from "@/lib/cave-projects";
+import type { CardStep, TaskDependency, TaskNextStep } from "@/lib/board/cave-board-types";
+import type { CardAsanaLink, CardGitHubLink } from "@/lib/board/cave-board-types";
+import type { ChatAttachment } from "@/lib/chat/chat-attachments";
+import type { CardOps, CardPatch } from "@/lib/board/board-card-ops";
+import { trustedProjectCwd } from "@/lib/projects/cave-projects";
 
 export const dynamic = "force-dynamic";
 

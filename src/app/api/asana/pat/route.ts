@@ -25,7 +25,7 @@ import {
   resolveSecret,
   saveVaultMap,
   type VaultMap,
-} from "@/lib/vault";
+} from "@/lib/grimoire/vault";
 import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";

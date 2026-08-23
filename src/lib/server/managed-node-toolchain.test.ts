@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
-import { MANAGED_NODE_VERSION, nodeArchiveFor } from "../onboarding-prerequisites.ts";
+import { MANAGED_NODE_VERSION, nodeArchiveFor } from "../onboarding/onboarding-prerequisites.ts";
 import { safeArchiveDestination, extractSafeTarGz, extractSafeZip } from "./managed-node-archive.ts";
 import {
   classifyManagedNodeInstallError,

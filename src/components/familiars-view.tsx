@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
@@ -19,19 +19,19 @@ import {
   refreshCanonicalMemory,
   type CanonicalMemoryListLoad,
   type CanonicalMemoryOverviewLoad,
-} from "@/lib/canonical-memory-resources";
-import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
+} from "@/lib/memory/canonical-memory-resources";
+import { CanonicalMemoryRequestError } from "@/lib/memory/canonical-memory-client";
 import type { PendingCanonicalMemorySelection } from "@/lib/canonical-memory";
-import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
-import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { createMemoryFeedRequestGate } from "@/lib/memory/memory-feed-request-gate";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiars/familiar-resolve";
 import {
   SUMMON_FAMILIAR_EVENT,
   consumeSummonPending,
   hasSummonPending,
 } from "@/lib/summon-events";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
-import { readSurfaceResource } from "@/lib/surface-warmup-registry";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
+import { readSurfaceResource } from "@/lib/surfaces/surface-warmup-registry";
 import {
   emptyStats,
   FamiliarsEmptyState,

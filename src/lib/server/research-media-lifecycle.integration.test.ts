@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 
-import type { ResearchGeneration } from "../research-generations.ts";
-import type { ResearchMission } from "../research-missions.ts";
+import type { ResearchGeneration } from "../research/research-generations.ts";
+import type { ResearchMission } from "../research/research-missions.ts";
 import type { ResearchMediaJobFactory } from "./research-media-job-contract.ts";
 
 const temporary = await mkdtemp(

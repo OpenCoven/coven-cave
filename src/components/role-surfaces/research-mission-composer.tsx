@@ -29,7 +29,7 @@ import { settleEnhance } from "@/lib/prompt-enhancer";
 import {
   defaultResearchPlan,
   inferResearchMissionMode,
-} from "@/lib/research-mission-routing";
+} from "@/lib/research/research-mission-routing";
 import {
   RESEARCH_BOUND_LIMITS,
   RESEARCH_INTENT_MAX_LENGTH,
@@ -41,14 +41,14 @@ import {
   type ResearchBounds,
   type ResearchMission,
   type ResearchMissionMode,
-} from "@/lib/research-missions";
+} from "@/lib/research/research-missions";
 import {
   RESEARCH_BRIEF_FIELDS,
   assembleBrief,
   parseBrief,
   promptStrength,
   type ResearchPromptRecommendation,
-} from "@/lib/research-prompt-brief";
+} from "@/lib/research/research-prompt-brief";
 import { ResearchPromptBuilder } from "./research-prompt-builder";
 import { ResearchPromptStrengthMeter } from "./research-prompt-strength";
 

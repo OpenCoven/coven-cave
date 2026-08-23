@@ -40,14 +40,14 @@ import {
   prStatBlocks,
   summarizePrChecks,
   type PrReaderTab,
-} from "@/lib/github-pr-reader";
+} from "@/lib/github/github-pr-reader";
 import {
   useGitHubPrChecks,
   useGitHubPrCommits,
   useGitHubPrDetail,
   useGitHubPrFiles,
   useGitHubPrThreads,
-} from "@/lib/use-github-pr";
+} from "@/lib/hooks/use-github-pr";
 
 const TAB_LABEL: Record<PrReaderTab, string> = {
   conversation: "Conversation",

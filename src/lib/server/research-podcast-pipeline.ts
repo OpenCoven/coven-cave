@@ -3,7 +3,7 @@ import {
   type ResearchGenerationScriptSegment,
   type ResearchGenerationContent,
   type ResearchMediaRenderConfig,
-} from "../research-generations.ts";
+} from "../research/research-generations.ts";
 import {
   runKokoro,
   runPiper,
@@ -15,7 +15,7 @@ import {
   withSpeechModelUse,
   type SpeechModelReadiness,
 } from "../voice/speech-models.ts";
-import { resolveSecret } from "../vault.ts";
+import { resolveSecret } from "../grimoire/vault.ts";
 import {
   DEFAULT_ELEVENLABS_MODEL_ID,
   DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,

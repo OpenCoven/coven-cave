@@ -1,4 +1,4 @@
-import { summarizeChecks, type CheckSummary } from "./github-checks.ts";
+import { summarizeChecks, type CheckSummary } from "./github/github-checks.ts";
 
 export type PrLane =
   | "draft"

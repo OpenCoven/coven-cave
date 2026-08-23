@@ -214,7 +214,7 @@ assert.match(source, /aria-label=\{`Open \$\{fmtDateHeading\(day\)\}`\}/, "the d
 assert.match(source, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onDayClick\?\.\(day\); \}\}/, "the date number navigates into the day (stops the cell add)");
 
 // ── Per-familiar colour coding + legend ──
-assert.match(source, /import \{ familiarAccent \} from "@\/lib\/familiar-color"/, "uses the familiar-accent helper");
+assert.match(source, /import \{ familiarAccent \} from "@\/lib\/familiars\/familiar-color"/, "uses the familiar-accent helper");
 assert.match(source, /const FamiliarColorContext = createContext/, "provides per-familiar colour via context (no prop threading)");
 assert.match(source, /<FamiliarColorContext\.Provider value=\{accentFor\}>/, "CalendarView provides the accent fn");
 assert.match(source, /familiarAccent\(f\.color, f\.id\)/, "maps each familiar to its accent (explicit colour or derived)");

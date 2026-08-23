@@ -15,7 +15,7 @@ import {
   startCodexExecWithOwnedLog,
   type CodexPromptDeliveryResult,
 } from "./automation-runner.ts";
-import { codexManagedPackageSpawnEnv } from "../codex-bin.ts";
+import { codexManagedPackageSpawnEnv } from "../integrations/codex/codex-bin.ts";
 import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV } from "../coven-bin.ts";
 
 const base = {

@@ -8,7 +8,7 @@
  * read falls back to the shared default so surfaces without a familiar in hand
  * (previews, tests) still get a sane value.
  *
- * Mirrors src/lib/reading-leading.ts: a small enum in localStorage, normalized
+ * Mirrors src/lib/reading/reading-leading.ts: a small enum in localStorage, normalized
  * on every read so a hand-edited or stale value can never widen the type.
  */
 

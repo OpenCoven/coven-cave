@@ -6,7 +6,7 @@ import {
   ProjectAccessDeniedError,
   createGrantProposal,
   listGrantProposals,
-} from "@/lib/project-permissions";
+} from "@/lib/projects/project-permissions";
 
 export const dynamic = "force-dynamic";
 

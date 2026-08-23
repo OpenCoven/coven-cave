@@ -4,7 +4,7 @@ import { isValidCollectionId, listCollections, readCollectionMeta } from "@/lib/
 import { normalizeSewDraft, runAgenticSew, runDraftSew, runManualSew } from "@/lib/server/stitch-sew";
 import { markThreadSewn, readStitchThread } from "@/lib/server/stitch-threads";
 import { isValidThreadId, type SewShape } from "@/lib/stitch";
-import { stitchPatternById } from "@/lib/stitch-patterns";
+import { stitchPatternById } from "@/lib/grimoire/stitch-patterns";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

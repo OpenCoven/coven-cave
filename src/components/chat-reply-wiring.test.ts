@@ -31,7 +31,7 @@ assert.match(bubble, /onClick=\{onReply\}/, "the Reply button invokes onReply");
 assert.match(bubble, /onSelect=\{onReply\}/, "the assistant Reply menu item invokes onReply");
 
 // ── chat-view stages, shows, and sends the reply ──────────────────────────
-assert.match(view, /from "@\/lib\/chat-reply"/, "chat-view imports the quote-reply helpers");
+assert.match(view, /from "@\/lib\/chat\/chat-reply"/, "chat-view imports the quote-reply helpers");
 assert.match(view, /const \[replyTarget, setReplyTarget\] = useState<ReplyTarget \| null>/, "reply target state exists");
 // The optional `quote` is the reader's "Ask about this": a passage selected
 // inside the Expand reader becomes the reply target instead of the whole turn.

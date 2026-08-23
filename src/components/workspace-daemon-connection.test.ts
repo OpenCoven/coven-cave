@@ -8,12 +8,12 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 test("Workspace swaps the fixed 5s daemon-status poll for the connection supervisor", () => {
   assert.match(
     workspace,
-    /import \{[\s\S]*createDaemonConnectionSupervisor,[\s\S]*type DaemonConnectionPoll,[\s\S]*\} from "@\/lib\/daemon-connection-supervisor";/,
+    /import \{[\s\S]*createDaemonConnectionSupervisor,[\s\S]*type DaemonConnectionPoll,[\s\S]*\} from "@\/lib\/daemon\/daemon-connection-supervisor";/,
     "Workspace should import the daemon connection supervisor contract",
   );
   assert.match(
     workspace,
-    /import \{ createDaemonTravelReconcileRequester \} from "@\/lib\/daemon-travel-reconcile-client";/,
+    /import \{ createDaemonTravelReconcileRequester \} from "@\/lib\/daemon\/daemon-travel-reconcile-client";/,
     "Workspace should import the daemon travel reconcile requester next to the connection supervisor",
   );
   assert.doesNotMatch(
@@ -116,7 +116,7 @@ test("Workspace applies connection polls through the existing classifier-driven 
   assert.ok(applyPoll.length > 0, "Workspace should centralize daemon connection publication in a stable apply callback");
   assert.match(
     workspace,
-    /import \{[\s\S]*classifyDaemonConnectionTravelCadence,[\s\S]*classifyDaemonStatusPoll,[\s\S]*\} from "@\/lib\/daemon-status-classification";/,
+    /import \{[\s\S]*classifyDaemonConnectionTravelCadence,[\s\S]*classifyDaemonStatusPoll,[\s\S]*\} from "@\/lib\/daemon\/daemon-status-classification";/,
     "Workspace should import the explicit daemon travel cadence classifier next to the status classifier",
   );
   assert.match(

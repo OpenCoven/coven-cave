@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import * as canvasGallery from "../lib/canvas-gallery.ts";
+import * as canvasGallery from "../lib/canvas/canvas-gallery.ts";
 
 const { formatArtifactWhen, mergeCanvasArtifactSnapshot, sortArtifactsForGallery } = canvasGallery;
 
@@ -496,7 +496,7 @@ assert.equal(
 // The gallery owns its add affordance: a ghost tile leads the grid (and IS
 // the empty state), expanding in-place into the describe-first composer.
 const addTile = readFileSync(new URL("./canvas-add-tile.tsx", import.meta.url), "utf8");
-const generationRegistry = readFileSync(new URL("../lib/canvas-generation-registry.ts", import.meta.url), "utf8");
+const generationRegistry = readFileSync(new URL("../lib/canvas/canvas-generation-registry.ts", import.meta.url), "utf8");
 
 assert.match(
   view,

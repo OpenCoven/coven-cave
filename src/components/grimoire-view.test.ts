@@ -8,10 +8,10 @@ const view = [
 ].join("\n");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
-const navigation = await readFile(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
-const pageRegistry = await readFile(new URL("../lib/workspace-page-registry.ts", import.meta.url), "utf8");
-const warmupRegistry = await readFile(new URL("../lib/surface-warmup-registry.ts", import.meta.url), "utf8");
+const modeType = await readFile(new URL("../lib/projects/workspace-mode.ts", import.meta.url), "utf8");
+const navigation = await readFile(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
+const pageRegistry = await readFile(new URL("../lib/projects/workspace-page-registry.ts", import.meta.url), "utf8");
+const warmupRegistry = await readFile(new URL("../lib/surfaces/surface-warmup-registry.ts", import.meta.url), "utf8");
 
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
 
@@ -317,7 +317,7 @@ assert.match(view, /fromHash/, "a #grimoire: deep link merges into (and activate
 // The open doc's resolved wiki-links render as a chip row below the editor,
 // resolved against the loaded doc lists (no server index); resolved chips
 // navigate via openDoc, unresolved ones render dashed + inert.
-assert.match(view, /from "@\/lib\/wiki-link-resolve"/, "grimoire-view uses the wiki-link resolver engine");
+assert.match(view, /from "@\/lib\/reading\/wiki-link-resolve"/, "grimoire-view uses the wiki-link resolver engine");
 assert.match(view, /function GrimoireDocLinks\(/, "there is a doc-links chip component");
 assert.match(view, /resolveOutgoingLinks\(markdown, docIndex\)/, "chips come from resolving the open doc's markdown against the index");
 assert.match(
@@ -353,7 +353,7 @@ assert.match(view, /b\.type === "mention" \? "Mentions this doc \(unlinked\)" : 
 // lands (or if it fails) the client-built knowledge graph stands in, so the
 // graph is never blank while docs exist. A segmented Docs|Graph header control
 // swaps the detail pane for the lazy-loaded canvas; clicking a node opens it.
-assert.match(view, /from "@\/lib\/grimoire-graph"/, "grimoire-view builds the fallback graph via the graph lib");
+assert.match(view, /from "@\/lib\/grimoire\/grimoire-graph"/, "grimoire-view builds the fallback graph via the graph lib");
 assert.match(view, /import\("@\/components\/grimoire-graph-view"\)/, "the canvas graph is lazy-loaded (dynamic import)");
 assert.match(view, /ssr: false/, "the graph view is client-only (no SSR)");
 assert.match(view, /fetch\(`\/api\/grimoire\/graph\$\{params\}`/, "the graph comes from the server scan");

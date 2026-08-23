@@ -18,7 +18,7 @@ import {
   type WorktreeObservation,
   type WorktreeProcessOwner,
   type WorktreeRemoteRef,
-} from "../src/lib/worktree-lifecycle.ts";
+} from "../src/lib/projects/worktree-lifecycle.ts";
 import { beadIdsInText } from "../src/lib/beads-pr-management.ts";
 
 export interface WorktreeLifecycleInventoryOptions {

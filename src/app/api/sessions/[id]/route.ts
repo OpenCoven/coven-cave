@@ -16,8 +16,8 @@ import {
   defaultChatTitleForSession,
   MAX_CHAT_TITLE_LENGTH,
 } from "@/lib/cave-chat-titles";
-import { clampExtendDays, extendUntilIso } from "@/lib/chat-auto-archive";
-import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
+import { clampExtendDays, extendUntilIso } from "@/lib/chat/chat-auto-archive";
+import { resolveArchiveNudges } from "@/lib/tasks/task-archive-nudge-emit";
 
 export const dynamic = "force-dynamic";
 

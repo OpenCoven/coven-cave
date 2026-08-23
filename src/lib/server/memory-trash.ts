@@ -2,7 +2,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { mkdir, realpath, rename, writeFile, readFile, readdir, rm, access } from "node:fs/promises";
 import { classifyMemoryFilePath } from "./memory-file-sources.ts";
-import { isStructuralMemoryPath } from "../memory-management.ts";
+import { isStructuralMemoryPath } from "../memory/memory-management.ts";
 
 export const TRASH_DIRNAME = ".cave-trash";
 

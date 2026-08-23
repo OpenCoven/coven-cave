@@ -1,7 +1,7 @@
 import type { IconName } from "@/lib/icon";
-import type { OnboardingReadinessState } from "@/lib/onboarding-readiness";
+import type { OnboardingReadinessState } from "@/lib/onboarding/onboarding-readiness";
 import type { LatestCheckDisplay } from "@/lib/opencoven-tools-status-display";
-import type { RuntimeAvailabilitySummary } from "@/lib/runtime-availability";
+import type { RuntimeAvailabilitySummary } from "@/lib/runtime/runtime-availability";
 
 export type PruneState =
   | { idle: true }

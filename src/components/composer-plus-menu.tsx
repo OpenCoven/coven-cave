@@ -19,7 +19,7 @@ import {
   type AddMenuLegacySection,
   type AddMenuProjectsSection,
 } from "@/components/composer-add-menu";
-import type { SkillOption } from "@/lib/slash-skill";
+import type { SkillOption } from "@/lib/chat/slash-skill";
 import type { EnhanceIntent } from "@/lib/prompt-enhancer";
 
 export function ComposerPlusMenu({

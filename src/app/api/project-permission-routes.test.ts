@@ -20,7 +20,7 @@ const chatView = await readFile(new URL("../../components/chat-view.tsx", import
 
 assert.match(
   helper,
-  /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/project-permissions";/,
+  /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/projects\/project-permissions";/,
   "project API request helper should use the shared project-permission chokepoint",
 );
 assert.match(

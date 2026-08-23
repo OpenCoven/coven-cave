@@ -10,9 +10,9 @@ import {
   parseHermesProfileDescription,
   summarizeHermesProfile,
   type HermesProfileSummary,
-} from "@/lib/hermes-profiles";
-import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
-import { resolveHermesLaunch } from "@/lib/runtime-availability";
+} from "@/lib/integrations/hermes/hermes-profiles";
+import { harnessSpawnEnv } from "@/lib/runtime/harness-spawn-env";
+import { resolveHermesLaunch } from "@/lib/runtime/runtime-availability";
 
 const execFileAsync = promisify(execFile);
 const MAX_DISCOVERED_HERMES_PROFILES = 32;

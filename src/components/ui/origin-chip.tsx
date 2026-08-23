@@ -2,7 +2,7 @@
 
 import { Icon } from "@/lib/icon";
 import type { SessionOrigin } from "@/lib/types";
-import { ORIGIN_ICON, ORIGIN_LABEL } from "@/lib/session-origin";
+import { ORIGIN_ICON, ORIGIN_LABEL } from "@/lib/chat/session-origin";
 
 type Props = {
   origin: SessionOrigin;

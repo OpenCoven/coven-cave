@@ -20,8 +20,8 @@ import {
   registerRoleSurface,
   type RoleSurfaceContext,
   type RoleSurfaceContribution,
-} from "@/lib/role-surfaces";
-import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-state";
+} from "@/lib/familiars/role-surfaces";
+import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/familiars/role-surface-state";
 import { watchtowerStatus } from "./sentinel-watch";
 import { deskSummary, scribeStatus } from "./scribe-craft";
 import { chartRoomStatus } from "./navigator-charts";

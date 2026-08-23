@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { canonicalHarnessId } from "@/lib/harness-adapters";
-import { catalogForRuntime } from "@/lib/runtime-models";
+import { canonicalHarnessId } from "@/lib/runtime/harness-adapters";
+import { catalogForRuntime } from "@/lib/runtime/runtime-models";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
-import { isSshRuntime } from "@/lib/familiar-runtime";
+import { isSshRuntime } from "@/lib/familiars/familiar-runtime";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { listRuntimeModelInventory } from "@/lib/server/runtime-model-options";

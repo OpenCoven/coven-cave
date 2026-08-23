@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const palette = readFileSync(new URL("./command-palette.tsx", import.meta.url), "utf8");
-const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const registry = readFileSync(new URL("../lib/projects/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const sheet = readFileSync(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
@@ -31,7 +31,7 @@ assert.ok(labels.size > 0, "WORKSPACE_NAV_ITEMS should declare id/label rows");
 // ── "Go to <surface>" rows derive from WORKSPACE_NAV_ITEMS at runtime ────────
 assert.match(
   palette,
-  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/workspace-navigation"/,
+  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/projects\/workspace-navigation"/,
   "the palette imports the shared workspace navigation registry rather than its own surface list",
 );
 assert.match(

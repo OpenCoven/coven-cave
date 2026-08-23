@@ -11,7 +11,7 @@ import {
   type PrerequisiteCapability,
   type PrerequisiteDefinition,
   type PrerequisiteId,
-} from "../onboarding-prerequisites.ts";
+} from "../onboarding/onboarding-prerequisites.ts";
 import { covenSpawnEnv, pickWindowsLauncher } from "../coven-bin.ts";
 import { openCovenToolReadinessStatuses } from "../opencoven-tools-status.ts";
 import { probeManagedNodeToolchain } from "./managed-node-toolchain.ts";

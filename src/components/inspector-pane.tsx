@@ -16,20 +16,20 @@ import type { Familiar } from "@/lib/types";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { Icon, type IconName } from "@/lib/icon";
 import { Tabs } from "@/components/ui/tabs";
-import { useSurfaceHistory } from "@/lib/use-surface-history";
+import { useSurfaceHistory } from "@/lib/hooks/use-surface-history";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import type { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
+import type { CanonicalMemoryRequestError } from "@/lib/memory/canonical-memory-client";
 import {
   loadCanonicalMemoryList,
   type CanonicalMemoryListLoad,
-} from "@/lib/canonical-memory-resources";
+} from "@/lib/memory/canonical-memory-resources";
 import {
   excludeMissingCanonicalMemory,
   reconcileMissingCanonicalRefresh,
-} from "@/lib/memory-rows";
-import { createMemoryFeedRequestGate } from "@/lib/memory-feed-request-gate";
-import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
+} from "@/lib/memory/memory-rows";
+import { createMemoryFeedRequestGate } from "@/lib/memory/memory-feed-request-gate";
+import { scopeMemoryFilesToFamiliar } from "@/lib/memory/memory-file-scope";
+import { openGrimoireDoc } from "@/lib/grimoire/grimoire-link";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
 type MemoryEntry = {

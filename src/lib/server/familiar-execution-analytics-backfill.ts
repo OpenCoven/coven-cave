@@ -2,7 +2,7 @@ import type {
   ConversationFile,
   ConversationSummary,
 } from "../cave-conversations.ts";
-import type { ExecutionAttemptSnapshotV1 } from "../familiar-execution-analytics.ts";
+import type { ExecutionAttemptSnapshotV1 } from "../familiars/familiar-execution-analytics.ts";
 import { projectConversationExecutionAttempts } from "./familiar-execution-analytics-projection.ts";
 
 export type ExecutionAnalyticsBackfillDependencies = {

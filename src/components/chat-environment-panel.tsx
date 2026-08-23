@@ -30,7 +30,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { useChangesSummary } from "@/lib/use-changes-summary";
+import { useChangesSummary } from "@/lib/hooks/use-changes-summary";
 import {
   GitBranchMenuPopover,
   useBranchPr,
@@ -39,7 +39,7 @@ import {
   environmentLabel,
   prRowAction,
   resolveEnvPanelVisible,
-} from "@/lib/chat-environment-panel-model";
+} from "@/lib/chat/chat-environment-panel-model";
 
 /** Versioned so a future shape change can't misread stale persisted state. */
 export const ENV_PANEL_COLLAPSED_KEY = "cave:chat-env-panel:collapsed:v1";

@@ -4,13 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
-import { parseRipgrepJson, type SearchResult } from "@/lib/project-search";
+import { parseRipgrepJson, type SearchResult } from "@/lib/projects/project-search";
 import {
   assertProjectApiAccess,
   projectAccessDeniedBody,
   projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
-import { ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { ProjectAccessDeniedError } from "@/lib/projects/project-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
  *   → { ok, repo, root, files, totalMatches, truncated }
  *
  * Spawns ripgrep (`rg --json`) under the requested root and parses its event
- * stream via the pure parser in @/lib/project-search. ripgrep respects
+ * stream via the pure parser in @/lib/projects/project-search. ripgrep respects
  * .gitignore and skips hidden/binary files by default, so results track the
  * same "git-visible working tree" surface as the @-mention file index. The
  * optional glob is applied after ripgrep returns so it cannot widen the search

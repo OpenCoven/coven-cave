@@ -25,9 +25,9 @@ import {
   type RoleSurface,
   type RoleSurfaceContext,
   type RoleSurfaceContribution,
-} from "@/lib/role-surfaces";
+} from "@/lib/familiars/role-surfaces";
 import { roomEnabledInBuild } from "@/lib/room-flags";
-import { useRoleSurfaceStateSnapshot } from "@/lib/role-surface-state";
+import { useRoleSurfaceStateSnapshot } from "@/lib/familiars/role-surface-state";
 
 /** A broken surface must never take the shell down with it. */
 class SurfaceErrorBoundary extends Component<

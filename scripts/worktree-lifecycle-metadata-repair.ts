@@ -6,7 +6,7 @@ import {
   MAX_FENCED_MUTATION_TIMEOUT_MS,
   verifyMaintenanceGateOwnership,
 } from "./maintenance-gate.mjs";
-import { normalizeAbsoluteWorktreePath } from "../src/lib/worktree-lifecycle.ts";
+import { normalizeAbsoluteWorktreePath } from "../src/lib/projects/worktree-lifecycle.ts";
 import {
   sanitizedGitEnvironment,
   validateStructuredLifecycleRecord,

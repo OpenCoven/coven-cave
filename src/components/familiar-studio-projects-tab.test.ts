@@ -7,7 +7,7 @@ const inline = readFileSync(new URL("./familiar-studio-inline.tsx", import.meta.
 const settings = readFileSync(new URL("./familiar-tab-settings.tsx", import.meta.url), "utf8");
 const projectsView = readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8");
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
-const context = readFileSync(new URL("../lib/familiar-studio-context.tsx", import.meta.url), "utf8");
+const context = readFileSync(new URL("../lib/familiars/familiar-studio-context.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../app/api/project-grants/route.ts", import.meta.url), "utf8");
 
 // ── Project access lives on ONE surface: Chat → Projects (cave-2tmly) ────────
@@ -111,7 +111,7 @@ assert.match(route, /listRecentPermissionAudit/, "the grants GET returns a recen
 assert.match(route, /listAccessGroups/, "the grants GET rides access groups along for effective access");
 
 // ── Registry CRUD from the access surface (issue #3710) ──────────────────────
-assert.match(tab, /import \{ useProjects \} from "@\/lib\/use-projects"/, "pulls the registry hook for CRUD");
+assert.match(tab, /import \{ useProjects \} from "@\/lib\/hooks\/use-projects"/, "pulls the registry hook for CRUD");
 assert.match(tab, /import \{ useAddProjectFlow \} from "@\/components\/project-picker"/, "reuses the shared add-project flow");
 assert.match(tab, /import \{ ProjectSettingsModal \} from "@\/components\/project-settings-modal"/, "opens the shared project settings modal");
 assert.match(

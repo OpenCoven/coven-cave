@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import type { ResearchMission } from "../research-missions.ts";
+import type { ResearchMission } from "../research/research-missions.ts";
 import { xArticleContentSha256 } from "./x-article-content-sha.ts";
 import {
   materializeSavedLinkForMission,

@@ -78,7 +78,7 @@ try {
   const { refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
   refreshCovenBin();
   const spawnEnv = refreshCovenSpawnEnv();
-  const { resolveHermesLaunch } = await import("@/lib/runtime-availability");
+  const { resolveHermesLaunch } = await import("@/lib/runtime/runtime-availability");
   assert.equal(
     resolveHermesLaunch({ env: spawnEnv, cwd: familiarWorkspace }).state,
     "missing",
@@ -86,8 +86,8 @@ try {
   );
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { POST } = await import("./route.ts");
   await saveConfig({ familiars: { ember: { harness: "hermes" } } });
   const project = await createProject({ name: "Hermes availability fixture", root: familiarWorkspace });

@@ -10,7 +10,7 @@ import {
   type OnboardingBootstrapStageResult,
   type OnboardingComponentReadiness,
   type OnboardingSetupFailureCode,
-} from "@/lib/onboarding-bootstrap";
+} from "@/lib/onboarding/onboarding-bootstrap";
 import {
   managedNodePaths,
   probeManagedNodeToolchain,

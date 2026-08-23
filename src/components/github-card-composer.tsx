@@ -37,10 +37,10 @@ import {
   parseCommand,
   resolveSlash,
   type GhCommandAction,
-} from "@/lib/gh-card-commands";
+} from "@/lib/github/gh-card-commands";
 import { copyText } from "@/lib/clipboard";
-import { clearDraft, readDraft, writeDraft } from "@/lib/gh-card-draft";
-import { generateReviewDraft, type GhDraftScopes } from "@/lib/gh-review-draft";
+import { clearDraft, readDraft, writeDraft } from "@/lib/github/gh-card-draft";
+import { generateReviewDraft, type GhDraftScopes } from "@/lib/github/gh-review-draft";
 import "@/styles/gh-card-composer.css";
 
 export type GhComposerItem = {

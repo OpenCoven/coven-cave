@@ -32,7 +32,7 @@ assert.match(
 );
 assert.match(
   route,
-  /import \{ resolveGitHubToken \} from "@\/lib\/github-token"/,
+  /import \{ resolveGitHubToken \} from "@\/lib\/github\/github-token"/,
   "activity should use the shared token resolver for every supported installation harness",
 );
 assert.match(

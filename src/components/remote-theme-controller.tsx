@@ -9,14 +9,14 @@ import {
   subscribeAppPreferences,
   updateAppPreferences,
 } from "@/lib/app-preferences";
-import { reapplyIndependentAppearance } from "@/lib/appearance-restore";
+import { reapplyIndependentAppearance } from "@/lib/themes/appearance-restore";
 import {
   applyThemeToRoot,
   remoteThemeNeedsRefresh,
   resolveThemeMode,
   themeRuntimeSignature,
-} from "@/lib/theme-runtime";
-import { rgbaBytesToHex } from "@/lib/theme-token-hex";
+} from "@/lib/themes/theme-runtime";
+import { rgbaBytesToHex } from "@/lib/themes/theme-token-hex";
 
 /**
  * Keeps the rendered root theme in sync with canonical preferences on every

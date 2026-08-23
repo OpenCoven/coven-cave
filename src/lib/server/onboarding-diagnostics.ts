@@ -5,7 +5,7 @@ import type {
   OnboardingComponentReadiness,
   OnboardingSetupDiagnostics,
   OnboardingSetupFailureCode,
-} from "@/lib/onboarding-bootstrap";
+} from "@/lib/onboarding/onboarding-bootstrap";
 export { probeOwnedDirectoryWrite } from "@/lib/server/owned-directory-write";
 
 const DIAGNOSTIC_LINE_CAP = 8;

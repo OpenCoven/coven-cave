@@ -105,12 +105,12 @@ async function covenCalls() {
 
 try {
   const { covenLaunchCommand, refreshCovenBin, refreshCovenSpawnEnv } = await import("@/lib/coven-bin");
-  const { harnessSpawnEnv } = await import("@/lib/harness-spawn-env");
-  const { evaluateCovenBackedRuntimeAvailability } = await import("@/lib/runtime-availability");
+  const { harnessSpawnEnv } = await import("@/lib/runtime/harness-spawn-env");
+  const { evaluateCovenBackedRuntimeAvailability } = await import("@/lib/runtime/runtime-availability");
   const { saveConfig } = await import("@/lib/cave-config");
   const { loadConversation } = await import("@/lib/cave-conversations");
-  const { createProject } = await import("@/lib/cave-projects");
-  const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
+  const { createProject } = await import("@/lib/projects/cave-projects");
+  const { grantProjectToFamiliar } = await import("@/lib/projects/project-permissions");
   const { POST } = await import("./route.ts");
   await saveConfig({ familiars: { sage: { harness: "claude" } } });
   const project = await createProject({ name: "Claude availability fixture", root: familiarWorkspace });

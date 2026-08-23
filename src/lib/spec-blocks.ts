@@ -1,4 +1,4 @@
-import { readerOutline, readingStats } from "./reader-outline.ts";
+import { readerOutline, readingStats } from "./reading/reader-outline.ts";
 
 export type FamiliarDocumentKind = "spec" | "handoff";
 

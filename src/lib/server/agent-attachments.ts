@@ -7,7 +7,7 @@ import {
   MAX_ATTACHMENT_MEDIA_BYTES,
   MAX_ATTACHMENT_TEXT_CHARS,
   type ChatAttachment,
-} from "@/lib/chat-attachments";
+} from "@/lib/chat/chat-attachments";
 import { saveChatMediaAttachmentFromFileSync } from "@/lib/server/chat-attachment-store";
 
 /**

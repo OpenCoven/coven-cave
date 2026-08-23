@@ -11,7 +11,7 @@
  */
 
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
-import { NAV_SECTIONS, type NavSection } from "@/lib/nav-section";
+import { NAV_SECTIONS, type NavSection } from "@/lib/surfaces/nav-section";
 
 export function NavSectionTabs({
   section,

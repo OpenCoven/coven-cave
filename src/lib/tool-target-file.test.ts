@@ -41,7 +41,7 @@ const { toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
 // ── wiring: chat dispatches, code rail handles, workspace bridges ────────────
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
-const railController = await readFile(new URL("./use-workspace-rail-controller.ts", import.meta.url), "utf8");
+const railController = await readFile(new URL("./hooks/use-workspace-rail-controller.ts", import.meta.url), "utf8");
 
 assert.match(
   chatView,

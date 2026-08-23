@@ -5,10 +5,10 @@ import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-dat
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Icon } from "@/lib/icon";
-import { deriveAnalyticsInsight } from "@/lib/familiar-analytics-insight";
-import type { ContractReport, FamiliarProperty } from "@/lib/familiar-contract";
-import type { SelfHealRequest } from "@/lib/familiar-heal-requests";
-import type { ThreadConfidence } from "@/lib/thread-confidence";
+import { deriveAnalyticsInsight } from "@/lib/familiars/familiar-analytics-insight";
+import type { ContractReport, FamiliarProperty } from "@/lib/familiars/familiar-contract";
+import type { SelfHealRequest } from "@/lib/familiars/familiar-heal-requests";
+import type { ThreadConfidence } from "@/lib/chat/thread-confidence";
 
 /**
  * A dock action row — the prioritized "do this next" list. Derived upstream

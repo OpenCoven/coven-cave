@@ -12,7 +12,7 @@ import {
   strandDetailRows,
   strandDiff,
 } from "./strand-inspect.ts";
-import type { AuditEntryView, StrandView, TensionView } from "./threads-read.ts";
+import type { AuditEntryView, StrandView, TensionView } from "./chat/threads-read.ts";
 
 const CONTENT_HASH: StrandView = {
   id: "s-1",

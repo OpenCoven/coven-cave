@@ -6,7 +6,7 @@ import {
   stripCompleteMarkdownComments,
 } from "../document-reader.ts";
 import { parseMdDocument } from "../md-frontmatter.ts";
-import { parseMemorySourceContext } from "@/lib/memory-source-context";
+import { parseMemorySourceContext } from "@/lib/memory/memory-source-context";
 import {
   classifyMemoryFilePath,
   memoryFileSourcesForHome,

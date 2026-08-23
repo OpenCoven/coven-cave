@@ -4,22 +4,22 @@ import "@/styles/calendar.css";
 
 import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect, type SetStateAction } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { familiarAccent } from "@/lib/familiar-color";
+import { useResolvedFamiliars } from "@/lib/familiars/familiar-resolve";
+import { familiarAccent } from "@/lib/familiars/familiar-color";
 import { Icon } from "@/lib/icon";
 import { formatClock, formatDate } from "@/lib/datetime-format";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useRovingTabIndex } from "@/lib/hooks/use-roving-tabindex";
+import { useFocusTrap } from "@/lib/hooks/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow } from "@/lib/calendar-layout";
-import { familiarInScope } from "@/lib/familiar-multiselect";
-import { useIsMobile } from "@/lib/use-viewport";
-import { useSurfacePreference } from "@/lib/surface-preferences";
-import { surfacePreferenceSpecs } from "@/lib/surface-preference-specs";
+import { familiarInScope } from "@/lib/familiars/familiar-multiselect";
+import { useIsMobile } from "@/lib/hooks/use-viewport";
+import { useSurfacePreference } from "@/lib/surfaces/surface-preferences";
+import { surfacePreferenceSpecs } from "@/lib/surfaces/surface-preference-specs";
 import {
   AgendaDeadlineRow,
   FamiliarColorContext,

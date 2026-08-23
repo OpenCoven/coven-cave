@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { relativeTime } from "@/lib/relative-time";
 import { countRedactions } from "@/lib/redact";
-import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
+import { openFamiliarStudioSettingsTab } from "@/lib/familiars/familiar-studio-context";
 import { fileBase, type FileMemoryEntry } from "@/components/familiars-memory-utils";
 import type { Familiar } from "@/lib/types";
 

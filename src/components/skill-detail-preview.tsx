@@ -5,7 +5,7 @@
 // the option list, so you can read what a skill does before running it.
 
 import { Icon } from "@/lib/icon";
-import type { SkillOption } from "@/lib/slash-skill";
+import type { SkillOption } from "@/lib/chat/slash-skill";
 import "@/styles/skill-detail-preview.css";
 
 export function SkillDetailPreview({ skill }: { skill: SkillOption | null }) {

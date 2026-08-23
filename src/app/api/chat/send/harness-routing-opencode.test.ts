@@ -184,7 +184,7 @@ assert.match(
 );
 assert.match(
   route,
-  /import \{ handleOpenCodeJsonLine \} from "@\/lib\/opencode-stream";[\s\S]*?handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema,/,
+  /import \{ handleOpenCodeJsonLine \} from "@\/lib\/integrations\/opencode\/opencode-stream";[\s\S]*?handleOpenCodeJsonLine\(line, openCodeCompatibility\?\.schema,/,
   "the route uses the behavioral JSONL handler, whose lifecycle-frame behavior is covered by its focused test",
 );
 assert.match(

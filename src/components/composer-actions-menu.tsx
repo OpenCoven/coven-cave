@@ -36,8 +36,8 @@ import {
 } from "@/components/ui/popover";
 import { AddMenuRow, ComposerAddMenu } from "@/components/composer-add-menu";
 import { Icon } from "@/lib/icon";
-import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import type { SkillOption } from "@/lib/slash-skill";
+import { NO_PROJECT_ID } from "@/lib/chat/chat-projects";
+import type { SkillOption } from "@/lib/chat/slash-skill";
 import type { EnhanceIntent } from "@/lib/prompt-enhancer";
 
 export function ComposerLinkedWorkActions(props: ComposerLinkedWorkActionsProps) {

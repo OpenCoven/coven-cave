@@ -7,8 +7,8 @@ import {
   mutateCanvasArtifactAnnotation,
   upsertCanvasArtifact,
 } from "@/lib/cave-canvas";
-import type { CanvasArtifact } from "@/lib/canvas-artifacts";
-import type { CanvasPositions } from "@/lib/canvas-layout";
+import type { CanvasArtifact } from "@/lib/canvas/canvas-artifacts";
+import type { CanvasPositions } from "@/lib/canvas/canvas-layout";
 import { requireTrustedHumanCanvasMutation } from "@/lib/server/trusted-grant-mutation";
 
 export const dynamic = "force-dynamic";

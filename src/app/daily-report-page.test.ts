@@ -186,7 +186,7 @@ assert.match(
   assert.match(empty, /isFuture/, "a day that hasn't happened is never offered a generate button");
   assert.match(empty, /kind: "empty"/, "an honestly empty day says so instead of reporting failure");
 
-  const route = read("../app/api/inbox/daily-summary/route.ts");
+  const route = read("./api/inbox/daily-summary/route.ts");
   // The midnight-rollover guard must survive: only an EXPLICIT backfill may
   // target another day, and never a future one.
   assert.match(route, /body\.backfill !== true/, "the automatic path keeps the midnight-rollover guard");

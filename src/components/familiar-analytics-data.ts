@@ -5,24 +5,24 @@ import {
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
-import { deriveRenown, type FamiliarRenown } from "@/lib/familiar-renown";
-import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
+import { loadCanonicalMemoryList } from "@/lib/memory/canonical-memory-resources";
+import { deriveRenown, type FamiliarRenown } from "@/lib/familiars/familiar-renown";
+import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/chat/thread-confidence";
 import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
-import type { ContractReport } from "@/lib/familiar-contract";
-import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-growth-signals";
-import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
+import type { ContractReport } from "@/lib/familiars/familiar-contract";
+import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiars/familiar-growth-signals";
+import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiars/familiar-heal-requests";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
-import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
+import { buildSessionPulse, type PulseDay } from "@/lib/chat/session-pulse";
 import { buildActivityLattice, type ActivityLattice } from "@/lib/activity-lattice";
 import {
   type ThreadSelfReport,
-} from "@/lib/thread-self-report";
+} from "@/lib/chat/thread-self-report";
 import {
   EMPTY_FEEDBACK_ROLLUP,
   type MessageFeedbackRollup,
-} from "@/lib/message-feedback-rollup";
-import type { FamiliarExecutionAnalytics } from "@/lib/familiar-execution-analytics";
+} from "@/lib/chat/message-feedback-rollup";
+import type { FamiliarExecutionAnalytics } from "@/lib/familiars/familiar-execution-analytics";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =

@@ -42,7 +42,7 @@ const outputDirectory = new URL(
   import.meta.url,
 );
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-const gitAttributes = readFileSync(new URL("../.gitattributes", import.meta.url), "utf8");
+const gitAttributes = readFileSync(new URL("../../..", import.meta.url), "utf8");
 const validationCoreSource = readFileSync(
   new URL("../src/lib/tweet-thread-validation-core.ts", import.meta.url),
   "utf8",

@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
 // Type-only: erased at compile time, so the ~22 KB vendored WebGL module
 // still reaches the bundle only through the dynamic import() below.
 import type PeelComponent from "@/components/canvasui/Peel";

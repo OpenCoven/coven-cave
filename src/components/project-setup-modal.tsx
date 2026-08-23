@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
-import type { CaveProject } from "@/lib/cave-projects-types";
-import { projectNameForRoot, type CreateProjectOptions } from "@/lib/chat-add-project";
+import type { CaveProject } from "@/lib/projects/cave-projects-types";
+import { projectNameForRoot, type CreateProjectOptions } from "@/lib/chat/chat-add-project";
 import { projectTint } from "@/lib/comux-projects";
-import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { normalizeGitHubRepoUrl } from "@/lib/github/github-repo-link";
 import type { RepoItem } from "@/lib/home-feed";
 import {
   applyRepoSuggestion,
@@ -15,11 +15,11 @@ import {
   projectSetupBlocked,
   validateProjectName,
   validateRepoDraft,
-} from "@/lib/project-setup-validation";
+} from "@/lib/projects/project-setup-validation";
 import { Popover, PopoverBody } from "@/components/ui/popover";
-import type { ProjectAccessLevel } from "@/lib/project-access-levels";
-import { emitProjectRegistryMutation } from "@/lib/project-registry-events";
-import { PROJECT_SETUP_COLOR_CHOICES } from "@/lib/project-setup-offer";
+import type { ProjectAccessLevel } from "@/lib/projects/project-access-levels";
+import { emitProjectRegistryMutation } from "@/lib/projects/project-registry-events";
+import { PROJECT_SETUP_COLOR_CHOICES } from "@/lib/projects/project-setup-offer";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";

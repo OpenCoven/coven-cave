@@ -17,9 +17,9 @@ import {
 } from "@/components/familiars-view-stats";
 import { FamiliarGrowthReport } from "@/components/familiar-growth-report";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
-import { loadCanonicalMemoryList } from "@/lib/canonical-memory-resources";
-import { deriveGrowthReport, type FamiliarGrowthReport as GrowthReportModel } from "@/lib/familiar-growth-signals";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { loadCanonicalMemoryList } from "@/lib/memory/canonical-memory-resources";
+import { deriveGrowthReport, type FamiliarGrowthReport as GrowthReportModel } from "@/lib/familiars/familiar-growth-signals";
+import { usePausablePoll } from "@/lib/hooks/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
 import type { Familiar, SessionRow } from "@/lib/types";

@@ -14,7 +14,7 @@ import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
-import { runtimeEventProtocolSchemas } from "../copilot-stream.ts";
+import { runtimeEventProtocolSchemas } from "../integrations/copilot/copilot-stream.ts";
 import { writeJsonAtomic } from "./atomic-write.ts";
 
 const REGISTRY_REPO = "OpenCoven/coven-runtimes" as const;

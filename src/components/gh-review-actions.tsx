@@ -5,13 +5,13 @@ import { useEffect, useState } from "react";
 import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import { generateArtifactCode } from "@/lib/canvas-generate";
+import { generateArtifactCode } from "@/lib/canvas/canvas-generate";
 import {
   buildReviewArtifact,
   buildReviewPrompt,
   saveCanvasArtifact,
-} from "@/lib/gh-review-export";
-import type { ReviewComment, ReviewThread } from "@/lib/gh-review-html";
+} from "@/lib/github/gh-review-export";
+import type { ReviewComment, ReviewThread } from "@/lib/github/gh-review-html";
 
 /** Minimal PR shape this surface needs — a subset of github-view's ItemDetail. */
 type PrInfo = {

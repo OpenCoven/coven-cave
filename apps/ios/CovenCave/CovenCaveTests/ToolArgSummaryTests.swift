@@ -4,7 +4,7 @@ import XCTest
 /// ToolArgSummary turns a tool call's input payload into the one-line argument
 /// shown beside the tool name. The payloads here are the real wire shapes: the
 /// server pretty-prints tool inputs as JSON (`formatToolInputValue` in
-/// src/lib/chat-tool-events.ts), which is exactly the case the old first-line
+/// src/lib/chat/chat-tool-events.ts), which is exactly the case the old first-line
 /// reader got wrong — every call summarised to a bare "{".
 final class ToolArgSummaryTests: XCTestCase {
 

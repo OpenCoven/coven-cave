@@ -9,7 +9,7 @@ const observed = vi.hoisted(() => ({
   announcements: [] as string[],
 }));
 
-vi.mock("@/lib/use-projects", () => ({
+vi.mock("@/lib/hooks/use-projects", () => ({
   useProjects: () => ({
     projects: [],
     loading: false,
@@ -21,7 +21,7 @@ vi.mock("@/lib/use-projects", () => ({
     deleteProject: vi.fn(),
   }),
 }));
-vi.mock("@/lib/use-refresh-on-focus", () => ({ useRefreshOnFocus: vi.fn() }));
+vi.mock("@/lib/hooks/use-refresh-on-focus", () => ({ useRefreshOnFocus: vi.fn() }));
 vi.mock("@/components/project-picker", () => ({
   useAddProjectFlow: () => ({
     beginAddProject: vi.fn(),

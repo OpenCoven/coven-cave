@@ -52,7 +52,7 @@ try {
   await writeFile(outsidePath, Buffer.from(PNG_1x1_BASE64, "base64"));
   await writeFile(globalOnlyPath, "should not be read");
 
-  const { extractAgentAttachmentMarkers } = await import("../chat-attachments.ts");
+  const { extractAgentAttachmentMarkers } = await import("../chat/chat-attachments.ts");
   const { parseAgentAttachments } = await import("./agent-attachments.ts");
 
   // --- pure marker extraction (client-safe, no fs) ---

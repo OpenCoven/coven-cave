@@ -17,9 +17,9 @@ import {
   responseEnvelopeStateAt,
   scheduleResponseEnvelopeStaleness,
 } from "./response-envelope-freshness.ts";
-import { makeThreadsMeta, okEnvelope } from "./threads-read.ts";
-import type { ProposalView, ThreadsMeta } from "./threads-read.ts";
-import { surfaceStateFromPayload, type SurfaceState } from "./weave-rail.ts";
+import { makeThreadsMeta, okEnvelope } from "./chat/threads-read.ts";
+import type { ProposalView, ThreadsMeta } from "./chat/threads-read.ts";
+import { surfaceStateFromPayload, type SurfaceState } from "./grimoire/weave-rail.ts";
 
 const FRESH = new Date("2026-07-15T09:00:00Z");
 const PROPOSAL_REVISION = "a".repeat(64);

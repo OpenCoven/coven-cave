@@ -1,7 +1,7 @@
 "use client";
 
 import { CAVE_ICON_SIZE, Icon } from "@/lib/icon";
-import { moveSurfaceHistory } from "@/lib/surface-history";
+import { moveSurfaceHistory } from "@/lib/surfaces/surface-history";
 
 /**
  * Shared browser-history controls for the standalone shells.
