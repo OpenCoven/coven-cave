@@ -1718,6 +1718,7 @@ export const SUITES = {
     "src/app/api/feedback/message/route.test.ts",
     "src/app/api/launch/route.test.ts",
     "scripts/sidecar-archive-manifest.test.mjs",
+    "scripts/sidecar-lock.test.mjs",
     "scripts/sidecar-bundle.test.mjs",
     "scripts/sidecar-bundle-deps.test.mjs",
     "scripts/sidecar-runtime-closure.test.mjs",
