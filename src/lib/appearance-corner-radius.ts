@@ -24,8 +24,11 @@
  * values apply unchanged.
  *
  * NOTE: the level → CSS values below are duplicated, as string literals, in the
- * flash-free boot block inside src/components/theme-script.tsx (which runs
- * before any module resolves). Keep both in sync when changing values.
+ * flash-free boot block — `public/scripts/theme-init.js` (the `RADII` table),
+ * loaded by src/components/theme-script.tsx. It runs before any module
+ * resolves, so it cannot import them. Keep both in sync when changing values;
+ * src/components/theme-script.test.ts asserts the same numbers on both sides,
+ * so a one-sided edit fails there rather than shipping a boot/runtime flash.
  */
 export const CORNER_RADIUS_KEY = "cave:corner-radius";
 
