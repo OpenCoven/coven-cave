@@ -14,16 +14,20 @@ ones you intended to pair, then choose:
 - **Deny** — permanently rejects that request. A denied request cannot be
   exchanged later.
 
-Requests expire five minutes after creation. The section refreshes while it is
-active and pauses polling when Settings is elsewhere or the app is hidden.
-Actions are disabled while a mutation is in flight to prevent duplicate
-decisions.
+Requests expire five minutes after creation. While **Settings → Client access**
+is active, Cave refreshes about every 10 seconds and pauses polling when
+Settings is elsewhere or the app is hidden. Actions are disabled while a
+mutation is in flight to prevent duplicate decisions.
+
+If **Approve** or **Deny** reports that a request is no longer pending, Cave
+refreshes the authoritative lists immediately so expired or already-decided
+requests disappear.
 
 ## Issued credentials
 
 Issued credentials show app and installation identity, granted scopes, creation
-time, last-use time, and revocation state. Cave never displays the bearer or its
-stored hash.
+time, last-use time, and revocation state. Secret values are never shown. Cave
+never displays the bearer or its stored hash.
 
 Choose **Revoke** when an installation is retired, lost, compromised, or no
 longer needs access. Revocation is immediate; the client must pair again before
@@ -41,8 +45,9 @@ timestamp and reason so operators can audit what happened.
 - A pairing secret or bearer must never be pasted into chat, logs, issues, or
   screenshots. Cave stores bearer hashes only; the paired native client owns
   secure bearer storage.
-- If an action fails, use **Retry** to refresh current state before deciding
-  again. Do not assume a timed-out UI request means the server mutation failed.
+- If a mutation times out or fails with a generic network or server error, use
+  **Retry** to refresh current state before deciding again. Do not assume a
+  timed-out UI request means the server mutation failed.
 
 See [`api/client-v1.md`](api/client-v1.md) for discovery, pairing, envelopes,
 and the supported scope contract.
