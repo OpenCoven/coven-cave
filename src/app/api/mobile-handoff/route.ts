@@ -258,10 +258,13 @@ function mobileAccessUnavailableResponse() {
  * cookie so the freshly armed gate never locks out the session that turned
  * pairing on.
  */
-function resolveMobileAccessSecret(): { secret: string; provisioned: boolean } | null {
+async function resolveMobileAccessSecret(): Promise<{ secret: string; provisioned: boolean } | null> {
   const existing = mobileAccessSecret();
   if (existing) return { secret: existing, provisioned: false };
-  const provisioned = provisionMobileAccessSecret();
+  // Async since cave-fawvh: provisioning now restricts the state directory and
+  // the token file to this user before handing back a plaintext secret, and on
+  // Windows that means reading a DACL out of a subprocess.
+  const provisioned = await provisionMobileAccessSecret();
   if (!provisioned) return null;
   armMobileAccessSecret(provisioned);
   return { secret: provisioned, provisioned: true };
@@ -297,7 +300,7 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
-  const access = resolveMobileAccessSecret();
+  const access = await resolveMobileAccessSecret();
   if (!access) {
     return mobileAccessUnavailableResponse();
   }
@@ -499,7 +502,7 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
-  const access = resolveMobileAccessSecret();
+  const access = await resolveMobileAccessSecret();
   if (!access) {
     return mobileAccessUnavailableResponse();
   }

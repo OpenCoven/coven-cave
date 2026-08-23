@@ -139,6 +139,40 @@ assert.equal(
   "callers can distinguish an unavailable list from a confirmed zero",
 );
 
+const workspaceBacked = buildFamiliarCardStats({
+  familiars: [{ id: "w", display_name: "Workspace backed", role: "" }],
+  sessions: [],
+  covenEntries: [],
+  memoryAvailability: "unavailable",
+  fileEntries: [{
+    familiarId: "w",
+    relPath: "MEMORY.md",
+    fullPath: "/tmp/w/MEMORY.md",
+    modified: minutesAgo(2),
+  }],
+  fileMemoryAvailability: "ready",
+  now: NOW,
+}).get("w");
+assert.equal(workspaceBacked?.memoryCount, 1, "workspace memory contributes to the durable count");
+assert.equal(workspaceBacked?.memoryAvailability, "ready");
+assert.equal(workspaceBacked?.latestMemory?.title, "MEMORY.md");
+
+const partiallyUnavailable = buildFamiliarCardStats({
+  familiars: [{ id: "p", display_name: "Partial", role: "" }],
+  sessions: [],
+  covenEntries: [],
+  memoryAvailability: "ready",
+  fileEntries: [],
+  fileMemoryAvailability: "unavailable",
+  now: NOW,
+}).get("p");
+assert.equal(partiallyUnavailable?.memoryCount, 0);
+assert.equal(
+  partiallyUnavailable?.memoryAvailability,
+  "unavailable",
+  "an empty partial read cannot assert that no durable memory exists",
+);
+
 // Empty inputs
 const empty = buildFamiliarCardStats({
   familiars: [],

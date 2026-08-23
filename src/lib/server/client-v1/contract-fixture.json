@@ -1,0 +1,486 @@
+{
+  "contract": {
+    "apiVersion": "1.0",
+    "capabilities": [
+      "health",
+      "pairing",
+      "credentials",
+      "familiars",
+      "projects",
+      "conversations",
+      "conversation-messages",
+      "cursors"
+    ],
+    "discovery": {
+      "fileName": "client-v1-discovery.json",
+      "mode": "0600",
+      "version": 1
+    },
+    "errorCodes": [
+      "invalid_request",
+      "unauthorized",
+      "scope_denied",
+      "not_found",
+      "conflict",
+      "rate_limited",
+      "pairing_pending",
+      "pairing_denied",
+      "pairing_expired",
+      "incompatible_version",
+      "service_unavailable",
+      "reconcile_required",
+      "internal_error"
+    ],
+    "identityKinds": [
+      "client",
+      "credential",
+      "familiar",
+      "project",
+      "conversation",
+      "message",
+      "event"
+    ],
+    "limits": {
+      "cursorCharacters": 512,
+      "declarationIdCharacters": 64,
+      "defaultPageSize": 50,
+      "errorDetailEntries": 16,
+      "errorDetailValueCharacters": 256,
+      "errorMessageCharacters": 256,
+      "idempotencyKeyCharacters": 36,
+      "instanceIdCharacters": 64,
+      "maxPageSize": 100,
+      "releaseVersionCharacters": 64,
+      "requestIdCharacters": 64,
+      "revisionTokenCharacters": 128
+    },
+    "minimumClientVersion": "0.1.0",
+    "operations": [
+      {
+        "families": [
+          "health"
+        ],
+        "id": "health.read",
+        "ingress": "public",
+        "method": "GET",
+        "path": "/api/client/v1/health",
+        "scope": null
+      },
+      {
+        "families": [
+          "pairing"
+        ],
+        "id": "pairing.create",
+        "ingress": "public",
+        "method": "POST",
+        "path": "/api/client/v1/pairing/requests",
+        "scope": null
+      },
+      {
+        "families": [
+          "pairing"
+        ],
+        "id": "pairing.poll",
+        "ingress": "public",
+        "method": "GET",
+        "path": "/api/client/v1/pairing/requests/:id",
+        "scope": null
+      },
+      {
+        "families": [
+          "pairing"
+        ],
+        "id": "pairing.exchange",
+        "ingress": "public",
+        "method": "POST",
+        "path": "/api/client/v1/pairing/requests/:id/exchange",
+        "scope": null
+      },
+      {
+        "families": [
+          "pairing"
+        ],
+        "id": "pairing.admin.list",
+        "ingress": "admin",
+        "method": "GET",
+        "path": "/api/client/v1/admin/pairing-requests",
+        "scope": null
+      },
+      {
+        "families": [
+          "pairing"
+        ],
+        "id": "pairing.admin.decide",
+        "ingress": "admin",
+        "method": "POST",
+        "path": "/api/client/v1/admin/pairing-requests/:id/decision",
+        "scope": null
+      },
+      {
+        "families": [
+          "credentials"
+        ],
+        "id": "credentials.admin.list",
+        "ingress": "admin",
+        "method": "GET",
+        "path": "/api/client/v1/admin/credentials",
+        "scope": null
+      },
+      {
+        "families": [
+          "credentials"
+        ],
+        "id": "credentials.admin.revoke",
+        "ingress": "admin",
+        "method": "DELETE",
+        "path": "/api/client/v1/admin/credentials/:id",
+        "scope": null
+      },
+      {
+        "families": [
+          "familiars",
+          "cursors"
+        ],
+        "id": "familiars.list",
+        "ingress": "authenticated",
+        "method": "GET",
+        "path": "/api/client/v1/familiars",
+        "scope": "chat:read"
+      },
+      {
+        "families": [
+          "projects",
+          "cursors"
+        ],
+        "id": "projects.list",
+        "ingress": "authenticated",
+        "method": "GET",
+        "path": "/api/client/v1/projects",
+        "scope": "chat:read"
+      },
+      {
+        "families": [
+          "conversations",
+          "cursors"
+        ],
+        "id": "conversations.list",
+        "ingress": "authenticated",
+        "method": "GET",
+        "path": "/api/client/v1/conversations",
+        "scope": "chat:read"
+      },
+      {
+        "families": [
+          "conversations"
+        ],
+        "id": "conversations.read",
+        "ingress": "authenticated",
+        "method": "GET",
+        "path": "/api/client/v1/conversations/:id",
+        "scope": "chat:read"
+      },
+      {
+        "families": [
+          "conversation-messages",
+          "cursors"
+        ],
+        "id": "messages.list",
+        "ingress": "authenticated",
+        "method": "GET",
+        "path": "/api/client/v1/conversations/:id/messages",
+        "scope": "chat:read"
+      }
+    ],
+    "pairingRequired": true,
+    "pairingScopes": [
+      "chat:read",
+      "chat:write",
+      "conversations:write",
+      "attachments:write",
+      "tasks:write",
+      "github:write"
+    ],
+    "pairingSecretHeader": "x-coven-pairing-secret",
+    "publicRoutes": [
+      {
+        "method": "GET",
+        "path": "/api/client/v1/health"
+      },
+      {
+        "method": "POST",
+        "path": "/api/client/v1/pairing/requests"
+      },
+      {
+        "method": "GET",
+        "path": "/api/client/v1/pairing/requests/:id"
+      },
+      {
+        "method": "POST",
+        "path": "/api/client/v1/pairing/requests/:id/exchange"
+      }
+    ]
+  },
+  "examples": {
+    "cursor": {
+      "current": "conversation-list:cursor:0",
+      "hasMore": true,
+      "next": "conversation-list:cursor:1"
+    },
+    "discoveryRecord": {
+      "endpoint": "http://127.0.0.1:3020",
+      "nonce": "018f4f1a-77c2-7a31-8a15-55a25aaba003",
+      "pid": 4321,
+      "startedAt": "2026-08-20T20:20:12.617Z",
+      "version": 1
+    },
+    "errorEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "health",
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "cursors"
+      ],
+      "error": {
+        "code": "reconcile_required",
+        "details": {
+          "reason": "resume_from_canonical_state"
+        },
+        "message": "Client state must be reconciled.",
+        "retryable": true
+      },
+      "minimumClientVersion": "0.1.0",
+      "operations": [
+        "health.read",
+        "pairing.create",
+        "pairing.poll",
+        "pairing.exchange",
+        "pairing.admin.list",
+        "pairing.admin.decide",
+        "credentials.admin.list",
+        "credentials.admin.revoke",
+        "familiars.list",
+        "projects.list",
+        "conversations.list",
+        "conversations.read",
+        "messages.list"
+      ],
+      "requestId": "request-example-error"
+    },
+    "health": {
+      "instanceId": "00000000-0000-4000-8000-000000000000",
+      "pairingRequired": true,
+      "releaseVersion": "0.0.0"
+    },
+    "healthEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "health",
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "cursors"
+      ],
+      "data": {
+        "instanceId": "00000000-0000-4000-8000-000000000000",
+        "pairingRequired": true,
+        "releaseVersion": "0.0.0"
+      },
+      "minimumClientVersion": "0.1.0",
+      "operations": [
+        "health.read",
+        "pairing.create",
+        "pairing.poll",
+        "pairing.exchange",
+        "pairing.admin.list",
+        "pairing.admin.decide",
+        "credentials.admin.list",
+        "credentials.admin.revoke",
+        "familiars.list",
+        "projects.list",
+        "conversations.list",
+        "conversations.read",
+        "messages.list"
+      ]
+    },
+    "identity": {
+      "displayName": "Example conversation",
+      "id": "conversation-example",
+      "kind": "conversation"
+    },
+    "pairingCreatedEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "health",
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "cursors"
+      ],
+      "data": {
+        "expiresAt": 1755731112617,
+        "requestId": "018f4f1a-77c2-7a31-8a15-55a25aaba001",
+        "secret": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "minimumClientVersion": "0.1.0",
+      "operations": [
+        "health.read",
+        "pairing.create",
+        "pairing.poll",
+        "pairing.exchange",
+        "pairing.admin.list",
+        "pairing.admin.decide",
+        "credentials.admin.list",
+        "credentials.admin.revoke",
+        "familiars.list",
+        "projects.list",
+        "conversations.list",
+        "conversations.read",
+        "messages.list"
+      ]
+    },
+    "pairingExchangeEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "health",
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "cursors"
+      ],
+      "data": {
+        "bearer": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "credential": {
+          "appName": "OpenCoven Chat",
+          "createdAt": 1755730812617,
+          "id": "018f4f1a-77c2-7a31-8a15-55a25aaba002",
+          "installationId": "chat-install-1",
+          "lastUsedAt": null,
+          "revocationReason": null,
+          "revokedAt": null,
+          "scopes": [
+            "chat:read",
+            "chat:write"
+          ]
+        }
+      },
+      "minimumClientVersion": "0.1.0",
+      "operations": [
+        "health.read",
+        "pairing.create",
+        "pairing.poll",
+        "pairing.exchange",
+        "pairing.admin.list",
+        "pairing.admin.decide",
+        "credentials.admin.list",
+        "credentials.admin.revoke",
+        "familiars.list",
+        "projects.list",
+        "conversations.list",
+        "conversations.read",
+        "messages.list"
+      ]
+    },
+    "pairingStatusEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "health",
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "cursors"
+      ],
+      "data": {
+        "expiresAt": 1755731112617,
+        "id": "018f4f1a-77c2-7a31-8a15-55a25aaba001",
+        "status": "approved"
+      },
+      "minimumClientVersion": "0.1.0",
+      "operations": [
+        "health.read",
+        "pairing.create",
+        "pairing.poll",
+        "pairing.exchange",
+        "pairing.admin.list",
+        "pairing.admin.decide",
+        "credentials.admin.list",
+        "credentials.admin.revoke",
+        "familiars.list",
+        "projects.list",
+        "conversations.list",
+        "conversations.read",
+        "messages.list"
+      ]
+    },
+    "revision": {
+      "token": "conversation-example-revision-1",
+      "updatedAt": "2026-08-15T00:00:01.000Z"
+    },
+    "status": {
+      "status": "ok"
+    },
+    "successEnvelope": {
+      "apiVersion": "1.0",
+      "capabilities": [
+        "health",
+        "pairing",
+        "credentials",
+        "familiars",
+        "projects",
+        "conversations",
+        "conversation-messages",
+        "cursors"
+      ],
+      "cursor": {
+        "current": "conversation-list:cursor:0",
+        "hasMore": true,
+        "next": "conversation-list:cursor:1"
+      },
+      "data": {
+        "status": "ok"
+      },
+      "identity": {
+        "displayName": "Example conversation",
+        "id": "conversation-example",
+        "kind": "conversation"
+      },
+      "minimumClientVersion": "0.1.0",
+      "operations": [
+        "health.read",
+        "pairing.create",
+        "pairing.poll",
+        "pairing.exchange",
+        "pairing.admin.list",
+        "pairing.admin.decide",
+        "credentials.admin.list",
+        "credentials.admin.revoke",
+        "familiars.list",
+        "projects.list",
+        "conversations.list",
+        "conversations.read",
+        "messages.list"
+      ],
+      "requestId": "request-example-success",
+      "revision": {
+        "token": "conversation-example-revision-1",
+        "updatedAt": "2026-08-15T00:00:01.000Z"
+      }
+    }
+  }
+}

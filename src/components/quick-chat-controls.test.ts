@@ -5,9 +5,10 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 const primitives = readFileSync(new URL("./quick-chat-primitives.tsx", import.meta.url), "utf8");
 const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
-const messageBubble = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const messageFormat = readFileSync(new URL("../lib/quick-chat-message-format.ts", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
+const quickHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+const streamingResponse = readFileSync(new URL("./streaming-turn-response.tsx", import.meta.url), "utf8");
 
 assert.match(primitives, /StandardSelect/, "quick-chat select helper should delegate to StandardSelect");
 assert.doesNotMatch(primitives, /PopoverBody|PopoverItem|anchorRef/, "quick-chat select helper should not maintain its own popover implementation");
@@ -17,18 +18,13 @@ assert.match(primitives, /renderValue=/, "quick-chat select helper should keep i
 assert.match(source, /export \{ QuickChatThread \} from "\.\/quick-chat-thread"/, "controls preserve the shared thread export");
 assert.match(
   thread,
-  /import \{ ProgressiveMarkdownBlock \} from "@\/components\/message-bubble"/,
-  "familiar replies render through the normal chat's progressive Markdown path",
+  /formatQuickChatAssistantMessage[\s\S]*createStreamingTurnViewModel[\s\S]*<StreamingTurnResponse/,
+  "Quick Chat feeds its marker-safe projection into the shared model and renderer",
 );
 assert.match(
   thread,
-  /pendingTextIndex[\s\S]*<ProgressiveMarkdownBlock key=\{`text-\$\{index\}`\} text=\{piece\.text\} pending=\{streaming && index === pendingTextIndex\}/,
-  "streaming replies use progressive Markdown and show a cursor only on the final visible piece",
-);
-assert.match(
-  messageBubble,
-  /export function ProgressiveMarkdownBlock[\s\S]*<MarkdownContent text=\{text\} pending=\{pending\}/,
-  "the public progressive wrapper preserves one MarkdownContent instance across stream settlement",
+  /<StreamingTurnResponse[\s\S]*density="compact"/,
+  "Quick Chat renders the shared compact response composition",
 );
 assert.doesNotMatch(
   thread,
@@ -37,7 +33,7 @@ assert.doesNotMatch(
 );
 assert.match(
   thread,
-  /formatQuickChatAssistantMessage\(message\.text, streaming\)/,
+  /const formatted = formatQuickChatAssistantMessage\([\s\S]*message\.text[\s\S]*streaming/,
   "quick chat uses the shared marker-safe formatter for human-readable reply details",
 );
 assert.match(thread, /<SkillStageCard/, "quick chat renders live skill details as readable status cards");
@@ -45,12 +41,160 @@ assert.match(thread, /<GitHubCard/, "quick chat renders settled GitHub details a
 assert.match(thread, /<GitHubActionCard/, "quick chat renders GitHub write proposals as explicit action cards");
 assert.match(
   thread,
-  /if \(streaming\) return null;/,
-  "quick chat keeps GitHub placeholders stable while streaming without mounting their cards",
+  /!streaming && pieces\.some\(\(piece\) => piece\.kind !== "text"\)[\s\S]*pieces\.map[\s\S]*piece\.kind === "text"[\s\S]*<ProgressiveMarkdownBlock[\s\S]*piece\.kind === "action"[\s\S]*<GitHubActionCard[\s\S]*<GitHubCard/,
+  "settled Quick Chat renders text, cards, and actions once in their original order",
+);
+assert.match(
+  thread,
+  /proseContent=\{orderedProseContent\}[\s\S]*supplementaryContent=\{quickChatSupplementaryContent\}/,
+  "ordered rich pieces use the shared prose slot while independent metadata stays supplementary",
+);
+const quickSupplementary = /const quickChatSupplementaryContent = \(([\s\S]*?)\n  \);\n  return/.exec(thread)?.[1] ?? "";
+assert.ok(quickSupplementary, "Quick Chat supplementary content exists");
+assert.doesNotMatch(
+  quickSupplementary,
+  /GitHubCard|GitHubActionCard/,
+  "ordered GitHub pieces are not duplicated in supplementary content",
 );
 assert.match(thread, /copyText\(visible\)/, "each familiar reply can be copied to the clipboard — the visible text, not the raw next-paths trailer");
-assert.match(thread, /aria-live="polite"/, "the thread is a polite live region so streamed replies are announced");
-assert.match(thread, /quick-chat-caret|quick-chat-typing/, "streaming turns show a caret / thinking affordance");
+assert.match(
+  thread,
+  /formatQuickChatAssistantMessage\([\s\S]*useStreamingPresentationSource\([\s\S]*formatted\.visibleProse/,
+  "Quick Chat buffers the formatter's prose-only visible projection",
+);
+assert.doesNotMatch(
+  thread,
+  /sourceMode:\s*"(?:append-only|appendOnly)"/,
+  "Quick Chat keeps the safe replaceable presentation-buffer mode",
+);
+assert.doesNotMatch(thread, /aria-live=/, "the thread does not nest a second live region");
+assert.match(
+  thread,
+  /messages\.findLast\([\s\S]*message\.role === "assistant" && message\.local !== true[\s\S]*announceLifecycle=\{message\.id === latestAssistantId\}/,
+  "only Quick Chat's latest non-local assistant turn can announce lifecycle changes",
+);
+const responseMetadataComponent =
+  /function QuickChatResponseMetadata[\s\S]*?\n\}/.exec(thread)?.[0] ?? "";
+assert.match(
+  responseMetadataComponent,
+  /role="group"/,
+  "response metadata is a labelled semantic group",
+);
+assert.doesNotMatch(
+  responseMetadataComponent,
+  /role="status"|aria-live=/,
+  "response metadata never creates another live region",
+);
+assert.match(
+  streamingResponse,
+  /announceLifecycle\?: boolean[\s\S]*announceLifecycle = true/,
+  "the focused shared response announcement prop preserves existing callers by default",
+);
+assert.match(
+  streamingResponse,
+  /role=\{announceLifecycle \? "status" : undefined\}/,
+  "status announcements can be removed without hiding visible lifecycle copy",
+);
+assert.match(
+  streamingResponse,
+  /role=\{announceLifecycle \? "alert" : undefined\}/,
+  "alert announcements can be removed from historical failed turns",
+);
+assert.match(
+  quickHook,
+  /lifecycle\?: ChatTurnLifecycle/,
+  "Quick Chat records the same explicit lifecycle vocabulary",
+);
+assert.match(
+  quickHook,
+  /role: "assistant",[\s\S]*pending: true,[\s\S]*lifecycle: "streaming",[\s\S]*error: null/,
+  "a new assistant turn starts in the explicit streaming lifecycle",
+);
+assert.match(
+  quickHook,
+  /pending: false,[\s\S]*lifecycle: aborted \? "cancelled" : "failed",[\s\S]*error: aborted \? null : \(err as Error\)\?\.message \?\? "Generation failed\."/,
+  "catch settlement distinguishes abort from a specific failure",
+);
+assert.match(
+  quickHook,
+  /text: result\.text,[\s\S]*error: result\.error,[\s\S]*pending: false,[\s\S]*lifecycle: result\.error \? "failed" : "complete"/,
+  "natural settlement records success or failure explicitly",
+);
+assert.match(
+  quickHook,
+  /return result\.error \? "stopped" : "done";/,
+  "a normally returned transport error parks the queue instead of looking complete",
+);
+assert.match(
+  quickHook,
+  /message\.id === activeSend\.assistantId && message\.pending[\s\S]*lifecycle: "cancelled"/,
+  "Stop marks only the active Quick Chat turn cancelled",
+);
+assert.match(
+  quickHook,
+  /body: JSON\.stringify\(\{ runId: active\.runId \}\)/,
+  "Quick Chat Stop is scoped only to the captured run id",
+);
+assert.doesNotMatch(
+  /async function requestQuickChatStop[\s\S]*?\n\}/.exec(quickHook)?.[0] ?? "",
+  /sessionId/,
+  "Quick Chat never adds a reusable session id to Stop requests",
+);
+assert.match(
+  quickHook,
+  /return \{\s*stopped: payload\.stopped === true,\s*queued: payload\.queued === true,\s*\}/,
+  "Quick Chat parses the server's stopped and queued acceptance outcome",
+);
+assert.match(
+  quickHook,
+  /normalStopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*cleanupStopOutcomePromise\?: Promise<QuickChatStopOutcome>[\s\S]*function beginQuickChatStop[\s\S]*options\.keepalive[\s\S]*"cleanupStopOutcomePromise"[\s\S]*"normalStopOutcomePromise"[\s\S]*const existingPromise = active\[promiseField\];[\s\S]*if \(existingPromise\) return existingPromise;[\s\S]*active\[promiseField\] = stopOutcomePromise/,
+  "normal and cleanup Stop requests have independently deduplicated outcome promises",
+);
+assert.match(
+  quickHook,
+  /const awaitedStopOutcomePromises = new Set<Promise<QuickChatStopOutcome>>\(\);[\s\S]*while \(activeSendRef\.current === activeSend\)[\s\S]*activeSend\.normalStopOutcomePromise,[\s\S]*activeSend\.cleanupStopOutcomePromise,[\s\S]*!awaitedStopOutcomePromises\.has\(promise\)[\s\S]*if \(stopOutcomePromises\.length === 0\) break;[\s\S]*await Promise\.all\(stopOutcomePromises\)[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*const ownsActiveSend = activeSendRef\.current === activeSend;/,
+  "definitive done loops across independently owned Stop outcomes before normal settlement",
+);
+assert.match(
+  quickHook,
+  /const settleAcceptedStop = useCallback[\s\S]*if \(activeSendRef\.current !== activeSend\) return false;[\s\S]*activeSendRef\.current = null;[\s\S]*activeSend\.controller\.abort\(\);[\s\S]*lifecycle: "cancelled"/,
+  "only the continuation that still owns the active send can settle an accepted Stop",
+);
+assert.match(
+  quickHook,
+  /const reconcileStopOutcome = useCallback[\s\S]*promiseField: "normalStopOutcomePromise" \| "cleanupStopOutcomePromise"[\s\S]*outcome\.status === "stopped" \|\| outcome\.status === "queued"[\s\S]*settleAcceptedStop\(activeSend\);[\s\S]*activeSend\[promiseField\] === stopOutcomePromise[\s\S]*activeSend\[promiseField\] = undefined;[\s\S]*activeSend\.cleanupStopSent = false;[\s\S]*outcome\.status !== "failure"[\s\S]*!ownsActiveSend[\s\S]*setError\(/,
+  "reconciliation clears only its exact failed request owner and accepted outcomes cancel atomically",
+);
+assert.match(
+  quickHook,
+  /const terminateActiveSend = useCallback[\s\S]*beginQuickChatStop\(activeSend, \{ keepalive: true \}\)[\s\S]*activeSendRef\.current = null;[\s\S]*"cleanupStopOutcomePromise"[\s\S]*activeSend\.controller\.abort\(\)/,
+  "cleanup reuses its independently owned keepalive Stop before atomically taking and aborting",
+);
+assert.match(
+  quickHook,
+  /const newThread = useCallback[\s\S]*terminateActiveSend\(\{[\s\S]*keepalive: true,[\s\S]*suppressSettlementUi: true/,
+  "thread resets explicitly stop their captured server run",
+);
+assert.match(
+  quickHook,
+  /const stopForPageHide = \(event: PageTransitionEvent\)[\s\S]*if \(event\.persisted\)[\s\S]*beginQuickChatStop\(activeSend, \{[\s\S]*keepalive: true[\s\S]*reconcileStopOutcome\([\s\S]*activeSend,[\s\S]*"cleanupStopOutcomePromise",[\s\S]*stopOutcomePromise,[\s\S]*outcome[\s\S]*suppressSettlementUi: true[\s\S]*window\.addEventListener\("pagehide", stopForPageHide\)[\s\S]*suppressSettlementUi: true/,
+  "BFCache waits for its keepalive Stop outcome while discarded pages and unmount abort immediately",
+);
+assert.match(
+  quickHook,
+  /const ownsActiveSend = activeSendRef\.current === activeSend;[\s\S]*if \(ownsActiveSend\) activeSendRef\.current = null;[\s\S]*if \(ownsActiveSend\) setSendState\("idle"\);/,
+  "a cancelled turn settling late cannot reset a newer send to idle",
+);
+assert.match(
+  tray,
+  /<QuickChatThread[\s\S]*onStop=\{cancelQuickChat\}/,
+  "Quick Chat places Stop beside live response activity",
+);
+assert.doesNotMatch(
+  source,
+  /sending \? \(\s*<Button variant="secondary" size="sm" onClick=\{onCancel\}>/,
+  "the composer no longer duplicates the live response Stop control",
+);
 
 // ── Shared building blocks: one source of truth for both surfaces ────────────
 // The overlay and the tray render the same header identity, controls row, and
@@ -197,8 +341,8 @@ assert.match(
 // pausing near the bottom — stays gone.
 assert.match(
   thread,
-  /const \{ schedulePin, stick \} = useStickToBottom\(scrollRef\)/,
-  "the thread follows via the shared intent-release hook",
+  /const \[stuck, setStuck\] = useState\(true\);[\s\S]*const \[newResponseContent, setNewResponseContent\] = useState\(false\);[\s\S]*const \{ schedulePin, stick \} = useStickToBottom\(scrollRef, \{\s*onStickChange: setStuck,\s*\}\)/,
+  "the thread observes the shared intent-release hook and owns one unseen-content boolean",
 );
 assert.doesNotMatch(
   source,
@@ -207,13 +351,23 @@ assert.doesNotMatch(
 );
 assert.match(
   thread,
-  /schedulePin\(\);\s*\}, \[messages\.length, lastText, schedulePin\]\)/,
+  /schedulePin\(\);\s*\}, \[messages\.length, latestAssistantSource, schedulePin\]\)/,
   "streamed tokens pin through the coalesced scheduler",
 );
 assert.match(
   thread,
-  /stick\(\);\s*\}, \[messages\.length, stick\]\)/,
-  "a new turn re-engages follow-along scrolling",
+  /lastUserMessageId[\s\S]*observedUserMessageIdRef[\s\S]*setNewResponseContent\(false\);[\s\S]*stick\(\);/,
+  "a new user message or thread reset clears unseen content and re-engages following",
+);
+assert.match(
+  thread,
+  /message\.role === "assistant" && message\.local !== true[\s\S]*formatQuickChatAssistantMessage[\s\S]*latestAssistantSource[\s\S]*if \(stuck\) \{[\s\S]*setNewResponseContent\(false\);[\s\S]*if \(latestAssistantId !== null && \(turnChanged \|\| sourceChanged\)\) \{[\s\S]*setNewResponseContent\(true\);/,
+  "only the latest non-local assistant projection creates unseen response content while released",
+);
+assert.match(
+  thread,
+  /className="quick-chat-new-response-content focus-ring"[\s\S]*setNewResponseContent\(false\);\s*stick\(\);[\s\S]*\{newResponseContent \? "New response content" : "Latest"\}/,
+  "the released Quick Chat reader gets the shared focused response control",
 );
 {
   const hook = readFileSync(new URL("../lib/use-stick-to-bottom.ts", import.meta.url), "utf8");
@@ -241,8 +395,8 @@ assert.match(
 );
 assert.match(
   messageFormat,
-  /extractNextPaths\(skillSplit\.visible\)/,
-  "the formatter strips the trailer from familiar turns after protocol markers (never shown raw)",
+  /extractChatResultMarkers\(skillSplit\.visible,[\s\S]*extractNextPaths\(resultSplit\.visible\)/,
+  "the formatter strips result and next-path trailers from familiar turns after protocol markers",
 );
 assert.match(
   thread,
@@ -351,10 +505,10 @@ assert.match(
 
 // ── The hook side of queueing + attachments (use-quick-chat) ─────────────────
 {
-  const hook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+  const hook = quickHook;
   assert.match(
     hook,
-    /if \(abortRef\.current\) \{[\s\S]*?queuedRef\.current = \[\.\.\.queuedRef\.current, item\]/,
+    /if \(activeSendRef\.current\) \{[\s\S]*?queuedRef\.current = \[\.\.\.queuedRef\.current, item\]/,
     "a send during an in-flight turn queues instead of silently dropping",
   );
   assert.match(
@@ -388,11 +542,11 @@ assert.match(
     sendTextIndex,
   );
   const familiarSwitchIndex = hook.indexOf(
-    "if (target.familiarId !== selectedFamiliarId && !abortRef.current)",
+    "if (target.familiarId !== selectedFamiliarId && !activeSendRef.current)",
     sendTextIndex,
   );
   const launchGateIndex = hook.indexOf("if (!projectLaunchReady)", sendTextIndex);
-  const queueIndex = hook.indexOf("if (abortRef.current)", sendTextIndex);
+  const queueIndex = hook.indexOf("if (activeSendRef.current)", sendTextIndex);
   assert.ok(launchGateIndex > sendTextIndex, "quick-chat send has a client launch guard");
   assert.ok(
     targetResolutionIndex < launchGateIndex && familiarSwitchIndex < launchGateIndex,
@@ -401,7 +555,7 @@ assert.match(
   assert.ok(launchGateIndex < queueIndex, "an invalid quick-chat send is rejected before queue or draft mutation");
   assert.match(
     hook,
-    /target\.familiarId !== selectedFamiliarId && !abortRef\.current[\s\S]*setSelectedProjectRoot\(null\)[\s\S]*setDraft\(raw\)[\s\S]*Choose a project/,
+    /target\.familiarId !== selectedFamiliarId && !activeSendRef\.current[\s\S]*setSelectedProjectRoot\(null\)[\s\S]*setDraft\(raw\)[\s\S]*Choose a project/,
     "an @mention familiar switch clears the old project and preserves the draft before any launch",
   );
   assert.match(
@@ -447,8 +601,13 @@ assert.match(
   );
   assert.match(
     thread,
-    /QuickChatResponseMetadata[\s\S]*?Forwarded — not confirmed/,
+    /quickChatResponseMetadataLines[\s\S]*?Forwarded — not confirmed[\s\S]*?<QuickChatResponseMetadata lines=\{responseMetadataLines\}/,
     "quick chat renders requested, forwarded, and applied model/control outcomes",
+  );
+  assert.doesNotMatch(
+    /hasRichBlocks:[\s\S]*?resultCount:/.exec(thread)?.[0] ?? "",
+    /responseMetadataLines/,
+    "routine response metadata cannot hide the empty-success fallback",
   );
 }
 

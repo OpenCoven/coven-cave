@@ -13,6 +13,11 @@ import { DEFAULT_READING_TRACKING, applyReadingTracking, readReadingTracking } f
 import { DEFAULT_READING_WEIGHT, applyReadingWeight, readReadingWeight } from "./reading-weight";
 import { DEFAULT_READING_WIDTH, applyReadingWidth, readReadingWidth } from "./reading-width";
 import { applyScreenScale, readScreenScale } from "./screen-magnification";
+import {
+  READER_TEXT_SCALE_DEFAULT_INDEX,
+  applyReadingSize,
+  loadScaleIndex,
+} from "./reader-text-scale";
 import { readAppPreferences } from "./app-preferences";
 import type { CustomThemeData } from "./preferences-schema";
 
@@ -45,6 +50,8 @@ export function reapplyIndependentAppearance(
   const fontPair = readFontPairPref();
   if (!preserveDefaults || fontPair.id !== DEFAULT_FONT_PAIR_ID) applyFontPair(fontPair.id);
   applyScreenScale(readScreenScale(), { persist: false });
+  const size = loadScaleIndex();
+  if (!preserveDefaults || size !== READER_TEXT_SCALE_DEFAULT_INDEX) applyReadingSize(size);
   const leading = readReadingLeading();
   if (!preserveDefaults || leading !== DEFAULT_READING_LEADING) applyReadingLeading(leading, { persist: false });
   const tracking = readReadingTracking();

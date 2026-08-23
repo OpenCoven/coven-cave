@@ -49,6 +49,7 @@ export type CaveFontPreferences = {
 };
 
 export type CaveReadingPreferences = {
+  size: 0 | 1 | 2 | 3 | 4;
   leading: "compact" | "normal" | "relaxed";
   tracking: "normal" | "wide" | "wider";
   align: "left" | "justify";
@@ -262,6 +263,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
       fonts: { serif: "eb-garamond", sans: "inter", mono: "jetbrains-mono" },
       screenScale: 100,
       reading: {
+        size: 1,
         leading: "normal",
         tracking: "normal",
         align: "left",
@@ -505,6 +507,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
       },
       screenScale: oneOf(appearance.screenScale, SCREEN_SCALES, 100),
       reading: {
+        size: oneOf(reading.size, [0, 1, 2, 3, 4] as const, 1),
         leading: oneOf(reading.leading, READING_LEADING, "normal"),
         tracking: oneOf(reading.tracking, READING_TRACKING, "normal"),
         align: oneOf(reading.align, READING_ALIGN, "left"),
@@ -708,8 +711,9 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
     }
     if (Object.hasOwn(appearance, "reading")) {
       const reading = strictRecord(appearance.reading, "appearance.reading");
-      assertAllowedKeys(reading, ["leading", "tracking", "align", "width", "weight", "hyphens"], "appearance.reading");
+      assertAllowedKeys(reading, ["size", "leading", "tracking", "align", "width", "weight", "hyphens"], "appearance.reading");
       next.reading = {
+        ...(Object.hasOwn(reading, "size") ? { size: strictChoice(reading.size, [0, 1, 2, 3, 4] as const, "appearance.reading.size") } : {}),
         ...(Object.hasOwn(reading, "leading") ? { leading: strictChoice(reading.leading, READING_LEADING, "appearance.reading.leading") } : {}),
         ...(Object.hasOwn(reading, "tracking") ? { tracking: strictChoice(reading.tracking, READING_TRACKING, "appearance.reading.tracking") } : {}),
         ...(Object.hasOwn(reading, "align") ? { align: strictChoice(reading.align, READING_ALIGN, "appearance.reading.align") } : {}),
@@ -974,6 +978,7 @@ export const LEGACY_PREFERENCE_STORAGE_KEYS = [
   "cave:font:sans",
   "cave:font:mono",
   "cave:screen-scale",
+  "cave:reader:text-scale",
   "cave:reading-leading",
   "cave:reading-tracking",
   "cave:reading-align",
@@ -1000,6 +1005,7 @@ export function preferencesToLegacyStorage(input: CavePreferences): Record<strin
     "cave:font:sans": appearance.fonts.sans,
     "cave:font:mono": appearance.fonts.mono,
     "cave:screen-scale": String(appearance.screenScale),
+    "cave:reader:text-scale": String(appearance.reading.size),
     "cave:reading-leading": appearance.reading.leading,
     "cave:reading-tracking": appearance.reading.tracking,
     "cave:reading-align": appearance.reading.align,
@@ -1066,6 +1072,11 @@ export function legacyStorageToPreferencesPatch(values: Record<string, unknown>)
   if (SCREEN_SCALES.includes(scale as never)) appearance.screenScale = scale as CavePreferences["appearance"]["screenScale"];
 
   const reading: Partial<CaveReadingPreferences> = {};
+  const readerSizeRaw = storageString(values, "cave:reader:text-scale");
+  const readerSize = readerSizeRaw === null ? Number.NaN : Number(readerSizeRaw);
+  if (Number.isInteger(readerSize) && [0, 1, 2, 3, 4].includes(readerSize)) {
+    reading.size = readerSize as CaveReadingPreferences["size"];
+  }
   const readingValues = {
     leading: ["cave:reading-leading", READING_LEADING],
     tracking: ["cave:reading-tracking", READING_TRACKING],
@@ -1074,7 +1085,7 @@ export function legacyStorageToPreferencesPatch(values: Record<string, unknown>)
     weight: ["cave:reading-weight", READING_WEIGHT],
     hyphens: ["cave:reading-hyphens", READING_HYPHENS],
   } as const;
-  for (const key of Object.keys(readingValues) as Array<keyof CaveReadingPreferences>) {
+  for (const key of Object.keys(readingValues) as Array<keyof typeof readingValues>) {
     const [storageKey, choices] = readingValues[key];
     const value = storageString(values, storageKey);
     if ((choices as readonly string[]).includes(value ?? "")) {

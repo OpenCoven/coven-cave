@@ -5,12 +5,8 @@ import "@/styles/cave-chat.css";
 // ── ChatStartFromBands ───────────────────────────────────────────────────────
 // The new-session launcher, built to Chat.dc.html option 2b.
 //
-// The design replaces the old vertical stack of full-width rows with one
-// horizontal BAND per source of work: a tinted head cell states what the source
-// is and how much of it is on screen, and the rest of the band is a strip of
-// fixed-width tiles that scrolls sideways when the pane is narrow. Collapsing a
-// band folds it to a single head row, so a source you never start from costs
-// one line instead of a section.
+// One compact source switcher drives a paged four-tile deck. Desktop uses one
+// row; compact panes use two-by-two. Nothing scrolls inside the launcher.
 //
 // The component is presentational on purpose. Both new-session surfaces feed it
 // the same shape — ChatNewDashboard (a brand-new chat, `sessionId === null`) and
@@ -19,7 +15,7 @@ import "@/styles/cave-chat.css";
 // come from the shared pure model in `@/lib/chat-start-from`, never from the
 // caller's own arithmetic.
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Icon } from "@/lib/icon";
 import type { StartFromGroupMeta, StartFromKind } from "@/lib/chat-start-from";
@@ -54,6 +50,7 @@ export type StartFromBand = {
 
 /** The design's promise for the strip, stated once above every band. */
 export const START_FROM_NOTE = "one tap fills the brief and the whole setup";
+const START_FROM_PAGE_SIZE = 4;
 
 export function ChatStartFromBands({
   bands,
@@ -64,14 +61,39 @@ export function ChatStartFromBands({
   note?: string;
   label?: string;
 }) {
-  // Collapse is per-kind and local: which sources you fold is a reading
-  // preference for this page view, not state worth persisting across sessions.
-  const [collapsed, setCollapsed] = useState<Partial<Record<StartFromKind, boolean>>>({});
-  const toggle = useCallback((kind: StartFromKind) => {
-    setCollapsed((prev) => ({ ...prev, [kind]: !prev[kind] }));
-  }, []);
+  const [activeKind, setActiveKind] = useState<StartFromKind | null>(bands[0]?.meta.kind ?? null);
+  const [pageByKind, setPageByKind] = useState<Partial<Record<StartFromKind, number>>>({});
+  const activeBand = bands.find((band) => band.meta.kind === activeKind) ?? bands[0] ?? null;
+  const items = useMemo(
+    () => activeBand
+      ? [
+          ...activeBand.tiles.map((tile) => ({ type: "tile" as const, tile })),
+          ...(activeBand.viewAll
+            ? [{ type: "more" as const, viewAll: activeBand.viewAll }]
+            : []),
+        ]
+      : [],
+    [activeBand],
+  );
+  const pageCount = Math.max(1, Math.ceil(items.length / START_FROM_PAGE_SIZE));
+  const page = Math.min(activeBand ? pageByKind[activeBand.meta.kind] ?? 0 : 0, pageCount - 1);
+  const pageStart = page * START_FROM_PAGE_SIZE;
+  const pageItems = items.slice(pageStart, pageStart + START_FROM_PAGE_SIZE);
 
-  if (bands.length === 0) return null;
+  useEffect(() => {
+    if (!bands.some((band) => band.meta.kind === activeKind)) {
+      setActiveKind(bands[0]?.meta.kind ?? null);
+    }
+  }, [activeKind, bands]);
+
+  if (!activeBand) return null;
+
+  const setPage = (next: number) => {
+    setPageByKind((current) => ({
+      ...current,
+      [activeBand.meta.kind]: Math.min(Math.max(next, 0), pageCount - 1),
+    }));
+  };
 
   return (
     <section className="cave-sf" aria-label="Start from existing work">
@@ -81,77 +103,104 @@ export function ChatStartFromBands({
         <span className="cave-sf__head-note">{note}</span>
       </div>
 
-      {bands.map((band) => {
-        const { meta } = band;
-        const open = !collapsed[meta.kind];
-        return (
-          <div key={meta.kind} className="cave-sf__band" data-kind={meta.kind} data-open={open}>
+      <div className="cave-sf__sources" role="tablist" aria-label="Start-from sources">
+        {bands.map(({ meta }) => {
+          const active = meta.kind === activeBand.meta.kind;
+          return (
+            <button
+              key={meta.kind}
+              type="button"
+              role="tab"
+              id={`cave-sf-tab-${meta.kind}`}
+              aria-controls={`cave-sf-panel-${meta.kind}`}
+              aria-selected={active}
+              className="cave-sf__source focus-ring"
+              data-kind={meta.kind}
+              onClick={() => setActiveKind(meta.kind)}
+              title={meta.note}
+            >
+              <Icon name={meta.icon} width={14} height={14} aria-hidden />
+              <span className="cave-sf__source-label">{meta.label}</span>
+              <span className="cave-sf__source-count">{meta.count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="cave-sf__deck-frame">
+        <div
+          className="cave-sf__deck"
+          role="tabpanel"
+          id={`cave-sf-panel-${activeBand.meta.kind}`}
+          aria-labelledby={`cave-sf-tab-${activeBand.meta.kind}`}
+          data-kind={activeBand.meta.kind}
+        >
+          {activeBand.status ?? pageItems.map((item) => (
+            item.type === "tile" ? (
+              <button
+                key={item.tile.id}
+                type="button"
+                className="cave-sf__tile focus-ring"
+                disabled={item.tile.disabled || Boolean(item.tile.busyLabel)}
+                title={item.tile.hint}
+                aria-label={item.tile.ariaLabel ?? item.tile.title}
+                onClick={item.tile.onPick}
+              >
+                <span className="cave-sf__tile-top">
+                  <span className="cave-sf__tile-title">{item.tile.title}</span>
+                  {item.tile.busyLabel ? (
+                    <span className="cave-sf__tile-badge">{item.tile.busyLabel}</span>
+                  ) : item.tile.badge ? (
+                    <span className="cave-sf__tile-badge">{item.tile.badge}</span>
+                  ) : null}
+                </span>
+                {item.tile.sub ? (
+                  <span className="cave-sf__tile-sub">
+                    <span className="cave-sf__tile-dot" aria-hidden />
+                    <span className="cave-sf__tile-sub-text">{item.tile.sub}</span>
+                  </span>
+                ) : null}
+              </button>
+            ) : (
+              <button
+                key="view-all"
+                type="button"
+                className="cave-sf__tile cave-sf__tile--more focus-ring"
+                onClick={item.viewAll.onOpen}
+              >
+                <span className="cave-sf__tile-more-label">
+                  {item.viewAll.label}
+                  <Icon name="ph:arrow-right-bold" width={11} height={11} aria-hidden />
+                </span>
+              </button>
+            )
+          ))}
+        </div>
+
+        {pageCount > 1 ? (
+          <div className="cave-sf__pager" aria-label={`${activeBand.meta.label} pages`}>
+            <span>{page + 1} / {pageCount}</span>
             <button
               type="button"
-              className="cave-sf__band-head"
-              aria-expanded={open}
-              aria-label={`${meta.label} — ${meta.count}, ${meta.note}`}
-              onClick={() => toggle(meta.kind)}
+              className="cave-sf__page-button focus-ring"
+              aria-label="Previous start-from page"
+              disabled={page === 0}
+              onClick={() => setPage(page - 1)}
             >
-              <span className="cave-sf__band-glyphs">
-                <Icon name={meta.icon} width={14} height={14} aria-hidden />
-                <Icon name="ph:caret-right" width={9} height={9} className="cave-sf__caret" aria-hidden />
-              </span>
-              <span className="cave-sf__band-label">{meta.label}</span>
-              <span className="cave-sf__band-count">{meta.count}</span>
-              <span className="cave-sf__band-spacer" aria-hidden />
-              <span className="cave-sf__band-note">{meta.note}</span>
+              <Icon name="ph:caret-left" width={12} aria-hidden />
             </button>
-
-            {open ? (
-              <div className="cave-sf__strip" role="group" aria-label={meta.label}>
-                {band.status ?? (
-                  <>
-                    {band.tiles.map((tile) => (
-                      <button
-                        key={tile.id}
-                        type="button"
-                        className="cave-sf__tile"
-                        disabled={tile.disabled || Boolean(tile.busyLabel)}
-                        title={tile.hint}
-                        aria-label={tile.ariaLabel ?? tile.title}
-                        onClick={tile.onPick}
-                      >
-                        <span className="cave-sf__tile-top">
-                          <span className="cave-sf__tile-title">{tile.title}</span>
-                          {tile.busyLabel ? (
-                            <span className="cave-sf__tile-badge">{tile.busyLabel}</span>
-                          ) : tile.badge ? (
-                            <span className="cave-sf__tile-badge">{tile.badge}</span>
-                          ) : null}
-                        </span>
-                        {tile.sub ? (
-                          <span className="cave-sf__tile-sub">
-                            <span className="cave-sf__tile-dot" aria-hidden />
-                            <span className="cave-sf__tile-sub-text">{tile.sub}</span>
-                          </span>
-                        ) : null}
-                      </button>
-                    ))}
-                    {band.viewAll ? (
-                      <button
-                        type="button"
-                        className="cave-sf__tile cave-sf__tile--more"
-                        onClick={band.viewAll.onOpen}
-                      >
-                        <span className="cave-sf__tile-more-label">
-                          {band.viewAll.label}
-                          <Icon name="ph:arrow-right-bold" width={11} height={11} aria-hidden />
-                        </span>
-                      </button>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            ) : null}
+            <button
+              type="button"
+              className="cave-sf__page-button focus-ring"
+              aria-label="Next start-from page"
+              disabled={page === pageCount - 1}
+              onClick={() => setPage(page + 1)}
+            >
+              <Icon name="ph:caret-right" width={12} aria-hidden />
+            </button>
           </div>
-        );
-      })}
+        ) : null}
+      </div>
     </section>
   );
 }

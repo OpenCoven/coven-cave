@@ -31,7 +31,7 @@ const MISSION_STATUSES: ResearchMissionStatus[] = [
 ];
 const ACTIONS = new Set<string>([
   ...MISSION_STATUSES.flatMap((status) => allowedResearchActions({ status })),
-  "attach-source", "update-source", "reject-artifact", "publish-artifact",
+  "attach-source", "attach-saved-link", "update-source", "reject-artifact", "publish-artifact",
 ]);
 
 // Messages the runner throws when the CLIENT sent a bad request (invalid
@@ -42,6 +42,8 @@ const VALIDATION_ERRORS = new Set([
   "Source id and title are required",
   "Source requires a safe URL or absolute local path",
   "Source confidence must be between 0 and 1",
+  "saved link id is invalid",
+  "saved X Article not found",
   "artifact rejection reason required",
   "research artifact not found",
   "research source not found",

@@ -1,7 +1,7 @@
 /**
  * Profile card model — the pure numbers layer behind the Kaito-style profile
  * cards (cave-ujbr). One familiar (or the human operator) in, one render-ready
- * model out: a trailing-12-month activity heatmap, streaks, busiest day,
+ * model out: an adaptive activity heatmap, streaks, busiest day,
  * share-of-coven percentage, weekly + cumulative sparkline series, stat tiles,
  * and a ranked top-collaborators row.
  *
@@ -11,6 +11,7 @@
  */
 
 import { sessionDayKey } from "@/lib/session-pulse";
+import { activityHeatmapWindowDays } from "@/lib/activity-heatmap-window";
 import type { SessionRow } from "@/lib/types";
 
 export type ProfileKind = "familiar" | "human";
@@ -23,7 +24,7 @@ export type ProfileHeatmapCell = {
   level: 0 | 1 | 2 | 3 | 4;
 };
 
-/** One Sun→Sat column; null cells fall outside the 12-month window. */
+/** One Sun→Sat column; null cells fall outside the selected window. */
 export type ProfileHeatmapWeek = (ProfileHeatmapCell | null)[];
 
 export type ProfileHeatmapMonthLabel = {
@@ -52,7 +53,7 @@ export type ProfileCollaborator = { familiarId: string; count: number };
 
 export type ProfileCardModel = {
   kind: ProfileKind;
-  /** Sessions attributed to the subject inside the 12-month window. */
+  /** Sessions attributed to the subject inside the selected window. */
   sessionsTotal: number;
   statTiles: ProfileStatTile[];
   heatmap: ProfileHeatmap;
@@ -76,7 +77,6 @@ export type ProfileCardModel = {
 };
 
 const DAY_MS = 24 * 60 * 60_000;
-const WINDOW_DAYS = 365;
 const THIRTY_DAYS_MS = 30 * DAY_MS;
 /** Matches familiars-view-stats: a session touched in the last 5 minutes is live. */
 const ACTIVE_WINDOW_MS = 5 * 60_000;
@@ -138,14 +138,18 @@ function levelFor(count: number, max: number): ProfileHeatmapCell["level"] {
 }
 
 /**
- * GitHub-style trailing-12-month grid: Sun-start week columns, today in the
+ * GitHub-style adaptive grid: Sun-start week columns, today in the
  * final column, cells before the window start (or after today) are null.
  * Month labels sit on the first column whose Sunday enters a new month; a
  * cramped leading label (< 3 columns before the next) is dropped.
  */
 export function buildProfileHeatmap(sessions: SessionRow[], now: number): ProfileHeatmap {
+  const windowDays = activityHeatmapWindowDays(
+    sessions.map((session) => session.updated_at),
+    now,
+  );
   const todayStart = utcDayStartMs(now);
-  const windowStart = todayStart - (WINDOW_DAYS - 1) * DAY_MS;
+  const windowStart = todayStart - (windowDays - 1) * DAY_MS;
   const gridStart = windowStart - new Date(windowStart).getUTCDay() * DAY_MS;
 
   const counts = bucketByDay(sessions, windowStart, todayStart);
@@ -184,7 +188,7 @@ export function buildProfileHeatmap(sessions: SessionRow[], now: number): Profil
     monthLabels.shift();
   }
 
-  return { weeks, monthLabels, max, total, activeDays, windowDays: WINDOW_DAYS };
+  return { weeks, monthLabels, max, total, activeDays, windowDays };
 }
 
 export type ProfileStreaks = { current: number; longest: number };
@@ -329,8 +333,13 @@ export type ProfileCardInput = {
 
 export function buildProfileCardModel(input: ProfileCardInput): ProfileCardModel {
   const now = input.now ?? Date.now();
+  const allSubject = subjectSessions(input.sessions, input.kind, input.familiarId);
+  const windowDays = activityHeatmapWindowDays(
+    allSubject.map((session) => session.updated_at),
+    now,
+  );
   const todayStart = utcDayStartMs(now);
-  const windowStart = todayStart - (WINDOW_DAYS - 1) * DAY_MS;
+  const windowStart = todayStart - (windowDays - 1) * DAY_MS;
 
   const inWindow = (session: SessionRow): boolean => {
     const key = sessionDayKey(session.updated_at);
@@ -342,7 +351,7 @@ export function buildProfileCardModel(input: ProfileCardInput): ProfileCardModel
   const allWindowed = input.sessions.filter(inWindow);
   const subject = subjectSessions(allWindowed, input.kind, input.familiarId);
 
-  const heatmap = buildProfileHeatmap(subject, now);
+  const heatmap = buildProfileHeatmap(allSubject, now);
   const streaks = computeStreaks(heatmap);
   const weekly = weeklySeries(heatmap);
   const cumulative = cumulativeSeries(weekly);

@@ -109,12 +109,9 @@ mod native_startup_terminal_tests {
     }
 }
 
-/// Show or hide the macOS traffic lights (close/minimize/zoom) on the
-/// invoking window. The main window's title bar is an Overlay (see the main
-/// window builder), so the buttons float over web content — when the app's
-/// side panel is closed the shell asks for them to disappear, Dia-style, and
-/// brings them back the moment the panel (or its hover-peek) opens. AppKit
-/// must be touched on the main thread; a no-op elsewhere.
+/// Keep the native macOS window controls in sync with the primary side panel.
+/// When the side panel is closed the shell asks for them to disappear, Dia-style,
+/// and brings them back the moment the panel (or its hover-peek) opens.
 #[cfg(desktop)]
 #[tauri::command]
 fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
@@ -129,7 +126,8 @@ fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
                 let ns_window = ns_ptr as *mut AnyObject;
                 // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
                 for kind in 0u64..=2u64 {
-                    let button: *mut AnyObject = msg_send![&*ns_window, standardWindowButton: kind];
+                    let button: *mut AnyObject =
+                        msg_send![&*ns_window, standardWindowButton: kind];
                     if !button.is_null() {
                         let _: () = msg_send![&*button, setHidden: !visible];
                     }
@@ -274,6 +272,8 @@ pub fn run() {
     #[cfg(desktop)]
     let reliability_recorder = Arc::new(ReliabilityRecorder::default());
     #[cfg(desktop)]
+    let offline_cache = Arc::new(offline_cache::OfflineCacheState::default());
+    #[cfg(desktop)]
     let builder = builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
@@ -296,6 +296,7 @@ pub fn run() {
             browser::browser_commands::browser_report_title,
             browser::browser_commands::browser_report_scroll,
             shell_open,
+            open_tailscale_app,
             open_x_oauth_url,
             shell_open_path,
             shell_pick_directory,
@@ -311,6 +312,10 @@ pub fn run() {
             desktop_reachability_status,
             desktop_reachability_configure,
             record_daemon_reliability_measurement,
+            offline_cache::offline_cache_read,
+            offline_cache::offline_cache_write,
+            offline_cache::offline_cache_clear,
+            offline_cache::offline_cache_status,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
             #[cfg(target_os = "windows")]
@@ -321,6 +326,7 @@ pub fn run() {
         .manage(SidecarState(Arc::clone(&sidecar_process)))
         .manage(Arc::clone(&reachability_runtime))
         .manage(Arc::clone(&reliability_recorder))
+        .manage(Arc::clone(&offline_cache))
         .manage(browser::BrowserLifecycleState::default());
     // Registered on every desktop platform even though the watcher thread is
     // non-Windows: the teardown path reads this flag unconditionally, and a
@@ -332,11 +338,106 @@ pub fn run() {
     #[cfg(desktop)]
     builder
         .setup(move |app| {
+            // Release builds always get `None` here without touching the
+            // network, so this costs a packaged launch nothing.
+            let dev_server_url = live_dev_server_url(app);
+            // `live_dev_server_url` logs its own decision, but the log plugin
+            // is registered further down this closure — so without this a dev
+            // whose Next server is not up gets a stale bundled build with
+            // nothing on screen or in the terminal explaining why.
+            if cfg!(debug_assertions) {
+                eprintln!(
+                    "[cave] dev server {}",
+                    if dev_server_url.is_some() {
+                        "is live; using it for the main webview"
+                    } else {
+                        "is not serving; falling back to the bundled sidecar"
+                    }
+                );
+            }
+
+            // A translocated app exits here, before it can persist a
+            // LaunchAgent that points at the temporary DMG/quarantine path.
+            check_app_translocation();
+
+            // Refuse a second copy BEFORE it touches anything shared.
+            //
+            // Sidecar startup takes this same claim, and that is what stops two
+            // copies racing `node` onto one port. But everything below this
+            // point runs first, and a copy that is going to be refused should
+            // not have run any of it: it truncates the FIRST copy's live
+            // diagnostics file, starts a second Discord presence worker, and
+            // builds a second, indistinguishable tray icon. On Windows the
+            // refusal then arrives only after the runtime-cache lock, which can
+            // hold for minutes, behind a Retry button that can never succeed
+            // while the other copy lives.
+            //
+            // macOS already refused a second GUI, via the reachability lease —
+            // but that lease sits further down, AFTER the reliability store and
+            // the diagnostics reset, so even there a refused copy had already
+            // written to both. This is earlier and it is on every desktop
+            // platform, keyed on the port so `COVEN_CAVE_PORT` still admits a
+            // deliberate second copy.
+            //
+            // Skipped when a dev server owns the origin: `pnpm dev` holds the
+            // port on purpose, and the bundled sidecar is never started then.
+            // That answer is resolved ONCE, above, and reused for the webview
+            // URL below — probing twice let the two decisions disagree and
+            // strand a claim on a port this copy would never bind.
+            //
+            // Only two things run above it. `check_app_translocation` was moved
+            // up to get there; the dev-server probe was already first.
+            // `check_app_translocation` shows a BLOCKING dialog, so a copy
+            // about to be told it is translocated must not be holding the port
+            // while that alert waits for a click — the good copy in
+            // /Applications would then be refused, naming a process that never
+            // binds anything. The dev-server probe is above it because this
+            // block reads the answer. Everything else in the prologue —
+            // configuring the reliability store, the offline cache, and the
+            // diagnostics reset — mutates state the OTHER copy is using, so it
+            // belongs below, which is the whole point.
+            if dev_server_url.is_none() {
+                let port = sidecar_ports::dedicated_port();
+                match app
+                    .path()
+                    .app_local_data_dir()
+                    .map_err(|error| format!("could not resolve local app data: {error}"))
+                    .and_then(|state_dir| {
+                        crate::sidecar_port_lock::claim_dedicated_port(&state_dir, port)
+                    }) {
+                    Ok(crate::sidecar_port_lock::PortClaim::Acquired) => {}
+                    Ok(crate::sidecar_port_lock::PortClaim::HeldBy { pid }) => {
+                        report_existing_port_owner(port, pid)
+                    }
+                    // Fail open, exactly as sidecar startup does: a claim that
+                    // cannot be evaluated must never be the reason a launch is
+                    // refused.
+                    Err(error) => {
+                        // Both, and not just the `log` line: this claim runs
+                        // above the log-plugin registration further down, so on
+                        // its own that message goes to a facade with no logger
+                        // and is dropped. This is the one path where that would
+                        // matter most — failing open means cross-copy exclusion
+                        // is silently OFF, and the next launch gets node's raw
+                        // EADDRINUSE with nothing anywhere naming the cause.
+                        log::warn!("[cave] could not claim the dedicated port {port}: {error}");
+                        eprintln!(
+                            "[cave] could not claim the dedicated port {port}: {error};                              a second copy will not be refused"
+                        );
+                    }
+                }
+            }
+
             if let Ok(app_data_dir) = app.path().app_data_dir() {
                 app.state::<Arc<ReliabilityRecorder>>()
                     .configure(app_data_dir);
             }
             if let Ok(app_local_data_dir) = app.path().app_local_data_dir() {
+                // Local data, not roaming app data: the offline cache is a
+                // machine-local copy of daemon state and must not follow a
+                // roaming profile onto another machine.
+                app.state::<Arc<offline_cache::OfflineCacheState>>()
+                    .configure(app_local_data_dir.clone());
                 let diagnostics_path =
                     app_local_data_dir.join(sidecar_diagnostics::NATIVE_DIAGNOSTICS_FILE_NAME);
                 if let Err(error) =
@@ -359,10 +460,6 @@ pub fn run() {
                         .build(),
                 )?;
             }
-
-            // A translocated app exits here, before it can persist a
-            // LaunchAgent that points at the temporary DMG/quarantine path.
-            check_app_translocation();
 
             app.handle().plugin(tauri_plugin_notification::init())?;
             // A second GUI must not be reported through `?`. This closure is
@@ -405,7 +502,7 @@ pub fn run() {
             // production build instead of live code.
             #[cfg(not(target_os = "windows"))]
             let mut pending_native_startup_terminal = None;
-            let main_url: Option<tauri::Url> = if let Some(dev_url) = live_dev_server_url(app) {
+            let main_url: Option<tauri::Url> = if let Some(dev_url) = dev_server_url {
                 Some(dev_url)
             } else {
                 #[cfg(target_os = "windows")]
@@ -498,14 +595,11 @@ pub fn run() {
                         // them.
                         .disable_drag_drop_handler();
                 // macOS: dissolve the seam between the native title bar and the
-                // app's top toolbar. `Overlay` lets the webview content fill to the
+                // app's title strip. `Overlay` lets the webview content fill to the
                 // very top (the traffic-light buttons float over it) and
-                // `hidden_title` drops the centered "CovenCave" label, so the
-                // toolbar reads as one continuous strip. The web side reserves room
-                // for the traffic lights (`[data-tauri-titlebar]` in globals.css)
-                // and marks the bar `data-tauri-drag-region="deep"`; the drag is
-                // an ACL-gated IPC call, granted to this loopback origin by
-                // capabilities/loopback-window-drag.json. No-op on Windows/Linux.
+                // `hidden_title` drops the native "CovenCave" label. The web side
+                // renders the centered Coven identity, reserves room for the
+                // traffic lights, and marks the strip as a deep drag region.
                 #[cfg(target_os = "macos")]
                 {
                     main_window = main_window

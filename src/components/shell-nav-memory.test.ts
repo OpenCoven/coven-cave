@@ -24,6 +24,8 @@ const resolveShellNavOpenPreference =
   (() => ({ open: true, shouldPersist: false }));
 const resolveShellNavPolicyHandoff =
   shellLayout.resolveShellNavPolicyHandoff ?? (() => null);
+const resolveShellNavSwipe =
+shellLayout.resolveShellNavSwipe ?? (() => null);
 
 assert.equal(resolveShellNavWidth("300"), 300, "a valid persisted nav width is retained");
 assert.equal(resolveShellNavWidth("999"), 420, "nav width is clamped to the desktop maximum");
@@ -103,6 +105,27 @@ assert.equal(
   resolveShellNavPolicyHandoff({ ...chatToHome, fromPolicy: null }),
   null,
   "the first settled render is not a policy transition",
+);
+
+assert.equal(
+  resolveShellNavSwipe({ intent: "open", deltaX: 72, deltaY: 8 }),
+  "open",
+  "a horizontal right swipe resolves the edge-open gesture",
+);
+assert.equal(
+  resolveShellNavSwipe({ intent: "close", deltaX: -72, deltaY: 8 }),
+  "close",
+  "a horizontal left swipe resolves the drawer-close gesture",
+);
+assert.equal(
+  resolveShellNavSwipe({ intent: "open", deltaX: 72, deltaY: 70 }),
+  null,
+  "a diagonal content gesture does not open the drawer",
+);
+assert.equal(
+  resolveShellNavSwipe({ intent: "open", deltaX: -72, deltaY: 0 }),
+  null,
+  "the wrong swipe direction does not toggle the drawer",
 );
 
 // The handoff has to run BEFORE the destination-layout effect reads the
@@ -453,12 +476,12 @@ assert.match(
 );
 assert.match(
   destinationLayoutEffect,
-  /if \(\s*!chatContextual &&\s*isShellNavCollapsedLayout\(\{[\s\S]*?layout: defaultLayout,[\s\S]*?collapsedNavPixels: NAV_RAIL_PX,[\s\S]*?\}\)\s*\) \{\s*seedNavOpenPref\(false\);\s*\}[\s\S]*?resolveShellDestinationLayout\(/,
+  /if \(\s*!chatContextual &&\s*isShellNavCollapsedLayout\(\{[\s\S]*?layout: defaultLayout,[\s\S]*?  collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?\}\)\s*\) \{\s*seedNavOpenPref\(false\);\s*\}[\s\S]*?resolveShellDestinationLayout\(/,
   "legacy collapsed normal layouts migrate the collapsed preference before their expanded fallback is restored",
 );
 assert.match(
   destinationLayoutEffect,
-  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,[\s\S]*?isMobile,/,
+  /resolveShellDestinationLayout\(\{[\s\S]*?savedLayout: defaultLayout,[\s\S]*?defaultPanelPixels: \{[\s\S]*?\.\.\.\(!twoPane && \{ list: 260 \}\),[\s\S]*?\.\.\.\(desktopRightChat && \{ "right-chat": rightChatOpen \? preferredRightChatWidth : 0 \}\),[\s\S]*?\},[\s\S]*?preferredNavPixels: preferredNavWidth,[\s\S]*?collapsedNavPixels: NAV_COLLAPSED_PX,[\s\S]*?isMobile,/,
   "every desktop group transition resolves its own saved/default layout with the active shared nav width",
 );
 assert.match(
@@ -604,46 +627,22 @@ assert.match(
   "rail auto-collapse marks itself programmatic before the panel collapses",
 );
 
-assert.match(
+assert.doesNotMatch(
   shell,
-  /const navPeekEnabled = !isMobile && !navOpen;/,
-  "hover-to-peek covers every desktop policy now that they all collapse to a rail",
+  /navPeeking|navPeekEnabled|navPeekVisible|shell-nav--peek|shell-nav--rail/,
+  "closed navigation has no hover overlay or icon rail",
 );
 assert.match(
   shell,
-  /const navPeekVisible = navPeekEnabled && navPeeking;/,
-  "peek visibility is synchronously gated so stale state cannot leak onto the first Chat paint",
+  /collapsedSize=\{NAV_COLLAPSED_PX\}/,
+  "every shell policy closes the sidebar completely",
 );
 assert.match(
   shell,
-  /className=\{`shell-nav\$\{!isMobile && !navOpen \? \(navPeekVisible \? " shell-nav--peek" : " shell-nav--rail"\) : ""\}`\}/,
-  "every collapsed desktop sidebar, Chat included, gets rail or peek styling",
-);
-assert.match(
-  shell,
-  /onMouseEnter=\{navPeekEnabled \? \(\) => setNavPeeking\(true\) : undefined\}/,
-  "hover enter peeks whenever a desktop rail is showing",
-);
-assert.match(
-  shell,
-  /onMouseLeave=\{navPeekEnabled \? \(\) => setNavPeeking\(false\) : undefined\}/,
-  "hover leave peeks whenever a desktop rail is showing",
-);
-
-// The reported bug: collapsing in Chat made the sidebar vanish outright. Only
-// mobile — where the nav is an overlay drawer over the content — still closes
-// to zero.
-assert.match(
-  shell,
-  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
-  "only mobile drawers close fully; every desktop surface collapses to the icon rail",
-);
-assert.match(
-  shell,
-  /collapsedNavPixels: isMobile \? 0 : NAV_RAIL_PX,/,
+  /collapsedNavPixels: NAV_COLLAPSED_PX,/,
   "the restored destination layout describes the same collapsed width as the panel",
 );
-// Chat collapsing to a rail changes what the panel LOOKS like, not who owns the
+// Chat collapsing changes what the panel looks like, not who owns the
 // remembered preference — the #4404 handoff depends on Chat never writing it.
 assert.match(
   shell,
@@ -651,13 +650,13 @@ assert.match(
   "Chat still never seeds the remembered nav-open preference",
 );
 
-// The session list has no rail form, so the collapsed Code room falls back to
-// the destination rail rather than rendering a squeezed session list.
+// The session list has no collapsed form, so the hidden Code room keeps the
+// destination sidebar mounted inertly for state continuity.
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 assert.match(
   workspace,
   /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/,
-  "the collapsed Code room renders the destination rail, not the session list",
+  "the collapsed Code room keeps the destination sidebar mounted, not the session list",
 );
 assert.match(
   workspace,
@@ -667,7 +666,7 @@ assert.match(
 
 assert.match(
   shell,
-  /aria-label=\{chatContextual\s*\? navOpen\s*\? "Collapse Chat sidebar"\s*: "Expand Chat sidebar"\s*: navOpen\s*\? "Collapse navigation to icons"\s*: "Expand navigation"\}/,
+  /aria-label=\{chatContextual\s*\? navOpen\s*\? "Collapse Chat sidebar"\s*: "Expand Chat sidebar"\s*: navOpen\s*\? "Close navigation"\s*: "Expand navigation"\}/,
   "the top-left toggle announces Chat sidebar actions in contextual mode",
 );
 assert.match(

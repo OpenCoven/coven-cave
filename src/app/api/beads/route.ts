@@ -60,6 +60,52 @@ function readOptionalString(value: unknown, field: string): ParsedField<string |
   return { ok: true, value: value.trim() };
 }
 
+/**
+ * `bd` priority is an integer 0–4 (0 = Critical … 4 = Backlog) — see
+ * `bd priority --help`. Reject anything else rather than forwarding a string
+ * `bd` would reinterpret: the scheduler's undo replays a recorded previous
+ * value, so a silently coerced band would make an "undo" land somewhere else.
+ */
+export const BEAD_PRIORITY_MIN = 0;
+export const BEAD_PRIORITY_MAX = 4;
+
+function readPriority(value: unknown): ParsedField<number> {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return { ok: false, error: `priority must be an integer ${BEAD_PRIORITY_MIN}-${BEAD_PRIORITY_MAX}` };
+  }
+  if (value < BEAD_PRIORITY_MIN || value > BEAD_PRIORITY_MAX) {
+    return { ok: false, error: `priority must be an integer ${BEAD_PRIORITY_MIN}-${BEAD_PRIORITY_MAX}` };
+  }
+  return { ok: true, value };
+}
+
+/**
+ * `bd blocked --json` names each blocker by id only. A gate card that printed
+ * bare ids would fail the repo's own dependency rule ("name the dependency in
+ * the imperative" — docs/orchestration-ready-tasks.md), so the ids are joined
+ * to their records in ONE extra `bd list --id` call rather than N `bd show`s.
+ * Capped so a pathological graph cannot build an unbounded argv.
+ */
+const BLOCKER_JOIN_LIMIT = 200;
+
+function blockerIdsFrom(rows: unknown): string[] {
+  if (!Array.isArray(rows)) return [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const ids = (row as { blocked_by?: unknown }).blocked_by;
+    if (!Array.isArray(ids)) continue;
+    for (const id of ids) {
+      if (typeof id !== "string") continue;
+      const trimmed = id.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      if (seen.size >= BLOCKER_JOIN_LIMIT) return [...seen];
+    }
+  }
+  return [...seen];
+}
+
 function readOptionalStringArray(value: unknown, field: string): ParsedField<string[] | undefined> {
   if (value === undefined || value === null) return { ok: true, value: undefined };
   if (!Array.isArray(value)) return { ok: false, error: `${field} must be an array` };
@@ -116,6 +162,9 @@ export async function GET(req: Request) {
     case "ready":
       args = ["ready", "--json"];
       break;
+    case "blocked":
+      args = ["blocked", "--json"];
+      break;
     default:
       return NextResponse.json({ ok: false, error: "unsupported mode" }, { status: 400 });
   }
@@ -127,11 +176,29 @@ export async function GET(req: Request) {
     );
   }
 
+  const data = mode === "prime" ? result.stdout : jsonFromStdout(result.stdout);
+
+  // The gates rail needs each blocker NAMED, not just referenced. Join in one
+  // call; a failed join degrades to an empty map (the caller renders the bare
+  // ids and says the names are unavailable) rather than failing the whole read.
+  let blockers: unknown = undefined;
+  if (mode === "blocked") {
+    const ids = blockerIdsFrom(data);
+    if (ids.length > 0) {
+      const joined = await runBdCommand(root.repoRoot, root.beadsDir, ["list", "--id", ids.join(","), "--json"]);
+      const rows = joined.ok ? jsonFromStdout(joined.stdout) : null;
+      blockers = Array.isArray(rows) ? rows : [];
+    } else {
+      blockers = [];
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     mode,
     projectRoot: root.repoRoot,
-    data: mode === "prime" ? result.stdout : jsonFromStdout(result.stdout),
+    data,
+    ...(blockers === undefined ? {} : { blockers }),
     stderr: result.stderr || undefined,
   });
 }
@@ -220,6 +287,15 @@ export async function POST(req: Request) {
       args = assignee.value
         ? ["update", id.value, "--assignee", assignee.value, "--status", "in_progress", "--json"]
         : ["update", id.value, "--claim", "--json"];
+      break;
+    }
+    case "priority": {
+      // The Work scheduler's only ordering write (cave-7c329). Priority is a
+      // stored band, so a change made here survives a reload — which is the
+      // whole reason the scheduler has no free-position reorder.
+      const priority = readPriority(parsed.body.priority);
+      if (!priority.ok) return NextResponse.json({ ok: false, error: priority.error }, { status: 400 });
+      args = ["update", id.value, "--priority", String(priority.value), "--json"];
       break;
     }
     case "comment": {

@@ -46,6 +46,7 @@ import {
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { publishProjectAccessChanged } from "@/lib/project-access-events";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -546,6 +547,7 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
       setOptimistic((prev) => new Map(prev).set(row.project.id, next === "none" ? null : next));
       try {
         await runAccessOp(familiar.id, op);
+        publishProjectAccessChanged(row.project.id);
         setMutateError(null);
         await loadGrants();
         announce(`${row.project.name}: ${accessStateMeta(next).label}`);
@@ -580,14 +582,19 @@ export function ProjectsView({ familiars = [], activeFamiliarId = null }: Projec
         return copy;
       });
       let failed = 0;
+      const succeededProjectIds: string[] = [];
       // Sequential on purpose: the grants store is a single document, so
       // parallel writes could interleave.
       for (const op of ops) {
         try {
           await runAccessOp(familiar.id, op);
+          succeededProjectIds.push(op.projectId);
         } catch {
           failed += 1;
         }
+      }
+      for (const projectId of succeededProjectIds) {
+        publishProjectAccessChanged(projectId);
       }
       await loadGrants();
       setOptimistic(new Map());

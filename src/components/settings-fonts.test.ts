@@ -110,6 +110,10 @@ assert.match(
 );
 
 // Line spacing control (reading line-height for .cave-md surfaces).
+assert.match(src, /Reader size/, "renders the canonical reader size control");
+assert.match(src, /READER_TEXT_SCALE_STEPS/, "uses the shared reader size ladder");
+assert.match(src, /saveScaleIndex/, "reader size persists through the canonical preference migration");
+
 assert.match(src, /Line spacing/, "renders a Line spacing control");
 assert.match(src, /READING_LEADING_OPTIONS/, "uses the reading-leading ladder");
 assert.match(src, /applyReadingLeading/, "applies line spacing via the shared helper");

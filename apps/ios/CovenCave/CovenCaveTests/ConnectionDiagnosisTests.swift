@@ -35,6 +35,61 @@ final class ConnectionDiagnosisTests: XCTestCase {
         XCTAssertEqual(ProbeFailure(classifying: Weird()), .transport)
     }
 
+    // MARK: - App-wide reconnect disposition
+
+    func testTransportFailuresRequestReconnect() {
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(URLError(.notConnectedToInternet)),
+            .reconnect(.offline)
+        )
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(URLError(.networkConnectionLost)),
+            .reconnect(.refused)
+        )
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(CaveError.transport("socket closed")),
+            .reconnect(.transport)
+        )
+    }
+
+    func testAuthFailuresRequestPairing() {
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(CaveError.badResponse(401)),
+            .needsAuth
+        )
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(
+                CaveError.serverResponse(status: 403, code: nil, message: nil)
+            ),
+            .needsAuth
+        )
+    }
+
+    func testSemanticAndCancelledFailuresDoNotDropTheConnection() {
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(
+                CaveError.serverResponse(
+                    status: 403,
+                    code: "project_access_denied",
+                    message: "Choose another project"
+                )
+            ),
+            .ignore
+        )
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(CancellationError()),
+            .ignore
+        )
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(URLError(.cancelled)),
+            .ignore
+        )
+        XCTAssertEqual(
+            ConnectionFailureDisposition.classify(CaveError.decoding("bad payload")),
+            .ignore
+        )
+    }
+
     // MARK: - Adjudication ranking (max = strongest diagnosis)
 
     func testStrongerSignalsOutrankWeaker() {

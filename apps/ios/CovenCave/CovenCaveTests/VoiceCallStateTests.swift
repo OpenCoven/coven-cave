@@ -32,6 +32,15 @@ final class VoiceCallStateTests: XCTestCase {
         XCTAssertFalse(state.shouldCaptureAudio)
     }
 
+    func testSessionBindingPreservesTheActivePhase() {
+        var state = connectedState()
+
+        state.receive(.sessionBound("session-1"))
+
+        XCTAssertEqual(state.sessionId, "session-1")
+        XCTAssertEqual(state.phase, .listening)
+    }
+
     func testPartialTranscriptUpdatesOneInProgressRowAndFinalPromotesItOnce() {
         var state = connectedState()
 
@@ -137,6 +146,21 @@ final class VoiceCallStateTests: XCTestCase {
         XCTAssertEqual(state.transcript.map(\.text), ["Keep this"])
     }
 
+    func testLateSessionBindingAfterEndPreservesTheBoundSessionWithoutRevivingTheCall() {
+        var state = connectedState()
+        state.receive(.final(role: .user, text: "Keep this", segmentID: "user-1"))
+        state.send(.end)
+
+        state.receive(.sessionBound("session-late"))
+        state.receive(.speaking)
+        state.receive(.final(role: .assistant, text: "Ignore", segmentID: "assistant-1"))
+
+        XCTAssertEqual(state.phase, .ended)
+        XCTAssertEqual(state.sessionId, "session-late")
+        XCTAssertFalse(state.isAudioActive)
+        XCTAssertEqual(state.transcript.map(\.text), ["Keep this"])
+    }
+
     func testFailureIsTerminalAndPreventsFurtherAudioTransitions() {
         var state = connectedState()
 
@@ -176,5 +200,26 @@ final class VoiceCallStateTests: XCTestCase {
 
         XCTAssertEqual(state.phase, .idle)
         XCTAssertFalse(state.isAudioActive)
+    }
+
+    func testBlankSessionBindingIsIgnored() {
+        var state = connectedState()
+
+        state.receive(.sessionBound(" \n "))
+
+        XCTAssertNil(state.sessionId)
+        XCTAssertEqual(state.phase, .listening)
+    }
+
+    func testClearingSessionBindingOnlyDropsTheMatchingSession() {
+        var state = connectedState()
+
+        state.receive(.sessionBound("session-1"))
+        state.clearSessionBinding(matching: "session-2")
+        XCTAssertEqual(state.sessionId, "session-1")
+
+        state.clearSessionBinding(matching: "session-1")
+        XCTAssertNil(state.sessionId)
+        XCTAssertEqual(state.phase, .listening)
     }
 }

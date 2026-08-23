@@ -132,9 +132,43 @@ struct ChatView: View {
     // The server session for the callee, when the thread already has one.
     // Empty for a brand-new chat; the call engine treats that as a fresh
     // session for the familiar.
-    private var voiceCallSessionId: String {
-        guard let id = thread.familiarIds.first else { return "" }
-        return thread.sessionIds[id] ?? ""
+    private var voiceCallSessionId: String? {
+        guard let id = thread.familiarIds.first,
+              let sessionId = thread.sessionIds[id]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionId.isEmpty
+        else { return nil }
+        return sessionId
+    }
+
+    private struct VoiceCallLaunch {
+        let familiar: Familiar
+        let sessionId: String?
+        let projectRoot: String
+    }
+
+    private var voiceCallLaunch: VoiceCallLaunch? {
+        guard let familiar = voiceCallFamiliar else { return nil }
+        guard !isRecoveryOnlyThread else { return nil }
+        guard app.threadOpenFailure(for: thread) == nil else { return nil }
+        guard visibleThreadContext != .unassigned else { return nil }
+        guard let projectRoot = thread.projectRoot?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !projectRoot.isEmpty
+        else { return nil }
+        return VoiceCallLaunch(
+            familiar: familiar,
+            sessionId: voiceCallSessionId,
+            projectRoot: projectRoot
+        )
+    }
+
+    private var isRecoveryOnlyThread: Bool {
+        app.isRecoveryOnlyThread(thread)
+    }
+
+    private var visibleThreadContext: ProjectContext {
+        app.projectContext(for: thread)
     }
 
     private func writeDraftPersistence(_ value: String, key: String) {
@@ -176,7 +210,7 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !app.linkedTasks(for: thread).isEmpty {
+            if !app.projectLinkedTasks(for: thread).isEmpty {
                 linkedContextStrip
             }
             messageScroll
@@ -195,7 +229,11 @@ struct ChatView: View {
             // Model access moved into the header's agent pill (and /model), so
             // the composer anchors the screen with nothing between it and the
             // transcript.
-            composer
+            if isRecoveryOnlyThread {
+                recoveryOnlyComposer
+            } else {
+                composer
+            }
         }
         // Keep the conversation in a centred reading column on iPad.
         .readableWidth(740)
@@ -220,14 +258,14 @@ struct ChatView: View {
                 .accessibilityLabel("\(thread.title), \(chatPresence.label)")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                if let familiar = voiceCallFamiliar {
+                if let voiceCallLaunch, app.client != nil {
                     Button {
                         Haptics.tap()
                         showVoiceCall = true
                     } label: {
                         Image(systemName: "phone.fill")
                     }
-                    .accessibilityLabel("Call \(familiar.displayName)")
+                    .accessibilityLabel("Call \(voiceCallLaunch.familiar.displayName)")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -303,11 +341,23 @@ struct ChatView: View {
             ResponseReaderView(item: item)
         }
         .fullScreenCover(isPresented: $showVoiceCall) {
-            if let familiar = voiceCallFamiliar {
+            if let voiceCallLaunch {
                 LiveVoiceCallView(
-                    familiar: familiar,
-                    sessionId: voiceCallSessionId,
-                    client: app.client
+                    familiar: voiceCallLaunch.familiar,
+                    sessionId: voiceCallLaunch.sessionId,
+                    projectRoot: voiceCallLaunch.projectRoot,
+                    client: app.client,
+                    onSessionEstablished: { sessionId in
+                        bindVoiceCallSession(sessionId, for: voiceCallLaunch.familiar.id)
+                    },
+                    onSessionDiscarded: { sessionId in
+                        unbindVoiceCallSession(sessionId, for: voiceCallLaunch.familiar.id)
+                    },
+                    onCleanupWarning: { message in
+                        app.showToast(message,
+                                      systemImage: "exclamationmark.triangle.fill",
+                                      style: .warning)
+                    }
                 )
             }
         }
@@ -340,7 +390,10 @@ struct ChatView: View {
             computeUnreadDividerIfNeeded()
             // Opening the chat clears the unread badge for its familiar(s) and
             // any delivered reply banner for this thread.
-            app.markFamiliarViewed(thread.familiarIds)
+            app.markFamiliarViewed(
+                thread.familiarIds,
+                in: app.projectContext(for: thread)
+            )
             ChatNotifications.removeDelivered(threadId: thread.id)
         }
         .task(id: modelStateLoadKey) {
@@ -372,6 +425,7 @@ struct ChatView: View {
                let familiar = app.familiar(familiarId) {
                 NavigationStack {
                     FamiliarThreadsView(familiar: familiar,
+                                        projectContext: visibleThreadContext,
                                         path: $pickerPath,
                                         zoomNamespace: pickerZoomNamespace,
                                         onSelect: { chosen in switchToSession(chosen) },
@@ -408,6 +462,18 @@ struct ChatView: View {
 
     private var sessionDetailsCard: some View {
         VStack(spacing: 0) {
+            sessionDetailRow(
+                "Harness",
+                value: sessionHarnessLabel,
+                systemImage: "terminal"
+            )
+            Divider()
+            sessionDetailRow(
+                "Runtime",
+                value: sessionRuntimeLabel,
+                systemImage: "desktopcomputer"
+            )
+            Divider()
             Button {
                 showSessionDetails = false
                 Task { await switchModel("") }
@@ -418,24 +484,10 @@ struct ChatView: View {
             .disabled(thread.isGroup)
 
             Divider()
-            HStack(spacing: 10) {
-                Image(systemName: "desktopcomputer")
-                    .foregroundStyle(chrome.accent)
-                    .frame(width: 22)
-                Text("Runtime")
-                Spacer()
-                Text(sessionRuntimeLabel)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .font(.callout)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            Divider()
             sessionDetailRow(
-                "Inventory",
-                value: ChatModelInventoryProvenancePresentation.label(for: presentedModelPickerProvenance),
-                systemImage: "info.circle"
+                "Project",
+                value: sessionProjectLabel,
+                systemImage: "folder"
             )
             Divider()
             Button {
@@ -443,7 +495,7 @@ struct ChatView: View {
                 showSessionPicker = true
             } label: {
                 sessionDetailRow(
-                    "Session",
+                    "Conversation",
                     value: thread.title,
                     systemImage: "bubble.left.and.bubble.right",
                     showsChevron: true
@@ -451,7 +503,7 @@ struct ChatView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("Switch session")
-            .accessibilityLabel("Session")
+            .accessibilityLabel("Conversation")
             .accessibilityValue(thread.title)
             .disabled(thread.isGroup)
             ForEach(presentedModelControlCapabilities) { capability in
@@ -496,6 +548,35 @@ struct ChatView: View {
         }
     }
 
+    private var recoveryOnlyComposer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(
+                "This chat is recovery-only.",
+                systemImage: "folder.badge.questionmark"
+            )
+            .font(.headline)
+            Text(recoveryOnlyCopy)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            if app.canStartProjectChats {
+                Button("Start replacement chat", action: startReplacementChat)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(chrome.bgRaised)
+    }
+
+    private var recoveryOnlyCopy: String {
+        if let activeProject = app.activeProject {
+            return "This conversation was created without a registered project. Inspect, export, or delete it here, or start a replacement chat in \(activeProject.name)."
+        }
+        return "This conversation was created without a registered project. Switch to a registered project in Chats to start a replacement chat."
+    }
+
     private func sessionControlRow<Control: View>(
         systemImage: String,
         @ViewBuilder control: () -> Control
@@ -531,7 +612,8 @@ struct ChatView: View {
         if thread.isStreaming { return (Color.orange, "responding") }
         switch app.connectionState {
         case .connected: return (Color.green, "ready")
-        case .checking: return (Color.orange, "reconnecting")
+        case .checking, .degraded: return (Color.orange, "reconnecting")
+        case .projectContextRequired: return (Color.orange, "setup required")
         case .unreachable: return (chrome.textSecondary, "offline")
         case .unconfigured, .needsAuth: return (chrome.textSecondary, "offline")
         }
@@ -539,8 +621,16 @@ struct ChatView: View {
 
     private var sessionRuntimeLabel: String {
         if thread.isGroup { return "Per familiar" }
-        guard let state = presentedSessionModelState else { return "Unavailable" }
-        return state.runtime?.isEmpty == false ? state.runtime! : state.harness
+        return ChatRuntimePresentation.runtimeLabel(presentedSessionModelState?.runtime)
+    }
+
+    private var sessionHarnessLabel: String {
+        if thread.isGroup { return "Per familiar" }
+        return ChatRuntimePresentation.harnessLabel(presentedSessionModelState?.harness)
+    }
+
+    private var sessionProjectLabel: String {
+        app.projectContext(for: thread).displayName
     }
 
     private var modelStateLoadKey: ChatModelRequestTarget? { currentModelLoadTarget }
@@ -644,7 +734,7 @@ struct ChatView: View {
     }
 
     private var linkedGitHubContext: (link: CardGitHubLink, url: URL)? {
-        app.linkedTasks(for: thread)
+        app.projectLinkedTasks(for: thread)
             .flatMap(\.githubLinks)
             .compactMap { link in
                 validGitHubURL(for: link).map { (link, $0) }
@@ -684,7 +774,7 @@ struct ChatView: View {
     }
 
     private var linkedContextStrip: some View {
-        let cards = app.linkedTasks(for: thread)
+        let cards = app.projectLinkedTasks(for: thread)
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 8))
@@ -753,23 +843,52 @@ struct ChatView: View {
     private func sessionDetailRow(
         _ label: String, value: String, systemImage: String, showsChevron: Bool = false
     ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .foregroundStyle(chrome.accent)
-                .frame(width: 22)
-            Text(label).foregroundStyle(.primary)
-            Spacer()
-            Text(value).foregroundStyle(.secondary)
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                sessionDetailIcon(systemImage)
+                Text(label).foregroundStyle(.primary)
+                Spacer(minLength: 12)
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                sessionDetailChevron(showsChevron)
+            }
+
+            HStack(alignment: .top, spacing: 10) {
+                sessionDetailIcon(systemImage)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label).foregroundStyle(.primary)
+                    Text(value)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                sessionDetailChevron(showsChevron)
             }
         }
         .font(.callout)
         .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
+    }
+
+    private func sessionDetailIcon(_ systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .foregroundStyle(chrome.accent)
+            .frame(width: 22)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func sessionDetailChevron(_ visible: Bool) -> some View {
+        if visible {
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
     }
 
     private var messageScroll: some View {
@@ -1379,7 +1498,7 @@ struct ChatView: View {
     private var canSend: Bool {
         let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !pendingImages.isEmpty
-        return hasContent && (isCommand || thread.canSendMessages)
+        return !isRecoveryOnlyThread && hasContent && (isCommand || thread.canSendMessages)
     }
 
     /// True when the draft is a recognised command — tints the send affordance
@@ -1396,6 +1515,10 @@ struct ChatView: View {
     // MARK: - Send / dispatch
 
     private func send() {
+        guard !isRecoveryOnlyThread else {
+            showRecoveryOnlyChatGuidance()
+            return
+        }
         dictation.stop()
         let raw = draft
         switch SlashInput.parse(raw) {
@@ -1442,16 +1565,30 @@ struct ChatView: View {
                 app.showToast("Queued — sends when reconnected", systemImage: "clock")
                 return
             }
+            let dispatchLease = app.captureConnectionDispatchLease()
             thread.send(outgoing, attachments: attachments,
                         modelControls: modelControlValues,
                         modelOverride: modelBinding.modelOverride,
                         modelOverrideScope: modelBinding.scope,
+                        onConnectionFailure: { app.noteConnectionFailure($0) },
+                        liveDispatchLeaseIsCurrent: {
+                            app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                        },
+                        persistBeforeDispatch: {
+                            await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                        },
+                        persistAfterRollback: { await app.flushThreadsAndWait() },
+                        onDeliverySettled: { app.flushQueuedMessages() },
                         client: client) { app.touch(thread) }
         }
     }
 
     /// Tap a follow-up suggestion chip → send it as the next message.
     private func sendSuggestion(_ text: String) {
+        guard !isRecoveryOnlyThread else {
+            showRecoveryOnlyChatGuidance()
+            return
+        }
         guard let client = app.client else { return }
         guard thread.canSendMessages else {
             thread.needsProjectSelection = true
@@ -1466,9 +1603,19 @@ struct ChatView: View {
             app.showToast("Queued — sends when reconnected", systemImage: "clock")
             return
         }
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(text, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -1485,13 +1632,21 @@ struct ChatView: View {
 
     /// Re-run a reply in place (re-stream its familiar with the original prompt).
     private func retryAssistant(_ assistant: DisplayMessage) {
+        guard !isRecoveryOnlyThread else {
+            showRecoveryOnlyChatGuidance()
+            return
+        }
         guard let client = app.client else { return }
         guard thread.canSendMessages else {
             thread.needsProjectSelection = true
             return
         }
         Haptics.tap()
-        thread.retry(assistant.id, client: client) { app.touch(thread) }
+        thread.retry(
+            assistant.id,
+            client: client,
+            onConnectionFailure: { app.noteConnectionFailure($0) }
+        ) { app.touch(thread) }
     }
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get
@@ -1531,10 +1686,16 @@ struct ChatView: View {
         case .quitToList:
             dismiss()
         case .newChat:
-            let fresh = app.startFreshThread(familiarIds: thread.familiarIds,
-                                             title: thread.isGroup ? thread.title : nil,
-                                             projectRoot: thread.projectRoot)
-            app.requestOpen(fresh)
+            guard let fresh = app.startFreshThreadInActiveProject(
+                familiarIds: thread.familiarIds,
+                title: thread.isGroup ? thread.title : nil
+            ) else {
+                if !app.canStartProjectChats {
+                    showRecoveryOnlyChatGuidance()
+                }
+                return
+            }
+            _ = app.requestOpen(fresh)
             app.showToast("Started a new chat", systemImage: "square.and.pencil", style: .info)
         case .familiarPicker:
             if args.isEmpty {
@@ -1552,10 +1713,6 @@ struct ChatView: View {
         case .openBoard:
             app.selectedTab = .tasks
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
-        case .openTerminal:
-            app.selectedTab = .terminal
-            dismiss()
-            app.showToast("Opened Terminal", systemImage: "terminal", style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
         case .daemonStatus:
@@ -1564,6 +1721,8 @@ struct ChatView: View {
             Task { await runDoctor() }
         case .switchModel:
             Task { await switchModel(args) }
+        case .startDiagram:
+            startDiagram(args)
         case .desktopOnly(let surface):
             app.showToast("\(surface) lives on your desktop", systemImage: "desktopcomputer",
                           style: .warning)
@@ -1572,13 +1731,46 @@ struct ChatView: View {
 
     // MARK: - Command handlers
 
+    private func startDiagram(_ args: String) {
+        guard let client = app.client else { return }
+        guard thread.canSendMessages else {
+            thread.needsProjectSelection = true
+            return
+        }
+        let brief = args.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelBinding = turnModelBinding
+        let dispatchLease = app.captureConnectionDispatchLease()
+        thread.send(DiagramCommandPrompt.build(brief),
+                    displayText: brief.isEmpty ? DiagramCommandPrompt.start : brief,
+                    modelControls: modelControlValues,
+                    modelOverride: modelBinding.modelOverride,
+                    modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
+                    client: client) { app.touch(thread) }
+    }
+
     private func switchTo(_ familiar: Familiar) {
-        if !thread.isGroup, thread.familiarIds == [familiar.id] {
+        guard let destination = app.openFamiliarLandingThread(
+            for: familiar.id,
+            in: visibleThreadContext
+        ) else {
+            showRecoveryOnlyChatGuidance()
+            return
+        }
+        if destination.id == thread.id {
             app.showToast("Already chatting with \(familiar.displayName)",
                           systemImage: "checkmark.circle.fill")
             return
         }
-        app.requestOpen(app.directThread(for: familiar.id))
+        guard app.requestOpen(destination) else { return }
         app.showToast("Switched to \(familiar.displayName)", systemImage: "arrow.left.arrow.right")
     }
 
@@ -1898,6 +2090,10 @@ struct ChatView: View {
     }
 
     private func sendPrompt(_ args: String, command: SlashCommand) {
+        guard !isRecoveryOnlyThread else {
+            showRecoveryOnlyChatGuidance()
+            return
+        }
         let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             thread.appendSystem("\(command.name) needs a task — e.g. \(command.name) fix the build",
@@ -1911,9 +2107,19 @@ struct ChatView: View {
             return
         }
         let modelBinding = turnModelBinding
+        let dispatchLease = app.captureConnectionDispatchLease()
         thread.send(trimmed, modelControls: modelControlValues,
                     modelOverride: modelBinding.modelOverride,
                     modelOverrideScope: modelBinding.scope,
+                    onConnectionFailure: { app.noteConnectionFailure($0) },
+                    liveDispatchLeaseIsCurrent: {
+                        app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                    },
+                    persistBeforeDispatch: {
+                        await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                    },
+                    persistAfterRollback: { await app.flushThreadsAndWait() },
+                    onDeliverySettled: { app.flushQueuedMessages() },
                     client: client) { app.touch(thread) }
     }
 
@@ -1958,8 +2164,27 @@ struct ChatView: View {
     }
 
     private func deleteMessage(_ message: DisplayMessage) {
-        thread.deleteMessage(message.id)
-        app.touch(thread)
+        // `app.client` may be nil (not connected yet). The thread refuses the
+        // delete in that case if the message has a server copy, rather than
+        // removing it here and telling nobody.
+        // The closure IS the persist: `deleteMessage` calls it on the optimistic
+        // removal, on the refusal, and again on a rollback that lands after the
+        // request. Touching again here only re-wrote the threads file a second
+        // time for the same change.
+        // The names are only read if a group delete lands in some of its
+        // familiars' sessions and not others: that report names the chats the
+        // message survived in, and it is read by a person, so it says "Nyx"
+        // rather than the familiar id the thread stores.
+        // `uniquingKeysWith:` rather than `uniqueKeysWithValues:` — the latter
+        // traps on a repeated key, and a duplicated familiar id in a thread
+        // must not turn a swipe into a crash.
+        let familiarNames = Dictionary(
+            thread.familiarIds.compactMap { id in
+                app.familiar(id).map { (id, $0.displayName) }
+            },
+            uniquingKeysWith: { first, _ in first })
+        thread.deleteMessage(message.id, client: app.client,
+                             familiarNames: familiarNames) { app.touch(thread) }
     }
 
     private func openReader(text: String, familiar: Familiar?) {
@@ -2023,30 +2248,40 @@ struct ChatView: View {
     }
 
     private func forward(_ message: DisplayMessage, to familiar: Familiar) {
+        guard !isRecoveryOnlyThread else {
+            showRecoveryOnlyChatGuidance()
+            return
+        }
         guard let client = app.client else { return }
-        let destination = app.directThread(for: familiar.id)
+        let dispatchLease = app.captureConnectionDispatchLease()
+        let activeContext = visibleThreadContext
+        let needsDeferredHistoryHydration =
+            app.landingDirectThread(for: familiar.id, in: activeContext) == nil
+                && app.serverOnlySessions(for: familiar.id, in: activeContext).first != nil
+        guard let destination = app.openFamiliarLandingThread(
+            for: familiar.id,
+            in: activeContext,
+            loadHistory: false
+        ) else {
+            app.showToast(
+                "Switch to a registered project before forwarding",
+                systemImage: "folder.badge.questionmark",
+                style: .warning
+            )
+            return
+        }
         let prompt = forwardPrompt(for: message, to: familiar)
         let displayText = forwardDisplayText(for: message)
         Task { @MainActor in
-            if !destination.canSendMessages {
-                do {
-                    let accessible = try await client.projects(familiarIds: [familiar.id])
-                    let preferred = [thread.projectRoot].compactMap { $0 }
-                        + app.recentProjectRoots
-                    destination.projectRoot = ChatProjectSelection.resolvedRoot(
-                        current: destination.projectRoot,
-                        recent: preferred,
-                        projects: accessible
-                    )
-                    app.touch(destination)
-                } catch {
-                    destination.needsProjectSelection = true
-                }
-            }
-
-            guard destination.canSendMessages else {
+            switch app.forwardingRouteDisposition(from: thread, to: destination) {
+            case .allowed:
+                break
+            case .recoveryOnly:
+                showRecoveryOnlyChatGuidance()
+                return
+            case .needsProjectSelection:
                 destination.needsProjectSelection = true
-                app.requestOpen(destination)
+                _ = app.requestOpen(destination)
                 app.showToast(
                     "Choose a project before forwarding",
                     systemImage: "folder.badge.questionmark",
@@ -2066,16 +2301,96 @@ struct ChatView: View {
                 modelControls: [:],
                 modelOverride: destinationModelBinding.modelOverride,
                 modelOverrideScope: destinationModelBinding.scope,
+                onStreamResult: needsDeferredHistoryHydration
+                    ? { result in
+                        reloadForwardedLandingHistoryIfConfirmed(
+                            result,
+                            in: destination,
+                            client: client
+                        )
+                    }
+                    : nil,
+                onConnectionFailure: { app.noteConnectionFailure($0) },
+                liveDispatchLeaseIsCurrent: {
+                    app.connectionDispatchLeaseIsCurrent(dispatchLease)
+                },
+                persistBeforeDispatch: {
+                    await app.persistThreadsBeforeDispatch(for: dispatchLease)
+                },
+                persistAfterRollback: { await app.flushThreadsAndWait() },
+                onDeliverySettled: { app.flushQueuedMessages() },
                 client: client
             ) {
                 app.touch(destination)
             }
-            app.requestOpen(destination)
+            _ = app.requestOpen(destination)
             app.showToast(
                 "Forwarded to \(familiar.displayName)",
                 systemImage: "arrowshape.turn.up.right"
             )
         }
+    }
+
+    private func reloadForwardedLandingHistoryIfConfirmed(
+        _ result: ChatSendResult,
+        in destination: ChatThread,
+        client: CaveClient
+    ) {
+        guard ForwardedLandingHydrationGate.shouldReload(
+            thread: destination,
+            after: result
+        ) else {
+            return
+        }
+        Task { @MainActor in
+            do {
+                try await destination.reload(client: client)
+                app.touch(destination)
+            } catch {
+                // Keep the just-forwarded transcript when the refresh fails.
+            }
+        }
+    }
+
+    private func startReplacementChat() {
+        guard let replacement = app.startFreshThreadInActiveProject(
+            familiarIds: thread.familiarIds,
+            title: thread.isGroup ? thread.title : nil
+        ) else {
+            if !app.canStartProjectChats {
+                showRecoveryOnlyChatGuidance()
+            }
+            return
+        }
+        _ = app.requestOpen(replacement)
+        app.showToast(
+            "Started a replacement chat",
+            systemImage: "square.and.pencil",
+            style: .info
+        )
+    }
+
+    private func showRecoveryOnlyChatGuidance() {
+        app.showToast(
+            app.canStartProjectChats
+                ? "Start a replacement chat in the active project"
+                : "Switch to a registered project to start a replacement chat",
+            systemImage: "folder.badge.questionmark",
+            style: .warning
+        )
+    }
+
+    private func bindVoiceCallSession(_ sessionId: String, for familiarId: String) {
+        app.bindThreadSession(sessionId, to: thread, for: familiarId)
+    }
+
+    private func unbindVoiceCallSession(_ sessionId: String, for familiarId: String) {
+        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              thread.sessionIds[familiarId] == trimmed
+        else { return }
+        thread.sessionIds.removeValue(forKey: familiarId)
+        app.touch(thread)
     }
 
     private func forwardSenderName(for message: DisplayMessage) -> String {

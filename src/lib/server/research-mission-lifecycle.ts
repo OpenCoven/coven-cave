@@ -8,6 +8,7 @@ import type {
 } from "./research-session-authority.ts";
 import {
   researchArtifactKindForMode,
+  RESEARCH_COST_UNAVAILABLE_STOP_REASON,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
   STANDARD_RESEARCH_ARTIFACTS,
 } from "../research-missions.ts";
@@ -53,7 +54,11 @@ export function createMissionRecord(
     id,
     familiarId: input.familiarId,
     title: missionTitle(input),
+    titleSource: input.title?.trim() ? "explicit" : "generated",
     intent: input.intent.trim(),
+    // Recorded once, at creation, and never re-derived: the surface that
+    // invoked a run is a fact about the request, not about its later state.
+    ...(input.origin ? { origin: input.origin } : {}),
     mode: input.mode,
     modeSource: input.modeSource,
     deliverable: input.deliverable,
@@ -158,7 +163,11 @@ export function withinStartupGrace(startedAt: string | undefined, now: Date): bo
   return Math.abs(now.getTime() - started) < SESSION_STARTUP_GRACE_MS;
 }
 
-export function stopBeforeNextIteration(mission: ResearchMission, now: Date): string | null {
+export function stopBeforeNextIteration(
+  mission: ResearchMission,
+  now: Date,
+  options: { allowCostUnavailable?: boolean } = {},
+): string | null {
   if (mission.iterations.length >= mission.bounds.maxIterations) return "Iteration limit reached";
   const startedAt = mission.startedAt ? Date.parse(mission.startedAt) : Number.NaN;
   if (Number.isFinite(startedAt) && now.getTime() - startedAt >= mission.bounds.wallClockMinutes * 60_000) {
@@ -167,11 +176,15 @@ export function stopBeforeNextIteration(mission: ResearchMission, now: Date): st
   const knownCosts = mission.iterations
     .map((iteration) => iteration.costUsd)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  if (mission.bounds.stopWhenCostUnavailable && mission.iterations.some((iteration) => iteration.finishedAt && iteration.costUsd === undefined)) {
-    return "Cost unavailable; review before another iteration";
-  }
   if (mission.bounds.maxSpendUsd !== undefined && knownCosts.reduce((sum, value) => sum + value, 0) >= mission.bounds.maxSpendUsd) {
     return "Reported spend limit reached";
+  }
+  if (
+    !options.allowCostUnavailable &&
+    mission.bounds.stopWhenCostUnavailable &&
+    mission.iterations.some((iteration) => iteration.finishedAt && iteration.costUsd === undefined)
+  ) {
+    return RESEARCH_COST_UNAVAILABLE_STOP_REASON;
   }
   return null;
 }

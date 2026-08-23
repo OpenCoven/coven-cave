@@ -868,8 +868,8 @@ test("resized desktop Chromium pins theme, constrained-pane, responsive-sheet, a
   const constrainedChat = await requiredBounds(page, ".chat-surface");
   const constrainedRail = await requiredBounds(page, ".workspace-rail");
   const shellDetail = await requiredBounds(page, ".shell-detail");
-  expectBoundsNear(constrainedChat, { x: 65, y: 47, width: 1046, height: 676 });
-  expectBoundsNear(constrainedRail, { x: 791, y: 81, width: 320, height: 642 });
+  expectBoundsNear(constrainedChat, { x: 9, y: 43, width: 1102, height: 680 });
+  expectBoundsNear(constrainedRail, { x: 791, y: 77, width: 320, height: 646 });
   const shellContract = await page.locator(".shell-detail").evaluate((element) => {
     const style = getComputedStyle(element);
     const rootStyle = getComputedStyle(document.documentElement);

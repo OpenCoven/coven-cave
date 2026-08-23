@@ -21,6 +21,35 @@ export type ResearchMissionStatus =
   | "cancelled"
   | "archived";
 
+/**
+ * Where a run was invoked from. A research run is ONE object with several
+ * projections (#4808): the Research Desk workspace and the chat surface both
+ * address the same mission, so the mission itself has to say which surface
+ * started it and how to get back there. Without this a chat-invoked run and a
+ * desk-invoked run are indistinguishable once persisted, and the desk has no
+ * way to project a run back into the conversation that asked for it.
+ */
+export const RESEARCH_RUN_ORIGIN_SURFACES = ["chat", "research-desk"] as const;
+
+export type ResearchRunOriginSurface = (typeof RESEARCH_RUN_ORIGIN_SURFACES)[number];
+
+export type ResearchRunOrigin = {
+  surface: ResearchRunOriginSurface;
+  /**
+   * The conversation the run was invoked from — the chat the user was in, NOT
+   * `iterations[].sessionId`, which is the executor session the run itself
+   * spawned. Only a `chat` origin can carry one.
+   */
+  sessionId?: string;
+};
+
+/** Human label for a run's origin surface; shared so chat and the desk cannot
+ *  drift into describing the same run two different ways. */
+export const RESEARCH_RUN_ORIGIN_LABELS: Record<ResearchRunOriginSurface, string> = {
+  chat: "Started from chat",
+  "research-desk": "Started from the Research Desk",
+};
+
 export type ResearchMissionAction =
   | "retry"
   | "continue"
@@ -29,7 +58,11 @@ export type ResearchMissionAction =
   | "pause"
   | "resume"
   | "cancel"
-  | "archive";
+  | "archive"
+  | "attach-saved-link";
+
+export const RESEARCH_COST_UNAVAILABLE_STOP_REASON =
+  "Cost unavailable; review before another iteration";
 
 export type ResearchBounds = {
   wallClockMinutes: number;
@@ -137,6 +170,8 @@ export function ensureStandardArtifactRefs(mission: ResearchMission): ResearchMi
   };
 }
 
+export type ResearchSourceAvailability = "available" | "unavailable" | "deleted";
+
 export type ResearchSourceRef = {
   id: string;
   title: string;
@@ -149,6 +184,20 @@ export type ResearchSourceRef = {
   note?: string;
   confidence?: number;
   status: "candidate" | "used" | "conflicting" | "rejected";
+  /**
+   * External-provider identity for a source Cave rehydrates rather than
+   * archives. `provider`/`externalId` are what let a stored ref resolve back
+   * to the familiar-scoped record it came from (an attached X post resolves by
+   * `externalId` = post id), and `availability` records whether that upstream
+   * item can still be retrieved.
+   *
+   * These are identity only, deliberately: the ledger never gains a field that
+   * could hold the external item's body. See
+   * docs/superpowers/specs/2026-07-27-x-api-research-and-publishing-design.md.
+   */
+  provider?: "x";
+  externalId?: string;
+  availability?: ResearchSourceAvailability;
 };
 
 export type ResearchSourceDraft = Partial<ResearchSourceRef> & {
@@ -177,8 +226,13 @@ export type ResearchMission = {
   id: string;
   familiarId: string;
   title: string;
+  /** Whether the title was supplied by the caller or derived from intent. */
+  titleSource?: "explicit" | "generated";
   intent: string;
   direction?: string;
+  /** Which surface invoked this run, and the conversation to project it back
+   *  into. Absent on missions created before the field existed. */
+  origin?: ResearchRunOrigin;
   mode: ResearchMissionMode;
   modeSource: "auto" | "user";
   deliverable: string;
@@ -350,12 +404,19 @@ export type CreateResearchMissionInput = {
   harness?: string;
   /** Harness-specific model id, passed through verbatim when supported. */
   model?: string;
+  /** Saved Research resources made available before iteration one launches. */
+  savedLinkIds?: string[];
+  /** Which surface is invoking the run. Callers that omit it create a run with
+   *  no recorded origin rather than a guessed one. */
+  origin?: ResearchRunOrigin;
 };
 
 export type ResearchMissionActionInput =
   | {
     action: ResearchMissionAction;
     direction?: string;
+    /** One-iteration approval to continue when the previous iteration reported no cost. */
+    approveCostUnavailable?: boolean;
     /**
      * Retry-only project root override: a path re-targets the retried
      * iteration (validated server-side against allowed project roots), null
@@ -364,6 +425,7 @@ export type ResearchMissionActionInput =
     projectRoot?: string | null;
   }
   | { action: "attach-source"; source: ResearchSourceDraft }
+  | { action: "attach-saved-link"; savedLinkId: string; familiarId: string }
   | { action: "update-source"; sourceId: string; patch: ResearchSourcePatch }
   | { action: "reject-artifact"; artifactKey: string; reason: string }
   | { action: "publish-artifact"; artifactKey: string };
@@ -399,6 +461,12 @@ const RESEARCH_SOURCE_STATUSES: ReadonlySet<ResearchSourceRef["status"]> = new S
   "conflicting",
   "rejected",
 ]);
+const RESEARCH_SOURCE_PROVIDERS: ReadonlySet<string> = new Set(["x"]);
+const RESEARCH_SOURCE_AVAILABILITIES: ReadonlySet<string> = new Set([
+  "available",
+  "unavailable",
+  "deleted",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -431,6 +499,47 @@ function optionalTimestamp(
   const candidate = value[key];
   if (candidate === undefined) return undefined;
   return validTimestamp(candidate) ? candidate : null;
+}
+
+/** Upper bound on an origin session id — matches the conversation store's own
+ *  ceiling (isSafeConversationSessionId). */
+export const RESEARCH_ORIGIN_SESSION_ID_MAX_LENGTH = 240;
+
+/**
+ * A stored origin session id has to be safe to hand straight back to the
+ * conversation store, which resolves it as a file name. Reject anything that
+ * could traverse — the same predicate as `isSafeConversationSessionId`, spelled
+ * without `node:path` so this module stays free of runtime imports.
+ */
+function isSafeOriginSessionId(value: string): boolean {
+  if (!value || value.length > RESEARCH_ORIGIN_SESSION_ID_MAX_LENGTH) return false;
+  if (value === "." || value === "..") return false;
+  return !/[/\\\0]/.test(value);
+}
+
+/**
+ * Parse a run origin. Returns `undefined` when absent and `null` when present
+ * but malformed — a malformed origin is refused rather than dropped, because a
+ * run that silently forgets where it came from is exactly the "two surfaces,
+ * two models" failure this field exists to close.
+ */
+export function parseResearchRunOrigin(
+  value: unknown,
+): ResearchRunOrigin | null | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const surface = value.surface;
+  if (typeof surface !== "string"
+    || !(RESEARCH_RUN_ORIGIN_SURFACES as readonly string[]).includes(surface)) {
+    return null;
+  }
+  const sessionId = value.sessionId;
+  if (sessionId === undefined) return { surface: surface as ResearchRunOriginSurface };
+  if (typeof sessionId !== "string" || !isSafeOriginSessionId(sessionId)) return null;
+  // Only chat can name a conversation. A desk-invoked run carrying a session id
+  // would make the desk offer a "back to the chat" jump that never existed.
+  if (surface !== "chat") return null;
+  return { surface, sessionId };
 }
 
 function parseResearchIteration(value: unknown): ResearchIteration | null {
@@ -564,6 +673,23 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
       || value.confidence > 1)) {
     return null;
   }
+  // External-provider identity. Strict like `status`: a ledger written by an
+  // agent that claims an unknown provider or a bogus availability is refused
+  // outright rather than silently downgraded, so a rehydrated source can never
+  // be resolved against a value Cave does not understand.
+  const externalId = optionalString(value, "externalId");
+  if (externalId === null) return null;
+  // Membership is tested on the RAW value, exactly as `status` is above.
+  // Coercing with String() first would admit `["x"]` and `["deleted"]` — JSON
+  // an agent can write — as the provider and availability they stringify to,
+  // storing an array behind a type that promises a string literal.
+  if (value.provider !== undefined && !RESEARCH_SOURCE_PROVIDERS.has(value.provider as string)) {
+    return null;
+  }
+  if (value.availability !== undefined
+    && !RESEARCH_SOURCE_AVAILABILITIES.has(value.availability as string)) {
+    return null;
+  }
   return {
     id: value.id,
     title: value.title,
@@ -576,6 +702,11 @@ function parseResearchSource(value: unknown): ResearchSourceRef | null {
     ...(note !== undefined ? { note } : {}),
     ...(typeof value.confidence === "number" ? { confidence: value.confidence } : {}),
     status: value.status as ResearchSourceRef["status"],
+    ...(value.provider !== undefined ? { provider: value.provider as "x" } : {}),
+    ...(externalId !== undefined ? { externalId } : {}),
+    ...(value.availability !== undefined
+      ? { availability: value.availability as ResearchSourceAvailability }
+      : {}),
   };
 }
 
@@ -624,6 +755,9 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     || typeof value.familiarId !== "string"
     || !FAMILIAR_ID_RE.test(value.familiarId)
     || !validResearchPromptText(value.title, RESEARCH_TITLE_MAX_LENGTH)
+    || (value.titleSource !== undefined
+      && (typeof value.titleSource !== "string"
+        || !["explicit", "generated"].includes(value.titleSource)))
     || !validResearchPromptText(value.intent, RESEARCH_INTENT_MAX_LENGTH)
     || !RESEARCH_MISSION_MODES.includes(value.mode as ResearchMissionMode)
     || !["auto", "user"].includes(String(value.modeSource))
@@ -658,6 +792,11 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   // creation, then erased the first time the mission was re-read and saved.
   const harness = optionalString(value, "harness");
   const model = optionalString(value, "model");
+  // Same trap as `harness` above: a field this parser does not name is dropped
+  // on the next read/write round trip, and the mission would quietly forget the
+  // surface that started it.
+  const origin = parseResearchRunOrigin(value.origin);
+  if (origin === null) return null;
   if (direction === null
     || audience === null
     || projectRoot === null
@@ -699,8 +838,12 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
     id: value.id,
     familiarId: value.familiarId,
     title: value.title,
+    ...(value.titleSource !== undefined
+      ? { titleSource: value.titleSource as ResearchMission["titleSource"] }
+      : {}),
     intent: value.intent,
     ...(direction !== undefined ? { direction } : {}),
+    ...(origin !== undefined ? { origin } : {}),
     mode: value.mode as ResearchMissionMode,
     modeSource: value.modeSource as ResearchMission["modeSource"],
     deliverable: value.deliverable,
@@ -741,6 +884,8 @@ export const RESEARCH_PROJECT_ROOT_MAX_LENGTH = 2_000;
 export const RESEARCH_DIRECTION_MAX_LENGTH = 10_000;
 export const RESEARCH_CONSTRAINT_MAX_COUNT = 20;
 export const RESEARCH_CONSTRAINT_MAX_LENGTH = 500;
+export const RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT = 500;
+export const RESEARCH_SAVED_LINK_ID_MAX_LENGTH = 128;
 
 export function validateCreateResearchMissionInput(
   input: unknown,
@@ -823,6 +968,39 @@ export function validateCreateResearchMissionInput(
     }
     if (constraint) constraints.push(constraint);
   }
+  if (value.savedLinkIds !== undefined && !Array.isArray(value.savedLinkIds)) {
+    return { ok: false, error: "savedLinkIds must be an array of strings" };
+  }
+  const rawSavedLinkIds = value.savedLinkIds ?? [];
+  if (rawSavedLinkIds.length > RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT) {
+    return {
+      ok: false,
+      error: `savedLinkIds must contain at most ${RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT} items`,
+    };
+  }
+  if (rawSavedLinkIds.some((item) => typeof item !== "string")) {
+    return { ok: false, error: "savedLinkIds must be an array of strings" };
+  }
+  const savedLinkIds: string[] = [];
+  const seenSavedLinkIds = new Set<string>();
+  for (const rawSavedLinkId of rawSavedLinkIds as string[]) {
+    const savedLinkId = rawSavedLinkId.trim();
+    if (
+      !savedLinkId
+      || savedLinkId.length > RESEARCH_SAVED_LINK_ID_MAX_LENGTH
+      || savedLinkId.includes("\0")
+      || hasUnpairedUtf16Surrogate(rawSavedLinkId)
+    ) {
+      return {
+        ok: false,
+        error: `each saved link id must be valid Unicode text without NUL and at most ${RESEARCH_SAVED_LINK_ID_MAX_LENGTH} characters`,
+      };
+    }
+    if (!seenSavedLinkIds.has(savedLinkId)) {
+      seenSavedLinkIds.add(savedLinkId);
+      savedLinkIds.push(savedLinkId);
+    }
+  }
   const optionalText = (field: "title" | "audience" | "projectRoot", max: number) => {
     const raw = value[field];
     if (raw === undefined || raw === null || raw === "") return undefined;
@@ -887,6 +1065,16 @@ export function validateCreateResearchMissionInput(
     }
     model = rawModel.trim();
   }
+  // A malformed origin is refused, never coerced: a run whose recorded origin
+  // is a guess would send the desk's "open the chat that started this" jump to
+  // a conversation that never asked for it.
+  const origin = parseResearchRunOrigin(value.origin);
+  if (origin === null) {
+    return {
+      ok: false,
+      error: `origin.surface must be one of: ${RESEARCH_RUN_ORIGIN_SURFACES.join(", ")}, with origin.sessionId only on a chat origin`,
+    };
+  }
   return {
     ok: true,
     value: {
@@ -902,6 +1090,8 @@ export function validateCreateResearchMissionInput(
       bounds: bounds.value,
       ...(harness ? { harness } : {}),
       ...(model ? { model } : {}),
+      ...(savedLinkIds.length > 0 ? { savedLinkIds } : {}),
+      ...(origin !== undefined ? { origin } : {}),
     },
   };
 }
@@ -985,6 +1175,21 @@ export function allowedResearchActions(
     return ["continue", "archive"];
   }
   return [];
+}
+
+/** Repair the exact terminal-state downgrade produced by the old Continue gate. */
+export function repairResearchMissionState(mission: ResearchMission): ResearchMission {
+  const latest = mission.iterations.at(-1);
+  if (
+    mission.status === "paused" &&
+    mission.lastError === RESEARCH_COST_UNAVAILABLE_STOP_REASON &&
+    latest?.status === "completed" &&
+    latest.decision === "complete"
+  ) {
+    const { lastError: _lastError, ...completed } = mission;
+    return { ...completed, status: "completed" };
+  }
+  return mission;
 }
 
 export type ResearchPhaseStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
@@ -1139,54 +1344,55 @@ export function researchSourceStatusCounts(
 }
 
 export type ResearchContinueLabel = {
-  /** Compact button text in the desk's iN/M vocabulary. */
+  /** Explicit button text naming the iteration the runner will evaluate. */
   label: string;
   /** Full-sentence consequence for the button's aria-label and title. */
   description: string;
   /** A stop gate already refuses the next iteration — pressing starts nothing. */
   gated: boolean;
+  /** Missing telemetry may be bypassed for exactly one explicitly approved iteration. */
+  costApprovalRequired: boolean;
 };
+
+export function nextResearchIterationNumber(
+  mission: Pick<ResearchMission, "iterations">,
+): number {
+  return (mission.iterations.at(-1)?.number ?? 0) + 1;
+}
 
 /**
  * What pressing Continue will actually do.
  *
  * The runner gates every new iteration on stopBeforeNextIteration
  * (src/lib/server/research-mission-runner.ts): iteration count, wall-clock
- * budget, missing-cost policy, and the reported-spend cap. A Continue past
- * any of those starts nothing — it re-settles the mission at the limit. This
- * mirrors those gates (same >= comparisons) so the button can say which gate
- * refuses instead of promising an iteration; keep the two in sync. Even when
- * no gate is known-exceeded, the description stays a request — the runner
- * re-checks with live clocks.
+ * budget, missing-cost policy, and the reported-spend cap. Hard bounds refuse
+ * the action; missing cost instead requires an explicit approval that applies
+ * to one iteration only. Keep this in sync with stopBeforeNextIteration.
  */
 export function researchContinueLabel(
   mission: Pick<ResearchMission, "iterations" | "bounds" | "startedAt">,
   nowMs: number = Date.now(),
 ): ResearchContinueLabel {
-  const next = mission.iterations.length + 1;
+  const next = nextResearchIterationNumber(mission);
   const max = mission.bounds.maxIterations;
-  const label = `Continue (i${next}/${max})`;
+  const label = `Continue to iteration ${next} of ${max}`;
   const refusal = (why: string) => ({
     label,
     description: `Continue would ask for iteration ${next}, but ${why}`,
     gated: true,
+    costApprovalRequired: false,
   });
   if (next > max) {
     return {
-      label,
+      label: "Iteration limit reached",
       description: `Continue would ask for iteration ${next}, past the planned ${max} — the runner stops at the iteration limit instead of starting it.`,
       gated: true,
+      costApprovalRequired: false,
     };
   }
   const startedAt = mission.startedAt ? Date.parse(mission.startedAt) : Number.NaN;
   if (Number.isFinite(startedAt) && nowMs - startedAt >= mission.bounds.wallClockMinutes * 60_000) {
     return refusal(`the ${mission.bounds.wallClockMinutes}-minute wall-clock budget is spent — the runner pauses at the limit instead of starting it.`);
-  }
-  if (
-    mission.bounds.stopWhenCostUnavailable &&
-    mission.iterations.some((iteration) => iteration.finishedAt && iteration.costUsd === undefined)
-  ) {
-    return refusal("an iteration finished without reporting cost — the runner pauses for review instead of starting it.");
   }
   const reportedSpend = mission.iterations
     .map((iteration) => iteration.costUsd)
@@ -1195,10 +1401,22 @@ export function researchContinueLabel(
   if (mission.bounds.maxSpendUsd !== undefined && reportedSpend >= mission.bounds.maxSpendUsd) {
     return refusal(`reported spend has reached the $${mission.bounds.maxSpendUsd} cap — the runner pauses at the limit instead of starting it.`);
   }
+  if (
+    mission.bounds.stopWhenCostUnavailable &&
+    mission.iterations.some((iteration) => iteration.finishedAt && iteration.costUsd === undefined)
+  ) {
+    return {
+      label: `Continue with unreported cost, iteration ${next} of ${max}`,
+      description: `An iteration finished without reporting cost. Continue starts iteration ${next} with approval for that one iteration; the mission will ask again before another unmetered iteration.`,
+      gated: true,
+      costApprovalRequired: true,
+    };
+  }
   return {
     label,
     description: `Continue asks the runner to start iteration ${next} of ${max} planned — stop gates are re-checked first.`,
     gated: false,
+    costApprovalRequired: false,
   };
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ChatRunRail — the right-hand instrument column from the
+ * ChatActivityMap — the right-hand activity column from the
  * `Coven Cave - Chat Session` design handoff (cave-w716g).
  *
  * Four panels, chosen because the data supports them: TIMELINE, TOOL MIX,
@@ -12,8 +12,8 @@
  * panel.
  *
  * All derivation lives in the pure model; this file only draws it. It reads the
- * SAME activePath the transcript renders, like the spine and minimap, so the
- * rail can never disagree with the conversation beside it.
+ * SAME activePath the transcript renders, so the map can never disagree with
+ * the conversation beside it.
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -23,7 +23,6 @@ import {
   runRailTicks,
   type RunRailModel,
 } from "@/lib/chat-run-rail";
-import { THREAD_INSTRUMENTS_MIN_WIDTH } from "@/components/chat-thread-instruments";
 import type { InstrumentTurn } from "@/lib/chat-thread-instruments";
 
 /** A live call's elapsed time moves every second. */
@@ -33,10 +32,8 @@ const LIVE_TICK_MS = 1000;
  *  re-render an idle transcript 60x more often for an identical string. */
 const IDLE_TICK_MS = 60_000;
 
-/** Widest the rail ever gets (mirrors --runrail-max-w in run-rail.css). The
- *  gate spends this before comparing, so admitting the rail can never push the
- *  transcript under the threshold its sibling instruments measure. */
-const RAIL_MAX_WIDTH = 300;
+/** Reserves roughly 980px for the transcript beside the map's 300px maximum. */
+const ACTIVITY_MAP_MIN_ROW_WIDTH = 1280;
 
 /**
  * Local clock for the elapsed readouts. Deliberately a raw interval rather
@@ -57,14 +54,10 @@ function useNow(active: boolean, intervalMs: number): number {
 }
 
 /**
- * Wide-pane gate, matching the spine and minimap's THREAD_INSTRUMENTS_MIN_WIDTH
- * so all three instruments appear and disappear together.
- *
  * Measures the PARENT ROW, not the transcript scroller the siblings measure.
- * They are overlays and cost the scroller no width; this rail is layout, so
- * measuring the thing it shrinks would oscillate — mount, narrow the scroller
- * under the threshold, unmount, widen it, mount again. The row's width comes
- * from the layout above it and does not move when the rail collapses.
+ * This map is layout, so measuring the thing it shrinks would oscillate. The
+ * row's width comes from the layout above it and does not move when the map
+ * collapses.
  *
  * The element therefore stays mounted and hides in CSS: returning null would
  * remove the very node whose parent is being observed, and it could never
@@ -75,13 +68,7 @@ function useWideEnough(ref: React.RefObject<HTMLElement | null>): boolean {
   useLayoutEffect(() => {
     const row = ref.current?.parentElement;
     if (!row || typeof ResizeObserver === "undefined") return;
-    // The row must clear the instruments threshold WITH the rail's own width
-    // already spent. Comparing the bare row admits the rail at ~1360px, which
-    // leaves the transcript ~1100px — below the threshold the spine and minimap
-    // measure, so they would disappear while the rail that displaced them
-    // stayed. Keep the mirror of RAIL_MAX_WIDTH in run-rail.css in step.
-    const measure = () =>
-      setWide(row.clientWidth >= THREAD_INSTRUMENTS_MIN_WIDTH + RAIL_MAX_WIDTH);
+    const measure = () => setWide(row.clientWidth >= ACTIVITY_MAP_MIN_ROW_WIDTH);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(row);
@@ -125,7 +112,7 @@ function Counters({ model }: { model: RunRailModel }) {
   );
 }
 
-export function ChatRunRail({
+export function ChatActivityMap({
   turns,
   conversationCreatedAt,
   className,
@@ -159,7 +146,7 @@ export function ChatRunRail({
     <aside
       ref={railRef}
       className={`cave-runrail${wide ? "" : " cave-runrail--narrow"}${className ? ` ${className}` : ""}`}
-      aria-label="Run instruments"
+      aria-label="Activity map"
     >
       <Counters model={model} />
 

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  CONTRACT_PARTIAL,
+  NOT_DISPATCHABLE,
   RECOVERY_COOLDOWN_MS,
   RECOVERY_GRACE_MS,
   runCiRecovery,
@@ -65,14 +67,28 @@ function workflowRun({
 
 const GUARDED_RUN_NAME = "CI ${{ github.event_name }} ${{ inputs.expected_sha || github.sha }}";
 const GUARDED_CONCURRENCY =
+  "ci-pr-${{ github.event.pull_request.number || inputs.expected_pr_number || github.run_id }}";
+const PREVIOUS_GUARDED_CONCURRENCY =
   "ci-${{ github.event.pull_request.head.sha || inputs.expected_sha || github.sha }}";
 const GUARDED_JOB_IF =
   "github.event_name != 'workflow_dispatch' || github.sha == inputs.expected_sha";
-const GUARDED_JOB_IFS = {
+const GUARDED_SUBORDINATE_JOB_IFS = {
   paths: GUARDED_JOB_IF,
   ios: `needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
-  build: `always() && (${GUARDED_JOB_IF})`,
 };
+const SHA_MISMATCH_STEP = [
+  "    steps:",
+  "      - name: Refuse recovery SHA mismatch",
+  "        env:",
+  "          EXPECTED_SHA: ${{ inputs.expected_sha }}",
+  "          ACTUAL_SHA: ${{ github.sha }}",
+  "        run: |",
+  "          set -euo pipefail",
+  '          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then',
+  '            echo "::error::Recovery SHA mismatch: expected $EXPECTED_SHA but actual workflow SHA is $ACTUAL_SHA."',
+  "            exit 1",
+  "          fi",
+];
 const GUARDED_CI_WORKFLOW = [
   "name: CI",
   `run-name: ${GUARDED_RUN_NAME}`,
@@ -82,13 +98,21 @@ const GUARDED_CI_WORKFLOW = [
   "      expected_sha:",
   "        required: true",
   "        type: string",
+  "      expected_pr_number:",
+  "        required: true",
+  "        type: string",
   "concurrency:",
   `  group: ${GUARDED_CONCURRENCY}`,
   "jobs:",
-  ...Object.entries(GUARDED_JOB_IFS).flatMap(([name, condition]) => [
+  "  pr-checks:",
+  ...SHA_MISMATCH_STEP,
+  ...Object.entries(GUARDED_SUBORDINATE_JOB_IFS).flatMap(([name, condition]) => [
     `  ${name}:`,
     `    if: ${condition}`,
   ]),
+  "  build:",
+  "    if: always()",
+  ...SHA_MISMATCH_STEP,
   "",
 ].join("\n");
 const PREVIOUS_GUARDED_CI_WORKFLOW = [
@@ -101,11 +125,36 @@ const PREVIOUS_GUARDED_CI_WORKFLOW = [
   "        required: true",
   "        type: string",
   "concurrency:",
-  `  group: ${GUARDED_CONCURRENCY}`,
+  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
   "jobs:",
   "  build:",
   `    if: ${GUARDED_JOB_IF}`,
   "",
+].join("\n");
+const MIGRATION_GUARDED_CI_WORKFLOW = [
+  "name: CI",
+  `run-name: ${GUARDED_RUN_NAME}`,
+  "on:",
+  "  workflow_dispatch:",
+  "    inputs:",
+  "      expected_sha:",
+  "        required: true",
+  "        type: string",
+  "concurrency:",
+  `  group: ${PREVIOUS_GUARDED_CONCURRENCY}`,
+  "jobs:",
+  "  paths:",
+  `    if: ${GUARDED_JOB_IF}`,
+  "  ios:",
+  `    if: needs.paths.outputs.ios == 'true' && (${GUARDED_JOB_IF})`,
+  "  build:",
+  `    if: always() && (${GUARDED_JOB_IF})`,
+  "",
+].join("\n");
+const REQUIRED_EXPECTED_PR_NUMBER_INPUT = [
+  "      expected_pr_number:",
+  "        required: true",
+  "        type: string",
 ].join("\n");
 
 function githubFixture({ pulls, runsBySha = {}, jobsByRun = {}, workflowsBySha = {} }) {
@@ -204,7 +253,10 @@ test("apply dispatches one fresh CI run for a qualifying same-repository head", 
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: pr.head.ref, inputs: { expected_sha: pr.head.sha } },
+        body: {
+          ref: pr.head.ref,
+          inputs: { expected_sha: pr.head.sha, expected_pr_number: String(pr.number) },
+        },
       },
     ],
   );
@@ -233,6 +285,34 @@ test("apply preserves expected_sha for the previous complete guarded workflow", 
     ],
   );
 });
+
+for (const [name, workflow] of [
+  ["previous", PREVIOUS_GUARDED_CI_WORKFLOW],
+  ["migration", MIGRATION_GUARDED_CI_WORKFLOW],
+]) {
+  test(
+    `a ${name} guarded workflow with a required expected_pr_number is partial and never dispatched`,
+    async () => {
+      const pr = pull();
+      const fixture = githubFixture({
+        pulls: [pr],
+        workflowsBySha: {
+          [pr.head.sha]: workflow.replace(
+            "concurrency:",
+            `${REQUIRED_EXPECTED_PR_NUMBER_INPUT}\nconcurrency:`,
+          ),
+        },
+      });
+
+      const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+      assert.deepEqual(result.recoveries, []);
+      assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
+      assert.equal(result.degraded, true);
+      assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+    },
+  );
+}
 
 test("apply omits expected_sha only for a legacy head workflow without that input", async () => {
   const pr = pull();
@@ -266,39 +346,112 @@ test("apply omits expected_sha only for a legacy head workflow without that inpu
   );
 });
 
-test("apply fails closed when expected_sha exists without the REST-visible run stamp", async () => {
-  const pr = pull();
+test("a partial guard contract is skipped without blocking the other candidates", async () => {
+  // The safety property is unchanged: a partial contract is ambiguous rather
+  // than un-dispatchable, so the exact-SHA guard may not be honoured and THIS
+  // head is never dispatched. What changed is blast radius — it used to abort
+  // the whole apply, so one un-rebased branch disabled recovery for every other
+  // open PR (runs 31393882802 and 31618670601 died exactly here).
+  const partial = pull({ number: 1, sha: "e".repeat(40), branch: "fix/partial" });
+  const healthy = pull({ number: 2, sha: "f".repeat(40), branch: "fix/healthy" });
   const fixture = githubFixture({
-    pulls: [pr],
+    pulls: [partial, healthy],
     workflowsBySha: {
-      [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(`run-name: ${GUARDED_RUN_NAME}\n`, ""),
+      [partial.head.sha]: GUARDED_CI_WORKFLOW.replace(`run-name: ${GUARDED_RUN_NAME}\n`, ""),
+      [healthy.head.sha]: GUARDED_CI_WORKFLOW,
     },
   });
+  const messages = [];
 
-  await assert.rejects(
-    runCiRecovery(options(fixture.fetchImpl, true)),
-    /CI workflow recovery contract was partially configured/,
+  const result = await runCiRecovery(
+    options(fixture.fetchImpl, true, { log: (message) => messages.push(message) }),
   );
+
+  assert.deepEqual(
+    result.recoveries.map((recovery) => recovery.number),
+    [healthy.number],
+  );
+  assert.deepEqual(result.skipped, [{ number: partial.number, reason: CONTRACT_PARTIAL }]);
+  // The ambiguous head is never dispatched — only the healthy one is.
+  assert.deepEqual(
+    fixture.requests.filter((request) => request.method === "POST"),
+    [
+      {
+        method: "POST",
+        path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
+        body: {
+          ref: healthy.head.ref,
+          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
+        },
+      },
+    ],
+  );
+  // A misconfigured contract still has to reach a human.
+  assert.equal(result.degraded, true);
+  assert.equal(messages.some((message) => message.includes("needs attention")), true);
+});
+
+test("an expected_pr_number-only contract is skipped and never dispatched", async () => {
+  const pr = pull();
+  const expectedPrNumberOnlyWorkflow = [
+    "name: CI",
+    "on:",
+    "  workflow_dispatch:",
+    "    inputs:",
+    "      expected_pr_number:",
+    "        required: true",
+    "        type: string",
+    "jobs:",
+    "  build:",
+    "    if: ${{ inputs.expected_pr_number }}",
+    "",
+  ].join("\n");
+  const fixture = githubFixture({
+    pulls: [pr],
+    workflowsBySha: { [pr.head.sha]: expectedPrNumberOnlyWorkflow },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
+  assert.equal(result.degraded, true);
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
 });
 
-test("apply fails closed when the required job lacks the expected SHA guard", async () => {
+test("a required job missing the expected SHA failure is skipped, never dispatched", async () => {
   const pr = pull();
   const fixture = githubFixture({
     pulls: [pr],
     workflowsBySha: {
       [pr.head.sha]: GUARDED_CI_WORKFLOW.replace(
-        `  build:\n    if: ${GUARDED_JOB_IFS.build}`,
-        "  build:\n    if: success()",
+        "      - name: Refuse recovery SHA mismatch",
+        "      - name: Start validation",
       ),
     },
   });
 
-  await assert.rejects(
-    runCiRecovery(options(fixture.fetchImpl, true)),
-    /CI workflow recovery contract was partially configured/,
-  );
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.recoveries, []);
+  assert.deepEqual(result.skipped, [{ number: pr.number, reason: CONTRACT_PARTIAL }]);
+  assert.equal(result.degraded, true);
   assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
+test("an un-dispatchable head is skipped without raising the attention flag", async () => {
+  // A branch whose ci.yml predates dispatch support is normal, not a
+  // misconfiguration: it must not turn the scheduled run red every ten minutes.
+  const stale = pull({ number: 4646, sha: "c".repeat(40), branch: "codex/stale-workflow" });
+  const fixture = githubFixture({
+    pulls: [stale],
+    workflowsBySha: { [stale.head.sha]: "name: CI\non:\n  pull_request:\n" },
+  });
+
+  const result = await runCiRecovery(options(fixture.fetchImpl, true));
+
+  assert.deepEqual(result.skipped, [{ number: stale.number, reason: NOT_DISPATCHABLE }]);
+  assert.equal(result.degraded, false);
 });
 
 test("an un-dispatchable head is skipped without blocking the other candidates", async () => {
@@ -306,8 +459,7 @@ test("an un-dispatchable head is skipped without blocking the other candidates",
   // that used to abort everything: its ci.yml predates workflow_dispatch, so it
   // can never be dispatched by anyone, and throwing for it stranded every other
   // eligible PR in the repository (cave-qibp6).
-  const stale = pull({ number: 4646, sha: "c".repeat(40), branch: "codex/stale-workflow" });
-  const healthy = pull({ number: 4643, sha: "d".repeat(40), branch: "codex/current-workflow" });
+  const stale = pull({ number: 4646, sha: "c".repeat(40), branch: "codex/stale-workflow" });  const healthy = pull({ number: 4643, sha: "d".repeat(40), branch: "codex/current-workflow" });
   const fixture = githubFixture({
     pulls: [stale, healthy],
     workflowsBySha: {
@@ -334,7 +486,10 @@ test("an un-dispatchable head is skipped without blocking the other candidates",
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: healthy.head.ref, inputs: { expected_sha: healthy.head.sha } },
+        body: {
+          ref: healthy.head.ref,
+          inputs: { expected_sha: healthy.head.sha, expected_pr_number: String(healthy.number) },
+        },
       },
     ],
   );
@@ -346,26 +501,62 @@ test("an un-dispatchable head is skipped without blocking the other candidates",
   assert.equal(messages.some((message) => message.includes("1 skipped")), true);
 });
 
-test("a partial guard contract still aborts every dispatch, even beside a healthy candidate", async () => {
-  // The safety property the skip above must not have weakened. A partial
-  // contract is ambiguous rather than un-dispatchable: the exact-SHA guard may
-  // not be honoured, so the dispatch could test a different commit. That stays
-  // fatal for the whole run, before any mutation.
-  const partial = pull({ number: 1, sha: "e".repeat(40), branch: "fix/partial" });
-  const healthy = pull({ number: 2, sha: "f".repeat(40), branch: "fix/healthy" });
-  const fixture = githubFixture({
-    pulls: [partial, healthy],
-    workflowsBySha: {
-      [partial.head.sha]: GUARDED_CI_WORKFLOW.replace(`run-name: ${GUARDED_RUN_NAME}\n`, ""),
-      [healthy.head.sha]: GUARDED_CI_WORKFLOW,
-    },
-  });
 
-  await assert.rejects(
-    runCiRecovery(options(fixture.fetchImpl, true)),
-    /CI workflow recovery contract was partially configured/,
+
+test("one unreadable pull request does not strand the rest of the scan", async () => {
+  // A 404 on a deleted/garbage-collected head, or one flaky 5xx, used to
+  // propagate out of the scan loop and end the run. Every other open PR with
+  // missing CI then stayed missing — the same "recovery never fired" report,
+  // from a different cause.
+  const broken = pull({ number: 11, sha: "1".repeat(40), branch: "fix/broken" });
+  const healthy = pull({ number: 12, sha: "2".repeat(40), branch: "fix/healthy" });
+  const fixture = githubFixture({ pulls: [broken, healthy] });
+  const failing = async (url, init) => {
+    const parsed = new URL(url);
+    if (
+      parsed.pathname.endsWith("/actions/workflows/ci.yml/runs") &&
+      parsed.searchParams.get("head_sha") === broken.head.sha
+    ) {
+      return new Response("", { status: 502 });
+    }
+    return fixture.fetchImpl(url, init);
+  };
+
+  const result = await runCiRecovery(options(failing, true));
+
+  assert.deepEqual(
+    result.recoveries.map((recovery) => recovery.number),
+    [healthy.number],
   );
-  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+  assert.deepEqual(result.skipped, [
+    {
+      number: broken.number,
+      reason: "error: failed to list CI runs for a pull request head (HTTP 502)",
+    },
+  ]);
+  assert.equal(result.degraded, true);
+});
+
+test("one refused dispatch does not abandon the dispatches queued behind it", async () => {
+  const refused = pull({ number: 21, sha: "3".repeat(40), branch: "fix/refused" });
+  const healthy = pull({ number: 22, sha: "4".repeat(40), branch: "fix/healthy" });
+  const fixture = githubFixture({ pulls: [refused, healthy] });
+  const failing = async (url, init) => {
+    const body = init?.body ? JSON.parse(init.body) : null;
+    if (body?.ref === refused.head.ref) return new Response("", { status: 403 });
+    return fixture.fetchImpl(url, init);
+  };
+
+  const result = await runCiRecovery(options(failing, true));
+
+  assert.deepEqual(
+    result.recoveries.map((recovery) => recovery.number),
+    [healthy.number],
+  );
+  assert.deepEqual(result.skipped, [
+    { number: refused.number, reason: "error: failed to dispatch CI recovery (HTTP 403)" },
+  ]);
+  assert.equal(result.degraded, true);
 });
 
 test("a legacy dispatchable head is still dispatched without inputs", async () => {
@@ -494,17 +685,39 @@ test("apply completes every candidate read before dispatching any recovery", asy
       }
       return jsonResponse({ message: "service unavailable" }, 503);
     }
+    if (parsed.pathname.endsWith(`/pulls/${first.number}`)) return jsonResponse(first);
+    if (parsed.pathname.endsWith(`/pulls/${second.number}`)) return jsonResponse(second);
+    if (parsed.pathname.endsWith("/contents/.github/workflows/ci.yml")) {
+      return jsonResponse({
+        encoding: "base64",
+        content: Buffer.from(GUARDED_CI_WORKFLOW).toString("base64"),
+      });
+    }
     if (parsed.pathname.endsWith("/actions/workflows/ci.yml/dispatches")) {
       return new Response(null, { status: 204 });
     }
     throw new Error(`unexpected request: ${parsed.pathname}`);
   };
 
-  await assert.rejects(
-    runCiRecovery(options(fetchImpl, true)),
-    /failed to list CI runs for a pull request head \(HTTP 503\)/,
+  const result = await runCiRecovery(options(fetchImpl, true));
+
+  // The ordering invariant is unchanged: no mutation is issued until every
+  // candidate read has finished. What changed is that a failed read now costs
+  // that ONE candidate instead of the whole scan.
+  const firstPost = requests.findIndex((request) => request.method === "POST");
+  const lastRead = requests.findLastIndex((request) => request.method === "GET");
+  assert.notEqual(firstPost, -1);
+  assert.equal(firstPost > lastRead, true);
+  assert.deepEqual(
+    result.recoveries.map((recovery) => recovery.number),
+    [first.number],
   );
-  assert.equal(requests.some((request) => request.method === "POST"), false);
+  assert.deepEqual(result.skipped, [
+    {
+      number: second.number,
+      reason: "error: failed to list CI runs for a pull request head (HTTP 503)",
+    },
+  ]);
 });
 
 test("apply inspects every exact-head workflow contract before dispatching any recovery", async () => {
@@ -535,11 +748,22 @@ test("apply inspects every exact-head workflow contract before dispatching any r
     throw new Error(`unexpected request: ${parsed.pathname}`);
   };
 
-  await assert.rejects(
-    runCiRecovery(options(fetchImpl, true)),
-    /failed to inspect the CI workflow contract \(HTTP 503\)/,
+  const result = await runCiRecovery(options(fetchImpl, true));
+
+  const firstPost = requests.findIndex((request) => request.method === "POST");
+  const lastRead = requests.findLastIndex((request) => request.method === "GET");
+  assert.notEqual(firstPost, -1);
+  assert.equal(firstPost > lastRead, true);
+  assert.deepEqual(
+    result.recoveries.map((recovery) => recovery.number),
+    [first.number],
   );
-  assert.equal(requests.some((request) => request.method === "POST"), false);
+  assert.deepEqual(result.skipped, [
+    {
+      number: second.number,
+      reason: "error: failed to inspect the CI workflow contract (HTTP 503)",
+    },
+  ]);
 });
 
 test("apply skips a recovery when the pull request head moves before dispatch", async () => {
@@ -600,7 +824,10 @@ test("a completed dispatch for a different expected SHA does not cover the curre
       {
         method: "POST",
         path: `/repos/${REPOSITORY}/actions/workflows/ci.yml/dispatches`,
-        body: { ref: current.head.ref, inputs: { expected_sha: current.head.sha } },
+        body: {
+          ref: current.head.ref,
+          inputs: { expected_sha: current.head.sha, expected_pr_number: String(current.number) },
+        },
       },
     ],
   );

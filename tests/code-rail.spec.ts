@@ -8,6 +8,10 @@ import { expect, test, type Page } from "@playwright/test";
 // Daemon-less — onboarding dismissed, all endpoints mocked via page.route.
 
 const ISO = "2026-06-12T10:00:00.000Z";
+// WorkspaceRail is a client-only chunk. A cold next-dev compile can cross the
+// ordinary assertion budget after adjacent Code-surface modules grow, so only
+// the lazy mount gets the larger allowance; settled rail assertions stay fast.
+const RAIL_MOUNT_TIMEOUT = 60_000;
 
 const mkSession = (over: Record<string, unknown>) => ({
   status: "running",
@@ -82,11 +86,24 @@ async function routeChanges(page: Page, filesRef: { count: number }) {
   });
 }
 
+function waitForChangesListResponse(page: Page, projectRoot: string) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/api/changes" &&
+      url.searchParams.get("projectRoot") === projectRoot &&
+      !url.searchParams.has("path") &&
+      !url.searchParams.has("checkpoints") &&
+      !url.searchParams.has("branches");
+  });
+}
+
 async function openSession(page: Page, title: string) {
   await page.locator(".chat-sidebar").getByText(title, { exact: false }).first().click();
 }
 
 test.describe("code rail beside chat", () => {
+  test.describe.configure({ timeout: 90_000 });
+
   test("(a) plain chat with no project_root → no code rail", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);
@@ -100,13 +117,19 @@ test.describe("code rail beside chat", () => {
   test("(b) repo session → rail rests closed with the reopen strip; (c) a fresh 0→N edit batch auto-reveals with the Changes badge; (d) collapse → reopen strip", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);
+    const initialChangesResponse = waitForChangesListResponse(page, REPO_PROJECT.root);
     await base(page, [REPO_SESSION]);
     await openSession(page, "Refactor auth flow");
+    expect(await initialChangesResponse.then((response) => response.json())).toMatchObject({
+      ok: true,
+      files: [],
+    });
 
     // (b) Closed by default (cave-xsq.7): a repo-linked session offers the slim
     // reopen strip, but the conversation owns the pane — no rail at rest.
     const reopen = page.locator(".workspace-rail-reopen");
     await expect(reopen).toBeVisible({ timeout: 30_000 });
+    await expect(reopen).toHaveAttribute("data-change-count", "0");
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
 
     // (c) A genuinely observed fresh edit batch (the mocked count was a real 0,
@@ -114,8 +137,13 @@ test.describe("code rail beside chat", () => {
     // rail with the Changes tab badge showing 2.
     const rail = page.locator(".workspace-rail");
     filesRef.count = 2;
+    const populatedChangesResponse = waitForChangesListResponse(page, REPO_PROJECT.root);
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:changes-refresh")));
-    await expect(rail).toBeVisible({ timeout: 15_000 });
+    expect(await populatedChangesResponse.then((response) => response.json())).toMatchObject({
+      ok: true,
+      files: [{ path: "src/file-0.ts" }, { path: "src/file-1.ts" }],
+    });
+    await expect(rail).toBeVisible({ timeout: RAIL_MOUNT_TIMEOUT });
     await expect(rail.locator(".workspace-rail__badge")).toHaveText("2", { timeout: 15_000 });
 
     // (d) Collapsing hides the rail and surfaces the slim reopen strip.
@@ -153,7 +181,7 @@ test.describe("code rail beside chat", () => {
     // Closed at rest (cave-xsq.7) — open the rail via the reopen strip.
     await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
     const rail = page.locator(".workspace-rail");
-    await expect(rail).toBeVisible({ timeout: 15_000 });
+    await expect(rail).toBeVisible({ timeout: RAIL_MOUNT_TIMEOUT });
 
     // Switch to the Files tab — the placeholder is gone and the tree appears.
     await rail.getByRole("button", { name: "Files" }).click();
@@ -195,7 +223,7 @@ test.describe("code rail beside chat", () => {
     await rail.getByRole("button", { name: "Exit code rail fullscreen" }).click();
     await expect(rail).not.toHaveAttribute("data-fullscreen", "true");
     await expect(rail.locator(".workspace-rail__files--ide")).toHaveCount(0);
-    await expect(rail.getByRole("button", { name: "Terminal" })).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "Terminal" })).toBeVisible();
   });
 
   // PR 3 / Task 3: below the mobile breakpoint there's no room for the
@@ -211,7 +239,7 @@ test.describe("code rail beside chat", () => {
     await openSession(page, "Refactor auth flow");
     // Closed at rest (cave-xsq.7) — the strip reopens the third-column Panel…
     await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
-    await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: RAIL_MOUNT_TIMEOUT });
     // …and the mobile toggle affordance is absent on desktop.
     await expect(page.locator(".mobile-code-rail-toggle")).toHaveCount(0);
   });
@@ -221,7 +249,7 @@ test.describe("code rail beside chat", () => {
   // under tests/mobile/ (see playwright.config.ts testMatch). A mobile-only test
   // placed here would only ever run under the desktop project and self-skip.
 
-  test("(f) Terminal tab → fullscreen-only lazy pty host", async ({ page }) => {
+  test("(f) Terminal tab → compact-rail lazy pty host", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);
 
@@ -231,29 +259,23 @@ test.describe("code rail beside chat", () => {
     // Closed at rest (cave-xsq.7) — open the rail via the reopen strip.
     await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
     const rail = page.locator(".workspace-rail");
-    await expect(rail).toBeVisible({ timeout: 15_000 });
+    await expect(rail).toBeVisible({ timeout: RAIL_MOUNT_TIMEOUT });
 
-    // The normal side rail has Changes/Files only; Terminal is reserved for
-    // the user-expanded fullscreen rail.
-    await expect(rail.getByRole("button", { name: "Terminal" })).toHaveCount(0);
-    await expect(rail.locator(".workspace-rail__terminal")).toHaveCount(0);
-
-    await rail.getByRole("button", { name: "Expand code rail fullscreen" }).click();
-    await expect(rail).toHaveAttribute("data-fullscreen", "true");
-
-    // The Terminal tab button appears only after fullscreen expansion…
+    // Terminal stays visible below Files in the compact rail.
     const terminalTab = rail.getByRole("button", { name: "Terminal" });
     await expect(terminalTab).toBeVisible();
+    await expect(rail).not.toHaveAttribute("data-fullscreen", "true");
 
-    // …but its host container is ABSENT before the first click (genuine
-    // laziness — the pty must not start early).
+    // Its host container is absent before the first click (genuine laziness —
+    // the pty must not start early).
     await expect(rail.locator(".workspace-rail__terminal")).toHaveCount(0);
 
-    // Clicking Terminal mounts the host wrapper. In daemon-less e2e there is no
-    // live pty websocket bridge, so we assert the host wrapper mounts (not a
-    // working shell) and that the "next step" placeholder is gone.
+    // Clicking Terminal mounts the host without forcing fullscreen. In
+    // daemon-less e2e there is no live pty websocket bridge, so assert the host
+    // wrapper mounts (not a working shell) and the placeholder is gone.
     await terminalTab.click();
     await expect(rail.locator(".workspace-rail__terminal")).toBeVisible({ timeout: 15_000 });
+    await expect(rail).not.toHaveAttribute("data-fullscreen", "true");
     await expect(rail.locator(".workspace-rail__soon")).toHaveCount(0);
   });
 
@@ -279,7 +301,7 @@ test.describe("code rail beside chat", () => {
 
     await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
     const rail = page.locator(".workspace-rail");
-    await expect(rail).toBeVisible({ timeout: 15_000 });
+    await expect(rail).toBeVisible({ timeout: RAIL_MOUNT_TIMEOUT });
 
     await rail.getByRole("button", { name: "Changes" }).click();
     const review = rail.getByRole("button", { name: "Review changes in a new session" });

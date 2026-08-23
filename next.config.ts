@@ -107,6 +107,13 @@ const nextConfig: NextConfig = {
   // bundle-budget postbuild gate and the e2e suite guard the output.
   reactCompiler: true,
   experimental: {
+    // Next 16.2 enables Turbopack's persistent dev cache by default. In this
+    // app the cache reaches multiple gigabytes, then its SST compaction can
+    // starve the PostCSS child-process IPC until Turbopack panics while
+    // processing globals.css ("timeout while receiving message from process").
+    // Keep dev state in memory instead; a dev-server restart is an acceptable
+    // cache boundary and avoids the failing compaction path.
+    turbopackFileSystemCacheForDev: false,
     // Tree-shake the icon + syntax-highlight kitchens so the per-route
     // bundle only includes the icons and grammars actually referenced.
     // @iconify/react in particular has a flat icon-name surface that

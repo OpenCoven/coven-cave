@@ -67,10 +67,103 @@ function mockFetchFor(score: "low" | "trusted") {
           violations: [],
           warnings: [],
         };
+  const executionWindow = {
+    attempts: score === "trusted" ? 2 : 0,
+    completed: score === "trusted" ? 2 : 0,
+    failed: 0,
+    cancelled: 0,
+    successRate: score === "trusted" ? 1 : null,
+    medianDurationMs: score === "trusted" ? 1_200 : undefined,
+    p95DurationMs: score === "trusted" ? 1_800 : undefined,
+    totalTokens: score === "trusted" ? 2_400 : undefined,
+    costUsd: score === "trusted" ? 0.04 : undefined,
+    toolCalls: score === "trusted" ? 3 : 0,
+    toolFailures: 0,
+    coverage: {
+      harnessVersion: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+      confirmedModel: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+      usage: { known: score === "trusted" ? 1 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 0.5 : 0 },
+      cost: { known: score === "trusted" ? 1 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 0.5 : 0 },
+      duration: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+      tools: { known: score === "trusted" ? 2 : 0, total: score === "trusted" ? 2 : 0, ratio: score === "trusted" ? 1 : 0 },
+    },
+    models: score === "trusted"
+      ? [{
+          key: "claude-sonnet-4",
+          label: "claude-sonnet-4",
+          attempts: 2,
+          completed: 2,
+          failed: 0,
+          cancelled: 0,
+          successRate: 1,
+          medianDurationMs: 1_200,
+          totalTokens: 2_400,
+          costUsd: 0.04,
+          toolCalls: 3,
+          toolFailures: 0,
+        }]
+      : [],
+    harnesses: score === "trusted"
+      ? [{
+          key: "claude@1.0.0",
+          label: "claude 1.0.0",
+          attempts: 2,
+          completed: 2,
+          failed: 0,
+          cancelled: 0,
+          successRate: 1,
+          medianDurationMs: 1_200,
+          totalTokens: 2_400,
+          costUsd: 0.04,
+          toolCalls: 3,
+          toolFailures: 0,
+        }]
+      : [],
+  };
 
   const responses = new Map<string, unknown>([
     ["/api/familiars", { ok: true, familiars: [familiar] }],
     ["/api/familiars/cody/contract", { ok: true, report: contract }],
+    [
+      "/api/familiars/cody/execution-analytics",
+      {
+        ok: true,
+        analytics: {
+          generatedAt: "2026-06-25T12:00:00.000Z",
+          windows: {
+            "7d": executionWindow,
+            "14d": executionWindow,
+            "8w": executionWindow,
+            all: executionWindow,
+          },
+          recentAttempts: score === "trusted"
+            ? [{
+                id: "attempt-1",
+                sessionId: "session-1",
+                turnId: "turn-1",
+                executionKind: "chat",
+                occurredAt: "2026-06-25T12:00:00.000Z",
+                harnessId: "claude",
+                harnessVersion: "1.0.0",
+                requestedModel: "claude-sonnet-4",
+                forwardedModel: "claude-sonnet-4",
+                confirmedModel: "claude-sonnet-4",
+                status: "completed",
+                durationMs: 1_200,
+                totalTokens: 1_200,
+                costUsd: 0.02,
+                toolCalls: 1,
+                toolFailures: 0,
+                provenance: "backfilled",
+              }]
+            : [],
+          backfill: {
+            state: "complete",
+            imported: score === "trusted" ? 2 : 0,
+          },
+        },
+      },
+    ],
     [
       "/api/sessions/list?includeArchived=1&familiarId=cody",
       {
@@ -110,6 +203,20 @@ function mockFetchFor(score: "low" | "trusted") {
               },
             ]
           : [],
+      },
+    ],
+    [
+      "/api/memory?familiarId=cody",
+      {
+        ok: true,
+        entries: score === "trusted"
+          ? []
+          : [{
+              familiarId: "cody",
+              relPath: "MEMORY.md",
+              fullPath: "/tmp/cody/MEMORY.md",
+              modified: "2026-06-25T12:00:00.000Z",
+            }],
       },
     ],
     [
@@ -419,6 +526,21 @@ describe("FamiliarAnalyticsView", () => {
           }),
         } as unknown as Response;
       }
+      if (String(url) === "/api/memory?familiarId=cody") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            entries: [{
+              familiarId: "cody",
+              relPath: "MEMORY.md",
+              fullPath: "/tmp/cody/MEMORY.md",
+              modified: "2026-06-25T12:00:00.000Z",
+            }],
+          }),
+        } as unknown as Response;
+      }
       return realFetch(url);
     }) as typeof fetch;
 
@@ -427,11 +549,12 @@ describe("FamiliarAnalyticsView", () => {
 
     assert.equal(data.covenEntries.length, 0);
     assert.equal(data.memoryAvailability, "unavailable");
-    assert.ok(model.errors.some((message) => message.includes("memory unavailable")));
-    assert.equal(model.progression?.memoryAvailability, "unavailable");
+    assert.equal(data.fileMemoryAvailability, "ready");
+    assert.ok(model.errors.some((message) => message.includes("canonical memory unavailable")));
+    assert.equal(model.progression?.memoryAvailability, "ready");
     assert.ok(
       !model.growthReport?.signals.some((signal) => signal.kind === "no-memory"),
-      "a failed list must not invent a no-memory growth signal",
+      "workspace memory prevents a false no-memory signal when canonical memory is unavailable",
     );
   });
 
@@ -444,7 +567,11 @@ describe("FamiliarAnalyticsView", () => {
 
     assert.equal(model.healRequests.length, 1);
     assert.equal(model.threadReports.length, 1);
-    assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
+    assert.match(
+      source,
+      /escalateBlockers\([\s\S]{0,180}?model\.healRequests,[\s\S]{0,40}?windowReports/,
+      "self-report blocker requests retain their real source thread",
+    );
     assert.match(stageSource, /request\{healRequests\.length === 1 \? "" : "s"\}/, "the self-heal stat pluralizes its count");
     assert.doesNotMatch(source, /ResponseConfidenceSection/, "response confidence analytics retired (cave-7ku5)");
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{windowReports\}/);
@@ -506,17 +633,22 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(stageSource, /const pulse = model\.sessionPulse/, "pulse is wired to the model");
   });
 
-  it("surfaces thumbs-vote model/runtime performance from the feedback rollup", async () => {
+  it("surfaces execution telemetry and preserves thumbs feedback in runtime performance", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
+    assert.equal(model.executionAnalytics?.windows["14d"].attempts, 2);
+    assert.equal(model.executionAnalytics?.windows["14d"].coverage.usage.ratio, 0.5);
     assert.equal(model.modelFeedback.total, 3, "the rollup rides the model");
     assert.equal(model.modelFeedback.models[0].key, "claude-sonnet-4");
     assert.equal(model.modelFeedback.runtimes[0].up, 2);
-    assert.match(contentSource, /<b>Model performance<\/b>/, "the footer carries a Model performance deep dive");
+    assert.match(contentSource, /<b>Runtime performance<\/b>/, "the footer carries a Runtime performance deep dive");
     assert.match(contentSource, /openOverlay\("model"\)/, "the deep dive opens the full-stage view");
-    assert.match(source, /<ModelFeedbackSection rollup=\{model\.modelFeedback\}/, "the panel is wired to the rollup");
+    assert.match(source, /<RuntimePerformanceSection/, "the panel is wired to execution telemetry");
+    assert.match(source, /Telemetry coverage/, "missing-field coverage is explicit");
+    assert.match(source, /Recent execution evidence/, "recent attempts remain drillable");
+    assert.match(source, /Thumbs feedback/, "quality evidence remains visible");
     assert.match(source, /ph:thumbs-up/, "rows show up-vote counts");
     assert.match(source, /ph:thumbs-down/, "rows show down-vote counts");
   });
@@ -693,8 +825,13 @@ describe("FamiliarAnalyticsView", () => {
     );
     assert.match(
       contentSource,
-      /const traceRequest = useCallback\(\(request: SelfHealRequest\) => \{\s*setBoardOpen\(false\);\s*setTraceTarget\(\{ id: request\.id, title: request\.title \}\);/,
-      "opening a trace from the board retires the board before activating the trace focus trap",
+      /if \(!request\.traceSessionId\) \{[\s\S]*?No source thread is available for this request/,
+      "derived requests without thread evidence never send synthetic request ids to the session endpoint",
+    );
+    assert.match(
+      contentSource,
+      /setTraceTarget\(\{\s*id: request\.traceSessionId,\s*title: request\.traceThreadTitle \?\? request\.title,\s*\}\)/,
+      "traceable requests open the newest real source thread",
     );
 
     // A face turned away is hidden to the eye by backface-visibility, but that
@@ -880,7 +1017,11 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.equal(sevenDays.trends.overall.direction, "insufficient");
     assert.equal(fourteenDays.trends.overall.direction, "improving");
     assert.equal(sevenDays.queue.length, 0);
-    assert.ok(fourteenDays.queue.some((item) => item.sourceId === "context-pressure"));
+    assert.equal(
+      fourteenDays.queue.some((item) => item.sourceId === "context-pressure"),
+      false,
+      "a newer adequate report resolves older context pressure inside the selected window",
+    );
     assert.equal(sevenDays.evidenceCount, 1);
     assert.equal(fourteenDays.evidenceCount, 2);
     assert.equal(sevenDays.sessionCount, 1);
@@ -967,6 +1108,63 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /confidence\.metrics\.map/, "bars render from the derived metric list");
     assert.match(source, /aria-label="Context pressure distribution"/, "the context-pressure mix rides along");
     assert.match(source, /CONTEXT_PRESSURE_HINT/, "context pills carry a plain-language legend tooltip");
+    assert.match(source, /className="fa-thread-priorities"/, "the panel calls out prioritized areas for improvement");
+    assert.match(source, /THREAD_METRIC_IMPROVEMENT_COPY/, "improvement cards carry concrete next steps");
+    assert.match(source, /contributes \{contribution\.toFixed\(1\)\} points/, "metric cards expose weighted contribution");
+    const css = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.doesNotMatch(
+      css.match(/\.fa-thread-analysis \{[^}]*\}/)?.[0] ?? "",
+      /justify-content: space-between/,
+      "the confidence panel no longer creates a large empty vertical gulf",
+    );
+    assert.match(
+      css,
+      /\.fa-thread-analysis__top \{[\s\S]{0,180}?grid-template-columns: minmax\(0, 2fr\) minmax\(240px, 1fr\);/,
+      "trend and improvement priorities share a balanced top row",
+    );
+  });
+
+  it("enlarges the trust computation modal and shows the actual weighted arithmetic", () => {
+    assert.match(
+      contentSource,
+      /<Modal open onClose=\{onClose\} wide breadcrumb=\{\["Trust"/,
+      "trust computation uses the wide modal treatment",
+    );
+    assert.match(contentSource, /className="fa-trust-modal__equation"/, "the exact weighted equation is visible");
+    assert.match(contentSource, /className="fa-trust-row__contribution"/, "each metric shows its point contribution");
+    assert.match(contentSource, /className="fa-trust-context"/, "report coverage includes context-pressure evidence");
+  });
+
+  it("turns the self-heal board into a production-grade intervention queue", () => {
+    assert.match(contentSource, /className="fa-board__summary"/, "the board opens with an operational summary");
+    assert.match(
+      contentSource,
+      /className="fa-board__summary-stat fa-board__summary-stat--crit"/,
+      "critical work is visible before filtering",
+    );
+    assert.match(contentSource, /className="fa-heal-card__evidence"/, "request cards separate evidence from action");
+    assert.match(contentSource, /className="fa-heal-card__next-label">Next step</, "the primary action is clearly named");
+    assert.match(
+      contentSource,
+      /request\.traceSessionId \? \([\s\S]*?Trace source thread[\s\S]*?\) : \([\s\S]*?No source thread/,
+      "board cards expose tracing only when backed by a real thread",
+    );
+    assert.match(
+      stageSource,
+      /request\.traceSessionId \? \([\s\S]*?Trace the thread behind this request[\s\S]*?\) : null/,
+      "the compact self-heal strip also hides untraceable controls",
+    );
+    const css = readFileSync(new URL("../styles/familiar-analytics.css", import.meta.url), "utf8");
+    assert.match(
+      css,
+      /\.fa-board__grid \{[\s\S]{0,180}?grid-template-columns: repeat\(auto-fit, minmax\(320px, 1fr\)\);/,
+      "board cards use the whole modal at every queue size",
+    );
+    assert.doesNotMatch(
+      css,
+      /\.fa-board__grid \.fa-heal-card \{[^}]*min-height: 148px/,
+      "request cards are not padded into artificial empty height",
+    );
   });
 
   it("teaches enabling self-reporting when there are no thread reports yet", () => {

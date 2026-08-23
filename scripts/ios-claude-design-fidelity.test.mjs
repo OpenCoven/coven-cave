@@ -15,12 +15,14 @@ const home = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift"
 const root = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 const drawer = await read("apps/ios/CovenCave/CovenCave/Views/NavigationDrawer.swift");
 const projects = await read("apps/ios/CovenCave/CovenCave/Views/ProjectsPanel.swift");
+const projectSwitcher = await read("apps/ios/CovenCave/CovenCave/Views/ProjectSwitcherView.swift");
 const familiars = await read("apps/ios/CovenCave/CovenCave/Views/FamiliarsListView.swift");
 const plugins = await read("apps/ios/CovenCave/CovenCave/Views/PluginsPanel.swift");
 const client = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
 const thread = await read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
 const modelControl = await read("apps/ios/CovenCave/CovenCave/Views/ChatModelControl.swift");
 const responseControls = await read("apps/ios/CovenCave/CovenCave/Models/ChatResponseControls.swift");
+const nextPaths = await read("apps/ios/CovenCave/CovenCave/Models/NextPaths.swift");
 const models = await read("apps/ios/CovenCave/CovenCave/Models/Models.swift");
 const messageBubble = await read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
 const caveClient = await read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
@@ -28,9 +30,9 @@ const appModel = await read("apps/ios/CovenCave/CovenCave/State/AppModel.swift")
 const caveApp = await read("apps/ios/CovenCave/CovenCave/CovenCaveApp.swift");
 const tasks = await read("apps/ios/CovenCave/CovenCave/Views/TasksView.swift");
 const linkedTasks = await read("apps/ios/CovenCave/CovenCave/Views/LinkedTasksSheet.swift");
-const terminal = await read("apps/ios/CovenCave/CovenCave/Views/TerminalView.swift");
 const settings = await read("apps/ios/CovenCave/CovenCave/Views/SettingsView.swift");
 const glass = await read("apps/ios/CovenCave/CovenCave/Theme/Glass.swift");
+const chatChrome = await read("apps/ios/CovenCave/CovenCave/Theme/ChatChrome.swift");
 const zoom = await read("apps/ios/CovenCave/CovenCave/Views/ContentZoom.swift");
 const globalSearch = await read(
   "apps/ios/CovenCave/CovenCave/Views/GlobalSearchView.swift",
@@ -93,11 +95,15 @@ assert.match(
   /--ui-preview-empty-chat/,
   "the canonical empty-session surface has a deterministic simulator preview",
 );
-assert.match(appModel, /var launchThreadId: String\?/, "the launch thread intent belongs to AppModel");
 assert.match(
   appModel,
-  /func consumeLaunchThreadIntent\(\) -> ChatThread\?/,
-  "the launch thread intent waits for a matching thread before consuming",
+  /var pendingProjectNavigationIntent: ProjectNavigationIntent\?/,
+  "the project-aware navigation intent belongs to AppModel",
+);
+assert.match(
+  appModel,
+  /func resolvePendingProjectNavigationIntent\([\s\S]{0,80}\) -> Bool/,
+  "pending navigation resolves only after the needed project or entity hydrates",
 );
 assert.match(
   appModel,
@@ -106,8 +112,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /if let threadId = ChatNotifications\.threadId\(fromDeepLink: url\) \{[\s\S]{0,140}launchThreadId = threadId[\s\S]{0,140}selectedTab = \.chats/,
-  "runtime chat links retain their thread id until hydration",
+  /guard let intent = ProjectNavigationIntent\(url: url\) else \{ return \}[\s\S]*pendingProjectNavigationIntent = intent[\s\S]*resolvePendingProjectNavigationIntent\([^)]*\)/,
+  "runtime links queue one project-aware navigation intent until hydration can resolve it",
 );
 assert.match(
   appModel,
@@ -121,18 +127,18 @@ assert.doesNotMatch(
 );
 assert.match(
   home,
-  /\.onAppear \{\s*consumeLaunchThreadIntent\(\)\s*consumeGlobalRequests\(\)\s*selectMostRecentThreadIfNeeded\(\)\s*\}/,
-  "Chats selects the most recent thread after honoring explicit launch requests",
+  /\.onAppear \{\s*_\s*=\s*app\.resolvePendingProjectNavigationIntent\(\)\s*consumeGlobalRequests\(\)\s*selectMostRecentThreadIfNeeded\(\)\s*\}/,
+  "Chats selects the most recent thread only after retrying any pending project-aware navigation",
 );
 assert.match(
   home,
-  /onChange\(of: app\.threads\.map\(\\\.id\)\)[\s\S]{0,160}consumeLaunchThreadIntent\(\)[\s\S]{0,160}selectMostRecentThreadIfNeeded\(\)/,
-  "Chats retries explicit and default selection when hydration adds threads",
+  /onChange\(of: app\.threads\.map\(\\\.id\)\)[\s\S]{0,160}resolvePendingProjectNavigationIntent\(\)[\s\S]{0,160}selectMostRecentThreadIfNeeded\(\)/,
+  "Chats retries pending navigation and only then re-evaluates the default selection when hydration adds threads",
 );
 assert.match(
   home,
-  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,500}guard selection == nil,[\s\S]{0,500}!showNewChat,[\s\S]{0,500}app\.threadToOpen == nil,[\s\S]{0,500}app\.launchThreadId == nil,[\s\S]{0,500}!app\.newChatRequested,[\s\S]{0,500}let thread = app\.mostRecentThread[\s\S]{0,180}open\(\.thread\(thread\)\)/,
-  "the default never overrides an explicit destination or New Chat intent",
+  /private func selectMostRecentThreadIfNeeded\(\) \{[\s\S]{0,500}guard selection == nil,[\s\S]{0,500}!showNewChat,[\s\S]{0,500}app\.threadToOpen == nil,[\s\S]{0,500}app\.pendingProjectNavigationIntent == nil,[\s\S]{0,500}!app\.newChatRequested,[\s\S]{0,700}projectThreads[\s\S]{0,220}projectLastActivity[\s\S]{0,220}open\(\.familiar\(familiar\)\)|open\(\.thread\(mostRecentGroupThread\)\)/,
+  "the default never overrides a pending explicit navigation and only picks active-project familiar or group activity",
 );
 
 // Authored navigation and discovery surfaces.
@@ -142,22 +148,148 @@ assert.match(
   "Chats renders the familiar list it defines",
 );
 assert.match(root, /CaveNavigationDrawer\(/, "the global Claude Design drawer is mounted at app root");
+assert.match(
+  root,
+  /DrawerDestinationStage\(\s*isOpen: app\.navigationDrawerOpen/,
+  "opening the drawer turns the active destination into the rounded live-surface peek",
+);
+assert.match(
+  root,
+  /\.accessibilityHidden\(isOpen\)/,
+  "the obscured destination leaves the accessibility tree while the modal drawer is open",
+);
+assert.match(
+  appModel,
+  /navigationDrawerOpen: Bool = \{[\s\S]*?--ui-open-drawer/,
+  "the layered drawer has a deterministic native screenshot fixture",
+);
 assert.doesNotMatch(root, /TabView/, "the primary shell does not retain a native tab view");
 assert.doesNotMatch(root, /Tab\("/, "the primary shell does not declare native tabs");
 assert.doesNotMatch(root, /MainTabView/, "RootView mounts the semantically neutral shell");
 assert.match(root, /struct MainShellView/, "the connected root uses MainShellView");
 assert.match(
   root,
-  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.terminal:\s*TerminalView\(terminal: terminal, cwd: \$terminalCwd\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
+  /switch app\.selectedTab\s*\{\s*case \.chats:\s*ChatsHomeView\(\)\s*case \.tasks:\s*TasksView\(\)\s*case \.settings:\s*SettingsView\(\)\s*\}/s,
   "the shell mounts exactly the selected primary destination",
 );
-for (const label of ["Chats", "Tasks", "Terminal", "Settings"]) {
+assert.match(
+  root,
+  /if app\.selectedTab == \.settings \{\s*SettingsView\(\)\s*\} else \{[\s\S]*switch app\.projectContextGateState/s,
+  "settings stays reachable even when the project context is gated",
+);
+for (const label of ["Chats", "Tasks", "Settings"]) {
   const matches = drawer.match(new RegExp(`DrawerNavRow\\([\\s\\S]*?label: "${label}"`, "g")) ?? [];
   assert.equal(matches.length, 1, `drawer includes ${label} exactly once as a primary row`);
 }
-for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Terminal", terminal], ["Settings", settings]]) {
+assert.match(
+  drawer,
+  /geo\.size\.width \* 0\.70/,
+  "the drawer keeps enough of the active destination visible to preserve spatial context",
+);
+assert.match(
+  drawer,
+  /ProjectContextButton[\s\S]{0,160}\.padding\(\.horizontal, 8\)/,
+  "the project selector aligns to the primary navigation row gutter",
+);
+assert.match(
+  projectSwitcher,
+  /PillSelector\([\s\S]{0,180}fillsWidth: true/,
+  "the global project selector fills the available drawer width",
+);
+assert.match(
+  chat,
+  /sessionDetailRow\(\s*"Harness"[\s\S]*?sessionDetailRow\(\s*"Runtime"[\s\S]*?sessionDetailRow\("Model"[\s\S]*?sessionDetailRow\(\s*"Project"[\s\S]*?sessionDetailRow\(\s*"Conversation"/,
+  "chat configuration leads with runtime identity, then model, project, and conversation",
+);
+assert.doesNotMatch(
+  chat,
+  /sessionDetailRow\(\s*"Inventory"/,
+  "chat configuration does not expose internal inventory provenance",
+);
+assert.ok(
+  nextPaths.includes(
+    'of: #"^\\[(?:reply|task|action:open-tasks|action:save-link)(?::recommended)?\\]\\s*"#',
+  ),
+  "typed next-path controls are removed before suggestions reach the conversation UI",
+);
+assert.match(
+  drawer,
+  /Theme\.initials\(app\.operatorDisplayName\)/,
+  "the bottom action dock carries a readable operator identity tile",
+);
+for (const [name, source] of [["Chats", home], ["Tasks", tasks], ["Settings", settings]]) {
   assert.match(source, /navigationDrawerOpen = true/, `${name} exposes Open navigation`);
 }
+assert.doesNotMatch(drawer, /label: "Terminal"|go\(\.terminal\)/,
+  "the retired iOS terminal stays out of the drawer");
+assert.doesNotMatch(root, /TerminalView|PtyTerminal|case \.terminal/,
+  "the connected shell cannot mount the retired iOS terminal");
+assert.match(
+  home,
+  /EditorialSurfaceTitle\(\s*title: "Chats",\s*detail: visibleConversationLabel,\s*large: true/,
+  "the Chats title uses the restrained editorial hierarchy",
+);
+assert.match(
+  chatChrome,
+  /struct EditorialSurfaceTitle[\s\S]*?design: \.serif/,
+  "primary destination titles share one editorial component",
+);
+assert.match(home, /visibleConversationLabel/, "the Chats title names its conversation context");
+assert.match(tasks, /EditorialSurfaceTitle\(title: "Tasks", detail: visibleTaskLabel\)/,
+  "Tasks shares the editorial primary-surface hierarchy");
+assert.match(settings, /EditorialSurfaceTitle\(title: "Settings"\)/,
+  "Settings shares the editorial primary-surface hierarchy");
+assert.match(
+  home,
+  /--ui-preview-chats-home/,
+  "the Chats list chrome has a deterministic native screenshot fixture",
+);
+assert.match(
+  home,
+  /private var homeSearchBar[\s\S]*?frame\(maxWidth: sizeClass == \.regular \? 560 : \.infinity\)/,
+  "the floating Chats dock adapts to regular-width layouts",
+);
+assert.match(
+  home,
+  /private var homeSearchBar[\s\S]*?chrome\.accentGradient[\s\S]*?accessibilityLabel\("New chat"\)/,
+  "the footer carries one unmistakable accessible New Chat action",
+);
+assert.doesNotMatch(
+  home,
+  /private var homeSearchBar[\s\S]*?glassChrome\(\.bottom\)/,
+  "the Chats footer no longer paints an edge-to-edge chrome bar",
+);
+assert.match(home, /private var lowDensityActions[\s\S]*?"New chat"[\s\S]*?"All familiars"/,
+  "low-density Chats lists offer truthful next actions without restoring recents");
+assert.match(home, /ViewThatFits\(in: \.horizontal\)/,
+  "familiar rows protect name and timestamp hierarchy at large text sizes");
+assert.match(
+  settings,
+  /Section\("Community"\) \{\s*HStack\(spacing: 0\)/,
+  "Community presents its destinations as one icon shelf",
+);
+for (const label of ["Discord", "X", "Docs", "Podcast", "Blog"]) {
+  assert.match(
+    settings,
+    new RegExp(`iconShelfLink\\("${label}"|iconShelfLink\\(\\s*"${label}"`),
+    `Community keeps an accessible ${label} icon`,
+  );
+}
+assert.match(
+  settings,
+  /private var legalSection[\s\S]*?HStack\(spacing: 0\)[\s\S]*?Terms of Service[\s\S]*?Privacy/,
+  "Legal presents its destinations as one icon shelf",
+);
+assert.match(
+  settings,
+  /private func iconShelfLink[\s\S]*?\.frame\(maxWidth: \.infinity, minHeight: 52\)/,
+  "Community and Legal shelf controls share a full-width row-height contract",
+);
+assert.match(
+  settings,
+  /LabeledContent\("Status"\) \{\s*HStack\(spacing: 10\)[\s\S]*?arrow\.clockwise/,
+  "Connection status and its re-check action share one row",
+);
 assert.doesNotMatch(chat, /\.toolbar\(\.hidden, for: \.tabBar\)/, "ChatView does not depend on a removed tab bar");
 assert.doesNotMatch(glass, /UITabBar(?:Appearance)?|tabAppearance|liveTabBars/,
   "the chrome system no longer styles an unavailable native tab bar");
@@ -193,26 +325,44 @@ assert.match(
 );
 assert.match(
   caveApp,
-  /guard !app\.isConnectingPreview else \{ return \}[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?await app\.connectWithRetry\(\)/,
+  /guard !app\.isConnectingPreview else \{ return \}[\s\S]*?app\.startConnectionSupervisor\(\)[\s\S]*?app\.setConnectionSupervisorActive\(true\)/,
   "connecting preview skips only live connection work",
 );
 assert.match(
   drawer,
-  /Color\.black\.opacity\(isOpen \? 0\.46 : 0\)/,
+  /Color\.black\.opacity\(isOpen \? 0\.\d+ : 0\)/,
   "the closed drawer does not leave its dimming scrim over the app",
 );
 assert.match(
   root,
-  /case \.projects\(let project\):\s*ProjectsPanel\(initialProject: project\)/,
-  "Projects carries its selected project atomically into the drawer destination",
+  /case \.projectSwitcher:\s*ProjectSwitcherView\(\)/,
+  "the project switcher is a real shell overlay destination",
 );
 assert.match(root, /case \.familiars: FamiliarsListView/, "Familiars is a real drawer destination");
-assert.match(drawer, /openProjects\(project\)/, "drawer project shortcuts preserve the selected project");
-assert.match(projects, /NavigationLink\(value: project\)/, "project rows navigate instead of rendering inertly");
 assert.match(
-  projects,
-  /if let initialProject \{[\s\S]{0,120}path\.append\(initialProject\)/,
-  "a drawer project shortcut opens that project directly",
+  drawer,
+  /ProjectContextButton \{[\s\S]{0,120}close\(\)[\s\S]{0,120}openProjectSwitcher\(\)/,
+  "the drawer header opens the project switcher from the current shell context",
+);
+assert.match(
+  drawer,
+  /private var recentThreads: \[ChatThread\] \{\s*app\.projectRecentThreads\(limit: 5\)\s*\}/,
+  "drawer recents come from the active project only",
+);
+assert.match(
+  projectSwitcher,
+  /navigationTitle\("Switch project"\)/,
+  "the switcher presents as a first-class destination",
+);
+assert.match(
+  projectSwitcher,
+  /Button \{[\s\S]{0,180}app\.switchProject\(to: row\.context\)/,
+  "choosing a project row switches the app context in place",
+);
+assert.match(
+  projectSwitcher,
+  /struct ProjectContextGateView: View[\s\S]{0,2200}Button\("Settings"\)/,
+  "the project-context gate exposes settings recovery",
 );
 assert.match(familiars, /struct FamiliarDetailView: View/, "familiar rows open a real detail surface");
 assert.match(
@@ -247,8 +397,13 @@ assert.match(
 );
 assert.match(
   modelControl,
-  /Section\("Inventory"\)[\s\S]{0,260}ChatModelInventoryProvenancePresentation\.label\(for: provenance\)/,
-  "the model picker visibly names every inventory provenance state",
+  /ChatModelInventoryProvenancePresentation\.notice\(for: provenance\)/,
+  "the model picker surfaces only actionable model-list freshness notices",
+);
+assert.doesNotMatch(
+  modelControl,
+  /Section\("Inventory"\)/,
+  "the model picker does not expose inventory implementation terminology",
 );
 assert.match(
   modelControl,
@@ -277,11 +432,6 @@ assert.match(
 );
 assert.match(
   chat,
-  /sessionDetailRow\(\s*"Inventory",[\s\S]{0,180}ChatModelInventoryProvenancePresentation\.label\(for: presentedModelPickerProvenance\)/,
-  "chat session details expose inventory provenance before the picker opens",
-);
-assert.match(
-  chat,
   /prepareModelStateLoad\(for target:[\s\S]{0,320}modelPresentationScope\.beginLoading\(for: target\)[\s\S]{0,320}modelPickerOptions = \[\][\s\S]{0,220}modelControlCapabilities = \[\]/,
   "a changed familiar/session masks prior inventory and selected-model controls",
 );
@@ -294,6 +444,21 @@ assert.match(
   familiars,
   /ModelPickerSheet\([\s\S]{0,320}provenance: presentedModelProvenance/,
   "familiar defaults pass inventory provenance to the model picker",
+);
+assert.match(
+  familiars,
+  /photosPicker\([\s\S]{0,260}selection: \$avatarPhotoItem/,
+  "familiar details can choose a new avatar from the photo library",
+);
+assert.match(
+  familiars,
+  /uploadFamiliarAvatar\([\s\S]{0,220}applyFamiliarAvatarMutation/,
+  "avatar uploads update the visible familiar immediately",
+);
+assert.match(
+  familiars,
+  /deleteFamiliarAvatar\([\s\S]{0,220}applyFamiliarAvatarMutation/,
+  "familiar details can remove an existing avatar",
 );
 assert.match(
   familiars,
@@ -342,13 +507,13 @@ assert.match(
 );
 assert.match(
   familiars,
-  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,12000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
+  /@State private var modelMutationQueue = ChatModelMutationQueue\(\)[\s\S]{0,18000}private func chooseModel\([\s\S]{0,900}modelMutationQueue\.enqueue[\s\S]{0,900}client\.setChatModel/,
   "familiar-default model PATCHes are serialized in selection order",
 );
 assert.match(
   familiars,
-  /familiar\.activeSessions\.map\(String\.init\) \?\? "Unknown"/,
-  "missing live activity is labelled unknown rather than fabricated as zero",
+  /static func activityValue\(for lastActivity: Date\?\) -> String \{[\s\S]*return "No activity yet"[\s\S]*lastActivity\.formatted\(date: \.abbreviated, time: \.shortened\)/,
+  "missing familiar activity falls back cleanly while real activity stays explicit and scoped",
 );
 for (const section of ["Identity", "Defaults", "Access"]) {
   assert.match(familiars, new RegExp(`Text\\("${section}"\\)`), `familiar detail includes ${section}`);
@@ -512,7 +677,7 @@ assert.match(
 );
 assert.match(
   chat,
-  /case \.checking: return \(Color\.orange, "reconnecting"\)/,
+  /case \.checking, \.degraded: return \(Color\.orange, "reconnecting"\)/,
   "the chat header reports reconnecting state instead of claiming readiness",
 );
 assert.match(
@@ -522,7 +687,7 @@ assert.match(
 );
 assert.match(
   home,
-  /if app\.familiars\.isEmpty && app\.threads\.isEmpty \{[\s\S]{0,180}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
+  /if app\.projectFamiliars\.isEmpty[\s\S]{0,80}app\.projectThreads\.isEmpty[\s\S]{0,80}app\.projectServerSessions\.isEmpty[\s\S]{0,220}if let error = app\.familiarsError \?\? app\.sessionsError \{[\s\S]{0,100}loadFailure\(error\)/,
   "Chats renders first-load failure before the no-familiars empty state",
 );
 assert.match(
@@ -547,12 +712,12 @@ assert.match(
 );
 assert.match(
   familiars,
-  /if let error = app\.familiarsError, app\.familiars\.isEmpty/,
+  /guard app\.projectMembershipLoaded else \{[\s\S]{0,200}if let error = app\.familiarsError \{[\s\S]{0,120}mode = \.firstLoadError\(error\)/,
   "the familiar roster renders first-load failure before empty state",
 );
 assert.match(
   familiars,
-  /app\.tasksError == nil\s*\?\s*"\\\(assignedTasks\.count\)"\s*:\s*app\.tasks\.isEmpty \? "Unknown" : "\\\(assignedTasks\.count\) cached"/,
+  /let taskValue = app\.tasksError == nil[\s\S]{0,120}\? "\\\(assignedTasks\.count\)"[\s\S]{0,160}app\.tasks\.isEmpty \? "Unknown" : "\\\(assignedTasks\.count\) cached"/,
   "familiar task stats distinguish live, unavailable, and cached counts",
 );
 for (const [name, source] of [["projects", projects], ["familiars", familiars]]) {
@@ -680,6 +845,16 @@ assert.match(
 );
 assert.match(
   globalSearch,
+  /Picker\("Search scope", selection: \$scope\)[\s\S]*Text\(projectScopeLabel\)\.tag\(SearchScope\.project\)[\s\S]*Text\("Everywhere"\)\.tag\(SearchScope\.everywhere\)/,
+  "global search exposes project and everywhere scope options",
+);
+assert.match(
+  globalSearch,
+  /app\.projectThreads[\s\S]*app\.projectServerSessions[\s\S]*app\.projectFamiliars[\s\S]*app\.projectTasks/,
+  "project-scoped global search uses the active project collections",
+);
+assert.match(
+  globalSearch,
   /if let trailing \{[\s\S]*?Text\(trailing\)[\s\S]*?\.foregroundStyle\(chrome\.textSecondary\)/,
   "global search recency metadata remains legible in dark mode",
 );
@@ -692,13 +867,18 @@ for (const label of ["Chats", "Projects", "Familiars", "Tasks"]) {
 }
 assert.match(
   globalSearch,
-  /app\.serverOnlySessions\(for:/,
-  "global search includes conversations that only exist on the server",
+  /boundSessionIDs[\s\S]*!boundSessionIDs\.contains\(\$0\.id\)/,
+  "global search deduplicates local-bound server sessions",
 );
 assert.match(
   globalSearch,
+  /openServerSession: \(SessionRow, String\?\) -> Void/,
+  "global search routes server-only chat opens through a central callback",
+);
+assert.doesNotMatch(
+  globalSearch,
   /app\.openServerSession\(/,
-  "selecting a server-only search result materializes and opens it",
+  "global search itself must not materialize server sessions",
 );
 assert.match(
   projects,
@@ -780,8 +960,38 @@ assert.match(
 );
 assert.match(
   appModel,
-  /configureDesignCloseoutPreview[\s\S]{0,2200}cardThreadLinks\["cold-launch"\] = "ui-preview-empty-chat"/,
+  /configureDesignCloseoutPreview[\s\S]*cardThreadLinks\["cold-launch"\] = "ui-preview-empty-chat"/,
   "the design closeout fixture exposes linked task and GitHub context",
+);
+assert.match(
+  tasks,
+  /private var filtered: \[BoardCard\] \{[\s\S]{0,120}var cards = app\.projectTasks/,
+  "the task list starts from the active project's tasks",
+);
+assert.match(
+  tasks,
+  /if !app\.projectFamiliars\.isEmpty \{[\s\S]{0,260}ForEach\(app\.projectFamiliars\)/,
+  "task familiar filters use the active project's familiars",
+);
+assert.match(
+  home,
+  /private var filteredFamiliars: \[Familiar\] \{[\s\S]{0,220}app\.projectFamiliars/,
+  "Chats uses the active project's familiar roster",
+);
+assert.match(
+  home,
+  /private func familiarChat[\s\S]{0,260}app\.projectLandingDirectThread\(for: familiar\.id\)/,
+  "Chats resolves the visible conversation through the active project's landing thread",
+);
+assert.match(
+  familiars,
+  /statCard\("Chats", value: statsModel\.chats, icon: "bubble\.left"\)/,
+  "familiar detail chat counts are scoped through the active project stats model",
+);
+assert.match(
+  familiars,
+  /let assignedTasks = context\.map \{ scopedContext in[\s\S]*scopedContext\.matches\(task: \$0, registeredProjects: app\.projects\)[\s\S]*&& \$0\.familiarId == familiar\.id/,
+  "familiar detail task counts are scoped to the explicit active project context",
 );
 assert.match(root, /--ui-open-search/, "simulator validation can launch directly into global search");
 assert.match(root, /--ui-open-projects/, "simulator validation can launch directly into projects");

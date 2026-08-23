@@ -14,8 +14,12 @@
  */
 
 import {
+  elevenLabsDeliveryPreset,
   isValidElevenLabsModelId,
+  isValidElevenLabsSeed,
   validateElevenLabsVoiceSettings,
+  ELEVENLABS_MAX_SEED,
+  type ElevenLabsDeliveryPresetId,
   type ElevenLabsVoiceSettings,
 } from "./voice/elevenlabs-shared.ts";
 
@@ -160,7 +164,47 @@ export type ResearchMediaRenderConfig = {
    * them verbatim.
    */
   voiceSettings?: ElevenLabsVoiceSettings;
+  /**
+   * Podcast only (ElevenLabs): pins provider sampling so re-rendering the same
+   * script is reproducible and two renders stay comparable. Absent means the
+   * provider samples freely, which is the previous behaviour.
+   */
+  seed?: number;
 };
+
+/**
+ * Resolve the Studio's delivery controls into the render-config fields the
+ * podcast pipeline consumes.
+ *
+ * The three fields are podcast-only and ElevenLabs-only in the stored contract
+ * (`validateResearchMediaRenderConfig` rejects them anywhere else), so this
+ * returns an empty object for every other combination rather than letting the
+ * UI compose a config the server would refuse. Every field is omitted when it
+ * would only restate a default, keeping an undirected render byte-identical to
+ * what it was before delivery became selectable.
+ */
+export function elevenLabsPodcastDirection(input: {
+  kind: ResearchGenerationCreatableKind;
+  provider: ResearchMediaProvider;
+  /** Named preset id; `neutral` and unknown ids direct nothing. */
+  delivery: ElevenLabsDeliveryPresetId;
+  /** Model id, or "" for the pipeline's offline default. */
+  model: string;
+  /** Raw seed field text, or "" for unpinned provider sampling. */
+  seed: string;
+}): Pick<ResearchMediaRenderConfig, "model" | "voiceSettings" | "seed"> {
+  if (input.kind !== "podcast" || input.provider !== "elevenlabs") return {};
+  const preset = elevenLabsDeliveryPreset(input.delivery);
+  const trimmedSeed = input.seed.trim();
+  const seed = trimmedSeed === "" ? Number.NaN : Number(trimmedSeed);
+  return {
+    ...(isValidElevenLabsModelId(input.model) ? { model: input.model } : {}),
+    ...(preset && preset.id !== "neutral"
+      ? { voiceSettings: preset.settings }
+      : {}),
+    ...(isValidElevenLabsSeed(seed) ? { seed } : {}),
+  };
+}
 
 export type ResearchGenerationProgress = {
   unit: "chapter";
@@ -280,6 +324,22 @@ export function validateResearchMediaRenderConfig(
     }
     voiceSettings = normalized;
   }
+  let seed: number | undefined;
+  if (value.seed !== undefined) {
+    if (kind !== "podcast") {
+      return { ok: false, error: "podcast seed is only valid for podcasts" };
+    }
+    if (value.provider !== "elevenlabs") {
+      return { ok: false, error: "podcast seed is only valid for the ElevenLabs provider" };
+    }
+    if (!isValidElevenLabsSeed(value.seed)) {
+      return {
+        ok: false,
+        error: `podcast seed must be an integer between 0 and ${ELEVENLABS_MAX_SEED}`,
+      };
+    }
+    seed = value.seed;
+  }
   return {
     ok: true,
     value: {
@@ -290,6 +350,7 @@ export function validateResearchMediaRenderConfig(
       ...(style ? { style } : {}),
       ...(model ? { model } : {}),
       ...(voiceSettings ? { voiceSettings } : {}),
+      ...(seed !== undefined ? { seed } : {}),
     },
   };
 }

@@ -62,9 +62,51 @@ Release work should start only after branch consolidation:
 5. Edit the generated changelog, run
    `pnpm release:verify --version X.Y.Z`, make a signed stamp commit, and merge
    it through the protected PR path.
-6. Reconcile clean `main` at the stamp merge commit before creating the signed
-   `vX.Y.Z` tag. The release workflow requires an annotated GitHub-verified
-   tag contained in `main`, then rejects any disagreement across the five
-   stamped sources before platform builds begin.
-7. Record the build/version, exact tagged SHA, verification, upload artifact,
-   and any App Store Connect status in the release handoff.
+6. Reconcile clean `main` at the stamp merge commit. Create and push a signed,
+   annotated `vX.Y.Z-rc.N` tag at that exact commit. Candidate tags are
+   immutable; replace a failed candidate with a higher `rc.N` after its fix
+   lands through a PR.
+7. Wait for the `Release candidate` workflow and its `Release candidate
+   validated` rollup to succeed. Record the candidate tag, run URL, and exact
+   commit. A manual candidate dispatch is diagnostic only and cannot authorize
+   promotion.
+8. Create and push the signed, annotated final `vX.Y.Z` tag at the same commit.
+   Final release authorization re-verifies both tags through GitHub and rejects
+   a different version or commit before packaging, release metadata, updater
+   publication, or TestFlight work starts.
+   The only legacy-recovery exception is a manually dispatched final release
+   strictly before `v0.2.4` with an existing non-draft GitHub Release published
+   before the legacy cutoff and a matching successful legacy push run whose
+   creation and update timestamps precede that cutoff. Final versions `v0.2.4`
+   and later always require signed release-candidate promotion.
+9. Record the build/version, candidate and final tags, exact promoted SHA,
+   validation run, upload artifacts, and App Store Connect status in the
+   release handoff. The `rollback-readiness` job records the verified rollback
+   target alongside it, and blocks updater publication when the previous
+   release is not one — see
+   [`release-rollback-readiness.md`](release-rollback-readiness.md).
+10. Before widening the audience, run the three-OS acceptance journey and prove
+    a rollback target exists. See [Release Acceptance](release-acceptance.md)
+    for the journey and its evidence format, and
+    [Production Rollout](production-rollout.md) for the staged rollout
+    thresholds and the bounded rollback drill. A release that has shipped a tag
+    has not yet been rolled out.
+
+```bash
+git fetch origin
+version=$(node -p "require('./package.json').version")
+main_commit=$(git rev-parse origin/main)
+test "$(git rev-parse HEAD)" = "$main_commit"
+git tag -s "v${version}-rc.1" "$main_commit" -m "Coven Cave v${version}-rc.1"
+git push origin "v${version}-rc.1"
+candidate_run=""
+for attempt in $(seq 1 20); do
+  candidate_run=$(gh run list --workflow release-candidate.yml --branch "v${version}-rc.1" --event push --limit 10 --json databaseId,headSha --jq '.[] | select(.headSha == "'"$main_commit"'") | .databaseId' | head -1)
+  [ -n "$candidate_run" ] && break
+  sleep 6
+done
+test -n "$candidate_run"
+gh run watch --exit-status "$candidate_run"
+git tag -s "v${version}" "$main_commit" -m "Coven Cave v${version}"
+git push origin "v${version}"
+```

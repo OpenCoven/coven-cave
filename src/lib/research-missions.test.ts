@@ -20,9 +20,11 @@ import {
   RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
   RESEARCH_HARNESS_IDS,
+  RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT,
   RESEARCH_MODEL_MAX_LENGTH,
   RESEARCH_RUNTIME_DEFAULT_HARNESS,
   RESEARCH_TITLE_MAX_LENGTH,
+  nextResearchIterationNumber,
   researchArtifactKindForMode,
   researchBoundReadings,
   researchContinueLabel,
@@ -79,6 +81,97 @@ test("mission parser validates shared-state fields and reconstructs safe data", 
     ...validMission(),
     constraints: ["x".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH + 1)],
   }), null);
+});
+
+// cave-v3ajh. The X identity fields are refused exactly as strictly as
+// `status` is, and this had no coverage: deleting both validation branches
+// outright left every suite green.
+test("mission parser refuses unknown external-provider identity on a source", () => {
+  const source = {
+    id: "x-post-1",
+    title: "X post 1",
+    url: "https://x.com/opencoven/status/1",
+    sourceType: "x-post",
+    status: "candidate",
+  } as const;
+  const withSource = (extra: Record<string, unknown>) => parseResearchMission({
+    ...validMission(),
+    sources: [{ ...source, ...extra }],
+  });
+
+  assert.equal(
+    withSource({ provider: "x", externalId: "1", availability: "deleted" })?.sources[0]?.provider,
+    "x",
+  );
+  assert.equal(withSource({ provider: "mastodon" }), null);
+  assert.equal(withSource({ availability: "maybe" }), null);
+  assert.equal(withSource({ externalId: 1 }), null);
+  // Membership must be tested on the raw value. `String(["x"]) === "x"`, so a
+  // coercing check would store an array behind a `"x"` literal type — and an
+  // array is exactly what an agent writing sources.json can put there.
+  assert.equal(withSource({ provider: ["x"] }), null);
+  assert.equal(withSource({ availability: ["deleted"] }), null);
+});
+
+test("mission parser preserves valid title provenance and rejects unknown values", () => {
+  const explicit = { ...validMission(), titleSource: "explicit" } as const;
+  assert.deepEqual(parseResearchMission(explicit), explicit);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: "inferred" }), null);
+  assert.equal(parseResearchMission({ ...validMission(), titleSource: new String("explicit") }), null);
+});
+
+test("a run's origin survives the read/write round trip both surfaces share", () => {
+  // parseResearchMission rebuilds from an explicit field list, so a field it
+  // does not name evaporates the first time a mission is re-read and saved —
+  // exactly what happened to `harness`. A run that forgets it came from chat
+  // can never be projected back into that conversation, so pin the round trip.
+  const fromChat = {
+    ...validMission(),
+    origin: { surface: "chat", sessionId: "conv-42" },
+  } as const;
+  assert.deepEqual(parseResearchMission(fromChat), fromChat);
+
+  const fromDesk = { ...validMission(), origin: { surface: "research-desk" } } as const;
+  assert.deepEqual(parseResearchMission(fromDesk), fromDesk);
+
+  // Absent stays absent — legacy missions predate the field.
+  assert.equal(parseResearchMission(validMission())?.origin, undefined);
+
+  // A malformed origin is refused, never dropped: silently discarding it would
+  // reintroduce the very "two surfaces, two models" split the field closes.
+  for (const origin of [
+    { surface: "automation" },
+    { surface: "chat", sessionId: "../../escape" },
+    { surface: "chat", sessionId: "conv/42" },
+    { surface: "chat", sessionId: "" },
+    { surface: "chat", sessionId: 7 },
+    // Only chat names a conversation; a desk run carrying one would make the
+    // desk offer a jump back to a chat that never asked for the run.
+    { surface: "research-desk", sessionId: "conv-42" },
+    "chat",
+    [],
+  ]) {
+    assert.equal(parseResearchMission({ ...validMission(), origin }), null);
+  }
+});
+
+test("create input carries a valid origin through and refuses a malformed one", () => {
+  const base = { ...validMission(), origin: undefined } as Record<string, unknown>;
+  const accepted = validateCreateResearchMissionInput({
+    ...base,
+    origin: { surface: "chat", sessionId: "conv-42" },
+  });
+  assert.equal(accepted.ok, true);
+  assert.deepEqual(accepted.ok && accepted.value.origin, { surface: "chat", sessionId: "conv-42" });
+
+  // Omitted means "no recorded origin", never a guessed one.
+  const withoutOrigin = validateCreateResearchMissionInput(base);
+  assert.equal(withoutOrigin.ok, true);
+  assert.equal(withoutOrigin.ok && withoutOrigin.value.origin, undefined);
+
+  const refused = validateCreateResearchMissionInput({ ...base, origin: { surface: "nowhere" } });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.ok === false && refused.error.includes("origin.surface"), true);
 });
 
 test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
@@ -401,10 +494,50 @@ test("mission input rejects lossful and NUL-bearing prompt fields", () => {
     audience: "a".repeat(RESEARCH_AUDIENCE_MAX_LENGTH),
     constraints: ["c".repeat(RESEARCH_CONSTRAINT_MAX_LENGTH)],
   });
+
   assert.equal(boundary.ok, true);
   if (boundary.ok) {
     assert.equal(boundary.value.title?.length, RESEARCH_TITLE_MAX_LENGTH);
     assert.equal(boundary.value.constraints?.[0]?.length, RESEARCH_CONSTRAINT_MAX_LENGTH);
+  }
+});
+
+test("mission creation validates, deduplicates, and bounds initial saved links", () => {
+  const valid = {
+    familiarId: "sage",
+    intent: "Compare two databases",
+    mode: "brief",
+    modeSource: "auto",
+    deliverable: "brief",
+    constraints: [],
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+  const accepted = validateCreateResearchMissionInput({
+    ...valid,
+    savedLinkIds: ["link-a", " link-b ", "link-a"],
+  });
+  assert.equal(accepted.ok, true);
+  if (accepted.ok) {
+    assert.deepEqual(accepted.value.savedLinkIds, ["link-a", "link-b"]);
+  }
+
+  for (const savedLinkIds of [
+    "link-a",
+    ["ok", 42],
+    [""],
+    ["x".repeat(129)],
+    Array.from({ length: RESEARCH_INITIAL_SAVED_LINK_MAX_COUNT + 1 }, (_, index) => `link-${index}`),
+  ]) {
+    assert.equal(
+      validateCreateResearchMissionInput({ ...valid, savedLinkIds }).ok,
+      false,
+    );
   }
 });
 
@@ -1012,7 +1145,7 @@ test("Continue is labeled with its real consequence", () => {
     { iterations: [{ number: 1, status: "checkpoint" }], bounds, startedAt },
     tenMinutesIn,
   );
-  assert.equal(withinPlan.label, "Continue (i2/3)");
+  assert.equal(withinPlan.label, "Continue to iteration 2 of 3");
   assert.equal(withinPlan.gated, false);
   // Even ungated, the sentence is a request, not a promise — the runner
   // re-checks its stop gates with live clocks.
@@ -1029,10 +1162,21 @@ test("Continue is labeled with its real consequence", () => {
     },
     tenMinutesIn,
   );
-  assert.equal(beyond.label, "Continue (i2/1)");
+  assert.equal(beyond.label, "Iteration limit reached");
   assert.equal(beyond.gated, true);
   assert.match(beyond.description, /past the planned 1/);
   assert.match(beyond.description, /iteration limit/);
+
+  assert.equal(
+    nextResearchIterationNumber({
+      iterations: [
+        { number: 1, status: "completed" },
+        { number: 3, status: "checkpoint" },
+      ],
+    }),
+    4,
+    "the next iteration follows the latest persisted iteration number, not the array length",
+  );
 });
 
 test("Continue reports every runner stop gate, not just the iteration limit", () => {
@@ -1071,7 +1215,28 @@ test("Continue reports every runner stop gate, not just the iteration limit", ()
     Date.parse("2026-07-15T00:10:00Z"),
   );
   assert.equal(noCost.gated, true);
+  assert.equal(noCost.costApprovalRequired, true);
+  assert.match(noCost.label, /Continue with unreported cost/);
   assert.match(noCost.description, /finished without reporting cost/);
+
+  const spendBeforeApproval = researchContinueLabel(
+    {
+      iterations: [
+        { number: 1, status: "checkpoint" as const, finishedAt: "2026-07-15T00:05:00Z", costUsd: 5 },
+        { number: 2, status: "checkpoint" as const, finishedAt: "2026-07-15T00:10:00Z" },
+      ],
+      bounds: {
+        ...bounds,
+        maxIterations: 3,
+        maxSpendUsd: 5,
+        stopWhenCostUnavailable: true,
+      },
+      startedAt,
+    },
+    Date.parse("2026-07-15T00:10:00Z"),
+  );
+  assert.equal(spendBeforeApproval.costApprovalRequired, false);
+  assert.match(spendBeforeApproval.description, /reported spend has reached/);
 });
 
 // --- bound readings: a bar only where a denominator exists -----------------

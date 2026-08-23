@@ -16,6 +16,8 @@ import {
 import { buildResearchMissionFlow } from "../research-mission-flow.ts";
 import {
   allowedResearchActions,
+  nextResearchIterationNumber,
+  RESEARCH_COST_UNAVAILABLE_STOP_REASON,
   RESEARCH_DIRECTION_MAX_LENGTH,
   RESEARCH_PROJECT_ROOT_MAX_LENGTH,
   researchArtifactKindForMode,
@@ -44,11 +46,19 @@ import {
   loadResearchMissionSessionOwner,
   readValidatedMissionFile,
   recordResearchMissionSessionOwner,
+  removeResearchMissionWorkspace,
   researchMissionWorkspacePath,
   saveResearchMission,
   type ResearchMissionSessionOwner,
 } from "./research-mission-store.ts";
 import { withResearchMissionActionLock } from "./research-mission-lock.ts";
+import { materializeSavedLinkForMission } from "./research-link-materialization.ts";
+import {
+  ResearchMissionXHydrationError,
+  mergeXSourceRefs,
+  researchMissionHoldsXRuntime,
+  type ResearchMissionXHydration,
+} from "./research-mission-x-runtime.ts";
 import {
   applyStartResult,
   createMissionRecord,
@@ -132,6 +142,7 @@ type ResearchAutomationCreateInput = {
 
 export type ResearchMissionRunnerDeps = {
   createWorkspace(mission: ResearchMission): Promise<ResearchMission>;
+  removeWorkspace(id: string): Promise<void>;
   loadMission(id: string): Promise<ResearchMission | null>;
   saveMission(mission: ResearchMission): Promise<void>;
   loadSessionOwner(missionId: string): Promise<ResearchMissionSessionOwner | null>;
@@ -181,6 +192,24 @@ export type ResearchMissionRunnerDeps = {
   ): Promise<string>;
   readMissionFile(id: string, relativePath: string): Promise<string | null>;
   readSources(id: string): Promise<ResearchSourceRef[]>;
+  materializeSavedLink(
+    mission: ResearchMission,
+    savedLinkId: string,
+  ): Promise<{ source: ResearchSourceRef; rollback(): Promise<void> }>;
+  /**
+   * Rehydrate the mission's attached X posts into its `runtime/x/` directory
+   * immediately before an iteration launches, and report what the iteration
+   * can and cannot see. Throws `ResearchMissionXHydrationError` when an
+   * attached source cannot be retrieved for a non-durable reason — the launch
+   * is then refused rather than run without the user's attached evidence.
+   */
+  hydrateXSources(mission: ResearchMission): Promise<ResearchMissionXHydration>;
+  /**
+   * Remove that temporary post text. Called from every persisted transition
+   * into a non-active status, so it must be idempotent, safe on a mission that
+   * never hydrated, and cheap when there is nothing to remove.
+   */
+  dropXRuntime(missionId: string): Promise<void>;
   publishKnowledge(entry: KnowledgeEntry): Promise<KnowledgeEntry>;
   killSession(
     sessionId: string,
@@ -279,17 +308,57 @@ function mergeFileSources(
   stored: ResearchSourceRef[],
   file: ResearchSourceRef[],
 ): ResearchSourceRef[] {
-  const matchesFileEntry = (item: ResearchSourceRef) => file.some((source) => (
+  const matches = (source: ResearchSourceRef, item: ResearchSourceRef) => (
     source.url && item.url === source.url
   ) || (
     source.localPath && item.localPath === source.localPath
-  ) || source.id === item.id);
-  return [...file, ...stored.filter((item) => !matchesFileEntry(item))];
+  ) || source.id === item.id;
+  const matchesFileEntry = (item: ResearchSourceRef) => file.some((source) => matches(source, item));
+  // The agent's sources.json wins on every field it owns, but external-provider
+  // IDENTITY is Cave's, not the agent's: it is written by the attach route and
+  // by hydration, and the agent is never told to reproduce it. Without this
+  // carry-forward the entry an agent records for an attached X post displaces
+  // the identity-only ref and silently drops provider/externalId/availability,
+  // so a COMPLETED mission — which never hydrates again — would keep no record
+  // that the source was an X post at all (cave-v3ajh, #4816 criterion 4).
+  const merged = file.map((source) => {
+    if (source.provider !== undefined) return source;
+    const displaced = stored.find((item) => item.provider !== undefined && matches(source, item));
+    if (!displaced) return source;
+    return {
+      ...source,
+      provider: displaced.provider,
+      ...(displaced.externalId !== undefined ? { externalId: displaced.externalId } : {}),
+      ...(displaced.availability !== undefined ? { availability: displaced.availability } : {}),
+    };
+  });
+  return [...merged, ...stored.filter((item) => !matchesFileEntry(item))];
 }
 
 const PATCHABLE_SOURCE_FIELDS = [
   "title", "publisher", "publishedAt", "sourceType", "claim", "note", "confidence", "status",
 ] as const satisfies ReadonlyArray<keyof ResearchSourcePatch>;
+
+function mergeMaterializedResearchSource(
+  sources: ResearchSourceRef[],
+  source: ResearchSourceRef,
+): ResearchSourceRef[] {
+  // A content-addressed materialization is the only safe identity here: an
+  // updated Article may retain its URL while receiving a new source id/path.
+  const index = sources.findIndex((item) => item.id === source.id);
+  if (index < 0) return [source, ...sources];
+  return sources.map((item, itemIndex) => itemIndex === index ? {
+    ...source,
+    title: item.title,
+    ...(item.publisher === undefined ? {} : { publisher: item.publisher }),
+    ...(item.publishedAt === undefined ? {} : { publishedAt: item.publishedAt }),
+    sourceType: item.sourceType,
+    ...(item.claim === undefined ? {} : { claim: item.claim }),
+    ...(item.note === undefined ? {} : { note: item.note }),
+    ...(item.confidence === undefined ? {} : { confidence: item.confidence }),
+    status: item.status,
+  } : item);
+}
 
 const PATCHABLE_TEXT_LIMITS: Record<string, number> = {
   title: 300,
@@ -633,6 +702,26 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       }
       throw error;
     }
+    // THE removal choke point. Hydrated X post text may exist only while a run
+    // is live, so every persisted transition out of an active status takes it
+    // off disk — completed, checkpoint, paused, failed, cancelled, archived,
+    // and a launch that never started.
+    //
+    // This is deliberately here rather than in a `finally` around the happy
+    // path: settling happens through at least eight distinct code paths in
+    // this file (normal reconciliation, orphan recovery, session-owner
+    // mismatch, a failed flow run, cancel, finish, archive, a refused launch),
+    // and every one of them ends in this single write. A per-path `try/finally`
+    // would have to be re-added correctly to each of them and to each one added
+    // later; this cannot be forgotten.
+    //
+    // A removal failure is swallowed on purpose. The mission state is already
+    // durably saved and must be returned, and two independent mechanisms retry
+    // the removal: the next launch purges before it hydrates, and the startup
+    // sweep clears residue a dead process left behind.
+    if (!researchMissionHoldsXRuntime(mission.status)) {
+      await deps.dropXRuntime(mission.id).catch(() => {});
+    }
   };
   const saveUpdated = async (mission: ResearchMission): Promise<ResearchMission> => {
     const updated = { ...mission, updatedAt: deps.now().toISOString() };
@@ -801,6 +890,44 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
   };
 
   /**
+   * Just-in-time X hydration for the iteration that is about to start.
+   *
+   * Runs after the start target is resolved and immediately before startFlow,
+   * so post text is on disk for the shortest window that still lets the
+   * iteration read it. Every failure becomes a refused launch — the mission
+   * settles as failed with an actionable reason and Retry re-hydrates — rather
+   * than a run that quietly proceeds without evidence the user attached, or a
+   * mission stranded in "planning" by a raw throw.
+   */
+  const hydrateForLaunch = async (
+    mission: ResearchMission,
+  ): Promise<
+    | { ok: true; mission: ResearchMission; hydration: ResearchMissionXHydration }
+    | { ok: false; error: string }
+  > => {
+    let hydration: ResearchMissionXHydration;
+    try {
+      hydration = await deps.hydrateXSources(mission);
+    } catch (error) {
+      await deps.dropXRuntime(mission.id).catch(() => {});
+      return {
+        ok: false,
+        error: error instanceof ResearchMissionXHydrationError
+          ? error.message
+          : "An X source attached to this mission could not be prepared for the run. Resolve it or detach the source, then retry.",
+      };
+    }
+    return {
+      ok: true,
+      mission: hydration.sources.length === 0 ? mission : {
+        ...mission,
+        sources: mergeXSourceRefs(mission.sources, hydration.sources),
+      },
+      hydration,
+    };
+  };
+
+  /**
    * Start options for one iteration. A configured project may be the research
    * context while artifacts still belong in Cave's canonical mission
    * workspace, so that verified workspace is the one narrow secondary grant.
@@ -873,9 +1000,15 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     return { ...mission, projectRoot: resolved };
   };
 
-  const startNextIteration = async (mission: ResearchMission): Promise<ResearchMission> => {
-    const stopReason = stopBeforeNextIteration(mission, deps.now());
+  const startNextIteration = async (
+    mission: ResearchMission,
+    options: { allowCostUnavailable?: boolean } = {},
+  ): Promise<ResearchMission> => {
+    const stopReason = stopBeforeNextIteration(mission, deps.now(), options);
     if (stopReason) {
+      if (mission.status === "completed" || mission.status === "cancelled") {
+        return mission;
+      }
       const atIterationLimit = stopReason === "Iteration limit reached";
       return saveUpdated({
         ...mission,
@@ -884,7 +1017,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         lastError: stopReason,
       });
     }
-    const number = mission.iterations.length + 1;
+    const number = nextResearchIterationNumber(mission);
     const timestamp = deps.now().toISOString();
     const workingArtifact = mission.artifacts[0]?.state === "rejected" ? {
       ...mission.artifacts[0],
@@ -922,12 +1055,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     await assertNoActiveSessionOwner(next.id);
     await saveMission(next);
     const target = await missionStartTarget(next);
-    const result = target.ok
-      ? await deps.startFlow(
-          buildResearchMissionFlow(next, number),
+    let result: ResearchFlowStartResult;
+    if (!target.ok) {
+      result = { ok: false, error: target.error };
+    } else {
+      const hydrated = await hydrateForLaunch(next);
+      if (!hydrated.ok) {
+        result = { ok: false, error: hydrated.error };
+      } else {
+        next = hydrated.mission;
+        result = await deps.startFlow(
+          buildResearchMissionFlow(next, number, hydrated.hydration),
           missionStartOptions(next.id, number, target.projectRoot, target.missionWorkspace, next),
-        )
-      : { ok: false, error: target.error };
+        );
+      }
+    }
     return persistLaunchResult(next, result);
   };
 
@@ -966,12 +1108,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     await assertNoActiveSessionOwner(retried.id);
     await saveMission(retried);
     const target = await missionStartTarget(retried);
-    const result = target.ok
-      ? await deps.startFlow(
-          buildResearchMissionFlow(retried, current.number),
+    let result: ResearchFlowStartResult;
+    if (!target.ok) {
+      result = { ok: false, error: target.error };
+    } else {
+      const hydrated = await hydrateForLaunch(retried);
+      if (!hydrated.ok) {
+        result = { ok: false, error: hydrated.error };
+      } else {
+        retried = hydrated.mission;
+        result = await deps.startFlow(
+          buildResearchMissionFlow(retried, current.number, hydrated.hydration),
           missionStartOptions(retried.id, current.number, target.projectRoot, target.missionWorkspace, retried),
-        )
-      : { ok: false, error: target.error };
+        );
+      }
+    }
     return persistLaunchResult(retried, result);
   };
 
@@ -1003,6 +1154,23 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         }
         throw new Error("research mission not found");
       }
+      const savedLinkInput = input.action === "attach-saved-link"
+        ? input as Extract<ResearchMissionActionInput, { action: "attach-saved-link" }>
+        : null;
+      let savedLinkId = "";
+      if (savedLinkInput) {
+        // Conceal cross-familiar missions before reconciliation, owner lookup,
+        // timestamps, or any mutable saved-link work.
+        if (savedLinkInput.familiarId !== mission.familiarId) {
+          throw new Error("research mission not found");
+        }
+        savedLinkId = typeof savedLinkInput.savedLinkId === "string"
+          ? savedLinkInput.savedLinkId.trim()
+          : "";
+        if (!savedLinkId || savedLinkId.length > 128) {
+          throw new Error("saved link id is invalid");
+        }
+      }
       mission = await reconcileFlowUnlocked(mission);
       const sessionOwner = await deps.loadSessionOwner(id);
       const timestamp = deps.now().toISOString();
@@ -1011,6 +1179,25 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         throw new Error(RESEARCH_ACTIVE_SESSION_OWNER_CONFLICT);
       }
 
+      if (savedLinkInput) {
+        const materialized = await deps.materializeSavedLink(mission, savedLinkId);
+        try {
+          return await saveUpdated({
+            ...mission,
+            sources: mergeMaterializedResearchSource(mission.sources, materialized.source),
+          });
+        } catch (error) {
+          try {
+            await materialized.rollback();
+          } catch (rollbackError) {
+            throw new AggregateError(
+              [error, rollbackError],
+              "Research saved link could not be rolled back after the mission save failed",
+            );
+          }
+          throw error;
+        }
+      }
       if (input.action === "attach-source") {
         const normalized = normalizeResearchSource(input.source);
         if (!normalized.ok) throw new Error(normalized.reason);
@@ -1110,7 +1297,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
           throw new Error(`refined direction must be at most ${RESEARCH_DIRECTION_MAX_LENGTH} characters`);
         }
         mission = { ...mission, direction };
-        return startNextIteration(mission);
+        return startNextIteration(mission, {
+          allowCostUnavailable: input.approveCostUnavailable === true,
+        });
       }
       if (input.action === "retry") {
         if (input.projectRoot !== undefined) {
@@ -1119,7 +1308,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         return retryCurrentIteration(mission);
       }
       if (input.action === "continue") {
-        return startNextIteration(mission);
+        return startNextIteration(mission, {
+          allowCostUnavailable: input.approveCostUnavailable === true,
+        });
       }
       if (input.action === "cancel") {
         const current = mission.iterations.at(-1);
@@ -1210,6 +1401,12 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         return saveUpdated({ ...mission, status: "archived" });
       }
       if (input.action === "resume") {
+        if (
+          mission.lastError === RESEARCH_COST_UNAVAILABLE_STOP_REASON &&
+          input.approveCostUnavailable === true
+        ) {
+          return startNextIteration(mission, { allowCostUnavailable: true });
+        }
         return saveUpdated({ ...mission, status: "checkpoint", lastError: undefined });
       }
       return mission;
@@ -1387,7 +1584,7 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     }
 
     const timestamp = deps.now().toISOString();
-    const number = mission.iterations.length + 1;
+    const number = nextResearchIterationNumber(mission);
     let status: ResearchMission["status"] = control.decision === "complete" ? "completed" : "checkpoint";
     let stopReason = control.decision === "complete" ? "Research marked complete" : null;
     let reconciled: ResearchMission = {
@@ -1728,7 +1925,42 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       if (!validated.ok) throw new Error(validated.error);
       let mission = createMissionRecord(validated.value, deps.randomId(), deps.now());
       mission = await deps.createWorkspace(mission);
-      await saveMission(mission);
+      const initialResourceRollbacks: Array<() => Promise<void>> = [];
+      const rollbackInitialResources = async (error: unknown): Promise<never> => {
+        const rollbackErrors: unknown[] = [];
+        for (const rollback of initialResourceRollbacks.reverse()) {
+          try {
+            await rollback();
+          } catch (rollbackError) {
+            rollbackErrors.push(rollbackError);
+          }
+        }
+        try {
+          await deps.removeWorkspace(mission.id);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+        if (rollbackErrors.length > 0) {
+          throw new AggregateError(
+            [error, ...rollbackErrors],
+            "Initial research mission could not be prepared or rolled back",
+          );
+        }
+        throw error;
+      };
+      try {
+        for (const savedLinkId of validated.value.savedLinkIds ?? []) {
+          const materialized = await deps.materializeSavedLink(mission, savedLinkId);
+          initialResourceRollbacks.push(materialized.rollback);
+          mission = {
+            ...mission,
+            sources: [...mission.sources, materialized.source],
+          };
+        }
+        await saveMission(mission);
+      } catch (error) {
+        return rollbackInitialResources(error);
+      }
       // The start sequence shares the per-mission action lock: without it, a
       // concurrent locked act('cancel') landing between the pre-launch save
       // and the launch-result save was silently overwritten back to running.
@@ -1737,12 +1969,21 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         if (TERMINAL_RESEARCH_MISSION_STATUSES.includes(current.status)) return current;
         const target = await missionStartTarget(current);
         if (target.ok) await assertNoActiveSessionOwner(current.id);
-        const result = target.ok
-          ? await deps.startFlow(
-            buildResearchMissionFlow(current, 1),
-            missionStartOptions(current.id, 1, target.projectRoot, target.missionWorkspace, current),
-          )
-          : { ok: false, error: target.error };
+        let result: ResearchFlowStartResult;
+        if (!target.ok) {
+          result = { ok: false, error: target.error };
+        } else {
+          const hydrated = await hydrateForLaunch(current);
+          if (!hydrated.ok) {
+            result = { ok: false, error: hydrated.error };
+          } else {
+            current = hydrated.mission;
+            result = await deps.startFlow(
+              buildResearchMissionFlow(current, 1, hydrated.hydration),
+              missionStartOptions(current.id, 1, target.projectRoot, target.missionWorkspace, current),
+            );
+          }
+        }
         return persistLaunchResult(current, result);
       });
     },
@@ -1988,6 +2229,7 @@ export async function researchDaemonSessionState(
 export function makeProductionResearchMissionRunner() {
   const deps: ResearchMissionRunnerDeps = {
     createWorkspace: createResearchMissionWorkspace,
+    removeWorkspace: removeResearchMissionWorkspace,
     loadMission: loadResearchMission,
     saveMission: saveResearchMission,
     loadSessionOwner: loadResearchMissionSessionOwner,
@@ -2025,6 +2267,15 @@ export function makeProductionResearchMissionRunner() {
     readSources: async (id) => {
       const raw = await readValidatedMissionFile(id, "sources.json");
       return parseResearchSourcesFile(raw);
+    },
+    materializeSavedLink: materializeSavedLinkForMission,
+    hydrateXSources: async (mission) => {
+      const { hydrateMissionXSources } = await import("./research-mission-x-runtime.ts");
+      return hydrateMissionXSources(mission);
+    },
+    dropXRuntime: async (missionId) => {
+      const { dropMissionXRuntime } = await import("./research-mission-x-runtime.ts");
+      await dropMissionXRuntime(missionId);
     },
     publishKnowledge: async (entry) => {
       const { writeKnowledgeEntry } = await import("./knowledge-vault.ts");

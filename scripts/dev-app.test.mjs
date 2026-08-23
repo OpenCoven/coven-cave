@@ -75,7 +75,7 @@ assert.match(
 
 assert.match(
   source,
-  /HOSTNAME=127\.0\.0\.1 PORT="\$dev_port" pnpm dev &/,
+  /HOSTNAME=127\.0\.0\.1 PORT="\$dev_port" NODE_OPTIONS="\$dev_node_options" pnpm dev &/,
   "the launcher must bind its owned dev server to the Tauri loopback devUrl on Windows and POSIX",
 );
 assert.match(
@@ -84,10 +84,60 @@ assert.match(
   "Tauri must not launch a second server after the launcher has verified the first root document",
 );
 
+// The owned dev server gets a CHOSEN old-space ceiling rather than whatever V8
+// derives from host memory. scripts/heap-limits.test.mjs proves the value
+// actually caps a running process; what belongs here is that the launcher
+// resolves it before it starts the server, and refuses rather than starting an
+// unbounded one — the same shape as the port capture above.
+assert.ok(
+  source.indexOf("dev_node_options=") <
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+  "the heap ceiling must be resolved before the owned dev server starts",
+);
 assert.match(
   source,
-  /if \[ -n "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?encodeURIComponent\(process\.env\.COVEN_CAVE_AUTH_TOKEN\)[\s\S]*?dev_url\+="#covenCaveToken=\$\{sidecar_token_fragment\}"/,
-  "an inherited sidecar token must reach the desktop webview through the URL hash",
+  /case "\$dev_node_options" in[\s\S]*?\*--max-old-space-size=\[0-9\]\*\)[\s\S]*?exit 1/,
+  "a NODE_OPTIONS value carrying no ceiling must fail loudly rather than start an uncapped dev server",
+);
+// Only a server this launcher STARTS gets a ceiling it can announce; an
+// attached pre-existing server keeps whatever it was launched with, so the
+// resolution has to live inside the start branch rather than run unconditionally.
+assert.match(
+  source,
+  /if \[ "\$should_start_server" = true \]; then[\s\S]*?dev_node_options="\$\(/,
+  "the heap ceiling must be resolved only for a server this launcher owns",
+);
+
+assert.match(
+  source,
+  /if \[ -z "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?randomBytes\(32\)\.toString\("hex"\)[\s\S]*?export COVEN_CAVE_AUTH_TOKEN[\s\S]*?if \[ -n "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?encodeURIComponent\(process\.env\.COVEN_CAVE_AUTH_TOKEN\)[\s\S]*?dev_url\+="#covenCaveToken=\$\{sidecar_token_fragment\}"/,
+  "the launcher must mint a missing sidecar token and carry it into the desktop webview",
+);
+assert.match(
+  source,
+  /if \[ -z "\$\{COVEN_CAVE_DEV_PROBE_TOKEN:-\}" \]; then[\s\S]*?randomBytes\(32\)\.toString\("hex"\)[\s\S]*?export COVEN_CAVE_DEV_PROBE_TOKEN/,
+  "the launcher must mint a readiness-only token before starting the server and watchdog",
+);
+assert.ok(
+  source.indexOf("export COVEN_CAVE_DEV_PROBE_TOKEN") <
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+  "the readiness-only token must be exported before the owned dev server starts",
+);
+
+assert.match(
+  source,
+  /if \[ -z "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?randomBytes\(32\)\.toString\("hex"\)[\s\S]*?export COVEN_CAVE_AUTH_TOKEN[\s\S]*?if \[ -n "\$\{COVEN_CAVE_AUTH_TOKEN:-\}" \]; then[\s\S]*?encodeURIComponent\(process\.env\.COVEN_CAVE_AUTH_TOKEN\)[\s\S]*?dev_url\+="#covenCaveToken=\$\{sidecar_token_fragment\}"/,
+  "the launcher must mint a missing sidecar token and carry it into the desktop webview",
+);
+assert.ok(
+  source.indexOf("export COVEN_CAVE_AUTH_TOKEN") <
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+  "the sidecar token must be exported before the owned dev server starts",
+);
+assert.ok(
+  source.indexOf("export COVEN_CAVE_AUTH_TOKEN") <
+    source.indexOf('HOSTNAME=127.0.0.1 PORT="$dev_port" NODE_OPTIONS="$dev_node_options" pnpm dev &'),
+  "the minted token must be exported before the owned dev server starts",
 );
 assert.match(
   source,

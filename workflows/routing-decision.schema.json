@@ -39,7 +39,6 @@
       "type": "array",
       "description": "All considered familiars. Eligible candidates appear first in descending score order, followed by ineligible candidates with hard-block evidence.",
       "minItems": 1,
-      "uniqueItems": true,
       "items": {
         "$ref": "#/$defs/candidate"
       }

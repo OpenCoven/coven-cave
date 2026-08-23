@@ -32,12 +32,19 @@ const E2E_CAVE_HOME = join(tmpdir(), `cave-e2e-cave-${E2E_RUN_ID}`);
 const E2E_COVEN_SOCKET = join(tmpdir(), `cave-e2e-socket-${E2E_RUN_ID}.sock`);
 const E2E_LOCAL_PEER_FIXTURE = "cave-e2e-local-peer-fixture";
 const E2E_MOBILE_ACCESS_FIXTURE = "test-fixture";
+const E2E_AGENTIC_RECOMMENDATIONS =
+  process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS ?? "false";
 
 const PERSISTED_SCREEN_SCALE_TEST = /persisted screen magnification scales the app without window scroll$/;
 const SETUP_FOCUS_VISIBILITY_TEST =
   /keeps setup (?:controls focus-visible|diagnostics focus contained) in WebKit$/;
 const MOBILE_FOUNDATIONS_SPEC = /mobile\/foundations\.spec\.ts/;
-const MOBILE_SURFACE_SPECS = /(?:mobile\/.*|right-chat-panel)\.spec\.ts/;
+// inbox-toast-chrome-clearance lives at the root rather than in tests/mobile/
+// on purpose: the toast-over-chrome collision it guards exists at desktop
+// widths too (cave-lcxc6), so it has to run on all three viewport projects —
+// tests/mobile/ is excluded from the desktop project.
+const MOBILE_SURFACE_SPECS =
+  /(?:mobile\/.*|right-chat-panel|inbox-toast-chrome-clearance)\.spec\.ts/;
 // Not a `.spec.ts`, so no ordinary project's testMatch picks it up.
 const WARMUP_SETUP = /warmup\.setup\.ts/;
 
@@ -214,6 +221,10 @@ export default defineConfig({
       // Crafts stay hidden in production by default. Their dedicated E2E
       // specs exercise the explicitly enabled surface through this fixture.
       NEXT_PUBLIC_CAVE_CRAFTS: "1",
+      // Agentic recommendations stay disabled by default. Their E2E journeys
+      // require an explicit NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1 opt-in,
+      // so ordinary browser coverage exercises the production-safe default.
+      NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: E2E_AGENTIC_RECOMMENDATIONS,
       // Keep app-owned preferences and backdrop bytes out of the developer's
       // real ~/.coven directory. A per-config UUID prevents concurrent runs or
       // later PID reuse from sharing stale state while remaining stable for

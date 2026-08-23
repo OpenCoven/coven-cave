@@ -1,6 +1,11 @@
 import { createContext, useEffect, useRef } from "react";
 import { copyText } from "@/lib/clipboard";
 import { parseFileRef, type FileRef } from "@/lib/file-ref";
+import {
+  fileRefLinkTitle,
+  openFileRef,
+  type FileRefDispatch,
+} from "@/lib/file-ref-open";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { FOCUSABLE } from "@/lib/use-focus-trap";
 import {
@@ -126,6 +131,10 @@ function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => 
   }
 }
 
+/** Raise the routing decision (src/lib/file-ref-open.ts) on the real window. */
+const dispatchFileRefEvent: FileRefDispatch = (name, init) =>
+  window.dispatchEvent(new CustomEvent(name, init));
+
 function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | null) {
   for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
     if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
@@ -142,8 +151,8 @@ function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | n
     code.classList.add("cave-file-link");
     code.setAttribute("role", "button");
     code.setAttribute("tabindex", "0");
-    code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
-    const open = () => window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
+    code.title = fileRefLinkTitle(ref!);
+    const open = () => openFileRef({ path, line }, dispatchFileRefEvent);
     const onKeydown = (event: KeyboardEvent) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();

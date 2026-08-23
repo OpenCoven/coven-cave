@@ -15,7 +15,8 @@ const OUTSIDE = mkdtempSync(join(tmpdir(), "chat-attachment-route-outside-"));
 process.env.COVEN_CAVE_CHAT_ATTACHMENTS_DIR = ROOT;
 
 const { GET } = await import("./route.ts");
-const { saveChatImageAttachment, saveChatMediaAttachment } = await import("@/lib/server/chat-attachment-store");
+const { saveChatFileAttachment, saveChatImageAttachment, saveChatMediaAttachment } =
+  await import("@/lib/server/chat-attachment-store");
 
 after(() => {
   rmSync(ROOT, { recursive: true, force: true });
@@ -70,6 +71,22 @@ test("a stored media attachment is served for inline playback", async () => {
   assert.equal(res.headers.get("content-length"), String(clip.byteLength));
   const body = Buffer.from(await res.arrayBuffer());
   assert.deepEqual(body, clip, "the served bytes are the stored bytes");
+});
+
+test("a stored source file is forced to download", async () => {
+  const source = Buffer.from("<script>throw new Error('must not execute')</script>");
+  const storedId = await saveChatFileAttachment(
+    `data:text/html;base64,${source.toString("base64")}`,
+    "text/html",
+    "Components.html",
+  );
+  assert.ok(storedId, "the store minted a source-file id");
+
+  const res = await GET(localRequest(`id=${encodeURIComponent(storedId)}`));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "text/html");
+  assert.equal(res.headers.get("content-disposition"), "attachment");
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), source);
 });
 
 test("a non-local request is refused before the store is touched", async () => {

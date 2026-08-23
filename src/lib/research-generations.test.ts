@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_ELEVENLABS_VOICE_SETTINGS,
+  ELEVENLABS_DELIVERY_PRESETS,
+  ELEVENLABS_PODCAST_MODEL_OPTIONS,
+  describeElevenLabsVoiceSettings,
+  elevenLabsDeliveryPreset,
+} from "./voice/elevenlabs-shared.ts";
+import {
+  elevenLabsPodcastDirection,
   isResearchGenerationContent,
   isResearchGenerationCreatableKind,
   isResearchGenerationKind,
@@ -321,6 +329,69 @@ test("podcast model and voice settings are ElevenLabs-only, podcast-only, and no
   }
 });
 
+test("podcast seed is ElevenLabs-only, podcast-only, and bounded", () => {
+  const pinned = validateResearchMediaRenderConfig("podcast", {
+    provider: "elevenlabs",
+    voice: "21m00Tcm4TlvDq8ikWAM",
+    length: "standard",
+    seed: 20_260_817,
+  });
+  assert.ok(pinned.ok);
+  if (pinned.ok) assert.equal(pinned.value.seed, 20_260_817);
+
+  // An absent seed stays absent, so stored configs revalidate unchanged.
+  const bare = validateResearchMediaRenderConfig("podcast", {
+    provider: "elevenlabs",
+    voice: "21m00Tcm4TlvDq8ikWAM",
+    length: "standard",
+  });
+  assert.ok(bare.ok);
+  if (bare.ok) assert.equal("seed" in bare.value, false);
+
+  for (const seed of [0, 4_294_967_295]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        seed,
+      }).ok,
+      true,
+      `seed ${seed} is in range`,
+    );
+  }
+  for (const seed of [-1, 1.5, 4_294_967_296, "7"]) {
+    assert.equal(
+      validateResearchMediaRenderConfig("podcast", {
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        length: "standard",
+        seed,
+      }).ok,
+      false,
+      `seed ${seed} is rejected`,
+    );
+  }
+  assert.equal(
+    validateResearchMediaRenderConfig("podcast", {
+      provider: "local",
+      voice: "piper-lessac-medium",
+      length: "standard",
+      seed: 7,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateResearchMediaRenderConfig("short-video", {
+      provider: "elevenlabs",
+      voice: "21m00Tcm4TlvDq8ikWAM",
+      length: "brief",
+      seed: 7,
+    }).ok,
+    false,
+  );
+});
+
 test("chapter progress accepts bounded real units and rejects invented ranges", () => {
   assert.equal(
     isResearchGenerationProgress({
@@ -596,4 +667,205 @@ test("client fetchers hit /api/research/generations with the expected shapes", a
     id: "gen-1",
     familiarId: "nova",
   });
+});
+
+// ── ElevenLabs podcast delivery direction (cave-sl7je) ───────────────────────
+
+const BASE_PODCAST_CONFIG = {
+  provider: "elevenlabs",
+  voice: "21m00Tcm4TlvDq8ikWAM",
+  length: "standard",
+} as const;
+
+test("delivery presets sit on the stability axis they claim to", () => {
+  const stability = Object.fromEntries(
+    ELEVENLABS_DELIVERY_PRESETS.map((preset) => [preset.id, preset.settings.stability]),
+  );
+  // Lower stability lets the model reset pitch between sentences; higher holds
+  // one even reading. The ordering IS the meaning of the four names.
+  assert.ok(
+    stability.animated < stability.conversational,
+    "animated is looser than conversational",
+  );
+  assert.ok(
+    stability.conversational < stability.neutral,
+    "conversational is looser than the baseline",
+  );
+  assert.ok(
+    stability.neutral < stability.narration,
+    "narration is steadier than the baseline",
+  );
+  // Neutral must be the untouched baseline, or "no direction" would silently
+  // change how every existing render sounds.
+  assert.deepEqual(
+    elevenLabsDeliveryPreset("neutral")?.settings,
+    DEFAULT_ELEVENLABS_VOICE_SETTINGS,
+  );
+  for (const preset of ELEVENLABS_DELIVERY_PRESETS) {
+    if (preset.id === "neutral") continue;
+    assert.notDeepEqual(
+      preset.settings,
+      DEFAULT_ELEVENLABS_VOICE_SETTINGS,
+      `${preset.id} directs something the baseline does not`,
+    );
+  }
+  assert.equal(elevenLabsDeliveryPreset("nonexistent"), null);
+});
+
+test("every offered delivery and model is accepted by the stored render contract", () => {
+  for (const preset of ELEVENLABS_DELIVERY_PRESETS) {
+    const validated = validateResearchMediaRenderConfig("podcast", {
+      ...BASE_PODCAST_CONFIG,
+      voiceSettings: preset.settings,
+    });
+    assert.ok(validated.ok, `${preset.id} settings are in range`);
+    if (validated.ok) {
+      assert.deepEqual(validated.value.voiceSettings, preset.settings);
+      // The review gate reads the stored settings back, so the round trip has
+      // to name the same preset the author chose.
+      assert.equal(
+        describeElevenLabsVoiceSettings(validated.value.voiceSettings!),
+        preset.label,
+      );
+    }
+  }
+  for (const option of ELEVENLABS_PODCAST_MODEL_OPTIONS) {
+    assert.ok(
+      validateResearchMediaRenderConfig("podcast", {
+        ...BASE_PODCAST_CONFIG,
+        model: option.id,
+      }).ok,
+      `${option.id} is a valid model id`,
+    );
+  }
+});
+
+test("settings off every preset are reported as custom, never mislabelled", () => {
+  assert.equal(
+    describeElevenLabsVoiceSettings({
+      ...DEFAULT_ELEVENLABS_VOICE_SETTINGS,
+      stability: 0.41,
+    }),
+    "Custom",
+  );
+  // A single differing field is enough — a near-match must not borrow a name,
+  // and every field has to participate or one of them silently stops mattering.
+  const base = elevenLabsDeliveryPreset("conversational")!.settings;
+  const perturbed: Record<string, unknown>[] = [
+    { stability: base.stability + 0.01 },
+    { similarityBoost: base.similarityBoost + 0.01 },
+    { style: base.style + 0.01 },
+    { useSpeakerBoost: !base.useSpeakerBoost },
+    { speed: base.speed + 0.01 },
+  ];
+  for (const change of perturbed) {
+    assert.equal(
+      describeElevenLabsVoiceSettings({ ...base, ...change }),
+      "Custom",
+      `${Object.keys(change)[0]} participates in the match`,
+    );
+  }
+});
+
+test("podcast direction is composed only where the contract accepts it", () => {
+  const directed = {
+    delivery: "conversational",
+    model: "eleven_v3",
+    seed: "20260823",
+  } as const;
+  assert.deepEqual(
+    elevenLabsPodcastDirection({
+      kind: "podcast",
+      provider: "elevenlabs",
+      ...directed,
+    }),
+    {
+      model: "eleven_v3",
+      voiceSettings: elevenLabsDeliveryPreset("conversational")!.settings,
+      seed: 20_260_823,
+    },
+  );
+  // Local podcasts and every non-podcast kind must contribute nothing: the
+  // contract rejects these three fields there, so composing them would make
+  // the create request 400 rather than degrade.
+  assert.deepEqual(
+    elevenLabsPodcastDirection({ kind: "podcast", provider: "local", ...directed }),
+    {},
+  );
+  for (const kind of ["short-video", "long-video", "blog"] as const) {
+    assert.deepEqual(
+      elevenLabsPodcastDirection({ kind, provider: "elevenlabs", ...directed }),
+      {},
+      `${kind} carries no podcast direction`,
+    );
+  }
+});
+
+test("undirected podcast fields are omitted rather than restated", () => {
+  // The whole point: a config nobody directed must be byte-identical to what
+  // the Studio sent before delivery became selectable.
+  assert.deepEqual(
+    elevenLabsPodcastDirection({
+      kind: "podcast",
+      provider: "elevenlabs",
+      delivery: "neutral",
+      model: "",
+      seed: "",
+    }),
+    {},
+  );
+  const validated = validateResearchMediaRenderConfig("podcast", {
+    ...BASE_PODCAST_CONFIG,
+    ...elevenLabsPodcastDirection({
+      kind: "podcast",
+      provider: "elevenlabs",
+      delivery: "neutral",
+      model: "",
+      seed: "",
+    }),
+  });
+  assert.ok(validated.ok);
+  if (validated.ok) {
+    assert.equal("model" in validated.value, false);
+    assert.equal("voiceSettings" in validated.value, false);
+    assert.equal("seed" in validated.value, false);
+  }
+});
+
+test("a seed the contract would reject never reaches the render config", () => {
+  for (const seed of ["abc", "-1", "1.5", "4294967296", " ", "1e400"]) {
+    const direction = elevenLabsPodcastDirection({
+      kind: "podcast",
+      provider: "elevenlabs",
+      delivery: "neutral",
+      model: "",
+      seed,
+    });
+    assert.equal("seed" in direction, false, `seed ${JSON.stringify(seed)} is dropped`);
+  }
+  for (const [seed, expected] of [["0", 0], ["4294967295", 4_294_967_295], [" 42 ", 42]] as const) {
+    assert.deepEqual(
+      elevenLabsPodcastDirection({
+        kind: "podcast",
+        provider: "elevenlabs",
+        delivery: "neutral",
+        model: "",
+        seed,
+      }),
+      { seed: expected },
+    );
+  }
+});
+
+test("an unrecognized model id is dropped instead of failing the create", () => {
+  assert.deepEqual(
+    elevenLabsPodcastDirection({
+      kind: "podcast",
+      provider: "elevenlabs",
+      delivery: "neutral",
+      model: "Eleven V3!",
+      seed: "",
+    }),
+    {},
+  );
 });

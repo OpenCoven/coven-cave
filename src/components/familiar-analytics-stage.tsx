@@ -641,15 +641,17 @@ export const SelfHealStrip = memo(function SelfHealStrip({
               >
                 {request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind]}
               </button>
-              <button
-                type="button"
-                className="fa-heal-card__trace focus-ring"
-                title="Trace the thread behind this request"
-                aria-label={`Trace ${request.title}`}
-                onClick={() => onTrace(request)}
-              >
-                <Icon name="ph:tree-structure" width={11} aria-hidden />
-              </button>
+              {request.traceSessionId ? (
+                <button
+                  type="button"
+                  className="fa-heal-card__trace focus-ring"
+                  title="Trace the thread behind this request"
+                  aria-label={`Trace ${request.title}`}
+                  onClick={() => onTrace(request)}
+                >
+                  <Icon name="ph:tree-structure" width={11} aria-hidden />
+                </button>
+              ) : null}
             </div>
           </article>
         ))}

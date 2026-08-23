@@ -34,12 +34,12 @@ assert.match(navigation, /id: "grimoire", label: "Memories"/, "grimoire has a na
 assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar renders rows from the section-filtered visible registry");
 assert.match(
   view,
-  /href="\/weaves"/,
+  /<Link\s+href="\/weaves"\s+role="menuitem"/,
   "Memories exposes its nested protected-memory Weaves destination",
 );
-assert.match(view, />\s*Weaves\s*<\/Link>/, "the protected-memory destination has a visible label");
+assert.match(view, /<span>Weaves<\/span>/, "the protected-memory destination has a visible overflow label");
 
-// ── Navigator: three sources, searchable, new-entry affordance ───────────────
+// ── Library navigator: stitches + familiar memory ────────────────────────────
 
 assert.match(view, /export function GrimoireView\(/, "GrimoireView must be exported");
 assert.match(view, /readSurfaceResource<[^>]+>\("grimoire:knowledge", force\)/, "navigator consumes the shared knowledge cache");
@@ -50,7 +50,7 @@ assert.match(warmupRegistry, /defineResource\("memory:list",[^\n]+"\/api\/memory
 assert.match(warmupRegistry, /defineResource\("grimoire:journal",[^\n]+"\/api\/journal"/, "journal cache loads journal days");
 assert.match(view, /aria-label="Search grimoire documents"/, "doc search is labelled");
 // cave-zqhr: the doc search moved OUT of the navigator rail into the compact
-// header beside the Knowledge/Journal/Relations tabs. It must be the shared
+// header beside the Library/Journal/Relations tabs. It must be the shared
 // SearchInput in the actions cluster, and the rail must not grow a second
 // input back.
 assert.match(
@@ -67,9 +67,10 @@ assert.match(view, /New stitch/, "stitches can be sewn from pinned sources here"
 assert.match(view, /Blank entry/, "hand-written entries can still be created");
 assert.match(
   view,
-  /ariaLabel="Stitches"[\s\S]*ariaLabel="Memory files"[\s\S]*ariaLabel="Journal"/,
+  /ariaLabel="Stitches"[\s\S]*ariaLabel="Memory files"/,
   "sections are labelled landmarks (RailSection renders section[aria-label])",
 );
+assert.doesNotMatch(view, /ariaLabel="Journal"/, "Journal is not duplicated inside Library");
 assert.match(view, /<section aria-label=\{ariaLabel\}>/, "RailSection emits the section landmark");
 
 // ── Navigator sections collapse (persisted), search overrides collapse ──────
@@ -82,7 +83,6 @@ assert.match(
 );
 assert.match(view, /ariaLabel="Stitches"\s+icon="ph:book-open"/, "stitches carry their kind icon");
 assert.match(view, /ariaLabel="Memory files"\s+icon="ph:brain"/, "memory carries its kind icon");
-assert.match(view, /ariaLabel="Journal"\s+icon="ph:calendar-blank"/, "journal carries its kind icon");
 
 // ── Whole navigator collapse (persisted compact rail) ───────────────────────
 assert.match(
@@ -102,7 +102,7 @@ assert.match(
 );
 assert.match(view, /aria-label="Open Stitches navigator"/, "compact rail keeps Stitches reachable");
 assert.match(view, /aria-label="Open Memory files navigator"/, "compact rail keeps memory files reachable");
-assert.match(view, /aria-label="Open Journal navigator"/, "compact rail keeps Journal reachable");
+assert.doesNotMatch(view, /aria-label="Open Journal navigator"/, "compact Library rail does not duplicate Journal");
 assert.match(
   view,
   /const navigatorCollapsedForDisplay = navigatorCollapsed && !q;/,
@@ -153,7 +153,7 @@ assert.match(
   /const scopedMemory = useMemo\(\s*\(\) => \(memory \?\? \[\]\)\.filter\(\(e\) => familiarInScope\(memoryScope, e\.familiarId\)\)/,
   "memory files are filtered by the selected familiars before search",
 );
-assert.match(view, /memory=\{scopedMemory\}/, "the launcher's memory stats/jumps use the same scoped list as the rail");
+assert.match(view, /memory=\{scopedMemory\}/, "the launcher's Recall rows use the same scoped list as the rail");
 assert.match(
   view,
   /No memory for \$\{memoryScopeLabel\} yet/,
@@ -247,11 +247,11 @@ assert.match(
 assert.match(view, /Show more \(\{group\.entries\.length - limit\} remaining\)/, "each group pages independently");
 
 // ── (grimoire-audit Batch A quick wins) ──────────────────────────────────────
-// cave-0rx0: journal dates honor the user's datetime prefs everywhere (rail
-// rows, tab labels, editor footer, delete confirm) instead of raw ISO.
+// cave-0rx0: journal dates honor the user's datetime prefs everywhere they
+// remain visible (Continue, tabs, editor footer, delete confirm).
 assert.match(view, /function journalDayLabel\(date: string, prefs: DateTimePrefs\)/, "there is a shared journal date label helper");
 assert.match(view, /new Date\(`\$\{date\}T00:00:00`\)/, "date-only strings anchor to local midnight (no UTC day shift)");
-assert.match(view, /title=\{journalDayLabel\(day\.date, dateTimePrefs\)\}/, "rail journal rows format through prefs");
+assert.match(view, /journalTitle=\{\(date\) => journalDayLabel\(date, dateTimePrefs\)\}/, "Continue journal rows format through prefs");
 assert.match(view, /return journalDayLabel\(sel\.date, dateTimePrefs\)/, "journal tab labels format through prefs");
 assert.match(view, /Journal · \$\{journalDayLabel\(date, dateTimePrefs\)\}/, "the editor footer source label formats through prefs");
 assert.match(view, /journalDayLabel\(selection\.date, readDateTimePrefs\(\)\)/, "the delete confirm formats through prefs");
@@ -260,7 +260,8 @@ assert.match(view, /evictedRef\.current = tabs\[evictIndex\] \?\? null/, "openDo
 assert.match(view, /announce\(`Closed \$\{tabTitle\(evictedRef\.current\)\} — \$\{MAX_OPEN_TABS\}-tab limit reached`/, "evictions are announced post-commit");
 // cave-gsvf: search results are announced to screen readers (debounced).
 assert.match(view, /No documents match/, "an empty result set announces");
-assert.match(view, /stitches, \$\{visibleMemory\.length\} memory, \$\{visibleJournal\.length\} journal/, "match counts announce per section");
+assert.match(view, /stitches, \$\{visibleMemory\.length\} memory/, "Library search announces stitches and memory counts");
+assert.doesNotMatch(view, /visibleJournal\.length\} journal/, "Library search does not report a hidden Journal group");
 // cave-bkpj: unresolved wiki-link chips are actionable on touch — tapping
 // shows a visible hint (and announces it) instead of a hover-only title.
 assert.match(view, /const \[unresolvedHint, setUnresolvedHint\] = useState<string \| null>/, "unresolved chips have a tap-visible hint");

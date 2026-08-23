@@ -99,8 +99,12 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   await expect(panel).toContainText("Newest Cody chat");
   await expect(panel).not.toContainText("Nova must not be selected");
 
+  await page.getByRole("button", { name: "Expand navigation" }).click();
+  const navigation = page.locator(".shell-nav");
+  await expect(navigation).toHaveAttribute("aria-hidden", "false");
+
   const chooseFamiliar = async (name: string) => {
-    await page.locator('button[aria-label^="Switch familiar"]:visible').first().click();
+    await navigation.locator('button[aria-label^="Switch familiar"]').click();
     await page.getByRole("dialog", { name: "Familiars" }).getByText(name, { exact: true }).last().click();
   };
 
@@ -132,12 +136,10 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   expect(Math.abs((after?.width ?? 0) - before.width)).toBeGreaterThan(10);
 
   const chatTab = page.getByRole("tablist", { name: "Workspace sections" }).getByRole("tab", { name: "Chat" });
-  // The keyboard resize above leaves the nav rail collapsed to its narrow icon
-  // width, close enough to the nav/detail separator that react-resizable-panels'
-  // separator hit-slop swallows the first pointerdown here as a phantom
-  // zero-delta drag (see node_modules/react-resizable-panels' `je`/`we`
-  // handlers). A harmless first click (still on "Home", a no-op) clears that
-  // state so the real navigation click below lands normally.
+  // The keyboard resize above can leave the separator's expanded pointer
+  // target armed, so the first pointerdown here is swallowed as a zero-delta
+  // drag. A harmless first click (still on "Home", a no-op) clears that state
+  // so the real navigation click below lands normally.
   await chatTab.click();
   await chatTab.click();
   await expect(page.locator(".chat-surface")).toBeVisible();
@@ -193,18 +195,47 @@ test("mobile uses one focus-trapped right drawer and returns focus", async ({ pa
 
   // The drawer intentionally spans the full viewport width on narrow phones
   // (`.mobile-right-chat-drawer` under `@media (max-width: 480px)`), so on
-  // Pixel 5 (393px) and iPhone 13 (390px) its own header can legitimately sit
-  // on top of the backdrop button at every coordinate, including this one —
-  // Playwright's actionability check then waits (flakily) for a visually
-  // uncovered pixel that never appears. `force: true` dispatches the click
-  // straight to the backdrop button regardless of what's visually on top,
-  // which is exactly right here: the assertion is about the backdrop's own
-  // close handler, not about a hit-test that full-width drawers can't pass.
+  // Pixel 5 (393px) and iPhone 13 (390px) it covers the backdrop button at
+  // EVERY coordinate once its slide-in has settled — its own header is what
+  // sits at the top-left pixel.
+  //
+  // `force: true` does not rescue that, and believing it did is what kept
+  // this line flaky across three CI runs (cave-m1mgi). `force` only skips
+  // the actionability checks; Playwright still delivers a real mouse event
+  // at real viewport coordinates, so the click lands on whatever is topmost
+  // there, not on the located element. Whether that was the backdrop or the
+  // drawer depended on how far `mobile-right-chat-in` (translateX(100%) → 0
+  // over `--duration-base`, 180ms) had advanced at the instant the event was
+  // delivered: a fast round trip caught the drawer still off-screen and
+  // passed, a slow one hit the settled drawer and failed, which is why CI
+  // lost both the first attempt and the in-process retry but passed on a
+  // fresh job. Measured on this viewport with CDP CPU throttling, which is
+  // what a loaded runner looks like: 0/10 failures unthrottled, 7/10 at 2×,
+  // 10/10 at 4× and at 8×. The dispatch below was 0/40 across all four.
+  //
+  // So invoke the backdrop button's own click instead of aiming a pointer at
+  // a pixel this layout never exposes. The assertion below is unchanged —
+  // this is still "the backdrop's close handler dismisses the drawer" — it
+  // just no longer races an animation to ask the question.
   await toggle.click();
-  await page
-    .getByRole("button", { name: "Close drawer" })
-    .click({ position: { x: 2, y: 2 }, force: true });
+  await expect(drawer).toBeVisible();
+  const backdrop = page.getByRole("button", { name: "Close drawer" });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () => !!document.elementFromPoint(2, 2)?.closest("#shell-right-chat-drawer"),
+        ),
+      {
+        message:
+          "the full-width drawer should cover the backdrop at the top-left pixel; if it no longer does, a real pointer click on the backdrop is available again and should replace the dispatch below",
+      },
+    )
+    .toBe(true);
+  await backdrop.dispatchEvent("click");
   await expect(drawer).toBeHidden();
+  await expect(backdrop).toHaveCount(0);
+  await expect(toggle).toBeFocused();
 
   await toggle.click();
   await drawer.getByRole("button", { name: "Close Chat panel" }).click();

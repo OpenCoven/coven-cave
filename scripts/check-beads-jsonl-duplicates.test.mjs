@@ -143,6 +143,9 @@ test("a checkout path containing a space still runs the CLI", () => {
   const dir = mkdtempSync(join(tmpdir(), "beads dup guard "));
   const script = join(dir, "check.mjs");
   copyFileSync(join(repoRoot, "scripts/check-beads-jsonl-duplicates.mjs"), script);
+  // The direct-run guard is a sibling module, so the copy needs it alongside
+  // under the name the script imports.
+  copyFileSync(join(repoRoot, "scripts/direct-run.mjs"), join(dir, "direct-run.mjs"));
   const dirty = join(dir, "dirty.jsonl");
   writeFileSync(dirty, [rec("a"), rec("a")].join("\n") + "\n");
 
@@ -152,6 +155,20 @@ test("a checkout path containing a space still runs the CLI", () => {
     1,
     `CLI must still run from a path with a space (got ${res.status}); ` +
       "a naive file:// concatenation silently no-ops here",
+  );
+  // Status alone is too weak to prove the CLI ran: a module that fails to load
+  // also exits 1, so this assertion passed for the wrong reason the moment the
+  // guard moved into a sibling module. Pin the output that only real work
+  // produces.
+  assert.doesNotMatch(
+    res.stderr,
+    /ERR_MODULE_NOT_FOUND|Cannot find module/,
+    "the copied CLI must load its imports, not exit 1 because one is missing",
+  );
+  assert.match(
+    `${res.stdout}${res.stderr}`,
+    /duplicate/i,
+    "and must exit 1 because it found the duplicate, not for any other reason",
   );
   rmSync(dir, { recursive: true, force: true });
 });

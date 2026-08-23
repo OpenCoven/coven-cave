@@ -1,5 +1,5 @@
 /**
- * Agentic next-pass direction drafting for Research Desk checkpoints.
+ * Agentic next-iteration direction drafting for Research Desk checkpoints.
  *
  * The familiar proposes one execution-ready direction from persisted mission
  * evidence. It never continues the mission itself: the proposal lands in the
@@ -10,6 +10,7 @@
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import { extractNextPaths } from "@/lib/next-paths";
 import {
+  nextResearchIterationNumber,
   RESEARCH_DIRECTION_MAX_LENGTH,
   type ResearchMission,
   type ResearchSourceRef,
@@ -68,7 +69,7 @@ export function buildResearchRefineDirectionPrompt(
     mission.constraints.length
       ? `Constraints: ${mission.constraints.map((constraint) => compact(constraint, 240)).join("; ")}`
       : "Constraints: none beyond the mission bounds.",
-    `Next pass: ${mission.iterations.length + 1} of ${mission.bounds.maxIterations}`,
+    `Next iteration: ${nextResearchIterationNumber(mission)} of ${mission.bounds.maxIterations}`,
     `Remaining source target: ${Math.max(0, mission.bounds.sourceTarget - mission.sources.length)}`,
     iteration?.summary ? `Latest synthesis: ${compact(iteration.summary, 900)}` : "",
     iteration?.decisionReason ? `Control decision: ${compact(iteration.decisionReason, 700)}` : "",
@@ -80,7 +81,7 @@ export function buildResearchRefineDirectionPrompt(
   ].filter(Boolean);
 
   return [
-    "You are the mission familiar choosing the highest-value next bounded research pass.",
+    "You are the mission familiar choosing the highest-value next bounded research iteration.",
     "Produce one execution-ready refined direction that can be passed verbatim to the next iteration. Do not perform the research and do not summarize the checkpoint.",
     "Write agentically: lead with imperative verbs, commit to one coherent course, and state what evidence to gather or verify, which uncertainty to resolve, and what the updated artifact must establish.",
     "Prefer the highest-impact unresolved conflict or evidence gap. Preserve every explicit operator priority and mission constraint. Do not broaden the mission, offer a menu of options, ask a question, request approval, or use hedges such as “consider”, “could”, or “might”.",

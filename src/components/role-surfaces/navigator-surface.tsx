@@ -5,9 +5,10 @@
  *
  * Course-plotting over the Cave's real board. Every step in this room is a real
  * card from `/api/board`, every lane is a real board lane, and every move is a
- * real write. The one thing the board does not record is which step *waits on*
- * which, so that lives as the operator's chart overlay in the room's own
- * surface state and is drawn over the cards.
+ * real write — dependencies included: they are canonical on the card
+ * (`Card.dependencies`), every link and cut here writes the card, and the old
+ * per-familiar overlay survives only as a read-side legacy store whose edges
+ * are imported onto the cards on load (idempotent — see `overlayImportPlan`).
  *
  * Four readings of the same work — Flow (the lanes), Graph (dependency depth),
  * Orchestration (who and what it draws on), Table (sortable, editable, plus a
@@ -28,7 +29,7 @@ import {
 } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon, type IconName } from "@/lib/icon";
-import type { Card, CardStatus } from "@/lib/cave-board-types";
+import type { Card, CardStatus, TaskDependency } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
 import { useRoleSurfaceState } from "@/lib/role-surface-state";
@@ -67,6 +68,7 @@ import {
   graphLayout,
   lockedSteps,
   normalizeOverlay,
+  overlayImportPlan,
   routeSet,
   setDependency,
   sortSteps,
@@ -146,7 +148,7 @@ const LENSES: Array<{ id: ChartRoomLens; label: string }> = [
 
 const HELP: Record<ChartRoomLens, Array<[IconName, string, string]>> = {
   flow: [
-    ["ph:link", "Link a dependency", "Drag the dot on a step's right edge onto whatever waits on it."],
+    ["ph:link", "Link a dependency", "Drag the dot on a step's right edge onto whatever waits on it. A step can wait on several — dragging adds, never replaces."],
     ["ph:cursor-click", "Trace a chain", "Hover a step to light its whole chain; click to open it."],
     ["ph:arrows-left-right", "Move it", "Inside a step, walk the lane carousel. Every move writes the real card."],
     ["ph:caret-down", "See more", "Every step has a more toggle — what to do with it, without leaving the board."],
@@ -171,7 +173,7 @@ const HELP: Record<ChartRoomLens, Array<[IconName, string, string]>> = {
   list: [
     ["ph:arrows-down-up", "Sort", "Click a column header to sort; click again to reverse it."],
     ["ph:funnel", "Filter", "By text, or narrow to what needs you, what's linked, late, or running."],
-    ["ph:pencil-simple", "Edit in place", "Project, lane, title and owner write the card. Waits on writes the chart."],
+    ["ph:pencil-simple", "Edit in place", "Every column writes the real card — Waits on included, as canonical dependencies."],
     ["ph:arrows-out-simple", "Open a step", "The expand icon on a row opens the full step."],
   ],
   decisions: [
@@ -183,7 +185,15 @@ const HELP: Record<ChartRoomLens, Array<[IconName, string, string]>> = {
 
 type UndoEntry =
   | { kind: "overlay"; overlay: ChartOverlay; label: string }
-  | { kind: "stage"; id: string; stage: ChartStageId; label: string };
+  | { kind: "stage"; id: string; stage: ChartStageId; label: string }
+  | {
+      kind: "deps";
+      id: string;
+      dependencies: TaskDependency[];
+      primaryBlockerId: string | null;
+      primaryBlockerPinned: boolean;
+      label: string;
+    };
 
 type AuditEntry = { id: string; iconName: IconName; text: string };
 
@@ -382,7 +392,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     setAudit((entries) => [{ id: `edit-${auditSeq.current}`, iconName, text }, ...entries].slice(0, 12));
   }, []);
 
-  // ── Chart writes (the overlay) ─────────────────────────────────────────────
+  // ── Legacy overlay writes (prunes only — dependency edits write the card) ──
 
   const writeOverlay = useCallback(
     (next: ChartOverlay, label: string, iconName: IconName) => {
@@ -391,27 +401,6 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       note(iconName, label);
     },
     [note, overlay, patch],
-  );
-
-  const linkSteps = useCallback(
-    (stepId: string, needs: string | null) => {
-      const step = allSteps.find((entry) => entry.id === stepId);
-      const target = needs == null ? null : allSteps.find((entry) => entry.id === needs);
-      if (!step) return;
-      writeOverlay(
-        setDependency(overlay, stepId, needs),
-        needs == null
-          ? `Unlinked “${step.title}”`
-          : `Linked — “${step.title}” now waits on “${target?.title ?? needs}”`,
-        needs == null ? "ph:scissors" : "ph:link",
-      );
-      announce(
-        needs == null
-          ? `Unlinked ${step.title}.`
-          : `${step.title} now waits on ${target?.title ?? "another step"}.`,
-      );
-    },
-    [allSteps, announce, overlay, writeOverlay],
   );
 
   // ── Board writes (real cards) ──────────────────────────────────────────────
@@ -426,14 +415,29 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error(`status ${res.status}`);
+        if (!res.ok) {
+          // The board's validator explains a refused orchestration write; that
+          // explanation is the actionable part, so carry it to the operator.
+          let detail = "";
+          try {
+            const json = (await res.json()) as { errors?: Array<{ message?: string }> };
+            detail = json.errors?.[0]?.message ?? "";
+          } catch {
+            /* a bare status is still a failure */
+          }
+          throw new Error(detail || `status ${res.status}`);
+        }
         publishBoardChanged();
         await loadBoard({ retainData: true });
         announce(success);
         return true;
-      } catch {
-        setWriteError(failure);
-        announce(failure, "assertive");
+      } catch (error) {
+        const detail =
+          error instanceof Error && error.message && !error.message.startsWith("status ")
+            ? ` ${error.message}`
+            : "";
+        setWriteError(`${failure}${detail}`);
+        announce(`${failure}${detail}`, "assertive");
         return false;
       } finally {
         setSaving(false);
@@ -441,6 +445,173 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     },
     [announce, loadBoard],
   );
+
+  // ── Dependency writes (canonical on the card) ──────────────────────────────
+
+  const cardById = useCallback((id: string) => (cards ?? []).find((entry) => entry.id === id), [cards]);
+
+  const linkSteps = useCallback(
+    async (stepId: string, parentId: string) => {
+      if (stepId === parentId) return;
+      const step = allSteps.find((entry) => entry.id === stepId);
+      const target = allSteps.find((entry) => entry.id === parentId);
+      const card = cardById(stepId);
+      if (!step || !target || !card) return;
+      const existing = card.dependencies ?? [];
+      if (existing.some((dep) => dep.kind === "task" && dep.taskId === parentId)) return;
+      const addition: TaskDependency = {
+        id: crypto.randomUUID(),
+        kind: "task",
+        label: target.title,
+        taskId: parentId,
+        state: "unresolved",
+        origin: "human",
+        createdAt: new Date().toISOString(),
+      };
+      const label = `Linked — “${step.title}” now waits on “${target.title}”`;
+      const ok = await patchCard(
+        stepId,
+        { dependencies: [...existing, addition] },
+        `${step.title} now waits on ${target.title}.`,
+        "Link failed — the board didn't accept the dependency.",
+      );
+      if (ok) {
+        setHistory((entries) =>
+          [
+            {
+              kind: "deps" as const,
+              id: stepId,
+              dependencies: existing,
+              primaryBlockerId: card.primaryBlockerId ?? null,
+              primaryBlockerPinned: card.primaryBlockerPinned === true,
+              label,
+            },
+            ...entries,
+          ].slice(0, 25),
+        );
+        note("ph:link", label);
+      }
+    },
+    [allSteps, cardById, note, patchCard],
+  );
+
+  const unlinkSteps = useCallback(
+    async (stepId: string, parentId: string) => {
+      const step = allSteps.find((entry) => entry.id === stepId);
+      const target = allSteps.find((entry) => entry.id === parentId);
+      const card = cardById(stepId);
+      if (!step || !card) return;
+      const existing = card.dependencies ?? [];
+      const removed = existing.filter((dep) => dep.kind === "task" && dep.taskId === parentId);
+      const kept = existing.filter((dep) => !(dep.kind === "task" && dep.taskId === parentId));
+      const label = `Unlinked — “${step.title}” no longer waits on “${target?.title ?? parentId}”`;
+
+      // An edge that only ever lived in the legacy overlay (its import was
+      // refused, or has not landed yet) is cut by pruning the overlay store —
+      // otherwise the union would resurrect it on the next read.
+      const overlayHasEdge = overlay.dependsOn[stepId] === parentId;
+      if (removed.length === 0) {
+        if (overlayHasEdge) {
+          writeOverlay(setDependency(overlay, stepId, null), label, "ph:scissors");
+          announce(`Unlinked ${step.title}.`);
+        }
+        return;
+      }
+
+      const body: Record<string, unknown> = { dependencies: kept };
+      // Cutting the primary blocker re-points it deterministically rather than
+      // leaving a dangling reference for the validator to refuse.
+      if (card.primaryBlockerId != null && removed.some((dep) => dep.id === card.primaryBlockerId)) {
+        body.primaryBlockerId = kept.find((dep) => dep.state === "unresolved")?.id ?? null;
+        if (card.primaryBlockerPinned === true) body.primaryBlockerPinned = false;
+      }
+      const ok = await patchCard(
+        stepId,
+        body,
+        `Unlinked ${step.title}.`,
+        "Cut failed — the board didn't accept the change.",
+      );
+      if (ok) {
+        if (overlayHasEdge) patch({ overlay: setDependency(overlay, stepId, null) });
+        setHistory((entries) =>
+          [
+            {
+              kind: "deps" as const,
+              id: stepId,
+              dependencies: existing,
+              primaryBlockerId: card.primaryBlockerId ?? null,
+              primaryBlockerPinned: card.primaryBlockerPinned === true,
+              label,
+            },
+            ...entries,
+          ].slice(0, 25),
+        );
+        note("ph:scissors", label);
+      }
+    },
+    [allSteps, announce, cardById, note, overlay, patch, patchCard, writeOverlay],
+  );
+
+  // ── Overlay import (idempotent, merge-never-overwrite) ─────────────────────
+
+  // Each legacy overlay edge becomes a canonical `kind: task` dependency with
+  // `origin: system` and evidence naming the import. The plan only ever ADDS —
+  // a canonical edge is never overwritten, so divergent per-browser maps union
+  // and a re-run is a no-op. An edge the validator refuses (say it would close
+  // a canonical cycle) stays in the overlay union and is not retried this
+  // session; the signature guard stops a refused import from looping.
+  const importAttemptedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (cards == null) return;
+    const plan = overlayImportPlan(cards, overlay);
+    if (plan.length === 0) return;
+    const signature = plan.map((entry) => `${entry.stepId}->${entry.needs}`).join("|");
+    if (importAttemptedRef.current === signature) return;
+    importAttemptedRef.current = signature;
+    const titles = new Map(cards.map((entry) => [entry.id, entry.title]));
+    const byCard = new Map<string, string[]>();
+    for (const entry of plan) {
+      const bucket = byCard.get(entry.stepId);
+      if (bucket) bucket.push(entry.needs);
+      else byCard.set(entry.stepId, [entry.needs]);
+    }
+    void (async () => {
+      let imported = 0;
+      for (const [cardId, parents] of byCard) {
+        const card = cards.find((entry) => entry.id === cardId);
+        if (!card) continue;
+        const existing = card.dependencies ?? [];
+        const additions: TaskDependency[] = parents
+          .filter((parentId) => !existing.some((dep) => dep.kind === "task" && dep.taskId === parentId))
+          .map((parentId) => ({
+            id: crypto.randomUUID(),
+            kind: "task",
+            label: titles.get(parentId) ?? parentId,
+            taskId: parentId,
+            state: "unresolved",
+            origin: "system",
+            createdAt: new Date().toISOString(),
+            evidence: "Imported from the Chart Room dependency overlay",
+          }));
+        if (additions.length === 0) continue;
+        try {
+          const res = await fetch(`/api/board/${encodeURIComponent(cardId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dependencies: [...existing, ...additions] }),
+          });
+          if (res.ok) imported += additions.length;
+        } catch {
+          /* the edge survives in the overlay union; a later session retries */
+        }
+      }
+      if (imported > 0) {
+        publishBoardChanged();
+        await loadBoard({ retainData: true });
+        note("ph:link", `Imported ${imported} chart link${imported === 1 ? "" : "s"} onto the board`);
+      }
+    })();
+  }, [cards, loadBoard, note, overlay]);
 
   const moveStage = useCallback(
     async (id: string, stage: ChartStageId, options?: { record?: boolean }) => {
@@ -591,16 +762,28 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       patch({ overlay: entry.overlay });
       note("ph:arrow-arc-left", `Undid — ${entry.label}`);
       announce("Undid the last chart edit.");
+    } else if (entry.kind === "deps") {
+      void patchCard(
+        entry.id,
+        {
+          dependencies: entry.dependencies,
+          primaryBlockerId: entry.primaryBlockerId,
+          primaryBlockerPinned: entry.primaryBlockerPinned,
+        },
+        "Undid the last dependency edit.",
+        "Undo failed — the board didn't accept the change.",
+      );
+      note("ph:arrow-arc-left", `Undid — ${entry.label}`);
     } else {
       void moveStage(entry.id, entry.stage, { record: false });
       note("ph:arrow-arc-left", `Undid — ${entry.label}`);
     }
-  }, [announce, history, moveStage, note, patch]);
+  }, [announce, history, moveStage, note, patch, patchCard]);
 
   const applyAction = useCallback(
     (action: ChartProposalAction) => {
       if (action.type === "cut-dependency") {
-        linkSteps(action.stepId, null);
+        void unlinkSteps(action.stepId, action.needs);
         return;
       }
       if (action.type === "move-stage") {
@@ -611,7 +794,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       setTraceOnly(false);
       setChainOpen(true);
     },
-    [linkSteps, moveStage, patch],
+    [moveStage, patch, unlinkSteps],
   );
 
   // ── Selection, hover, route ────────────────────────────────────────────────
@@ -651,7 +834,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       const under = document.elementFromPoint?.(event.clientX, event.clientY) ?? null;
       const host = under instanceof Element ? under.closest("[data-step-id]") : null;
       const target = host?.getAttribute("data-step-id");
-      if (target && target !== from) linkSteps(target, from);
+      if (target && target !== from) void linkSteps(target, from);
       setDrag(null);
     };
     window.addEventListener("pointermove", move);
@@ -757,8 +940,8 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
       const id = queue.shift() as string;
       const node = allSteps.find((step) => step.id === id);
       const neighbours: string[] = [];
-      if (node?.needs) neighbours.push(node.needs);
-      for (const step of allSteps) if (step.needs === id) neighbours.push(step.id);
+      for (const parentId of node?.needs ?? []) neighbours.push(parentId);
+      for (const step of allSteps) if (step.needs.includes(id)) neighbours.push(step.id);
       for (const neighbour of neighbours) {
         if (!seen.has(neighbour) && seen.size < 16) {
           seen.add(neighbour);
@@ -788,28 +971,30 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
     });
     const holdIndex = chain.findIndex((step) => step.state === "overdue" || step.state === "decision");
     const held = holdIndex >= 0 ? chain[holdIndex] : null;
-    const edges = nodes.flatMap((step) => {
-      const from = step.needs ? at.get(step.needs) : undefined;
-      const to = at.get(step.id);
-      if (!from || !to) return [];
-      const source = nodes.find((other) => other.id === step.needs);
-      const backwards = from.x >= to.x;
-      const hot = source != null && (source.state === "overdue" || source.id === held?.id);
-      const x1 = from.x + NW;
-      const y1 = from.y + NH / 2;
-      const x2 = to.x;
-      const y2 = to.y + NH / 2;
-      const mid = backwards ? x1 + 22 : x1 + (x2 - x1) / 2;
-      return [
-        {
-          id: `${step.needs}->${step.id}`,
-          hot,
-          d: backwards
-            ? `M${x1} ${y1} C${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`
-            : `M${x1} ${y1} C${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`,
-        },
-      ];
-    });
+    const edges = nodes.flatMap((step) =>
+      step.needs.flatMap((parentId) => {
+        const from = at.get(parentId);
+        const to = at.get(step.id);
+        if (!from || !to) return [];
+        const source = nodes.find((other) => other.id === parentId);
+        const backwards = from.x >= to.x;
+        const hot = source != null && (source.state === "overdue" || source.id === held?.id);
+        const x1 = from.x + NW;
+        const y1 = from.y + NH / 2;
+        const x2 = to.x;
+        const y2 = to.y + NH / 2;
+        const mid = backwards ? x1 + 22 : x1 + (x2 - x1) / 2;
+        return [
+          {
+            id: `${parentId}->${step.id}`,
+            hot,
+            d: backwards
+              ? `M${x1} ${y1} C${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`
+              : `M${x1} ${y1} C${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`,
+          },
+        ];
+      }),
+    );
     return {
       width,
       height,
@@ -859,7 +1044,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
         shipped,
         late: mine.filter((step) => step.state === "overdue").length,
         running: mine.filter((step) => step.state === "running").length,
-        waiting: mine.filter((step) => step.needs != null).length,
+        waiting: mine.filter((step) => step.needs.length > 0).length,
         percent: mine.length > 0 ? Math.max(6, Math.round((shipped / mine.length) * 100)) : 0,
       };
     });
@@ -1059,7 +1244,8 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
               "Couldn't reassign it — the board didn't accept it.",
             )
           }
-          onNeeds={linkSteps}
+          onLink={(id, parentId) => void linkSteps(id, parentId)}
+          onUnlink={(id, parentId) => void unlinkSteps(id, parentId)}
           onRemove={(id) => void removeStep(id)}
           onToggleColumn={(stage) =>
             patch({
@@ -1257,7 +1443,7 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                 <ul aria-label="Recently completed cards">
                   {recentlyDone.map((card) => {
                     const open = openDone === card.id;
-                    const unblocked = allSteps.filter((step) => step.needs === card.id);
+                    const unblocked = allSteps.filter((step) => step.needs.includes(card.id));
                     return (
                       <li key={card.id} className="cr-done__item" data-open={open}>
                         <button
@@ -1689,18 +1875,19 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
                 <Icon name={focusMode ? "ph:corners-in" : "ph:corners-out"} width={11} height={11} aria-hidden />
                 {focusMode ? "Exit" : "Expand"}
               </button>
-              <button
-                type="button"
-                className="cr-btn focus-ring"
-                title="Discard this session's links — the board's own cards are untouched"
-                disabled={Object.keys(overlay.dependsOn).length === 0}
-                onClick={() => {
-                  writeOverlay(EMPTY_OVERLAY, "Cleared every link in the chart", "ph:arrow-counter-clockwise");
-                  announce("Cleared the chart's links.");
-                }}
-              >
-                <Icon name="ph:arrow-counter-clockwise" width={11} height={11} aria-hidden /> Clear links
-              </button>
+              {Object.keys(overlay.dependsOn).length > 0 ? (
+                <button
+                  type="button"
+                  className="cr-btn focus-ring"
+                  title="Discard the legacy overlay's surviving links — canonical dependencies on the cards are untouched"
+                  onClick={() => {
+                    writeOverlay(EMPTY_OVERLAY, "Cleared the legacy chart links", "ph:arrow-counter-clockwise");
+                    announce("Cleared the legacy chart links.");
+                  }}
+                >
+                  <Icon name="ph:arrow-counter-clockwise" width={11} height={11} aria-hidden /> Clear legacy links
+                </button>
+              ) : null}
             </div>
 
             {selected && chainOpen && chain.length > 1 && lens !== "decisions" ? (
@@ -1762,15 +1949,16 @@ export function NavigatorSurface({ context }: { context: RoleSurfaceContext }) {
               "Couldn't change the project — the board didn't accept it.",
             )
           }
-          onNeeds={(needs) => {
-            linkSteps(selected.id, needs);
+          onLink={(parentId) => {
+            void linkSteps(selected.id, parentId);
             setUpstreamPickerOpen(false);
           }}
+          onUnlink={(parentId) => void unlinkSteps(selected.id, parentId)}
           onConnect={(dependantId) => {
-            linkSteps(dependantId, selected.id);
+            void linkSteps(dependantId, selected.id);
             setDownstreamPickerOpen(false);
           }}
-          onCut={(dependantId) => linkSteps(dependantId, null)}
+          onCut={(dependantId) => void unlinkSteps(dependantId, selected.id)}
           onSelect={(id) => patch({ selectedId: id })}
           onToggleUpstream={() => {
             setUpstreamPickerOpen((open) => !open);

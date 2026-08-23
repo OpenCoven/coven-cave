@@ -33,8 +33,10 @@ import {
 } from "./child-spawn-env.ts";
 import { managedNodePaths, managedNodeSpawnEnv } from "./server/managed-node-toolchain.ts";
 import { loadVaultMap } from "./vault.ts";
+import { isWindowsRemoteExecutablePath } from "./windows-local-path.ts";
 
 export { scrubSidecarInternalEnv } from "./child-spawn-env.ts";
+export { isWindowsRemoteExecutablePath } from "./windows-local-path.ts";
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
@@ -130,10 +132,17 @@ export function runnableNodeToolchainDirs(
       return false;
     }
     const npm = path.join(/* turbopackIgnore: true */ directory, npmName);
-    const env = scrubSidecarInternalEnv({
-      ...sourceEnv,
-      PATH: [directory, sourceEnv.PATH].filter(Boolean).join(path.delimiter),
-    });
+    const env = scrubSidecarInternalEnv(
+      withSearchPath(
+        sourceEnv,
+        [
+          directory,
+          environmentValue(sourceEnv, "PATH", platform),
+        ].filter(Boolean).join(path.delimiter),
+        platform,
+      ),
+      platform,
+    );
     try {
       const nodeTimeout = remainingDiscoveryTimeout(1500, dependencies.deadline, now);
       if (nodeTimeout <= 0) return false;
@@ -356,12 +365,6 @@ function windowsRegistryPath(discovery: DiscoveryOptions): string | null {
 export const COVEN_WINDOWS_NOT_FOUND_DIAGNOSTIC =
   "Coven CLI was not found in Cave's launch environment. Install or repair @opencoven/cli, restart Cave, and try again.";
 
-/** UNC and extended-UNC paths cross Cave's owner-local executable boundary. */
-export function isWindowsRemoteExecutablePath(candidate: string): boolean {
-  const normalized = candidate.replaceAll("/", "\\");
-  return /^\\\\[^?.\\]/.test(normalized) || /^\\\\\?\\UNC\\/i.test(normalized);
-}
-
 function verifiedAbsoluteBinary(
   candidate: string,
   platform: NodeJS.Platform = process.platform,
@@ -369,7 +372,7 @@ function verifiedAbsoluteBinary(
   const pathApi = platform === "win32" ? path.win32 : path;
   const crossHostAbsolute = platform !== process.platform && path.isAbsolute(candidate);
   if (!pathApi.isAbsolute(candidate) && !crossHostAbsolute) return null;
-  // A Cave-owned local daemon/CLI must not be sourced from a remote UNC share.
+  // A Cave-owned local daemon/CLI must not be sourced from another machine.
   // Besides crossing the local trust boundary, probing one synchronously can
   // defeat the bounded onboarding/status request when the share is offline.
   if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) {
@@ -399,13 +402,61 @@ function environmentValue(
 }
 
 /**
+ * Copy `env` with its search path replaced, under the key the host actually
+ * uses. Exported for tests.
+ *
+ * `{ ...env, PATH: value }` is wrong on Windows and silently so. The variable
+ * is case-insensitive to Windows but an ordinary own property to JavaScript,
+ * and a process launched from PowerShell, cmd, Explorer, or the Tauri shell
+ * inherits it spelled `Path`. Spreading such an environment and then assigning
+ * `PATH` therefore does not overwrite anything — it ADDS a second key, leaving
+ * the untouched `Path` ahead of it in insertion order. Every case-insensitive
+ * reader here (`environmentValue`, `augmentedSpawnPath`) takes the FIRST match,
+ * so it reads the original value and the replacement is inert. Only a shell
+ * that exports the name as `PATH` — MSYS/Git Bash, POSIX — ever saw the
+ * intended value, which is why the same command behaved differently in two
+ * terminals on one machine (cave-6bb4m).
+ *
+ * What that cost: `covenBin()` builds Cave's priority-ordered search path
+ * precisely so the npm-published CLI outranks a stale `cargo install` copy in
+ * `~/.cargo/bin` (see this module's header). Dropping it fell back to raw PATH
+ * order, `~/.cargo/bin` sorts first on a typical Windows developer machine, and
+ * the maintenance gate refused a supported install with
+ * `coven-version-unsupported` while naming nothing.
+ */
+export function withSearchPath(
+  env: NodeJS.ProcessEnv,
+  pathValue: string,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...env };
+  if (platform !== "win32") {
+    next.PATH = pathValue;
+    return next;
+  }
+  // Collapse every spelling to one key so no reader can pick a stale twin,
+  // and keep the casing the host supplied so the child sees a normal
+  // environment rather than a second variable Windows would merge unpredictably.
+  let key: string | null = null;
+  for (const name of Object.keys(next)) {
+    if (name.toUpperCase() !== "PATH") continue;
+    if (key === null) key = name;
+    else delete next[name];
+  }
+  next[key ?? "PATH"] = pathValue;
+  return next;
+}
+
+/**
  * Resolve Coven from one explicit environment without invoking `where.exe`.
  *
  * Windows' executable search checks the child cwd before PATH. Research and
  * onboarding operate inside user-controlled project/workspace directories,
  * so a bare `where coven` or `spawn("coven")` can select a planted launcher.
  * Only an existing absolute override or a launcher inside an absolute PATH
- * entry is eligible here. Relative entries and remote UNC paths fail closed.
+ * entry is eligible here. Relative entries fail closed, and so does anything
+ * rooted at `\\` that is not a drive letter behind a device prefix — the
+ * boundary is every spelling that can leave this machine, not only `UNC`.
  */
 export function covenBinaryFromEnvironment(
   env: NodeJS.ProcessEnv,
@@ -458,12 +509,12 @@ export function covenOverrideRejection(
     return "it is not an absolute path";
   }
   if (platform === "win32" && isWindowsRemoteExecutablePath(candidate)) {
-    return "it refers to a remote UNC share";
+    return "it is not on a local drive";
   }
   try {
     const canonical = realpathSync(/* turbopackIgnore: true */ candidate);
     if (platform === "win32" && isWindowsRemoteExecutablePath(canonical)) {
-      return "it resolves onto a remote UNC share";
+      return "it resolves off this machine";
     }
     return statSync(/* turbopackIgnore: true */ canonical).isFile()
       ? "it could not be verified"
@@ -498,10 +549,11 @@ export function covenBin(): string {
 
   const discovery = discoveryOptions();
   const resolved = covenBinaryFromEnvironment(
-    {
-      ...discovery.env,
-      PATH: augmentedSpawnPath(false, discovery),
-    },
+    withSearchPath(
+      discovery.env,
+      augmentedSpawnPath(false, discovery),
+      process.platform,
+    ),
     process.platform,
   );
   if (resolved) {
@@ -674,10 +726,16 @@ function spawnEnv(
   pathValue: string,
   includeManagedNode = true,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: pathValue };
+  let env: NodeJS.ProcessEnv = withSearchPath(process.env, pathValue);
   if (includeManagedNode) {
     const managed = managedNodeSpawnEnv(env);
-    if (managed) Object.assign(env, managed);
+    // `managedNodeSpawnEnv` returns a whole environment whose search path is
+    // spelled `PATH`. Merging that over one Windows spelled `Path` would leave
+    // the pre-managed value sitting ahead of it, so re-normalise to a single
+    // key instead of assigning in place.
+    if (managed) {
+      env = withSearchPath({ ...env, ...managed }, managed.PATH ?? pathValue);
+    }
   }
   env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
     process.env.COVEN_HARNESS_ADAPTER_DIRS,

@@ -273,10 +273,10 @@ import type { StreamEvent } from "@/lib/stream-events";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 import {
   appendMentionedFilesBlock,
-  cleanupStagedImageFiles,
-  persistImageAttachments,
+  cleanupStagedAttachmentFiles,
+  persistChatAttachments,
   resolveMentionedFiles,
-  writeImageAttachmentsToRuntime,
+  writeAttachmentsToRuntime,
 } from "./chat-send-attachments";
 import {
   covenRunSupportsAddDir,
@@ -309,7 +309,6 @@ import {
 } from "@/lib/model-control-capabilities";
 import { chatSse, startChatSseHeartbeat } from "./chat-send-sse";
 import {
-  conversationCwd,
   daemonSessionCwd,
   filterUsableLocalDirectories,
   resolveFamiliarWorkspace,
@@ -719,6 +718,7 @@ function openClawChatResponse(args: {
   promptText: string;
   harnessPrompt: string;
   attachments: ChatAttachment[];
+  cwd: string;
   desiredModel: string;
   modelState: ChatModelState;
   initialModelIntent: string | null;
@@ -802,32 +802,11 @@ function openClawChatResponse(args: {
       }
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
-      let cwd: string;
-      try {
-        cwd = await resolveLocalRuntimeCwd(
-          args.body.projectRoot ??
-            (await conversationCwd(args.body.sessionId)) ??
-            (await daemonSessionCwd(args.body.sessionId)),
-        );
-      } catch (error) {
-        if (error instanceof RuntimeScopeError) {
-          pushProgress("openclaw-start", "OpenClaw bridge not started", "error", error.message);
-          push({ kind: "error", code: error.code, message: error.message });
-          push({
-            kind: "done",
-            durationMs: Date.now() - startedAt,
-            isError: true,
-          });
-          close();
-          return;
-        }
-        throw error;
-      }
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
         model: args.desiredModel,
-        runtime: `local:${cwd}`,
+        runtime: `local:${args.cwd}`,
         requestedModel: args.body.modelOverride === ""
           ? ""
           : cleanModelId(args.body.modelOverride) ?? undefined,
@@ -1035,7 +1014,11 @@ function openClawChatResponse(args: {
         };
         const stopGateway = () => abortGateway("[tool cancelled by user]");
         const stopDetachedGateway = () => abortGateway("[tool did not settle before the Gateway turn ended]");
-        const runHandle = registerChatRun([args.body.runId, conversationId], stopGateway);
+        const runHandle = registerChatRun(
+          [args.body.runId, conversationId],
+          stopGateway,
+          { runId: args.body.runId },
+        );
         let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
         let detachTimeoutFired = false;
         const armDetachKill = () => {
@@ -1192,7 +1175,6 @@ function openClawChatResponse(args: {
           durationMs,
           isError,
           sessionId: conversationId,
-          ...(cancelledByUser ? { cancelled: true } : {}),
           responseMetadata,
         });
         gatewayDispatch.close();
@@ -1209,7 +1191,7 @@ function openClawChatResponse(args: {
         env: openclawEnv,
         requiredFiles: openclawLaunch.requiredFiles,
         unresolvedWindowsShim: openclawLaunch.unresolvedWindowsShim === true,
-        cwd,
+        cwd: args.cwd,
       });
       if (openclawAvailability.state !== "ready") {
         pushProgress(
@@ -1237,17 +1219,27 @@ function openClawChatResponse(args: {
       let stderr = "";
       let terminal = false;
       let localRecoveryAttempted = false;
+      let stopChildOnLaunch = false;
       const spawnChild = (mode: "gateway" | "local") => {
         const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId, mode);
-        return spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
+        const launched = spawn(/* turbopackIgnore: true */ openclawLaunch.command, [...openclawLaunch.fixedArgs, ...argv], {
           windowsHide: true,
-          cwd,
+          cwd: args.cwd,
           stdio: ["ignore", "pipe", "pipe"],
           env: openclawEnv,
           shell: false,
         });
+        if (stopChildOnLaunch) {
+          try {
+            launched.kill("SIGTERM");
+          } catch {
+            /* ignore */
+          }
+        }
+        return launched;
       };
       const killChild = () => {
+        stopChildOnLaunch = true;
         try {
           child?.kill("SIGTERM");
         } catch {
@@ -1258,7 +1250,11 @@ function openClawChatResponse(args: {
       // registration); a bare transport abort means the client vanished — let
       // the turn finish server-side so resync recovers the full reply, bounded
       // by the detach cap in case nothing ever comes back for it.
-      const runHandle = registerChatRun([args.body.runId, conversationId], killChild);
+      const runHandle = registerChatRun(
+        [args.body.runId, conversationId],
+        killChild,
+        { runId: args.body.runId },
+      );
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
       const armDetachKill = () => {
         if (runHandle.stopRequested || detachKillTimer != null) return;
@@ -1575,7 +1571,7 @@ function openClawChatResponse(args: {
         await sleep(20);
         close();
       }
-      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
+      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", args.cwd);
       child = spawnChild(executionMode);
       attachChild(child);
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
@@ -1693,12 +1689,10 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  // Persisted transcripts keep attachment metadata only — base64 image
-  // payloads stay out of the conversation store. Images additionally get a
-  // durable copy in the attachment store, and the transcript records its id,
-  // so reopening the thread can show the picture again instead of degrading
-  // to a filename chip (cave-cysu4).
-  const persistedAttachments = await persistImageAttachments(
+  // Persisted transcripts keep metadata plus a durable store id; base64
+  // payloads stay out of the conversation JSON. Reloads and retries can then
+  // render images/media or rematerialize source files for a local harness.
+  const persistedAttachments = await persistChatAttachments(
     stripPreviewOnlyAttachmentFields(attachments),
     attachments,
   );
@@ -2240,7 +2234,11 @@ export async function POST(req: Request) {
   }
   let cwd: string;
   try {
-    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(authorizedProjectRoot);
+    cwd = sshRuntime
+      ? homedir()
+      : await resolveLocalRuntimeCwd(authorizedProjectRoot, {
+          rootAuthority: "authorized-project",
+        });
   } catch (error) {
     if (error instanceof RuntimeScopeError) {
       return new Response(
@@ -2666,8 +2664,8 @@ export async function POST(req: Request) {
   const imagesSupported = !sshRuntime && binding.harness !== "openclaw" &&
     !(hermesApi && !hermesApiCanAccessLocalFiles(hermesApi));
   const attachmentStagingRoot = resolvedFamiliarWorkspace ?? cwd;
-  const imageFilePaths = imagesSupported
-    ? await writeImageAttachmentsToRuntime(attachments, attachmentStagingRoot)
+  const attachmentFilePaths = imagesSupported
+    ? await writeAttachmentsToRuntime(attachments, attachmentStagingRoot)
     : new Map<number, string>();
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
@@ -2746,7 +2744,8 @@ export async function POST(req: Request) {
                   buildPromptWithResponseControls(
                     buildPromptWithAttachments(promptText, attachments, {
                       imagesSupported,
-                      imageFilePaths,
+                      filesSupported: imagesSupported,
+                      attachmentFilePaths,
                     }),
                     { modelControls: promptModelControls },
                   ),
@@ -2778,6 +2777,7 @@ export async function POST(req: Request) {
       promptText,
       harnessPrompt,
       attachments: persistedAttachments,
+      cwd,
       desiredModel,
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
@@ -4514,6 +4514,7 @@ export async function POST(req: Request) {
       runHandle = registerChatRun(
         [body.runId, body.sessionId, sessionId],
         killCurrentChild,
+        { runId: body.runId },
       );
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
       const armDetachKill = () => {
@@ -4776,6 +4777,7 @@ export async function POST(req: Request) {
       };
 
       const runAttempt = (spawnArgs: string[], apiPrompt = harnessPrompt): Promise<void> => {
+        if (runHandle.stopRequested) return Promise.resolve();
         if (hermesApi) return runHermesApiAttempt(apiPrompt);
         return new Promise((resolve) => {
           const attemptStartedAt = Date.now();
@@ -5938,7 +5940,7 @@ export async function POST(req: Request) {
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
-      cleanupStagedImageFiles(imageFilePaths);
+      cleanupStagedAttachmentFiles(attachmentFilePaths);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
       runBuffer?.finish();

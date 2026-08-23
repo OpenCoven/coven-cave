@@ -1,5 +1,9 @@
 # iOS Terminal Composer Implementation Plan
 
+> **Superseded.** Native iOS Terminal functionality was comprehensively retired
+> on 2026-08-18. Do not execute or resume this plan. See
+> [`../../ios-current-direction.md`](../../ios-current-direction.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an accessible native composer below the iOS terminal that safely sends shell input, exposes terminal slash commands, and hands drafts to native chat for review.

@@ -9,7 +9,7 @@
   cursor: pointer; color: var(--text-secondary); transition: background 0.12s ease, color 0.12s ease; }
 .recent-activity__head:hover { background: var(--bg-raised); color: var(--text-primary); }
 .recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: 999px; background: var(--accent-presence, currentColor); opacity: 0.55; flex: none; }
+.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: var(--radius-pill); background: var(--accent-presence, currentColor); opacity: 0.55; flex: none; }
 .recent-activity__chevron { transition: transform 140ms ease; }
 .recent-activity__chevron--collapsed { transform: rotate(-90deg); }
 .recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -19,7 +19,7 @@
 .recent-activity__card--active::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent-presence); }
 .recent-activity__row1, .recent-activity__row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .recent-activity__title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 550; color: var(--text-primary); }
-.recent-activity__status { flex-shrink: 0; width: 7px; height: 7px; border-radius: 999px; background: var(--text-muted); }
+.recent-activity__status { flex-shrink: 0; width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--text-muted); }
 .recent-activity__status--running { background: var(--color-success); animation: recent-activity-status-pulse 1.6s ease-in-out infinite; }
 .recent-activity__status--failed { background: var(--color-danger); }
 .recent-activity__status--queued { background: var(--color-warning); }

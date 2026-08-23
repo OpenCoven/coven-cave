@@ -33,6 +33,7 @@ import { MarkdownBlock } from "@/components/message-bubble";
 import { PodcastTranscript } from "@/components/role-surfaces/podcast-transcript";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { StandardSelect } from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
 import { useResearchMediaUrl } from "@/lib/research-media-client";
 import {
@@ -49,6 +50,15 @@ import {
   type ResearchMediaProvider,
   type ResearchPodcastStyle,
 } from "@/lib/research-generations";
+import {
+  ELEVENLABS_DELIVERY_PRESETS,
+  ELEVENLABS_MAX_SEED,
+  ELEVENLABS_PODCAST_MODEL_OPTIONS,
+  describeElevenLabsVoiceSettings,
+  elevenLabsDeliveryPreset,
+  isValidElevenLabsSeed,
+  type ElevenLabsDeliveryPresetId,
+} from "@/lib/voice/elevenlabs-shared";
 import type { ResearchMission } from "@/lib/research-missions";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -475,7 +485,7 @@ export function GenerationReviewModal({
           <span className="research-studio__kicker">Studio · review draft</span>
           <h4 id="research-studio-review-title">Review before rendering</h4>
         </div>
-        <button type="button" className="research-studio-modal__close" onClick={onClose} aria-label="Close dialog">✕</button>
+        <button type="button" className="research-studio-modal__close focus-ring" onClick={onClose} aria-label="Close dialog">✕</button>
       </header>
       <div className="research-studio-modal__body">
         <p className="research-studio-config__note">
@@ -517,6 +527,30 @@ export function GenerationReviewModal({
               <dt>Length</dt>
               <dd>{generation.renderConfig.length}</dd>
             </div>
+            {/* Delivery direction is frozen on the draft alongside the voice,
+                so the render gate shows what will actually be spoken with. */}
+            {generation.renderConfig.voiceSettings ? (
+              <div>
+                <dt>Delivery</dt>
+                <dd>
+                  {describeElevenLabsVoiceSettings(
+                    generation.renderConfig.voiceSettings,
+                  )}
+                </dd>
+              </div>
+            ) : null}
+            {generation.renderConfig.model ? (
+              <div>
+                <dt>Model</dt>
+                <dd>{generation.renderConfig.model}</dd>
+              </div>
+            ) : null}
+            {generation.renderConfig.seed !== undefined ? (
+              <div>
+                <dt>Seed</dt>
+                <dd>{generation.renderConfig.seed}</dd>
+              </div>
+            ) : null}
           </dl>
         ) : null}
         {content?.kind === "podcast" ? (
@@ -546,7 +580,7 @@ export function GenerationReviewModal({
       </div>
       <footer className="research-studio-modal__footer">
         <button type="button" className="research-studio-act research-studio-act--ghost" onClick={onClose}>Keep draft</button>
-        <button type="button" className="research-studio-act research-studio-act--primary" onClick={onRender} disabled={rendering}>
+        <button type="button" className="research-studio-act research-studio-act--primary focus-ring" onClick={onRender} disabled={rendering}>
           {rendering ? "Queueing…" : "Render media"}
         </button>
       </footer>
@@ -572,6 +606,12 @@ export function GenerationConfigModal({
   onMediaStyleChange,
   mediaLength,
   onMediaLengthChange,
+  mediaDelivery,
+  onMediaDeliveryChange,
+  mediaModel,
+  onMediaModelChange,
+  mediaSeed,
+  onMediaSeedChange,
   error,
   creating,
   onSubmit,
@@ -596,6 +636,15 @@ export function GenerationConfigModal({
   onMediaStyleChange: (style: ResearchPodcastStyle) => void;
   mediaLength: ResearchMediaLength;
   onMediaLengthChange: (length: ResearchMediaLength) => void;
+  /** Podcast + ElevenLabs only: named delivery direction for synthesis. */
+  mediaDelivery: ElevenLabsDeliveryPresetId;
+  onMediaDeliveryChange: (delivery: ElevenLabsDeliveryPresetId) => void;
+  /** Podcast + ElevenLabs only: model id; "" uses the offline render default. */
+  mediaModel: string;
+  onMediaModelChange: (model: string) => void;
+  /** Podcast + ElevenLabs only: raw seed field; "" leaves sampling unpinned. */
+  mediaSeed: string;
+  onMediaSeedChange: (seed: string) => void;
   /** Server-side create failure — e.g. the 409 "no markdown artifact" message. */
   error: string | null;
   creating: boolean;
@@ -644,6 +693,16 @@ export function GenerationConfigModal({
     if (kind === "short-video" && mediaLength === "extended") {
       return "Short video length must be brief or standard.";
     }
+    // A seed the contract would reject must be caught here, not silently
+    // dropped on the way to the render config.
+    if (
+      kind === "podcast" &&
+      mediaProvider === "elevenlabs" &&
+      mediaSeed.trim() !== "" &&
+      !isValidElevenLabsSeed(Number(mediaSeed.trim()))
+    ) {
+      return `Seed must be a whole number between 0 and ${ELEVENLABS_MAX_SEED}.`;
+    }
     return null;
   })();
 
@@ -664,7 +723,7 @@ export function GenerationConfigModal({
         </div>
         <button
           type="button"
-          className="research-studio-modal__close"
+          className="research-studio-modal__close focus-ring"
           onClick={onClose}
           aria-label="Close dialog"
         >
@@ -681,7 +740,7 @@ export function GenerationConfigModal({
           </label>
           <select
             id="research-studio-config-source"
-            className="research-studio__select"
+            className="research-studio__select focus-ring"
             value={selectedSourceId ?? ""}
             onChange={(event) => onSelectSource(event.target.value)}
           >
@@ -701,7 +760,7 @@ export function GenerationConfigModal({
           </label>
           <textarea
             id="research-studio-directions"
-            className="research-studio-config__textarea"
+            className="research-studio-config__textarea focus-ring"
             value={directions}
             maxLength={RESEARCH_GENERATION_DIRECTIONS_MAX_LENGTH}
             onChange={(event) => onDirectionsChange(event.target.value)}
@@ -922,6 +981,100 @@ export function GenerationConfigModal({
               </div>
             ) : null}
 
+            {kind === "podcast" && mediaProvider === "elevenlabs" ? (
+              <>
+                <div className="research-studio-config__field">
+                  <label
+                    className="research-studio-config__label"
+                    htmlFor="research-studio-config-delivery"
+                  >
+                    Delivery
+                  </label>
+                  <StandardSelect<ElevenLabsDeliveryPresetId>
+                    id="research-studio-config-delivery"
+                    label="Delivery"
+                    className="research-studio__select focus-ring"
+                    value={mediaDelivery}
+                    aria-describedby="research-studio-config-delivery-help"
+                    onChange={onMediaDeliveryChange}
+                    options={ELEVENLABS_DELIVERY_PRESETS.map((preset) => ({
+                      value: preset.id,
+                      label: preset.label,
+                    }))}
+                  />
+                  <span
+                    id="research-studio-config-delivery-help"
+                    className="research-studio-config__hint"
+                  >
+                    {elevenLabsDeliveryPreset(mediaDelivery)?.hint ??
+                      "How the voice is directed during synthesis."}
+                  </span>
+                </div>
+
+                <div className="research-studio-config__field">
+                  <label
+                    className="research-studio-config__label"
+                    htmlFor="research-studio-config-model"
+                  >
+                    Render model
+                  </label>
+                  <StandardSelect<string>
+                    id="research-studio-config-model"
+                    label="Render model"
+                    className="research-studio__select focus-ring"
+                    value={mediaModel}
+                    aria-describedby="research-studio-config-model-help"
+                    onChange={onMediaModelChange}
+                    options={[
+                      { value: "", label: "Default for offline renders" },
+                      ...ELEVENLABS_PODCAST_MODEL_OPTIONS.map((option) => ({
+                        value: option.id,
+                        label: option.label,
+                      })),
+                    ]}
+                  />
+                  <span
+                    id="research-studio-config-model-help"
+                    className="research-studio-config__hint"
+                  >
+                    An episode render is queued and offline, so it is not tied to
+                    the live voice call&rsquo;s latency-first model.
+                  </span>
+                </div>
+
+                <div className="research-studio-config__field">
+                  <label
+                    className="research-studio-config__label"
+                    htmlFor="research-studio-config-seed"
+                  >
+                    Seed (optional)
+                  </label>
+                  <input
+                    id="research-studio-config-seed"
+                    className="research-studio-config__input focus-ring"
+                    value={mediaSeed}
+                    inputMode="numeric"
+                    placeholder="Unpinned"
+                    aria-describedby="research-studio-config-seed-help"
+                    aria-invalid={mediaConfigurationError ? true : undefined}
+                    aria-errormessage={
+                      mediaConfigurationError
+                        ? "research-studio-config-media-error"
+                        : undefined
+                    }
+                    onChange={(event) => onMediaSeedChange(event.target.value)}
+                  />
+                  <span
+                    id="research-studio-config-seed-help"
+                    className="research-studio-config__hint"
+                  >
+                    Pin the sampler so two renders of the same script are
+                    comparable when you are tuning delivery.
+                  </span>
+                </div>
+              </>
+            ) : null}
+
             <div className="research-studio-config__field">
               <label
                 className="research-studio-config__label"
@@ -990,7 +1143,7 @@ export function GenerationConfigModal({
         </button>
         <button
           type="button"
-          className="research-studio-act research-studio-act--primary"
+          className="research-studio-act research-studio-act--primary focus-ring"
           onClick={onSubmit}
           disabled={
             creating ||

@@ -26,5 +26,7 @@ marketplace/plugins/tweet-thread-lab/bin/tweet-thread-validate.mjs text eol=lf
 marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/SKILL.md text eol=lf
 marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/*.md text eol=lf
 marketplace/plugins/tweet-thread-lab/skills/tweet-thread-lab/references/schemas/*.json text eol=lf
+src/lib/server/client-v1/contract-fixture.json text eol=lf
+src/lib/server/client-v1/contract-fixture.sha256 text eol=lf
 workflows/optimize-tweet-thread.yaml text eol=lf
 workflows/optimize-tweet-thread.cave.json text eol=lf

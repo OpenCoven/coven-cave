@@ -1,8 +1,12 @@
 # Project grouping, UX audit closeout, and iOS terminal composer
 
+> **Historical multi-stream design.** Its native iOS Terminal stream is
+> superseded and must not be resumed. Current native iOS priorities live in
+> [`../../ios-current-direction.md`](../../ios-current-direction.md).
+
 **Date:** 2026-08-09  
 **Beads:** `cave-1vpy`, `cave-ui5z`, `cave-nv1dk.2`  
-**Status:** Approved for implementation
+**Status:** Partially superseded
 
 ## Delivery model
 
@@ -129,18 +133,23 @@ The terminal command palette is distinct from chat slash commands.
 
 - `/help` opens the terminal palette.
 - `/clear` sends the existing `clear\n` behavior.
-- `/cwd` opens the existing project picker.
 - Unknown leading-slash input passes through to the shell unchanged.
 
 Typing a recognized slash prefix shows discoverable matches. Selecting a
-command may prefill or dispatch it according to the behavior above.
+command may prefill or dispatch it according to the behavior above. Switching
+the active project from the shared project-context control is the only way to
+change which persistent shell the terminal adopts. That shell identity is keyed
+by the project id plus a deterministic fingerprint of the normalized project
+root, so moving a registered project folder creates a fresh PTY without
+exposing the full path in the server thread id.
 
 ### Ask Familiar
 
 Ask Familiar creates a safely quoted review prompt containing the draft and
-the current cwd, switches to the existing native New Chat flow, and preselects
-the matching project where available. After the user chooses a familiar, the
-new thread opens with that review prompt persisted as its unsent chat draft.
+the active project root, switches to the existing native New Chat flow, and
+preselects the matching project where available. After the user chooses a
+familiar, the new thread opens with that review prompt persisted as its unsent
+chat draft.
 
 The original terminal draft remains unchanged. The handoff never sends the
 chat message automatically and never executes familiar-produced shell text.

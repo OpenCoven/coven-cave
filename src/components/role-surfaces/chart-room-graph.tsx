@@ -112,7 +112,7 @@ export function ChartRoomGraph({
         {steps.map((step) => {
           const at = layout.positions[step.id];
           if (!at) return null;
-          const fan = steps.filter((other) => other.needs === step.id).length;
+          const fan = steps.filter((other) => other.needs.includes(step.id)).length;
           return (
             <button
               key={step.id}

@@ -140,11 +140,11 @@ assert.match(
   "composer exposes the permission-mode (Access) control",
 );
 // Context, linked work, prompt-improvement, and response controls collapse into
-// one grouped Tools surface at the composer edge while voice stays one click away.
+// one grouped Tools surface while access and voice stay one click away.
 assert.match(
   source,
-  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*<div className="cave-composer-utility-row">[\s\S]*aria-label="Voice call"/,
-  "composer exposes the grouped Tools trigger at its edge while keeping Voice direct in the lower control row",
+  /<div className="cave-composer-edge-actions">[\s\S]*<ComposerActionsMenu[\s\S]*attach=\{\{[\s\S]*triggerVariant="tools"[\s\S]*className="cave-composer-mode-switch"[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Voice call"/,
+  "composer exposes the grouped Tools trigger at its edge while keeping Access and Voice direct in the command rail",
 );
 const composerActionsMenuMatch = source.match(/<ComposerActionsMenu\b[\s\S]*?(?:\/>|<\/ComposerActionsMenu>)/);
 assert.ok(composerActionsMenuMatch, "expected the ComposerActionsMenu JSX block in ChatView");
@@ -178,8 +178,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const composerResponseSections:[\s\S]*label:\s*"Access"[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
-  "the grouped Response section carries Access, Model, and only selected-model capability controls with prompt guidance labelled",
+  /const composerResponseSections:[\s\S]*label:\s*`Model · \$\{inventoryProvenanceLabel\([\s\S]*\.\.\.modelCapabilities\.map\(\(capability\) => \(\{[\s\S]*Prompt guidance[\s\S]*<ComposerActionsMenu[\s\S]*response=\{\{[\s\S]*hostValue:\s*composerHostValue[\s\S]*sections:\s*composerResponseSections/,
+  "the grouped Response section carries Model and selected-model capability controls while Access remains direct",
 );
 assert.doesNotMatch(source, /<ComposerPlusMenu/, "legacy plus-menu composition should be gone");
 // "Both" reconciliation updated: context chips still construct exactly once.
@@ -212,7 +212,7 @@ assert.doesNotMatch(
 assert.match(
   styles,
   /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
-  "composer footer lays out utility, live context, and submit controls in one minimal row",
+  "composer footer lays out access, live context, and submit controls in one command rail",
 );
 // The extracted response section renders each control inline (no nested
 // popover) and keeps the connect-host dialog available to the grouped surface.
@@ -909,15 +909,26 @@ assert.match(
   /if \(followingRef\.current\) return;[\s\S]{0,200}gap <= 4\) updateFollowing\(true\)/,
   "Re-pin only on user scrolls reaching the true bottom (small epsilon); pin's own scroll events are no-ops while following",
 );
+// — CHAT-D10-03: released-reader response control stays boolean, not a badge —
 assert.match(
   source,
-  /updateFollowing\(true\);[\s\S]{0,600}prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduceMotion \? "auto" : "smooth"[\s\S]{0,400}aria-label=/,
-  "Scroll FAB must re-engage following and gate its smooth scroll on prefers-reduced-motion (CHAT-D10-03: aria-label now includes new message count)",
+  /const \[newResponseContent, setNewResponseContent\] = useState\(false\);/,
+  "Released-reader response control must track a boolean unseen-content flag, not a counter",
 );
 assert.match(
   source,
-  /aria-label=\{`Scroll to bottom\$\{newTurnsCount \? ` \(\$\{newTurnsCount\} new message\$\{newTurnsCount !== 1 \? "s" : ""\}\)` : ""\}`\}/,
-  "Scroll FAB aria-label must include the pluralized message noun for screen readers",
+  /if \(following\) \{\s*setNewResponseContent\(false\);\s*return;\s*\}\s*if \(activeAssistantTurnId !== null && \(turnChanged \|\| sourceChanged\)\) \{\s*setNewResponseContent\(true\);/,
+  "Released-reader unseen-content state flips true only on a new assistant turn or source update while released",
+);
+assert.match(
+  source,
+  /className="cave-new-response-content focus-ring"[\s\S]{0,200}onClick=\{\(\) => \{\s*updateFollowing\(true\);\s*schedulePin\(\);\s*\}\}[\s\S]{0,120}\{newResponseContent \? "New response content" : "Latest"\}/,
+  "The released-reader control re-engages following, schedules the instant pin, and labels readers without any numeric badge",
+);
+assert.doesNotMatch(
+  source,
+  /newTurnsCount|setNewTurnsCount|new message count|Scroll to bottom/,
+  "The released-reader control must stay boolean; do not restore numeric message-count labelling",
 );
 assert.match(
   source,

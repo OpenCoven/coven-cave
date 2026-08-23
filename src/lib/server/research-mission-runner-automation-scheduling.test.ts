@@ -24,6 +24,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
   let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
+    removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
@@ -42,6 +43,13 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     readSessionTranscript: async () => "",
     readMissionFile: async () => null,
     readSources: async () => [],
+    materializeSavedLink: async () => {
+      throw new Error("saved X Article not found");
+    },
+    // No mission in this suite has attached X sources; the dedicated
+    // hydration coverage lives in research-mission-x-hydration.test.ts.
+    hydrateXSources: async () => ({ files: [], unavailable: [], sources: [] }),
+    dropXRuntime: async () => {},
     publishKnowledge: async (entry) => entry,
     killSession: async () => {},
     createAutomation: async (input) => ({

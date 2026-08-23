@@ -11,41 +11,14 @@ const shellNavigation = await readFile(new URL("../styles/globals/shell-navigati
 // workspace-sidebar.tsx feature assertions
 assert.match(workspaceSidebar, /deriveChatProjectGroups\(applyProjectOverrides/, "should group by project with overrides");
 assert.match(
-  workspaceSidebar,
-  /chatProjectOrganizationGroups\(visibleGroups\)/,
-  "Projects view should derive organization sections from the currently filtered project groups",
-);
-assert.match(
-  workspaceSidebar,
-  /organizationExpansionKey\(organization\.key\)/,
-  "organization disclosures should use the shared namespaced expansion key",
-);
-assert.match(
-  workspaceSidebar,
-  /organizationGroup\.items\.map\(\(group\) => renderProjectGroup\(group\)\)/,
-  "organization items should keep using the existing project-group renderer",
-);
-assert.match(
-  workspaceSidebar,
-  /const organizationVisible = hasSearch \|\| organizationExpanded;[\s\S]*?disabled=\{hasSearch\}[\s\S]*?aria-expanded=\{organizationVisible\}/,
-  "search should force truthful organization visibility while disabling its disclosure",
-);
-assert.match(
-  workspaceSidebar,
-  /const expanded = hasSearch \|\| !collapsedKeys\.has\(key\);[\s\S]*?disabled=\{hasSearch\}[\s\S]*?aria-expanded=\{expanded\}/,
-  "search should force truthful project visibility while disabling its disclosure",
-);
-assert.match(workspaceSidebar, /handleRegister/, "should offer register-as-project for unregistered roots");
-assert.match(workspaceSidebar, /Register \$\{label\} as a project/, "register label must be accessible");
-assert.match(
   shellNavigation,
   /\.cnav__error-text\s*\{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*normal;/,
   "the sidebar keeps the actionable project-registration error readable instead of ellipsizing it",
 );
 assert.match(workspaceSidebar, /deriveChatRecencyBuckets\(/, "should derive time buckets for Recent view");
-assert.match(workspaceSidebar, /<Tabs<ChatSidebarView>/, "should expose visible grouping tabs");
+assert.doesNotMatch(workspaceSidebar, /<Tabs<ChatSidebarView>|label:\s*"Projects"/, "the redundant Projects grouping tab is removed");
 assert.match(workspaceSidebar, /<PopoverLabel>Chat visibility<\/PopoverLabel>/, "should retain chat visibility options");
-assert.match(workspaceSidebar, /readChatSidebarView\(\)/, "organize mode should hydrate from persisted pref");
+assert.match(workspaceSidebar, /aria-label="Search chats"/, "the remaining recency list keeps direct chat filtering");
 assert.doesNotMatch(workspaceSidebar, /function bareTime\(/, "sidebar should remove the dead bareTime compatibility helper");
 assert.match(workspaceSidebar, /const minuteTick = useMinuteTick\(\);/, "sidebar should subscribe to the shared minute tick");
 assert.match(
@@ -53,20 +26,15 @@ assert.match(
   /const now = useMemo\(\(\) => Date\.now\(\), \[minuteTick\]\);/,
   "now should be one memoized clock snapshot derived from minuteTick, not a bare per-render Date.now()",
 );
-assert.match(workspaceSidebar, /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, now\],/, "recent buckets should re-derive from the same memoized now used for row times and attention descriptions");
+assert.match(workspaceSidebar, /const recentBuckets = useMemo\([\s\S]*?\[recentSessions, now\],/, "recent buckets should re-derive from the same memoized now used for row times and attention descriptions");
 assert.match(workspaceSidebar, /bareTimeAt\(session\.updated_at \|\| session\.created_at, now\)/, 'row times should render through bareTimeAt on the current render clock');
-assert.ok((workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2, "both view branches should render ThreadRow");
+assert.ok((workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2, "attention and recency rows should render ThreadRow");
 assert.match(workspaceSidebar, /const sessionProjectById = useMemo\(\(\) => \{[\s\S]*?for \(const group of groups\)/, "recent-row project lookup derives from override-aware groups");
 assert.match(workspaceSidebar, /indent="flat"\s*\n\s*project=\{sessionProjectById\.get\(session\.id\) \?\? null\}/, "recent rows pass project identity");
 assert.match(workspaceSidebar, /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm"/, "renders ProjectAvatar tile in flat rows with the explicit project color");
 assert.match(workspaceSidebar, /<span className="sr-only">\{`Project \$\{project\.name\} `\}<\/span>/, "project name is announced for AT even when the visual tile collapses");
 assert.doesNotMatch(workspaceSidebar, /cnav__footer|cnav__user-plan/, "should not render user plan footer");
-// Project group headers: two-line label (bold name over activity meta) with the
-// user-set project color on the avatar; the meta line subsumes the count badge.
-assert.match(workspaceSidebar, /function groupMeta\(group: ChatProjectGroup, now: number\): string \{[\s\S]*?running > 0[\s\S]*?"chat" : "chats"/, "group meta reports running count or chat count");
-assert.match(workspaceSidebar, /<ProjectAvatar name=\{label\} root=\{group\.projectRoot\} color=\{group\.projectColor\} size="sm" className="cnav__folder" \/>/, "group header avatar uses the explicit project color");
-assert.match(workspaceSidebar, /<span className="cnav__group-text">[\s\S]*?cnav__group-name[\s\S]*?<span className="cnav__group-meta">\{groupMeta\(group, now\)\}<\/span>/, "group header stacks name over the activity meta line");
-assert.doesNotMatch(workspaceSidebar, /cnav__count/, "the count badge is retired — the meta line carries the count");
+assert.doesNotMatch(workspaceSidebar, /cnav__group-name|cnav__group-meta|renderProjectGroup/, "the redundant project grouping branch is removed");
 // Quick actions are New chat alone: the Scheduled/Plugins icon chips and the
 // band that carried them are retired (both destinations live in the Home rail's
 // list), so the only navigation shortcut left is the standalone-host Home
@@ -80,6 +48,12 @@ assert.doesNotMatch(workspaceSidebar, /cave:navigate-mode/, "workspace-sidebar s
 // navigation (#2747, restored by cave-l3ay after #2750 briefly removed it as a
 // supposed duplicate).
 assert.match(workspaceSidebar, /<SidebarRailHeader[\s\S]*?familiars=\{familiars\}/, "the chat sidebar header hosts the shared familiar switcher");
+const sidebarRailHeaderBlock = workspaceSidebar.match(/<SidebarRailHeader[\s\S]*?\/>/)?.[0] ?? "";
+assert.match(
+  sidebarRailHeaderBlock,
+  /selectedFamiliarIds=\{selectedFamiliarIds\}/,
+  "the shared familiar-scope set is forwarded from WorkspaceSidebar to SidebarRailHeader without collapsing to a first member",
+);
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 // Hover row-actions order: bookmark (pin) → archive → delete, so archive sits
@@ -101,9 +75,9 @@ assert.match(workspaceSidebar, /Show archived/, "the sidebar options menu must e
 assert.match(workspaceSidebar, /workspace-sidebar chat-sidebar/, "outer div must include both CSS classes for e2e compat");
 assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail|chat-sidebar__rail/, "chat sidebar no longer renders a collapsed rail child");
 // The search placeholder must fit the panel's ~200px minimum width (the old
-// "Search projects or threads…" clipped); the aria-label keeps the full scope.
+// "Search projects or threads…" clipped); the control now filters chats only.
 assert.match(workspaceSidebar, /placeholder="Search chats…"/, "search placeholder fits the narrow panel");
-assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "search keeps its descriptive accessible name");
+assert.match(workspaceSidebar, /aria-label="Search chats"/, "search names the single recency list it filters");
 assert.match(workspace, /const contextualNav =\s*\n\s*navSection === "code" && \(navOpen \|\| isMobile\) \? chatSidebar : sidebar;/, "workspace keeps the session rail across the expanded Code section");
 assert.doesNotMatch(workspace, /const list = mode === "chat" \? chatSidebar : undefined;/, "workspace should not mount Chats in the list slot");
 assert.match(workspace, /navPolicy=\{mode === "chat" \? "chat-contextual" : "remembered"\}/, "chat mode activates the contextual nav policy");
@@ -123,10 +97,11 @@ assert.doesNotMatch(workspace, /activeSessionId=\{routerRef\.current\?\.currentS
 assert.match(workspace, /const openFamiliarSession = useCallback\(\(sessionId: string[\s\S]*?setActiveChatSessionId\(sessionId\);/, "opening a session sets the highlight optimistically at click time");
 assert.match(workspace, /onActiveSessionChange=\{setActiveChatSessionId\}/, "ChatRouter reconciles the mirrored state (new-chat promotion, back-to-list)");
 assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
-assert.ok((chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6, "chat sidebar actions dismiss the mobile nav drawer");
+assert.ok((chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 5, "chat sidebar actions dismiss the mobile nav drawer");
 assert.match(workspace, /onOpenSession=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a chat session dismisses the mobile nav drawer");
 assert.match(workspace, /onOpenSessionInSplit=\{\(session\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "opening a split chat dismisses the mobile nav drawer");
-assert.match(workspace, /onNewChat=\{\(projectRoot\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "starting a new chat dismisses the mobile nav drawer");
+assert.match(workspace, /const startWorkspaceChat = useCallback\(\(request: AgentsNewChatRequest = \{\}\) => \{[\s\S]*?dismissNavMobile\(\);/, "starting a new chat dismisses the mobile nav drawer");
+assert.match(chatSidebarBlock, /onNewChat=\{\(\) => startWorkspaceChat\(\)\}/, "chat rail delegates new-chat launches to the shared gate");
 assert.match(workspace, /onNavigate=\{\(nextMode\) => \{[\s\S]*?setMode\(nextMode\);[\s\S]*?dismissNavMobile\(\);[\s\S]*?\}\}/, "the sidebar Home route dismisses the mobile nav drawer");
 assert.match(workspace, /onOpenUrl=\{\(url\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?openUrlInApp\(url\);[\s\S]*?\}\}/, "sidebar PR links dismiss the mobile nav drawer before opening");
 assert.match(workspace, /onOpenSettings=\{\(\) => \{[\s\S]*?dismissNavMobile\(\);[\s\S]*?nextRouter\.push\("\/settings"\);[\s\S]*?\}\}/, "chat sidebar settings dismisses the mobile nav drawer");

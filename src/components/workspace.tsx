@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
+import { ActingFamiliarGate } from "@/components/acting-familiar-gate";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl } from "@/lib/github-item-url";
@@ -52,7 +53,11 @@ import type { PaletteIntent } from "@/components/command-palette";
 // a new in-shell surface from main.
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
-import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import {
+  readMobileModeEnabled,
+  subscribeMobileModeEnabled,
+  writeMobileModeEnabled,
+} from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
@@ -69,15 +74,31 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import {
   getFamiliarScope,
   setFamiliarScope,
-  getLastSurface,
   setLastSurface,
 } from "@/lib/familiar-memory";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+import {
+  browserWorkspaceStorage,
+  readWorkspaceContext,
+  readWorkspaceCrew,
+  writeWorkspaceContext,
+} from "@/lib/workspace-context-storage";
+import {
+  familiarScopeFromIds,
+  reconcileCrewForProject,
+  resolveActingFamiliar,
+} from "@/lib/workspace-context";
+import {
+  resolveHomeTaskHandoff,
+  type HomeTaskOrigin,
+} from "@/lib/home-task-handoff";
+import { useProjectFamiliars } from "@/lib/use-project-familiars";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { useSurfaceWarmup } from "@/lib/use-surface-warmup";
+import { readSurfaceResource } from "@/lib/surface-warmup-registry";
 import { useCanonicalMemoryWarmup } from "@/lib/use-canonical-memory-warmup";
 import { canonicalMemoryLocalAccessEligible } from "@/lib/canonical-memory-local-access";
 import {
@@ -176,7 +197,7 @@ import {
   generateDailyNarrative,
   shouldRegenerateNarrative,
 } from "@/lib/daily-narrative";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import {
   isRoleSurfaceMode,
   parseRoleSurfaceMode,
@@ -207,7 +228,8 @@ import {
 } from "@/lib/coven-run-signal";
 import { sessionStatusTone } from "@/lib/session-status";
 import { sessionPrStatus } from "@/lib/session-pr-status";
-import { normalizeProjectRoot } from "@/lib/cave-projects-types";
+import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
+import { fetchProjectsFromCache } from "@/lib/use-projects-cache";
 import { FirstProjectGate } from "@/components/first-project-gate";
 import { resolveFirstProjectGatePolicy } from "@/lib/first-project-gate-policy";
 import {
@@ -217,7 +239,15 @@ import {
   type PendingFirstProjectAccessSnapshot,
 } from "@/lib/first-project-gate-retry";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
-import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
+import {
+  clearPendingAgentsNewChat,
+  readPendingAgentsNewChat,
+  type AgentsNewChatRequest,
+} from "@/lib/agents-new-chat";
+import {
+  PROJECT_ACCESS_CHANGED_EVENT,
+  projectAccessChangedId,
+} from "@/lib/project-access-events";
 import { enqueuePendingCodeOpen, type PendingCodeOpen, type PendingCodeOrigin } from "@/lib/pending-code-open";
 import {
   clearPendingCodeNavigation,
@@ -276,6 +306,15 @@ function splitTargetRendersMode(target: WorkspacePaneRequest, mode: WorkspaceMod
 // hidden windows and while the user is composing input.
 const GITHUB_TASKS_POLL_MS = 5 * 60_000;
 
+function requestedWorkspaceProjectId(
+  projectRoot: string | null,
+  projects: readonly CaveProject[],
+): string | null | undefined {
+  if (projectRoot === null) return null;
+  const normalizedRoot = normalizeProjectRoot(projectRoot);
+  return projects.find((project) => normalizeProjectRoot(project.root) === normalizedRoot)?.id;
+}
+
 export function Workspace() {
   const [acceptedLocalDaemonHealthy, setAcceptedLocalDaemonHealthy] = useState(false);
   const nextRouter = useRouter();
@@ -287,6 +326,7 @@ export function Workspace() {
     });
   useCanonicalMemoryWarmup(localDaemonReady);
   useSurfaceWarmup();
+  const { announce } = useAnnouncer();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
   const [rightChatOpen, setRightChatOpen] = useState(false);
@@ -307,6 +347,26 @@ export function Workspace() {
     setScopeIds(id == null ? new Set<string>() : new Set([id]));
   }, []);
   const [activeFamiliarHydrated, setActiveFamiliarHydrated] = useState(false);
+  const [selectedWorkspaceProjectId, setSelectedWorkspaceProjectId] =
+    useState<string | null>(null);
+  const [workspaceContextHydrated, setWorkspaceContextHydrated] = useState(false);
+  const [actingFamiliarRequestLabel, setActingFamiliarRequestLabel] =
+    useState<string | null>(null);
+  type ActingFamiliarRequestResult = {
+    familiarId: string | null;
+    outcome: "selected" | "cancelled" | "unavailable" | "superseded" | "context-changed" | "unmounted";
+  };
+  const actingFamiliarRequestRef = useRef<{
+    contextKey: string;
+    resolve: (result: ActingFamiliarRequestResult) => void;
+  } | null>(null);
+  const [pendingAgentsNewChat, setPendingAgentsNewChat] =
+    useState<AgentsNewChatRequest | null | undefined>(undefined);
+  const [pendingAgentsNewChatRetryEpoch, setPendingAgentsNewChatRetryEpoch] = useState(0);
+  const pendingAgentsNewChatAttemptRef = useRef(false);
+  // Blocks writeWorkspaceContext after any storage read or write failure so
+  // unknown fallback state is never persisted over real saved data.
+  const [workspaceContextPersistenceBlocked, setWorkspaceContextPersistenceBlocked] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const visibleFamiliars = useMemo(
     () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
@@ -316,6 +376,7 @@ export function Workspace() {
   // lets the chat boot view hold a quiet frame instead of flashing the
   // "choose a familiar" empty-state copy while the roster is in flight.
   const [familiarsLoaded, setFamiliarsLoaded] = useState(false);
+  const [familiarRosterLoading, setFamiliarRosterLoading] = useState(true);
   const [familiarRosterLoadedSuccessfully, setFamiliarRosterLoadedSuccessfully] = useState(false);
   const loadedActiveId = resolveLoadedActiveFamiliarId(requestedActiveId, visibleFamiliars);
   const activeId = resolveWorkspaceActiveFamiliarId(
@@ -326,7 +387,7 @@ export function Workspace() {
   );
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const resolvedFamiliars = useResolvedFamiliars(visibleFamiliars);
   const {
     projects: registeredProjects,
     loading: projectsLoading,
@@ -335,6 +396,289 @@ export function Workspace() {
     reload: reloadProjects,
     createProjectOrThrow,
   } = useProjects();
+  const selectedWorkspaceProject =
+    registeredProjects.find((project) => project.id === selectedWorkspaceProjectId) ?? null;
+  const {
+    familiars: projectCrewRecords,
+    loading: projectCrewLoading,
+    error: projectCrewError,
+    loadedSuccessfully: projectCrewLoadedSuccessfully,
+    reload: reloadProjectCrew,
+  } = useProjectFamiliars({ projectId: selectedWorkspaceProject?.id ?? null });
+  const blockWorkspaceContextPersistence = useCallback((
+    message: string,
+    error?: unknown,
+    consoleMessage?: string,
+  ) => {
+    if (error !== undefined) {
+      console.error(consoleMessage ?? message, error);
+    }
+    setWorkspaceContextPersistenceBlocked(true);
+    announce(message);
+  }, [announce]);
+  const resolvedProjectCrew = useResolvedFamiliars(projectCrewRecords);
+  const resolvedRosterIds = new Set(resolvedFamiliars.map((familiar) => familiar.id));
+  const workspaceFamiliarScope = familiarScopeFromIds(scopeIds);
+  // Retained query data is not current authority during a reload or failure.
+  // Both actor resolution and the chooser therefore consume the same
+  // success-gated list.
+  const eligibleWorkspaceFamiliars = selectedWorkspaceProjectId === null
+    ? familiarRosterLoadedSuccessfully && !familiarRosterLoading
+      ? resolvedFamiliars
+      : []
+    : projectsLoadedSuccessfully
+        && familiarRosterLoadedSuccessfully
+        && !familiarRosterLoading
+        && !projectsLoading
+        && projectsError === null
+        && selectedWorkspaceProject !== null
+        && projectCrewLoadedSuccessfully
+        && !projectCrewLoading
+        && projectCrewError === null
+      ? resolvedProjectCrew.filter((familiar) => resolvedRosterIds.has(familiar.id))
+      : [];
+  const eligibleFamiliarIds = eligibleWorkspaceFamiliars.map((familiar) => familiar.id);
+  // Effective crew loading for rail controls: keep the crew selector disabled
+  // while a selected project ID exists and any registry trust check is still
+  // unresolved, failed, or stale (including the one render after the project
+  // proves stale and before the clearing effect runs). projectCrewLoading
+  // covers the all-project context and the post-registry fetch once the
+  // selected project has been verified.
+  const effectiveProjectCrewLoading =
+    selectedWorkspaceProjectId !== null && (
+      projectsLoading
+      || !projectsLoadedSuccessfully
+      || projectsError !== null
+      || selectedWorkspaceProject === null
+    )
+      ? true
+      : projectCrewLoading;
+  const actingFamiliar = resolveActingFamiliar(workspaceFamiliarScope, eligibleFamiliarIds);
+  const actingFamiliarContextKey = JSON.stringify(
+    selectedWorkspaceProjectId === null
+      ? [
+          "all-projects",
+          workspaceContextHydrated,
+          workspaceFamiliarScope,
+          familiarRosterLoading,
+          familiarRosterLoadedSuccessfully,
+          projectsLoading,
+          projectsLoadedSuccessfully,
+          projectsError,
+          registeredProjects.map((project) => [project.id, project.root]),
+          eligibleFamiliarIds,
+        ]
+      : [
+          "project",
+          workspaceContextHydrated,
+          workspaceFamiliarScope,
+          selectedWorkspaceProjectId,
+          selectedWorkspaceProject?.root ?? null,
+          familiarRosterLoading,
+          familiarRosterLoadedSuccessfully,
+          projectsLoading,
+          projectsLoadedSuccessfully,
+          projectsError,
+          projectCrewLoading,
+          projectCrewLoadedSuccessfully,
+          projectCrewError,
+          eligibleFamiliarIds,
+        ],
+  );
+  const actingFamiliarAuthorityRef = useRef({
+    contextKey: actingFamiliarContextKey,
+    workspaceContextHydrated,
+    selectedWorkspaceProjectId,
+    selectedWorkspaceProject,
+    registeredProjects,
+    familiarRosterLoading,
+    familiarRosterLoadedSuccessfully,
+    projectsLoading,
+    projectsLoadedSuccessfully,
+    projectsError,
+    projectCrewLoading,
+    projectCrewLoadedSuccessfully,
+    projectCrewError,
+  });
+  actingFamiliarAuthorityRef.current = {
+    contextKey: actingFamiliarContextKey,
+    workspaceContextHydrated,
+    selectedWorkspaceProjectId,
+    selectedWorkspaceProject,
+    registeredProjects,
+    familiarRosterLoading,
+    familiarRosterLoadedSuccessfully,
+    projectsLoading,
+    projectsLoadedSuccessfully,
+    projectsError,
+    projectCrewLoading,
+    projectCrewLoadedSuccessfully,
+    projectCrewError,
+  };
+  const actingFamiliarContextWaitersRef = useRef(new Set<{
+    contextKey: string;
+    resolve: () => void;
+  }>());
+  const waitForActingFamiliarContextChange = useCallback((contextKey: string) =>
+    new Promise<void>((resolve) => {
+      actingFamiliarContextWaitersRef.current.add({ contextKey, resolve });
+    }), []);
+  useEffect(() => {
+    for (const waiter of actingFamiliarContextWaitersRef.current) {
+      if (waiter.contextKey === actingFamiliarContextKey) continue;
+      actingFamiliarContextWaitersRef.current.delete(waiter);
+      waiter.resolve();
+    }
+  }, [actingFamiliarContextKey]);
+  const requestActingFamiliarResult = useCallback((
+    actionLabel: string,
+    preferredFamiliarId?: string | null,
+  ) => {
+    const pending = actingFamiliarRequestRef.current;
+    if (pending) {
+      actingFamiliarRequestRef.current = null;
+      setActingFamiliarRequestLabel(null);
+      pending.resolve({ familiarId: null, outcome: "superseded" });
+    }
+
+    if (selectedWorkspaceProjectId !== null) {
+      if (familiarRosterLoading || !familiarRosterLoadedSuccessfully) {
+        announce("Familiar roster is still loading");
+        return Promise.resolve<ActingFamiliarRequestResult>({
+          familiarId: null,
+          outcome: "unavailable",
+        });
+      }
+      if (
+        projectsLoading
+        || !projectsLoadedSuccessfully
+        || projectsError
+        || selectedWorkspaceProject === null
+      ) {
+        announce(projectsError ?? "Project is still loading");
+        return Promise.resolve<ActingFamiliarRequestResult>({
+          familiarId: null,
+          outcome: "unavailable",
+        });
+      }
+      if (projectCrewLoading || !projectCrewLoadedSuccessfully || projectCrewError) {
+        announce(projectCrewError ?? "Project crew is still loading");
+        return Promise.resolve<ActingFamiliarRequestResult>({
+          familiarId: null,
+          outcome: "unavailable",
+        });
+      }
+    } else if (familiarRosterLoading || !familiarRosterLoadedSuccessfully) {
+      announce("Familiar roster is still loading");
+      return Promise.resolve<ActingFamiliarRequestResult>({
+        familiarId: null,
+        outcome: "unavailable",
+      });
+    }
+    if (preferredFamiliarId && eligibleFamiliarIds.includes(preferredFamiliarId)) {
+      return Promise.resolve<ActingFamiliarRequestResult>({
+        familiarId: preferredFamiliarId,
+        outcome: "selected",
+      });
+    }
+    if (!preferredFamiliarId && actingFamiliar.kind === "resolved") {
+      return Promise.resolve<ActingFamiliarRequestResult>({
+        familiarId: actingFamiliar.familiarId,
+        outcome: "selected",
+      });
+    }
+
+    setActingFamiliarRequestLabel(actionLabel);
+    return new Promise<ActingFamiliarRequestResult>((resolve) => {
+      actingFamiliarRequestRef.current = {
+        contextKey: actingFamiliarContextKey,
+        resolve,
+      };
+    });
+  }, [
+    actingFamiliar,
+    actingFamiliarContextKey,
+    announce,
+    eligibleFamiliarIds,
+    familiarRosterLoading,
+    familiarRosterLoadedSuccessfully,
+    projectCrewError,
+    projectCrewLoadedSuccessfully,
+    projectsError,
+    projectsLoadedSuccessfully,
+    projectsLoading,
+    selectedWorkspaceProject,
+    selectedWorkspaceProjectId,
+  ]);
+  const requestActingFamiliarResultRef = useRef(requestActingFamiliarResult);
+  requestActingFamiliarResultRef.current = requestActingFamiliarResult;
+  const selectedWorkspaceProjectRef = useRef(selectedWorkspaceProject);
+  selectedWorkspaceProjectRef.current = selectedWorkspaceProject;
+  const workspaceChatRequestGenerationRef = useRef(0);
+  const workspaceChatLaunchOwnerRef = useRef<{
+    generation: number;
+    kind: "live" | "persisted";
+  } | null>(null);
+  const workspaceMountedRef = useRef(true);
+  const projectAccessGenerationRef = useRef({
+    all: 0,
+    byProject: new Map<string, number>(),
+  });
+  const homeActionAuthorityRef = useRef<{
+    authorityId: string;
+    familiarId: string;
+    contextKey: string;
+    accessGeneration: number;
+  } | null>(null);
+  const homeActionRequestGenerationRef = useRef(0);
+
+  const finishActingFamiliarRequest = useCallback((familiarId: string | null) => {
+    const pending = actingFamiliarRequestRef.current;
+    actingFamiliarRequestRef.current = null;
+    setActingFamiliarRequestLabel(null);
+    if (!pending) return;
+    const validFamiliarId =
+      familiarId !== null
+      && pending.contextKey === actingFamiliarContextKey
+      && eligibleFamiliarIds.includes(familiarId)
+        ? familiarId
+        : null;
+    pending.resolve({
+      familiarId: validFamiliarId,
+      outcome:
+        validFamiliarId !== null
+          ? "selected"
+          : familiarId === null
+            ? "cancelled"
+            : "context-changed",
+    });
+    setPendingAgentsNewChatRetryEpoch((epoch) => epoch + 1);
+  }, [actingFamiliarContextKey, eligibleFamiliarIds]);
+
+  useEffect(() => {
+    const pending = actingFamiliarRequestRef.current;
+    if (pending && pending.contextKey !== actingFamiliarContextKey) {
+      actingFamiliarRequestRef.current = null;
+      setActingFamiliarRequestLabel(null);
+      pending.resolve({ familiarId: null, outcome: "context-changed" });
+      setPendingAgentsNewChatRetryEpoch((epoch) => epoch + 1);
+    }
+  }, [actingFamiliarContextKey]);
+
+  useEffect(() => {
+    workspaceMountedRef.current = true;
+    return () => {
+      workspaceMountedRef.current = false;
+      workspaceChatRequestGenerationRef.current += 1;
+      workspaceChatLaunchOwnerRef.current = null;
+      homeActionAuthorityRef.current = null;
+      homeActionRequestGenerationRef.current += 1;
+      actingFamiliarRequestRef.current?.resolve({ familiarId: null, outcome: "unmounted" });
+      actingFamiliarRequestRef.current = null;
+      for (const waiter of actingFamiliarContextWaitersRef.current) waiter.resolve();
+      actingFamiliarContextWaitersRef.current.clear();
+    };
+  }, []);
   // The global registry answers "does a project exist?"; chat readiness is
   // stricter and must be evaluated for the familiar that will run the turn.
   // Keep the two reads separate so an inaccessible project never suppresses
@@ -408,6 +752,10 @@ export function Workspace() {
   // deep links (?mode=, #chat-…) and cave:navigate-mode override this as
   // before, so restored sessions and share links still land where they point.
   const [mode, setModeRaw] = useState<CaveMode>("home");
+  const [homeTaskOrigin, setHomeTaskOrigin] = useState<HomeTaskOrigin | null>(null);
+  useEffect(() => {
+    if (mode !== "home") setHomeTaskOrigin(null);
+  }, [mode]);
   const [primaryPaneRequest, setPrimaryPaneRequest] = useState<WorkspacePaneRequest | null>(null);
   const primaryPaneRequestRef = useRef(primaryPaneRequest);
   primaryPaneRequestRef.current = primaryPaneRequest;
@@ -745,10 +1093,6 @@ export function Workspace() {
   // "running" doesn't flicker it away — it shows on the first definitive local-
   // offline poll and only clears after the daemon is *consistently* healthy.
   const [daemonOffline, setDaemonOffline] = useState(false);
-  // The access-token gate rejected our credential (401 on the status poll).
-  // Distinct from daemonOffline: the daemon may be fine — WE can't see it, and
-  // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
-  const [authExpired, setAuthExpired] = useState(false);
   const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const [daemonRecovery, setDaemonRecovery] = useState(initialDaemonRecoveryPresentation);
   const daemonHealthyStreakRef = useRef(0);
@@ -884,7 +1228,11 @@ export function Workspace() {
   });
   // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
   const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
-  const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
+  const mobileModeEnabled = useSyncExternalStore(
+    subscribeMobileModeEnabled,
+    readMobileModeEnabled,
+    readMobileModeEnabled,
+  );
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
   const responseNeededRef = useRef(responseNeeded);
@@ -927,7 +1275,6 @@ export function Workspace() {
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
-    setMobileModeEnabledState(enabled);
   }, []);
 
   const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean; suppressError?: boolean }) => {
@@ -996,13 +1343,11 @@ export function Workspace() {
     } else {
       setAcceptedLocalDaemonHealthy(false);
     }
-    // A real non-401 response proves the Cave credential is accepted again.
-    if (poll.responseStatus !== 401) setAuthExpired(false);
-
     setDaemonStatusResolved(true);
     if (result.kind === "auth-expired") {
-      setAuthExpired(true);
-      setDaemonStatusUnavailable(null);
+      daemonHealthyStreakRef.current = 0;
+      setDaemonOffline(false);
+      setDaemonStatusUnavailable("access check failed");
       return;
     }
     if (result.kind === "unavailable") {
@@ -1137,14 +1482,57 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
-    setScopeIds(new Set(getFamiliarScope()));
+    const storage = browserWorkspaceStorage();
+    const legacyFallback = { projectId: null, familiarIds: getFamiliarScope() };
+    let restored: { projectId: string | null; familiarIds: string[] } = legacyFallback;
+    if (storage === null) {
+      blockWorkspaceContextPersistence("Couldn't restore saved workspace context. Using your familiar scope.");
+    } else {
+      try {
+        restored = readWorkspaceContext(storage, getFamiliarScope());
+      } catch (err) {
+        blockWorkspaceContextPersistence(
+          "Couldn't restore saved workspace context. Using your familiar scope.",
+          err,
+          "[workspace] readWorkspaceContext failed on mount:",
+        );
+      }
+    }
+    setSelectedWorkspaceProjectId(restored.projectId);
+    setScopeIds(new Set(restored.familiarIds));
     setActiveFamiliarHydrated(true);
-  }, []);
+    setWorkspaceContextHydrated(true);
+  }, [blockWorkspaceContextPersistence]);
 
   useEffect(() => {
-    if (!activeFamiliarHydrated) return;
+    if (!workspaceContextHydrated) return;
+    const storage = browserWorkspaceStorage();
+    if (!workspaceContextPersistenceBlocked) {
+      if (storage === null) {
+        blockWorkspaceContextPersistence("Couldn't save workspace context.");
+      } else {
+        try {
+          writeWorkspaceContext(storage, {
+            projectId: selectedWorkspaceProjectId,
+            familiarIds: [...scopeIds],
+          });
+        } catch (err) {
+          blockWorkspaceContextPersistence(
+            "Couldn't save workspace context.",
+            err,
+            "[workspace] writeWorkspaceContext failed during persist:",
+          );
+        }
+      }
+    }
     setFamiliarScope([...scopeIds]);
-  }, [scopeIds, activeFamiliarHydrated]);
+  }, [
+    blockWorkspaceContextPersistence,
+    selectedWorkspaceProjectId,
+    scopeIds,
+    workspaceContextHydrated,
+    workspaceContextPersistenceBlocked,
+  ]);
 
   useEffect(() => {
     if (
@@ -1156,6 +1544,24 @@ export function Workspace() {
     ) return;
     setScopeIds(loadedActiveId ? new Set([loadedActiveId]) : new Set());
   }, [activeFamiliarHydrated, familiarsLoaded, familiarRosterLoadedSuccessfully, requestedActiveId, loadedActiveId]);
+
+  // After the project crew is verified, reconcile the current scope: drop any
+  // selected familiar that no longer belongs to the project. Uses a set-equality
+  // guard to avoid looping when the reconciled result matches the current scope.
+  useEffect(() => {
+    if (!selectedWorkspaceProjectId || !projectCrewLoadedSuccessfully) return;
+    const nextScope = reconcileCrewForProject(
+      familiarScopeFromIds(scopeIds),
+      projectCrewRecords.map((familiar) => familiar.id),
+    );
+    if (nextScope.kind === "selected") {
+      const nextIds = new Set(nextScope.familiarIds);
+      const equal = nextIds.size === scopeIds.size && [...nextIds].every((id) => scopeIds.has(id));
+      if (!equal) setScopeIds(nextIds);
+    } else if (scopeIds.size > 0) {
+      setScopeIds(new Set());
+    }
+  }, [selectedWorkspaceProjectId, projectCrewRecords, projectCrewLoadedSuccessfully, scopeIds]);
 
   useEffect(() => {
     const openSalem = () => {
@@ -1267,10 +1673,10 @@ export function Workspace() {
 
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat. While the access
-  // token is rejected the daemon state is unknowable — suppress this banner
-  // in favour of the re-auth one (cave-wkp5).
+  // token is rejected the daemon state is unknowable, so the status-unavailable
+  // path below owns recovery instead of offering Start daemon.
   useEffect(() => {
-    if (!daemonOffline || authExpired || daemonRecovery.quiet) {
+    if (!daemonOffline || daemonRecovery.quiet) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
@@ -1288,13 +1694,13 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, authExpired, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, daemonRecovery.quiet, pushBanner, dismissBanner, startDaemon]);
 
   // A status-service failure, timeout, malformed response, or non-local target
   // problem does not prove the local daemon is stopped. Keep that uncertainty
   // accurate and retryable instead of offering the misleading Start daemon CTA.
   useEffect(() => {
-    if (!daemonStatusUnavailable || authExpired || daemonOffline) {
+    if (!daemonStatusUnavailable || daemonOffline) {
       dismissBanner("daemon-status-unavailable");
       return;
     }
@@ -1309,31 +1715,12 @@ export function Workspace() {
         },
       },
     });
-  }, [daemonStatusUnavailable, authExpired, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
-
-  // Re-auth banner: the access-token gate is rejecting every request, so all
-  // surfaces are degrading at once. A reload lands on the gate page, which
-  // explains how to sign back in (paste a token / open the pairing link).
-  useEffect(() => {
-    if (!authExpired) {
-      dismissBanner("auth-expired");
-      return;
-    }
-    pushBanner({
-      id: "auth-expired",
-      severity: "error",
-      title: "Access expired — this session's token is no longer valid. Reload to sign in again.",
-      cta: {
-        label: "Reload",
-        onClick: () => {
-          window.location.reload();
-        },
-      },
-    });
-  }, [authExpired, pushBanner, dismissBanner]);
+  }, [daemonStatusUnavailable, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
 
   const loadFamiliars = useCallback(async () => {
     const requestGeneration = ++loadFamiliarsReqRef.current;
+    setFamiliarRosterLoading(true);
+    setFamiliarRosterLoadedSuccessfully(false);
     const isCurrent = () =>
       isLatestFamiliarRosterRequest(
         requestGeneration,
@@ -1385,7 +1772,10 @@ export function Workspace() {
         })
       );
     } finally {
-      if (isCurrent()) setFamiliarsLoaded(true);
+      if (isCurrent()) {
+        setFamiliarsLoaded(true);
+        setFamiliarRosterLoading(false);
+      }
     }
   }, []);
 
@@ -1413,19 +1803,6 @@ export function Workspace() {
         : null;
     }
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
-    if (!id) return;
-    // A multi-toggle shouldn't yank the surface around — only a plain single
-    // select restores that familiar's last-viewed surface.
-    if (opts?.multi || opts?.preserveSurface) return;
-    const last = getLastSurface(id);
-    // Guard against retired/unknown persisted modes (e.g. removed standalone
-    // surfaces). Any real mode is safe to hand to setMode — its alias funnel
-    // routes compatibility modes (flow, journal, groupchat, …) onto their
-    // canonical surface via MODE_ALIASES (cave-nwi8, cave-m4ih.3).
-    // A persisted Role Surface mode restores too — if this familiar no longer
-    // holds the role, the room stays on RoleSurfaceHost's explicit closed-door
-    // state and the persistence guard below preserves the prior valid surface.
-    if (last && (isWorkspaceMode(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
@@ -1961,7 +2338,64 @@ export function Workspace() {
   // fire-and-forget left items visually done and told AT "Marked done."
   // regardless (cave-x6k5). Announcements stay generic on purpose: the
   // callbacks are [] -deps'd and only carry the id.
-  const { announce } = useAnnouncer();
+  const selectWorkspaceProject = useCallback((projectId: string | null) => {
+    const storage = browserWorkspaceStorage();
+    let storedCrew: string[] | null = null;
+    let crewReadFailed = storage === null;
+    if (storage === null) {
+      setWorkspaceContextPersistenceBlocked(true);
+    } else {
+      try {
+        storedCrew = readWorkspaceCrew(storage, projectId);
+      } catch (err) {
+        console.error("[workspace] readWorkspaceCrew failed during project selection:", err);
+        crewReadFailed = true;
+        setWorkspaceContextPersistenceBlocked(true);
+      }
+    }
+    setScopeIds(new Set(storedCrew ?? []));
+    setSelectedWorkspaceProjectId(projectId);
+    const changeMessage = projectId
+      ? `Project changed to ${registeredProjects.find((project) => project.id === projectId)?.name ?? "selected project"}`
+      : "Showing all projects";
+    announce(crewReadFailed
+      ? `${changeMessage}. Couldn't restore project context.`
+      : changeMessage);
+  }, [announce, registeredProjects]);
+
+  // After the registry settles, clear any persisted project that is no longer
+  // in the registry and tell the user what happened.
+  useEffect(() => {
+    if (!projectsLoadedSuccessfully || !selectedWorkspaceProjectId) return;
+    if (registeredProjects.some((project) => project.id === selectedWorkspaceProjectId)) return;
+    // Restore the All-projects crew before clearing so stale project crew is
+    // not persisted under the null key when writeWorkspaceContext fires next.
+    const storage = browserWorkspaceStorage();
+    let allProjectsCrew: string[] | null = null;
+    let crewReadFailed = storage === null;
+    if (storage === null) {
+      setWorkspaceContextPersistenceBlocked(true);
+    } else {
+      try {
+        allProjectsCrew = readWorkspaceCrew(storage, null);
+      } catch (err) {
+        console.error("[workspace] readWorkspaceCrew failed during stale project reset:", err);
+        crewReadFailed = true;
+        setWorkspaceContextPersistenceBlocked(true);
+      }
+    }
+    setScopeIds(new Set(allProjectsCrew ?? []));
+    setSelectedWorkspaceProjectId(null);
+    announce(crewReadFailed
+      ? "Selected project is no longer available. Showing all projects. Couldn't restore project context."
+      : "Selected project is no longer available. Showing all projects.");
+  }, [
+    announce,
+    projectsLoadedSuccessfully,
+    registeredProjects,
+    selectedWorkspaceProjectId,
+  ]);
+
   const verifyInboxWrite = useCallback((req: Promise<Response>, failureNote: string) => {
     void req
       .then((res) => {
@@ -2044,16 +2478,18 @@ export function Workspace() {
 
   const refreshOpenTaskCards = useCallback(async () => {
     try {
-      const res = await fetch("/api/board", { cache: "no-store" });
-      const json = await res.json();
-      if (json.ok && Array.isArray(json.cards)) {
-        const cards = json.cards as Array<{
+      const { data: json } = await readSurfaceResource<{
+        ok?: boolean;
+        cards?: Array<{
           id?: string;
           title?: string;
           status?: string;
           familiarId?: string | null;
           endDate?: string | null;
         }>;
+      }>("board:cards");
+      if (json.ok && Array.isArray(json.cards)) {
+        const cards = json.cards;
         // The 60s board poll rebuilds these arrays each tick; keep the previous
         // reference when the content is unchanged so an idle board doesn't
         // re-render the Tasks badge / calendar deadline markers for nothing.
@@ -2228,13 +2664,40 @@ export function Workspace() {
     const onNavigate = (e: Event) => {
       const targetMode = (e as CustomEvent<{ mode?: string }>).detail?.mode;
       if (!targetMode) return;
+      const task = (e as CustomEvent<{ task?: unknown }>).detail?.task;
+      if (targetMode === "home" && task !== undefined) {
+        const handoff = resolveHomeTaskHandoff(task, {
+          projects: registeredProjects,
+          currentProjectId: selectedWorkspaceProjectId,
+          familiars,
+          currentFamiliarId: activeId,
+        });
+        if (handoff) {
+          setHomeTaskOrigin(handoff.origin);
+          if (handoff.projectId !== selectedWorkspaceProjectId) {
+            selectWorkspaceProject(handoff.projectId);
+          }
+          if (handoff.familiarId) setActiveId(handoff.familiarId);
+        } else {
+          setHomeTaskOrigin(null);
+        }
+      } else if (targetMode === "home") {
+        setHomeTaskOrigin(null);
+      }
       // Alias modes (flow, journal, groupchat, github, …) need no
       // special-casing: setMode's alias funnel routes them via MODE_ALIASES.
       setMode(targetMode as WorkspaceMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
-  }, [openFamiliarSession]);
+  }, [
+    activeId,
+    familiars,
+    registeredProjects,
+    selectWorkspaceProject,
+    selectedWorkspaceProjectId,
+    setMode,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2306,11 +2769,16 @@ export function Workspace() {
     initialPrompt?: string | null,
     initialControls?: InitialCommandControls | null,
     initialAttachments?: ChatAttachment[] | null,
+    origin?: SessionOrigin,
+    actorHasProjectAccess?: boolean,
   ) => {
-    if (chatProjectBlockedRef.current) {
+    if (
+      actorHasProjectAccess === false
+      || (actorHasProjectAccess === undefined && chatProjectBlockedRef.current)
+    ) {
       if (familiarId) setActiveId(familiarId);
       setMode("home");
-      return;
+      return false;
     }
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
@@ -2322,10 +2790,236 @@ export function Workspace() {
       initialPrompt,
       initialAttachments,
       initialControls,
+      origin,
       nonce: Date.now(),
     });
     setMode("chat");
+    return true;
   }, []);
+
+  const resolveActorProjectAccess = useCallback(async (
+    familiarId: string,
+    projectId: string | null,
+  ): Promise<boolean | null> => {
+    if (projectId !== null) return true;
+    try {
+      const payload = await fetchProjectsFromCache(familiarId, { force: true });
+      if (payload.ok === false || !Array.isArray(payload.projects)) {
+        if (workspaceMountedRef.current) {
+          announce(payload.error ?? "Project access is unavailable");
+        }
+        return null;
+      }
+      return payload.projects.length > 0;
+    } catch {
+      if (workspaceMountedRef.current) announce("Project access is unavailable");
+      return null;
+    }
+  }, [announce]);
+
+  const requestActingFamiliar = useCallback(async (
+    actionLabel: string,
+    authorityId: string,
+    requiresProjectAccess: boolean,
+  ) => {
+    const requestGeneration = ++homeActionRequestGenerationRef.current;
+    homeActionAuthorityRef.current = null;
+    const result = await requestActingFamiliarResult(actionLabel);
+    if (
+      requestGeneration !== homeActionRequestGenerationRef.current
+      || !result.familiarId
+      || !workspaceMountedRef.current
+    ) return null;
+
+    const authority = actingFamiliarAuthorityRef.current;
+    const projectId = authority.selectedWorkspaceProjectId;
+    const accessGeneration = projectId === null
+      ? projectAccessGenerationRef.current.all
+      : projectAccessGenerationRef.current.byProject.get(projectId) ?? 0;
+    const actorHasProjectAccess = requiresProjectAccess
+      ? await resolveActorProjectAccess(result.familiarId, projectId)
+      : true;
+    if (
+      requestGeneration !== homeActionRequestGenerationRef.current
+      || !workspaceMountedRef.current
+    ) return null;
+    if (actingFamiliarAuthorityRef.current.contextKey !== authority.contextKey) return null;
+    const currentAccessGeneration = projectId === null
+      ? projectAccessGenerationRef.current.all
+      : projectAccessGenerationRef.current.byProject.get(projectId) ?? 0;
+    if (currentAccessGeneration !== accessGeneration || actorHasProjectAccess === null) return null;
+    if (!actorHasProjectAccess) {
+      setActiveId(result.familiarId);
+      announce("Add a project this familiar can access before continuing");
+      return null;
+    }
+    homeActionAuthorityRef.current = {
+      authorityId,
+      familiarId: result.familiarId,
+      contextKey: authority.contextKey,
+      accessGeneration,
+    };
+    return result.familiarId;
+  }, [announce, requestActingFamiliarResult, resolveActorProjectAccess]);
+
+  const validateActingFamiliar = useCallback(async (
+    familiarId: string,
+    authorityId: string,
+  ) => {
+    const authority = homeActionAuthorityRef.current;
+    if (
+      !authority
+      || authority.authorityId !== authorityId
+      || authority.familiarId !== familiarId
+      || !workspaceMountedRef.current
+    ) {
+      return false;
+    }
+    homeActionAuthorityRef.current = null;
+    const current = actingFamiliarAuthorityRef.current;
+    const currentAccessGeneration = current.selectedWorkspaceProjectId === null
+      ? projectAccessGenerationRef.current.all
+      : projectAccessGenerationRef.current.byProject.get(current.selectedWorkspaceProjectId) ?? 0;
+    return current.contextKey === authority.contextKey
+      && currentAccessGeneration === authority.accessGeneration;
+  }, []);
+
+  const startWorkspaceChat = useCallback((request: AgentsNewChatRequest = {}) => {
+    shellRef.current?.dismissNavMobile();
+    clearPendingAgentsNewChat();
+    setPendingAgentsNewChat(null);
+    const generation = ++workspaceChatRequestGenerationRef.current;
+    workspaceChatLaunchOwnerRef.current = { generation, kind: "live" };
+    const pendingActorRequest = actingFamiliarRequestRef.current;
+    if (pendingActorRequest) {
+      actingFamiliarRequestRef.current = null;
+      setActingFamiliarRequestLabel(null);
+      pendingActorRequest.resolve({ familiarId: null, outcome: "superseded" });
+    }
+    void (async () => {
+      try {
+        while (workspaceChatLaunchOwnerRef.current?.generation === generation) {
+        const authority = actingFamiliarAuthorityRef.current;
+        if (!authority.workspaceContextHydrated) {
+          await waitForActingFamiliarContextChange(authority.contextKey);
+          continue;
+        }
+        let requestedProjectId: string | null | undefined =
+          authority.selectedWorkspaceProjectId;
+        if (request.projectRoot !== undefined) {
+          if (
+            request.projectRoot !== null
+            && (authority.projectsLoading || !authority.projectsLoadedSuccessfully)
+          ) {
+            if (authority.projectsLoading) {
+              await waitForActingFamiliarContextChange(authority.contextKey);
+              continue;
+            }
+            announce(authority.projectsError ?? "Project registry is unavailable");
+            return;
+          }
+          requestedProjectId = requestedWorkspaceProjectId(
+            request.projectRoot,
+            authority.registeredProjects,
+          );
+          if (requestedProjectId === undefined) {
+            announce("That project is no longer available");
+            clearPendingAgentsNewChat();
+            setPendingAgentsNewChat(null);
+            return;
+          }
+        }
+        if (requestedProjectId !== authority.selectedWorkspaceProjectId) {
+          selectWorkspaceProject(requestedProjectId);
+          await waitForActingFamiliarContextChange(authority.contextKey);
+          continue;
+        }
+        if (requestedProjectId === null && request.projectRoot === undefined) {
+          setPendingAgentsNewChat(request);
+          announce("Choose a project before starting a chat");
+          return;
+        }
+        const authorityLoading =
+          authority.familiarRosterLoading
+          || (requestedProjectId !== null
+            && (authority.projectsLoading || authority.projectCrewLoading));
+        if (authorityLoading) {
+          await waitForActingFamiliarContextChange(authority.contextKey);
+          continue;
+        }
+        const authorityFailed =
+          !authority.familiarRosterLoadedSuccessfully
+          || (requestedProjectId !== null
+            && (
+              !authority.projectsLoadedSuccessfully
+              || authority.projectsError !== null
+              || authority.selectedWorkspaceProject === null
+              || !authority.projectCrewLoadedSuccessfully
+              || authority.projectCrewError !== null
+            ));
+        if (authorityFailed) {
+          announce(
+            authority.projectsError
+            ?? authority.projectCrewError
+            ?? "Familiar eligibility is unavailable",
+          );
+          return;
+        }
+        const result = await requestActingFamiliarResultRef.current(
+          "New chat",
+          request.familiarId,
+        );
+        if (generation !== workspaceChatRequestGenerationRef.current) return;
+        if (result.outcome === "context-changed") continue;
+        if (!result.familiarId) return;
+        const accessGeneration = requestedProjectId === null
+          ? projectAccessGenerationRef.current.all
+          : projectAccessGenerationRef.current.byProject.get(requestedProjectId) ?? 0;
+        const actorHasProjectAccess = await resolveActorProjectAccess(
+          result.familiarId,
+          requestedProjectId,
+        );
+        if (workspaceChatLaunchOwnerRef.current?.generation !== generation) return;
+        if (actingFamiliarAuthorityRef.current.contextKey !== authority.contextKey) continue;
+        const currentAccessGeneration = requestedProjectId === null
+          ? projectAccessGenerationRef.current.all
+          : projectAccessGenerationRef.current.byProject.get(requestedProjectId) ?? 0;
+        if (currentAccessGeneration !== accessGeneration) {
+          if (requestedProjectId !== null) {
+            await waitForActingFamiliarContextChange(authority.contextKey);
+          }
+          continue;
+        }
+        if (actorHasProjectAccess === null) return;
+        const projectRoot =
+          request.projectRoot !== undefined
+            ? request.projectRoot
+            : selectedWorkspaceProjectRef.current?.root ?? null;
+        startFamiliarChat(
+          result.familiarId,
+          projectRoot,
+          request.initialPrompt ?? null,
+          request.initialControls ?? null,
+          null,
+          request.origin,
+          actorHasProjectAccess,
+        );
+        return;
+        }
+      } finally {
+        if (workspaceChatLaunchOwnerRef.current?.generation === generation) {
+          workspaceChatLaunchOwnerRef.current = null;
+          setPendingAgentsNewChatRetryEpoch((epoch) => epoch + 1);
+        }
+      }
+    })();
+  }, [
+    announce,
+    resolveActorProjectAccess,
+    selectWorkspaceProject,
+    startFamiliarChat,
+    waitForActingFamiliarContextChange,
+  ]);
 
   // Voice new-chat: create the empty conversation the call will attach to,
   // then route to chat with autoVoice so the overlay opens on arrival. On
@@ -2347,12 +3041,11 @@ export function Workspace() {
     setMode("chat");
   }, [pushToast]);
 
-  // Keep the ⌘J quick-chat launcher pointed at "new chat with the active
-  // familiar" — startFamiliarChat handles both the off-chat (switch + new
-  // thread) and in-chat (new thread) cases (cave-xsq.6).
+  // Keep the global quick-chat shortcut on the same project/actor gate as every
+  // visible blank-chat action.
   useEffect(() => {
-    quickChatLaunchRef.current = () => startFamiliarChat(activeId);
-  }, [startFamiliarChat, activeId]);
+    quickChatLaunchRef.current = startWorkspaceChat;
+  }, [startWorkspaceChat]);
 
   // Bridge `cave:agents-new-chat` from surfaces that aren't the chat view.
   // ChatSurface owns this event, but it only mounts when mode === "chat", so a
@@ -2363,8 +3056,8 @@ export function Workspace() {
   useEffect(() => {
     const onAgentsNewChat = (e: Event) => {
       if (modeRef.current === "chat") return;
-      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null; initialControls?: InitialCommandControls | null }>).detail;
-      startFamiliarChat(d?.familiarId ?? null, d?.projectRoot ?? null, d?.initialPrompt ?? null, d?.initialControls ?? null);
+      const d = (e as CustomEvent<AgentsNewChatRequest>).detail;
+      startWorkspaceChat(d ?? {});
     };
     window.addEventListener("cave:agents-new-chat", onAgentsNewChat);
     // Chat overflow → "Continue on phone": open the pairing modal with the
@@ -2379,21 +3072,197 @@ export function Workspace() {
       window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
       window.removeEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
     };
-  }, [startFamiliarChat]);
+  }, [startFamiliarChat, startWorkspaceChat]);
 
-  // Consume a cross-page "new chat" handoff (cave-hbpb): standalone routes like
-  // the familiar analytics pages have no workspace listeners, so their Resolve
-  // actions persist the request to sessionStorage and navigate here.
+  // Read a cross-page "new chat" handoff without clearing it. Ownerless actions
+  // may arrive before actor authority has loaded, so the request remains durable
+  // until the gate launches it or the user explicitly cancels the chooser.
   useEffect(() => {
-    const pending = consumePendingAgentsNewChat();
-    if (!pending) return;
-    startFamiliarChat(
-      pending.familiarId ?? null,
-      pending.projectRoot ?? null,
-      pending.initialPrompt ?? null,
-      pending.initialControls ?? null,
-    );
-  }, [startFamiliarChat]);
+    setPendingAgentsNewChat(readPendingAgentsNewChat());
+  }, []);
+
+  useEffect(() => {
+    const retryPendingHandoff = (event: Event) => {
+      const projectId = projectAccessChangedId(event);
+      if (!projectId) return;
+      projectAccessGenerationRef.current.all += 1;
+      projectAccessGenerationRef.current.byProject.set(
+        projectId,
+        (projectAccessGenerationRef.current.byProject.get(projectId) ?? 0) + 1,
+      );
+      if (pendingAgentsNewChat) {
+        setPendingAgentsNewChatRetryEpoch((epoch) => epoch + 1);
+      }
+    };
+    window.addEventListener(PROJECT_ACCESS_CHANGED_EVENT, retryPendingHandoff);
+    return () => window.removeEventListener(PROJECT_ACCESS_CHANGED_EVENT, retryPendingHandoff);
+  }, [pendingAgentsNewChat]);
+
+  useEffect(() => {
+    const pending = pendingAgentsNewChat;
+    if (
+      !pending
+      || pendingAgentsNewChatAttemptRef.current
+      || workspaceChatLaunchOwnerRef.current !== null
+    ) return;
+    if (pending.projectRoot !== undefined) {
+      if (
+        pending.projectRoot !== null
+        && (projectsLoading || !projectsLoadedSuccessfully)
+      ) {
+        if (projectsLoading) return;
+        announce(projectsError ?? "Project registry is unavailable");
+        return;
+      }
+      const requestedProjectId = requestedWorkspaceProjectId(
+        pending.projectRoot,
+        registeredProjects,
+      );
+      if (requestedProjectId === undefined) {
+        announce("That project is no longer available");
+        clearPendingAgentsNewChat();
+        setPendingAgentsNewChat(null);
+        return;
+      }
+      if (requestedProjectId !== selectedWorkspaceProjectId) {
+        selectWorkspaceProject(requestedProjectId);
+        return;
+      }
+    }
+    if (pending.projectRoot === undefined && selectedWorkspaceProjectId === null) {
+      announce("Choose a project to continue the pending chat");
+      return;
+    }
+    const authorityLoading =
+      !workspaceContextHydrated
+      || familiarRosterLoading
+      || (selectedWorkspaceProjectId !== null && (projectsLoading || projectCrewLoading));
+    if (authorityLoading) return;
+    const authorityFailed =
+      !familiarRosterLoadedSuccessfully
+      || (selectedWorkspaceProjectId !== null
+        && (
+          !projectsLoadedSuccessfully
+          || projectsError !== null
+          || selectedWorkspaceProject === null
+          || !projectCrewLoadedSuccessfully
+          || projectCrewError !== null
+        ));
+    if (authorityFailed) {
+      announce(
+        projectsError
+        ?? projectCrewError
+        ?? "Familiar eligibility is unavailable",
+      );
+      return;
+    }
+    const authorityReady =
+      workspaceContextHydrated
+      && !authorityLoading
+      && !authorityFailed;
+    if (!authorityReady) return;
+
+    const attemptGeneration = ++workspaceChatRequestGenerationRef.current;
+    workspaceChatLaunchOwnerRef.current = {
+      generation: attemptGeneration,
+      kind: "persisted",
+    };
+    const attemptContextKey = actingFamiliarAuthorityRef.current.contextKey;
+    const accessGeneration = selectedWorkspaceProjectId === null
+      ? projectAccessGenerationRef.current.all
+      : projectAccessGenerationRef.current.byProject.get(selectedWorkspaceProjectId) ?? 0;
+    pendingAgentsNewChatAttemptRef.current = true;
+    void (async () => {
+      let retryAfterFinish = false;
+      try {
+        const result = await requestActingFamiliarResult("New chat", pending.familiarId);
+        if (
+          workspaceChatLaunchOwnerRef.current?.generation !== attemptGeneration
+          || workspaceChatLaunchOwnerRef.current.kind !== "persisted"
+        ) return;
+        if (result.outcome === "cancelled") {
+          clearPendingAgentsNewChat();
+          setPendingAgentsNewChat(null);
+          return;
+        }
+        if (!result.familiarId) {
+          retryAfterFinish = result.outcome === "context-changed";
+          return;
+        }
+        const actorHasProjectAccess = await resolveActorProjectAccess(
+          result.familiarId,
+          selectedWorkspaceProjectId,
+        );
+        if (
+          workspaceChatLaunchOwnerRef.current?.generation !== attemptGeneration
+          || workspaceChatLaunchOwnerRef.current.kind !== "persisted"
+        ) return;
+        const currentAccessGeneration = selectedWorkspaceProjectId === null
+          ? projectAccessGenerationRef.current.all
+          : projectAccessGenerationRef.current.byProject.get(selectedWorkspaceProjectId) ?? 0;
+        if (
+          actingFamiliarAuthorityRef.current.contextKey !== attemptContextKey
+          || currentAccessGeneration !== accessGeneration
+        ) {
+          retryAfterFinish = true;
+          return;
+        }
+        if (actorHasProjectAccess === null) return;
+        const projectRoot =
+          pending.projectRoot !== undefined
+            ? pending.projectRoot
+            : selectedWorkspaceProject?.root ?? null;
+        const launched = startFamiliarChat(
+          result.familiarId,
+          projectRoot,
+          pending.initialPrompt ?? null,
+          pending.initialControls ?? null,
+          null,
+          pending.origin,
+          actorHasProjectAccess,
+        );
+        if (!launched) return;
+        clearPendingAgentsNewChat();
+        setPendingAgentsNewChat(null);
+      } finally {
+        pendingAgentsNewChatAttemptRef.current = false;
+        if (
+          workspaceChatLaunchOwnerRef.current?.generation === attemptGeneration
+          && workspaceChatLaunchOwnerRef.current.kind === "persisted"
+        ) {
+          workspaceChatLaunchOwnerRef.current = null;
+          if (retryAfterFinish) {
+            setPendingAgentsNewChatRetryEpoch((epoch) => epoch + 1);
+          }
+        } else if (
+          workspaceMountedRef.current
+          && workspaceChatLaunchOwnerRef.current === null
+        ) {
+          setPendingAgentsNewChatRetryEpoch((epoch) => epoch + 1);
+        }
+      }
+    })();
+  }, [
+    announce,
+    familiarRosterLoadedSuccessfully,
+    familiarRosterLoading,
+    pendingAgentsNewChat,
+    pendingAgentsNewChatRetryEpoch,
+    projectCrewError,
+    projectCrewLoadedSuccessfully,
+    projectCrewLoading,
+    projectsError,
+    projectsLoadedSuccessfully,
+    projectsLoading,
+    requestActingFamiliarResult,
+    registeredProjects,
+    resolveActorProjectAccess,
+    selectedWorkspaceProject,
+    selectedWorkspaceProjectId,
+    selectWorkspaceProject,
+    startFamiliarChat,
+    workspaceContextHydrated,
+  ]);
 
   useEffect(() => {
     // ⌘1..⌘5 in the order surfaces appear top-to-bottom in the left sidebar
@@ -2472,14 +3341,14 @@ export function Workspace() {
       // ⌘N → new chat (only on Chat surface)
       if (meta && !alt && e.key.toLowerCase() === "n" && mode === "chat") {
         e.preventDefault();
-        startFamiliarChat(activeId);
+        startWorkspaceChat();
         return;
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [familiars, activeId, mode, selectFamiliar, startFamiliarChat, nextRouter]);
+  }, [familiars, activeId, mode, selectFamiliar, startWorkspaceChat, nextRouter]);
 
   const showFamiliarChatList = useCallback(() => {
     setActiveChatSessionId(null);
@@ -2827,7 +3696,7 @@ export function Workspace() {
   const handleSlashIntent = (command: string, args = ""): boolean => {
     switch (command) {
       case "/new":
-        startFamiliarChat(activeId);
+        startWorkspaceChat();
         return true;
       case "/board":
         setMode("board");
@@ -2836,8 +3705,9 @@ export function Workspace() {
         setMode("journal"); // opens the Grimoire on its Journal tab (see setMode)
         return true;
       case "/canvas":
-        // /canvas is chat-inline. Home falls back to a new chat with the exact
-        // command so ChatView can execute it after mounting.
+      case "/diagram":
+        // These commands generate chat-inline. Home falls back to a new chat
+        // with the exact command so ChatView can execute it after mounting.
         return false;
       case "/chats":
       case "/agents":
@@ -3230,10 +4100,7 @@ export function Workspace() {
       }))}
       sessions={sessions}
       activeSessionId={activeChatSessionId}
-      onNewChat={() => {
-        startFamiliarChat(activeId);
-        shellRef.current?.dismissNavMobile();
-      }}
+      onNewChat={startWorkspaceChat}
       onOpenSettings={() => {
         shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");
@@ -3263,6 +4130,19 @@ export function Workspace() {
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
+      projects={registeredProjects}
+      projectId={selectedWorkspaceProjectId}
+      project={selectedWorkspaceProject}
+      projectLoading={projectsLoading}
+      projectError={projectsError}
+      reloadProjects={reloadProjects}
+      onProjectChange={selectWorkspaceProject}
+      createProjectOrThrow={createProjectOrThrow}
+      projectCrew={resolvedProjectCrew}
+      projectCrewLoading={effectiveProjectCrewLoading}
+      projectCrewError={projectCrewError}
+      reloadProjectCrew={reloadProjectCrew}
+      contextNotice={null}
     />
   );
 
@@ -3287,10 +4167,7 @@ export function Workspace() {
         setMode("chat");
         shellRef.current?.dismissNavMobile();
       }}
-      onNewChat={(projectRoot) => {
-        startFamiliarChat(activeId, projectRoot);
-        shellRef.current?.dismissNavMobile();
-      }}
+      onNewChat={() => startWorkspaceChat()}
       onNavigate={(nextMode) => {
         setMode(nextMode);
         shellRef.current?.dismissNavMobile();
@@ -3314,6 +4191,20 @@ export function Workspace() {
         shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");
       }}
+      projects={registeredProjects}
+      projectId={selectedWorkspaceProjectId}
+      project={selectedWorkspaceProject}
+      projectLoading={projectsLoading}
+      projectError={projectsError}
+      reloadProjects={reloadProjects}
+      onProjectChange={selectWorkspaceProject}
+      createProjectOrThrow={createProjectOrThrow}
+      projectCrew={resolvedProjectCrew}
+      projectCrewLoading={effectiveProjectCrewLoading}
+      projectCrewError={projectCrewError}
+      reloadProjectCrew={reloadProjectCrew}
+      contextNotice={null}
+      selectedFamiliarIds={scopeIds}
     />
   );
 
@@ -3404,6 +4295,7 @@ export function Workspace() {
         familiarsLoaded={familiarsLoaded}
         familiarsError={familiarsError}
         onRetryFamiliars={() => void loadFamiliars()}
+        onRequestNewChat={startWorkspaceChat}
         pendingProjectRoot={pendingProjectChatRoot}
         pendingChatAction={pendingChatAction}
         onSetActiveFamiliar={setActiveId}
@@ -3532,11 +4424,24 @@ export function Workspace() {
     ) : (
       <HomeComposer
         familiars={resolvedFamiliars}
-        activeFamiliarId={activeId}
-        onSetActiveFamiliar={setActiveId}
+        project={selectedWorkspaceProject}
+        taskOrigin={homeTaskOrigin}
+        actingFamiliarId={
+          actingFamiliar.kind === "resolved" ? actingFamiliar.familiarId : null
+        }
+        onRequestActingFamiliar={requestActingFamiliar}
+        onValidateActingFamiliar={validateActingFamiliar}
         sessions={sessions}
         onStartChat={(prompt, fid, projectRoot, opts) =>
-          startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
+          startFamiliarChat(
+            fid,
+            projectRoot,
+            prompt,
+            opts?.initialControls ?? null,
+            opts?.initialAttachments ?? null,
+            undefined,
+            true,
+          )
         }
         onStartVoiceCall={(fid, projectRoot) => startVoiceChat(fid, projectRoot)}
         onNavigateToBoard={() => setMode("board")}
@@ -3835,7 +4740,7 @@ export function Workspace() {
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
               onViewSchedules={() => setMode("inbox")}
-              onOpenQuickChat={() => startFamiliarChat(activeId)}
+              onOpenQuickChat={startWorkspaceChat}
             />
             <TopBar
               onOpenPalette={() => openPalette()}
@@ -3847,7 +4752,7 @@ export function Workspace() {
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
               onOpenMobileHandoff={() => openMobileHandoff()}
-              onOpenQuickChat={() => startFamiliarChat(activeId)}
+              onOpenQuickChat={startWorkspaceChat}
               inboxItems={inboxItemsWithEphemeral}
               familiars={familiars}
               activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
@@ -3882,6 +4787,15 @@ export function Workspace() {
         nav={contextualNav}
         list={undefined}
         detail={detail}
+      />
+
+      <ActingFamiliarGate
+        open={actingFamiliarRequestLabel !== null}
+        actionLabel={actingFamiliarRequestLabel ?? "Choose familiar"}
+        eligibleFamiliars={eligibleWorkspaceFamiliars}
+        projectName={selectedWorkspaceProject?.name ?? null}
+        onChoose={(familiarId) => finishActingFamiliarRequest(familiarId)}
+        onClose={() => finishActingFamiliarRequest(null)}
       />
 
       {paletteOpen && (

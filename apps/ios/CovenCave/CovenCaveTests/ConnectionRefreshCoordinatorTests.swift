@@ -3,6 +3,23 @@ import XCTest
 
 final class ConnectionRefreshCoordinatorTests: XCTestCase {
 
+    // MARK: - Supervisor retry policy
+
+    func testReconnectBackoffDoublesAndCapsAtSixtySeconds() {
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 1, jitter: 1), 1)
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 2, jitter: 1), 2)
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 3, jitter: 1), 4)
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 7, jitter: 1), 60)
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 99, jitter: 1), 60)
+    }
+
+    func testReconnectBackoffBoundsJitterAndNeverExceedsCap() {
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 1, jitter: 0), 0.8)
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 1, jitter: 9), 1.2)
+        XCTAssertEqual(ConnectionRetryPolicy.delaySeconds(afterFailureCount: 7, jitter: 1.2), 60)
+        XCTAssertEqual(ConnectionRetryPolicy.heartbeatSeconds, 60)
+    }
+
     // MARK: - Test plumbing
 
     private actor Counter {
@@ -175,6 +192,37 @@ final class ConnectionRefreshCoordinatorTests: XCTestCase {
         XCTAssertTrue(next.launched)
         let probeCount = await probes.value
         XCTAssertEqual(probeCount, 2)
+    }
+
+    func testCancelledDisconnectBridgeCannotCancelReplacementProbe() async {
+        let coordinator = ConnectionRefreshCoordinator()
+        let probeStarted = Gate()
+        let probeRelease = Gate()
+        let bridgeRelease = Gate()
+        let url = URL(string: "http://replacement.cave.test:3000")!
+
+        let launcher = Task {
+            await coordinator.refresh {
+                await probeStarted.open()
+                await probeRelease.wait()
+                return Task.isCancelled ? .cancelled : .found(url)
+            }
+        }
+        await probeStarted.wait()
+
+        // Models configure revoking the asynchronous bridge installed by the
+        // preceding synchronous disconnect before its actor hop can execute.
+        let staleDisconnectBridge = Task {
+            await bridgeRelease.wait()
+            await coordinator.cancelActiveRefreshIfCallerCurrent()
+        }
+        staleDisconnectBridge.cancel()
+        await bridgeRelease.open()
+        await staleDisconnectBridge.value
+
+        await probeRelease.open()
+        let result = await launcher.value
+        XCTAssertEqual(result.result, .found(url))
     }
 
     // MARK: - Concurrent bootstrap

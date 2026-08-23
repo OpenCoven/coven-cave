@@ -14,6 +14,7 @@ import {
   type ConsoleProject,
 } from "@/lib/permissions-console";
 import type { ProjectAccessLevel } from "@/lib/project-access-levels";
+import { publishProjectAccessChanged } from "@/lib/project-access-events";
 
 /**
  * Settings → Familiars → Access groups — manage named groups of familiars that
@@ -65,12 +66,19 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
   }, [load]);
 
   const withBusy = useCallback(
-    async (groupId: string, run: () => Promise<Response>) => {
+    async (
+      groupId: string,
+      affectedProjectIds: readonly string[],
+      run: () => Promise<Response>,
+    ) => {
       setBusy((prev) => new Set(prev).add(groupId));
       try {
         const res = await run();
         if (!res.ok) throw new Error(String(res.status));
         setError(null);
+        for (const projectId of new Set(affectedProjectIds)) {
+          publishProjectAccessChanged(projectId);
+        }
         await load();
       } catch {
         setError("Couldn’t update that access group.");
@@ -114,7 +122,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
       const memberFamiliarIds = isMember
         ? group.memberFamiliarIds.filter((id) => id !== familiarId)
         : [...group.memberFamiliarIds, familiarId];
-      void withBusy(group.id, () =>
+      void withBusy(group.id, group.projectGrants.map((grant) => grant.projectId), () =>
         fetch(`/api/access-groups/${group.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -140,7 +148,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
         .filter((grant) => grant.projectId !== projectId)
         .map((grant) => ({ projectId: grant.projectId, access: grant.access ?? "write" }));
       if (nextLevel) projectGrants.push({ projectId, access: nextLevel });
-      void withBusy(group.id, () =>
+      void withBusy(group.id, [projectId], () =>
         fetch(`/api/access-groups/${group.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -153,7 +161,7 @@ export function AccessGroupsSection({ familiars }: { familiars: ResolvedFamiliar
 
   const deleteGroup = useCallback(
     (group: ConsoleAccessGroup) => {
-      void withBusy(group.id, () =>
+      void withBusy(group.id, group.projectGrants.map((grant) => grant.projectId), () =>
         fetch(`/api/access-groups/${group.id}`, { method: "DELETE" }),
       );
     },

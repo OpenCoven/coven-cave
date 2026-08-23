@@ -45,8 +45,13 @@ const chatSidebarBlock = workspace.match(/const chatSidebar =[\s\S]*?const conte
 assert.ok(chatSidebarBlock, "workspace should keep a distinct chatSidebar block");
 assert.doesNotMatch(chatSidebarBlock, /dismissListMobile/, "chat sidebar callbacks should not dismiss the list drawer");
 assert.ok(
-  (chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 6,
+  (chatSidebarBlock.match(/dismissNavMobile/g) ?? []).length >= 5,
   "chat sidebar actions should dismiss the mobile nav drawer",
+);
+assert.match(
+  workspace,
+  /const startWorkspaceChat = useCallback[\s\S]{0,160}dismissNavMobile/,
+  "the shared actor-gated new-chat action owns its mobile-nav dismissal",
 );
 assert.match(
   workspaceSidebar,
@@ -82,21 +87,21 @@ assert.match(
   "ChatRouter should receive the rail-only flag — the outer sidebar owns chats, but the full-width toolbar must stay (hideRail, not compact)",
 );
 
-// ── Recreated sidepanel: project-grouped threads + register-as-project. ───────
+// ── Contextual sidepanel: one recency list with project identity on each row. ─
 assert.match(
   workspaceSidebar,
   /deriveChatProjectGroups\(applyProjectOverrides/,
-  "ChatSidebar should group threads by project (with local overrides applied)",
+  "ChatSidebar should resolve project identity with local overrides applied",
+);
+assert.doesNotMatch(
+  workspaceSidebar,
+  /handleRegister|Register \$\{label\} as a project/,
+  "ChatSidebar should not duplicate project registration under the global project selector",
 );
 assert.match(
   workspaceSidebar,
-  /handleRegister/,
-  "ChatSidebar should offer register-as-project for unregistered roots",
-);
-assert.match(
-  workspaceSidebar,
-  /Register \$\{label\} as a project/,
-  "ChatSidebar register affordance should be labeled for assistive tech",
+  /project=\{sessionProjectById\.get\(session\.id\) \?\? null\}/,
+  "recency rows should retain their compact project identity",
 );
 
 // ── Easy add-project on failure: a 403 project-access denial surfaces a
@@ -465,50 +470,30 @@ assert.match(
   "scope changes should explicitly launch a current-scope session-list request",
 );
 
-// ── Visible grouping tabs: recency view (default) + by-project. ───────────────
+// ── One recency-oriented list; project scope lives in the global selector. ───
 assert.match(
   workspaceSidebar,
   /deriveChatRecencyBuckets\(/,
-  "ChatSidebar should derive time buckets for the Recent view",
+  "ChatSidebar should derive time buckets for its chat list",
 );
-assert.match(
+assert.doesNotMatch(
   workspaceSidebar,
   /<Tabs<ChatSidebarView>/,
-  "ChatSidebar should use the shared accessible tabs primitive",
-);
-assert.match(
-  workspaceSidebar,
-  /idPrefix="chat-sidebar-group"/,
-  "Grouping tabs should emit stable ids and aria-controls",
-);
-assert.match(
-  workspaceSidebar,
-  /id="chat-sidebar-group-panel"[\s\S]*?role="tabpanel"[\s\S]*?aria-labelledby=\{`chat-sidebar-group-tab-\$\{view\}`\}[\s\S]*?<nav aria-label="Chat threads">/,
-  "The active thread list should be associated with its selected grouping tab",
+  "ChatSidebar should not render a one-option grouping control",
 );
 const chatSidebarPanelOpenTag = workspaceSidebar.match(
   /<div\s*\n\s*id="chat-sidebar-group-panel"[\s\S]*?>/,
 )?.[0] ?? "";
-assert.ok(chatSidebarPanelOpenTag, "ChatSidebar should render the active grouping panel");
+assert.ok(chatSidebarPanelOpenTag, "ChatSidebar should render the thread list panel");
 assert.doesNotMatch(
   chatSidebarPanelOpenTag,
-  /tabIndex=/,
-  "the tabpanel should not add a redundant keyboard stop before its interactive rows",
+  /role="tabpanel"|aria-labelledby=|tabIndex=/,
+  "the thread list should not retain tab semantics after grouping tabs are removed",
 );
-assert.match(
+assert.doesNotMatch(
   workspaceSidebar,
-  /id: "recent",[\s\S]*?label: "Recent",[\s\S]*?icon: "ph:clock-counter-clockwise",[\s\S]*?controlsId: "chat-sidebar-group-panel"/,
-  "ChatSidebar should expose the Recent grouping tab",
-);
-assert.match(
-  workspaceSidebar,
-  /id: "projects",[\s\S]*?label: "Projects",[\s\S]*?icon: "ph:folders-bold",[\s\S]*?controlsId: "chat-sidebar-group-panel"/,
-  "ChatSidebar should expose the Projects grouping tab",
-);
-assert.match(
-  workspaceSidebar,
-  /readChatSidebarView\(\)/,
-  "the organize mode should hydrate from the persisted preference",
+  /readChatSidebarView|writeChatSidebarView|ChatSidebarView/,
+  "the sidebar no longer hydrates a dead Recent/Projects preference",
 );
 assert.doesNotMatch(
   workspaceSidebar,
@@ -531,7 +516,7 @@ assert.match(
 );
 assert.match(
   workspaceSidebar,
-  /const recentBuckets = useMemo\([\s\S]*?\[view, recentSessions, now\],/,
+  /const recentBuckets = useMemo\([\s\S]*?\[recentSessions, now\],/,
   "recent buckets should re-derive from the same memoized now, not a separately-tracked minuteTick",
 );
 assert.match(
@@ -541,13 +526,12 @@ assert.match(
 );
 assert.ok(
   (workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2,
-  "both view branches should render the shared ThreadRow",
+  "attention and recency sections should render the shared ThreadRow",
 );
 
 // Recent rows carry their project's identity tile: the time buckets
-// interleave chats from every project, and the mapping comes from the SAME
-// override-aware grouping the folder view uses (a dragged chat shows its
-// override folder's tile, not its recorded cwd's).
+// interleave chats from every project, and the mapping remains override-aware
+// so a dragged chat shows its chosen project rather than its recorded cwd.
 assert.match(
   workspaceSidebar,
   /const sessionProjectById = useMemo\(\(\) => \{[\s\S]*?for \(const group of groups\)/,

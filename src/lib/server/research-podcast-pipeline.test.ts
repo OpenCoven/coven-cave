@@ -12,6 +12,8 @@ import type { ResearchMediaJobContext } from "./research-media-job-contract.ts";
 import {
   DEFAULT_ELEVENLABS_MODEL_ID,
   DEFAULT_ELEVENLABS_PODCAST_MODEL_ID,
+  ELEVENLABS_MAX_SEED,
+  modelSupportsRequestStitching,
 } from "../voice/elevenlabs-shared.ts";
 
 const mediaRoot = await mkdtemp(path.join(tmpdir(), "cave-podcast-pipeline-"));
@@ -23,6 +25,7 @@ const {
   concatPcmWav,
   createPodcastMediaJobDefinition,
   readBoundedElevenLabsAudio,
+  readElevenLabsErrorDetail,
   trimPcmWavSilence,
 } = await import("./research-podcast-pipeline.ts");
 const {
@@ -403,6 +406,20 @@ test("ElevenLabs response streaming stops at the audio byte cap", async () => {
   );
 });
 
+test("ElevenLabs error detail reads only a bounded streamed prefix", async () => {
+  const encoder = new TextEncoder();
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(" ".repeat(1_200)));
+        controller.enqueue(encoder.encode("provider detail that must not be read"));
+        controller.close();
+      },
+    }),
+  );
+  assert.equal(await readElevenLabsErrorDetail(response), "");
+});
+
 test("stored bytes equal the single assembled WAV", async () => {
   const chunks = [wav([1, 2]), wav([3, 4])];
   let index = 0;
@@ -436,7 +453,7 @@ test("stored bytes equal the single assembled WAV", async () => {
 
 test("ElevenLabs TTS body carries delivery controls and optional segment context", () => {
   const full = buildElevenLabsTtsBody("Hello.", {
-    modelId: "eleven_v3",
+    modelId: "eleven_multilingual_v2",
     voiceSettings: {
       stability: 0.3,
       similarityBoost: 0.9,
@@ -446,10 +463,11 @@ test("ElevenLabs TTS body carries delivery controls and optional segment context
     },
     previousText: "Before.",
     nextText: "After.",
+    seed: 4242,
   });
   assert.deepEqual(full, {
     text: "Hello.",
-    model_id: "eleven_v3",
+    model_id: "eleven_multilingual_v2",
     voice_settings: {
       stability: 0.3,
       similarity_boost: 0.9,
@@ -459,6 +477,7 @@ test("ElevenLabs TTS body carries delivery controls and optional segment context
     },
     previous_text: "Before.",
     next_text: "After.",
+    seed: 4242,
   });
 
   // A bare call stays on the latency default and sends the baseline settings,
@@ -474,6 +493,45 @@ test("ElevenLabs TTS body carries delivery controls and optional segment context
   });
   assert.equal("previous_text" in minimal, false);
   assert.equal("next_text" in minimal, false);
+  assert.equal("seed" in minimal, false);
+});
+
+test("v3 renders drop segment context the provider would reject outright", () => {
+  // Regression: sending previous_text/next_text to the v3 family returns HTTP
+  // 400 invalid_parameters, which failed every v3 podcast render.
+  for (const modelId of ["eleven_v3", "eleven_v3_preview", "eleven_v3_alpha"]) {
+    const body = buildElevenLabsTtsBody("Hello.", {
+      modelId,
+      previousText: "Before.",
+      nextText: "After.",
+      seed: 7,
+    });
+    assert.equal(body.model_id, modelId);
+    assert.equal("previous_text" in body, false, `${modelId} must not stitch`);
+    assert.equal("next_text" in body, false, `${modelId} must not stitch`);
+    // Everything else still applies — only the unsupported keys are dropped.
+    assert.equal(body.seed, 7);
+    assert.equal(body.voice_settings.stability, 0.5);
+  }
+  assert.equal(modelSupportsRequestStitching("eleven_v3"), false);
+  assert.equal(modelSupportsRequestStitching("eleven_multilingual_v2"), true);
+  assert.equal(modelSupportsRequestStitching(DEFAULT_ELEVENLABS_MODEL_ID), true);
+  assert.equal(
+    modelSupportsRequestStitching(DEFAULT_ELEVENLABS_PODCAST_MODEL_ID),
+    true,
+  );
+});
+
+test("an out-of-range seed is dropped rather than sent to the provider", () => {
+  for (const seed of [-1, 1.5, 4_294_967_296, Number.NaN]) {
+    const body = buildElevenLabsTtsBody("Hello.", { seed });
+    assert.equal("seed" in body, false, `seed ${seed} must not be sent`);
+  }
+  assert.equal(buildElevenLabsTtsBody("Hello.", { seed: 0 }).seed, 0);
+  assert.equal(
+    buildElevenLabsTtsBody("Hello.", { seed: ELEVENLABS_MAX_SEED }).seed,
+    ELEVENLABS_MAX_SEED,
+  );
 });
 
 test("podcast segments synthesize with cross-segment context and the offline model default", async () => {
@@ -553,7 +611,8 @@ test("ElevenLabs podcast config reaches the outbound request and stored WAV", as
           host: "21m00Tcm4TlvDq8ikWAM",
           guest: "AZnzlk1XvdvUeBnXmlld",
         },
-        model: "eleven_v3",
+        model: "eleven_multilingual_v2",
+        seed: 20_260_817,
         voiceSettings: {
           stability: 0.3,
           similarityBoost: 0.9,
@@ -583,7 +642,7 @@ test("ElevenLabs podcast config reaches the outbound request and stored WAV", as
     assert.deepEqual(requests.map(({ body }) => body), [
       {
         text: "Opening.",
-        model_id: "eleven_v3",
+        model_id: "eleven_multilingual_v2",
         voice_settings: {
           stability: 0.3,
           similarity_boost: 0.9,
@@ -592,10 +651,11 @@ test("ElevenLabs podcast config reaches the outbound request and stored WAV", as
           speed: 1.25,
         },
         next_text: "Findings.",
+        seed: 20_260_817,
       },
       {
         text: "Findings.",
-        model_id: "eleven_v3",
+        model_id: "eleven_multilingual_v2",
         voice_settings: {
           stability: 0.3,
           similarity_boost: 0.9,
@@ -605,10 +665,11 @@ test("ElevenLabs podcast config reaches the outbound request and stored WAV", as
         },
         previous_text: "Opening.",
         next_text: "Closing.",
+        seed: 20_260_817,
       },
       {
         text: "Closing.",
-        model_id: "eleven_v3",
+        model_id: "eleven_multilingual_v2",
         voice_settings: {
           stability: 0.3,
           similarity_boost: 0.9,
@@ -617,6 +678,7 @@ test("ElevenLabs podcast config reaches the outbound request and stored WAV", as
           speed: 1.25,
         },
         previous_text: "Findings.",
+        seed: 20_260_817,
       },
     ]);
     assert.equal(result.content.kind, "podcast");
@@ -632,6 +694,105 @@ test("ElevenLabs podcast config reaches the outbound request and stored WAV", as
     );
     assert.equal(new TextDecoder().decode(stored.slice(0, 4)), "RIFF");
     assert.equal(new DataView(stored.buffer, stored.byteOffset, stored.byteLength).getUint32(40, true), 6);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousApiKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = previousApiKey;
+  }
+});
+
+test("an eleven_v3 podcast render completes instead of failing every segment", async () => {
+  // Before the capability guard this render returned `http 400` on segment 1
+  // for every user who selected the v3 model.
+  const previousApiKey = process.env.ELEVENLABS_API_KEY;
+  const previousFetch = globalThis.fetch;
+  const bodies: Array<Record<string, unknown>> = [];
+  process.env.ELEVENLABS_API_KEY = "test-elevenlabs-key";
+  globalThis.fetch = async (_input, init = {}) => {
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    bodies.push(body);
+    if ("previous_text" in body || "next_text" in body) {
+      return new Response(
+        JSON.stringify({
+          detail: {
+            status: "invalid_parameters",
+            message:
+              "Providing previous_text or next_text is not yet supported with the 'eleven_v3' model.",
+          },
+        }),
+        { status: 400 },
+      );
+    }
+    return new Response(new Uint8Array([1, 0]), { status: 200 });
+  };
+
+  try {
+    const definition = createPodcastMediaJobDefinition({
+      familiarId: "nova",
+      generationId: "podcast-v3-render",
+      script: [
+        { id: "segment-1", text: "Opening." },
+        { id: "segment-2", text: "Findings.", speaker: "guest" },
+        { id: "segment-3", text: "Closing." },
+      ],
+      renderConfig: renderConfig({
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+        model: "eleven_v3",
+      }),
+    });
+    const result = await definition.run(jobContext());
+    assert.equal(bodies.length, 3);
+    assert.ok(
+      bodies.every((body) => body.model_id === "eleven_v3"),
+      "the selected v3 model is still what gets rendered",
+    );
+    assert.ok(
+      bodies.every(
+        (body) => !("previous_text" in body) && !("next_text" in body),
+      ),
+      "v3 segments must not carry the context keys the provider rejects",
+    );
+    assert.equal(result.content.kind, "podcast");
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousApiKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = previousApiKey;
+  }
+});
+
+test("a rejected ElevenLabs render reports the provider's reason, not a bare status", async () => {
+  const previousApiKey = process.env.ELEVENLABS_API_KEY;
+  const previousFetch = globalThis.fetch;
+  process.env.ELEVENLABS_API_KEY = "test-elevenlabs-key";
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        detail: { status: "invalid_uid", message: "A voice for the voice_id was not found." },
+      }),
+      { status: 400 },
+    );
+
+  try {
+    const definition = createPodcastMediaJobDefinition({
+      familiarId: "nova",
+      generationId: "podcast-error-detail",
+      script: [{ id: "segment-1", text: "Opening." }],
+      renderConfig: renderConfig({
+        provider: "elevenlabs",
+        voice: "21m00Tcm4TlvDq8ikWAM",
+      }),
+    });
+    await assert.rejects(
+      definition.run(jobContext()),
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        assert.match(message, /http 400/);
+        assert.match(message, /invalid_uid/);
+        assert.match(message, /voice_id/);
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = previousFetch;
     if (previousApiKey === undefined) delete process.env.ELEVENLABS_API_KEY;

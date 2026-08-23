@@ -43,6 +43,121 @@ export const DEFAULT_ELEVENLABS_VOICE_SETTINGS: ElevenLabsVoiceSettings = {
   speed: 1,
 };
 
+/**
+ * Named delivery directions for the offline podcast render.
+ *
+ * The render call was previously undirected: every segment went out on
+ * ElevenLabs' own baseline, which is the setting that lets a long narration
+ * unit slide into continuous pitch declination. `stability` is the lever that
+ * matters for that — lower values let the model reset pitch and vary pace
+ * between sentences, higher values hold one consistent reading — so each
+ * preset below is a point on that axis rather than an arbitrary bundle.
+ *
+ * Presets, not four raw sliders: the numbers encode which direction fights
+ * flatness, and that knowledge belongs in the codebase rather than in every
+ * user's head. `neutral` is byte-identical to the baseline, so a render that
+ * does not choose a direction behaves exactly as it did before.
+ */
+export type ElevenLabsDeliveryPresetId =
+  | "neutral"
+  | "conversational"
+  | "animated"
+  | "narration";
+
+export type ElevenLabsDeliveryPreset = {
+  id: ElevenLabsDeliveryPresetId;
+  label: string;
+  /** One-line hint shown under the Studio control. */
+  hint: string;
+  settings: ElevenLabsVoiceSettings;
+};
+
+export const ELEVENLABS_DELIVERY_PRESETS: readonly ElevenLabsDeliveryPreset[] = [
+  {
+    id: "neutral",
+    label: "Neutral",
+    hint: "ElevenLabs' baseline. Consistent, and the flattest on long narration units.",
+    settings: DEFAULT_ELEVENLABS_VOICE_SETTINGS,
+  },
+  {
+    id: "conversational",
+    label: "Conversational",
+    hint: "Looser stability so pitch resets between sentences instead of declining across the turn.",
+    settings: {
+      stability: 0.35,
+      similarityBoost: 0.75,
+      style: 0.35,
+      useSpeakerBoost: true,
+      speed: 1,
+    },
+  },
+  {
+    id: "animated",
+    label: "Animated",
+    hint: "The widest pitch and pace range — for debate and interview turns that should sound argued.",
+    settings: {
+      stability: 0.2,
+      similarityBoost: 0.7,
+      style: 0.6,
+      useSpeakerBoost: true,
+      speed: 1.05,
+    },
+  },
+  {
+    id: "narration",
+    label: "Narration",
+    hint: "Steadier and slightly slower — for straight recap reads where evenness beats colour.",
+    settings: {
+      stability: 0.7,
+      similarityBoost: 0.8,
+      style: 0,
+      useSpeakerBoost: true,
+      speed: 0.95,
+    },
+  },
+];
+
+export function elevenLabsDeliveryPreset(
+  id: unknown,
+): ElevenLabsDeliveryPreset | null {
+  return ELEVENLABS_DELIVERY_PRESETS.find((preset) => preset.id === id) ?? null;
+}
+
+/**
+ * Name the delivery a stored `voice_settings` object represents, so the review
+ * gate can show what was actually directed rather than five bare numbers.
+ * Settings that match no preset are reported as "Custom" — the contract accepts
+ * any in-range object, so this must not claim a name it cannot prove.
+ */
+export function describeElevenLabsVoiceSettings(
+  settings: ElevenLabsVoiceSettings,
+): string {
+  const match = ELEVENLABS_DELIVERY_PRESETS.find(
+    (preset) =>
+      preset.settings.stability === settings.stability &&
+      preset.settings.similarityBoost === settings.similarityBoost &&
+      preset.settings.style === settings.style &&
+      preset.settings.useSpeakerBoost === settings.useSpeakerBoost &&
+      preset.settings.speed === settings.speed,
+  );
+  return match ? match.label : "Custom";
+}
+
+/**
+ * Models offered for an offline podcast render. Deliberately a short curated
+ * list rather than the account's whole catalog: these are the three that differ
+ * in ways a podcast author is choosing between, and each is a valid
+ * `isValidElevenLabsModelId` value the render contract already accepts.
+ */
+export const ELEVENLABS_PODCAST_MODEL_OPTIONS: readonly {
+  id: string;
+  label: string;
+}[] = [
+  { id: DEFAULT_ELEVENLABS_PODCAST_MODEL_ID, label: "Multilingual v2 · balanced (default)" },
+  { id: "eleven_v3", label: "v3 · most expressive" },
+  { id: DEFAULT_ELEVENLABS_MODEL_ID, label: "Turbo v2.5 · fastest" },
+];
+
 const ELEVENLABS_VOICE_SETTINGS_RANGES: Record<
   "stability" | "similarityBoost" | "style" | "speed",
   [number, number]
@@ -92,6 +207,33 @@ export function isValidElevenLabsVoiceId(id: unknown): id is string {
 
 export function isValidElevenLabsModelId(id: unknown): id is string {
   return typeof id === "string" && /^[a-z0-9_]{1,64}$/.test(id);
+}
+
+/**
+ * Request stitching (`previous_text` / `next_text`) is not accepted by the v3
+ * model family — the provider rejects the whole request with HTTP 400
+ * `invalid_parameters`, so sending it unconditionally fails every render on
+ * those models rather than degrading. Capability is derived from the model id
+ * prefix so `eleven_v3` and its dated/preview variants are all covered.
+ */
+export function modelSupportsRequestStitching(modelId: string): boolean {
+  return !modelId.startsWith("eleven_v3");
+}
+
+/** ElevenLabs accepts an unsigned 32-bit integer seed for reproducible renders. */
+export const ELEVENLABS_MAX_SEED = 4_294_967_295;
+
+/**
+ * A pinned seed is what makes two renders comparable; without it every
+ * before/after delivery measurement is confounded by provider run variance.
+ */
+export function isValidElevenLabsSeed(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= ELEVENLABS_MAX_SEED
+  );
 }
 
 // ── Account catalog (saved voices + available models) ────────────────────────

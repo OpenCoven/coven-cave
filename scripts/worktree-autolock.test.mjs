@@ -14,7 +14,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  evaluateRisk,
   headShaOf,
+  isAutoLock,
   parseWorktrees,
   reasonFor,
   remoteTagCommits,
@@ -166,6 +168,14 @@ try {
     mkdirSync(spaced);
     const script = path.join(spaced, "worktree-autolock.mjs");
     copyFileSync(fileURLToPath(new URL("./worktree-autolock.mjs", import.meta.url)), script);
+    // The direct-run guard now lives in a sibling module, so the copy needs it
+    // too — otherwise the script dies on ERR_MODULE_NOT_FOUND before reaching
+    // the behaviour under test, which reads as the same silence this case
+    // exists to catch.
+    copyFileSync(
+      fileURLToPath(new URL("./direct-run.mjs", import.meta.url)),
+      path.join(spaced, "direct-run.mjs"),
+    );
 
     // Reach the script through a symlink so argv[1] and import.meta.url differ.
     const linked = path.join(box, "link");
@@ -331,6 +341,94 @@ try {
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+// --- a lock is released once the risk it named is gone (cave-a245b) ----------
+// A lock reason is a point-in-time claim. Nothing re-evaluated it, so a tree
+// locked while genuinely at risk stayed locked after its branch was pushed, and
+// `beads:worktrees:apply` then failed `retirement-blocked` on units that were
+// in fact safe — registered worktrees climbed 14 -> 55 and both budgets blew.
+{
+  const box = mkdtempSync(path.join(tmpdir(), "autolock-release-"));
+  try {
+    const hook = fileURLToPath(new URL("./worktree-autolock.mjs", import.meta.url));
+    const origin = path.join(box, "origin.git");
+    git(["init", "--quiet", "--bare", "-b", "main", origin], box);
+
+    const repo = path.join(box, "repo");
+    git(["init", "--quiet", "-b", "main", repo], box);
+    writeFileSync(path.join(repo, "seed.txt"), "seed\n");
+    git(["add", "."], repo);
+    git(["commit", "--quiet", "--no-gpg-sign", "-m", "seed"], repo);
+    git(["remote", "add", "origin", origin], repo);
+    git(["push", "--quiet", "origin", "main"], repo);
+
+    const wt = path.join(repo, "wt");
+    git(["worktree", "add", "--quiet", "-b", "risky", wt], repo);
+    writeFileSync(path.join(wt, "unsaved.txt"), "would be lost\n");
+
+    const runHook = () => {
+      // The 60s throttle stamp would make a second pass a no-op, and the whole
+      // point here is what the NEXT pass does.
+      rmSync(path.join(repo, ".claude", "worktree-autolock.stamp"), { force: true });
+      execFileSync(process.execPath, [hook], {
+        cwd: repo,
+        env: { ...process.env, CLAUDE_PROJECT_DIR: repo },
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 30_000,
+      });
+      return parseWorktrees(
+        execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" }),
+      ).find((w) => w.path.endsWith("wt"));
+    };
+
+    const locked = runHook();
+    assert.equal(locked.locked, true, "untracked work is at risk, so the hook locks it");
+    assert.ok(isAutoLock(locked.lockReason), "the hook's own lock is recognizable as its own");
+
+    // Still at risk → the lock must survive re-evaluation. Without this, a
+    // release path could simply unlock everything and still pass the test below.
+    assert.equal(runHook().locked, true, "a lock whose risk still holds is not released");
+
+    // Commit and push: the risk the reason names no longer holds.
+    git(["add", "."], wt);
+    git(["commit", "--quiet", "--no-gpg-sign", "-m", "save"], wt);
+    git(["push", "--quiet", "origin", "risky"], wt);
+    assert.equal(runHook().locked, false, "the lock is released once the head is retained");
+
+    // Fail closed on anything unproven: an unreadable tree keeps its lock,
+    // because "I could not measure this" is not evidence the work is safe.
+    assert.equal(
+      evaluateRisk(path.join(box, "does-not-exist")).status,
+      "unreadable",
+      "a missing path is unreadable, never 'clear'",
+    );
+    assert.equal(evaluateRisk(wt).status, "clear", "a clean, pushed tree measures clear");
+
+    // A lock this hook did not take is somebody else's claim it cannot
+    // evaluate, so it must stand even when nothing is at risk.
+    git(["worktree", "lock", "--reason", "active cave-1c8zf PR completion", wt], repo);
+    assert.equal(runHook().locked, true, "a human lock is never released by the hook");
+    git(["worktree", "unlock", wt], repo);
+  } finally {
+    rmSync(box, { recursive: true, force: true });
+  }
+}
+
+// --- only this hook's own locks are releasable -------------------------------
+// The prefix test is the entire safety boundary, and porcelain C-quotes any
+// reason containing something unusual — ours always does (an em dash).
+{
+  assert.equal(isAutoLock('"auto-locked 2026-08-14: 1 commit not on any remote"'), true);
+  assert.equal(isAutoLock("auto-locked 2026-08-14: 3 uncommitted paths"), true);
+  assert.equal(isAutoLock('"active cave-1c8zf PR completion"'), false);
+  assert.equal(isAutoLock(""), false, "a bare `locked` line carries no claim of ours");
+  assert.equal(isAutoLock(undefined), false);
+  assert.equal(
+    isAutoLock('"manual: auto-locked look-alike"'),
+    false,
+    "the prefix must lead the reason, not merely appear in it",
+  );
 }
 
 console.log("worktree-autolock.test.mjs: ok");

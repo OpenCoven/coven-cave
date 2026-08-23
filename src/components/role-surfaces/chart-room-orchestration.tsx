@@ -134,10 +134,11 @@ export function ChartRoomOrchestration({
       });
     }
 
-    if (step.needs != null && stepOrder[step.needs] !== undefined) {
-      const upstreamY = centre(stepOrder, step.needs, STEP_PITCH, STEP_H);
+    for (const parentId of step.needs) {
+      if (stepOrder[parentId] === undefined) continue;
+      const upstreamY = centre(stepOrder, parentId, STEP_PITCH, STEP_H);
       edges.push({
-        id: `d:${step.id}`,
+        id: `d:${step.id}:${parentId}`,
         lane: "dependency",
         dim: !on,
         width: 1.3,

@@ -1,4 +1,97 @@
 import SwiftUI
+import PhotosUI
+import UIKit
+
+enum FamiliarsListCopy {
+    static let cachedAccessBanner = "Showing cached familiar access"
+
+    static func emptyState(for context: ProjectContext?) -> (title: String, message: String) {
+        switch context {
+        case .project(let project):
+            return (
+                "No familiars have access",
+                "No familiars have access to \(project.name) yet."
+            )
+        case .unassigned:
+            return ("No recovery familiars", ProjectContextCopy.unassignedRecovery)
+        case nil:
+            return ("Choose a project", "Choose a project in Chats to see its familiar roster.")
+        }
+    }
+}
+
+@MainActor
+struct FamiliarsListPresentation {
+    enum Mode: Equatable {
+        case loading
+        case firstLoadError(String)
+        case empty(title: String, message: String)
+        case list
+    }
+
+    let visibleFamiliars: [Familiar]
+    let showsCachedAccessBanner: Bool
+    let mode: Mode
+
+    init(app: AppModel) {
+        visibleFamiliars = app.projectFamiliars
+        showsCachedAccessBanner = app.projectMembershipLoaded && app.familiarsError != nil
+
+        guard app.projectMembershipLoaded else {
+            if let error = app.familiarsError {
+                mode = .firstLoadError(error)
+            } else {
+                mode = .loading
+            }
+            return
+        }
+
+        if visibleFamiliars.isEmpty {
+            let copy = FamiliarsListCopy.emptyState(for: app.projectContext)
+            mode = .empty(title: copy.title, message: copy.message)
+        } else {
+            mode = .list
+        }
+    }
+}
+
+@MainActor
+struct FamiliarDetailStatsModel {
+    let chats: String
+    let activity: String
+    let tasks: String
+    let memory: String
+
+    static func make(
+        app: AppModel,
+        familiar: Familiar,
+        context: ProjectContext?
+    ) -> FamiliarDetailStatsModel {
+        let chatCount = context.map { app.threadCount(for: familiar.id, in: $0) } ?? 0
+        let assignedTasks = context.map { scopedContext in
+            app.tasks.filter {
+                scopedContext.matches(task: $0, registeredProjects: app.projects)
+                    && $0.familiarId == familiar.id
+                    && $0.status.isActive
+            }
+        } ?? []
+        let taskValue = app.tasksError == nil
+            ? "\(assignedTasks.count)"
+            : app.tasks.isEmpty ? "Unknown" : "\(assignedTasks.count) cached"
+
+        return FamiliarDetailStatsModel(
+            chats: "\(chatCount)",
+            activity: activityValue(for: context.flatMap { app.lastActivity(for: familiar.id, in: $0) }),
+            tasks: taskValue,
+            memory: familiar.memoryFreshness ?? "Unknown"
+        )
+    }
+
+    static func activityValue(for lastActivity: Date?) -> String {
+        guard let lastActivity else { return "No activity yet" }
+        return lastActivity.formatted(date: .abbreviated, time: .shortened)
+    }
+}
 
 /// The all-familiars roster (design: "Familiars" drawer destination): every
 /// summoned familiar with its avatar, role, and live presence. Tapping one
@@ -12,9 +105,15 @@ struct FamiliarsListView: View {
     var openFamiliar: (Familiar) -> Void
 
     var body: some View {
+        let presentation = FamiliarsListPresentation(app: app)
         NavigationStack {
             Group {
-                if let error = app.familiarsError, app.familiars.isEmpty {
+                switch presentation.mode {
+                case .loading:
+                    ProgressView("Loading familiars…")
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .firstLoadError(let error):
                     ContentUnavailableView {
                         Label("Couldn’t load familiars", systemImage: "exclamationmark.triangle")
                     } description: {
@@ -23,16 +122,20 @@ struct FamiliarsListView: View {
                         Button("Retry") { Task { await app.loadFamiliars() } }
                             .buttonStyle(.borderedProminent)
                     }
-                } else if app.familiars.isEmpty {
+                case .empty(let title, let message):
                     ContentUnavailableView {
-                        Label("No familiars", systemImage: "cat")
+                        Label(title, systemImage: app.projectContext == .unassigned ? "tray.full" : "cat")
                     } description: {
-                        Text("Familiars summoned on the desktop appear here.")
+                        Text(message)
                     }
-                } else {
-                    List(app.familiars) { familiar in
+                case .list:
+                    List(presentation.visibleFamiliars) { familiar in
                         NavigationLink {
-                            FamiliarDetailView(familiar: familiar) {
+                            // The roster opens the unified hub (cave-9rwd.2).
+                            // The Chats hand-off is unchanged: the hub's Chat
+                            // action runs the exact same closure the detail
+                            // page's button used to.
+                            FamiliarHubView(familiar: familiar) {
                                 dismiss()
                                 openFamiliar(familiar)
                             }
@@ -47,10 +150,10 @@ struct FamiliarsListView: View {
             }
             .themedListBackground()
             .safeAreaInset(edge: .top, spacing: 0) {
-                if app.familiarsError != nil, !app.familiars.isEmpty {
+                if presentation.showsCachedAccessBanner {
                     HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle")
-                        Text("Showing cached familiars")
+                        Text(FamiliarsListCopy.cachedAccessBanner)
                             .font(.footnote)
                         Spacer()
                         Button("Retry") { Task { await app.loadFamiliars() } }
@@ -123,11 +226,22 @@ private struct FamiliarRosterRow: View {
     }
 }
 
+/// The Familiar hub's **Profile** tab body (`cave-9rwd.2` shell).
+///
+/// This was the roster's standalone detail page until the hub landed. It kept
+/// its identity, defaults and access surfaces and lost the parts the hub now
+/// owns — the avatar hero, the navigation title, the scroll container and the
+/// primary Chat action — so nothing is drawn twice.
+///
+/// It is still driven by the paths that OWN these mutations (the chat model
+/// inventory, `FamiliarPermissionsSheet`) rather than by the dashboard read.
+/// `cave-9rwd.4` replaces it with the comprehensive dashboard-driven profile;
+/// rendering nothing here in the meantime would be a regression from what the
+/// roster used to open.
 struct FamiliarDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     let familiar: Familiar
-    let openChat: () -> Void
 
     @State private var modelState: ChatModelState?
     @State private var modelOptions: [ChatModelOption] = []
@@ -139,9 +253,18 @@ struct FamiliarDetailView: View {
     @State private var showPermissions = false
     @State private var changingModel = false
     @State private var modelMutationQueue = ChatModelMutationQueue()
+    @State private var showAvatarActions = false
+    @State private var showAvatarPhotosPicker = false
+    @State private var showAvatarCamera = false
+    @State private var avatarPhotoItem: PhotosPickerItem?
+    @State private var changingAvatar = false
 
-    private var assignedTasks: [BoardCard] {
-        app.tasks.filter { $0.familiarId == familiar.id && $0.status.isActive }
+    private var scopedContext: ProjectContext? {
+        app.projectContext
+    }
+
+    private var statsModel: FamiliarDetailStatsModel {
+        FamiliarDetailStatsModel.make(app: app, familiar: familiar, context: scopedContext)
     }
 
     private var modelLoadTarget: ChatModelRequestTarget {
@@ -194,32 +317,13 @@ struct FamiliarDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 22) {
-                hero
-                stats
-                identitySection
-                defaultsSection
-                accessSection
-            }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 24)
+        VStack(spacing: 22) {
+            stats
+            identitySection
+            defaultsSection
+            accessSection
         }
-        .background(chrome.bgBase)
-        .navigationTitle(familiar.displayName)
-        .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
-            Button(action: openChat) {
-                Label("Chat with \(familiar.displayName)", systemImage: "bubble.left.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 50)
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .glassChrome(.bottom)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: modelLoadTarget) {
             if !app.tasksLoaded { await app.loadTasks() }
             await loadModel()
@@ -236,46 +340,55 @@ struct FamiliarDetailView: View {
         .sheet(isPresented: $showPermissions) {
             FamiliarPermissionsSheet(familiar: familiar)
         }
+        .photosPicker(
+            isPresented: $showAvatarPhotosPicker,
+            selection: $avatarPhotoItem,
+            matching: .images
+        )
+        .onChange(of: avatarPhotoItem) { _, item in
+            guard let item else { return }
+            Task { await loadAvatar(item) }
+        }
+        .fullScreenCover(isPresented: $showAvatarCamera) {
+            CameraPicker { image in
+                Task { await updateAvatar(image) }
+            }
+            .ignoresSafeArea()
+        }
+        .confirmationDialog(
+            "Familiar avatar",
+            isPresented: $showAvatarActions,
+            titleVisibility: .visible
+        ) {
+            Button("Choose photo") { showAvatarPhotosPicker = true }
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button("Take photo") { showAvatarCamera = true }
+            }
+            if currentFamiliar.avatarUrl != nil {
+                Button("Remove avatar", role: .destructive) {
+                    Task { await removeAvatar() }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose how \(familiar.displayName) appears throughout Coven Cave.")
+        }
     }
 
-    private var hero: some View {
-        VStack(spacing: 12) {
-            AvatarView(
-                familiar: familiar,
-                url: app.client?.avatarURL(for: familiar),
-                size: 108,
-                showStatus: true)
-                .shadow(color: chrome.accent.opacity(0.2), radius: 20, y: 8)
-            Text(familiar.displayName)
-                .font(.system(size: 34, weight: .semibold, design: .serif))
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(Presence.isActive(familiar.status) ? Color.green : chrome.textSecondary)
-                    .frame(width: 7, height: 7)
-                Text(familiar.role ?? familiar.status?.capitalized ?? "Familiar")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.subheadline)
-        }
-        .padding(.top, 18)
+    // The avatar/name/presence hero that used to sit here is gone: the hub's
+    // persistent identity header carries it. Avatar editing remains in the
+    // Profile identity group below, without drawing the hero twice.
+
+    private var currentFamiliar: Familiar {
+        app.familiar(familiar.id) ?? familiar
     }
 
     private var stats: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            statCard("Sessions", value: "\(app.threadCount(for: familiar.id))", icon: "bubble.left")
-            statCard(
-                "Active",
-                value: familiar.activeSessions.map(String.init) ?? "Unknown",
-                icon: "bolt.fill"
-            )
-            statCard(
-                "Tasks",
-                value: app.tasksError == nil
-                    ? "\(assignedTasks.count)"
-                    : app.tasks.isEmpty ? "Unknown" : "\(assignedTasks.count) cached",
-                icon: "checkmark.square"
-            )
-            statCard("Memory", value: familiar.memoryFreshness ?? "Unknown", icon: "brain")
+            statCard("Chats", value: statsModel.chats, icon: "bubble.left")
+            statCard("Activity", value: statsModel.activity, icon: "clock")
+            statCard("Tasks", value: statsModel.tasks, icon: "checkmark.square")
+            statCard("Memory", value: statsModel.memory, icon: "brain")
         }
     }
 
@@ -301,6 +414,37 @@ struct FamiliarDetailView: View {
         detailGroup {
             Text("Identity")
                 .font(.headline)
+            Button {
+                showAvatarActions = true
+            } label: {
+                HStack(spacing: 12) {
+                    AvatarView(
+                        familiar: currentFamiliar,
+                        url: app.client?.avatarURL(for: currentFamiliar),
+                        size: 40,
+                        showStatus: false
+                    )
+                    Text("Avatar")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    if changingAvatar {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Edit")
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(changingAvatar || app.client == nil)
+            .accessibilityLabel("Edit \(familiar.displayName)’s avatar")
+            .accessibilityHint("Choose a photo, take a photo, or remove the current avatar.")
+            Divider()
             detailValue("Role", familiar.role ?? "Not set")
             if let pronouns = familiar.pronouns, !pronouns.isEmpty {
                 detailValue("Pronouns", pronouns)
@@ -472,5 +616,80 @@ struct FamiliarDetailView: View {
             }
         }
         await mutation.value
+    }
+
+    @MainActor
+    private func loadAvatar(_ item: PhotosPickerItem) async {
+        defer { avatarPhotoItem = nil }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data) else {
+                app.showToast(
+                    "Couldn’t read that photo",
+                    systemImage: "exclamationmark.triangle.fill",
+                    style: .error
+                )
+                return
+            }
+            await updateAvatar(image)
+        } catch {
+            app.showToast(
+                "Couldn’t read that photo",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+        }
+    }
+
+    @MainActor
+    private func updateAvatar(_ image: UIImage) async {
+        guard let client = app.client else { return }
+        let resized = image.resizedForUpload(maxDimension: 1_024)
+        guard let data = resized.jpegData(compressionQuality: 0.84) else {
+            app.showToast(
+                "Couldn’t prepare that photo",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+            return
+        }
+
+        changingAvatar = true
+        defer { changingAvatar = false }
+        do {
+            let mutation = try await client.uploadFamiliarAvatar(
+                id: familiar.id,
+                imageData: data,
+                contentType: "image/jpeg"
+            )
+            app.applyFamiliarAvatarMutation(id: familiar.id, avatarUrl: mutation.avatarUrl)
+            app.showToast("Avatar updated", systemImage: "person.crop.circle.fill")
+            Haptics.success()
+        } catch {
+            app.showToast(
+                "Couldn’t update the avatar",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+        }
+    }
+
+    @MainActor
+    private func removeAvatar() async {
+        guard let client = app.client else { return }
+        changingAvatar = true
+        defer { changingAvatar = false }
+        do {
+            let mutation = try await client.deleteFamiliarAvatar(id: familiar.id)
+            app.applyFamiliarAvatarMutation(id: familiar.id, avatarUrl: mutation.avatarUrl)
+            app.showToast("Avatar removed", systemImage: "person.crop.circle")
+            Haptics.tap()
+        } catch {
+            app.showToast(
+                "Couldn’t remove the avatar",
+                systemImage: "exclamationmark.triangle.fill",
+                style: .error
+            )
+        }
     }
 }

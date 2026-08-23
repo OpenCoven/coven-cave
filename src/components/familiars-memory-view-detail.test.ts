@@ -58,12 +58,13 @@ assert.match(source, /\.sort\(compare\[sortMode\]\)/, "visibleFiles must sort by
 
 // ───────── #9 search a11y + clear ─────────
 
-assert.match(source, /aria-label="Clear search"/, "Search must offer a labelled clear button");
+assert.match(source, /<SearchInput/, "Search uses the shared accessible input");
+assert.match(source, /onClear=\{\(\) => setQuery\(""\)\}/, "Search must offer a clear action");
 assert.match(source, /label="Filter memory by familiar"/, "Familiar select must be labelled");
 assert.match(
   source,
-  /event\.key === "Escape" && query/,
-  "Escape in the search field must clear the query",
+  /placeholder=[\s\S]*?"Search memory…"/,
+  "Search uses the canonical placeholder grammar",
 );
 
 // ───────── #10 last-refreshed indicator ─────────

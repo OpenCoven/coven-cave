@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.6"
+version = "0.3.9"
 description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
 authors = ["OpenCoven contributors"]
 license = "MIT OR AGPL-3.0-only"
@@ -59,15 +59,43 @@ tauri-plugin-process = "2"
 # Direct desktop IPC to the locally running Discord client. This remains out
 # of mobile targets because Discord Rich Presence has no mobile client API.
 discord-rich-presence = "1.1.0"
+# Offline read cache (offline_cache.rs): AES-256-GCM over an HKDF-SHA256 key
+# derived from a keychain-held root secret. Desktop-only because the module is
+# — `keyring` has no iOS or Android backend, and there is nowhere on mobile to
+# hold a root secret this cache would trust. sha2 lives here rather than in the
+# Windows block it started in, because both the sidecar archive digests and the
+# cache's derivation need it.
+# `zeroize` is not on by default, and without it the expanded AES round-key
+# schedule outlives the cipher in freed heap — which would undo the Zeroizing
+# this module wraps every other piece of key material in.
+aes-gcm = { version = "0.10", features = ["zeroize"] }
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = "1"
+# Advisory cross-process file locks, for the same reason sha2 moved up here:
+# more than one desktop platform needs them. The Windows sidecar archive holds
+# one over the runtime cache, macOS holds one over reachability ownership, and
+# sidecar_port_lock.rs holds one over the dedicated port on every desktop
+# target — a second copy must lose that claim wherever it launches, not only
+# where a target block happened to list the crate.
+fs2 = "0.4.3"
 
 # Windows packages the large Next.js sidecar as one archive instead of one
 # WiX component per file. The launcher verifies and extracts it on first use.
 [target.'cfg(target_os = "windows")'.dependencies]
-fs2 = "0.4.3"
-sha2 = "0.10"
+# One credential-store backend per OS, so no unused backend is compiled in and
+# the Linux build never pulls a D-Bus stack: Credential Manager here, Keychain
+# Services on macOS, the kernel session keyring on Linux. See offline_cache.rs
+# for what the Linux backend's session lifetime means for the cache.
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
 tar = "0.4"
 zstd = "0.13"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# Win32_Security_Authorization is Get/SetNamedSecurityInfoW and
+# ConvertSidToStringSidW: secret_path_acl.rs uses them to give the plaintext
+# mobile access token a DACL, which Windows has no create-time equivalent of.
+# The feature is a cfg gate over already-vendored bindings, so it pulls in no
+# new crate and leaves Cargo.lock untouched.
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # OS-level glass for the quick-chat tray window: NSVisualEffectView vibrancy
 # behind the transparent webview on macOS (the only platform we apply it on;
@@ -78,7 +106,6 @@ signal-hook-registry = "1.4"
 # Signal numbers for the daemon shutdown handler; signal-hook-registry only
 # exposes register(), not the SIG* constants.
 libc = "0.2"
-fs2 = "0.4.3"
 # Raw msg_send access to NSWindow's standard buttons (traffic-light
 # show/hide follows the side panel); already in the tree via tauri/wry.
 objc2 = "0.6"
@@ -90,6 +117,14 @@ objc2-foundation = "0.3"
 objc2-speech = "0.3"
 objc2-avf-audio = "0.3"
 block2 = "0.6"
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+# Linux desktop keeps the offline cache's root secret in the kernel session
+# keyring rather than the Secret Service, so the build needs no D-Bus stack.
+# The trade is that the secret does not survive a logout; the cache treats the
+# resulting entries as undecryptable and refills (offline_cache.rs).
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["linux-native"] }
 
 # Unix lifecycle tests hard-kill exact owned process groups. Keep libc
 # test-only on Linux while reusing the macOS runtime dependency above.

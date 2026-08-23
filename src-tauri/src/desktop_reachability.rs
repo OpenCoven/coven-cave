@@ -331,8 +331,12 @@ fn read_reachability_config(path: &Path) -> DesktopReachabilityConfig {
 fn launch_agent_reconciliation_required(
     previous: &DesktopReachabilityConfig,
     next: &DesktopReachabilityConfig,
+    launch_agent_is_ready: bool,
+    launch_agent_is_present: bool,
 ) -> bool {
     previous.daemon_mode != next.daemon_mode
+        || (next.daemon_mode && !launch_agent_is_ready)
+        || (!next.daemon_mode && launch_agent_is_present)
 }
 
 #[cfg(desktop)]
@@ -779,15 +783,25 @@ fn run_launchctl(args: &[&str]) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = [stderr.trim(), stdout.trim()]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    if detail.is_empty() {
+        Err(format!("launchctl exited with {}", output.status))
+    } else {
+        Err(detail)
+    }
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn bootout_launch_agent() -> Result<(), String> {
     let domain = launch_agent_domain()?;
-    let plist_path = launch_agent_path()?;
-    let plist_arg = plist_path.to_string_lossy().into_owned();
-    match run_launchctl(&["bootout", &domain, &plist_arg]) {
+    let service = format!("{domain}/{LAUNCH_AGENT_LABEL}");
+    match run_launchctl(&["bootout", &service]) {
         Ok(()) => Ok(()),
         // A missing service is normal on first install and after a clean
         // handoff. All other launchd failures are ownership failures: do not
@@ -802,6 +816,66 @@ fn bootout_launch_agent() -> Result<(), String> {
         }
         Err(error) => Err(format!("could not unload background availability: {error}")),
     }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn bootstrap_launch_agent(domain: &str, plist_path: &str) -> Result<(), String> {
+    match run_launchctl(&["bootstrap", domain, plist_path]) {
+        Ok(()) => Ok(()),
+        Err(first_error) => {
+            // launchd can briefly retain a just-booted-out service label. Reset
+            // it once and retry after a bounded handoff instead of making the
+            // user toggle Background availability repeatedly.
+            bootout_launch_agent().map_err(|cleanup_error| {
+                format!("{first_error}; launchd retry cleanup failed: {cleanup_error}")
+            })?;
+            thread::sleep(Duration::from_millis(200));
+            run_launchctl(&["bootstrap", domain, plist_path]).map_err(|retry_error| {
+                if retry_error == first_error {
+                    retry_error
+                } else {
+                    format!("{first_error}; retry failed: {retry_error}")
+                }
+            })
+        }
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn expected_launch_agent_plist() -> Result<String, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("could not resolve CovenCave executable: {error}"))?;
+    let log_dir = std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|_| "HOME is unavailable".to_string())?
+        .join("Library")
+        .join("Logs")
+        .join("CovenCave");
+    Ok(launch_agent_plist(
+        &executable,
+        &log_dir.join("sidecar-daemon.out.log"),
+        &log_dir.join("sidecar-daemon.err.log"),
+    ))
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn launch_agent_loaded() -> bool {
+    let Ok(domain) = launch_agent_domain() else {
+        return false;
+    };
+    let service = format!("{domain}/{LAUNCH_AGENT_LABEL}");
+    run_launchctl(&["print", &service]).is_ok()
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn launch_agent_configuration_is_current() -> bool {
+    let Ok(path) = launch_agent_path() else {
+        return false;
+    };
+    let Ok(expected) = expected_launch_agent_plist() else {
+        return false;
+    };
+    std::fs::read_to_string(path).is_ok_and(|actual| actual == expected)
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -835,19 +909,25 @@ fn install_launch_agent(app: &tauri::AppHandle, app_data_dir: &Path) -> Result<(
     std::fs::create_dir_all(&log_dir)
         .map_err(|error| format!("could not create {}: {error}", log_dir.display()))?;
     let plist_path = launch_agent_path()?;
-    let plist = launch_agent_plist(
-        &executable,
-        &log_dir.join("sidecar-daemon.out.log"),
-        &log_dir.join("sidecar-daemon.err.log"),
-    );
+    let plist = expected_launch_agent_plist()?;
     stop_recorded_daemon_sidecar(app_data_dir)?;
     bootout_launch_agent()?;
     write_launch_agent_file(&plist_path, &plist)?;
     let domain = launch_agent_domain()?;
     let plist_arg = plist_path.to_string_lossy().into_owned();
-    if let Err(error) = run_launchctl(&["bootstrap", &domain, &plist_arg]) {
+    if let Err(error) = bootstrap_launch_agent(&domain, &plist_arg) {
         let _ = remove_launch_agent_file(&plist_path);
-        return Err(format!("could not load background availability: {error}"));
+        return Err(format!(
+            "launchd could not load the CovenCave LaunchAgent: {error}"
+        ));
+    }
+    if !launch_agent_configuration_is_current() || !launch_agent_loaded() {
+        let _ = bootout_launch_agent();
+        let _ = remove_launch_agent_file(&plist_path);
+        return Err(
+            "background availability did not load the current CovenCave LaunchAgent"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -862,7 +942,7 @@ fn uninstall_launch_agent(app_data_dir: &Path) -> Result<(), String> {
 #[cfg(all(desktop, target_os = "macos"))]
 fn suspend_background_launch_agent(app_data_dir: &Path) -> Result<(), String> {
     stop_recorded_daemon_sidecar(app_data_dir)?;
-    if launch_agent_installed() {
+    if launch_agent_present() {
         bootout_launch_agent()?;
     }
     Ok(())
@@ -870,11 +950,21 @@ fn suspend_background_launch_agent(app_data_dir: &Path) -> Result<(), String> {
 
 #[cfg(all(desktop, target_os = "macos"))]
 fn launch_agent_installed() -> bool {
-    launch_agent_path().is_ok_and(|path| path.is_file())
+    launch_agent_configuration_is_current() && launch_agent_loaded()
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn launch_agent_present() -> bool {
+    launch_agent_path().is_ok_and(|path| path.is_file()) || launch_agent_loaded()
 }
 
 #[cfg(all(desktop, not(target_os = "macos")))]
 fn launch_agent_installed() -> bool {
+    false
+}
+
+#[cfg(all(desktop, not(target_os = "macos")))]
+fn launch_agent_present() -> bool {
     false
 }
 
@@ -981,7 +1071,7 @@ pub(super) fn prepare_gui_reachability(app: &tauri::AppHandle) -> Result<GuiReac
                 "[cave] background availability is unavailable in this development build; preserving its saved setting"
             );
         }
-    } else if launch_agent_installed() {
+    } else if launch_agent_present() {
         uninstall_launch_agent(&app_data_dir)?;
     }
     Ok(GuiReachability::Acquired)
@@ -1398,9 +1488,16 @@ pub(super) fn desktop_reachability_configure(
         // healthy background service merely because an unrelated option was
         // toggled; this also preserves the prior service if launchd is
         // temporarily unavailable.
-        let launch_agent_result = if !launch_agent_reconciliation_required(&previous, &config) {
+        let installing_background_availability =
+            config.daemon_mode && background_availability_supported();
+        let launch_agent_result = if !launch_agent_reconciliation_required(
+            &previous,
+            &config,
+            launch_agent_installed(),
+            launch_agent_present(),
+        ) {
             Ok(())
-        } else if config.daemon_mode && background_availability_supported() {
+        } else if installing_background_availability {
             install_launch_agent(&app, &app_data_dir)
         } else if config.daemon_mode {
             suspend_background_launch_agent(&app_data_dir)
@@ -1420,6 +1517,11 @@ pub(super) fn desktop_reachability_configure(
                 log::warn!(
                     "[cave] could not restore background availability after a failed settings change: {restore_error}"
                 );
+            }
+            if installing_background_availability {
+                return Err(format!(
+                    "Background availability couldn’t start: {error}. Quit other Cave copies, reopen /Applications/CovenCave.app, and try again."
+                ));
             }
             return Err(error);
         }
@@ -1631,7 +1733,11 @@ fn run_sidecar_daemon() -> Result<i32, String> {
 
     let mut command = Command::new(&node);
     command
-        .arg(&server_entry)
+        // Same chosen old-space ceiling as the GUI's sidecar. This spawn site is
+        // the daemon lane for the SAME server entry, so leaving it on V8's
+        // host-derived default would mean the ceiling depended on which lane
+        // started the server. See src-tauri/src/sidecar_heap.rs.
+        .args(crate::sidecar_heap::sidecar_node_args(&server_entry))
         .current_dir(&server_dir)
         .env("PATH", daemon_augmented_path(&node))
         .env("PORT", port.to_string())
@@ -1866,12 +1972,29 @@ mod tests {
         };
         assert!(!launch_agent_reconciliation_required(
             &enabled,
-            &changed_sleep_policy
+            &changed_sleep_policy,
+            true,
+            true,
         ));
         assert!(launch_agent_reconciliation_required(
             &enabled,
-            &DesktopReachabilityConfig::default()
+            &DesktopReachabilityConfig::default(),
+            true,
+            true,
         ));
+        assert!(
+            launch_agent_reconciliation_required(&enabled, &enabled, false, false),
+            "an enabled setting must repair a missing LaunchAgent"
+        );
+        assert!(
+            launch_agent_reconciliation_required(&enabled, &enabled, false, true),
+            "an enabled setting must repair a stale or unloaded LaunchAgent"
+        );
+        let disabled = DesktopReachabilityConfig::default();
+        assert!(
+            launch_agent_reconciliation_required(&disabled, &disabled, false, true),
+            "a disabled setting must remove a stray LaunchAgent"
+        );
     }
 
     #[test]

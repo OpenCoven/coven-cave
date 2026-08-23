@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { classifyCiPaths } from "./ci-paths.mjs";
@@ -25,6 +26,28 @@ test("workflow and script changes run frontend validation", () => {
   });
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).frontend, true);
   assert.equal(classifyCiPaths(["scripts/run-tests.mjs"]).ios, false);
+});
+
+test("protocol changes run conformance in normal Linux pull-request CI", () => {
+  assert.equal(
+    classifyCiPaths(["schemas/research/v1/run-manifest.schema.json"]).frontend,
+    true,
+  );
+
+  const workflow = readFileSync(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const frontendValidation = workflow.match(
+    /^  frontend-validation:\n[\s\S]*?(?=^  [a-z][a-z-]+:\n)/m,
+  )?.[0];
+  assert.ok(frontendValidation, "CI must retain the frontend validation job");
+  assert.match(workflow, /^  pull_request:\n/m);
+  assert.match(frontendValidation, /^    runs-on: ubuntu-latest$/m);
+  assert.match(
+    frontendValidation,
+    /^          - name: protocol conformance\n            command: test:conformance$/m,
+  );
 });
 
 test("Rust-only changes avoid frontend and E2E work", () => {
@@ -78,9 +101,38 @@ test("iOS sources and generators request the macOS build", () => {
   for (const path of [
     "scripts/ios-xcodegen.sh",
     "scripts/build-ios-markdown.mjs",
-    "scripts/build-ios-terminal.mjs",
     "scripts/ci-paths.mjs",
   ]) {
     assert.equal(classifyCiPaths([path]).ios, true, path);
+  }
+});
+
+test("public client v1 changes run Cave API, E2E, and documentation validation", () => {
+  for (const file of [
+    "src/lib/server/client-v1/contract.ts",
+    "src/lib/server/client-v1/discovery.test.ts",
+    "src/lib/server/client-v1/runtime.ts",
+    "src/lib/server/client-v1/contract-fixture.json",
+    "scripts/export-client-v1-contract.mjs",
+    "scripts/client-v1-release-smoke.mjs",
+    "scripts/client-v1-release-smoke.test.mjs",
+    // The real-authority conformance harness (cave-2hjtv). It is operator-run,
+    // so CI never drives it — but a change to it must still be validated by the
+    // lane that owns this surface, or the harness that judges client-v1 could
+    // rot without a single check noticing.
+    "scripts/client-v1-conformance.mjs",
+    "scripts/client-v1-conformance.test.mjs",
+    "docs/workflows/client-v1-conformance.md",
+    "docs/client-v1-conformance-results/2026-08-22-v0.3.9-win32.json",
+    "src/app/api/client/v1/health/route.ts",
+    "src/app/api/client/v1/health/route.test.ts",
+    "src/app/api/api-contracts.test.ts",
+    "docs/api/client-v1.md",
+    ".gitattributes",
+  ]) {
+    const paths = classifyCiPaths([file]);
+    assert.equal(paths.frontend, true, `${file} must run Cave API validation`);
+    assert.equal(paths.e2e, true, `${file} must run E2E validation`);
+    assert.equal(paths.docs, true, `${file} must run documentation validation`);
   }
 });

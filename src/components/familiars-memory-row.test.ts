@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./familiars-memory-row.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../styles/familiars-memory.css", import.meta.url), "utf8");
 
 assert.match(source, /export function MemoryRowItem\(/, "MemoryRowItem must be exported");
 // type glyph differs by kind
@@ -11,13 +12,18 @@ assert.match(
   /\{ row: CanonicalMemoryRow; onDelete\?: never \}\s*\|\s*\{ row: FileMemoryRow; onDelete\?: \(\) => void \}/,
   "the prop union makes delete unrepresentable for canonical rows",
 );
-// two-line: title + age on line 1, source/size/stale on line 2
+// unified grammar: title + age, excerpt/path, then meaningful metadata
 assert.match(source, /\{row\.title\}/, "row renders the title");
 assert.match(source, /\{age\}/, "row renders the age label passed in");
+assert.match(source, /row\.kind === "canonical" \? row\.excerpt : compactRowPath\(row\.path\)/);
 assert.match(source, /\{row\.sourceLabel\}/, "row renders the source label");
 // selected styling via accent border
 assert.match(source, /selected/, "row reacts to a selected prop");
-assert.match(source, /var\(--accent-presence\)/, "selected row uses the accent border");
+assert.match(
+  css,
+  /\.fm-memory-row\.is-selected \{[\s\S]*?border-left-color: var\(--accent-presence\);/,
+  "selected row uses the accent border",
+);
 // hover-revealed actions: opacity toggled on group hover/focus
 assert.match(source, /opacity-0/, "actions hidden by default");
 assert.match(source, /group-hover\/row:opacity-100/, "actions revealed on row hover");

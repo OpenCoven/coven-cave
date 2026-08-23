@@ -63,7 +63,7 @@ export function ComposerPlusMenu({
     loading?: boolean;
   };
   /** Opens the existing composer options panel ("Model & tuning…"). */
-  onOpenModelTuning: () => void;
+  onOpenModelTuning?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const internalRef = useRef<HTMLButtonElement | null>(null);

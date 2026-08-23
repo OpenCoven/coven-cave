@@ -12,6 +12,7 @@ const {
   socketPath,
   extractDaemonError,
   normalizeWindowsDaemonSocket,
+  isRemoteWindowsPath,
   resolveDaemonSocketPath,
   daemonTargetForConfig,
   callDaemonTarget,
@@ -128,6 +129,563 @@ const {
     },
   });
   assert.equal(socket, "\\\\.\\pipe\\coven-daemon-from-env.sock");
+}
+
+// A forged COVEN_SOCKET naming another machine is refused, not dialed. Every
+// UNC spelling resolves to the canonical local path instead.
+{
+  // Every entry below was measured reaching a local `net.createServer` pipe
+  // through the SMB redirector via `net.connect({ path })` on Windows 11 with
+  // the host spelled `localhost`, so each is a live redirection and not a
+  // theoretical spelling. The device-namespace and GLOBALROOT forms are why
+  // this check is an allowlist: `\\?\GLOBALROOT\??\UNC\…` nests arbitrarily,
+  // so no enumeration of remote prefixes closes the set.
+  const remotes = [
+    String.raw`\\evil-host\pipe\coven`,
+    String.raw`//evil-host/pipe/coven`,
+    String.raw`\\?\UNC\evil-host\pipe\coven`,
+    String.raw`\\evil-host\share\coven.sock`,
+    String.raw`\\.\UNC\evil-host\pipe\coven`,
+    String.raw`//./UNC/evil-host/pipe/coven`,
+    String.raw`\\?\unc\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\Device\LanmanRedirector\evil-host\pipe\coven`,
+    String.raw`\\.\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\??\UNC\evil-host\pipe\coven`,
+  ];
+  for (const remote of remotes) {
+    assert.equal(
+      isRemoteWindowsPath(remote),
+      true,
+      `${remote} should be classified remote`,
+    );
+    // This used to assert the opposite — that daemon.json "must not be
+    // consulted for a rejected COVEN_SOCKET". That encoded the first cut of
+    // the guard, where a refusal jumped straight to the default below. It is
+    // deliberately flipped: see the "refused COVEN_SOCKET resolves to the
+    // published pipe" block for why, and the block after it for the half of
+    // the precedence contract that did NOT change.
+    const readPaths = [];
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: remote, COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: (filePath) => {
+        readPaths.push(filePath.replaceAll("\\", "/"));
+        return "{}";
+      },
+    });
+    assert.deepEqual(
+      readPaths,
+      ["C:/Users/Sonic/.coven/daemon.json"],
+      `${remote} should fall through to daemon.json, and read it from the local home`,
+    );
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /\.coven\/coven\.sock$/,
+      `${remote} should fall back to the local default when daemon.json names nothing`,
+    );
+  }
+}
+
+// A refused COVEN_SOCKET resolves to the pipe daemon.json publishes.
+//
+// This is the whole point of the fallthrough. On Windows the running daemon
+// advertises a named pipe in daemon.json; COVEN_HOME\coven.sock is a path
+// nothing listens on. Jumping straight to that default on a refusal turned a
+// forged — or mistyped — COVEN_SOCKET into a permanent daemon outage, so an
+// attacker who could set one environment variable and nothing else got a
+// denial of service out of a guard meant to fail closed.
+{
+  const published = String.raw`\\.\pipe\coven-daemon-9f2c1e.sock`;
+  for (const forged of [
+    String.raw`\\evil-host\pipe\coven`,
+    String.raw`\\?\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\UNC\evil-host\pipe\coven`,
+  ]) {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: forged, COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => JSON.stringify({ socket: published }),
+    });
+    assert.equal(
+      socket,
+      published,
+      `${forged} should be refused without taking the local daemon down with it`,
+    );
+  }
+}
+
+// The half of the precedence contract that did NOT change: an *accepted*
+// COVEN_SOCKET is still the whole answer, and daemon.json is not read at all.
+// Only refusal falls through.
+{
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: {
+      COVEN_SOCKET: String.raw`\\.\pipe\coven-daemon-from-env.sock`,
+      COVEN_HOME: "C:/Users/Sonic/.coven",
+    },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("daemon.json must not be consulted for an accepted COVEN_SOCKET");
+    },
+  });
+  assert.equal(socket, String.raw`\\.\pipe\coven-daemon-from-env.sock`);
+}
+
+// A `..` walks back out of an allowed local root and re-enters the redirector,
+// so matching the root prefix alone is not enough. Every spelling below was
+// measured on Windows 11 connecting to a local `net.createServer` pipe through
+// the SMB redirector via `net.connect({ path })` with the host spelled
+// `localhost`, while its prefix reads as one of the two local device roots.
+{
+  for (const traversal of [
+    String.raw`\\.\pipe\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\.\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\aaaa\..\..\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\PIPE\..\unc\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\..\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\.\C:\..\..\UNC\evil-host\pipe\coven`,
+    "//./pipe/../UNC/evil-host/pipe/coven",
+  ]) {
+    assert.equal(
+      isRemoteWindowsPath(traversal),
+      true,
+      `${traversal} escapes its local root and must be classified remote`,
+    );
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: traversal, COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => "{}",
+    });
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /\.coven\/coven\.sock$/,
+      `${traversal} should fall back to the local default`,
+    );
+  }
+}
+
+// The sharpest form of the above: a value that is not rooted at `\\` at all,
+// and so passes the pre-normalization check unexamined, is *promoted* into the
+// pipe device by `normalizeWindowsDaemonSocket` — which is what makes its `..`
+// segments load-bearing. The post-normalization re-check is the only thing
+// standing between a relative-looking COVEN_SOCKET and the redirector.
+{
+  const relative = String.raw`..\..\UNC\evil-host\pipe\coven`;
+  assert.equal(
+    isRemoteWindowsPath(relative),
+    false,
+    "as written it is relative, so nothing is refused yet",
+  );
+  assert.equal(
+    normalizeWindowsDaemonSocket(relative),
+    String.raw`\\.\pipe\..\..\UNC\evil-host\pipe\coven`,
+    "the normalizer roots it at the pipe device",
+  );
+  assert.equal(
+    isRemoteWindowsPath(normalizeWindowsDaemonSocket(relative)),
+    true,
+    "and the rooted form is what has to be refused",
+  );
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_SOCKET: relative, COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => "{}",
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+}
+
+// Only an exact `..` component traverses. These were measured ENOENT against
+// the same local pipe, so refusing them would be refusing a value that cannot
+// leave the machine — and a pipe name that merely contains dots is ordinary.
+{
+  for (const local of [
+    String.raw`\\.\pipe\.. \UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\...\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\. .\UNC\evil-host\pipe\coven`,
+    String.raw`\\.\pipe\coven..daemon.sock`,
+    String.raw`\\.\pipe\..coven`,
+    String.raw`\\?\C:\Users\Sonic\.coven\coven.sock`,
+  ]) {
+    assert.equal(
+      isRemoteWindowsPath(local),
+      false,
+      `${local} does not traverse and must stay local`,
+    );
+  }
+}
+
+// A planted daemon.json pointing off-machine is refused the same way. This is
+// the likelier vector of the two: it is a plain file in COVEN_HOME.
+{
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => JSON.stringify({ socket: String.raw`\\evil-host\pipe\coven` }),
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+}
+
+// A remote COVEN_HOME is refused too. Without this the socket checks are
+// decorative: the "safe" fallback would be built under the attacker's host,
+// and daemon.json would be read from it over SMB in the first place.
+{
+  for (const home of [
+    String.raw`\\evil-host\share\.coven`,
+    String.raw`\\.\UNC\evil-host\share\.coven`,
+    String.raw`\\?\GLOBALROOT\Device\Mup\evil-host\share\.coven`,
+  ]) {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_HOME: home },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => {
+        throw new Error("daemon.json must not be read from a remote COVEN_HOME");
+      },
+    });
+    assert.equal(
+      isRemoteWindowsPath(socket),
+      false,
+      `a remote COVEN_HOME (${home}) must not produce a remote socket path`,
+    );
+    assert.match(socket.replaceAll("\\", "/"), /Users\/Sonic\/\.coven\/coven\.sock$/);
+  }
+}
+
+// A planted daemon.json can also name the remote host in a device-namespace
+// spelling; the same allowlist has to catch those or the file check above only
+// covers the one form an attacker would not bother using twice.
+{
+  for (const forged of [
+    String.raw`\\.\UNC\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\Device\Mup\evil-host\pipe\coven`,
+    String.raw`\\?\GLOBALROOT\??\UNC\evil-host\pipe\coven`,
+  ]) {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_HOME: "C:/Users/Sonic/.coven" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => JSON.stringify({ socket: forged }),
+    });
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /\.coven\/coven\.sock$/,
+      `${forged} from daemon.json should fall back to the local default`,
+    );
+  }
+}
+
+// A local COVEN_HOME is still honored verbatim, on both platforms.
+{
+  assert.match(
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_HOME: "D:/coven-home" },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => {
+        throw new Error("no daemon.json");
+      },
+    }).replaceAll("\\", "/"),
+    /^D:\/coven-home\/coven\.sock$/,
+  );
+  assert.match(
+    resolveDaemonSocketPath({
+      platform: "linux",
+      env: { COVEN_HOME: "/opt/coven-home" },
+      homeDir: "/home/cave",
+      readFileSync: () => {
+        throw new Error("no daemon.json");
+      },
+    }).replaceAll("\\", "/"),
+    /^\/opt\/coven-home\/coven\.sock$/,
+  );
+}
+
+// The local device namespaces stay accepted — the check must not swallow the
+// ordinary Windows pipe path, which is what a healthy daemon publishes.
+{
+  for (const local of [
+    String.raw`\\.\pipe\coven-daemon-abc123.sock`,
+    String.raw`\\?\pipe\coven-daemon-abc123.sock`,
+    String.raw`\\?\C:\Users\Sonic\.coven\coven.sock`,
+    String.raw`\\.\C:\Users\Sonic\.coven\coven.sock`,
+    "coven-daemon-abc123.sock",
+    ".coven/coven.sock",
+    "C:/Users/Sonic/.coven/coven.sock",
+  ]) {
+    assert.equal(
+      isRemoteWindowsPath(local),
+      false,
+      `${local} should be classified local`,
+    );
+  }
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_SOCKET: String.raw`\\.\pipe\coven-daemon-abc123.sock` },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("unused");
+    },
+  });
+  assert.equal(socket, String.raw`\\.\pipe\coven-daemon-abc123.sock`);
+}
+
+// A refusal is reported, once per distinct value, and never carries the value.
+// Without this the operator whose COVEN_HOME really is a share sees a permanent
+// "daemon offline" with no cause, and a probe of the guard leaves no trace.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const resolve = (env) =>
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env,
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => JSON.stringify({ socket: String.raw`\\report-file-host\pipe\coven` }),
+    });
+
+  resolve({ COVEN_SOCKET: String.raw`\\report-socket-host\pipe\coven` });
+  resolve({ COVEN_HOME: String.raw`\\.\UNC\report-home-host\share\.coven` });
+  resolve({});
+
+  const refusals = listDaemonDiagnosticEvents().filter(
+    (event) => event.operation === "daemon-socket-resolution",
+  );
+  // Note the second entry: the first resolve() refuses COVEN_SOCKET and then
+  // falls through to daemon.json, which is forged here too, so one call
+  // reports twice under two different sources. That is the fallthrough visible
+  // in the diagnostics — before it, the first call reported once and the third
+  // produced the daemon-status-file event instead.
+  assert.deepEqual(
+    refusals.map((event) => event.endpoint.classification),
+    ["coven-socket-env", "daemon-status-file", "coven-home-env"],
+    "each refused source reports under its own classification",
+  );
+  for (const event of refusals) {
+    assert.equal(event.outcome, "failed");
+    assert.equal(event.severity, "error");
+    assert.equal(event.error?.classification, "off-machine-target");
+    assert.doesNotMatch(
+      event.error?.message ?? "",
+      /report-socket-host|report-home-host|report-file-host|UNC/,
+      "a refusal event must not carry the hostname it refused",
+    );
+  }
+
+  // The resolver runs on every daemon request, so a persistently forged value
+  // must not flush the 256-event ring.
+  const before = listDaemonDiagnosticEvents().length;
+  for (let i = 0; i < 20; i += 1) {
+    resolve({ COVEN_SOCKET: String.raw`\\report-socket-host\pipe\coven` });
+  }
+  assert.equal(
+    listDaemonDiagnosticEvents().length,
+    before,
+    "a repeated refusal of the same value reports once",
+  );
+
+  // A distinct value is still worth an event.
+  resolve({ COVEN_SOCKET: String.raw`\\report-socket-host-2\pipe\coven` });
+  assert.equal(listDaemonDiagnosticEvents().length, before + 1);
+  clearDaemonDiagnosticEventsForTests();
+}
+
+// The dedupe set is bounded. Its keys come from the same attacker the events
+// describe — daemon.json is re-read on every request — so an unbounded set
+// would grow for the life of the process under a file rewritten with a fresh
+// hostname each time. Eviction is FIFO, so a value pushed out is reported
+// again rather than suppressed forever.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const refuse = (host) =>
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: String.raw`\\` + host + String.raw`\pipe\coven` },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => {
+        throw new Error("unused");
+      },
+    });
+
+  refuse("evict-probe-first");
+  const afterFirst = listDaemonDiagnosticEvents().length;
+  assert.equal(afterFirst, 1, "the first distinct refusal reports");
+  refuse("evict-probe-first");
+  assert.equal(listDaemonDiagnosticEvents().length, 1, "and is then deduped");
+
+  // 32 further distinct values push it out of a 32-entry window.
+  for (let i = 0; i < 32; i += 1) refuse(`evict-probe-filler-${i}`);
+  refuse("evict-probe-first");
+  const events = listDaemonDiagnosticEvents();
+  assert.equal(
+    events.filter((event) => event.operation === "daemon-socket-resolution").length,
+    34,
+    "an evicted value reports again instead of being suppressed for the process lifetime",
+  );
+  clearDaemonDiagnosticEventsForTests();
+}
+
+// The dedupe keys are bounded in length, not just in count. Nothing limits how
+// long the refused value is — daemon.json is attacker-writable and its socket
+// field is returned verbatim — so 32 entries of a megabyte each is a retention
+// the count bound alone would allow. The cost is that two absurd values
+// sharing a 1024-character prefix dedupe to one event, which is asserted here
+// rather than left as a surprise. Collapsing them loses nothing: the event
+// carries only the source, so two values refused from the same source produce
+// byte-identical events either way.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const refuse = (host) =>
+    resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: String.raw`\\` + host + String.raw`\pipe\coven` },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => "{}",
+    });
+
+  const shared = `key-limit-${"a".repeat(4096)}`;
+  refuse(`${shared}-one`);
+  refuse(`${shared}-two`);
+  assert.equal(
+    listDaemonDiagnosticEvents().filter(
+      (event) => event.operation === "daemon-socket-resolution",
+    ).length,
+    1,
+    "values sharing the truncated key report once",
+  );
+  clearDaemonDiagnosticEventsForTests();
+}
+
+// ...and the length bound has to bound *memory*, which truncation alone does
+// not. V8 backs a sliced string with a pointer to its parent instead of a copy,
+// so a key sliced straight out of the refused value keeps the whole value
+// reachable for as long as the key is in the set — the exact retention the
+// limit is there to prevent, reintroduced by the expression enforcing it. The
+// assertion above cannot see that: both spellings dedupe identically.
+//
+// Needs a collectable heap, and `--expose-gc` is not on this suite's command
+// line, so it is enabled at runtime. If that ever stops working the block says
+// so rather than passing silently on an assertion it never reached.
+{
+  let gc = null;
+  try {
+    const v8 = await import("node:v8");
+    const vm = await import("node:vm");
+    v8.setFlagsFromString("--expose-gc");
+    gc = vm.runInNewContext("gc");
+    v8.setFlagsFromString("--no-expose-gc");
+  } catch {
+    gc = null;
+  }
+  if (typeof gc !== "function") {
+    console.log("coven-daemon.test.ts: SKIPPED refusal-key retention (no runtime gc)");
+  } else {
+    clearDaemonDiagnosticEventsForTests();
+    const keyCount = 8;
+    // One-byte characters, so a character is a byte of heap.
+    const valueBytes = 2 * 1024 * 1024;
+    const heapUsed = () => {
+      gc();
+      gc();
+      gc();
+      return process.memoryUsage().heapUsed;
+    };
+
+    const before = heapUsed();
+    for (let i = 0; i < keyCount; i += 1) {
+      resolveDaemonSocketPath({
+        platform: "win32",
+        env: {
+          // Distinct inside the truncated prefix, then padded far past it, so
+          // these are eight separate keys over eight megabyte-scale values.
+          COVEN_SOCKET:
+            String.raw`\\retain-probe-` + i + String.raw`\pipe\coven-` + "x".repeat(valueBytes),
+        },
+        homeDir: "C:/Users/Sonic",
+        readFileSync: () => {
+          throw new Error("unused");
+        },
+      });
+    }
+    const retained = heapUsed() - before;
+
+    const offered = keyCount * valueBytes;
+    const mib = (bytes) => (bytes / 1024 / 1024).toFixed(1);
+    const detail = `kept ${mib(retained)} MiB of the ${mib(offered)} MiB offered`;
+    assert.ok(
+      retained < offered / 4,
+      `the dedupe keys must not retain the values they were truncated from: ${detail}, where ${keyCount} keys of about 1024 characters each is well under 1 MiB`,
+    );
+    clearDaemonDiagnosticEventsForTests();
+  }
+}
+
+// Recording a refusal must never throw into the resolver. socketPath() calls
+// the resolver on every daemon request, so an exception escaping the
+// diagnostics would take out every request Cave makes — on the one code path
+// that runs only when something is already wrong. A poisoned event store
+// stands in for any failure inside recordDaemonDiagnosticEvent.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const poisoned = {
+    nextGeneration: 1,
+    nextEvent: 1,
+    events: {
+      length: 0,
+      push() {
+        throw new Error("diagnostics store is unavailable");
+      },
+    },
+    seededNativeCorrelations: new Set(),
+  };
+  globalThis.__covenDaemonDiagnosticStore = poisoned;
+  try {
+    const socket = resolveDaemonSocketPath({
+      platform: "win32",
+      env: { COVEN_SOCKET: String.raw`\\throwing-recorder-host\pipe\coven` },
+      homeDir: "C:/Users/Sonic",
+      readFileSync: () => "{}",
+    });
+    assert.match(
+      socket.replaceAll("\\", "/"),
+      /Users\/Sonic\/\.coven\/coven\.sock$/,
+      "a failing recorder must not change what the resolver returns",
+    );
+  } finally {
+    clearDaemonDiagnosticEventsForTests();
+  }
+}
+
+// A whitespace-only COVEN_SOCKET names nothing; it is not a redirection and
+// must not be reported as one. It does not fall through to daemon.json either
+// — the fallthrough is the remedy for a *refusal*, which is the case where a
+// discoverable local daemon would otherwise be hidden. A value that names
+// nothing hides nothing, so it keeps the plain "COVEN_SOCKET was set" path.
+{
+  clearDaemonDiagnosticEventsForTests();
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_SOCKET: "   ", COVEN_HOME: "C:/Users/Sonic/.coven" },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("daemon.json should not be read for a COVEN_SOCKET that names nothing");
+    },
+  });
+  assert.match(socket.replaceAll("\\", "/"), /\.coven\/coven\.sock$/);
+  assert.deepEqual(
+    listDaemonDiagnosticEvents().filter(
+      (event) => event.operation === "daemon-socket-resolution",
+    ),
+    [],
+  );
+  clearDaemonDiagnosticEventsForTests();
 }
 
 // extractDaemonError handles the canonical { error: { message } } shape

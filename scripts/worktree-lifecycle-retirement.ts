@@ -17,6 +17,13 @@ import {
 
 const DEFAULT_MAX_RETIRE = 3;
 const MAX_RETIRE_LIMIT = 10;
+// A retirement attempt includes a full candidate reprobe and several gate
+// checks, so it can be much slower than the local mutation it guards. Five
+// lets the scheduled default of three retirements bypass two blocked units,
+// while bounding an all-blocked sweep. Higher explicit success limits retain
+// at least that many attempts so a requested successful-retirement limit is
+// still attainable.
+const DEFAULT_RETIREMENT_ATTEMPT_BUDGET = 5;
 const ZERO_OID_40 = "0000000000000000000000000000000000000000";
 const ZERO_OID_64 =
   "0000000000000000000000000000000000000000000000000000000000000000";
@@ -157,15 +164,22 @@ export function retireLifecycleUnits({
     attempts: [],
     remoteDeletionProposals: [],
   };
-  const batchSize = parseMaxRetire(maxRetire);
+  const maxSuccessfulRetirements = parseMaxRetire(maxRetire);
+  const attemptBudget = retirementAttemptBudget(maxSuccessfulRetirements);
   const eligible = [...items]
     .filter((item) => item.lane === "retire-after-gate")
     .sort(compareRetirementCandidates);
-  const selected = eligible.slice(0, batchSize);
-  report.cleanupReady = eligible.slice(batchSize);
 
-  for (let index = 0; index < selected.length; index += 1) {
-    const item = selected[index]!;
+  let gateFailed = false;
+  let index = 0;
+  for (
+    ;
+    index < eligible.length &&
+    report.retired.length < maxSuccessfulRetirements &&
+    report.attempts.length < attemptBudget;
+    index += 1
+  ) {
+    const item = eligible[index]!;
     const attempt = beginAttempt(item);
     const state: RetirementState = {
       destructiveMutation: false,
@@ -178,7 +192,8 @@ export function retireLifecycleUnits({
     const initialGate = heartbeatThenVerify(operations, gateHandle, "before retirement");
     if (!initialGate.ok) {
       reportFailure(report, item, attempt, state, initialGate.reason);
-      cascadeRemainingBlocked(report, selected, index + 1, initialGate.reason);
+      cascadeRemainingBlocked(report, eligible, index + 1, initialGate.reason);
+      gateFailed = true;
       break;
     }
 
@@ -257,7 +272,8 @@ export function retireLifecycleUnits({
       const preCleanupGate = heartbeatThenVerify(operations, gateHandle, "before ignored cleanup");
       if (!preCleanupGate.ok) {
         reportFailure(report, item, attempt, state, preCleanupGate.reason);
-        cascadeRemainingBlocked(report, selected, index + 1, preCleanupGate.reason);
+        cascadeRemainingBlocked(report, eligible, index + 1, preCleanupGate.reason);
+        gateFailed = true;
         break;
       }
 
@@ -300,7 +316,8 @@ export function retireLifecycleUnits({
       );
       if (!preWorktreeGate.ok) {
         reportFailure(report, item, attempt, state, preWorktreeGate.reason);
-        cascadeRemainingBlocked(report, selected, index + 1, preWorktreeGate.reason);
+        cascadeRemainingBlocked(report, eligible, index + 1, preWorktreeGate.reason);
+        gateFailed = true;
         break;
       }
 
@@ -322,7 +339,8 @@ export function retireLifecycleUnits({
         state,
         midGate.reason,
       );
-      cascadeRemainingBlocked(report, selected, index + 1, midGate.reason);
+      cascadeRemainingBlocked(report, eligible, index + 1, midGate.reason);
+      gateFailed = true;
       break;
     }
 
@@ -357,7 +375,8 @@ export function retireLifecycleUnits({
       );
       reportFailure(report, item, attempt, handled.state, handled.reason);
       if (handled.lostGate) {
-        cascadeRemainingBlocked(report, selected, index + 1, handled.reason);
+        cascadeRemainingBlocked(report, eligible, index + 1, handled.reason);
+        gateFailed = true;
         break;
       }
       continue;
@@ -382,7 +401,8 @@ export function retireLifecycleUnits({
         );
         reportFailure(report, item, attempt, handled.state, handled.reason);
         if (handled.lostGate) {
-          cascadeRemainingBlocked(report, selected, index + 1, handled.reason);
+          cascadeRemainingBlocked(report, eligible, index + 1, handled.reason);
+          gateFailed = true;
           break;
         }
         continue;
@@ -392,7 +412,8 @@ export function retireLifecycleUnits({
     const finalGate = heartbeatThenVerify(operations, gateHandle, "after local retirement");
     if (!finalGate.ok) {
       reportFailure(report, item, attempt, state, finalGate.reason);
-      cascadeRemainingBlocked(report, selected, index + 1, finalGate.reason);
+      cascadeRemainingBlocked(report, eligible, index + 1, finalGate.reason);
+      gateFailed = true;
       break;
     }
 
@@ -409,6 +430,9 @@ export function retireLifecycleUnits({
         reason: "remote-deletion-requires-separate-authorization",
       });
     }
+  }
+  if (!gateFailed) {
+    report.cleanupReady = eligible.slice(index);
   }
 
   return report;
@@ -599,12 +623,8 @@ export function createGitRetirementOperations({
         ["worktree", "remove", worktreePath],
         MAX_FENCED_MUTATION_TIMEOUT_MS,
       );
-      return removed.ok
-        ? { ok: true }
-        : {
-            ok: false,
-            reason: removed.stderr || "git worktree remove failed",
-          };
+      if (removed.ok) return { ok: true };
+      return resolveBlockedRemoval(normalizedRoot, worktreePath, removed);
     },
     deleteLocalRef(item) {
       if (item.ref === null) {
@@ -837,14 +857,18 @@ function reportFailure(
   });
 }
 
+function retirementAttemptBudget(maxSuccessfulRetirements: number): number {
+  return Math.max(DEFAULT_RETIREMENT_ATTEMPT_BUDGET, maxSuccessfulRetirements);
+}
+
 function cascadeRemainingBlocked(
   report: RetirementReport,
-  selected: WorktreeLifecycleItem[],
+  eligible: WorktreeLifecycleItem[],
   startIndex: number,
   reason: string,
 ): void {
-  for (let index = startIndex; index < selected.length; index += 1) {
-    const item = selected[index]!;
+  for (let index = startIndex; index < eligible.length; index += 1) {
+    const item = eligible[index]!;
     report.blocked.push({
       branch: item.branch,
       ref: item.ref,
@@ -1043,6 +1067,155 @@ function git(root: string, args: string[], timeout?: number): CommandResult {
   );
 }
 
+// The auto-lock hook's reason prefix, from scripts/worktree-autolock.mjs.
+//
+// Deliberately duplicated rather than imported. That file is a PreToolUse hook:
+// its module body calls main() on direct execution, and its symlink test copies
+// it ALONE into a temp directory to prove the hook still fires, so it keeps no
+// import edges in either direction. A silent drift between the two strings would
+// be invisible and would restore exactly the deadlock below, so
+// `worktree-lifecycle-retirement.test.mjs` reads the constant out of the hook
+// and asserts the two agree.
+const AUTOLOCK_REASON_PREFIX = "auto-locked";
+
+/**
+ * Lock reasons by worktree path, for every locked worktree in the checkout.
+ *
+ * `git worktree list --porcelain` is the documented contract and resolves each
+ * unit's admin directory for us, which reading `.git/worktrees/<id>/locked`
+ * by hand would not. A bare `locked` line means locked without a reason.
+ */
+function readWorktreeLocks(root: string): OperationFailure | { ok: true; locks: Map<string, string> } {
+  const listed = git(
+    root,
+    ["worktree", "list", "--porcelain"],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
+  if (!listed.ok) {
+    return { ok: false, reason: listed.stderr || "git worktree list --porcelain failed" };
+  }
+  const locks = new Map<string, string>();
+  let current: string | null = null;
+  for (const line of listed.stdout.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      // Porcelain C-quotes a path containing anything unusual, and a quoted
+      // string is not absolute, so `current` goes null and that unit's lock is
+      // skipped. That is the safe direction: the caller then reports git's own
+      // error instead of attributing a lock it could not identify.
+      current = normalizeAbsoluteWorktreePath(line.slice("worktree ".length));
+      continue;
+    }
+    if (line === "") {
+      current = null;
+      continue;
+    }
+    if (current !== null && (line === "locked" || line.startsWith("locked "))) {
+      locks.set(current, line === "locked" ? "" : line.slice("locked ".length));
+    }
+  }
+  return { ok: true, locks };
+}
+
+/**
+ * Did the auto-lock hook take this lock? Only its own locks may be released.
+ *
+ * Mirrors `isAutoLock` in scripts/worktree-autolock.mjs, including the leading
+ * quote strip: porcelain C-quotes a reason containing anything unusual, and the
+ * hook's reason always does (an em dash).
+ */
+function isAutoLockReason(reason: string): boolean {
+  return reason.trim().replace(/^"/, "").startsWith(AUTOLOCK_REASON_PREFIX);
+}
+
+/**
+ * Removal was refused. If a lock is why, resolve it — or report it in terms an
+ * operator can act on.
+ *
+ * A lock read HERE is being read against a unit this pipeline has just proven
+ * safe, under the fence, in this same pass: `stillRetireReady` re-verified the
+ * tree clean after a fresh reprobe, and retention was re-established live
+ * against the remote (the branch re-read, or a remote tag resolving to this
+ * exact head). That is strictly stronger evidence than `evaluateRisk` in the
+ * hook uses to release a lock on its own. So an `auto-locked` reason at this
+ * point is a point-in-time claim the pipeline has already disproven: the
+ * uncommitted paths were committed or discarded, or the commits reached a
+ * remote. Release it and retry once.
+ *
+ * This is the unattended half of cave-a245b. The hook's own release path (part
+ * c) only fires as a PreToolUse hook inside a Claude Code session, and
+ * scripts/worktree-sweep.sh — the scheduled sweep — never runs it. So a stale
+ * auto-lock survived indefinitely in exactly the path meant to work without a
+ * human: registered worktrees climbed 14 -> 55, both budgets blew, and
+ * `beads:worktrees:create` then refused for every session in the checkout.
+ *
+ * A FOREIGN lock still stands. "active cave-1c8zf PR completion" is a claim
+ * this code cannot evaluate, so it is reported, never released — the same
+ * safety boundary the hook draws. What changes is that it is reported at all:
+ * git's own message ("use 'worktree remove -f -f' if you insist") named neither
+ * the lock as the blocker nor `git worktree unlock` as the remedy, and instead
+ * recommended the double force — the one action that destroys live work, which
+ * is the entire reason the lock exists.
+ */
+function resolveBlockedRemoval(
+  root: string,
+  worktreePath: string,
+  firstAttempt: CommandResult,
+): OperationResult {
+  const baseReason = firstAttempt.stderr || "git worktree remove failed";
+  const listed = readWorktreeLocks(root);
+  // Fail with the original error rather than inventing a lock diagnosis from a
+  // read that did not succeed.
+  if (!listed.ok) return { ok: false, reason: baseReason };
+
+  const lockReason = listed.locks.get(worktreePath);
+  // Not locked, so the lock is not the story — report what git actually said.
+  if (lockReason === undefined) return { ok: false, reason: baseReason };
+
+  if (!isAutoLockReason(lockReason)) {
+    return {
+      ok: false,
+      reason:
+        `worktree is held by a lock this tool did not take and cannot evaluate, so it was ` +
+        `left in place: ${lockReason || "(no reason recorded)"}. Confirm with its owner, then ` +
+        `release it with: git worktree unlock ${worktreePath} — do NOT use ` +
+        `"git worktree remove -f -f", which destroys any uncommitted work the lock is ` +
+        `protecting. git reported: ${baseReason}`,
+    };
+  }
+
+  const unlocked = git(
+    root,
+    ["worktree", "unlock", worktreePath],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
+  if (!unlocked.ok) {
+    return {
+      ok: false,
+      reason:
+        `worktree is held by a stale auto-lock (${lockReason}) whose stated risk this pass ` +
+        `disproved, but releasing it failed: ${unlocked.stderr || "git worktree unlock failed"}`,
+    };
+  }
+
+  const retry = git(
+    root,
+    ["worktree", "remove", worktreePath],
+    MAX_FENCED_MUTATION_TIMEOUT_MS,
+  );
+  if (retry.ok) return { ok: true };
+
+  // The lock was not the blocker after all. Leave it released: the tree is
+  // proven clean and retained, which is precisely the state in which the hook
+  // deliberately declines to lock at all, so restoring it would re-create a
+  // lock the hook itself would not take. Report the real cause.
+  return {
+    ok: false,
+    reason:
+      `released a stale auto-lock (${lockReason}) whose stated risk this pass disproved, but ` +
+      `removal still failed: ${retry.stderr || "git worktree remove failed"}`,
+  };
+}
+
 function validateExactLocalRef(root: string, ref: string): OperationResult {
   if (!ref.startsWith("refs/heads/")) {
     return { ok: false, reason: `exact local branch ref is required: ${ref}` };
@@ -1105,7 +1278,7 @@ function resolveDisposableIgnoredTarget(
   }
 
   let current = worktreePath;
-  for (const segment of segments) {
+  for (const [index, segment] of segments.entries()) {
     current = path.join(current, segment);
     if (
       current !== worktreePath &&
@@ -1119,6 +1292,9 @@ function resolveDisposableIgnoredTarget(
     try {
       const stat = lstatSync(current);
       if (stat.isSymbolicLink()) {
+        if (index === segments.length - 1) {
+          return { ok: true, target: current };
+        }
         return {
           ok: false,
           reason: `refused disposable ignored cleanup through a symbolic link: ${rawCandidate}`,

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_QUERY_PARAM,
+  LEGACY_ACCESS_PROMPT_QUERY_PARAM,
   TOKEN_PARAM,
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
@@ -19,12 +20,17 @@ import {
   bearerFromReferer,
   bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  shouldBypassMobileAccessGate,
   isTrustedLocalPeer,
   isHtmlNavigationRequest,
   accessGatePage,
   TAILNET_PEER_HEADER,
   verifiedTailnetNode,
   requiresPasskeyPresence,
+  clientV1IngressKind,
+  isClientV1AdminPath,
+  isClientV1Path,
+  isRefusedClientV1Path,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 import { PRESENCE_COOKIE, verifyPresenceToken } from "./lib/passkey-presence.ts";
@@ -50,6 +56,23 @@ function jsonError(status: number, error: string) {
 function configuredMobileAccessToken() {
   const token = process.env.COVEN_CAVE_ACCESS_TOKEN?.trim();
   return token && token.length > 0 ? token : null;
+}
+
+const DEV_READINESS_TOKEN_HEADER = "x-coven-cave-readiness-token";
+const DEV_READINESS_PROOF_HEADER = "x-coven-cave-readiness";
+
+function isAuthenticatedDevReadinessProbe(req: NextRequest, trustedLocalPeer: boolean) {
+  const expected = process.env.COVEN_CAVE_DEV_PROBE_TOKEN?.trim();
+  const supplied = req.headers.get(DEV_READINESS_TOKEN_HEADER);
+  return Boolean(
+    trustedLocalPeer
+    && expected
+    && supplied
+    && req.method === "GET"
+    && req.nextUrl.pathname === "/"
+    && req.nextUrl.searchParams.get("__devShellProbe") === "1"
+    && timingSafeEqualString(supplied, expected)
+  );
 }
 
 function bearerToken(req: NextRequest) {
@@ -82,6 +105,34 @@ async function mobileAccessVerification(
   return null;
 }
 
+async function mobileAccessQueryTokenRedirect(
+  req: NextRequest,
+  expected: string,
+  queryToken: string,
+) {
+  const url = req.nextUrl.clone();
+  url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
+  url.searchParams.delete(LEGACY_ACCESS_PROMPT_QUERY_PARAM);
+  const res = NextResponse.redirect(url);
+  const queryVerification = await isValidMobileAccessCredential({
+    supplied: queryToken,
+    expectedSecret: expected,
+  });
+  if (queryVerification.ok) {
+    const maxAge = queryVerification.legacy
+      ? undefined
+      : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
+    res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: req.nextUrl.protocol === "https:",
+      path: "/",
+      maxAge,
+    });
+  }
+  return res;
+}
+
 async function mobileAccessGate(
   req: NextRequest,
   trustedLocalPeer: boolean,
@@ -90,6 +141,18 @@ async function mobileAccessGate(
 ) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
+  const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
+
+  // A local pairing link is already trusted for app access, but its query
+  // credential still needs the audited cookie exchange and URL cleanup before
+  // the prompt-free loopback bypass runs.
+  if (
+    trustedLocalPeer
+    && queryToken
+    && (req.method === "GET" || req.method === "HEAD")
+  ) {
+    return mobileAccessQueryTokenRedirect(req, expected, queryToken);
+  }
 
   // A server.ts-stamped direct loopback DOCUMENT navigation is this machine's
   // own window asking for a page, and it is the one request shape that cannot
@@ -102,13 +165,16 @@ async function mobileAccessGate(
   // This does NOT reopen the bypass this change exists to close. The stamp is
   // minted per boot, never leaves server.ts, and is applied only to loopback
   // sockets carrying no forwarding markers — Tailscale-Serve traffic always
-  // arrives with x-forwarded-*, so it can never earn the stamp. `/api/*` is
-  // deliberately still gated: there the sidecar credential keeps doing the work
-  // the comment on shouldRequireMobileAccessCredential describes, distinguishing
-  // the intended local user from other OS users on a shared machine.
+  // arrives with x-forwarded-*, so it can never earn the stamp. `/api/*`
+  // follows the same direct-loopback decision below, so a browser tab does not
+  // fall into a pairing loop merely because mobile access is armed.
   if (
-    trustedLocalPeer &&
-    isHtmlNavigationRequest(req.method, req.nextUrl.pathname, req.headers.get("accept"))
+    shouldBypassMobileAccessGate(
+      trustedLocalPeer,
+      req.method,
+      req.nextUrl.pathname,
+      req.headers.get("accept"),
+    )
   ) {
     return null;
   }
@@ -126,7 +192,6 @@ async function mobileAccessGate(
     return null;
   }
 
-  const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
   const verification = await mobileAccessVerification(req, expected, suppliedTokens);
   if (!verification) {
     // Browser page navigations get an HTML access page instead of a raw JSON
@@ -147,26 +212,7 @@ async function mobileAccessGate(
   }
 
   if (queryToken && (req.method === "GET" || req.method === "HEAD")) {
-    const url = req.nextUrl.clone();
-    url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
-    const res = NextResponse.redirect(url);
-    const queryVerification = await isValidMobileAccessCredential({
-      supplied: queryToken,
-      expectedSecret: expected,
-    });
-    if (queryVerification.ok) {
-      const maxAge = queryVerification.legacy
-        ? undefined
-        : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
-      res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: req.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge,
-      });
-    }
-    return res;
+    return mobileAccessQueryTokenRedirect(req, expected, queryToken);
   }
 
   return null;
@@ -178,6 +224,46 @@ function hasSafeContentType(req: NextRequest) {
   if (!contentType) return true;
   const mediaType = contentType.split(";", 1)[0].trim().toLowerCase();
   return SAFE_CONTENT_TYPES.includes(mediaType);
+}
+
+function hasReviewedPairingContentType(req: NextRequest) {
+  if (
+    req.method !== "POST"
+    || req.nextUrl.pathname !== "/api/client/v1/pairing/requests"
+  ) {
+    return true;
+  }
+  const contentType = req.headers.get("content-type")?.trim();
+  return Boolean(
+    contentType
+    && /^application\/json(?:\s*;\s*charset\s*=\s*(?:"utf-8"|utf-8))?$/i.test(contentType)
+  );
+}
+
+const CLIENT_V1_CONTROL_BODY_LIMIT_BYTES = 64 * 1024;
+const CLIENT_V1_BODY_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function clientV1RequestBodyError(
+  req: NextRequest,
+  clientV1Ingress: ReturnType<typeof clientV1IngressKind>,
+) {
+  if (!clientV1Ingress || !CLIENT_V1_BODY_METHODS.has(req.method)) {
+    return null;
+  }
+  if (req.headers.has("transfer-encoding")) {
+    return { status: 400, error: "invalid content-length" };
+  }
+  const contentLength = req.headers.get("content-length");
+  if (contentLength === null) {
+    return { status: 411, error: "content-length required" };
+  }
+  if (!/^\d+$/.test(contentLength)) {
+    return { status: 400, error: "invalid content-length" };
+  }
+  if (BigInt(contentLength) > BigInt(CLIENT_V1_CONTROL_BODY_LIMIT_BYTES)) {
+    return { status: 413, error: "request body too large" };
+  }
+  return null;
 }
 
 function isLocalOnlyAutomationRun(pathname: string, method: string) {
@@ -222,14 +308,18 @@ export async function proxy(req: NextRequest) {
   const sidecarAuthenticatedAtGate = sidecarTokenMatches(
     req.headers.get(TOKEN_HEADER) ?? req.nextUrl.searchParams.get(TOKEN_PARAM),
   ) || mediaTicketAuthenticated;
-  // The local-peer stamp distinguishes direct from forwarded traffic, but TCP
-  // loopback is not OS-user identity. When mobile access is armed, the Tauri
-  // app must also present its per-launch sidecar credential and a plain local
-  // browser must use the same access-token gate as remote browsers.
+  // The local-peer stamp distinguishes direct from forwarded traffic. Direct,
+  // unforwarded loopback is the browser's no-prompt path; remote traffic still
+  // requires a mobile or sidecar credential.
   const trustedLocalPeer = isTrustedLocalPeer(
     req.headers.get(LOCAL_PEER_HEADER),
     process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
   );
+  if (isAuthenticatedDevReadinessProbe(req, trustedLocalPeer)) {
+    const response = NextResponse.next();
+    response.headers.set(DEV_READINESS_PROOF_HEADER, "1");
+    return response;
+  }
   // Tailnet device context behind a Tailscale-Serve-forwarded request. This is
   // never sufficient authentication because direct loopback clients can forge
   // forwarding headers; it is consumed only after bearer authentication for
@@ -239,12 +329,26 @@ export async function proxy(req: NextRequest) {
     process.env.COVEN_CAVE_TAILNET_PEER_SECRET,
   );
   const tailnetPeerVerified = tailnetNodeId !== null;
-  const mobileRes = await mobileAccessGate(
-    req,
-    trustedLocalPeer,
-    tailnetPeerVerified,
-    sidecarAuthenticatedAtGate,
-  );
+  // A Client v1 request-target carrying a percent-escape or a backslash is
+  // refused before anything is classified (cave-f1xki, #4854). It cannot be a
+  // real client — every segment of this surface is a fixed literal or a UUID —
+  // and leaving it to the classifier is exactly how it slipped the gate: the
+  // classifier answered null, so the direct-loopback branch and the
+  // 411/413/64 KiB body rules below, which both hang off a non-null answer,
+  // never ran. See isRefusedClientV1Path for why this refuses rather than
+  // normalizes.
+  if (isRefusedClientV1Path(req.nextUrl.pathname)) {
+    return jsonError(400, "invalid client v1 path");
+  }
+  const clientV1Ingress = clientV1IngressKind(req.nextUrl.pathname);
+  const mobileRes = clientV1Ingress
+    ? null
+    : await mobileAccessGate(
+      req,
+      trustedLocalPeer,
+      tailnetPeerVerified,
+      sidecarAuthenticatedAtGate,
+    );
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
@@ -379,8 +483,40 @@ export async function proxy(req: NextRequest) {
       return jsonError(403, "missing request source");
     }
   }
-  if (!hasSafeContentType(req)) {
+  if (!hasSafeContentType(req) || !hasReviewedPairingContentType(req)) {
     return jsonError(415, "unsupported content-type");
+  }
+  const clientV1BodyError = clientV1RequestBodyError(req, clientV1Ingress);
+  if (clientV1BodyError) {
+    return jsonError(clientV1BodyError.status, clientV1BodyError.error);
+  }
+
+  // The Client v1 administrative family is bound to the same direct-loopback
+  // peer the public family requires (#4843) — but only bound, never excused.
+  // It deliberately does NOT join the clientV1Ingress branch below: matching
+  // there is a demotion (mobileAccessGate skipped, the sidecar-token block
+  // returned before), and admin's whole protection is that sidecar token. So
+  // this refuses, then falls through to the ordinary gate.
+  //
+  // requireClientV1Admin's own comment — that transport locality is not proof
+  // of the administrator, and the per-launch credential is — argues for
+  // requiring the token, not against also requiring locality. The two answer
+  // different questions (who, and from where), and the route family this
+  // protects is the human-consent surface for the entire authority: the
+  // pairing-approval queue and the credential list. A bearer token alone let a
+  // forwarded caller off the machine READ both, which is measurably what
+  // happened before this line existed.
+  if (isClientV1AdminPath(req.nextUrl.pathname)) {
+    if (!trustedLocalPeer || remoteIngress) {
+      return jsonError(403, "forbidden peer: client v1 admin requires direct loopback");
+    }
+  }
+
+  if (clientV1Ingress) {
+    if (!trustedLocalPeer || remoteIngress) {
+      return jsonError(403, "forbidden peer: client v1 requires direct loopback");
+    }
+    return nextWithMobileAccessMarker(req, false);
   }
 
   const suppliedToken =
@@ -399,7 +535,13 @@ export async function proxy(req: NextRequest) {
     return nextWithMobileAccessMarker(req, remoteIngress);
   }
 
-  if (!sidecarAuthenticated && !mobileAccessVerified) {
+  // Direct loopback is the prompt-free browser path for ordinary app APIs.
+  // Client v1 is different: its reviewed public/authenticated routes returned
+  // above, while every remaining path intentionally stays on this credential
+  // boundary (especially the human-consent admin surface).
+  const trustedLocalBrowserApi =
+    trustedLocalPeer && !isClientV1Path(req.nextUrl.pathname);
+  if (!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi) {
     if (mediaTicketAuthenticated) {
       return nextWithMobileAccessMarker(req, remoteIngress);
     }
@@ -417,5 +559,8 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // The pdf.js module worker is a public, immutable build asset. Worker module
+  // requests cannot carry the Tauri sidecar header, so gating this one file
+  // makes every authenticated desktop PDF load fail before parsing begins.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|pdf\\.worker\\.min\\.mjs$).*)"],
 };

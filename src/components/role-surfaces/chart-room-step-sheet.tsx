@@ -30,7 +30,9 @@ type PickerGroup = { stage: string; options: Array<{ step: ChartStep; recommende
 /**
  * Dependency candidates grouped by lane in board order, recommended first.
  * Upstream is recommended for "waits on" and downstream for "connects to", so
- * either link keeps the flow running forward.
+ * either link keeps the flow running forward. A step already linked is never
+ * offered again, and the cycle guard excludes the whole descendant set — with
+ * fan-in, a loop can close through any branch, not just a direct dependant.
  */
 function pickerGroups(
   step: ChartStep,
@@ -42,7 +44,11 @@ function pickerGroups(
   return CHART_STAGES.map((stage, index) => {
     const options = steps
       .filter((other) => other.id !== step.id && other.stage === stage.id)
-      .filter((other) => (direction === "upstream" ? other.needs !== step.id : !ancestors.has(other.id)))
+      .filter((other) =>
+        direction === "upstream"
+          ? !step.needs.includes(other.id) && !ancestorsOf(steps, other.id).has(step.id)
+          : !ancestors.has(other.id) && !other.needs.includes(step.id),
+      )
       .map((other) => {
         const forward = direction === "upstream" ? index < here : index > here;
         const sameProject = other.project != null && other.project === step.project;
@@ -77,7 +83,8 @@ export function ChartRoomStepSheet({
   onStage,
   onOwner,
   onProject,
-  onNeeds,
+  onLink,
+  onUnlink,
   onConnect,
   onCut,
   onSelect,
@@ -100,7 +107,8 @@ export function ChartRoomStepSheet({
   onStage: (stage: ChartStageId) => void;
   onOwner: (familiarId: string) => void;
   onProject: (projectId: string) => void;
-  onNeeds: (needs: string | null) => void;
+  onLink: (parentId: string) => void;
+  onUnlink: (parentId: string) => void;
   onConnect: (dependantId: string) => void;
   onCut: (dependantId: string) => void;
   onSelect: (id: string) => void;
@@ -113,8 +121,11 @@ export function ChartRoomStepSheet({
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(true, dialogRef, { onEscape: onClose });
 
-  const upstream = step.needs ? steps.find((other) => other.id === step.needs) : undefined;
-  const downstream = steps.filter((other) => other.needs === step.id);
+  const upstreams = step.edges.map((edge) => ({
+    edge,
+    step: steps.find((other) => other.id === edge.needs),
+  }));
+  const downstream = steps.filter((other) => other.needs.includes(step.id));
   const recommendation = stepRecommendation(step, steps);
   const before = previousStage(step.stage);
   const after = nextStage(step.stage);
@@ -240,7 +251,8 @@ export function ChartRoomStepSheet({
               <Icon name="ph:flow-arrow" width={12} height={12} aria-hidden />
               <span className="cr-eyebrow">Connections</span>
               <span className="cr-mono">
-                {upstream ? "1 upstream" : "no upstream"} · {downstream.length || "no"} downstream
+                {upstreams.length || "no"} upstream · {downstream.length || "no"} downstream
+                {step.external.length > 0 ? ` · ${step.external.length} external` : ""}
               </span>
             </span>
 
@@ -248,20 +260,44 @@ export function ChartRoomStepSheet({
               <Icon name="ph:arrow-bend-left-up" width={11} height={11} aria-hidden />
               <span className="cr-eyebrow">Waits on</span>
             </span>
-            {upstream ? (
-              <span className="cr-conn__current">
-                <span className="cr-chain__title">{upstream.title}</span>
-                <StateTag state={upstream.state} />
+            {upstreams.map(({ edge, step: upstream }) => (
+              <span key={edge.needs} className="cr-conn__current">
+                {upstream ? (
+                  <button
+                    type="button"
+                    className="cr-conn__jump focus-ring"
+                    onClick={() => onSelect(edge.needs)}
+                  >
+                    {upstream.title}
+                  </button>
+                ) : (
+                  <span className="cr-chain__title">{edge.needs}</span>
+                )}
+                {upstream ? <StateTag state={upstream.state} /> : null}
+                {edge.primary ? (
+                  <span className="cr-chip" title={edge.pinned ? "Primary blocker, pinned by hand" : "Primary blocker"}>
+                    <Icon name={edge.pinned ? "ph:push-pin" : "ph:target"} width={9} height={9} aria-hidden />
+                    primary
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   className="cr-icon-btn cr-icon-btn--danger focus-ring"
-                  aria-label="Unlink"
-                  onClick={() => onNeeds(null)}
+                  aria-label={`Unlink ${upstream?.title ?? edge.needs}`}
+                  onClick={() => onUnlink(edge.needs)}
                 >
                   <Icon name="ph:x" width={11} height={11} aria-hidden />
                 </button>
               </span>
-            ) : null}
+            ))}
+            {step.external.map((blocker) => (
+              <span key={`${blocker.kind}:${blocker.label}`} className="cr-conn__current" data-terminal>
+                <Icon name="ph:link-simple" width={11} height={11} aria-hidden />
+                <span className="cr-chain__title">{blocker.label}</span>
+                <span className="cr-chip">{blocker.kind}</span>
+                <span className="cr-mono">{blocker.state}</span>
+              </span>
+            ))}
             <button
               type="button"
               className="cr-conn__trigger focus-ring"
@@ -269,17 +305,17 @@ export function ChartRoomStepSheet({
               onClick={onToggleUpstream}
             >
               <Icon name="ph:link" width={11} height={11} aria-hidden />
-              {upstream ? "Relink" : "Link a dependency"}
+              {upstreams.length > 0 ? "Add another dependency" : "Link a dependency"}
               <span className="cr-lens__spacer" />
               <Icon name={upstreamOpen ? "ph:caret-up" : "ph:caret-down"} width={10} height={10} aria-hidden />
             </button>
             {upstreamOpen ? (
               <Picker
                 groups={pickerGroups(step, steps, "upstream")}
-                selectedId={step.needs ?? null}
+                selectedId={null}
                 projectColor={projectColor}
-                onPick={(id) => onNeeds(id)}
-                note="Recommended = an earlier lane, so the flow still runs forward. Or drag from a step's right-edge dot."
+                onPick={(id) => onLink(id)}
+                note="Recommended = an earlier lane, so the flow still runs forward. Or drag from a step's right-edge dot. Adding never replaces — unlink an edge to drop it."
               />
             ) : null}
 

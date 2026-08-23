@@ -5,13 +5,17 @@ import {
   readdir,
   realpath,
   rm,
+  rmdir,
+  unlink,
 } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { caveHome } from "../coven-paths.ts";
 import type { ResearchMission } from "../research-missions.ts";
 import {
   ensureStandardArtifactRefs,
   parseResearchMission,
+  repairResearchMissionState,
 } from "../research-missions.ts";
 import { hasUnpairedUtf16Surrogate } from "../utf16.ts";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-write.ts";
@@ -24,6 +28,7 @@ import {
 
 const MISSION_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const ARTIFACT_FILE_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
+const SOURCE_FILE_RE = /^x-article-[a-f0-9]{24}\.md$/;
 const RESEARCH_SESSION_OWNER_VERSION = 1;
 const RESEARCH_SESSION_ID_MAX_LENGTH = 512;
 
@@ -69,6 +74,24 @@ export function researchMissionsRoot(): string {
   );
 }
 
+function privateResearchRuntimeRoot(
+  override: string | undefined,
+  defaultDirectory: string,
+  label: string,
+): string {
+  if (override && !path.isAbsolute(override)) {
+    throw new Error(`Research ${label} directory must be absolute`);
+  }
+  const root = path.resolve(
+    override || path.join(/* turbopackIgnore: true */ caveHome(), defaultDirectory),
+  );
+  const missionRoot = path.resolve(researchMissionsRoot());
+  if (isWithin(root, missionRoot) || isWithin(missionRoot, root)) {
+    throw new Error(`Research ${label} directory must be outside mission workspaces`);
+  }
+  return root;
+}
+
 /**
  * Private process ownership lives beside, never inside, agent-writable mission
  * workspaces. It is intentionally not part of the public Research DTO or Cave
@@ -76,17 +99,23 @@ export function researchMissionsRoot(): string {
  * would be unsafe.
  */
 export function researchMissionSessionOwnersRoot(): string {
-  const override = process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR?.trim();
-  if (override && !path.isAbsolute(override)) {
-    throw new Error("Research session ownership directory must be absolute");
-  }
-  const root = path.resolve(
-    override || path.join(/* turbopackIgnore: true */ caveHome(), "research-session-owners"),
+  return privateResearchRuntimeRoot(
+    process.env.COVEN_RESEARCH_SESSION_OWNERS_DIR?.trim(),
+    "research-session-owners",
+    "session ownership",
   );
-  if (isWithin(root, path.resolve(researchMissionsRoot()))) {
-    throw new Error("Research session ownership directory must be outside mission workspaces");
-  }
-  return root;
+}
+
+/**
+ * Cross-process action intents live beside the private session-owner ledger,
+ * never beneath a familiar-writable research workspace.
+ */
+export function researchMissionActionLocksRoot(): string {
+  return privateResearchRuntimeRoot(
+    process.env.COVEN_RESEARCH_ACTION_LOCKS_DIR?.trim(),
+    "research-mission-action-locks",
+    "mission action lock",
+  );
 }
 
 export type ResearchMissionSessionOwner = {
@@ -153,23 +182,39 @@ function researchMissionSessionOwnerPath(missionId: string, root = researchMissi
   return path.join(/* turbopackIgnore: true */ root, `${missionId}.json`);
 }
 
-async function assertPrivateSessionOwnerRoot(): Promise<string> {
-  const root = researchMissionSessionOwnersRoot();
+async function assertPrivateResearchRuntimeRoot(
+  root: string,
+  label: string,
+): Promise<string> {
   await mkdir(/* turbopackIgnore: true */ root, { recursive: true });
   const info = await lstat(/* turbopackIgnore: true */ root);
   if (info.isSymbolicLink() || !info.isDirectory()) {
-    throw new Error("Research session ownership directory must be a real directory");
+    throw new Error(`Research ${label} directory must be a real directory`);
   }
   const resolvedRoot = await realpath(/* turbopackIgnore: true */ root);
   try {
     const resolvedMissions = await realpath(/* turbopackIgnore: true */ researchMissionsRoot());
-    if (isWithin(resolvedRoot, resolvedMissions)) {
-      throw new Error("Research session ownership directory resolves inside mission workspaces");
+    if (isWithin(resolvedRoot, resolvedMissions) || isWithin(resolvedMissions, resolvedRoot)) {
+      throw new Error(`Research ${label} directory resolves inside mission workspaces`);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   return resolvedRoot;
+}
+
+async function assertPrivateSessionOwnerRoot(): Promise<string> {
+  return assertPrivateResearchRuntimeRoot(
+    researchMissionSessionOwnersRoot(),
+    "session ownership",
+  );
+}
+
+export async function assertResearchMissionActionLockRoot(): Promise<string> {
+  return assertPrivateResearchRuntimeRoot(
+    researchMissionActionLocksRoot(),
+    "mission action lock",
+  );
 }
 
 /**
@@ -353,6 +398,329 @@ async function assertRealMissionDirectory(id: string): Promise<string> {
   return resolvedDirectory;
 }
 
+function assertSourceFileName(fileName: string): void {
+  if (!SOURCE_FILE_RE.test(fileName)) {
+    throw new Error("invalid source filename");
+  }
+}
+
+async function assertRealSourceFilesDirectory(missionDirectory: string): Promise<string> {
+  const directory = path.join(/* turbopackIgnore: true */ missionDirectory, "source-files");
+  await mkdir(/* turbopackIgnore: true */ directory, { recursive: true });
+  const stat = await lstat(/* turbopackIgnore: true */ directory);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error("source-files must be a real directory");
+  }
+  const resolvedDirectory = await realpath(/* turbopackIgnore: true */ directory);
+  if (!isWithin(resolvedDirectory, missionDirectory)) {
+    throw new Error("source-files is outside mission workspace");
+  }
+  return resolvedDirectory;
+}
+
+async function sourceFileTarget(
+  missionDirectory: string,
+  fileName: string,
+): Promise<{ sourceDirectory: string; target: string }> {
+  const sourceDirectory = await assertRealSourceFilesDirectory(missionDirectory);
+  const target = path.resolve(/* turbopackIgnore: true */ sourceDirectory, fileName);
+  if (!isWithin(target, sourceDirectory)) {
+    throw new Error("source file is outside source-files");
+  }
+  return { sourceDirectory, target };
+}
+
+async function readExistingSourceFile(
+  sourceDirectory: string,
+  target: string,
+): Promise<string | null> {
+  let stat;
+  try {
+    stat = await lstat(/* turbopackIgnore: true */ target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  if (stat.isSymbolicLink()) throw new Error("source files cannot be symlinks");
+  if (!stat.isFile()) throw new Error("source path is not a file");
+  const resolvedTarget = await realpath(/* turbopackIgnore: true */ target);
+  if (!isWithin(resolvedTarget, sourceDirectory)) {
+    throw new Error("source file is outside source-files");
+  }
+  return readFile(/* turbopackIgnore: true */ resolvedTarget, "utf8");
+}
+
+export type ResearchMissionSourceFileWriteToken = {
+  content: string;
+  sha256: string;
+};
+
+function sourceFileWriteToken(content: string): ResearchMissionSourceFileWriteToken {
+  // This is the exact text that reaches writeFileAtomic after Node's UTF-8
+  // conversion, including replacement characters for malformed JS strings.
+  const utf8Content = Buffer.from(content, "utf8").toString("utf8");
+  return {
+    content: utf8Content,
+    sha256: createHash("sha256").update(utf8Content, "utf8").digest("hex"),
+  };
+}
+
+function assertSourceFileWriteToken(
+  expected: ResearchMissionSourceFileWriteToken,
+): void {
+  if (
+    typeof expected?.content !== "string" ||
+    !/^[a-f0-9]{64}$/.test(expected.sha256) ||
+    sourceFileWriteToken(expected.content).sha256 !== expected.sha256
+  ) {
+    throw new Error("invalid expected source file write token");
+  }
+}
+
+export async function writeResearchMissionSourceFile(
+  missionId: string,
+  fileName: string,
+  content: string,
+): Promise<{
+  path: string;
+  previous: string | null;
+  expected: ResearchMissionSourceFileWriteToken;
+}> {
+  assertMissionId(missionId);
+  assertSourceFileName(fileName);
+  return withResearchMissionLock(missionId, async () => {
+    const missionDirectory = await assertRealMissionDirectory(missionId);
+    const { sourceDirectory, target } = await sourceFileTarget(missionDirectory, fileName);
+    const previous = await readExistingSourceFile(sourceDirectory, target);
+    const expected = sourceFileWriteToken(content);
+    await writeFileAtomic(target, expected.content);
+    return { path: path.posix.join("source-files", fileName), previous, expected };
+  });
+}
+
+export async function restoreResearchMissionSourceFile(
+  missionId: string,
+  fileName: string,
+  previous: string | null,
+  expected: ResearchMissionSourceFileWriteToken,
+): Promise<void> {
+  assertMissionId(missionId);
+  assertSourceFileName(fileName);
+  assertSourceFileWriteToken(expected);
+  return withResearchMissionLock(missionId, async () => {
+    const missionDirectory = await assertRealMissionDirectory(missionId);
+    const { sourceDirectory, target } = await sourceFileTarget(missionDirectory, fileName);
+    const existing = await readExistingSourceFile(sourceDirectory, target);
+    if (existing === null) {
+      throw new Error("Research source file is missing after materialization; rollback refused");
+    }
+    if (
+      existing !== expected.content ||
+      createHash("sha256").update(existing, "utf8").digest("hex") !== expected.sha256
+    ) {
+      throw new Error("Research source file changed after materialization; rollback refused");
+    }
+    if (previous !== null) {
+      await writeFileAtomic(target, previous);
+      return;
+    }
+    await unlink(/* turbopackIgnore: true */ target);
+  });
+}
+
+/**
+ * Temporary, run-scoped external content lives here and nowhere else.
+ *
+ * `source-files/` is the DURABLE half of the workspace: an X Article
+ * materialized through attach-saved-link is meant to persist. `runtime/x/` is
+ * the opposite contract — normalized X post text hydrated just in time for one
+ * iteration and removed the moment that iteration settles. Keeping the two in
+ * separate directories is what lets removal be a whole-directory `rm` that
+ * cannot take a durable file with it.
+ */
+export const RESEARCH_MISSION_X_RUNTIME_DIR = "runtime/x";
+const X_RUNTIME_FILE_RE = /^x-post-\d{1,25}\.md$/;
+
+function assertXRuntimeFileName(fileName: string): void {
+  if (!X_RUNTIME_FILE_RE.test(fileName) || path.basename(fileName) !== fileName) {
+    throw new Error("invalid X runtime filename");
+  }
+}
+
+function missionXRuntimeTarget(missionDirectory: string): string {
+  return path.join(/* turbopackIgnore: true */ missionDirectory, "runtime", "x");
+}
+
+async function assertRealXRuntimeDirectory(missionDirectory: string): Promise<string> {
+  const runtimeRoot = path.join(/* turbopackIgnore: true */ missionDirectory, "runtime");
+  const directory = missionXRuntimeTarget(missionDirectory);
+  await mkdir(/* turbopackIgnore: true */ directory, { recursive: true });
+  for (const candidate of [runtimeRoot, directory]) {
+    const stat = await lstat(/* turbopackIgnore: true */ candidate);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw new Error("mission X runtime must be a real directory");
+    }
+  }
+  const resolvedDirectory = await realpath(/* turbopackIgnore: true */ directory);
+  if (!isWithin(resolvedDirectory, missionDirectory)) {
+    throw new Error("mission X runtime is outside the mission workspace");
+  }
+  return resolvedDirectory;
+}
+
+/**
+ * Replace the mission's hydrated X runtime with exactly `files`.
+ *
+ * The directory is dropped first, so a previous run's residue can never be
+ * presented to this iteration as if it had been rehydrated now.
+ */
+export async function writeResearchMissionXRuntimeFiles(
+  missionId: string,
+  files: ReadonlyArray<{ fileName: string; content: string }>,
+): Promise<string[]> {
+  assertMissionId(missionId);
+  for (const file of files) assertXRuntimeFileName(file.fileName);
+  const names = files.map((file) => file.fileName);
+  if (new Set(names).size !== names.length) {
+    throw new Error("duplicate X runtime filename");
+  }
+  return withResearchMissionLock(missionId, async () => {
+    const missionDirectory = await assertRealMissionDirectory(missionId);
+    await removeMissionXRuntimeUnlocked(missionDirectory);
+    if (files.length === 0) return [];
+    const directory = await assertRealXRuntimeDirectory(missionDirectory);
+    const written: string[] = [];
+    for (const file of files) {
+      const target = path.resolve(/* turbopackIgnore: true */ directory, file.fileName);
+      if (!isWithin(target, directory)) {
+        throw new Error("X runtime file is outside the runtime directory");
+      }
+      await writeFileAtomic(target, file.content);
+      written.push(path.posix.join("runtime", "x", file.fileName));
+    }
+    return written;
+  });
+}
+
+async function removeMissionXRuntimeUnlocked(missionDirectory: string): Promise<void> {
+  const directory = missionXRuntimeTarget(missionDirectory);
+  let stat;
+  try {
+    stat = await lstat(/* turbopackIgnore: true */ directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    // Never recurse through a link an agent may have planted in its own
+    // writable workspace: drop the entry itself, never what it points at.
+    await unlink(/* turbopackIgnore: true */ directory);
+  } else {
+    const resolved = await realpath(/* turbopackIgnore: true */ directory);
+    if (!isWithin(resolved, missionDirectory)) {
+      throw new Error("mission X runtime is outside the mission workspace");
+    }
+    await rm(/* turbopackIgnore: true */ directory, { recursive: true, force: true });
+  }
+  // Leave no empty scaffolding behind, but never disturb a `runtime/`
+  // directory something else is using. `rmdir` is the operation that expresses
+  // exactly that: it removes an empty directory and refuses a populated one
+  // with ENOTEMPTY. `rm(..., { recursive: false })` cannot be used here — Node
+  // throws ERR_FS_EISDIR for ANY directory, empty or not, so that form removed
+  // nothing at all and left the empty `runtime/` behind on every call.
+  await rmdir(path.join(/* turbopackIgnore: true */ missionDirectory, "runtime")).catch(() => {});
+}
+
+/**
+ * Remove every hydrated X post file for a mission. Safe to call when the
+ * mission, its workspace, or the runtime directory does not exist — removal
+ * runs from several independent places on purpose (see
+ * research-mission-x-runtime.ts) and none of them may fail because another
+ * already did the work.
+ */
+export async function removeResearchMissionXRuntime(missionId: string): Promise<void> {
+  assertMissionId(missionId);
+  await withResearchMissionLock(missionId, async () => {
+    let missionDirectory: string;
+    try {
+      missionDirectory = await assertRealMissionDirectory(missionId);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    await removeMissionXRuntimeUnlocked(missionDirectory);
+  });
+}
+
+/**
+ * Crash residue sweep: remove `runtime/x` for every mission whose runtime
+ * directory has not been touched inside `maxAgeMs`.
+ *
+ * A research iteration is bounded in minutes, so a runtime directory older
+ * than the sweep window belongs to a run whose process died — no in-process
+ * cleanup will ever reach it. The age gate is what keeps this from robbing a
+ * live run started by another process.
+ */
+export async function sweepResearchMissionXRuntimeResidue(
+  maxAgeMs: number,
+  now: Date = new Date(),
+): Promise<string[]> {
+  if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
+    throw new Error("invalid X runtime residue age");
+  }
+  let entries;
+  try {
+    entries = await readdir(/* turbopackIgnore: true */ researchMissionsRoot(), {
+      withFileTypes: true,
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const cutoff = now.getTime() - maxAgeMs;
+  const swept: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !MISSION_ID_RE.test(entry.name)) continue;
+    const directory = missionXRuntimeTarget(researchMissionWorkspacePath(entry.name));
+    let stat;
+    try {
+      stat = await lstat(/* turbopackIgnore: true */ directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (stat.mtimeMs > cutoff) continue;
+    await removeResearchMissionXRuntime(entry.name);
+    swept.push(entry.name);
+  }
+  return swept;
+}
+
+/**
+ * Read-modify-write the durable source ledger under the mission lock.
+ *
+ * `saveResearchMission` takes the same non-reentrant lock, so a caller that
+ * needs load-then-save as one unit cannot compose the two public functions.
+ */
+export async function updateResearchMissionSources(
+  missionId: string,
+  update: (sources: ResearchMission["sources"]) => ResearchMission["sources"],
+): Promise<ResearchMission | null> {
+  assertMissionId(missionId);
+  return withResearchMissionLock(missionId, async () => {
+    // `loadResearchMission` deliberately takes no lock, so it composes inside
+    // this one; `saveResearchMission` does, hence the unlocked save below.
+    const mission = await loadResearchMission(missionId);
+    if (!mission) return null;
+    const updated: ResearchMission = {
+      ...mission,
+      sources: update(mission.sources),
+    };
+    await saveResearchMissionUnlocked(updated);
+    return updated;
+  });
+}
+
 export async function createResearchMissionWorkspace(
   mission: ResearchMission,
 ): Promise<ResearchMission> {
@@ -382,12 +750,22 @@ export async function createResearchMissionWorkspace(
   });
 }
 
+export async function removeResearchMissionWorkspace(id: string): Promise<void> {
+  assertMissionId(id);
+  await withResearchMissionLock(id, async () => {
+    const directory = await assertRealMissionDirectory(id);
+    await rm(/* turbopackIgnore: true */ directory, { recursive: true, force: false });
+  });
+}
+
+async function saveResearchMissionUnlocked(mission: ResearchMission): Promise<void> {
+  const directory = await assertRealMissionDirectory(mission.id);
+  await writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "mission.json"), mission);
+}
+
 export async function saveResearchMission(mission: ResearchMission): Promise<void> {
   assertMissionId(mission.id);
-  await withResearchMissionLock(mission.id, async () => {
-    const directory = await assertRealMissionDirectory(mission.id);
-    await writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "mission.json"), mission);
-  });
+  await withResearchMissionLock(mission.id, () => saveResearchMissionUnlocked(mission));
 }
 
 export async function loadResearchMission(id: string): Promise<ResearchMission | null> {
@@ -399,7 +777,7 @@ export async function loadResearchMission(id: string): Promise<ResearchMission |
     if (!parsed || parsed.id !== id) return null;
     // Additive read-time backfill: missions created before the standard refs
     // existed gain them on load; the refs persist on the next save.
-    return ensureStandardArtifactRefs(parsed);
+    return ensureStandardArtifactRefs(repairResearchMissionState(parsed));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || error instanceof SyntaxError) return null;

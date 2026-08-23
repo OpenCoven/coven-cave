@@ -6,6 +6,13 @@ import { writeJsonAtomic } from "./server/atomic-write.ts";
 import {
   DEFAULT_MAX_RETRIES,
   type Card,
+  type BoardAgenticEnhanceState,
+  type BoardAgenticPatch,
+  type BoardAgenticProposalAuditEntry,
+  type BoardAgenticProposalError,
+  type BoardAgenticProposalRecord,
+  type BoardAgenticScopedInverse,
+  type BoardAgenticProposalState,
   type CardAsanaLink,
   type CardBeadRef,
   type CardGitHubLink,
@@ -35,6 +42,11 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
+import {
+  buildBoardAgenticContext,
+  validateBoardAgenticRecommendation,
+} from "@/lib/board-agentic-enhance";
+import { isAutoApplyAllowed } from "@/lib/agentic-recommendations";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   assertValidOrchestration,
@@ -49,6 +61,12 @@ export {
   PRIORITIES,
   STATUSES,
   type Card,
+  type BoardAgenticEnhanceState,
+  type BoardAgenticPatch,
+  type BoardAgenticProposalAuditEntry,
+  type BoardAgenticProposalError,
+  type BoardAgenticProposalRecord,
+  type BoardAgenticProposalState,
   type CardAsanaLink,
   type CardBeadRef,
   type CardGitHubLink,
@@ -62,6 +80,8 @@ export {
 export { OrchestrationValidationError } from "@/lib/task-orchestration";
 
 const BOARD_PATH = path.join(caveHome(), "board.json");
+export const MAX_BOARD_AGENTIC_PROPOSALS = 16;
+export const MAX_BOARD_AGENTIC_AUDIT_ENTRIES = 64;
 
 /**
  * Old cards predate the lifecycle machine. Map their column `status` to the
@@ -232,6 +252,34 @@ function normalizeBeadRef(value: unknown): CardBeadRef | null {
   return { id, projectId };
 }
 
+function normalizeAgenticEnhance(value: unknown): BoardAgenticEnhanceState {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { proposals: [], audit: [] };
+  }
+  const raw = value as Partial<BoardAgenticEnhanceState>;
+  const proposals = Array.isArray(raw.proposals)
+    ? raw.proposals
+      .filter((proposal): proposal is BoardAgenticProposalRecord =>
+        proposal != null
+        && typeof proposal === "object"
+        && typeof proposal.id === "string"
+        && proposal.id.length > 0,
+      )
+      .slice(-MAX_BOARD_AGENTIC_PROPOSALS)
+    : [];
+  const audit = Array.isArray(raw.audit)
+    ? raw.audit
+      .filter((entry): entry is BoardAgenticProposalAuditEntry =>
+        entry != null
+        && typeof entry === "object"
+        && typeof entry.proposalId === "string"
+        && entry.proposalId.length > 0,
+      )
+      .slice(-MAX_BOARD_AGENTIC_AUDIT_ENTRIES)
+    : [];
+  return { proposals, audit };
+}
+
 function backfillCard(c: Card | LegacyCard): Card {
   const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
   // Derived links FILL GAPS; they never overwrite what is already stored.
@@ -290,6 +338,7 @@ function backfillCard(c: Card | LegacyCard): Card {
       typeof c.primaryBlockerPinned === "boolean" ? c.primaryBlockerPinned : false,
     nextStep: c.nextStep ?? null,
     orchestrationAudit: Array.isArray(c.orchestrationAudit) ? c.orchestrationAudit : [],
+    agenticEnhance: normalizeAgenticEnhance(c.agenticEnhance),
   } as Card;
 }
 
@@ -363,6 +412,690 @@ export async function saveBoard(board: BoardFile): Promise<void> {
   // a task-chat POST 404ing on a card that exists). The write lock above
   // serializes mutations; writeJsonAtomic makes each write torn-read-safe.
   await writeJsonAtomic(BOARD_PATH, board);
+}
+
+export class BoardAgenticProposalMutationError extends Error {
+  readonly code:
+    | "proposal_not_found"
+    | "proposal_not_applicable"
+    | "stale_context"
+    | "invalid_patch"
+    | "orchestration_invalid"
+    | "untrusted_automatic"
+    | "cancelled";
+  readonly errors: BoardAgenticProposalError[];
+
+  constructor(
+    code: BoardAgenticProposalMutationError["code"],
+    errors: BoardAgenticProposalError[] = [],
+  ) {
+    super(`Board agentic proposal mutation rejected: ${code}`);
+    this.name = "BoardAgenticProposalMutationError";
+    this.code = code;
+    this.errors = errors;
+  }
+}
+
+export type RecordBoardAgenticProposalInput = Omit<
+  BoardAgenticProposalRecord,
+  "createdAt" | "updatedAt"
+> & {
+  actor?: string;
+};
+
+function boardAgenticActor(actor: string | undefined, automatic = false): string {
+  const normalized = actor?.trim().slice(0, 128);
+  return normalized || (automatic ? "system" : "human");
+}
+
+function proposalAuditAction(state: BoardAgenticProposalState): BoardAgenticProposalAuditEntry["action"] {
+  switch (state) {
+    case "blocked":
+      return "blocked";
+    case "auto-applied":
+      return "auto-applied";
+    case "applied":
+      return "applied";
+    case "reverted":
+      return "reverted";
+    case "dismissed":
+      return "dismissed";
+    case "proposed":
+      return "generated";
+  }
+}
+
+function proposalAuditEntry(
+  proposal: BoardAgenticProposalRecord,
+  action: BoardAgenticProposalAuditEntry["action"],
+  actor: string,
+  at: string,
+): BoardAgenticProposalAuditEntry {
+  return {
+    proposalId: proposal.id,
+    action,
+    actor,
+    at,
+    context: structuredClone(proposal.context),
+    evidence: structuredClone(proposal.evidence),
+    validation: structuredClone(proposal.validation),
+  };
+}
+
+function boundedAgenticState(
+  current: BoardAgenticEnhanceState | undefined,
+  proposal: BoardAgenticProposalRecord,
+  action: BoardAgenticProposalAuditEntry["action"],
+  actor: string,
+  at: string,
+): BoardAgenticEnhanceState {
+  const previous = normalizeAgenticEnhance(current);
+  const proposals = [
+    ...previous.proposals.filter((entry) => entry.id !== proposal.id),
+    structuredClone(proposal),
+  ].slice(-MAX_BOARD_AGENTIC_PROPOSALS);
+  const audit = [
+    ...previous.audit,
+    proposalAuditEntry(proposal, action, actor, at),
+  ].slice(-MAX_BOARD_AGENTIC_AUDIT_ENTRIES);
+  return { proposals, audit };
+}
+
+/** Persist one immutable generation batch after rechecking its snapshot under the Board lock. */
+export async function recordBoardAgenticProposals(
+  cardId: string,
+  expectedContextFingerprint: string,
+  inputs: readonly RecordBoardAgenticProposalInput[],
+): Promise<Card | null> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const index = board.cards.findIndex((card) => card.id === cardId);
+    if (index < 0) return null;
+    const current = board.cards[index]!;
+    if (buildBoardAgenticContext(current, board.cards).fingerprint !== expectedContextFingerprint) {
+      throw new BoardAgenticProposalMutationError("stale_context");
+    }
+
+    let agenticEnhance = current.agenticEnhance;
+    for (const input of inputs) {
+      if (input.context.fingerprint !== expectedContextFingerprint) {
+        throw new BoardAgenticProposalMutationError("stale_context");
+      }
+      const { actor, ...recordInput } = input;
+      const now = new Date().toISOString();
+      const proposal: BoardAgenticProposalRecord = {
+        ...structuredClone(recordInput),
+        createdAt: now,
+        updatedAt: now,
+      };
+      agenticEnhance = boundedAgenticState(
+        agenticEnhance,
+        proposal,
+        proposalAuditAction(proposal.state),
+        boardAgenticActor(actor),
+        now,
+      );
+    }
+    board.cards[index] = { ...current, agenticEnhance };
+    await saveBoard(board);
+    return board.cards[index]!;
+  });
+}
+
+/** Persist a bounded Board proposal and its generated/blocked validation audit. */
+export async function recordBoardAgenticProposal(
+  cardId: string,
+  expectedContextFingerprint: string,
+  input: RecordBoardAgenticProposalInput,
+): Promise<Card | null> {
+  return recordBoardAgenticProposals(cardId, expectedContextFingerprint, [input]);
+}
+
+const BOARD_AGENTIC_PATCH_FIELDS = new Set<keyof BoardAgenticPatch>([
+  "title",
+  "notes",
+  "links",
+  "github",
+  "dependencies",
+  "primaryBlockerId",
+  "primaryBlockerPinned",
+  "nextStep",
+]);
+
+function isBoardAgenticPatch(value: unknown): value is BoardAgenticPatch {
+  return (
+    value != null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.keys(value).length > 0
+    && Object.keys(value).every((key) => BOARD_AGENTIC_PATCH_FIELDS.has(key as keyof BoardAgenticPatch))
+  );
+}
+
+function inverseBoardAgenticPatch(card: Card, patch: BoardAgenticPatch): BoardAgenticPatch {
+  const inverse: BoardAgenticPatch = {};
+  if ("title" in patch) inverse.title = card.title;
+  if ("notes" in patch) inverse.notes = card.notes;
+  if ("links" in patch) inverse.links = structuredClone(card.links);
+  if ("github" in patch) inverse.github = structuredClone(card.github);
+  if ("dependencies" in patch) inverse.dependencies = structuredClone(card.dependencies ?? []);
+  if ("primaryBlockerId" in patch) inverse.primaryBlockerId = card.primaryBlockerId ?? null;
+  if ("primaryBlockerPinned" in patch) inverse.primaryBlockerPinned = card.primaryBlockerPinned ?? false;
+  if ("nextStep" in patch) inverse.nextStep = structuredClone(card.nextStep ?? null);
+  return inverse;
+}
+
+function scopedInverseForNormalization(
+  card: Card,
+  recommendation: BoardAgenticProposalRecord["recommendation"],
+): BoardAgenticScopedInverse | null {
+  if (recommendation.kind !== "canonicalize-reference") return null;
+  const payload = recommendation.payload as { referenceId?: unknown; canonicalUrl?: unknown };
+  if (typeof payload.referenceId !== "string" || typeof payload.canonicalUrl !== "string") return null;
+  const link = card.github.find((entry) => entry.id === payload.referenceId);
+  if (!link) return null;
+  return {
+    kind: "canonicalize-reference",
+    referenceId: link.id,
+    previousUrl: link.url,
+    appliedUrl: payload.canonicalUrl,
+  };
+}
+
+function scopedInversePatch(
+  card: Card,
+  inverse: BoardAgenticScopedInverse,
+): BoardAgenticPatch | null {
+  const link = card.github.find((entry) => entry.id === inverse.referenceId);
+  if (!link || link.url !== inverse.appliedUrl) return null;
+  return {
+    links: card.links.map((value) => value === link.url ? inverse.previousUrl : value),
+    github: card.github.map((entry) =>
+      entry.id === inverse.referenceId ? { ...entry, url: inverse.previousUrl } : entry),
+  };
+}
+
+type ApplyBoardAgenticProposalOptions = {
+  contextFingerprint: string;
+  actor?: string;
+  signal?: AbortSignal;
+  generationInputs?: readonly RecordBoardAgenticProposalInput[];
+};
+
+async function applyPersistedBoardAgenticProposal(
+  cardId: string,
+  proposalId: string,
+  options: ApplyBoardAgenticProposalOptions,
+  automatic: boolean,
+): Promise<Card | null> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const current = board.cards.find((card) => card.id === cardId);
+    if (!current) return null;
+    const proposal = current.agenticEnhance?.proposals.find((entry) => entry.id === proposalId);
+    if (!proposal) throw new BoardAgenticProposalMutationError("proposal_not_found");
+    const context = buildBoardAgenticContext(current, board.cards);
+    if (
+      options.contextFingerprint !== context.fingerprint
+      || proposal.context.fingerprint !== context.fingerprint
+    ) {
+      throw new BoardAgenticProposalMutationError("stale_context");
+    }
+    const validation = validateBoardAgenticRecommendation(current, board.cards, proposal.recommendation);
+    if (validation.status === "blocked" || !validation.patch) {
+      throw new BoardAgenticProposalMutationError("orchestration_invalid", validation.errors);
+    }
+    if (proposal.state !== "proposed") {
+      throw new BoardAgenticProposalMutationError("proposal_not_applicable");
+    }
+    if (
+      automatic
+      && (validation.status !== "verified" || !isAutoApplyAllowed(validation.recommendation))
+    ) {
+      throw new BoardAgenticProposalMutationError("untrusted_automatic");
+    }
+
+    const inversePatch = automatic ? inverseBoardAgenticPatch(current, validation.patch) : null;
+    const updated = await updateCardLocked(cardId, validation.patch, {
+      automated: true,
+      actor: boardAgenticActor(options.actor, automatic),
+    });
+    if (!updated) return null;
+    const active = updated.card;
+    const persisted = active.agenticEnhance?.proposals.find((entry) => entry.id === proposalId);
+    if (!persisted) throw new BoardAgenticProposalMutationError("proposal_not_found");
+    const now = new Date().toISOString();
+    const state: BoardAgenticProposalState = automatic ? "auto-applied" : "applied";
+    const nextProposal: BoardAgenticProposalRecord = {
+      ...persisted,
+      recommendation: validation.recommendation,
+      patch: validation.patch,
+      inversePatch,
+      appliedContextFingerprint: automatic
+        ? buildBoardAgenticContext(active, updated.board.cards).fingerprint
+        : null,
+      state,
+      updatedAt: now,
+    };
+    const index = updated.board.cards.findIndex((card) => card.id === cardId);
+    updated.board.cards[index] = {
+      ...active,
+      agenticEnhance: boundedAgenticState(
+        active.agenticEnhance,
+        nextProposal,
+        proposalAuditAction(state),
+        boardAgenticActor(options.actor, automatic),
+        now,
+      ),
+    };
+    await saveBoard(updated.board);
+    return updated.board.cards[index]!;
+  });
+}
+
+/**
+ * Applies a user-reviewed proposal atomically. Its patch is always re-derived
+ * from the persisted recommendation while the board write lock is held.
+ */
+export async function applyBoardAgenticProposal(
+  cardId: string,
+  proposalId: string,
+  options: ApplyBoardAgenticProposalOptions,
+): Promise<Card | null> {
+  return applyPersistedBoardAgenticProposal(cardId, proposalId, options, false);
+}
+
+type AppliedBoardNormalization = {
+  proposalId: string;
+  recommendation: BoardAgenticProposalRecord["recommendation"];
+  patch: BoardAgenticPatch;
+  inversePatch: BoardAgenticPatch | null;
+  scopedInverse: BoardAgenticScopedInverse | null;
+};
+
+/**
+ * Applies every code-verified normalization from one generated batch under one
+ * lock, then rebases review proposals to the resulting context fingerprint.
+ */
+export async function autoApplyBoardAgenticProposalBatch(
+  cardId: string,
+  proposalIds: readonly string[],
+  options: ApplyBoardAgenticProposalOptions,
+): Promise<Card | null> {
+  let uniqueIds = [...new Set(proposalIds)];
+  const generationIds = new Set<string>();
+  const allocatedIds = new Map<string, string>();
+  if (uniqueIds.length === 0 && options.generationInputs === undefined) return null;
+
+  return withBoardLock(async () => {
+    if (options.signal?.aborted) throw new BoardAgenticProposalMutationError("cancelled");
+    const board = await loadBoard();
+    let current = board.cards.find((card) => card.id === cardId);
+    if (!current) return null;
+    const initialContext = buildBoardAgenticContext(current, board.cards);
+    if (options.contextFingerprint !== initialContext.fingerprint) {
+      throw new BoardAgenticProposalMutationError("stale_context");
+    }
+    if (options.generationInputs) {
+      let agenticEnhance = current.agenticEnhance;
+      for (const input of options.generationInputs) {
+        if (input.context.fingerprint !== initialContext.fingerprint) {
+          throw new BoardAgenticProposalMutationError("stale_context");
+        }
+        const { actor, ...recordInput } = input;
+        const usedIds = new Set([
+          ...(agenticEnhance?.proposals.map((proposal) => proposal.id) ?? []),
+          ...(agenticEnhance?.audit.map((entry) => entry.proposalId) ?? []),
+        ]);
+        let id = recordInput.id;
+        let suffix = 2;
+        while (usedIds.has(id)) id = `${recordInput.id}-${suffix++}`;
+        generationIds.add(id);
+        allocatedIds.set(recordInput.id, id);
+        const now = new Date().toISOString();
+        const proposal: BoardAgenticProposalRecord = {
+          ...structuredClone(recordInput),
+          id,
+          recommendation: { ...recordInput.recommendation, id },
+          createdAt: now,
+          updatedAt: now,
+        };
+        agenticEnhance = boundedAgenticState(
+          agenticEnhance,
+          proposal,
+          proposalAuditAction(proposal.state),
+          boardAgenticActor(actor),
+          now,
+        );
+      }
+      const index = board.cards.findIndex((card) => card.id === cardId);
+      current = { ...current, agenticEnhance };
+      board.cards[index] = current;
+      uniqueIds = uniqueIds.map((id) => allocatedIds.get(id) ?? id);
+    }
+    if (options.signal?.aborted) throw new BoardAgenticProposalMutationError("cancelled");
+    if (uniqueIds.length === 0) {
+      const index = board.cards.findIndex((card) => card.id === cardId);
+      const base = current.agenticEnhance ?? { proposals: [], audit: [] };
+      current = {
+        ...current,
+        agenticEnhance: {
+          proposals: base.proposals.map((proposal) =>
+            (proposal.state === "proposed" || proposal.state === "blocked")
+              && !generationIds.has(proposal.id)
+              ? {
+                ...proposal,
+                state: "blocked",
+                validation: {
+                  ...proposal.validation,
+                  errors: [
+                    ...proposal.validation.errors,
+                    {
+                      code: "stale_context",
+                      message: "A newer Board generation superseded this proposal.",
+                    },
+                  ],
+                },
+              }
+              : proposal,
+          ),
+          audit: base.audit,
+        },
+      };
+      board.cards[index] = current;
+      await saveBoard(board);
+      return current;
+    }
+    const proposals = uniqueIds.map((proposalId) =>
+      current.agenticEnhance?.proposals.find((proposal) => proposal.id === proposalId));
+    if (proposals.some((proposal) => !proposal)) {
+      throw new BoardAgenticProposalMutationError("proposal_not_found");
+    }
+
+    const verified = proposals.map((proposal) => {
+      const entry = proposal!;
+      if (
+        entry.state !== "proposed"
+        || entry.context.fingerprint !== initialContext.fingerprint
+      ) {
+        throw new BoardAgenticProposalMutationError("proposal_not_applicable");
+      }
+      const validation = validateBoardAgenticRecommendation(current, board.cards, entry.recommendation);
+      if (
+        validation.status !== "verified"
+        || !validation.patch
+        || !isAutoApplyAllowed(validation.recommendation)
+      ) {
+        throw new BoardAgenticProposalMutationError(
+          validation.status === "blocked" ? "orchestration_invalid" : "untrusted_automatic",
+          validation.errors,
+        );
+      }
+      return entry;
+    });
+
+    let workingBoard = board;
+    let workingCard = current;
+    const applied: AppliedBoardNormalization[] = [];
+    for (const proposal of verified) {
+      if (options.signal?.aborted) throw new BoardAgenticProposalMutationError("cancelled");
+      const rebasedRecommendation = {
+        ...proposal.recommendation,
+        contextFingerprint: buildBoardAgenticContext(workingCard, workingBoard.cards).fingerprint,
+      };
+      const validation = validateBoardAgenticRecommendation(
+        workingCard,
+        workingBoard.cards,
+        rebasedRecommendation,
+      );
+      const patch = validation.patch;
+      if (
+        validation.status !== "verified"
+        || !patch
+        || !isAutoApplyAllowed(validation.recommendation)
+      ) {
+        throw new BoardAgenticProposalMutationError(
+          validation.status === "blocked" ? "orchestration_invalid" : "untrusted_automatic",
+          validation.errors,
+        );
+      }
+
+      const updated = await updateCardLocked(
+        cardId,
+        patch,
+        { automated: true, actor: boardAgenticActor(options.actor, true) },
+        workingBoard,
+      );
+      if (!updated) return null;
+      applied.push({
+        proposalId: proposal.id,
+        recommendation: validation.recommendation,
+        patch,
+        inversePatch: scopedInverseForNormalization(workingCard, validation.recommendation)
+          ? null
+          : inverseBoardAgenticPatch(workingCard, patch),
+        scopedInverse: scopedInverseForNormalization(workingCard, validation.recommendation),
+      });
+      workingBoard = updated.board;
+      workingCard = updated.card;
+    }
+
+    const finalContext = buildBoardAgenticContext(workingCard, workingBoard.cards).fingerprint;
+    const appliedById = new Map(applied.map((entry) => [entry.proposalId, entry]));
+    const base = workingCard.agenticEnhance ?? { proposals: [], audit: [] };
+    let agenticEnhance: BoardAgenticEnhanceState = {
+      proposals: base.proposals.map((proposal) => {
+        const normalization = appliedById.get(proposal.id);
+        if (normalization) {
+          return {
+            ...proposal,
+            recommendation: {
+              ...normalization.recommendation,
+              contextFingerprint: finalContext,
+            },
+            patch: normalization.patch,
+            inversePatch: normalization.inversePatch,
+            scopedInverse: normalization.scopedInverse,
+            appliedContextFingerprint: finalContext,
+            context: { ...proposal.context, fingerprint: finalContext },
+            state: "auto-applied",
+          };
+        }
+        if (proposal.state === "proposed" || proposal.state === "blocked") {
+          if (!generationIds.has(proposal.id)) {
+            return {
+              ...proposal,
+              state: "blocked",
+              validation: {
+                ...proposal.validation,
+                errors: [
+                  ...proposal.validation.errors,
+                  {
+                    code: "stale_context",
+                    message: "A newer Board generation superseded this proposal.",
+                  },
+                ],
+              },
+            };
+          }
+          return {
+            ...proposal,
+            recommendation: { ...proposal.recommendation, contextFingerprint: finalContext },
+            context: { ...proposal.context, fingerprint: finalContext },
+          };
+        }
+        return proposal;
+      }),
+      audit: base.audit,
+    };
+    const now = new Date().toISOString();
+    for (const normalization of applied) {
+      const proposal = agenticEnhance.proposals.find((entry) => entry.id === normalization.proposalId);
+      if (!proposal) throw new BoardAgenticProposalMutationError("proposal_not_found");
+      agenticEnhance = boundedAgenticState(
+        agenticEnhance,
+        { ...proposal, updatedAt: now },
+        "auto-applied",
+        boardAgenticActor(options.actor, true),
+        now,
+      );
+    }
+
+    const index = workingBoard.cards.findIndex((card) => card.id === cardId);
+    workingBoard.cards[index] = { ...workingCard, agenticEnhance };
+    if (options.signal?.aborted) throw new BoardAgenticProposalMutationError("cancelled");
+    await saveBoard(workingBoard);
+    return workingBoard.cards[index]!;
+  });
+}
+
+/** Internal generation path for one mechanically verified reversible normalization. */
+export async function autoApplyBoardAgenticProposal(
+  cardId: string,
+  proposalId: string,
+  options: ApplyBoardAgenticProposalOptions,
+): Promise<Card | null> {
+  return autoApplyBoardAgenticProposalBatch(cardId, [proposalId], options);
+}
+
+/** Reverses a verified normalization without overwriting sibling normalizations. */
+export async function revertBoardAgenticProposal(
+  cardId: string,
+  proposalId: string,
+  options: ApplyBoardAgenticProposalOptions,
+): Promise<Card | null> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const current = board.cards.find((card) => card.id === cardId);
+    if (!current) return null;
+    const proposal = current.agenticEnhance?.proposals.find((entry) => entry.id === proposalId);
+    if (!proposal) throw new BoardAgenticProposalMutationError("proposal_not_found");
+    const context = buildBoardAgenticContext(current, board.cards);
+    const crossedContext = options.contextFingerprint !== context.fingerprint
+      || proposal.appliedContextFingerprint !== context.fingerprint;
+    if (!proposal.scopedInverse && (
+      options.contextFingerprint !== context.fingerprint
+      || proposal.appliedContextFingerprint !== context.fingerprint
+    )) {
+      throw new BoardAgenticProposalMutationError("stale_context");
+    }
+    if (
+      proposal.state !== "auto-applied"
+      || proposal.recommendation.application.reversible !== true
+    ) {
+      throw new BoardAgenticProposalMutationError("proposal_not_applicable");
+    }
+    const patch = proposal.scopedInverse
+      ? scopedInversePatch(current, proposal.scopedInverse)
+      : proposal.inversePatch;
+    if (!patch || !isBoardAgenticPatch(patch)) {
+      throw new BoardAgenticProposalMutationError("proposal_not_applicable");
+    }
+
+    const updated = await updateCardLocked(cardId, patch, {
+      automated: true,
+      actor: boardAgenticActor(options.actor, true),
+    });
+    if (!updated) return null;
+    const active = updated.card;
+    const persisted = active.agenticEnhance?.proposals.find((entry) => entry.id === proposalId);
+    if (!persisted) throw new BoardAgenticProposalMutationError("proposal_not_found");
+    const now = new Date().toISOString();
+    const finalContext = buildBoardAgenticContext(active, updated.board.cards).fingerprint;
+    const nextProposal: BoardAgenticProposalRecord = {
+      ...persisted,
+      state: "reverted",
+      appliedContextFingerprint: null,
+      updatedAt: now,
+    };
+    const index = updated.board.cards.findIndex((card) => card.id === cardId);
+    const base = active.agenticEnhance ?? { proposals: [], audit: [] };
+    let agenticEnhance: BoardAgenticEnhanceState = {
+      proposals: base.proposals.map((entry) => {
+        if (entry.id === proposalId) return nextProposal;
+        if (crossedContext && (entry.state === "proposed" || entry.state === "blocked")) {
+          return {
+            ...entry,
+            state: "blocked",
+            validation: {
+              ...entry.validation,
+              errors: [
+                ...entry.validation.errors,
+                { code: "stale_context", message: "Context changed before this proposal could be applied." },
+              ],
+            },
+          };
+        }
+        if (
+          entry.state === "auto-applied"
+          || entry.state === "proposed"
+          || entry.state === "blocked"
+        ) {
+          return {
+            ...entry,
+            recommendation: { ...entry.recommendation, contextFingerprint: finalContext },
+            context: { ...entry.context, fingerprint: finalContext },
+            ...(entry.state === "auto-applied"
+              ? { appliedContextFingerprint: finalContext }
+              : {}),
+          };
+        }
+        return entry;
+      }),
+      audit: base.audit,
+    };
+    agenticEnhance = boundedAgenticState(
+      agenticEnhance,
+      nextProposal,
+      "reverted",
+      boardAgenticActor(options.actor, true),
+      now,
+    );
+    updated.board.cards[index] = {
+      ...active,
+      agenticEnhance,
+    };
+    await saveBoard(updated.board);
+    return updated.board.cards[index]!;
+  });
+}
+
+/** Mark a persisted proposal dismissed without changing any task field. */
+export async function dismissBoardAgenticProposal(
+  cardId: string,
+  proposalId: string,
+  actor?: string,
+): Promise<Card | null> {
+  return withBoardLock(async () => {
+    const board = await loadBoard();
+    const index = board.cards.findIndex((card) => card.id === cardId);
+    if (index < 0) return null;
+    const current = board.cards[index]!;
+    const proposal = current.agenticEnhance?.proposals.find((entry) => entry.id === proposalId);
+    if (!proposal) throw new BoardAgenticProposalMutationError("proposal_not_found");
+    if (proposal.state === "auto-applied" || proposal.state === "applied") {
+      throw new BoardAgenticProposalMutationError("proposal_not_applicable");
+    }
+
+    const now = new Date().toISOString();
+    const nextProposal: BoardAgenticProposalRecord = {
+      ...proposal,
+      state: "dismissed",
+      updatedAt: now,
+    };
+    board.cards[index] = {
+      ...current,
+      agenticEnhance: boundedAgenticState(
+        current.agenticEnhance,
+        nextProposal,
+        "dismissed",
+        boardAgenticActor(actor),
+        now,
+      ),
+    };
+    await saveBoard(board);
+    return board.cards[index]!;
+  });
 }
 
 export type NewCardInput = {
@@ -444,6 +1177,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
       input.primaryBlockerPinned === undefined ? false : input.primaryBlockerPinned,
     nextStep: input.nextStep ?? null,
     orchestrationAudit: [],
+    agenticEnhance: { proposals: [], audit: [] },
   };
   if (card.nextStep?.requiresApproval) card.needsHuman = true;
   const attachments = boardAttachments(input.attachments);
@@ -646,13 +1380,18 @@ function sameNextStepValue(
   );
 }
 
-export async function updateCard(
+type LockedBoardUpdate = {
+  board: BoardFile;
+  card: Card;
+};
+
+async function updateCardLocked(
   id: string,
   patchWithOps: CardPatch,
   options: { automated?: boolean; actor?: string } = {},
-): Promise<Card | null> {
-  return withBoardLock(async () => {
-  const board = await loadBoard();
+  existingBoard?: BoardFile,
+): Promise<LockedBoardUpdate | null> {
+  const board = existingBoard ?? await loadBoard();
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
   const current = board.cards[idx];
@@ -766,7 +1505,7 @@ export async function updateCard(
         hasOnlySettledDependencies(current) &&
         current.primaryBlockerId == null,
     });
-    return current;
+    return { board, card: current };
   }
   assertValidOrchestration(next, {
     cards: board.cards,
@@ -775,8 +1514,19 @@ export async function updateCard(
     allowReadyBlocked: promotion.readyBlocked,
   });
   board.cards[idx] = next;
-  await saveBoard(board);
-  return next;
+  return { board, card: next };
+}
+
+export async function updateCard(
+  id: string,
+  patchWithOps: CardPatch,
+  options: { automated?: boolean; actor?: string } = {},
+): Promise<Card | null> {
+  return withBoardLock(async () => {
+    const updated = await updateCardLocked(id, patchWithOps, options);
+    if (!updated) return null;
+    await saveBoard(updated.board);
+    return updated.card;
   });
 }
 
@@ -988,7 +1738,15 @@ function repairDeletedTaskReferences(
     );
     const previousNextStep = card.nextStep ?? null;
     next.primaryBlockerId = promoted?.id ?? null;
-    next.primaryBlockerPinned = false;
+    // Deletion repair is forced maintenance, not an operator re-decision: the
+    // pinned dependency did not resolve, its target card was removed out from
+    // under it. Clearing the pin here silently handed the primary pointer back
+    // to automatic promotion, so the next resolution moved a blocker the
+    // operator had explicitly frozen. Carry the pin onto the replacement.
+    // With nothing left to promote there is no blocker to pin, and a pin over a
+    // null pointer is inert everywhere it is read — so that case clears, the
+    // same way `applyExecutionBlocker` drops a pin whose target is gone.
+    next.primaryBlockerPinned = card.primaryBlockerPinned === true && promoted != null;
     next.nextStep =
       previousNextStep?.origin === "human"
         ? previousNextStep

@@ -33,6 +33,7 @@ import {
   allowedResearchActions,
   describeResearchSchedule,
   RESEARCH_DIRECTION_MAX_LENGTH,
+  RESEARCH_RUN_ORIGIN_LABELS,
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
@@ -101,8 +102,8 @@ const ACTION_LABELS: Partial<Record<ResearchMissionAction, string>> = {
 /** End-of-run actions sit right-aligned in the bar, per the design. */
 const END_ACTIONS: ReadonlySet<ResearchMissionAction> = new Set(["cancel", "archive"]);
 
-/** Note marker appended by "Verify next pass" — the source stays conflicting
- *  so the agent re-checks it, and the marker records the request. */
+/** Note marker appended by "Verify next iteration" — the source stays
+ *  conflicting so the familiar re-checks it, and the marker records the request. */
 
 const LIVE_STATUSES = new Set<ResearchMission["status"]>(["queued", "planning", "running"]);
 
@@ -241,15 +242,20 @@ export function ResearchMissionDetail({
 
   const iteration = mission.iterations.at(-1);
   const sessionId = iteration?.sessionId;
+  // The conversation this run was invoked FROM — distinct from sessionId above,
+  // which is the executor session the run itself spawned. Only a chat-invoked
+  // run has one, and it is what lets the desk project the run back into the
+  // context that asked for it (#4808).
+  const originSessionId = mission.origin?.surface === "chat"
+    ? mission.origin.sessionId
+    : undefined;
   const actions = allowedResearchActions(mission);
   const mainActions = actions.filter((action) => action !== "refine" && !END_ACTIONS.has(action));
   const endActions = actions.filter((action) => END_ACTIONS.has(action));
   const sourceCounts = researchSourceStatusCounts(mission.sources);
-  const passNote = mission.status === "completed"
-    ? "final"
-    : iteration
-      ? `pass ${iteration.number} of ${mission.bounds.maxIterations}`
-      : `0 of ${mission.bounds.maxIterations} passes`;
+  const iterationNote = iteration
+    ? `Iteration ${iteration.number} of ${mission.bounds.maxIterations}${mission.status === "completed" ? " · final" : ""}`
+    : `No iteration started · ${mission.bounds.maxIterations} planned`;
   const phaseStatuses = researchPhaseStatuses(mission, PHASE_IDS);
   const phaseMeta = researchPhaseMeta(mission, PHASE_IDS);
   // Wash width = settled phases. "Settled" counts skipped alongside succeeded:
@@ -258,12 +264,12 @@ export function ResearchMissionDetail({
   const phaseProgress =
     phaseStatuses.filter((status) => status === "succeeded" || status === "skipped").length
     / PHASES.length;
-  // One dot per allowed pass, capped so a 40-iteration budget stays a row and
+  // One dot per allowed iteration, capped so a 40-iteration budget stays a row and
   // not a ribbon. The count text next to it carries the exact numbers.
-  const passCount = Math.max(1, Math.min(8, mission.bounds.maxIterations));
-  const currentPass = iteration?.number ?? 0;
-  const passDots = Array.from({ length: passCount }, (_, index) =>
-    index < currentPass - 1 ? "done" : index === currentPass - 1 ? "current" : "pending");
+  const iterationCount = Math.max(1, Math.min(8, mission.bounds.maxIterations));
+  const currentIteration = iteration?.number ?? 0;
+  const iterationDots = Array.from({ length: iterationCount }, (_, index) =>
+    index < currentIteration - 1 ? "done" : index === currentIteration - 1 ? "current" : "pending");
   // The design's "draft synthesis updated · vN" tile — only when the primary
   // deliverable is still a working draft; its version is the iteration that
   // wrote it. Every mission now also carries the 3 standard refs (findings,
@@ -280,7 +286,7 @@ export function ResearchMissionDetail({
   const diagnostics = [
     ["Error", mission.lastError ?? "No current error"],
     ["Status", mission.status],
-    ["Pass", iteration ? `${iteration.number} of ${mission.bounds.maxIterations}` : "No pass recorded"],
+    ["Iteration", iteration ? `${iteration.number} of ${mission.bounds.maxIterations}` : "No iteration recorded"],
     ["Control", iteration?.decisionReason ?? "No control decision recorded"],
     ["Flow run", iteration?.flowRunId ?? "No flow run recorded"],
     ["Session", sessionId ?? "No session recorded"],
@@ -299,12 +305,12 @@ export function ResearchMissionDetail({
   // rail panels used to carry in their titles and hints.
   const railHint = railTab === "sources"
     ? isCheckpointLike
-      ? `Evidence delta — pass ${iteration?.number ?? 0}. Triage now or leave it for the agent to resolve next pass.`
+      ? `Evidence delta — iteration ${iteration?.number ?? 0}. Triage now or leave it for the familiar to resolve next iteration.`
       : isLive
         ? `${mission.sources.length} of ${mission.bounds.sourceTarget} targeted — streaming in, review anytime.`
         : null
     : mission.status === "failed" && iteration
-      ? `From pass ${iteration.number}.`
+      ? `From iteration ${iteration.number}.`
       : null;
   // Archived missions are read-only: automation controls gate on this the
   // same way "Create schedule" already does.
@@ -503,7 +509,7 @@ export function ResearchMissionDetail({
       size="xs"
       variant={
         action === "continue"
-          ? (continueInfo.gated ? "ghost" : "primary")
+          ? (continueInfo.costApprovalRequired ? "secondary" : continueInfo.gated ? "ghost" : "primary")
           : action === "retry"
             ? "primary"
             : action === "cancel"
@@ -512,13 +518,19 @@ export function ResearchMissionDetail({
                 ? "secondary"
                 : "ghost"
       }
-      disabled={busy}
-      {...(action === "continue"
+      disabled={busy || (action === "continue" && continueInfo.gated && !continueInfo.costApprovalRequired)}
+      {...(action === "continue" || (action === "resume" && continueInfo.costApprovalRequired)
         ? { "aria-label": continueInfo.description, title: continueInfo.description }
         : {})}
-      onClick={() => void runAction(action === "retry" ? plannedRetry : { action })}
+      onClick={() => void runAction(
+        action === "retry"
+          ? plannedRetry
+          : (action === "continue" || action === "resume") && continueInfo.costApprovalRequired
+            ? { action, approveCostUnavailable: true }
+            : { action },
+      )}
     >
-      {action === "continue"
+      {action === "continue" || (action === "resume" && continueInfo.costApprovalRequired)
         ? continueInfo.label
         : action === "retry" ? retryLabel : ACTION_LABELS[action] ?? action}
     </Button>
@@ -539,22 +551,42 @@ export function ResearchMissionDetail({
             <div>
               <span className="research-mission-detail__eyebrow">
                 {mission.mode} · {mission.status}
-                {iteration ? ` · pass ${iteration.number}/${mission.bounds.maxIterations}` : ""}
+                {iteration ? ` · iteration ${iteration.number} of ${mission.bounds.maxIterations}` : " · not started"}
                 {" · "}
                 <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
+                {mission.origin ? (
+                  <>
+                    {" · "}
+                    {RESEARCH_RUN_ORIGIN_LABELS[mission.origin.surface]}
+                  </>
+                ) : null}
               </span>
               <h2 id="research-mission-title">{mission.title}</h2>
               {researchIntentAddsContext(mission) ? <ClampedText lines={4} text={mission.intent} /> : null}
             </div>
-            {sessionId ? (
-              <Button
-                size="xs"
-                variant="secondary"
-                leadingIcon="ph:chat-circle-dots"
-                onClick={() => onOpenSession(sessionId)}
-              >
-                Open session
-              </Button>
+            {originSessionId || sessionId ? (
+              <div className="research-mission-detail__header-actions">
+                {originSessionId ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    leadingIcon="ph:arrow-u-up-left"
+                    onClick={() => onOpenSession(originSessionId)}
+                  >
+                    Open the chat that started this
+                  </Button>
+                ) : null}
+                {sessionId ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    leadingIcon="ph:chat-circle-dots"
+                    onClick={() => onOpenSession(sessionId)}
+                  >
+                    Open session
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </header>
 
@@ -635,14 +667,14 @@ export function ResearchMissionDetail({
                   </div>
                 ))}
               </dl>
-              <span className="research-desk-stepper__pass" title={passNote}>
-                <span className="research-desk-stepper__pass-label">Pass</span>
-                <span className="research-desk-stepper__dots" aria-hidden>
-                  {passDots.map((state, index) => (
+              <span className="research-desk-stepper__iteration" title={iterationNote}>
+                <span className="research-desk-stepper__iteration-label">Iteration</span>
+                <span className="research-desk-stepper__iteration-dots" aria-hidden>
+                  {iterationDots.map((state, index) => (
                     <i key={index} data-state={state} />
                   ))}
                 </span>
-                <span className="research-desk-stepper__pass-text">{passNote}</span>
+                <span className="research-desk-stepper__iteration-text">{iterationNote}</span>
               </span>
             </div>
           </div>
@@ -718,9 +750,9 @@ export function ResearchMissionDetail({
                 design's "+N new sources" tile ships as the honest ledger
                 total instead. ── */}
           {isCheckpointLike ? (
-            <section className="research-desk-block" aria-label={`What changed in pass ${iteration?.number ?? 0}`}>
+            <section className="research-desk-block" aria-label={`What changed in iteration ${iteration?.number ?? 0}`}>
               <span className="research-desk-block__kicker">
-                What changed in pass {iteration?.number ?? 0}
+                What changed in iteration {iteration?.number ?? 0}
               </span>
               <div className="research-desk-tiles">
                 {mission.sources.length > 0 ? (
@@ -762,8 +794,8 @@ export function ResearchMissionDetail({
                 <span className="research-desk-block__kicker">Live activity</span>
                 <span className="research-desk-block__aside">
                   {mission.bounds.checkpointEvery === 1
-                    ? "checkpoint after this pass"
-                    : `checkpoint every ${mission.bounds.checkpointEvery} passes`}
+                    ? "checkpoint after this iteration"
+                    : `checkpoint every ${mission.bounds.checkpointEvery} iterations`}
                 </span>
               </div>
               {iteration?.steps?.length ? (
@@ -777,7 +809,7 @@ export function ResearchMissionDetail({
                 </ul>
               ) : (
                 <p className="research-desk-block__empty">
-                  No step detail reported yet — activity appears as the pass advances.
+                  No step detail reported yet — activity appears as the iteration advances.
                 </p>
               )}
             </section>
@@ -791,7 +823,7 @@ export function ResearchMissionDetail({
                 <span className="research-desk-block__kicker">Findings · published</span>
                 <span className="research-desk-block__aside">
                   {mission.sources.length} sources · {sourceCounts.used} used ·{" "}
-                  {mission.iterations.length} pass{mission.iterations.length === 1 ? "" : "es"}
+                  {mission.iterations.length} iteration{mission.iterations.length === 1 ? "" : "s"}
                 </span>
               </div>
               {iteration?.summary ? (
@@ -847,7 +879,7 @@ export function ResearchMissionDetail({
             </div>
           ) : null}
 
-          {/* ── Refine box: the familiar may propose the next-pass direction,
+          {/* ── Refine box: the familiar may propose the next-iteration direction,
                 but only the separate reviewed action continues the mission. ── */}
           {actions.includes("refine") ? (
             <div className="research-desk-refine">
@@ -884,14 +916,24 @@ export function ResearchMissionDetail({
                   size="xs"
                   variant="secondary"
                   disabled={busy || directionDrafting || !direction.trim()}
-                  onClick={() => void runAction({ action: "refine", direction })}
+                  aria-label={continueInfo.costApprovalRequired
+                    ? `Refine and continue with unreported cost. ${continueInfo.description}`
+                    : undefined}
+                  title={continueInfo.costApprovalRequired ? continueInfo.description : undefined}
+                  onClick={() => void runAction({
+                    action: "refine",
+                    direction,
+                    ...(continueInfo.costApprovalRequired ? { approveCostUnavailable: true } : {}),
+                  })}
                 >
-                  Refine and continue
+                  {continueInfo.costApprovalRequired
+                    ? "Refine and continue with unreported cost"
+                    : "Refine and continue"}
                 </Button>
               </div>
               {directionDrafting ? (
                 <p className="research-desk-refine__status" role="status">
-                  Reading the checkpoint and choosing the highest-value next pass…
+                  Reading the checkpoint and choosing the highest-value next iteration…
                 </p>
               ) : null}
               {directionSuggestion ? (

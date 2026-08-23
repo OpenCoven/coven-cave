@@ -1,0 +1,817 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:opencoven:schema:research:run-manifest:v1",
+  "title": "OpenCoven Run Manifest v1",
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+  "propertyNames": {
+    "anyOf": [
+      {
+        "enum": [
+          "schema",
+          "id",
+          "runId",
+          "digest",
+          "revision",
+          "previousDigest",
+          "state",
+          "createdAt",
+          "finalizedAt",
+          "context",
+          "sources",
+          "artifacts",
+          "modelExecutions",
+          "usage",
+          "retention",
+          "deletion"
+        ]
+      },
+      { "$ref": "#/$defs/sensitivePropertyName" }
+    ]
+  },
+  "required": [
+    "schema",
+    "id",
+    "runId",
+    "digest",
+    "revision",
+    "state",
+    "createdAt",
+    "sources",
+    "artifacts",
+    "modelExecutions",
+    "usage",
+    "retention",
+    "deletion"
+  ],
+  "properties": {
+    "schema": { "const": "opencoven.run-manifest/v1" },
+    "id": { "$ref": "#/$defs/manifestId" },
+    "runId": { "$ref": "#/$defs/runId" },
+    "digest": { "$ref": "#/$defs/sha256" },
+    "revision": { "$ref": "#/$defs/positiveSafeInteger" },
+    "previousDigest": { "$ref": "#/$defs/sha256" },
+    "state": { "enum": ["assembling", "final"] },
+    "createdAt": { "$ref": "#/$defs/utcTimestamp" },
+    "finalizedAt": { "$ref": "#/$defs/utcTimestamp" },
+    "context": { "$ref": "#/$defs/contextBinding" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "modelExecutions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/modelExecution" }
+    },
+    "usage": { "$ref": "#/$defs/usage" },
+    "retention": { "$ref": "#/$defs/retention" },
+    "deletion": { "$ref": "#/$defs/deletion" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "revision": { "const": 1 } },
+        "required": ["revision"]
+      },
+      "then": {
+        "not": { "required": ["previousDigest"] }
+      },
+      "else": {
+        "required": ["previousDigest"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "assembling" } },
+        "required": ["state"]
+      },
+      "then": {
+        "not": { "required": ["finalizedAt"] }
+      },
+      "else": {
+        "required": ["finalizedAt"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retention": {
+            "properties": { "status": { "const": "active" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["retention"]
+      },
+      "then": {
+        "properties": {
+          "deletion": {
+            "properties": { "status": { "const": "not_scheduled" } },
+            "required": ["status"]
+          },
+          "retention": {
+            "properties": { "contentExpiresAt": { "const": null } },
+            "required": ["contentExpiresAt"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retention": {
+            "properties": {
+              "status": {
+                "enum": ["deletion_scheduled", "deletion_pending", "deleted"]
+              }
+            },
+            "required": ["status"]
+          }
+        },
+        "required": ["retention"]
+      },
+      "then": {
+        "properties": {
+          "retention": {
+            "properties": {
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["contentExpiresAt"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retention": {
+            "properties": { "status": { "const": "deletion_scheduled" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["retention"]
+      },
+      "then": {
+        "properties": {
+          "deletion": {
+            "properties": { "status": { "const": "scheduled" } },
+            "required": ["status"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": { "const": "final" },
+          "retention": {
+            "anyOf": [
+              {
+                "properties": {
+                  "policy": { "const": "7-days" },
+                  "effectivePolicy": { "const": "run-only" }
+                },
+                "required": ["policy", "effectivePolicy"]
+              },
+              {
+                "properties": {
+                  "policy": { "const": "project" },
+                  "effectivePolicy": { "enum": ["run-only", "7-days"] }
+                },
+                "required": ["policy", "effectivePolicy"]
+              }
+            ]
+          }
+        },
+        "required": ["state", "retention"]
+      },
+      "then": {
+        "properties": {
+          "retention": {
+            "properties": {
+              "status": {
+                "enum": ["deletion_scheduled", "deletion_pending", "deleted"]
+              },
+              "contentExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+            },
+            "required": ["status", "contentExpiresAt"]
+          },
+          "deletion": {
+            "properties": {
+              "status": {
+                "enum": ["scheduled", "pending", "partial_failure", "completed"]
+              }
+            },
+            "required": ["status"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retention": {
+            "properties": { "status": { "const": "deletion_pending" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["retention"]
+      },
+      "then": {
+        "properties": {
+          "deletion": {
+            "properties": {
+              "status": { "enum": ["pending", "partial_failure"] }
+            },
+            "required": ["status"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retention": {
+            "properties": { "status": { "const": "deleted" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["retention"]
+      },
+      "then": {
+        "properties": {
+          "deletion": {
+            "properties": { "status": { "const": "completed" } },
+            "required": ["status"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "deletion": {
+            "properties": {
+              "status": { "enum": ["scheduled", "pending", "partial_failure"] }
+            },
+            "required": ["status"]
+          }
+        },
+        "required": ["deletion"]
+      },
+      "then": {
+        "properties": {
+          "deletion": { "required": ["requestedAt"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "deletion": {
+            "properties": { "status": { "const": "completed" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["deletion"]
+      },
+      "then": {
+        "properties": {
+          "deletion": {
+            "required": [
+              "requestedAt",
+              "completedAt",
+              "deletedObjectCount",
+              "eventSequence"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sensitivePropertyName": {
+      "type": "string",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^(?:(?:[pP][rR][iI][vV][aA][tT][eE]|[pP][rR][iI][vV][aA][cC][yY]|[rR][aA][wW])[_.-]*)?(?:[pP][rR][oO][mM][pP][tT][sS]?|[eE][xX][cC][eE][rR][pP][tT][sS]?|[tT][eE][xX][tT][sS]?|[cC][oO][nN][tT][eE][nN][tT][sS]?|[bB][lL][oO][bB][sS]?|[fF][iI][lL][eE][nN][aA][mM][eE][sS]?|[pP][aA][tT][hH][sS]?|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|[sS][eE][cC][rR][eE][tT][sS]?|[lL][oO][cC][aA][lL][_.-]*[pP][aA][tT][hH][sS]?|[fF][iI][lL][eE][_.-]*[pP][aA][tT][hH][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[kK][eE][yY][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[sS][tT][oO][rR][eE][_.-]*[kK][eE][yY][sS]?|[sS][tT][oO][rR][aA][gG][eE][_.-]*[kK][eE][yY][sS]?|[bB][uU][cC][kK][eE][tT][_.-]*[kK][eE][yY][sS]?|[dD][eE][lL][eE][tT][eE][dD][_.-]*[cC][oO][nN][tT][eE][nN][tT][sS]?)(?:[_.-]*(?:[vV][aA][lL][uU][eE]|[vV][aA][lL][uU][eE][sS]|[dD][aA][tT][aA]|[fF][iI][eE][lL][dD]|[fF][iI][eE][lL][dD][sS]|[iI][tT][eE][mM]|[iI][tT][eE][mM][sS]|[lL][iI][sS][tT]|[mM][aA][pP]|[mM][eE][tT][aA][dD][aA][tT][aA]|[hH][iI][nN][tT]|[hH][iI][nN][tT][sS]|[rR][eE][fF]|[rR][eE][fF][sS]))?$"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^(?:(?:[pP][rR][iI][vV][aA][tT][eE]|[pP][rR][iI][vV][aA][cC][yY]|[rR][aA][wW])[_.-]*)?(?:[pP][rR][oO][mM][pP][tT][sS]?|[eE][xX][cC][eE][rR][pP][tT][sS]?|[tT][eE][xX][tT][sS]?|[cC][oO][nN][tT][eE][nN][tT][sS]?|[bB][lL][oO][bB][sS]?|[fF][iI][lL][eE][nN][aA][mM][eE][sS]?|[pP][aA][tT][hH][sS]?|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|[sS][eE][cC][rR][eE][tT][sS]?|[lL][oO][cC][aA][lL][pP][aA][tT][hH][sS]?|[fF][iI][lL][eE][pP][aA][tT][hH][sS]?|[oO][bB][jJ][eE][cC][tT][kK][eE][yY][sS]?|[oO][bB][jJ][eE][cC][tT][sS][tT][oO][rR][eE][kK][eE][yY][sS]?|[sS][tT][oO][rR][aA][gG][eE][kK][eE][yY][sS]?|[bB][uU][cC][kK][eE][tT][kK][eE][yY][sS]?|[dD][eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT][sS]?)(?:[pP][aA][yY][lL][oO][aA][dD])[sS]?$"
+          }
+        }
+      ],
+      "not": {
+        "pattern": "(?:(?:^|[_.-])(?:[pP][rR][oO][mM][pP][tT][sS]?|[eE][xX][cC][eE][rR][pP][tT][sS]?|[tT][eE][xX][tT][sS]?|[cC][oO][nN][tT][eE][nN][tT][sS]?|[bB][lL][oO][bB][sS]?|[fF][iI][lL][eE][nN][aA][mM][eE][sS]?|[pP][aA][tT][hH][sS]?|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|[sS][eE][cC][rR][eE][tT][sS]?|[lL][oO][cC][aA][lL][_.-]*[pP][aA][tT][hH][sS]?|[fF][iI][lL][eE][_.-]*[pP][aA][tT][hH][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[kK][eE][yY][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[sS][tT][oO][rR][eE][_.-]*[kK][eE][yY][sS]?|[sS][tT][oO][rR][aA][gG][eE][_.-]*[kK][eE][yY][sS]?|[bB][uU][cC][kK][eE][tT][_.-]*[kK][eE][yY][sS]?|[dD][eE][lL][eE][tT][eE][dD][_.-]*[cC][oO][nN][tT][eE][nN][tT][sS]?)(?:$|[_.-]|[A-Z0-9])|(?:^|[_.-]|[a-z0-9])(?:P[rR][oO][mM][pP][tT][sS]?|E[xX][cC][eE][rR][pP][tT][sS]?|T[eE][xX][tT][sS]?|C[oO][nN][tT][eE][nN][tT][sS]?|B[lL][oO][bB][sS]?|F[iI][lL][eE][nN][aA][mM][eE][sS]?|P[aA][tT][hH][sS]?|C[rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|S[eE][cC][rR][eE][tT][sS]?|L[oO][cC][aA][lL][pP][aA][tT][hH][sS]?|F[iI][lL][eE][pP][aA][tT][hH][sS]?|O[bB][jJ][eE][cC][tT][kK][eE][yY][sS]?|O[bB][jJ][eE][cC][tT][sS][tT][oO][rR][eE][kK][eE][yY][sS]?|S[tT][oO][rR][aA][gG][eE][kK][eE][yY][sS]?|B[uU][cC][kK][eE][tT][kK][eE][yY][sS]?|D[eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT][sS]?)(?:$|[_.-]|[A-Z0-9])|(?:^|[_.-]|[a-z0-9])(?:PROMPTS?|EXCERPTS?|TEXTS?|CONTENTS?|BLOBS?|FILENAMES?|PATHS?|CREDENTIALS?|SECRETS?|LOCALPATHS?|FILEPATHS?|OBJECTKEYS?|OBJECTSTOREKEYS?|STORAGEKEYS?|BUCKETKEYS?|DELETEDCONTENTS?)(?:$|[_.-]|[A-Za-z0-9]))"
+      }
+    },
+    "safeExtensionValue": {
+      "anyOf": [
+        {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/safeExtensionValue" }
+        },
+        {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
+          "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" }
+        }
+      ]
+    },
+    "deletionExtensionPropertyName": {
+      "type": "string",
+      "pattern": "^[\\x00-\\x7f]+$",
+      "allOf": [
+        { "$ref": "#/$defs/sensitivePropertyName" }
+      ]
+    },
+    "deletionSafeExtensionValue": {
+      "anyOf": [
+        {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deletionSafeExtensionValue" }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/deletionExtensionPropertyName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/deletionSafeExtensionValue"
+          }
+        }
+      ]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 20,
+      "maxLength": 30,
+      "pattern": "^(?:(?:\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d)|(?:1972-(?:06-30|12-31)|197[3-9]-12-31|198[1235]-06-30|198[79]-12-31|1990-12-31|199[2347]-06-30|199[58]-12-31|200[58]-12-31|201[25]-06-30|2016-12-31)T23:59:60)(?:\\.\\d{1,9})?Z$"
+    },
+    "manifestId": {
+      "type": "string",
+      "pattern": "^manifest_[A-Za-z0-9_-]+$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[A-Za-z0-9_-]+$"
+    },
+    "contextPackId": {
+      "type": "string",
+      "pattern": "^ctx_[A-Za-z0-9_-]+$"
+    },
+    "topicProposalId": {
+      "type": "string",
+      "pattern": "^proposal_[A-Za-z0-9_-]+$"
+    },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^evidence_[A-Za-z0-9_-]+$"
+    },
+    "artifactId": {
+      "type": "string",
+      "pattern": "^artifact_[A-Za-z0-9_-]+$"
+    },
+    "modelTaskId": {
+      "type": "string",
+      "pattern": "^modeltask_[A-Za-z0-9_-]+$"
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "nonNegativeSafeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "nullableSafeInteger": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nullableNonNegativeNumber": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "nullableTimestamp": {
+      "anyOf": [
+        { "$ref": "#/$defs/utcTimestamp" },
+        { "type": "null" }
+      ]
+    },
+    "contextBinding": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          { "enum": ["contextPackId", "contextPackDigest", "topicProposalId"] },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": ["contextPackId", "contextPackDigest"],
+      "properties": {
+        "contextPackId": { "$ref": "#/$defs/contextPackId" },
+        "contextPackDigest": { "$ref": "#/$defs/sha256" },
+        "topicProposalId": { "$ref": "#/$defs/topicProposalId" }
+      }
+    },
+    "source": {
+      "oneOf": [
+        { "$ref": "#/$defs/contextPackSource" },
+        { "$ref": "#/$defs/publicEvidenceSource" }
+      ]
+    },
+    "contextPackSource": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          { "enum": ["kind", "id", "digest", "availability"] },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": ["kind", "id", "digest", "availability"],
+      "properties": {
+        "kind": { "const": "context-pack" },
+        "id": { "$ref": "#/$defs/contextPackId" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "availability": { "const": "device-local" }
+      }
+    },
+    "publicEvidenceSource": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "kind",
+              "id",
+              "contentDigest",
+              "snapshotDigest",
+              "canonicalUrl",
+              "fetchedAt"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": [
+        "kind",
+        "id",
+        "contentDigest",
+        "snapshotDigest",
+        "canonicalUrl",
+        "fetchedAt"
+      ],
+      "properties": {
+        "kind": { "const": "public-evidence" },
+        "id": { "$ref": "#/$defs/evidenceId" },
+        "contentDigest": { "$ref": "#/$defs/sha256" },
+        "snapshotDigest": { "$ref": "#/$defs/sha256" },
+        "canonicalUrl": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A canonical public URL whose stored value exactly equals WHATWG URL.href serialization, including the root slash.",
+          "allOf": [
+            {
+              "pattern": "^https?://[^\\s\\\\/?#@]+(?:[/?][^\\s\\\\#]*)?$"
+            },
+            {
+              "not": {
+                "pattern": "^https?://[^/?#]*@"
+              }
+            },
+            { "not": { "pattern": "#" } }
+          ]
+        },
+        "fetchedAt": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    },
+    "artifactTitle": {
+      "type": "string",
+      "allOf": [
+        { "not": { "pattern": "[/\\\\]" } },
+        {
+          "not": {
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:"
+          }
+        },
+        {
+          "not": {
+            "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+          }
+        },
+        { "not": { "pattern": "(?:sk-|ghp_|github_pat_)" } }
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "id",
+              "kind",
+              "title",
+              "mediaType",
+              "digest",
+              "bytes",
+              "placement",
+              "contentSync",
+              "createdAt"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "mediaType",
+        "digest",
+        "bytes",
+        "placement",
+        "contentSync",
+        "createdAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/artifactId" },
+        "kind": { "type": "string" },
+        "title": { "$ref": "#/$defs/artifactTitle" },
+        "mediaType": { "type": "string" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "bytes": { "$ref": "#/$defs/nonNegativeSafeInteger" },
+        "placement": {
+          "enum": ["device-local", "cloud-metadata", "cloud-content"]
+        },
+        "contentSync": {
+          "enum": ["not-requested", "pending", "synced", "failed"]
+        },
+        "createdAt": { "$ref": "#/$defs/utcTimestamp" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "placement": { "const": "cloud-content" } },
+            "required": ["placement"]
+          },
+          "then": {
+            "properties": {
+              "contentSync": {
+                "not": { "const": "not-requested" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "modelUsage": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "inputTokens",
+              "outputTokens",
+              "costUsd",
+              "reportedByRuntime"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": ["inputTokens", "outputTokens", "costUsd", "reportedByRuntime"],
+      "properties": {
+        "inputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "outputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "costUsd": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "reportedByRuntime": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "reportedByRuntime": { "const": false } },
+            "required": ["reportedByRuntime"]
+          },
+          "then": {
+            "properties": {
+              "inputTokens": { "const": null },
+              "outputTokens": { "const": null },
+              "costUsd": { "const": null }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reportedByRuntime": { "const": true } },
+            "required": ["reportedByRuntime"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": { "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } },
+                "required": ["inputTokens"]
+              },
+              {
+                "properties": { "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 } },
+                "required": ["outputTokens"]
+              },
+              {
+                "properties": { "costUsd": { "type": "number", "minimum": 0 } },
+                "required": ["costUsd"]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "modelReceipt": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "familiarId",
+              "runtime",
+              "effectiveModel",
+              "modelSource",
+              "providerBilling",
+              "usage"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": [
+        "familiarId",
+        "runtime",
+        "effectiveModel",
+        "modelSource",
+        "providerBilling",
+        "usage"
+      ],
+      "properties": {
+        "familiarId": { "type": "string" },
+        "runtime": { "type": "string" },
+        "effectiveModel": { "type": ["string", "null"] },
+        "modelSource": {
+          "enum": [
+            "next-message",
+            "session",
+            "familiar-default",
+            "runtime-default",
+            "global-default"
+          ]
+        },
+        "providerBilling": { "const": "user-connected" },
+        "usage": { "$ref": "#/$defs/modelUsage" }
+      }
+    },
+    "modelExecution": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "taskId",
+              "phase",
+              "attempt",
+              "inputDigest",
+              "outputDigest",
+              "receipt"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": [
+        "taskId",
+        "phase",
+        "attempt",
+        "inputDigest",
+        "outputDigest",
+        "receipt"
+      ],
+      "properties": {
+        "taskId": { "$ref": "#/$defs/modelTaskId" },
+        "phase": { "enum": ["scope", "challenge", "synthesize", "control"] },
+        "attempt": { "$ref": "#/$defs/positiveSafeInteger" },
+        "inputDigest": { "$ref": "#/$defs/sha256" },
+        "outputDigest": { "$ref": "#/$defs/sha256" },
+        "receipt": { "$ref": "#/$defs/modelReceipt" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          { "enum": ["inputTokens", "outputTokens", "costUsd", "completeness"] },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": ["inputTokens", "outputTokens", "costUsd", "completeness"],
+      "properties": {
+        "inputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "outputTokens": { "$ref": "#/$defs/nullableSafeInteger" },
+        "costUsd": { "$ref": "#/$defs/nullableNonNegativeNumber" },
+        "completeness": {
+          "enum": ["complete", "partial", "unreported"]
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "policy",
+              "effectivePolicy",
+              "status",
+              "contentExpiresAt",
+              "updatedAt"
+            ]
+          },
+          { "$ref": "#/$defs/sensitivePropertyName" }
+        ]
+      },
+      "required": [
+        "policy",
+        "effectivePolicy",
+        "status",
+        "contentExpiresAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "policy": { "enum": ["run-only", "7-days", "project"] },
+        "effectivePolicy": { "enum": ["run-only", "7-days", "project"] },
+        "status": {
+          "enum": ["active", "deletion_scheduled", "deletion_pending", "deleted"]
+        },
+        "contentExpiresAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "updatedAt": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    },
+    "deletion": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/deletionSafeExtensionValue" },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": [
+              "status",
+              "requestedAt",
+              "completedAt",
+              "deletedObjectCount",
+              "retainedAuditUntil",
+              "eventSequence"
+            ]
+          },
+          { "$ref": "#/$defs/deletionExtensionPropertyName" }
+        ]
+      },
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["not_scheduled", "scheduled", "pending", "completed", "partial_failure"]
+        },
+        "requestedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "completedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "deletedObjectCount": { "$ref": "#/$defs/nonNegativeSafeInteger" },
+        "retainedAuditUntil": { "$ref": "#/$defs/utcTimestamp" },
+        "eventSequence": { "$ref": "#/$defs/positiveSafeInteger" }
+      }
+    }
+  }
+}

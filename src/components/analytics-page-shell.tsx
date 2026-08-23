@@ -1,143 +1,138 @@
 "use client";
 
-import { useLayoutEffect, useState, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
-import { DesktopHistoryNav } from "@/components/desktop-history-nav";
+import { useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
+import { Shell, type ShellHandle } from "@/components/shell";
+import { SidebarFooter, type SidebarFooterDestination } from "@/components/sidebar-footer";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
-import { useIsMobile } from "@/lib/use-viewport";
-import { VISIBLE_WORKSPACE_NAV_ITEMS } from "@/lib/workspace-navigation";
+import {
+  DEFAULT_NAV_SECTION,
+  navItemsForSection,
+  type NavSection,
+} from "@/lib/nav-section";
 import "@/styles/analytics-page-shell.css";
 
-// Shared with shell.tsx so the nav open/closed preference is consistent across
-// all routes — standalone pages and the SPA workspace stay in sync.
-const NAV_OPEN_PREF_KEY = "cave:shell:nav-open";
-
-function readNavOpenPref(): boolean | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(NAV_OPEN_PREF_KEY);
-    return raw === "1" ? true : raw === "0" ? false : null;
-  } catch {
-    return null;
-  }
+function activeFooterDestination(pathname: string): SidebarFooterDestination {
+  if (pathname.startsWith("/dashboard")) return "dashboard";
+  if (pathname.startsWith("/settings")) return "settings";
+  return null;
 }
 
-function writeNavOpenPref(open: boolean): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(NAV_OPEN_PREF_KEY, open ? "1" : "0");
-  } catch {
-    /* ignore — strict privacy mode or storage quota */
+function destinationTitle(pathname: string): string {
+  if (pathname.endsWith("/analytics")) return "Familiar analytics";
+  if (pathname.startsWith("/dashboard/familiars/") && pathname.endsWith("/profile")) {
+    return "Familiar profile";
   }
+  if (pathname === "/dashboard/familiars/growth") return "Familiar growth";
+  if (pathname.startsWith("/dashboard")) return "Dashboard";
+  if (pathname.startsWith("/settings")) return "Settings";
+  if (pathname.startsWith("/weaves")) return "Weaves";
+  if (pathname.startsWith("/proposals")) return "Proposals";
+  if (pathname.startsWith("/daily-report")) return "Daily report";
+  if (pathname.startsWith("/profile")) return "Profile";
+  return "Coven";
 }
 
-// Standalone pages use the workspace sidebar's canonical visible destinations
-// instead of maintaining a second list that can drift in names or reachability.
-const PRIMARY = VISIBLE_WORKSPACE_NAV_ITEMS.map((item) => ({
-  href: `/?mode=${item.id}`,
-  label: item.label,
-  icon: item.iconName,
-}));
+function DestinationSidebar({ pathname }: { pathname: string }) {
+  const router = useRouter();
+  const [section, setSection] = useState<NavSection>(DEFAULT_NAV_SECTION);
+  const navScrollRef = useRef<HTMLDivElement | null>(null);
+  useRovingTabIndex({
+    containerRef: navScrollRef,
+    itemSelector: ".sidebar-folder-row",
+    orientation: "vertical",
+    itemsVersion: section,
+  });
 
-const NAV_ICON = CAVE_ICON_SIZE.sidePanelNav;
-
-/**
- * Standalone-route left side-panel. Destination routes (/dashboard, /weaves,
- * /proposals, /settings, /profile, /daily-report, familiar analytics) render
- * OUTSIDE the SPA workspace (which owns SidebarMinimal), so on their own they
- * have no nav. This shell gives every one of them the app's left rail at EVERY
- * screen size, matching the main shell's sidebar behavior:
- * - Expanded (navOpen): 240px with icons + labels, synced via NAV_OPEN_PREF_KEY.
- * - Collapsed (!navOpen on desktop): 56px icon-only rail — never fully hidden.
- * - Mobile: always shows the 56px icon rail.
- * route-inventory.test.ts enforces that every destination page mounts it.
- */
-export function AnalyticsPageShell({ children }: { children: ReactNode }) {
-  // Only the Dashboard foot link can be "current" — the PRIMARY rows deep-link
-  // into the SPA at `/`, which this shell never wraps.
-  const pathname = usePathname();
-  const onDashboard = pathname === "/dashboard";
-  const isMobile = useIsMobile();
-
-  // Match the main shell's compact SSR default, then restore the shared desktop
-  // preference before paint. CSS keeps mobile compact during viewport hydration.
-  const [navOpen, setNavOpen] = useState(false);
-  useLayoutEffect(() => {
-    const pref = readNavOpenPref();
-    if (pref !== null) setNavOpen(pref);
-  }, []);
-
-  const handleToggleNav = () => {
-    setNavOpen((current) => {
-      const next = !current;
-      writeNavOpenPref(next);
-      return next;
-    });
-  };
-
-  // On mobile the sidebar is always the 56px icon rail; on desktop it
-  // expands/collapses based on preference. The rail is never fully hidden —
-  // collapsing only switches from 240px+labels to 56px icons.
-  const isExpanded = !isMobile && navOpen;
-
-  const desktopChrome = !isMobile ? (
-    <header className="aps-top shell-top" data-tauri-drag-region="deep">
-      <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
-      <button
-        type="button"
-        className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
-        aria-label={navOpen ? "Collapse navigation" : "Expand navigation"}
-        aria-expanded={navOpen}
-        title={navOpen ? "Collapse navigation" : "Expand navigation"}
-        onClick={handleToggleNav}
-      >
-        <Icon
-          name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
-          width={CAVE_ICON_SIZE.shellToggle}
-          height={CAVE_ICON_SIZE.shellToggle}
-        />
-      </button>
-      <DesktopHistoryNav />
-    </header>
-  ) : null;
+  const rows = navItemsForSection(section);
 
   return (
-    <div className="aps">
-      {desktopChrome}
-      <div className="aps-body">
-        {/* The rail is always rendered — collapsing shrinks it to 56px icons,
-            never hides it, matching the main shell's collapsed-nav behavior. */}
-        <nav
-          className={`aps-rail${isExpanded ? " aps-rail--expanded" : ""}`}
-          aria-label="Primary"
-        >
-          <a className="aps-brand" href="/" aria-label="CovenCave home" title="CovenCave">
-            <Icon name="ph:sparkle-bold" width={NAV_ICON} height={NAV_ICON} aria-hidden />
-            <span className="aps-rail-label aps-brand-label">CovenCave</span>
-          </a>
-          <ul className="aps-rail-list">
-            {PRIMARY.map((d) => (
-              <li key={d.href}>
-                <a className="aps-rail-link" href={d.href} aria-label={d.label} title={d.label}>
-                  <Icon name={d.icon} width={NAV_ICON} height={NAV_ICON} aria-hidden />
-                  <span className="aps-rail-label">{d.label}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
+    <nav className="sidebar-minimal" aria-label="Primary">
+      <NavSectionTabs section={section} onSectionChange={setSection} />
+      <div
+        className="sidebar-nav-scroll"
+        ref={navScrollRef}
+        role="tabpanel"
+        id={`nav-section-panel-${section}`}
+        aria-labelledby={`nav-section-tab-${section}`}
+      >
+        {rows.map((item, index) => (
           <a
-            className="aps-rail-link aps-rail-foot"
-            href="/dashboard"
-            aria-label="Dashboard"
-            title="Dashboard"
-            aria-current={onDashboard ? "page" : undefined}
+            key={item.id}
+            className={`sidebar-folder-row focus-ring${item.quiet ? " sidebar-folder-row--quiet" : ""}${item.quiet && !rows[index - 1]?.quiet ? " sidebar-folder-row--quiet-lead" : ""}`}
+            href={`/?mode=${item.id}`}
+            title={`${item.label} — ${item.description}${item.kbd ? ` (${item.kbd})` : ""}`}
           >
-            <Icon name="ph:squares-four" width={NAV_ICON} height={NAV_ICON} aria-hidden />
-            <span className="aps-rail-label">Dashboard</span>
+            <Icon
+              name={item.iconName}
+              width={CAVE_ICON_SIZE.sidePanelNav}
+              height={CAVE_ICON_SIZE.sidePanelNav}
+              className="sidebar-folder-icon"
+              aria-hidden
+            />
+            <span className="sidebar-folder-label">{item.label}</span>
           </a>
-        </nav>
-        <main className="aps-main">{children}</main>
+        ))}
       </div>
-    </div>
+      <SidebarFooter
+        onOpenSettings={() => router.push("/settings")}
+        activeDestination={activeFooterDestination(pathname)}
+      />
+    </nav>
+  );
+}
+
+/**
+ * Standalone destinations use the exact workspace Shell rather than carrying
+ * a parallel approximation of its rail, title bar, inset panel, and mobile
+ * behavior. Route pages keep owning their content; this component owns the
+ * universal application frame around it.
+ */
+export function AnalyticsPageShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const shellRef = useRef<ShellHandle>(null);
+  const title = destinationTitle(pathname);
+
+  return (
+    <Shell
+      ref={shellRef}
+      nav={<DestinationSidebar pathname={pathname} />}
+      detail={children}
+      navPolicy="remembered"
+      mobileTabs={
+        <MobileBottomTabs
+          mode=""
+          onSelect={(mode) => router.push(`/?mode=${mode}`)}
+        />
+      }
+      topBar={({ navDrawerOpen }) => (
+        <header className="top-bar destination-shell__mobile-bar">
+          <div className="top-bar__lead">
+            <button
+              type="button"
+              className="top-bar__mobile-toggle focus-ring"
+              onClick={() => shellRef.current?.toggleNav()}
+              aria-label={navDrawerOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={navDrawerOpen}
+              aria-controls="nav"
+              title={navDrawerOpen ? "Close navigation" : "Open navigation"}
+            >
+              <Icon
+                name={navDrawerOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+                width={CAVE_ICON_SIZE.headerToggle}
+                height={CAVE_ICON_SIZE.headerToggle}
+                aria-hidden
+              />
+            </button>
+          </div>
+          <strong className="destination-shell__mobile-title">{title}</strong>
+          <div className="top-bar__actions" aria-hidden />
+        </header>
+      )}
+    />
   );
 }

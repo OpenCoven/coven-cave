@@ -1042,6 +1042,37 @@ await withFixture({}, async (fixture) => {
   assert.match(report.metadata.coven.worktree.createdAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(registeredAt(fixture.repo, expectedPath).length, 1);
   assert.equal(refState(fixture.repo, report.fullRef).oid, report.head);
+
+  // A managed branch must NOT track its remote start point. Git's default
+  // `branch.autoSetupMerge` would set `origin/main` as the upstream of every
+  // worktree branch, which renders each one as "behind N" against `main` in
+  // GitHub Desktop and makes a bare `git push` suggest `git push origin
+  // HEAD:main` — the direct-to-main move the repository forbids.
+  //
+  // It also writes `branch.<name>.remote`, which `worktree-retention-push.mjs`
+  // reads as proof that a push once happened. That key was therefore true from
+  // birth for every canonically-created worktree, collapsing that hook's
+  // three-signal "deleted or never pushed?" test into an unconditional "was
+  // deleted" and so never taking the readable-branch route it promises for a
+  // branch that has genuinely never left the machine (cave-t57kr).
+  //
+  // Assert on the observable git state rather than the flag, so a refactor that
+  // drops `--no-track` fails here rather than silently restoring the defect.
+  for (const [key, label] of [
+    ["remote", "the retention hook's `was it ever pushed?` signal"],
+    ["merge", "the upstream shown by GitHub Desktop"],
+  ]) {
+    assert.equal(
+      run(realGit, ["config", "--get", `branch.${report.branch}.${key}`], fixture.repo).status,
+      1,
+      `a managed worktree branch must not set branch.<name>.${key} — it corrupts ${label}`,
+    );
+  }
+  assert.equal(
+    git(["for-each-ref", "--format=%(upstream)", report.fullRef], fixture.repo).trim(),
+    "",
+    "a managed worktree branch must have no upstream",
+  );
   const state = readJson(fixture.stateFile);
   assert.deepEqual(Object.keys(state.updates.at(-1)), ["coven"], "bd update merges only coven");
   const covenFence = readJson(fixture.covenStateFile);

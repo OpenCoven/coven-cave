@@ -62,8 +62,19 @@
     (`Bead cave-… worktree metadata: …`) is structural too, but since
     `cave-g9byt` it is charged only to the unit it names — so if one reaches
     you, it claims the exact branch or path you asked for. Pick another branch
-    or have its owner repair it; do not hand-edit someone else's record. Reach
-    for the fallback only after a retry failed:
+    or have its owner repair it; do not hand-edit someone else's record.
+
+    One more structural exit 1, and the one most often mistaken for a flake:
+    `maintenance fence acquisition failed: coven-acquire-failed:
+    coven-version-unsupported`. That is a resolved Coven CLI below the `0.2.5`
+    maintenance floor (prereleases are refused whatever their numbers), and it
+    is **deterministic given PATH** — retrying changes nothing. The refusal now
+    prints the binary it chose, the version that binary reported, its raw
+    `--version` banner, the floor, and the `COVEN_BIN` override; read those
+    before concluding your toolchain is broken, because a supported install is
+    often already present further along the same PATH. See `cave-6bb4m`.
+
+    Reach for the fallback only after a retry failed:
 
     ```bash
     git worktree add -b <branch> .worktrees/<branch> origin/main   # last resort
@@ -171,6 +182,24 @@ Hard rules, enforced by gates (not advisory):
   `src/lib/design-token-drift.test.ts` (app test suite) keeps the CSS codemod
   a no-op and ratchets judgment categories down-only — if you must add one,
   raise the baseline in the same PR and justify it.
+- **The token you name must exist** — those gates all ask whether a raw
+  literal should have been a token; none asked whether the token a `var()`
+  names is defined anywhere. CSS resolves an undefined custom property to
+  nothing, so the declaration is dropped and the element silently inherits:
+  no error, no warning, nothing visible in a diff. `pnpm lint` runs
+  `pnpm check:tokens:defined`
+  (`scripts/design-system/token-reference-scan.mjs`) and
+  `src/lib/undefined-token-reference.test.ts` gates the same scan in the app
+  suite. It checks `var(--x)` in `src/**/*.css`, in Tailwind arbitrary values
+  (`rounded-[var(--radius-control)]`), and in inline styles, against every
+  definition in the CSS tree, every custom property set at runtime from
+  TS/TSX, the `next/font` `variable:` names, and Tailwind's installed default
+  theme. It also fails a token defined **only** inside a
+  `[data-theme]`/`[data-mode]` block, which is undefined on the default Coven
+  palette. Pre-existing cases are banked by name and exact count in that
+  script — banks only ever go DOWN, and a name that is not in one is a new
+  defect. Run `node scripts/design-system/token-reference-scan.mjs` for the
+  full report.
 - **Auto-fixers before hand-editing**: `node scripts/codemods/tokenize-css.mjs`
   rewrites on-scale CSS literals to tokens; `pnpm codemod:design` does the
   same for component TSX.
@@ -308,7 +337,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
    # Team-maintainer opt-in only, unless current instructions forbid it:
    git pull --rebase
-   bd dolt push
+   pnpm beads:sync
    git push
    git status
    ```

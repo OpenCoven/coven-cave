@@ -60,12 +60,12 @@ assert.doesNotMatch(
 );
 assert.match(
   card,
-  /familiars-view__card-footer[\s\S]*Analytics →/,
+  /familiars-view__card-footer[\s\S]*familiars-view__analytics-link[\s\S]*<Icon name="ph:chart-line-up"[\s\S]*Analytics/,
   "The analytics link is folded into the card footer",
 );
 assert.match(
   card,
-  /<Link[\s\S]{0,400}className="focus-ring[\s\S]{0,200}Analytics →/,
+  /className="familiars-view__analytics-link focus-ring/,
   "The footer analytics link is keyboard-focusable with the shared focus ring",
 );
 assert.match(
@@ -99,7 +99,7 @@ assert.match(
 );
 
 // CSS contracts for the de-boxed card.
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/globals/shell-responsive.css", import.meta.url), "utf8");
 assert.match(
   css,
   /\.familiars-view__card \{[\s\S]{0,400}?box-shadow: inset 0 0 0 1px color-mix\(in oklch, var\(--border-hairline\) 55%, transparent\);/,

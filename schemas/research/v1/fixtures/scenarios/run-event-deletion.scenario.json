@@ -1,0 +1,545 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "run-event-deletion",
+  "objects": {
+    "completed-deletion-run": {
+      "fixture": "scenarios/objects/completed-deletion-run.json"
+    },
+    "completed-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 3,
+        "type": "run.status",
+        "data": {
+          "status": "completed"
+        }
+      }
+    },
+    "completed-event-other-run": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "runId": "run_other_01",
+        "sequence": 3,
+        "type": "run.status",
+        "data": {
+          "status": "completed"
+        }
+      }
+    },
+    "created-event": {
+      "fixture": "valid/run-event.json"
+    },
+    "created-event-other-run": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "runId": "run_other_01"
+      }
+    },
+    "deleted-count-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 4,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-duplicate-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 1,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-event-other-run": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "runId": "run_other_01",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-gap-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 3,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted"
+        }
+      }
+    },
+    "deleted-status-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "active"
+        }
+      }
+    },
+    "deleted-content-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "deletedcontentpayload": "private material"
+        }
+      }
+    },
+    "deleted-object-store-key-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "audit": {
+            "object": {
+              "store": {
+                "key": "tenant/private/object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "deleted-nested-array-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "auditTrail": [
+            {
+              "nested": {
+                "deletedContents": ["private material"]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "deleted-benign-audit-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "at": "2026-08-17T19:30:00.000Z",
+        "sequence": 2,
+        "type": "content.deleted",
+        "data": {
+          "status": null,
+          "deletedObjectCount": 3,
+          "manifestStatus": "deleted",
+          "audit": {
+            "context": "retention worker",
+            "contentment": "complete",
+            "objectives": "met",
+            "storefront": "closed",
+            "storagelike": "audit-only",
+            "bucketed": true,
+            "keystone": "retention",
+            "deletedcontentmentpayload": "benign",
+            "items": [
+              {
+                "retryDisposition": "not-needed"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "extra-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 4,
+        "type": "run.status",
+        "data": {
+          "status": "completed"
+        }
+      }
+    },
+    "midstream-status-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "run.status",
+        "data": {
+          "status": "scoping"
+        }
+      }
+    },
+    "no-manifest-run": {
+      "fixture": "valid/research-run.json",
+      "mergePatch": {
+        "status": "scoping",
+        "waitingReason": null,
+        "waitingForPhase": null,
+        "nextEventSequence": 3
+      }
+    },
+    "partial-failure-run": {
+      "fixture": "scenarios/objects/completed-deletion-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "retention": {
+            "status": "deletion_pending"
+          },
+          "deletion": {
+            "status": "partial_failure",
+            "completedAt": null,
+            "deletedObjectCount": null,
+            "eventSequence": null
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "scoping-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "run.status",
+        "data": {
+          "status": "scoping"
+        }
+      }
+    },
+    "wrong-receipt-run": {
+      "fixture": "scenarios/objects/completed-deletion-run.json",
+      "mergePatch": {
+        "artifactManifest": {
+          "deletion": {
+            "eventSequence": 4
+          }
+        }
+      },
+      "digestTargets": ["/artifactManifest"]
+    },
+    "wrong-type-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "run.status",
+        "data": {
+          "status": "completed"
+        }
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "run-deletion.valid-completed",
+      "description": "A complete ordered stream contains the content.deleted event named by the completed receipt.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-event", "completed-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.valid-benign-audit-extension",
+      "description": "A content.deleted event preserves recursively safe additive audit fields.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-benign-audit-event", "completed-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.rejects-deleted-content",
+      "description": "A content.deleted event cannot carry deleted content.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-content-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "semantic_conflict",
+        "path": "$.data.deletedcontentpayload"
+      }
+    },
+    {
+      "id": "run-deletion.rejects-object-store-key",
+      "description": "A content.deleted event cannot carry an object-store key.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-object-store-key-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "semantic_conflict",
+        "path": "$.data.audit.object.store.key"
+      }
+    },
+    {
+      "id": "run-deletion.rejects-nested-array-content",
+      "description": "A content.deleted event rejects sensitive keys nested through arrays.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-nested-array-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "semantic_conflict",
+        "path": "$.data.auditTrail[0].nested.deletedContents"
+      }
+    },
+    {
+      "id": "run-deletion.valid-no-manifest",
+      "description": "A non-completed run without a manifest accepts its complete ordered event stream.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "no-manifest-run",
+        "events": ["created-event", "scoping-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.partial-failure-retryable",
+      "description": "A partial-failure deletion remains valid and retryable without a completed deletion event.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "partial-failure-run",
+        "events": ["created-event", "midstream-status-event", "completed-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "run-deletion.partial-failure-incomplete-stream",
+      "description": "A partial-failure receipt does not permit an incomplete event stream.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "partial-failure-run",
+        "events": ["created-event", "midstream-status-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$"
+      }
+    },
+    {
+      "id": "run-deletion.truncated-stream",
+      "description": "A complete stream cannot omit its final persisted event.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$"
+      }
+    },
+    {
+      "id": "run-deletion.extra-stream",
+      "description": "A complete stream cannot contain an event beyond nextEventSequence.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-event", "completed-event", "extra-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$"
+      }
+    },
+    {
+      "id": "run-deletion.duplicate-sequence",
+      "description": "An event stream cannot repeat a sequence number.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-duplicate-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].sequence"
+      }
+    },
+    {
+      "id": "run-deletion.gapped-sequence",
+      "description": "An event stream cannot skip a contiguous sequence number.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-gap-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].sequence"
+      }
+    },
+    {
+      "id": "run-deletion.wrong-run-stream",
+      "description": "The event stream must belong to the enclosing run.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": [
+          "created-event-other-run",
+          "deleted-event-other-run",
+          "completed-event-other-run"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[0].runId"
+      }
+    },
+    {
+      "id": "run-deletion.mixed-run-stream",
+      "description": "Every event in one stream must identify the same run.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-event-other-run", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].runId"
+      }
+    },
+    {
+      "id": "run-deletion.wrong-event-type",
+      "description": "The deletion receipt sequence must identify content.deleted.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "wrong-type-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].type"
+      }
+    },
+    {
+      "id": "run-deletion.wrong-object-count",
+      "description": "The deletion event object count must match the receipt.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-count-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].data.deletedObjectCount"
+      }
+    },
+    {
+      "id": "run-deletion.wrong-manifest-status",
+      "description": "The deletion event manifestStatus must be deleted.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "completed-deletion-run",
+        "events": ["created-event", "deleted-status-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "events[1]",
+        "code": "invalid_value",
+        "path": "$.data.manifestStatus"
+      }
+    },
+    {
+      "id": "run-deletion.wrong-receipt-sequence",
+      "description": "The deletion receipt eventSequence must identify its matching stream event.",
+      "validator": "run-event-deletion",
+      "inputs": {
+        "run": "wrong-receipt-run",
+        "events": ["created-event", "deleted-event", "completed-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.artifactManifest.deletion.eventSequence"
+      }
+    }
+  ]
+}

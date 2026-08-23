@@ -18,6 +18,8 @@
  * no ⇧⌘ combo exists anywhere else in the app's catalog.
  */
 
+import { eventKey } from "./keyboard-event-key.ts";
+
 export type CodeRoomShortcut =
   | "focus-next-terminal"
   | "focus-previous-terminal"
@@ -87,6 +89,12 @@ export function resolveCodeRoomShortcut(
   if (event.altKey) return null;
   if (!event.shiftKey) return null;
   if (!event.metaKey && !event.ctrlKey) return null;
-  const key = event.key.toLowerCase();
+  // Read the key through the shared guard (cave-lryhx). The modifier tests
+  // above already turn away a bare `new Event("keydown")`, but an event that
+  // carries modifiers and no readable key still reaches this line — and this
+  // resolver runs on every keystroke typed into a live shell, so a throw here
+  // is the most expensive one in the family.
+  const key = eventKey(event);
+  if (key === null) return null;
   return BINDINGS.find((binding) => binding.key === key)?.shortcut ?? null;
 }

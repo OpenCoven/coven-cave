@@ -125,6 +125,69 @@ pub(super) fn shell_open(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn launch_tailscale_app_native() -> Result<(), String> {
+    let output = std::process::Command::new("/usr/bin/open")
+        .args(["-a", "Tailscale"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|error| format!("Could not open Tailscale: {error}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if detail.is_empty() {
+        "Tailscale is not installed or could not be opened.".to_string()
+    } else {
+        format!("Tailscale could not be opened: {detail}")
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn launch_tailscale_app_native() -> Result<(), String> {
+    let mut roots = Vec::new();
+    for key in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(root) = std::env::var_os(key) {
+            let root = std::path::PathBuf::from(root);
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+    }
+    let executable = roots
+        .into_iter()
+        .map(|root| root.join("Tailscale").join("tailscale-ipn.exe"))
+        .find(|candidate| candidate.is_file())
+        .ok_or_else(|| "Tailscale is not installed in a standard location.".to_string())?;
+    windows_command::hidden_command(executable)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Could not open Tailscale: {error}"))?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn launch_tailscale_app_native() -> Result<(), String> {
+    Err(
+        "Automatic Tailscale launch is unavailable on Linux. Start tailscaled, connect, then retry."
+            .to_string(),
+    )
+}
+
+/// Open the installed Tailscale client using fixed, platform-owned arguments.
+/// No caller-controlled path, executable, or shell string crosses this command.
+#[cfg(desktop)]
+#[tauri::command]
+pub(super) async fn open_tailscale_app() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(launch_tailscale_app_native)
+        .await
+        .map_err(|_| "The Tailscale launcher task did not complete.".to_string())?
+}
+
 /// Open an absolute local directory in the system file explorer.
 #[cfg(desktop)]
 #[tauri::command]

@@ -145,6 +145,54 @@ test("promptRecommendations derives one card per real signal, each explaining it
   }
 });
 
+test("promptRecommendations recovers full questions from generated truncated titles", () => {
+  const intent = [
+    "Research and compare: Visual planning for agentic guided coding sessions.",
+    "Primary questions: identify the strongest interaction patterns and tradeoffs.",
+  ].join(" ");
+  const generatedTitle = `${intent.slice(0, 77)}…`;
+  const [rec] = promptRecommendations([
+    mission({
+      id: "m-generated",
+      title: generatedTitle,
+      intent,
+      status: "completed",
+    }),
+  ]);
+  assert.equal(rec.title, "Visual planning for agentic guided coding sessions");
+  assert.equal(rec.brief.question, rec.title);
+  assert.doesNotMatch(assembleBrief(rec.brief), /Primary questions|…/);
+});
+
+test("promptRecommendations preserves explicit mission titles", () => {
+  const [rec] = promptRecommendations([
+    mission({
+      id: "m-named",
+      title: "Research brief: Planning systems landscape. Focus on team workflows",
+      intent: "Research and compare: Visual planning for guided coding.",
+      status: "completed",
+    }),
+  ]);
+  assert.equal(rec.title, "Research brief: Planning systems landscape. Focus on team workflows");
+  assert.equal(rec.brief.question, rec.title);
+});
+
+test("promptRecommendations preserves an explicit title that matches the generated title", () => {
+  const title = "Research brief: Planning systems landscape. Focus on team workflows";
+  const namedMission = {
+    ...mission({
+      id: "m-named-collision",
+      title,
+      intent: title,
+      status: "completed",
+    }),
+    titleSource: "explicit",
+  } as ResearchMission;
+  const [rec] = promptRecommendations([namedMission]);
+  assert.equal(rec.title, title);
+  assert.equal(rec.brief.question, title);
+});
+
 test("promptRecommendations flags a run short of its source target", () => {
   const thin = mission({
     id: "m4",

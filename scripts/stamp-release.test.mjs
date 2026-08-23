@@ -1082,6 +1082,7 @@ assert.doesNotMatch(
   "daemon and Cave releases have independent version lines",
 );
 const sourceVersionJob = workflowJob(yml, "source-version");
+const authorizationJob = workflowJob(yml, "authorize-release-promotion");
 assert.match(
   yml,
   /\npermissions:\s*\n\s+contents: read/,
@@ -1098,8 +1099,13 @@ assert.match(
 );
 assert.match(
   sourceVersionJob,
-  /ref: \$\{\{ steps\.release\.outputs\.ref \}\}[\s\S]*fetch-depth: 0[\s\S]*persist-credentials: false/,
-  "source-version checks out the explicit full tag ref with history and no write credential",
+  /needs: authorize-release-promotion[\s\S]*ref: \$\{\{ needs\.authorize-release-promotion\.outputs\.commit \}\}[\s\S]*fetch-depth: 0[\s\S]*persist-credentials: false/,
+  "source-version checks out the immutable promotion-authorized commit with history and no write credential",
+);
+assert.match(
+  authorizationJob,
+  /node scripts\/release-promotion\.mjs release/,
+  "release authorization proves signed exact-candidate promotion before source validation",
 );
 assert.match(
   sourceVersionJob,
@@ -1139,8 +1145,8 @@ const buildJob = workflowJob(yml, "build");
 assert.match(buildJob, /needs:\s*\n\s+- daemon-package\s*\n\s+- source-version/, "desktop builds wait for both release gates");
 assert.match(
   sourceVersionJob,
-  /outputs:\s*\n\s+release-commit: \$\{\{ steps\.tag\.outputs\.commit \}\}/,
-  "the source gate exposes the immutable commit verified from the signed tag",
+  /outputs:\s*\n\s+release-commit: \$\{\{ steps\.release\.outputs\.commit \}\}/,
+  "the source gate preserves the immutable commit authorized by promotion",
 );
 assert.match(
   buildJob,
@@ -1154,9 +1160,14 @@ assert.match(
   "checksum publication uses the immutable commit verified by the source gate",
 );
 const updaterManifestJob = workflowJob(yml, "updater-manifest");
+// Further `needs:` entries are allowed after source-version — release gates get
+// added over time (cave-ilh1h added rollback-readiness) and each pins itself in
+// its own test. What this assertion owns is unchanged: build and source-version
+// are both required, and the job checks out the source gate's immutable commit
+// with no write credential.
 assert.match(
   updaterManifestJob,
-  /needs:\s*\n\s+- build\s*\n\s+- source-version\s*\n\s+permissions:\s*\n\s+contents: write[\s\S]*ref: \$\{\{ needs\.source-version\.outputs\.release-commit \}\}\s*\n\s+persist-credentials: false/,
+  /needs:\s*\n\s+- build\s*\n\s+- source-version\s*\n(?:\s+- [\w-]+\s*\n)*\s+permissions:\s*\n\s+contents: write[\s\S]*ref: \$\{\{ needs\.source-version\.outputs\.release-commit \}\}\s*\n\s+persist-credentials: false/,
   "updater publication uses the immutable commit verified by the source gate",
 );
 assert.doesNotMatch(buildJob, /matrix\.os/, "release summaries use the declared matrix platform key");
@@ -1191,10 +1202,16 @@ assert.match(
   /\(allowPartial \? warn : fail\)\(`missing platform/,
   "missing platform downgrades to a warning under --allow-partial",
 );
+// Counting RECOGNISED targets rather than raw keys is the load-bearing part:
+// `Object.keys(platforms).length` is non-zero for `{"darwin-arm64": …}`,
+// `"abc"` and `["a"]` alike, so under --allow-partial all four real targets
+// downgraded to warnings, the per-platform loop ran zero times, and the script
+// printed PASS having verified no signature. The behavioural pin lives in
+// verify-release-updater.test.mjs; this one stops the expression regressing.
 assert.match(
   verify,
-  /if \(!Object\.keys\(plats\)\.length\) fail\(/,
-  "an EMPTY manifest fails even with --allow-partial",
+  /if \(!TARGETS\.some\(\(t\) => plats\[t\]\)\) \{/,
+  "a manifest naming no known target fails even with --allow-partial",
 );
 
 console.log("stamp-release.test.mjs: ok");

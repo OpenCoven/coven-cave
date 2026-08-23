@@ -1,7 +1,9 @@
+// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { test } from "vitest";
 import type { Block } from "@create-markdown/core";
 import { paragraph } from "@create-markdown/core";
@@ -20,6 +22,10 @@ import {
   scaleForIndex,
   scaleLabel,
 } from "@/lib/reader-text-scale.ts";
+import { updateAppPreferences } from "@/lib/app-preferences.ts";
+import { ReadingSizeController } from "./reading-size-controller.tsx";
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const doc: DocumentReaderDocument<Block, Block> = {
   title: "Shared document",
@@ -42,31 +48,92 @@ function render(navigation: "compact" | "rail" | "none") {
 }
 
 test("the size control renders in every navigation mode", () => {
-  // Text size is not a navigation affordance. A reader with no table of
-  // contents — the "none" mode — still needs it, and that is exactly the case
-  // that a control tucked inside the compact nav would have missed.
   for (const navigation of ["compact", "rail", "none"] as const) {
     const html = render(navigation);
     assert.match(
       html,
-      /aria-label="Text size"/,
-      `${navigation} reader should expose the text size group`,
+      /aria-label="Reading preferences"/,
+      `${navigation} reader should expose the compact Aa menu`,
     );
-    assert.match(html, /Decrease text size/, `${navigation} reader needs A−`);
-    assert.match(html, /Increase text size/, `${navigation} reader needs A\+`);
+    assert.match(html, />Aa</, `${navigation} reader needs the Aa trigger`);
   }
 });
 
-test("first paint uses the default scale so hydration cannot mismatch", () => {
-  // Reading localStorage in the state initializer would emit different HTML on
-  // the server than the client. The stored value is applied in an effect, so
-  // server markup must always carry the default.
+test("a non-default canonical size keeps server and first client paint at the default, then adopts after mount", async () => {
+  updateAppPreferences({ appearance: { reading: { size: 4 } } });
   const html = render("rail");
   assert.match(
     html,
     /--reader-text-scale:\s*1\b/,
-    "server markup should carry the default scale, not a stored one",
+    "server markup should carry the default scale even when canonical storage is non-default",
   );
+
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(
+      createElement(DocumentReader<Block, Block>, {
+        document: doc,
+        navigation: "rail",
+        renderLede: (lede) => createElement(MarkdownReaderBlock, { block: lede, blockKey: "lede" }),
+        renderBlock: (block, key) =>
+          createElement(MarkdownReaderBlock, { block, blockKey: key }),
+      }),
+    );
+  });
+  const root = renderer.root.find(
+    (node) =>
+      typeof node.props.className === "string" &&
+      node.props.className.split(" ").includes("document-reader"),
+  );
+  assert.equal(root.props.style["--reader-text-scale"], 1.4);
+  await act(async () => {
+    updateAppPreferences({
+      appearance: { reading: { size: READER_TEXT_SCALE_DEFAULT_INDEX } },
+    });
+    renderer.unmount();
+  });
+});
+
+test("the size controller reapplies canonical preference notifications", async () => {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const properties = new Map<string, string>();
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+  } as unknown as Window & typeof globalThis;
+  globalThis.document = {
+    documentElement: {
+      style: {
+        setProperty: (name: string, value: string) => properties.set(name, value),
+      },
+    },
+  } as unknown as Document;
+
+  let renderer!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      updateAppPreferences({
+        appearance: { reading: { size: READER_TEXT_SCALE_DEFAULT_INDEX } },
+      });
+      renderer = create(createElement(ReadingSizeController));
+    });
+    assert.equal(properties.get("--cave-reading-size-scale"), "1");
+
+    await act(async () => {
+      updateAppPreferences({ appearance: { reading: { size: 3 } } });
+    });
+    assert.equal(properties.get("--cave-reading-size-scale"), "1.25");
+  } finally {
+    await act(async () => {
+      updateAppPreferences({
+        appearance: { reading: { size: READER_TEXT_SCALE_DEFAULT_INDEX } },
+      });
+      renderer?.unmount();
+    });
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+  }
 });
 
 test("the smallest step disables A− and the largest disables A+", () => {
@@ -147,9 +214,6 @@ test("a round trip through storage preserves the step", () => {
 });
 
 test("only reading content is scaled — chrome keeps its own size", () => {
-  // Scaling the TOC links and the Contents trigger would move the furniture
-  // while the user is trying to enlarge the text, and the rail has a fixed
-  // width that oversized links would overflow.
   const css = readFileSync(new URL("../styles/document-reader.css", import.meta.url), "utf8");
   const scaled = (selector: string) => {
     const start = css.indexOf(selector);
@@ -166,41 +230,58 @@ test("only reading content is scaled — chrome keeps its own size", () => {
   assert.ok(!scaled(".document-reader__contents-trigger {"), "Contents trigger must NOT scale");
   assert.ok(!scaled(".document-reader__kicker {"), "kicker must NOT scale");
   assert.ok(
-    !scaled(".document-reader__textsize-btn {"),
-    "the control itself must NOT scale, or A+ walks out from under the pointer",
+    !scaled(".document-reader__preferences-trigger {"),
+    "the Aa trigger must stay stable while prose changes",
   );
 });
 
-test("the sticky controls share the document column width and gutters", () => {
+test("the shared reader uses character-based prose and a separate wide track", () => {
   const sharedCss = readFileSync(new URL("../styles/document-reader.css", import.meta.url), "utf8");
   const researchCss = readFileSync(new URL("../styles/research-reader.css", import.meta.url), "utf8");
 
   assert.match(
     sharedCss,
-    /\.document-reader__toolbar\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--document-reader-column-width\)\)[\s\S]*?margin:\s*0 auto[\s\S]*?padding:\s*0 var\(--document-reader-column-gutter\) var\(--space-2\)/,
+    /--document-reader-prose-measure:\s*var\(--cave-reading-width,\s*66ch\)/,
   );
   assert.match(
     sharedCss,
-    /\.document-reader__column\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--document-reader-column-width\)\)[\s\S]*?padding:\s*0 var\(--document-reader-column-gutter\)/,
+    /--document-reader-wide-measure:\s*min\(\s*88ch,\s*calc\(/,
   );
   assert.match(
     sharedCss,
-    /\.document-reader--compact\s*\{[\s\S]*?--document-reader-column-width:\s*48rem[\s\S]*?--document-reader-column-gutter:\s*var\(--space-4\)/,
+    /\.document-reader__prose\s*\{[\s\S]*?max-width:\s*var\(--document-reader-prose-measure\)/,
   );
   assert.match(
+    sharedCss,
+    /\.document-reader__wide-block\s*\{[\s\S]*?width:\s*var\(--document-reader-wide-measure\)/,
+  );
+  assert.doesNotMatch(
     researchCss,
-    /\.research-reader \.document-reader\s*\{[\s\S]*?--document-reader-column-width:\s*880px[\s\S]*?--document-reader-column-gutter:\s*var\(--space-12\)/,
+    /--document-reader-column-width:\s*\d+(?:px|rem)/,
+    "Research must not restore fixed reader widths",
+  );
+});
+
+test("narrow rail mode collapses the actual grid and keeps tokenized prose gutters", () => {
+  const css = readFileSync(new URL("../styles/document-reader.css", import.meta.url), "utf8");
+  assert.match(
+    css,
+    /\.document-reader--rail \.document-reader__layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*13rem\) minmax\(0,\s*1fr\)/,
+    "rail mode owns its two-column grid on a descendant of the query container",
   );
   assert.match(
-    researchCss,
-    /\.research-reader:not\(\[data-expanded="true"\]\) \.document-reader\s*\{[\s\S]*?--document-reader-column-width:\s*760px/,
+    css,
+    /@container document-reader \(max-width:\s*52rem\)\s*\{[\s\S]*?\.document-reader--rail \.document-reader__layout\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    "the narrow query must collapse the grid itself, not only hide the TOC",
   );
   assert.match(
-    researchCss,
-    /\.rr-doc__column\s*\{[\s\S]*?padding:\s*0 var\(--document-reader-column-gutter\)/,
+    css,
+    /\.document-reader__scroll\s*\{[\s\S]*?padding:\s*var\(--space-8\) var\(--document-reader-column-gutter\)/,
+    "the scrolling canvas owns tokenized horizontal gutters",
   );
   assert.match(
-    researchCss,
-    /@container \(max-width:\s*30rem\)\s*\{[\s\S]*?\.research-reader \.document-reader__toolbar,\s*\.research-reader \.rr-doc__column\s*\{[\s\S]*?padding-inline:\s*var\(--space-3\)/,
+    css,
+    /\.document-reader__column\s*\{[\s\S]*?width:\s*min\(100%,\s*var\(--document-reader-prose-measure\)\)/,
+    "the prose remains capped near 66ch inside the guttered canvas",
   );
 });

@@ -2,6 +2,7 @@ import {
   ACTIVITY_DAYS,
   buildFamiliarCardStats,
   type CanonicalMemoryAvailability,
+  type FamiliarFileMemoryStat,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
@@ -22,6 +23,7 @@ import {
   EMPTY_FEEDBACK_ROLLUP,
   type MessageFeedbackRollup,
 } from "@/lib/message-feedback-rollup";
+import type { FamiliarExecutionAnalytics } from "@/lib/familiar-execution-analytics";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -40,6 +42,10 @@ type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
   | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
 
+type FileMemoryResponse =
+  | { ok: true; entries: FamiliarFileMemoryStat[] }
+  | { ok: false; entries?: FamiliarFileMemoryStat[]; error?: string };
+
 type SelfReportsResponse =
   | { ok: true; reports: ThreadSelfReport[]; total: number }
   | { ok: false; reports?: ThreadSelfReport[]; total?: number; error?: string };
@@ -52,6 +58,10 @@ type MessageFeedbackResponse =
   | { ok: true; rollup: MessageFeedbackRollup }
   | { ok: false; rollup?: MessageFeedbackRollup; error?: string };
 
+type ExecutionAnalyticsResponse =
+  | { ok: true; analytics: FamiliarExecutionAnalytics }
+  | { ok: false; analytics?: FamiliarExecutionAnalytics; error?: string };
+
 export type FamiliarAnalyticsData = {
   familiarId: string;
   familiars: Familiar[];
@@ -59,12 +69,16 @@ export type FamiliarAnalyticsData = {
   sessions: SessionRow[];
   covenEntries: CanonicalMemorySummary[];
   memoryAvailability: CanonicalMemoryAvailability;
+  fileEntries: FamiliarFileMemoryStat[];
+  fileMemoryAvailability: CanonicalMemoryAvailability;
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
   /** Compact per-thread metric snapshots, oldest → newest (signal trends). */
   metricSnapshots: ThreadMetricSnapshot[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
+  /** Metadata-only model/harness execution analytics across Cave run surfaces. */
+  executionAnalytics: FamiliarExecutionAnalytics | null;
   errors: string[];
 };
 
@@ -83,6 +97,8 @@ export type FamiliarAnalyticsModel = {
   metricSnapshots: ThreadMetricSnapshot[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
+  /** Metadata-only model/harness execution analytics across Cave run surfaces. */
+  executionAnalytics: FamiliarExecutionAnalytics | null;
   /**
    * Renown + ritual streak — the progression system's read of this familiar
    * (same derivation as the roster cards, so the surfaces always agree).
@@ -170,10 +186,12 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     contractJson,
     sessionsJson,
     memoryJson,
+    fileMemoryJson,
     retroJson,
     selfReportsJson,
     metricSnapshotsJson,
     feedbackJson,
+    executionAnalyticsJson,
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
@@ -182,6 +200,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     // session response local to the familiar being inspected.
     fetchResource<SessionsResponse>(`/api/sessions/list?includeArchived=1&familiarId=${encodedId}`, { ok: false, sessions: [] }),
     loadCanonicalMemoryList(),
+    fetchResource<FileMemoryResponse>(`/api/memory?familiarId=${encodedId}`, { ok: false, entries: [] }),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     // The workbench's ALL window and report ledger are complete evidence, not a
     // newest-page sample. The route retains bounded pagination for consumers
@@ -189,18 +208,24 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=all`, { ok: false, reports: [], total: 0 }),
     fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
     fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
+    fetchResource<ExecutionAnalyticsResponse>(`/api/familiars/${encodedId}/execution-analytics`, { ok: false }),
   ]);
 
+  const fileMemoryReady = fileMemoryJson.ok && Array.isArray(fileMemoryJson.entries);
   const errors = [
     responseError(familiarsJson, "familiars unavailable"),
     responseError(contractJson, "contract unavailable"),
     responseError(sessionsJson, "sessions unavailable"),
     memoryJson.state === "error"
-      ? `memory unavailable (${memoryJson.error.code})`
+      ? `canonical memory unavailable (${memoryJson.error.code})`
       : null,
+    fileMemoryJson.ok
+      ? fileMemoryReady ? null : "workspace memory returned invalid payload"
+      : responseError(fileMemoryJson, "workspace memory unavailable"),
     responseError(retroJson, "retro runs unavailable"),
     responseError(metricSnapshotsJson, "metric snapshots unavailable"),
     responseError(feedbackJson, "message feedback unavailable"),
+    responseError(executionAnalyticsJson, "execution analytics unavailable"),
   ].filter((error): error is string => Boolean(error));
 
   return {
@@ -211,6 +236,10 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     covenEntries: memoryJson.state === "ready" ? memoryJson.entries : [],
     memoryAvailability:
       memoryJson.state === "ready" ? "ready" : "unavailable",
+    fileEntries: fileMemoryReady
+      ? fileMemoryJson.entries
+      : [],
+    fileMemoryAvailability: fileMemoryReady ? "ready" : "unavailable",
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     // `ok: true` says the request succeeded, not that the payload has the shape
     // its type claims — SelfReportsResponse is erased at runtime. Check it here
@@ -218,6 +247,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     threadReports: Array.isArray(selfReportsJson.reports) ? selfReportsJson.reports : [],
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
+    executionAnalytics: executionAnalyticsJson.ok ? executionAnalyticsJson.analytics : null,
     errors,
   };
 }
@@ -236,6 +266,8 @@ export function buildFamiliarAnalyticsModel(
         sessions: familiarSessions,
         covenEntries: data.covenEntries.filter((entry) => entry.familiarId === familiar.id),
         memoryAvailability: data.memoryAvailability,
+        fileEntries: data.fileEntries,
+        fileMemoryAvailability: data.fileMemoryAvailability,
         now,
       }).get(familiar.id) ?? emptyStats(data.memoryAvailability)
     : emptyStats(data.memoryAvailability);
@@ -266,6 +298,7 @@ export function buildFamiliarAnalyticsModel(
     threadReports: data.threadReports,
     metricSnapshots: data.metricSnapshots,
     modelFeedback: data.modelFeedback,
+    executionAnalytics: data.executionAnalytics,
     progression: familiar
       ? {
           renown: deriveRenown({ sessionsTotal: stats.sessionsTotal, memoryCount: stats.memoryCount }),

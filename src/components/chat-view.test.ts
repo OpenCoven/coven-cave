@@ -115,14 +115,31 @@ assert.match(
 
 assert.match(
   source,
+  /if \(!familiar\.autoSelfReport \|\| !reflectTranscript\) return;/,
+  "Automatic self-reporting should skip threads without assessable transcript evidence",
+);
+
+assert.match(
+  source,
+  /onReflect=\{familiar\.id && reflectTranscript \?/,
+  "Empty chats should not expose the manual reflection action",
+);
+
+assert.match(
+  source,
   /catch \{[\s\S]*Auto self-report is best-effort and intentionally silent/,
   "Auto self-report failures should be silent",
 );
 
 assert.match(
   source,
-  /<ThreadSignalCard[\s\S]*report=\{threadSignalReport\}/,
-  "Successful reflection should render the ThreadSignalCard in the transcript",
+  /<div className="cave-thread-signal-overlay">[\s\S]*<ThreadSignalCard[\s\S]*report=\{threadSignalReport\}/,
+  "Successful reflection should render the ThreadSignalCard in the chat overlay",
+);
+
+assert.ok(
+  source.indexOf('<div ref={tailRef} />') < source.indexOf('<div className="cave-thread-signal-overlay">'),
+  "Thread Signal should render after the transcript tail rather than inside the conversation log",
 );
 
 assert.match(

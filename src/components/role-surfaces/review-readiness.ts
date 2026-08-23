@@ -14,6 +14,7 @@
 
 import type { IconName } from "@/lib/icon";
 import { countChecks, isFailConclusion, type CheckSummary } from "@/lib/github-checks";
+import { deriveReviewLandingState } from "@/lib/review-landing";
 
 export type ReviewTone = "success" | "warning" | "danger" | "accent" | "muted";
 
@@ -194,15 +195,15 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
  */
 export function isReadyToMerge(pr: PrFacts | null): boolean {
   if (!pr) return false;
-  return (
-    pr.state === "open" &&
-    !pr.draft &&
-    pr.mergeable === true &&
-    pr.checks.rollup === "passing" &&
-    pr.reviews.approved > 0 &&
-    pr.reviews.changesRequested === 0 &&
-    pr.threads.unresolved === 0
-  );
+  return deriveReviewLandingState({
+    state: pr.state,
+    draft: pr.draft,
+    checks: pr.checks.rollup,
+    reviews: pr.reviews,
+    mergeable: pr.mergeable,
+    mergeableState: pr.mergeableState,
+    unresolvedThreads: pr.threads.unresolved,
+  }).canMerge;
 }
 
 // ── Queue buckets ────────────────────────────────────────────────────────────

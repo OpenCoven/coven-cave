@@ -21,6 +21,11 @@ import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
  * volume root (`/` on POSIX, drive roots on Windows); the `::drives`
  * pseudo-location lists those roots so multi-drive machines can switch.
  *
+ * `?hidden=1` reveals dot-prefixed folders, which the listing omits by
+ * default. That is presentation, not permission: every path below still goes
+ * through the same trusted walk, so a hidden folder reached by crumb, pin, or
+ * direct request resolves whatever the flag says.
+ *
  * `?places=1` returns the sidebar's jump-off locations instead of a listing:
  * Quick access ($HOME + known folders) and This PC (labeled volumes). The
  * client fetches it once per modal open and navigates to the paths it names
@@ -39,15 +44,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, home: homeRoot(), groups: listPlaceGroups() });
   }
 
+  // Dot folders are noise for almost every project pick, so the listing hides
+  // them unless the picker's "Show hidden folders" toggle asks otherwise.
+  const includeHidden = req.nextUrl.searchParams.get("hidden") === "1";
+
   const requested = req.nextUrl.searchParams.get("dir");
   if ((requested ?? "").trim() === DRIVES_LOCATION) {
     const entries = listSystemRootEntries().map((entry) => ({ ...entry, workspace: false }));
+    // A volume root is never dot-prefixed, so this listing has nothing to
+    // reveal — but it still reports the pair so the client's toggle keeps a
+    // stable shape across the drives location.
     return NextResponse.json({
       ok: true,
       home: homeRoot(),
       cwd: DRIVES_LOCATION,
       parent: null,
       entries,
+      hiddenCount: 0,
+      includeHidden,
     });
   }
 
@@ -59,7 +73,8 @@ export async function GET(req: NextRequest) {
   // `workspace` badges folders that already sit inside a configured Cave
   // workspace or registered project root, so the picker can spotlight the
   // places project chats normally live.
-  const entries = listSubdirs(dir).map((entry) => ({
+  const listing = listSubdirs(dir, { includeHidden });
+  const entries = listing.entries.map((entry) => ({
     ...entry,
     workspace: resolveAllowedProjectSubpath(entry.path) !== null,
   }));
@@ -72,7 +87,15 @@ export async function GET(req: NextRequest) {
         ? DRIVES_LOCATION
         : null
       : path.dirname(dir);
-  return NextResponse.json({ ok: true, home: homeRoot(), cwd: dir, parent, entries });
+  return NextResponse.json({
+    ok: true,
+    home: homeRoot(),
+    cwd: dir,
+    parent,
+    entries,
+    hiddenCount: listing.hiddenCount,
+    includeHidden,
+  });
 }
 
 export async function POST(req: NextRequest) {

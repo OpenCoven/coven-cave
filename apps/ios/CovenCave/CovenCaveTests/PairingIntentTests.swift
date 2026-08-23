@@ -27,6 +27,7 @@ final class PairingIntentTests: XCTestCase {
 
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertEqual(app.deepLink, .tasks)
+        XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.pendingPairingIntent)
     }
 

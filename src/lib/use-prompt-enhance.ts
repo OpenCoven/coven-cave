@@ -1,33 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { streamFamiliarText } from "@/lib/familiar-stream";
+import { contextFingerprint, type AgenticRecommendation } from "@/lib/agentic-recommendations";
+import { useAgenticRecommendations } from "@/lib/use-agentic-recommendations";
 import {
   buildEnhanceInstruction,
   buildPromptEnhancement,
+  createPromptEnhancementRecommendation,
+  extractCompleteEnhancedPrompt,
   extractEnhancedPrompt,
+  isPromptEnhancementRecommendationCurrent,
+  parsePromptEnhancementRecommendationOutput,
+  promptEnhancementContextFingerprintInput,
+  promptEnhancementEvidenceRefs,
+  promptEnhancementLifecycleFingerprint,
+  serializePromptEnhancementRecommendation,
   settleEnhance,
   type EnhanceIntent,
+  type PromptEnhancementPayload,
   type PromptEnhanceMode,
 } from "@/lib/prompt-enhancer";
+import { containsSecretText } from "@/lib/secret-redaction";
 
-// Model-backed prompt enhancement (cave-b6c2), shared by the home, chat, and
-// quick-chat composers. One state machine owns the whole lifecycle:
-//
-//   idle → loading{baseDraft} → applied{original} | suggested{enhanced} | error
-//
-// The race rule (the old implementations' bug): the draft captured at request
-// time is compared with the draft at completion — unchanged applies in place,
-// changed surfaces the rewrite as a suggestion strip and NEVER overwrites the
-// newer text. `original` only exists in `applied`, so typing mid-flight has
-// nothing to lose. A generation counter makes stale completions inert.
-//
-// Model path: streamFamiliarText (the sanctioned client LLM bridge) as an
-// ephemeral run — no sessionId, origin "enhance" (hidden from chat lists),
-// read-only permissions, low effort + fast speed. Falls back to the local rule
-// engine when there is no familiar, the stream errors, or the first token takes
-// too long.
+// Model-backed prompt enhancement (cave-b6c2) is deliberately a manual use of
+// the shared recommendation lifecycle: typing only updates its fingerprint;
+// the existing Enhance control explicitly starts a generation.
 
 export const ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 8000;
 
@@ -35,23 +34,68 @@ function newEnhanceRunId() {
   return globalThis.crypto?.randomUUID?.() ?? `enhance-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function stopEnhanceRun(runId: string | null) {
+function stopEnhanceRun(runId: string | null | undefined) {
   if (!runId) return;
   void fetch("/api/chat/stop", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ runId }),
   }).catch(() => {
-    // Best-effort stop: the stream abort/fallback path should still proceed.
+    // Best-effort stop: the lifecycle signal still prevents stale UI writes.
   });
 }
+
+export type PromptEnhanceRecommendation = AgenticRecommendation<PromptEnhancementPayload>;
 
 export type PromptEnhanceState =
   | { phase: "idle" }
   | { phase: "loading"; intent: EnhanceIntent; preview: string }
-  | { phase: "suggested"; enhanced: string; offline: boolean }
-  | { phase: "applied"; original: string; offline: boolean }
+  | { phase: "suggested"; enhanced: string; offline: boolean; recommendation: PromptEnhanceRecommendation }
+  | { phase: "applied"; original: string; offline: boolean; recommendation: PromptEnhanceRecommendation }
   | { phase: "error"; message: string };
+
+type PromptEnhanceRequest = {
+  baseDraft: string;
+  intent: EnhanceIntent;
+};
+
+type PromptEnhanceLifecycleContext = {
+  contextKey: string;
+};
+
+function asPromptEnhancementRecommendation(
+  recommendation: AgenticRecommendation,
+): PromptEnhanceRecommendation | null {
+  const payload = recommendation.payload;
+  if (
+    recommendation.surface !== "chat"
+    || recommendation.kind !== "prose"
+    || typeof payload.enhanced !== "string"
+    || typeof payload.offline !== "boolean"
+    || (
+      payload.mode !== "chat"
+      && payload.mode !== "code"
+      && payload.mode !== "image"
+      && payload.mode !== "research"
+      && payload.mode !== "task"
+    )
+    || (
+      payload.intent !== "auto"
+      && payload.intent !== "clarify"
+      && payload.intent !== "expand"
+      && payload.intent !== "specific"
+      && payload.intent !== "shorten"
+      && payload.intent !== "criteria"
+    )
+  ) {
+    return null;
+  }
+  return recommendation as PromptEnhanceRecommendation;
+}
+
+function recommendationId(runId: string): string {
+  return `prompt-enhance-${runId.replace(/[^A-Za-z0-9._:/-]/g, "-").slice(0, 72)}`;
+}
 
 export function usePromptEnhance({
   draft,
@@ -72,186 +116,261 @@ export function usePromptEnhance({
 }) {
   const { announce } = useAnnouncer();
   const [state, setState] = useState<PromptEnhanceState>({ phase: "idle" });
-
-  // Refs, not state: completions must read the LATEST draft and generation
-  // without re-subscribing the stream callbacks. stateRef mirrors state so
-  // apply/revert can read-then-act without side effects inside a setState
-  // updater (updaters must be pure — setDraft/announce there re-renders
-  // LiveRegionProvider mid-render).
   const draftRef = useRef(draft);
-  draftRef.current = draft;
   const stateRef = useRef(state);
-  stateRef.current = state;
-  const generationRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
-  const runIdRef = useRef<string | null>(null);
-  // Set before the hook itself writes the draft (apply/revert), so the
-  // draft-watch below can tell hook writes from user typing.
+  const requestRef = useRef<PromptEnhanceRequest | null>(null);
+  const enhanceRequestedRef = useRef(false);
+  const handledRecommendationRef = useRef<string | null>(null);
+  const activeRunIdRef = useRef<string | null>(null);
   const selfEditRef = useRef(false);
+  const contextRef = useRef(context);
+  const familiarIdRef = useRef(familiarId);
+  const currentContextFingerprintRef = useRef("");
 
-  const cancel = useCallback(() => {
-    generationRef.current += 1;
-    stopEnhanceRun(runIdRef.current);
-    runIdRef.current = null;
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setState({ phase: "idle" });
-  }, []);
+  draftRef.current = draft;
+  stateRef.current = state;
+  contextRef.current = context;
+  familiarIdRef.current = familiarId;
 
-  /** Full reset — send, session switch, submit. */
-  const reset = cancel;
+  const contextKey = contextFingerprint({
+    mode,
+    familiarId: familiarId ?? null,
+    context: promptEnhancementContextFingerprintInput(context),
+  });
+  const currentContextFingerprint = promptEnhancementLifecycleFingerprint({ mode, familiarId, context });
+  currentContextFingerprintRef.current = currentContextFingerprint;
+  const agenticContext = useMemo<PromptEnhanceLifecycleContext>(() => ({ contextKey }), [contextKey]);
 
-  // A USER edit dismisses a lingering applied strip (typing over an applied
-  // rewrite means Revert would corrupt the new text) and clears errors. The
-  // hook's own writes (apply/revert) don't count — selfEditRef marks those.
-  // `suggested` survives edits: applying later stashes the draft-at-apply, so
-  // it stays safe. `loading` survives too — the race rule downgrades its
-  // completion to a suggestion instead.
-  useEffect(() => {
-    if (selfEditRef.current) {
-      selfEditRef.current = false;
-      return;
-    }
-    setState((prev) =>
-      prev.phase === "applied" || prev.phase === "error" ? { phase: "idle" } : prev,
-    );
-  }, [draft]);
+  const generate = useCallback(async (request: {
+    contextFingerprint: string;
+    runId: string;
+    signal: AbortSignal;
+  }) => {
+    const activeRequest = requestRef.current;
+    if (!activeRequest) throw new Error("Enhance request is missing.");
+    activeRunIdRef.current = request.runId;
 
-  const finish = useCallback(
-    (gen: number, baseDraft: string, enhanced: string, offline: boolean) => {
-      if (gen !== generationRef.current) return; // stale completion — inert
-      abortRef.current = null;
-      runIdRef.current = null;
-      const text = enhanced.trim();
-      if (!text) {
-        setState({ phase: "error", message: "Enhance returned nothing usable." });
-        return;
+    const localRecommendation = () => {
+      const local = buildPromptEnhancement({
+        draft: activeRequest.baseDraft,
+        mode,
+        context: contextRef.current,
+      });
+      if (!local.ok) throw new Error(local.error);
+      return local.enhanced;
+    };
+    const toRecommendationOutput = (enhanced: string, offline: boolean) => {
+      const clean = enhanced.trim();
+      if (!clean) throw new Error("Enhance returned nothing usable.");
+      if (containsSecretText(clean)) {
+        throw new Error("Enhance returned text that may contain sensitive values.");
       }
-      if (settleEnhance(baseDraft, draftRef.current) === "apply") {
-        selfEditRef.current = true;
-        setDraft(text);
-        setState({ phase: "applied", original: baseDraft, offline });
-        announce(offline ? "Prompt enhanced offline." : "Prompt enhanced.", "polite");
-      } else {
-        setState({ phase: "suggested", enhanced: text, offline });
-        announce("Enhanced prompt ready — apply or dismiss.", "polite");
+      const recommendation = createPromptEnhancementRecommendation({
+        id: recommendationId(request.runId),
+        enhanced: clean,
+        offline,
+        mode,
+        intent: activeRequest.intent,
+        contextFingerprint: request.contextFingerprint,
+        evidenceRefs: promptEnhancementEvidenceRefs(contextRef.current),
+      });
+      return serializePromptEnhancementRecommendation(recommendation);
+    };
+
+    if (!familiarIdRef.current) return toRecommendationOutput(localRecommendation(), true);
+
+    let sawToken = false;
+    const controller = new AbortController();
+    const abortForLifecycle = () => controller.abort();
+    request.signal.addEventListener("abort", abortForLifecycle, { once: true });
+    const timer = setTimeout(() => {
+      if (!sawToken && !request.signal.aborted) {
+        stopEnhanceRun(request.runId);
+        controller.abort();
       }
-    },
-    [announce, setDraft],
-  );
+    }, ENHANCE_FIRST_TOKEN_TIMEOUT_MS);
 
-  const fallback = useCallback(
-    (gen: number, baseDraft: string) => {
-      const local = buildPromptEnhancement({ draft: baseDraft, mode, context });
-      if (!local.ok) {
-        if (gen === generationRef.current) setState({ phase: "error", message: local.error });
-        return;
-      }
-      finish(gen, baseDraft, local.enhanced, true);
-    },
-    [context, finish, mode],
-  );
-
-  const enhance = useCallback(
-    (intent: EnhanceIntent = "auto") => {
-      const baseDraft = draftRef.current;
-      if (!baseDraft.trim() || disabled) return;
-      generationRef.current += 1;
-      const gen = generationRef.current;
-      stopEnhanceRun(runIdRef.current);
-      runIdRef.current = null;
-      abortRef.current?.abort();
-
-      if (!familiarId) {
-        setState({ phase: "loading", intent, preview: "" });
-        fallback(gen, baseDraft);
-        return;
-      }
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setState({ phase: "loading", intent, preview: "" });
-
-      let sawToken = false;
-      // No first token in time → abort the stream and enhance locally. The
-      // rewrite should feel instant-ish; a cold harness shouldn't stall it.
-      const timer = setTimeout(() => {
-        if (!sawToken && gen === generationRef.current) {
-          stopEnhanceRun(runIdRef.current);
-          runIdRef.current = null;
-          controller.abort();
-          fallback(gen, baseDraft);
-        }
-      }, ENHANCE_FIRST_TOKEN_TIMEOUT_MS);
-
-      const runId = newEnhanceRunId();
-      runIdRef.current = runId;
-
-      void streamFamiliarText({
-        familiarId,
-        prompt: buildEnhanceInstruction({ draft: baseDraft, mode, intent, context }),
+    try {
+      const { text, error } = await streamFamiliarText({
+        familiarId: familiarIdRef.current,
+        prompt: buildEnhanceInstruction({
+          draft: activeRequest.baseDraft,
+          mode,
+          intent: activeRequest.intent,
+          context: contextRef.current,
+        }),
         origin: "enhance",
-        runId,
+        runId: request.runId,
         permissionMode: "read",
         reasoningEffort: "low",
         responseSpeed: "fast",
         signal: controller.signal,
         onText: (text) => {
-          if (gen !== generationRef.current) return;
+          if (controller.signal.aborted || activeRunIdRef.current !== request.runId) return;
           sawToken = true;
           const { partial } = extractEnhancedPrompt(text);
-          setState((prev) =>
-            prev.phase === "loading" ? { ...prev, preview: partial } : prev,
+          setState((previous) =>
+            previous.phase === "loading" ? { ...previous, preview: partial } : previous,
           );
         },
-      })
-        .then(({ text, error }) => {
-          clearTimeout(timer);
-          if (gen !== generationRef.current) return;
-          runIdRef.current = null;
-          if (error || !text.trim()) {
-            fallback(gen, baseDraft);
-            return;
-          }
-          finish(gen, baseDraft, extractEnhancedPrompt(text).partial, false);
-        })
-        .catch(() => {
-          clearTimeout(timer);
-          if (gen === generationRef.current) fallback(gen, baseDraft);
-        });
-    },
-    [context, disabled, fallback, familiarId, finish, mode],
-  );
+      });
+      if (request.signal.aborted) throw new Error("Enhance cancelled.");
+      if (error) return toRecommendationOutput(localRecommendation(), true);
+      const enhanced = extractCompleteEnhancedPrompt(text);
+      return enhanced ? toRecommendationOutput(enhanced, false) : "{}";
+    } catch (error) {
+      if (request.signal.aborted) throw error;
+      return toRecommendationOutput(localRecommendation(), true);
+    } finally {
+      clearTimeout(timer);
+      request.signal.removeEventListener("abort", abortForLifecycle);
+      if (activeRunIdRef.current === request.runId) activeRunIdRef.current = null;
+    }
+  }, [mode]);
+
+  const agentic = useAgenticRecommendations<PromptEnhanceLifecycleContext>({
+    context: agenticContext,
+    autoGenerate: false,
+    meaningfulContextKey: (current) => current.contextKey,
+    createRunId: newEnhanceRunId,
+    cancelRun: stopEnhanceRun,
+    debounceMs: 100,
+    generate: async (request) => generate(request),
+    apply: async () => ({ revert: () => {} }),
+    parseOutput: parsePromptEnhancementRecommendationOutput,
+  });
+
+  // A user edit clears only a completed direct replacement. Loading work
+  // survives so its eventual output becomes a proposal instead of an overwrite.
+  useEffect(() => {
+    if (selfEditRef.current) {
+      selfEditRef.current = false;
+      return;
+    }
+    setState((previous) =>
+      previous.phase === "applied" || previous.phase === "error" ? { phase: "idle" } : previous,
+    );
+  }, [draft]);
+
+  useEffect(() => {
+    setState((previous) =>
+      previous.phase === "suggested"
+      && !isPromptEnhancementRecommendationCurrent(previous.recommendation, currentContextFingerprint)
+        ? { phase: "idle" }
+        : previous,
+    );
+  }, [currentContextFingerprint]);
+
+  // The shared lifecycle strictly parses and fingerprint-checks the proposal;
+  // the legacy Chat UX then retains its direct-apply-or-suggest race rule.
+  useEffect(() => {
+    const item = agentic.state.items.find((candidate) => candidate.phase === "review");
+    const recommendation = item ? asPromptEnhancementRecommendation(item.recommendation) : null;
+    const activeRequest = requestRef.current;
+    if (!item || !recommendation || !activeRequest || handledRecommendationRef.current === recommendation.id) return;
+    if (!isPromptEnhancementRecommendationCurrent(
+      recommendation,
+      currentContextFingerprintRef.current,
+    )) {
+      setState({ phase: "idle" });
+      return;
+    }
+
+    handledRecommendationRef.current = recommendation.id;
+    const offline = recommendation.payload.offline;
+    if (settleEnhance(activeRequest.baseDraft, draftRef.current) === "apply") {
+      selfEditRef.current = true;
+      setDraft(recommendation.payload.enhanced);
+      setState({
+        phase: "applied",
+        original: activeRequest.baseDraft,
+        offline,
+        recommendation,
+      });
+      announce(offline ? "Prompt enhanced offline." : "Prompt enhanced.", "polite");
+      return;
+    }
+    setState({
+      phase: "suggested",
+      enhanced: recommendation.payload.enhanced,
+      offline,
+      recommendation,
+    });
+    announce("Enhanced prompt ready — apply or dismiss.", "polite");
+  }, [agentic.state.items, announce, setDraft]);
+
+  useEffect(() => {
+    if (agentic.state.phase !== "error" || stateRef.current.phase !== "loading") return;
+    setState({ phase: "error", message: agentic.state.error?.message ?? "Enhance could not be completed." });
+  }, [agentic.state.error, agentic.state.phase]);
+
+  useEffect(() => {
+    if (
+      !enhanceRequestedRef.current
+      || agentic.state.phase !== "idle"
+      || stateRef.current.phase !== "loading"
+    ) {
+      return;
+    }
+    enhanceRequestedRef.current = false;
+    requestRef.current = null;
+    setState({ phase: "idle" });
+  }, [agentic.state.phase]);
+
+  const cancel = useCallback(() => {
+    agentic.cancel();
+    activeRunIdRef.current = null;
+    requestRef.current = null;
+    enhanceRequestedRef.current = false;
+    setState({ phase: "idle" });
+  }, [agentic]);
+
+  const enhance = useCallback((intent: EnhanceIntent = "auto", draftOverride?: string) => {
+    const baseDraft = draftOverride ?? draftRef.current;
+    if (!baseDraft.trim() || disabled) return;
+    handledRecommendationRef.current = null;
+    requestRef.current = { baseDraft, intent };
+    enhanceRequestedRef.current = true;
+    setState({ phase: "loading", intent, preview: "" });
+    agentic.refresh();
+  }, [agentic, disabled]);
 
   const apply = useCallback(() => {
-    const prev = stateRef.current;
-    if (prev.phase !== "suggested") return;
+    const previous = stateRef.current;
+    if (previous.phase !== "suggested") return;
+    if (!isPromptEnhancementRecommendationCurrent(
+      previous.recommendation,
+      currentContextFingerprintRef.current,
+    )) {
+      setState({ phase: "error", message: "Chat context changed. Enhance again before applying." });
+      return;
+    }
     const original = draftRef.current;
     selfEditRef.current = true;
-    setDraft(prev.enhanced);
-    setState({ phase: "applied", original, offline: prev.offline });
+    setDraft(previous.enhanced);
+    setState({
+      phase: "applied",
+      original,
+      offline: previous.offline,
+      recommendation: previous.recommendation,
+    });
     announce("Enhanced prompt applied.", "polite");
   }, [announce, setDraft]);
 
   const dismiss = useCallback(() => {
-    setState((prev) => (prev.phase === "suggested" || prev.phase === "error" ? { phase: "idle" } : prev));
+    setState((previous) =>
+      previous.phase === "suggested" || previous.phase === "error" ? { phase: "idle" } : previous,
+    );
   }, []);
 
   const revert = useCallback(() => {
-    const prev = stateRef.current;
-    if (prev.phase !== "applied") return;
+    const previous = stateRef.current;
+    if (previous.phase !== "applied") return;
     selfEditRef.current = true;
-    setDraft(prev.original);
+    setDraft(previous.original);
     setState({ phase: "idle" });
     announce("Prompt restored.", "polite");
   }, [announce, setDraft]);
 
-  // Stop and abort any in-flight stream on unmount.
-  useEffect(() => () => {
-    stopEnhanceRun(runIdRef.current);
-    runIdRef.current = null;
-    abortRef.current?.abort();
-  }, []);
-
-  return { state, enhance, apply, dismiss, revert, cancel, reset };
+  return { state, enhance, apply, dismiss, revert, cancel, reset: cancel };
 }

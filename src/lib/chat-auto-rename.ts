@@ -19,10 +19,10 @@ export type ChatAutoRenamePolicy = {
   preserveManualTitles: boolean;
 };
 
-// Off by default — renaming a chat out from under someone is surprising, so it
-// is opt-in. The cadence tracks the conversation without thrashing the title.
+// Four-turn checkpoints keep auto-owned titles current without thrashing.
+// Manual titles remain protected by provenance and always win.
 export const DEFAULT_CHAT_AUTO_RENAME_POLICY: ChatAutoRenamePolicy = {
-  enabled: false,
+  enabled: true,
   everyTurns: 4,
   preserveManualTitles: true,
 };

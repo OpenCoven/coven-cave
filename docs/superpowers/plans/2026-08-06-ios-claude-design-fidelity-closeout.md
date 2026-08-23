@@ -1,5 +1,9 @@
 # iOS Claude Design Fidelity Closeout Implementation Plan
 
+> **Completed historical implementation plan.** Use
+> [`../../ios-current-direction.md`](../../ios-current-direction.md) for the
+> active visual priorities and supersession rules.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the remaining compatible gaps between the native SwiftUI app and the supplied Claude Design handoff without undoing the newer, approved familiars-first Chats IA or drawer navigation.

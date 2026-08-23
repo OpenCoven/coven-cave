@@ -15,7 +15,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /const clearSessionFilters = useCallback\(\(\) => \{\s*setSearch\(""\);\s*setStatusFilter\("all"\);\s*onSelectionChange\("all"\);\s*setShowArchived\(false\);\s*\}, \[onSelectionChange\]\);/,
+  /const clearSessionFilters = useCallback\(\(\) => \{\s*setSearch\(""\);\s*setStatusFilter\("all"\);\s*setKindFilter\("all"\);\s*onSelectionChange\("all"\);\s*setShowArchived\(false\);\s*\}, \[onSelectionChange\]\);/,
   "One reset should clear every non-familiar Sessions filter",
 );
 assert.match(
@@ -25,8 +25,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const hasAppliedFilters =\s*search\.trim\(\)\.length > 0 \|\|\s*statusFilter !== "all" \|\|\s*effectiveSelection !== "all" \|\|\s*showArchived;/,
-  "The clear action should track search, status, project, and archive filters without treating familiar scope as a filter",
+  /const hasAppliedFilters =\s*search\.trim\(\)\.length > 0 \|\|\s*statusFilter !== "all" \|\|\s*kindFilter !== "all" \|\|\s*effectiveSelection !== "all" \|\|\s*showArchived;/,
+  "The clear action should track search, status, kind, project, and archive filters without treating familiar scope as a filter",
 );
 assert.match(
   source,

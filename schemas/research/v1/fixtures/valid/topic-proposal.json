@@ -1,0 +1,41 @@
+{
+  "schema": "opencoven.topic-proposal/v1",
+  "id": "proposal_01",
+  "discoveryJobId": "topicjob_01",
+  "contextPackId": "ctx_01",
+  "title": "A grounded question",
+  "question": "Which evidence should guide the decision?",
+  "whyNow": "The source set contains unresolved disagreement.",
+  "evidence": [
+    {
+      "resourceId": "resource_01",
+      "selector": { "type": "text-span", "start": 0, "end": 20 },
+      "excerpt": "Evidence excerpt",
+      "excerptDigest": "84e3d621a6705b03cc38559364169efff401aa7155f85cecd46b51660dd1ae42"
+    }
+  ],
+  "counterevidence": [],
+  "scores": {
+    "groundability": 4,
+    "decisionValue": 3,
+    "unresolvedness": 2,
+    "recurrence": 1,
+    "novelty": 4,
+    "timeliness": 2,
+    "familiarFit": 4,
+    "feasibility": 3,
+    "humanResonance": 4,
+    "riskPenalty": 2,
+    "visibleTotal": 2.64
+  },
+  "suggested": {
+    "mode": "brief",
+    "deliverable": "Decision brief",
+    "sourceTarget": 8,
+    "wallClockMinutes": 30
+  },
+  "uncertainty": "One source may be stale.",
+  "relatedMissionIds": ["mission_01"],
+  "createdAt": "2026-08-15T20:05:00.000Z",
+  "futureExtension": { "preserve": true }
+}
