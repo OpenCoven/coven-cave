@@ -178,6 +178,14 @@ test("warm the code-split surface chunks", async ({ page }) => {
   await reopen.click();
   await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: CHUNK_TIMEOUT });
 
+  // `settings-about` — the narrow About regression is often the first test to
+  // visit /settings on its shard. Compile that route here so it does not spend
+  // its assertion budget waiting on a cold settings surface under CI load.
+  await page.goto("/settings#about");
+  await expect(page.locator(".settings-about-update-row")).toBeVisible({
+    timeout: CHUNK_TIMEOUT,
+  });
+
   // `board` — compile the board and its statically imported inspector before
   // a task-chip assertion has to pay that cold Turbopack cost.
   await page.goto(`/?mode=board#card-${WARMUP_CARD.id}`);
