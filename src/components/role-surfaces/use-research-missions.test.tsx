@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const listResearchMissions = vi.hoisted(() => vi.fn());
+const createResearchMission = vi.hoisted(() => vi.fn());
 const polling = vi.hoisted(() => ({
   callback: null as null | (() => void),
 }));
@@ -13,6 +14,7 @@ vi.mock("@/lib/research-mission-client", async () => {
   return {
     ...actual,
     listResearchMissions,
+    createResearchMission,
   };
 });
 vi.mock("@/lib/use-pausable-poll", () => ({
@@ -69,7 +71,69 @@ function mission(overrides: Record<string, unknown> = {}) {
 describe("useResearchMissions authoritative mission application", () => {
   beforeEach(() => {
     listResearchMissions.mockReset();
+    createResearchMission.mockReset();
     polling.callback = null;
+  });
+
+  test("a run started here is recorded as invoked from the Research Desk", async () => {
+    // One run, many projections (#4808): the run object itself has to say which
+    // surface asked for it, or a desk run and a chat run are indistinguishable
+    // once persisted. Every caller of this hook IS the desk, so it stamps here.
+    listResearchMissions.mockResolvedValue({ ok: true, missions: [] });
+    const started = mission({ id: "mission-new" });
+    createResearchMission.mockResolvedValue({ ok: true, mission: started });
+    let latest: ReturnType<typeof useResearchMissions> | null = null;
+    function Harness() {
+      latest = useResearchMissions("familiar-a");
+      return createElement("div");
+    }
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(createElement(Harness));
+    });
+    await act(async () => {
+      await latest!.start({
+        familiarId: "familiar-a",
+        intent: "compare managed vector stores",
+        mode: "brief",
+        modeSource: "auto",
+        deliverable: "brief",
+        bounds: {
+          wallClockMinutes: 20,
+          maxIterations: 1,
+          sourceTarget: 6,
+          checkpointEvery: 1,
+          stopWhenCostUnavailable: false,
+        },
+      });
+    });
+    expect(createResearchMission).toHaveBeenCalledTimes(1);
+    expect(createResearchMission.mock.calls[0][0].origin).toEqual({ surface: "research-desk" });
+
+    // …and a caller that already knows its own origin keeps it: the default
+    // must never overwrite a truthful one.
+    await act(async () => {
+      await latest!.start({
+        familiarId: "familiar-a",
+        intent: "compare managed vector stores",
+        mode: "brief",
+        modeSource: "auto",
+        deliverable: "brief",
+        origin: { surface: "chat", sessionId: "conv-42" },
+        bounds: {
+          wallClockMinutes: 20,
+          maxIterations: 1,
+          sourceTarget: 6,
+          checkpointEvery: 1,
+          stopWhenCostUnavailable: false,
+        },
+      });
+    });
+    expect(createResearchMission.mock.calls[1][0].origin).toEqual({
+      surface: "chat",
+      sessionId: "conv-42",
+    });
+    await act(async () => renderer.unmount());
   });
 
   test("applyMission merges a fresh mission without changing selection unless requested", async () => {
