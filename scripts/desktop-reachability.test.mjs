@@ -187,11 +187,31 @@ assert.match(
   /sidecar_stopped[\s\S]*state\.stop\(\)[\s\S]*if sidecar_stopped \{[\s\S]*sidecar_reachability_stopped[\s\S]*handoff_to_background_daemon/,
   "window teardown must hand off to launchd only after stopping the owned sidecar",
 );
-assert.match(
-  setup,
-  /stop_after_startup_error\([\s\S]{0,200}(?:message|"sidecar startup was cancelled")[\s\S]{0,200}\)[\s\S]{0,200}fatal_exit\(&error\)/,
-  "Non-Windows startup failure should reap the owned sidecar before fatal exit",
+// Enumerated per arm rather than matched as one bounded window over the whole
+// file. The property is an ordering — reap, then block on the dialog — and the
+// previous form encoded it as a character budget (`[\s\S]{0,200}` between the
+// reap and the exit), which an explanatory comment added between them broke
+// while the ordering it names was intact. Widening that budget is not the fix
+// either: the gap has to stay INSIDE one arm, because an unbounded gap lets
+// the `Cancelled` arm's reap satisfy the `Failed` arm's `fatal_exit`, so
+// dropping the reap from one arm alone would still pass. Anchoring each match
+// on its own `Err(SidecarStartError::…)` and closing it at the first
+// `fatal_exit` gives a window that cannot span two arms at any width.
+const startupFailureArms = [
+  ...setup.matchAll(/Err\(SidecarStartError::[\s\S]*?fatal_exit\(&error\)/g),
+].map((match) => match[0]);
+assert.equal(
+  startupFailureArms.length,
+  2,
+  "expected exactly two non-Windows SidecarStartError arms; re-check this contract if that changed",
 );
+for (const arm of startupFailureArms) {
+  assert.match(
+    arm,
+    /stop_after_startup_error\([\s\S]*?\)[\s\S]*?fatal_exit\(&error\)/,
+    "Non-Windows startup failure should reap the owned sidecar before fatal exit",
+  );
+}
 assert.match(
   lifecycle,
   /pub\(super\) fn id\(&self\) -> u32/,

@@ -15,11 +15,20 @@ import { isDirectRun as isDirectRunOf } from "./direct-run.mjs";
  * Identity comes from /api/app/build-info, which is deliberately value-free
  * ("public, value-free artifact identity" — src/app/api/app/build-info/route.ts).
  *
- * Caveat worth knowing: that route is behind the global gate in src/proxy.ts, so
- * a dev server started WITH a sidecar token (`pnpm mobile:tailscale:app`) answers
- * 401 rather than 200. A probe cannot then tell it apart from a stranger, so it
- * is reported as `gated` and the launcher refuses rather than guessing. Plain
- * `pnpm dev` sets no token, which is the case where attach actually matters.
+ * A configured token no longer gates that route against this probe, whatever
+ * `pnpm mobile:tailscale:app` set: server.ts stamps x-coven-cave-local-peer on
+ * any request whose TCP peer is loopback, carries no forwarding markers and
+ * names a loopback Host (`isDirectLoopbackRequest`), and src/proxy.ts lets that
+ * stamp through the ordinary app APIs as `trustedLocalBrowserApi`. This probe is
+ * exactly that shape, so it reads 200 either way.
+ *
+ * `gated` is therefore a defensive branch rather than the token case it was
+ * written for, and it still earns its keep: a 401/403 now means Next answered
+ * without server.ts in front of it (the stamp's secret is unset, so the peer
+ * check fails closed), or a CovenCave older than the stamp is holding the port
+ * with a token set, or the holder is simply somebody else's authenticated
+ * server. None of those can be told apart from here, so the launcher refuses
+ * rather than attaching to a server it cannot identify.
  *
  * Usage: node scripts/dev-port-owner.mjs --port 3000 [--timeout-ms 1500]
  * Prints one of: free | ours | gated | stranger
