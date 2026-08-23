@@ -963,3 +963,298 @@ fn node_arg_path_preserves_regular_windows_paths() {
 
     assert_eq!(node_arg_path(&path), path);
 }
+
+// The plaintext mobile pairing secret must be unreadable to any other
+// principal on Windows too. `write_secret_file` applied `mode(0o600)` under
+// `#[cfg(unix)]` and NOTHING here, so the shipped
+// `%APPDATA%\ai.opencoven.cave\mobile-access-token` on the author's host
+// carried `CodexSandboxUsers:(I)(M)` and two foreign user SIDs at `(I)(M,DC)`.
+// Anything holding that substitutes the gate secret the sidecar launches with.
+//
+// On the Linux CI runner this test does not exist: `cargo test --lib` never
+// compiles it. The assertions CI does run against the same change live in
+// `secret_path_acl.rs` and in the injected-refusal tests below, which is why
+// the guard is split into a pure policy layer and a Win32 layer at all.
+#[cfg(target_os = "windows")]
+#[test]
+fn mobile_access_token_is_exclusive_to_the_current_user_on_windows() {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-mobile-token-acl-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    // Reproduce the inherited exposure the real %APPDATA% has: a foreign
+    // principal with Modify, inheritable onto everything created below.
+    let system32 = std::path::PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"))
+        .join("System32");
+    let granted = Command::new(system32.join("icacls.exe"))
+        .arg(&dir)
+        .arg("/grant")
+        .arg("*S-1-5-32-545:(OI)(CI)(M)")
+        .output()
+        .expect("run icacls /grant");
+    assert!(granted.status.success(), "the fixture must start out shared");
+
+    let secret_path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let token = load_or_create_mobile_access_token(&secret_path);
+    assert!(is_valid_persisted_token(&token));
+    assert_eq!(
+        std::fs::read_to_string(&secret_path).expect("secret file written"),
+        token,
+        "the secret must still persist across launches"
+    );
+
+    let observed = Command::new(system32.join("icacls.exe"))
+        .arg(&secret_path)
+        .output()
+        .expect("run icacls");
+    let observed = String::from_utf8_lossy(&observed.stdout).to_string();
+
+    // Read the DACL back through the module's own probe rather than trusting
+    // the text: `repaired == false` is what makes this non-vacuous, because a
+    // probe that repairs on the way past would otherwise report success no
+    // matter what `load_or_create_mobile_access_token` left behind.
+    let report = crate::secret_path_acl::win::restrict_to_current_user(&secret_path)
+        .expect("read the secret's DACL back");
+    assert!(
+        !report.repaired,
+        "the secret must already be exclusive when the loader returns, not made \
+         exclusive by the check; icacls saw:\n{observed}"
+    );
+    assert!(
+        crate::secret_path_acl::exclusivity_findings(&report).is_empty(),
+        "the persisted secret must be exclusive to the current user: {:?}\nicacls saw:\n{observed}",
+        crate::secret_path_acl::exclusivity_findings(&report)
+    );
+    assert!(
+        !observed.contains("S-1-5-32-545") && !observed.contains(r"BUILTIN\Users"),
+        "an independent tool must agree the foreign principal is gone:\n{observed}"
+    );
+
+    // The directory above it matters just as much: `(M,DC)` is Delete-Child,
+    // and a principal holding that replaces the file wholesale no matter what
+    // the file's own DACL says.
+    let parent = crate::secret_path_acl::win::restrict_to_current_user(&dir)
+        .expect("read the directory's DACL back");
+    assert!(
+        !parent.repaired && crate::secret_path_acl::exclusivity_findings(&parent).is_empty(),
+        "the directory holding the secret must be exclusive too: {:?}",
+        crate::secret_path_acl::exclusivity_findings(&parent)
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
+}
+
+// -- The mobile access token's path guard, exercised on EVERY runner --------
+//
+// The real guard is a no-op off Windows, so these drive the injected seam
+// instead. That is the whole reason the seam exists: CI runs `cargo test
+// --locked --lib` on Linux, and a refusal path that only exists inside
+// `#[cfg(target_os = "windows")]` would have no assertion the runner ever
+// executes -- which is exactly how the Windows branch of the JavaScript
+// sibling stayed inert. Every assertion below runs identically on Linux,
+// macOS and Windows.
+
+#[cfg(desktop)]
+fn secret_acl_scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "cave-token-guard-{name}-{}-{}",
+        std::process::id(),
+        sidecar_auth_token()
+    ));
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    dir
+}
+
+#[cfg(desktop)]
+fn refusal(subject: &str) -> crate::secret_path_acl::Protection {
+    crate::secret_path_acl::Protection::Refused {
+        message: format!("{subject} refused by the test"),
+    }
+}
+
+#[cfg(desktop)]
+fn enforced() -> crate::secret_path_acl::Protection {
+    crate::secret_path_acl::Protection::Enforced { notice: None }
+}
+
+#[test]
+fn a_secret_the_guard_refuses_is_never_written_to_disk() {
+    let dir = secret_acl_scratch("refused-write");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+
+    let error = write_secret_file_with(&path, "deadbeef", &|_, subject| refusal(subject))
+        .expect_err("a refused path must not accept a plaintext secret");
+
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    assert!(
+        error.to_string().contains("refused by the test"),
+        "the refusal has to carry the guard's reason: {error}"
+    );
+    assert!(
+        !path.exists(),
+        "not even the empty file opened before the guard ran may survive a refusal"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn a_secret_the_guard_accepts_is_written_in_full() {
+    let dir = secret_acl_scratch("accepted-write");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+
+    write_secret_file_with(&path, "deadbeef", &|_, _| enforced()).expect("an accepted path writes");
+
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("secret file written"),
+        "deadbeef"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn an_unprotectable_directory_yields_a_per_launch_token_and_writes_nothing() {
+    let dir = secret_acl_scratch("refused-dir");
+    let path = dir.join("nested").join(MOBILE_ACCESS_TOKEN_FILE);
+
+    let first = load_or_create_mobile_access_token_with(&path, &|_, subject| {
+        if subject == crate::secret_path_acl::MOBILE_SECRET_DIR_SUBJECT {
+            refusal(subject)
+        } else {
+            enforced()
+        }
+    });
+    let second = load_or_create_mobile_access_token_with(&path, &|_, subject| {
+        if subject == crate::secret_path_acl::MOBILE_SECRET_DIR_SUBJECT {
+            refusal(subject)
+        } else {
+            enforced()
+        }
+    });
+
+    // Loud but NOT fatal: the shell still gets a usable gate secret, which is
+    // what keeps cave-37fxr's "a hardened host cannot boot" from recurring
+    // here. It simply does not survive a restart.
+    assert!(is_valid_persisted_token(&first));
+    assert_ne!(first, second, "a refused directory cannot persist anything");
+    assert!(
+        !path.exists(),
+        "a directory that cannot be made exclusive must not receive the secret"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn an_unprotectable_secret_file_is_neither_reused_nor_overwritten() {
+    let dir = secret_acl_scratch("refused-file");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let persisted = "a".repeat(64);
+    std::fs::write(&path, &persisted).expect("seed a persisted secret");
+
+    let token = load_or_create_mobile_access_token_with(&path, &|_, subject| {
+        if subject == crate::secret_path_acl::MOBILE_SECRET_SUBJECT {
+            refusal(subject)
+        } else {
+            enforced()
+        }
+    });
+
+    assert!(is_valid_persisted_token(&token));
+    assert_ne!(
+        token, persisted,
+        "a secret whose own path is not exclusive must not be armed as the gate secret"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("the persisted secret is still there"),
+        persisted,
+        "a refusal must not destroy the operator's pairing secret; the remedy is icacls, \
+         not deletion"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn a_waived_path_still_persists_the_secret_and_discloses_why() {
+    let dir = secret_acl_scratch("waived");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let waive = |_: &Path, _: &str| crate::secret_path_acl::Protection::Waived {
+        disclosure: "SECURITY WAIVER - test".to_string(),
+    };
+
+    let first = load_or_create_mobile_access_token_with(&path, &waive);
+    let second = load_or_create_mobile_access_token_with(&path, &waive);
+
+    assert_eq!(
+        first, second,
+        "the waiver buys persistence back; that is the whole of what it buys"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("secret file written"),
+        first
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn both_the_directory_and_the_secret_file_are_put_through_the_guard() {
+    // `(M,DC)` on the directory is Delete-Child: a principal holding it
+    // replaces the secret wholesale no matter what the file's own DACL says,
+    // so guarding only one of the two is not a partial fix, it is no fix.
+    let dir = secret_acl_scratch("subjects");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let seen = std::cell::RefCell::new(Vec::new());
+
+    let token = load_or_create_mobile_access_token_with(&path, &|guarded, subject| {
+        seen.borrow_mut()
+            .push((guarded.to_path_buf(), subject.to_string()));
+        enforced()
+    });
+
+    assert!(is_valid_persisted_token(&token));
+    let seen = seen.into_inner();
+    assert!(
+        seen.iter().any(|(guarded, subject)| guarded == &dir
+            && subject == crate::secret_path_acl::MOBILE_SECRET_DIR_SUBJECT),
+        "the directory holding the secret must be guarded: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|(guarded, subject)| guarded == &path
+            && subject == crate::secret_path_acl::MOBILE_SECRET_SUBJECT),
+        "the secret file itself must be guarded: {seen:?}"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
+
+#[test]
+fn a_persisted_secret_is_guarded_before_it_is_trusted() {
+    // The reuse path is where an upgrading install lives: its token file was
+    // written by a version that applied no access control at all, so reading
+    // it without a check would carry the defect forward forever.
+    let dir = secret_acl_scratch("reuse");
+    let path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+    let persisted = "b".repeat(64);
+    std::fs::write(&path, &persisted).expect("seed a persisted secret");
+    let guarded_before_read = std::cell::RefCell::new(false);
+
+    let token = load_or_create_mobile_access_token_with(&path, &|guarded, _| {
+        if guarded == path {
+            *guarded_before_read.borrow_mut() = true;
+        }
+        enforced()
+    });
+
+    assert_eq!(token, persisted, "an exclusive secret is still reused");
+    assert!(
+        guarded_before_read.into_inner(),
+        "the persisted secret's path must be guarded before its bytes are trusted"
+    );
+
+    std::fs::remove_dir_all(&dir).expect("cleanup");
+}
