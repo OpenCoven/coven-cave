@@ -120,6 +120,11 @@ export function researchMissionToRunSurface(mission: ResearchMission): ResearchR
 
 export type ResearchRunMarker = ResearchRunSurfaceModel;
 
+export const MAX_RESEARCH_RUN_STEPS = 24;
+export const RESEARCH_RUN_PREVIEW_PREFIX = "/__coven/research/";
+const RESEARCH_RUN_PREVIEW_ORIGIN = "http://127.0.0.1";
+const MAX_RESEARCH_RUN_SNAPSHOT_LENGTH = 16_384;
+
 const MARKER_RE = /<coven:research\b((?:[^">]|"[^"]*")*?)\/?>/g;
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 const VALID_STATUSES = new Set<ResearchRunSurfaceStatus>([
@@ -134,6 +139,14 @@ const VALID_STATUSES = new Set<ResearchRunSurfaceStatus>([
   "failed",
   "cancelled",
 ]);
+const VALID_STEP_STATUSES = new Set<ResearchRunStepStatus>([
+  "pending",
+  "active",
+  "completed",
+  "blocked",
+  "failed",
+  "skipped",
+]);
 
 function attrs(raw: string): Record<string, string> {
   const value: Record<string, string> = {};
@@ -143,10 +156,127 @@ function attrs(raw: string): Record<string, string> {
   return value;
 }
 
-function nonNegativeInt(value: string | undefined): number | undefined {
+function nonNegativeInt(value: string | undefined, maximum = Number.MAX_SAFE_INTEGER): number | undefined {
   if (!value || !/^\d+$/.test(value)) return undefined;
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : undefined;
+  return Number.isSafeInteger(parsed) && parsed <= maximum ? parsed : undefined;
+}
+
+function optionalSnapshotString(value: unknown): string | undefined | null {
+  if (value === undefined) return undefined;
+  return typeof value === "string" && value.length <= 2_048 ? value : null;
+}
+
+export function researchRunPreviewUrl(run: ResearchRunSurfaceModel): string {
+  const url = new URL(
+    `${RESEARCH_RUN_PREVIEW_ORIGIN}${RESEARCH_RUN_PREVIEW_PREFIX}${encodeURIComponent(run.runId)}`,
+  );
+  url.searchParams.set("status", run.status);
+  url.searchParams.set("title", run.title);
+  url.searchParams.set("snapshot", JSON.stringify(run));
+  return url.toString();
+}
+
+export function parseResearchRunPreviewUrl(value: string): ResearchRunSurfaceModel | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.hostname !== "127.0.0.1" || !url.pathname.startsWith(RESEARCH_RUN_PREVIEW_PREFIX)) return null;
+  const encodedId = url.pathname.slice(RESEARCH_RUN_PREVIEW_PREFIX.length);
+  if (!encodedId || encodedId.includes("/")) return null;
+  let runId: string;
+  try {
+    runId = decodeURIComponent(encodedId).trim();
+  } catch {
+    return null;
+  }
+  if (!runId) return null;
+
+  const snapshotText = url.searchParams.get("snapshot");
+  if (!snapshotText) {
+    const status = url.searchParams.get("status") as ResearchRunSurfaceStatus | null;
+    if (!status || !VALID_STATUSES.has(status)) return null;
+    return {
+      runId,
+      title: url.searchParams.get("title")?.trim() || "Research run",
+      status,
+      skill: "research",
+      steps: [],
+      evidence: {},
+    };
+  }
+  if (snapshotText.length > MAX_RESEARCH_RUN_SNAPSHOT_LENGTH) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(snapshotText);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const candidate = parsed as Record<string, unknown>;
+  if (candidate.runId !== runId || typeof candidate.title !== "string" || candidate.title.length > 2_048) return null;
+  if (typeof candidate.status !== "string" || !VALID_STATUSES.has(candidate.status as ResearchRunSurfaceStatus)) return null;
+  if (!Array.isArray(candidate.steps) || candidate.steps.length > MAX_RESEARCH_RUN_STEPS) return null;
+
+  const steps: ResearchRunStep[] = [];
+  for (const rawStep of candidate.steps) {
+    if (!rawStep || typeof rawStep !== "object" || Array.isArray(rawStep)) return null;
+    const step = rawStep as Record<string, unknown>;
+    const detail = optionalSnapshotString(step.detail);
+    if (
+      typeof step.id !== "string" || !step.id || step.id.length > 2_048
+      || typeof step.label !== "string" || !step.label || step.label.length > 2_048
+      || typeof step.status !== "string" || !VALID_STEP_STATUSES.has(step.status as ResearchRunStepStatus)
+      || detail === null
+    ) return null;
+    steps.push({
+      id: step.id,
+      label: step.label,
+      status: step.status as ResearchRunStepStatus,
+      ...(detail !== undefined ? { detail } : {}),
+    });
+  }
+
+  if (!candidate.evidence || typeof candidate.evidence !== "object" || Array.isArray(candidate.evidence)) return null;
+  const evidenceSource = candidate.evidence as Record<string, unknown>;
+  const evidence: ResearchRunSurfaceModel["evidence"] = {};
+  for (const key of ["sources", "reviewed", "retained", "rejected", "cited", "artifacts"] as const) {
+    const count = evidenceSource[key];
+    if (count === undefined) continue;
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) return null;
+    evidence[key] = count;
+  }
+
+  const familiarId = optionalSnapshotString(candidate.familiarId);
+  const skill = optionalSnapshotString(candidate.skill);
+  const runtime = optionalSnapshotString(candidate.runtime);
+  const activity = optionalSnapshotString(candidate.activity);
+  const activityDetail = optionalSnapshotString(candidate.activityDetail);
+  const startedAt = optionalSnapshotString(candidate.startedAt);
+  const updatedAt = optionalSnapshotString(candidate.updatedAt);
+  if (
+    familiarId === null || skill === null || runtime === null || activity === null
+    || activityDetail === null || startedAt === null || updatedAt === null
+  ) return null;
+
+  return {
+    runId,
+    title: candidate.title,
+    status: candidate.status as ResearchRunSurfaceStatus,
+    ...(familiarId !== undefined ? { familiarId } : {}),
+    ...(skill !== undefined ? { skill } : {}),
+    ...(runtime !== undefined ? { runtime } : {}),
+    ...(activity !== undefined ? { activity } : {}),
+    ...(activityDetail !== undefined ? { activityDetail } : {}),
+    steps,
+    evidence,
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
+  };
 }
 
 function hasUnquotedGtAfter(value: string, from: number): boolean {
@@ -173,7 +303,7 @@ function hasUnquotedGtAfter(value: string, from: number): boolean {
 export function extractResearchRunMarkers(
   text: string,
 ): { visible: string; runs: ResearchRunMarker[] } {
-  if (!text || !text.includes("<coven:r")) return { visible: text, runs: [] };
+  if (!text || !text.includes("<")) return { visible: text, runs: [] };
 
   const codeRanges = markdownCodeRanges(text);
   const byId = new Map<string, ResearchRunMarker>();
@@ -187,7 +317,7 @@ export function extractResearchRunMarkers(
     if (!runId || !title || !status || !VALID_STATUSES.has(status)) return "";
 
     const step = nonNegativeInt(value.step);
-    const total = nonNegativeInt(value.total);
+    const total = nonNegativeInt(value.total, MAX_RESEARCH_RUN_STEPS);
     const steps: ResearchRunStep[] = [];
     if (step !== undefined && total !== undefined && total > 0) {
       for (let i = 1; i <= total; i += 1) {
@@ -224,14 +354,14 @@ export function extractResearchRunMarkers(
   // Hide an unterminated marker tail while a streamed turn is still building
   // it. Fenced examples remain literal, mirroring the skill/GitHub marker
   // contracts so protocol syntax never flashes in user-visible prose.
-  const tail = visible.lastIndexOf("<coven:r");
+  const tail = visible.lastIndexOf("<");
   if (
     tail !== -1
     && !hasUnquotedGtAfter(visible, tail)
     && !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
   ) {
     const fragment = visible.slice(tail);
-    if ("<coven:research".startsWith(fragment.slice(0, "<coven:research".length))) {
+    if ("<coven:research".startsWith(fragment)) {
       visible = visible.slice(0, tail);
     }
   }

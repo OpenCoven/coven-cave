@@ -19,7 +19,6 @@ type Props = {
   run: ResearchRunSurfaceModel;
   variant?: ResearchRunSurfaceVariant;
   onOpenDesk?(): void;
-  onPause?(): void;
   onResume?(): void;
   onStop?(): void;
 };
@@ -52,7 +51,7 @@ function stepIcon(step: ResearchRunStep) {
   return null;
 }
 
-function statusLabel(status: ResearchRunSurfaceModel["status"]): string {
+function statusLabel(status: ResearchRunSurfaceModel["status"] | ResearchRunStep["status"]): string {
   if (status === "awaiting_input") return "Needs input";
   if (status === "awaiting_authority") return "Authority required";
   if (status === "partial") return "Completed with limitations";
@@ -144,7 +143,7 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
     };
   }, [snapshot.runId, snapshot.status]);
 
-  const act = useCallback(async (action: "pause" | "resume" | "cancel") => {
+  const act = useCallback(async (action: "resume" | "cancel") => {
     if (busy || !canonical) return;
     setBusy(true);
     setActionError(null);
@@ -170,7 +169,6 @@ export function ResearchRunInlineCard({ snapshot, onOpenDesk }: InlineProps) {
         run={run}
         variant="inline"
         onOpenDesk={onOpenDesk}
-        onPause={canControl ? () => void act("pause") : undefined}
         onResume={canControl ? () => void act("resume") : undefined}
         onStop={canControl ? () => void act("cancel") : undefined}
       />
@@ -187,7 +185,6 @@ export function ResearchRunSurface({
   run,
   variant = "inline",
   onOpenDesk,
-  onPause,
   onResume,
   onStop,
 }: Props) {
@@ -253,6 +250,7 @@ export function ResearchRunSurface({
                 </span>
                 <span className={step.status === "pending" ? "text-[var(--fg-secondary)]" : "text-[var(--fg-primary)]"}>
                   <span>{step.label}</span>
+                  <span className="sr-only"> — {statusLabel(step.status)}</span>
                   {step.detail ? (
                     <span className="mt-0.5 block text-[length:var(--text-xs)] text-[var(--fg-muted)]">
                       {step.detail}
@@ -280,8 +278,6 @@ export function ResearchRunSurface({
           <div className="flex shrink-0 items-center gap-1">
             {run.status === "paused" && onResume ? (
               <Button size="xs" variant="ghost" onClick={onResume}>Resume</Button>
-            ) : live && onPause ? (
-              <Button size="xs" variant="ghost" onClick={onPause}>Pause</Button>
             ) : null}
             {(live || run.status === "paused" || run.status === "awaiting_input" || run.status === "awaiting_authority") && onStop ? (
               <Button size="xs" variant="danger-ghost" onClick={onStop}>Stop</Button>

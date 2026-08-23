@@ -10,7 +10,7 @@ import {
   stripPreviewMarkers,
 } from "./preview-blocks.ts";
 import { extractNextPaths } from "./next-paths.ts";
-import { extractResearchRunMarkers, type ResearchRunMarker } from "./research-run-surface.ts";
+import { extractResearchRunMarkers, researchRunPreviewUrl, type ResearchRunMarker } from "./research-run-surface.ts";
 import { extractSkillMarkers } from "./skill-blocks.ts";
 
 export type ChatRenderedTextProjection = {
@@ -25,9 +25,6 @@ export type ChatRenderedTextProjection = {
   nextPaths: ReturnType<typeof extractNextPaths>["suggestions"];
 };
 
-const RESEARCH_PREVIEW_ORIGIN = "http://127.0.0.1";
-const RESEARCH_PREVIEW_PREFIX = "/__coven/research/";
-
 /**
  * ChatView already has a mature rich-block pipeline for local preview markers.
  * Feed research projections through that pipeline as an internal, reserved
@@ -39,12 +36,7 @@ const RESEARCH_PREVIEW_PREFIX = "/__coven/research/";
  * `<coven:research ... />`; providers never depend on this representation.
  */
 function researchPreviewMarker(run: ResearchRunMarker): string {
-  const url = new URL(
-    `${RESEARCH_PREVIEW_ORIGIN}${RESEARCH_PREVIEW_PREFIX}${encodeURIComponent(run.runId)}`,
-  );
-  url.searchParams.set("status", run.status);
-  url.searchParams.set("title", run.title);
-  return `<coven:preview url="${url.toString()}" title="Research run" />`;
+  return `<coven:preview url="${researchRunPreviewUrl(run)}" title="Research run" />`;
 }
 
 /**

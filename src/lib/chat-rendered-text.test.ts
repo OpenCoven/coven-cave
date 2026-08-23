@@ -6,7 +6,13 @@ import {
   extractChatRenderedText,
 } from "./chat-rendered-text.ts";
 import { findTranscriptHits } from "./transcript-find.ts";
-import { researchMissionToRunSurface } from "./research-run-surface.ts";
+import { slicePreviewBlocks } from "./preview-blocks.ts";
+import {
+  MAX_RESEARCH_RUN_STEPS,
+  extractResearchRunMarkers,
+  parseResearchRunPreviewUrl,
+  researchMissionToRunSurface,
+} from "./research-run-surface.ts";
 import type { ResearchMission } from "./research-missions.ts";
 
 const CONTROL_HEAVY_ASSISTANT_TEXT = [
@@ -15,7 +21,7 @@ const CONTROL_HEAVY_ASSISTANT_TEXT = [
   "```",
   "<thinking>private chain of thought</thinking>",
   "The ordinary visible answer remains.",
-  '<coven:research run-id="research-42" title="Dependency research" status="running" activity="Reviewing incidents" step="2" total="5" />',
+  '<coven:research run-id="research-42" title="Dependency research" status="running" activity="Reviewing incidents" step="2" total="5" reviewed="12" cited="3" />',
   '<coven:skill name="research" stage="done" />',
   '<coven:auto-status state="done" />',
   '<coven:attention reason="decision" />',
@@ -109,6 +115,39 @@ test("streaming research fragments never enter visible assistant text", () => {
   assert.equal(rendered.visible, "Visible before ");
   assert.equal(rendered.cardText, "Visible before ");
   assert.deepEqual(rendered.researchRuns, []);
+});
+
+test("every possible streamed research marker prefix stays hidden", () => {
+  for (const fragment of ["<", "<c", "<co", "<coven:r", "<coven:research"]) {
+    const rendered = extractChatRenderedText(`Visible before ${fragment}`, { pending: true });
+    assert.equal(rendered.visible, "Visible before ", fragment);
+    assert.equal(rendered.cardText, "Visible before ", fragment);
+  }
+});
+
+test("research marker stage expansion is explicitly bounded", () => {
+  const within = extractResearchRunMarkers(
+    `<coven:research run-id="bounded" title="Bounded" status="running" step="1" total="${MAX_RESEARCH_RUN_STEPS}" />`,
+  );
+  assert.equal(within.runs[0]?.steps.length, MAX_RESEARCH_RUN_STEPS);
+
+  const over = extractResearchRunMarkers(
+    `<coven:research run-id="too-large" title="Too large" status="running" step="1" total="${MAX_RESEARCH_RUN_STEPS + 1}" />`,
+  );
+  assert.deepEqual(over.runs[0]?.steps, []);
+});
+
+test("research preview bridge preserves the complete provider snapshot", () => {
+  const rendered = extractChatRenderedText(CONTROL_HEAVY_ASSISTANT_TEXT);
+  const preview = slicePreviewBlocks(rendered.cardText).find((piece) => piece.kind === "preview" && piece.preview.url.includes("/__coven/research/"));
+  assert.ok(preview && preview.kind === "preview");
+  const snapshot = parseResearchRunPreviewUrl(preview.preview.url);
+  assert.equal(snapshot?.runId, rendered.researchRuns[0]?.runId);
+  assert.equal(snapshot?.title, rendered.researchRuns[0]?.title);
+  assert.equal(snapshot?.status, rendered.researchRuns[0]?.status);
+  assert.equal(snapshot?.activity, "Reviewing incidents");
+  assert.equal(snapshot?.steps.length, 5);
+  assert.deepEqual(snapshot?.evidence, { reviewed: 12, cited: 3 });
 });
 
 test("user and system text remains unchanged", () => {
