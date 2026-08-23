@@ -84,6 +84,16 @@ assert.match(
   /PRIMARY_WORKSPACE_NAV_ITEMS\.map/,
   "Mobile bottom tabs should derive from the shared primary navigation cluster, inheriting canonical names (Rituals included) by construction",
 );
+assert.match(
+  mobileTabs,
+  /const hasActiveTab = TABS\.some\(\(tab\) => tab\.id === mode\)/,
+  "Mobile bottom navigation should distinguish workspace tabs from standalone destinations",
+);
+assert.match(
+  mobileTabs,
+  /role=\{hasActiveTab \? "tablist" : undefined\}[\s\S]*?role=\{hasActiveTab \? "tab" : undefined\}[\s\S]*?aria-selected=\{hasActiveTab \? active : undefined\}/,
+  "Standalone destinations should use navigation semantics instead of an unselected tablist",
+);
 
 assert.match(
   mobileTabs,

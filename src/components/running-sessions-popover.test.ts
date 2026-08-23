@@ -71,11 +71,27 @@ assert.match(
   /\{sessionDisplayTitle\(session\)\}/,
   "rows show the sanitized session title",
 );
-assert.match(
-  source,
-  /started <RelativeTime iso=\{session\.created_at\} fallback="—" \/>/,
-  "rows show when the process started",
-);
+// "rows show when the process started" is no longer asserted here.
+//
+// It used to read:
+//   /started <RelativeTime iso=\{session\.created_at\} fallback="—" \/>/
+//
+// A row's timestamp source now depends on the row: an ordinary process is timed
+// from `session.created_at`, while a row carrying an in-flight `/auto` mission
+// is timed from the MISSION's own `startedAt`, because a chat can predate the
+// mission running in it by a long way. The single literal that regex pinned
+// therefore cannot describe the behaviour any more, and re-pointing it at the
+// new ternary would only pin a fresh spelling — one that says nothing about
+// which row actually renders which clock, and that would pass unchanged if the
+// row stopped rendering at all.
+//
+// The property is now asserted on rendered output, per row kind, in
+// running-sessions-mission-row.test.ts:
+//   • "an ordinary row reports the session's OWN start time"
+//   • "a mission row reports when the MISSION started, not when the session was created"
+//   • "a row with no usable timestamp renders the em-dash fallback, not a broken clock"
+//   • "a mission row with an unusable mission start falls back — it never borrows the session's clock"
+// That is strictly more coverage than the regex had, not less.
 assert.match(
   source,
   /useMinuteTick\(\);/,

@@ -1827,6 +1827,17 @@ if (allowedTailnetNodeIds().size > 0) {
 
 server.once("error", (err: NodeJS.ErrnoException) => {
   cleanupStandaloneClientV1Discovery();
+  // The launcher keeps a bounded tail of this output and shows it verbatim when
+  // the sidecar dies before it is ready (src-tauri/src/sidecar_startup.rs).
+  // Printing the Error object alone put a stack and a properties dump —
+  // `errno: -4091, syscall: 'listen'` — on the desktop startup screen, in front
+  // of someone whose only real problem was that another copy already held the
+  // port. Lead with one legible line; the object still follows it for the log.
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `> Port ${port} on ${hostname} is already in use (EADDRINUSE); CovenCave cannot serve here.`,
+    );
+  }
   console.error(err);
   process.exit(1);
 });

@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenOverrideRejection, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy } from "./coven-bin.ts";
+import { COVEN_WINDOWS_HIDE_NATIVE_WINDOW_ENV, caveToolSpawnEnv, covenAdapterDirsEnvValue, covenBinaryFromEnvironment, covenLaunchCommandForBinary, covenOverrideRejection, covenSpawnEnv, covenWrapperSpawnEnv, isWindowsRemoteExecutablePath, pickWindowsLauncher, refreshCovenSpawnEnv, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery, withCovenWrapperWindowPolicy, withSearchPath } from "./coven-bin.ts";
 import { harnessSpawnEnv } from "./harness-spawn-env.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
@@ -460,6 +460,39 @@ assert.match(
     { command: path.join(windowsDir, "node.exe"), shell: undefined },
     { command: path.join(windowsDir, "npm.cmd"), shell: true },
   ], "Windows npm.cmd is health-checked through its supported shell launch path");
+}
+
+// The Windows probe env has the same one-key requirement as every other
+// environment built here: npm.cmd resolves `node` from its own PATH, so a
+// second stale key ahead of the prepended directory would health-check a
+// different toolchain than the one being admitted (cave-6bb4m).
+{
+  // `runnableNodeToolchainDirs` joins with the AMBIENT `path`, not a
+  // platform-aware one, so the fixture must too — the sibling win32 case above
+  // does the same. Building the set with `path.win32` instead passes on
+  // Windows and finds nothing on Linux.
+  const probeDir = path.join("/virtual", "fnm", "v24.15.0", "bin");
+  const existing = new Set([
+    path.join(probeDir, "node.exe"),
+    path.join(probeDir, "npm.cmd"),
+  ]);
+  const seen: NodeJS.ProcessEnv[] = [];
+  runnableNodeToolchainDirs([probeDir], {
+    platform: "win32",
+    exists: (file) => existing.has(file),
+    env: { Path: "C:\\stale", USERPROFILE: "C:\\u" },
+    probe: (_command, _args, options) => seen.push(options.env),
+  });
+  assert.ok(seen.length > 0, "the toolchain was probed");
+  for (const env of seen) {
+    const keys = Object.keys(env).filter((key) => key.toUpperCase() === "PATH");
+    assert.deepEqual(keys, ["Path"], "exactly one search-path key reaches the probe");
+    assert.equal(
+      env.Path,
+      [probeDir, "C:\\stale"].join(path.delimiter),
+      "the directory under test leads, ahead of the inherited value it must outrank",
+    );
+  }
 }
 
 {
@@ -975,6 +1008,223 @@ if (process.platform === "win32") {
     await rm(directory, { recursive: true, force: true });
     await rm(junctionDirectory, { recursive: true, force: true });
     await rm(verifiedDirectory, { recursive: true, force: true });
+  }
+}
+
+// `withSearchPath` — the search path must land under the key the host uses.
+//
+// `{ ...env, PATH: value }` is a no-op on any Windows process that inherited
+// the variable spelled `Path` (PowerShell, cmd, Explorer, the Tauri shell): it
+// adds a SECOND key while the original stays ahead of it in insertion order,
+// and every case-insensitive reader here takes the first match. The effect was
+// that `covenBin()` silently discarded Cave's priority-ordered search path and
+// fell back to raw PATH order, where `~/.cargo/bin` typically sorts first — so
+// the maintenance gate refused a stale `cargo install` copy while a supported
+// npm install sat further along the same PATH (cave-6bb4m).
+{
+  const collapsed = withSearchPath({ Path: "C:\\stale", USERPROFILE: "C:\\u" }, "C:\\fresh", "win32");
+  assert.deepEqual(
+    Object.keys(collapsed).filter((key) => key.toUpperCase() === "PATH"),
+    ["Path"],
+    "Windows ends with exactly ONE search-path key, keeping the casing the host supplied",
+  );
+  assert.equal(collapsed.Path, "C:\\fresh", "and that key holds the replacement, not the original");
+  assert.equal(collapsed.USERPROFILE, "C:\\u", "unrelated variables survive the copy");
+  // The property that actually matters: a case-insensitive reader takes the
+  // FIRST matching key, so the first match must be the replacement. A plain
+  // object is not case-folding the way `process.env` is, which is precisely
+  // why adding a second key was inert.
+  const firstMatch = (env: NodeJS.ProcessEnv) =>
+    Object.entries(env).find(([key]) => key.toUpperCase() === "PATH")?.[1];
+  assert.equal(firstMatch(collapsed), "C:\\fresh");
+
+  // An environment that already carries both spellings (Node merges nothing)
+  // must not keep the loser around for a later reader to pick up.
+  const deduped = withSearchPath({ Path: "C:\\a", PATH: "C:\\b" }, "C:\\fresh", "win32");
+  assert.deepEqual(Object.keys(deduped).filter((key) => key.toUpperCase() === "PATH"), ["Path"]);
+  assert.equal(deduped.Path, "C:\\fresh");
+  assert.equal(firstMatch(deduped), "C:\\fresh");
+  assert.equal(
+    withSearchPath({ HOME: "/h" }, "/fresh", "win32").PATH,
+    "/fresh",
+    "an environment with no search path at all gets the canonical spelling",
+  );
+
+  // Every environment Cave hands a child goes through the same rule, so the
+  // child cannot inherit two search paths and pick the stale one. Measured on
+  // the live process env, which is where the duplicate actually appeared.
+  for (const [label, env] of [
+    ["covenSpawnEnv", covenSpawnEnv()],
+    ["caveToolSpawnEnv", caveToolSpawnEnv()],
+  ] as const) {
+    assert.equal(
+      Object.keys(env).filter((key) => key.toUpperCase() === "PATH").length,
+      1,
+      `${label} hands the child exactly one search-path variable`,
+    );
+  }
+
+  // POSIX is deliberately untouched: there `Path` and `PATH` are two different
+  // variables, so collapsing them would invent a change the platform never had.
+  assert.deepEqual(
+    withSearchPath({ PATH: "/stale", HOME: "/h" }, "/fresh", "linux"),
+    { PATH: "/fresh", HOME: "/h" },
+  );
+  assert.deepEqual(
+    withSearchPath({ Path: "/unrelated" }, "/fresh", "linux"),
+    { Path: "/unrelated", PATH: "/fresh" },
+    "a POSIX variable that merely looks like PATH is left exactly as it was",
+  );
+}
+
+// The behaviour the helper exists for, proved through the real `covenBin()` in
+// a child process: an environment spelled `Path` must still honour Cave's
+// candidate priority, so an npm-global install outranks a stale `~/.cargo/bin`
+// copy that sits FIRST in that raw search path. Before the fix this selected
+// `.cargo`, and the maintenance gate reported `coven-version-unsupported`
+// naming nothing (cave-6bb4m).
+//
+// CI runs Linux and cannot exercise this: the whole defect is the Windows
+// spelling of one environment variable.
+if (process.platform === "win32") {
+  const fakeHome = await mkdtemp(path.join(os.tmpdir(), "cave-coven-path-casing-"));
+  try {
+    const cargoBin = path.join(fakeHome, ".cargo", "bin");
+    const npmGlobal = path.join(fakeHome, "appdata", "npm");
+    await mkdir(cargoBin, { recursive: true });
+    await mkdir(npmGlobal, { recursive: true });
+    // Resolution only stats these; nothing is executed to choose between them.
+    await writeFile(path.join(cargoBin, "coven.exe"), "stale");
+    await writeFile(path.join(npmGlobal, "coven.cmd"), "@echo supported");
+
+    const baseEnv: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (key.toUpperCase() === "PATH" || key === "COVEN_BIN") continue;
+      baseEnv[key] = value;
+    }
+    const moduleHref = new URL(`./coven-bin.ts?path-casing=${Date.now()}`, import.meta.url).href;
+    // The child also reports how many search-path keys the env it hands a
+    // coven child carries. Asserting that from the parent process cannot see
+    // the defect: this test suite is usually run from a shell that exports the
+    // name as `PATH`, where the duplicate never forms.
+    const script = [
+      `import { covenBin, covenSpawnEnv, caveToolSpawnEnv } from ${JSON.stringify(moduleHref)};`,
+      `const count = (env) => Object.keys(env).filter((k) => k.toUpperCase() === "PATH").length;`,
+      `try { console.log(JSON.stringify({ bin: covenBin(), spawn: count(covenSpawnEnv()), tool: count(caveToolSpawnEnv()) })); }`,
+      `catch (error) { console.error(error.message); }`,
+    ].join(" ");
+    const resolveUnder = (pathKey: string, extra: NodeJS.ProcessEnv = {}, searchPath?: string) => {
+      const probe = spawnSync(
+        process.execPath,
+        ["--experimental-strip-types", "--input-type=module", "-e", script],
+        {
+          cwd: fakeHome,
+          encoding: "utf8",
+          windowsHide: true,
+          shell: false,
+          env: {
+            ...baseEnv,
+            [pathKey]: searchPath ?? [cargoBin, npmGlobal].join(path.delimiter),
+            HOME: fakeHome,
+            USERPROFILE: fakeHome,
+            APPDATA: path.join(fakeHome, "appdata"),
+            // Keep the machine's real managed toolchain out of the candidate
+            // list so this measures ordering, not the host's install.
+            LOCALAPPDATA: path.join(fakeHome, "localappdata"),
+            ...extra,
+          },
+        },
+      );
+      assert.equal(probe.status, 0, probe.stderr || probe.error?.message);
+      const reported = probe.stdout.trim() ? JSON.parse(probe.stdout.trim()) : {};
+      return {
+        stdout: String(reported.bin ?? "").toLowerCase(),
+        spawnPathKeys: reported.spawn,
+        toolPathKeys: reported.tool,
+        stderr: probe.stderr,
+      };
+    };
+
+    const expected = path.join(npmGlobal, "coven.cmd").toLowerCase();
+    const underNativeCasing = resolveUnder("Path");
+    assert.equal(
+      underNativeCasing.stdout,
+      expected,
+      "a Windows-spelled `Path` still gets Cave's priority order, not raw PATH order",
+    );
+    assert.equal(
+      underNativeCasing.spawnPathKeys,
+      1,
+      "and the env handed to a coven child carries ONE search path, not a stale twin",
+    );
+    assert.equal(underNativeCasing.toolPathKeys, 1, "same for the project-tooling env");
+    assert.equal(
+      resolveUnder("PATH").stdout,
+      expected,
+      "and the uppercase spelling, which always worked, is unchanged",
+    );
+
+    // The refusals this resolver exists for must be untouched by the above.
+    // Each is exercised through the SAME real `covenBin()` under the `Path`
+    // spelling, which is the path the fix newly makes reachable — a fix that
+    // widened what discovery accepts would show up right here.
+    //
+    // The relative entry has to be measured from a cwd that really does hold a
+    // planted launcher, or `resolve(".")` lands on the repository root, finds
+    // nothing, and the assertion passes for the wrong reason.
+    const planted = await mkdtemp(path.join(os.tmpdir(), "cave-coven-relative-"));
+    const previousCwd = process.cwd();
+    try {
+      await mkdir(path.join(planted, "tools"), { recursive: true });
+      await writeFile(path.join(planted, "coven.exe"), "planted");
+      await writeFile(path.join(planted, "tools", "coven.exe"), "planted");
+      process.chdir(planted);
+      for (const relative of [".", "tools", ".\\tools", "..\\" + path.basename(planted)]) {
+        assert.equal(
+          covenBinaryFromEnvironment({ Path: relative }, "win32"),
+          null,
+          `a relative search-path entry (${relative}) never supplies coven, even holding one`,
+        );
+      }
+      assert.equal(
+        covenBinaryFromEnvironment({ Path: [".", planted].join(path.delimiter) }, "win32"),
+        path.join(planted, "coven.exe"),
+        "the absolute twin of that same directory IS eligible - only the spelling is refused",
+      );
+    } finally {
+      process.chdir(previousCwd);
+      await rm(planted, { recursive: true, force: true });
+    }
+
+    assert.equal(
+      resolveUnder("Path", {}, ["\\\\remote-host\\share", npmGlobal].join(path.delimiter)).stdout,
+      expected,
+      "a remote search root is still refused rather than sourcing coven off another machine",
+    );
+    const missingOverride = path.join(fakeHome, "no-such-coven.exe");
+    const rejected = resolveUnder("Path", { COVEN_BIN: missingOverride });
+    assert.equal(
+      rejected.stdout,
+      expected,
+      "a COVEN_BIN that does not exist falls through to discovery instead of being launched",
+    );
+    assert.match(
+      rejected.stderr,
+      /ignoring COVEN_BIN[\s\S]*does not exist/,
+      "and the operator is told why the override was dropped",
+    );
+    assert.equal(
+      resolveUnder("Path", { COVEN_BIN: "coven.exe" }).stdout,
+      expected,
+      "a relative COVEN_BIN never resolves against the child cwd",
+    );
+    assert.equal(
+      resolveUnder("Path", { COVEN_BIN: "\\\\remote-host\\share\\coven.exe" }).stdout,
+      expected,
+      "a remote COVEN_BIN is refused",
+    );
+  } finally {
+    await rm(fakeHome, { recursive: true, force: true });
   }
 }
 

@@ -86,11 +86,7 @@ async function boot(page: Page) {
   await page.waitForSelector(".shell-frame", { timeout: 30_000 });
 }
 
-// QUARANTINED — cave-z2bvz. Fails only on the collapsed-sidebar assertion,
-// which PR #4758 invalidated by silently reverting PR #4747. The rest of this
-// test still describes live behaviour, so quarantining it costs real coverage;
-// that debt is tracked on the bead and clears the moment the revert is decided.
-test.fixme("desktop keeps the panel across surfaces and supports a second Chat conversation", async ({ page }, testInfo) => {
+test("desktop keeps the panel across surfaces and supports a second Chat conversation", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await boot(page);
 
@@ -140,12 +136,10 @@ test.fixme("desktop keeps the panel across surfaces and supports a second Chat c
   expect(Math.abs((after?.width ?? 0) - before.width)).toBeGreaterThan(10);
 
   const chatTab = page.getByRole("tablist", { name: "Workspace sections" }).getByRole("tab", { name: "Chat" });
-  // The keyboard resize above leaves the nav rail collapsed to its narrow icon
-  // width, close enough to the nav/detail separator that react-resizable-panels'
-  // separator hit-slop swallows the first pointerdown here as a phantom
-  // zero-delta drag (see node_modules/react-resizable-panels' `je`/`we`
-  // handlers). A harmless first click (still on "Home", a no-op) clears that
-  // state so the real navigation click below lands normally.
+  // The keyboard resize above can leave the separator's expanded pointer
+  // target armed, so the first pointerdown here is swallowed as a zero-delta
+  // drag. A harmless first click (still on "Home", a no-op) clears that state
+  // so the real navigation click below lands normally.
   await chatTab.click();
   await chatTab.click();
   await expect(page.locator(".chat-surface")).toBeVisible();

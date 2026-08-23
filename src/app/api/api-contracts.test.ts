@@ -20,6 +20,9 @@ import {
   CLIENT_V1_PUBLIC_INGRESS,
   clientV1IngressKind,
 } from "../../proxy-helpers.ts";
+import { CLIENT_V1_CAPABILITIES } from "../../lib/server/client-v1/contract.ts";
+import { CLIENT_V1_OPERATION_DEFINITIONS } from "../../lib/server/client-v1/operations.ts";
+import { CLIENT_V1_READ_SCOPE } from "../../lib/server/client-v1/read-guard.ts";
 
 const root = process.cwd();
 const apiRoot = path.join(root, "src", "app", "api");
@@ -159,6 +162,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars/[id]/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", pathGuard: true },
   { route: "/familiars/[id]/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/familiars/[id]/dashboard", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/execution-analytics", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
@@ -763,6 +767,158 @@ for (const { file, route } of clientV1Routes) {
   );
 }
 
+// --- client-v1 capability truth (cave-8a0s2, #4869) ------------------------
+//
+// THE ASSERTION THIS BLOCK EXISTS FOR: an advertised capability must have a
+// live owning route, and a live route must be advertised. Until #4869 the
+// envelope declared `streaming` and `revisions` on every response and neither
+// had a handler — nothing emitted a stream, nothing emitted or consumed a
+// revision token — so an SDK helper spelled `client.supports("streaming")`
+// would have returned a false operational claim and blocked freezing the
+// SDK 0.1.0 contract.
+//
+// A hand-pruned list would only recreate that: the list had been hand-kept all
+// along, and hand-keeping is what let it drift. So the declaration is derived
+// from `CLIENT_V1_OPERATION_DEFINITIONS`, and this is the half that binds each
+// of those records to a `route.ts` on disk. The two directions are separate
+// assertions on purpose:
+//
+//   - a record whose route or method is gone fails, so a capability cannot
+//     outlive the thing that served it;
+//   - a shipped method with no record fails, so a route cannot land outside the
+//     inventory and be invisible to a client reading it.
+//
+// Read from the App Router tree, never from a second list someone maintains —
+// `clientV1Routes` above is the same walk the ingress assertions use.
+{
+  const routeMethodsOnDisk = new Map<string, Set<string>>();
+  for (const { file, route } of clientV1Routes) {
+    // The contract spells a dynamic segment `:id` and Next spells it `[id]`.
+    // Normalize toward the contract, since that is the form a client sees.
+    const contractPath = `/api${route}`.replace(/\[(\.{3})?([^\]]+)\]/gu, ":$2");
+    routeMethodsOnDisk.set(
+      contractPath,
+      new Set(exportedMethods(readFileSync(file, "utf8"))),
+    );
+  }
+
+  const declaredKeys = new Set<string>();
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    const methods = routeMethodsOnDisk.get(operation.path);
+    assert.ok(
+      methods !== undefined,
+      `client-v1 operation ${operation.id} declares ${operation.path}, but no route.ts under src/app/api/client/v1 serves that path`,
+    );
+    assert.ok(
+      methods.has(operation.method),
+      `client-v1 operation ${operation.id} declares ${operation.method} ${operation.path}, but that route exports only [${[...methods].join(", ")}]`,
+    );
+    declaredKeys.add(`${operation.method} ${operation.path}`);
+
+    // Ingress metadata may not widen access. `admin` is the sidecar-token
+    // family, which clientV1IngressKind deliberately classifies null so it
+    // keeps the ordinary gate; `public` is the reviewed credential-free
+    // bootstrap set; `authenticated` is the demotion that trades the sidecar
+    // token for the route's own requireScope. A record that mislabels any of
+    // the three would publish an authority class the proxy does not enforce.
+    const probePath = operation.path.replace(/:[^/]+/gu, "probe-segment");
+    const expectedIngress =
+      operation.ingress === "public"
+        ? CLIENT_V1_PUBLIC_INGRESS
+        : operation.ingress === "authenticated"
+          ? "authenticated"
+          : null;
+    assert.equal(
+      clientV1IngressKind(probePath),
+      expectedIngress,
+      `client-v1 operation ${operation.id} declares ingress "${operation.ingress}" but the proxy classifies ${probePath} as ${JSON.stringify(clientV1IngressKind(probePath))}`,
+    );
+
+    // And the credential the route really checks, read from its executable
+    // source rather than its text, so a mention in a comment cannot satisfy it.
+    const file = clientV1Routes.find(
+      ({ route }) => `/api${route}`.replace(/\[(\.{3})?([^\]]+)\]/gu, ":$2") === operation.path,
+    )?.file;
+    assert.ok(file, `client-v1 operation ${operation.id} resolved no route file`);
+    const routeSource = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+    if (operation.ingress === "admin") {
+      assert.match(
+        routeSource,
+        /requireClientV1Admin\s*\(/,
+        `client-v1 operation ${operation.id} is declared admin but its route never calls requireClientV1Admin`,
+      );
+    }
+    if (operation.ingress === "authenticated") {
+      assert.ok(
+        operation.scope !== null,
+        `client-v1 operation ${operation.id} is bearer-authenticated and must declare a scope`,
+      );
+      assert.match(
+        routeSource,
+        /requireScope\s*\(/,
+        `client-v1 operation ${operation.id} is declared authenticated but its route never calls requireScope`,
+      );
+      // The DECLARED scope, not merely "some scope": a record claiming
+      // `chat:read` against a route demanding `chat:write` would send every
+      // reader of the inventory to a 403. Checked in two hops, because the
+      // route names a constant rather than the literal — the source has to
+      // name that constant, and the constant has to hold the declared value.
+      assert.equal(
+        operation.scope,
+        CLIENT_V1_READ_SCOPE,
+        `client-v1 operation ${operation.id} declares ${operation.scope}, but the canonical reads are guarded by ${CLIENT_V1_READ_SCOPE}`,
+      );
+      assert.match(
+        routeSource,
+        /scope:\s*CLIENT_V1_READ_SCOPE\b/,
+        `client-v1 operation ${operation.id} declares scope ${operation.scope} but its route does not pass CLIENT_V1_READ_SCOPE to requireScope`,
+      );
+    }
+  }
+
+  // The converse. Every method a client-v1 route.ts exports has to be claimed
+  // by exactly one operation record, so adding a route without inventory
+  // metadata fails here rather than shipping a route no declaration mentions.
+  const undeclared: string[] = [];
+  for (const [contractPath, methods] of routeMethodsOnDisk) {
+    for (const method of methods) {
+      if (!declaredKeys.has(`${method} ${contractPath}`)) {
+        undeclared.push(`${method} ${contractPath}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    undeclared,
+    [],
+    `client-v1 routes with no operation record in src/lib/server/client-v1/operations.ts: ${undeclared.join(", ")}`,
+  );
+
+  // And finally the capability list itself, checked against the routes rather
+  // than against the registry it is derived from — this is the assertion that
+  // fails when a capability with no owning route is advertised.
+  const ownedFamilies = new Set<string>();
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    if (!routeMethodsOnDisk.get(operation.path)?.has(operation.method)) continue;
+    for (const family of operation.families) ownedFamilies.add(family);
+  }
+  const unowned = (CLIENT_V1_CAPABILITIES as readonly string[]).filter(
+    (capability) => !ownedFamilies.has(capability),
+  );
+  assert.deepEqual(
+    unowned,
+    [],
+    `client-v1 advertises capabilities no live route can serve: ${unowned.join(", ")}`,
+  );
+  const undeclaredFamilies = [...ownedFamilies].filter(
+    (family) => !(CLIENT_V1_CAPABILITIES as readonly string[]).includes(family),
+  );
+  assert.deepEqual(
+    undeclaredFamilies,
+    [],
+    `client-v1 routes serve capability families the contract never advertises: ${undeclaredFamilies.join(", ")}`,
+  );
+}
+
 for (const contract of contracts) {
   const file = path.join(apiRoot, ...contract.route.slice(1).split("/"), "route.ts");
   const source = readFileSync(file, "utf8");
@@ -1073,7 +1229,16 @@ for (const contract of contracts) {
 }
 
 {
+  // The computation moved to @/lib/server/sessions-list (cave-9rwd.1) so the
+  // Familiar dashboard read can reuse it without self-fetching this route.
+  // These assertions follow the behaviour to its new home rather than being
+  // relaxed: the route source is still checked for the things the route still
+  // owns (the shared cache), and the compute source for the rest.
   const sessionsListSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "server", "sessions-list.ts"),
+    "utf8",
+  );
+  const sessionsListRouteSource = readFileSync(
     path.join(apiRoot, "sessions", "list", "route.ts"),
     "utf8",
   );
@@ -1092,20 +1257,54 @@ for (const contract of contracts) {
     /import \{ enrichSessionsWithGitContext \} from "@\/lib\/session-git-enrich"/,
     "/sessions/list: sessions should be enriched from local git context (async lib)",
   );
+  // Checked on BOTH halves of the split, not just the one that happens to hold
+  // the git calls today: the ban is on sync subprocesses anywhere on this
+  // request path, and an extraction that moved the offending call into the
+  // other file would otherwise pass.
+  for (const [label, source] of [
+    ["compute helper", sessionsListSource],
+    ["route", sessionsListRouteSource],
+  ] as const) {
+    assert.doesNotMatch(
+      source,
+      /execFileSync|execSync|spawnSync/,
+      `/sessions/list: the polled list ${label} must never run sync subprocesses on the event loop (cave-n37w)`,
+    );
+  }
+  // Git enrichment is now reached through the `withGitContext` seam that lets a
+  // read-only caller switch it off (cave-9rwd.1). The property is unchanged and
+  // is asserted in both halves: the seam is async and returns the enrichment,
+  // and every call site awaits the seam rather than firing it and moving on.
+  assert.match(
+    sessionsListSource,
+    /const withGitContext = async \([\s\S]{0,160}enrichSessionsWithGitContext\(rows\)/,
+    "/sessions/list: the git-enrichment seam is async and delegates to the async lib",
+  );
+  assert.equal(
+    (sessionsListSource.match(/await withGitContext\(/g) || []).length,
+    2,
+    "/sessions/list: git enrichment is awaited on BOTH the healthy and degraded paths, not run synchronously or unawaited",
+  );
+  assert.equal(
+    (sessionsListSource.match(/enrichSessionsWithGitContext\(/g) || []).length,
+    1,
+    "/sessions/list: the git enrichment has exactly one call site — the awaited seam — so no path can bypass the read-only opt-out",
+  );
+  assert.match(
+    sessionsListRouteSource,
+    /import \{\s*sessionsListCache\s*\} from "@\/lib\/server\/sessions-list-cache"/,
+    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+  );
+  assert.match(
+    sessionsListRouteSource,
+    /sessionsListCache\.get\(cacheKey, \(\) =>\s*computeSessionsList\(/,
+    "/sessions/list: the route keeps cache ownership and delegates the cached compute to the shared helper",
+  );
+  // The extraction's whole point: one implementation, reachable without HTTP.
   assert.doesNotMatch(
     sessionsListSource,
-    /execFileSync|execSync|spawnSync/,
-    "/sessions/list: the polled list route must never run sync subprocesses on the event loop (cave-n37w)",
-  );
-  assert.match(
-    sessionsListSource,
-    /await enrichSessionsWithGitContext\(/,
-    "/sessions/list: git enrichment should be awaited (async), not run synchronously",
-  );
-  assert.match(
-    sessionsListSource,
-    /import \{\s*sessionsListCache,[\s\S]{0,80}\} from "@\/lib\/server\/sessions-list-cache"/,
-    "/sessions/list: repeated callers should share the invalidatable stale-while-revalidate cache (cave-53yx)",
+    /sessionsListCache/,
+    "/sessions/list: the reusable compute helper must not own the route's cache",
   );
   const sessionsListCacheSource = readFileSync(
     path.join(apiRoot, "..", "..", "lib", "server", "sessions-list-cache.ts"),

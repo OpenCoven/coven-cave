@@ -251,13 +251,13 @@ function writeNavWidthPref(width: number): void {
   }
 }
 
-// Closing the desktop nav leaves an icons-only destination rail; mobile
-// drawers still close completely.
-const NAV_RAIL_PX = 56;
+// Closing the left nav removes it completely. The persistent title-bar toggle
+// and keyboard shortcut remain available to reopen it.
+const NAV_COLLAPSED_PX = 0;
 // The nav Panel's open width (its defaultSize) — the ⌘B expand target and the
 // basis for the minimized-by-default layout injection.
 const NAV_OPEN_PX = SHELL_NAV_DEFAULT_PX;
-const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
+const NAV_OPEN_THRESHOLD_PX = NAV_COLLAPSED_PX + 1;
 const NAV_EDGE_SWIPE_START_PX = 24;
 const NAV_SWIPE_VERTICAL_CANCEL_PX = 12;
 
@@ -493,7 +493,7 @@ function ShellInner({
     if (isMobile) {
       setMobileDrawer("right-chat");
     } else {
-      const navWidth = navRef.current?.getSize().inPixels ?? NAV_RAIL_PX;
+      const navWidth = navRef.current?.getSize().inPixels ?? NAV_COLLAPSED_PX;
       const listWidth = twoPane ? 0 : listRef.current?.getSize().inPixels ?? 0;
       if (
         shouldAutoCollapseNavForRightChat({
@@ -621,7 +621,7 @@ function ShellInner({
   // remembered open panel before the first post-hydration paint.
   const [navOpen, setNavOpen] = useState(chatContextual);
   const [navChromeWidth, setNavChromeWidth] = useState(
-    chatContextual ? NAV_OPEN_PX : NAV_RAIL_PX,
+    chatContextual ? NAV_OPEN_PX : NAV_COLLAPSED_PX,
   );
   // Mirror of navOpen for effects that need the CURRENT visible state without
   // taking navOpen as a dependency (the policy handoff must fire on the policy
@@ -631,8 +631,7 @@ function ShellInner({
   // The native macOS traffic lights float inside the connected rail's title
   // strip, so they follow the rail rather than the window: visible while the
   // navigation is expanded, and on mobile where the rail IS the navigation;
-  // hidden once it collapses to the 56px icon rail, which is narrower than the
-  // 78px inset they need. desktop-chrome.css reads the resulting
+  // hidden once it closes completely. desktop-chrome.css reads the resulting
   // [data-traffic-lights] state to drop that inset and hide the centered title.
   // The hook is inert off the macOS desktop shell. The destination shells
   // (analytics-page-shell) already do this; the workspace shell is the surface
@@ -640,7 +639,7 @@ function ShellInner({
   const trafficLightsVisible = isMobile || navOpen;
   useMacTrafficLightsForNavState(trafficLightsVisible);
   const defaultNavSize =
-    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_RAIL_PX}px`;
+    chatContextual || mounted ? `${NAV_OPEN_PX}px` : `${NAV_COLLAPSED_PX}px`;
 
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
@@ -712,7 +711,7 @@ function ShellInner({
     const cur = group.getLayout();
     const nav = cur.nav;
     if (typeof nav !== "number" || typeof cur.detail !== "number") return;
-    const collapsedPct = nav * (NAV_RAIL_PX / preferredNavWidth);
+    const collapsedPct = nav * (NAV_COLLAPSED_PX / preferredNavWidth);
     if (collapsedPct >= nav) return;
     minimizedGroupsRef.current.add(groupId);
     seedNavOpenPref(false);
@@ -799,7 +798,7 @@ function ShellInner({
         layout: defaultLayout,
         panelIds,
         groupSize,
-        collapsedNavPixels: NAV_RAIL_PX,
+        collapsedNavPixels: NAV_COLLAPSED_PX,
       })
     ) {
       seedNavOpenPref(false);
@@ -819,7 +818,7 @@ function ShellInner({
         ...(desktopRightChat && { "right-chat": rightChatOpen ? preferredRightChatWidth : 0 }),
       },
       preferredNavPixels: preferredNavWidth,
-      collapsedNavPixels: NAV_RAIL_PX,
+      collapsedNavPixels: NAV_COLLAPSED_PX,
       isMobile,
     });
     if (!destinationLayout) return;
@@ -989,8 +988,24 @@ function ShellInner({
     };
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      // `matches` is an Element method, and the event target is not always an
+      // Element. A synthetic `new Event("keydown")` dispatched at `window` —
+      // the exact shape behind cave-lryhx — arrives with `target === window`,
+      // which answers the `?.` guard (it is not null) and then throws
+      // "target?.matches is not a function" on the call.
+      //
+      // This sits ABOVE both sites on the reported stack, so guarding only
+      // those left the handler still dying on the reported event. It surfaced
+      // only once an e2e dispatched the real thing at the real window: a unit
+      // test that calls matchesPanelShortcut directly never runs this line.
+      //
+      // A target we cannot ask is treated as not editable, which is the same
+      // answer `?? false` already gave for a null target: the shortcut is
+      // allowed through rather than suppressed.
       const editable =
-        target?.matches("input, textarea, select, [contenteditable='true'], [role='textbox']") ?? false;
+        typeof target?.matches === "function"
+          ? target.matches("input, textarea, select, [contenteditable='true'], [role='textbox']")
+          : false;
       if (!editable && hasRightChat && matchesPanelShortcut(e, panelShortcuts.toggleRightPanel)) {
         e.preventDefault();
         toggleRightChat();
@@ -1237,13 +1252,13 @@ function ShellInner({
         minSize={`${SHELL_NAV_MIN_PX}px`}
         maxSize={`${SHELL_NAV_MAX_PX}px`}
         collapsible
-        // Mobile drawers close fully; desktop keeps an icons-only destination
-        // rail so navigation remains reachable.
-        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
+        // Every shell policy closes to zero. Desktop reopens from the persistent
+        // title-bar toggle or shortcut; touch layouts also support edge swipe.
+        collapsedSize={NAV_COLLAPSED_PX}
         panelRef={navRef}
         onResize={(size) => {
           const width = size.inPixels ?? 0;
-          if (Number.isFinite(width) && width > 0) setNavChromeWidth(width);
+          if (Number.isFinite(width)) setNavChromeWidth(width);
           const open = width > NAV_OPEN_THRESHOLD_PX;
           setNavOpen(open);
           // Persist user-driven changes only: the group must be armed (boot /
@@ -1266,15 +1281,17 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !navOpen ? " shell-nav--rail" : ""}`}
+          className="shell-nav"
           aria-label="Sidebar"
-          aria-hidden={isMobile ? mobileDrawer !== "nav" : undefined}
-          inert={isMobile && mobileDrawer !== "nav"}
+          aria-hidden={isMobile ? mobileDrawer !== "nav" : !navOpen}
+          inert={isMobile ? mobileDrawer !== "nav" : !navOpen}
         >
           {nav}
         </aside>
       </Panel>
-      <Separator className="shell-separator" />
+      <Separator
+        className={`shell-separator${!isMobile && !navOpen ? " shell-separator--collapsed-nav" : ""}`}
+      />
       {!twoPane && (
         <>
           <Panel

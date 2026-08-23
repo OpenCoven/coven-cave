@@ -25,6 +25,7 @@ function healthEnvelope(overrides = {}, dataOverrides = {}) {
     apiVersion: "1.0",
     minimumClientVersion: "0.1.0",
     capabilities: ["pairing"],
+    operations: ["pairing.create"],
     data: {
       instanceId: "6f1d2c94-1f0b-4d3e-8a77-6b6f2a4c9d10",
       pairingRequired: true,
@@ -93,16 +94,19 @@ test("still judges every expectation-independent field under a broken expectatio
   // blank instanceId and pairingRequired false reported one failure about the
   // harness and nothing about itself. Only the three comparisons the broken
   // expectation actually undermines may be skipped.
-  const broken = healthEnvelope({ error: "boom", capabilities: [] }, { instanceId: "  ", pairingRequired: false });
+  const broken = healthEnvelope(
+    { error: "boom", capabilities: [], operations: [] },
+    { instanceId: "  ", pairingRequired: false },
+  );
   const whole = checkHealthEnvelope(broken, expected);
   const incomplete = checkHealthEnvelope(broken, undefined);
-  for (const field of ["error envelope", "capabilities", "instanceId", "pairingRequired"]) {
+  for (const field of ["error envelope", "capabilities", "operations", "instanceId", "pairingRequired"]) {
     assert.equal(incomplete.some((entry) => entry.includes(field)), true, field);
   }
   // Every version this envelope carries matches, so the three disabled
   // comparisons contribute nothing either way: the refusal must add one line,
   // not replace the four the envelope earned on its own.
-  assert.equal(whole.length, 4);
+  assert.equal(whole.length, 5);
   assert.equal(incomplete.length, whole.length + 1);
   assert.equal(incomplete[0].includes("cannot judge a release"), true);
 });

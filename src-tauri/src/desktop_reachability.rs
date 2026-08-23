@@ -783,7 +783,18 @@ fn run_launchctl(args: &[&str]) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = [stderr.trim(), stdout.trim()]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    if detail.is_empty() {
+        Err(format!("launchctl exited with {}", output.status))
+    } else {
+        Err(detail)
+    }
 }
 
 #[cfg(all(desktop, target_os = "macos"))]
@@ -804,6 +815,29 @@ fn bootout_launch_agent() -> Result<(), String> {
             Ok(())
         }
         Err(error) => Err(format!("could not unload background availability: {error}")),
+    }
+}
+
+#[cfg(all(desktop, target_os = "macos"))]
+fn bootstrap_launch_agent(domain: &str, plist_path: &str) -> Result<(), String> {
+    match run_launchctl(&["bootstrap", domain, plist_path]) {
+        Ok(()) => Ok(()),
+        Err(first_error) => {
+            // launchd can briefly retain a just-booted-out service label. Reset
+            // it once and retry after a bounded handoff instead of making the
+            // user toggle Background availability repeatedly.
+            bootout_launch_agent().map_err(|cleanup_error| {
+                format!("{first_error}; launchd retry cleanup failed: {cleanup_error}")
+            })?;
+            thread::sleep(Duration::from_millis(200));
+            run_launchctl(&["bootstrap", domain, plist_path]).map_err(|retry_error| {
+                if retry_error == first_error {
+                    retry_error
+                } else {
+                    format!("{first_error}; retry failed: {retry_error}")
+                }
+            })
+        }
     }
 }
 
@@ -881,9 +915,11 @@ fn install_launch_agent(app: &tauri::AppHandle, app_data_dir: &Path) -> Result<(
     write_launch_agent_file(&plist_path, &plist)?;
     let domain = launch_agent_domain()?;
     let plist_arg = plist_path.to_string_lossy().into_owned();
-    if let Err(error) = run_launchctl(&["bootstrap", &domain, &plist_arg]) {
+    if let Err(error) = bootstrap_launch_agent(&domain, &plist_arg) {
         let _ = remove_launch_agent_file(&plist_path);
-        return Err(format!("could not load background availability: {error}"));
+        return Err(format!(
+            "launchd could not load the CovenCave LaunchAgent: {error}"
+        ));
     }
     if !launch_agent_configuration_is_current() || !launch_agent_loaded() {
         let _ = bootout_launch_agent();
@@ -1452,6 +1488,8 @@ pub(super) fn desktop_reachability_configure(
         // healthy background service merely because an unrelated option was
         // toggled; this also preserves the prior service if launchd is
         // temporarily unavailable.
+        let installing_background_availability =
+            config.daemon_mode && background_availability_supported();
         let launch_agent_result = if !launch_agent_reconciliation_required(
             &previous,
             &config,
@@ -1459,7 +1497,7 @@ pub(super) fn desktop_reachability_configure(
             launch_agent_present(),
         ) {
             Ok(())
-        } else if config.daemon_mode && background_availability_supported() {
+        } else if installing_background_availability {
             install_launch_agent(&app, &app_data_dir)
         } else if config.daemon_mode {
             suspend_background_launch_agent(&app_data_dir)
@@ -1479,6 +1517,11 @@ pub(super) fn desktop_reachability_configure(
                 log::warn!(
                     "[cave] could not restore background availability after a failed settings change: {restore_error}"
                 );
+            }
+            if installing_background_availability {
+                return Err(format!(
+                    "Background availability couldn’t start: {error}. Quit other Cave copies, reopen /Applications/CovenCave.app, and try again."
+                ));
             }
             return Err(error);
         }
@@ -1690,7 +1733,11 @@ fn run_sidecar_daemon() -> Result<i32, String> {
 
     let mut command = Command::new(&node);
     command
-        .arg(&server_entry)
+        // Same chosen old-space ceiling as the GUI's sidecar. This spawn site is
+        // the daemon lane for the SAME server entry, so leaving it on V8's
+        // host-derived default would mean the ceiling depended on which lane
+        // started the server. See src-tauri/src/sidecar_heap.rs.
+        .args(crate::sidecar_heap::sidecar_node_args(&server_entry))
         .current_dir(&server_dir)
         .env("PATH", daemon_augmented_path(&node))
         .env("PORT", port.to_string())

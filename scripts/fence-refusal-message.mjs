@@ -12,6 +12,10 @@
  *   holderHost?: string,
  *   phase?: string,
  *   expiresAt?: string,
+ *   covenBinary?: string,
+ *   covenVersion?: string,
+ *   covenVersionOutput?: string,
+ *   covenMinimumVersion?: string,
  * }} FenceRefusal
  */
 
@@ -49,6 +53,28 @@ export function fenceRefusalMessage(refusal, now = Date.now()) {
         "  still refuses, so check whether the holder process above is alive.",
       );
     }
+  }
+  // A version refusal is about the WRONG BINARY far more often than a missing
+  // one: several `coven` installs routinely coexist on one machine (an npm
+  // global, a `cargo install` copy in ~/.cargo/bin, a vendored one) and only
+  // the resolver knows which it picked. Naming it, what it reported, what is
+  // required, and the override turns a toolchain-fault hunt into one command
+  // (cave-6bb4m). Every field is optional, so a caller that cannot supply one
+  // degrades to fewer lines rather than to "undefined".
+  if (refusal.covenBinary || refusal.covenVersion || refusal.covenVersionOutput) {
+    if (refusal.covenBinary) lines.push(`  coven binary: ${refusal.covenBinary}`);
+    if (refusal.covenVersion) lines.push(`  it reported version: ${refusal.covenVersion}`);
+    if (refusal.covenVersionOutput) {
+      lines.push(`  its --version output: ${refusal.covenVersionOutput}`);
+    }
+    if (refusal.covenMinimumVersion) {
+      lines.push(`  minimum supported: ${refusal.covenMinimumVersion} (prereleases are not accepted)`);
+    }
+    lines.push(
+      "  Another install may already be supported. Check every one on PATH, then",
+      "  point COVEN_BIN at an absolute path to a supported launcher and rerun:",
+      "    COVEN_BIN=/absolute/path/to/coven pnpm beads:worktrees:create …",
+    );
   }
   lines.push(
     "  Do NOT fall back to `git worktree add`: a worktree created that way",

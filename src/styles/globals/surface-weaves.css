@@ -20,10 +20,6 @@
   color: var(--text-primary);
   font-size: var(--text-base);
 }
-/* Same contract the reporting pages get: fill the pane under the desktop
-   chrome, never add a second scrollbar for the title-bar height. */
-.aps-main > .wv-page { height: 100%; }
-
 /* Header ------------------------------------------------------------------- */
 
 .wv-head {

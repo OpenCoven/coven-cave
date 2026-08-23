@@ -73,6 +73,10 @@ copyFileSync(path.join(scriptsDir, "dev-app.sh"), path.join(fakeScripts, "dev-ap
 copyFileSync(path.join(scriptsDir, "dev-app-origin-health.mjs"), path.join(fakeScripts, "dev-app-origin-health.mjs"));
 copyFileSync(path.join(scriptsDir, "dev-port-owner.mjs"), path.join(fakeScripts, "dev-port-owner.mjs"));
 copyFileSync(path.join(scriptsDir, "ports.mjs"), path.join(fakeScripts, "ports.mjs"));
+// The launcher resolves its heap ceiling from this module before it starts the
+// server it owns, and refuses to start an uncapped one. Leaving it out of the
+// fake root would make the teardown under test never begin.
+copyFileSync(path.join(scriptsDir, "heap-limits.mjs"), path.join(fakeScripts, "heap-limits.mjs"));
 chmodSync(path.join(fakeScripts, "dev-app.sh"), 0o755);
 writeFileSync(path.join(fakeScripts, "whisper-runtime-dev-env.sh"), "# stub for tests\n");
 

@@ -93,6 +93,8 @@ export const SUITES = {
     "scripts/worktree-lifecycle-retirement.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
+    "scripts/worktree-lifecycle-filemode.test.mjs",
+    "scripts/worktree-lifecycle-windows-cwd.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
     "scripts/remote-hygiene.test.mjs",
@@ -111,6 +113,7 @@ export const SUITES = {
     "src/lib/use-role-surfaces-loader.test.ts",
     "src/lib/familiar-types.test.ts",
     "src/lib/research-missions.test.ts",
+    "src/lib/research-chat-command.test.ts",
     "src/lib/research-prompt-brief.test.ts",
     "src/lib/research-refine-direction.test.ts",
     "src/lib/research-autoloop.test.ts",
@@ -134,6 +137,7 @@ export const SUITES = {
     "src/components/role-surfaces/research-quick-saves.test.ts",
     "src/components/role-surfaces/research-library-view.test.ts",
     "src/components/role-surfaces/research-studio-providers.test.ts",
+    "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
     "src/components/role-surfaces/research-tab-desk.test.ts",
     "src/components/ui/clamped-text.test.ts",
     "src/components/role-surfaces/research-tab-library.test.ts",
@@ -142,6 +146,7 @@ export const SUITES = {
     "src/components/role-surfaces/use-research-links.test.ts",
     "src/components/role-surfaces/research-x-sources.test.tsx",
     "src/components/role-surfaces/use-research-missions.test.tsx",
+    "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
     "src/lib/research-generations.test.ts",
     "src/lib/research-paper-view.test.ts",
     "src/components/role-surfaces/messenger-surface.test.ts",
@@ -164,6 +169,9 @@ export const SUITES = {
     "src/components/streaming-chat-wiring.test.ts",
     "src/components/streaming-turn-response.test.tsx",
     "src/lib/chat-composer-prefs.test.ts",
+    "src/lib/composer-markdown-decorations.test.ts",
+    "src/lib/composer-markdown-layer.test.ts",
+    "src/components/composer-markdown-layer.test.tsx",
     "src/lib/chat-assistant-output.test.ts",
     "src/lib/chat-result-markers.test.ts",
     "src/lib/chat-tool-verification.test.ts",
@@ -303,6 +311,7 @@ export const SUITES = {
     "src/lib/beads-delivery.test.ts",
     "src/lib/worktree-lifecycle.test.ts",
     "src/lib/beads-work-queue.test.ts",
+    "src/lib/work-scheduler.test.ts",
     "src/components/familiar-work-queue-view.test.ts",
     "src/components/gh-review-actions.test.ts",
     "src/components/github-filter-caret.test.ts",
@@ -325,6 +334,8 @@ export const SUITES = {
     "src/lib/reader-outline.test.ts",
     "src/lib/auto-status-blocks.test.ts",
     "src/lib/auto-mission-state.test.ts",
+    "src/lib/auto-mission-presence.test.ts",
+    "src/components/running-sessions-mission-row.test.ts",
     "src/lib/auto-mode-preferences.test.ts",
     "src/lib/reader-rewrite.test.ts",
     "src/lib/reader-provenance.test.ts",
@@ -378,6 +389,7 @@ export const SUITES = {
     "src/lib/rss.test.ts",
     "src/lib/home-feed.test.ts",
     "src/lib/home-greeting.test.ts",
+    "src/lib/home-continue-paging.test.ts",
     "src/lib/secret-validators.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/components/chat-project-sidebar-empty.test.ts",
@@ -443,6 +455,7 @@ export const SUITES = {
     "src/lib/server/research-mission-runner-reconciliation-evidence.test.ts",
     "src/lib/server/research-mission-runner-automation-scheduling.test.ts",
     "src/lib/server/research-mission-runner-concurrency-terminal.test.ts",
+    "src/lib/server/research-mission-x-hydration.test.ts",
     "src/lib/flow/flow-execution-data.test.ts",
     "src/lib/required-inputs.test.ts",
     "src/lib/server/flow-store.test.ts",
@@ -559,6 +572,7 @@ export const SUITES = {
     "src/components/marketplace/marketplace-detail.test.ts",
     "src/lib/knowledge-pack-ui.test.ts",
     "src/components/home-hearth.test.ts",
+    "src/components/home-continue-carousel.behavior.test.tsx",
     "src/lib/home-task-handoff.test.ts",
     "src/components/home/dashboard-open-work.test.ts",
     "src/components/home-feed.test.ts",
@@ -1092,6 +1106,7 @@ export const SUITES = {
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
     "src/lib/design-token-drift.test.ts",
+    "src/lib/undefined-token-reference.test.ts",
     "src/lib/design-handoff-ledger.test.ts",
     "src/lib/podcast-script.test.ts",
     "src/lib/dev-shell-recovery.test.ts",
@@ -1265,6 +1280,7 @@ export const SUITES = {
     "src/lib/clipboard.test.ts",
     "src/lib/icon-subset.test.ts",
     "src/lib/panel-shortcuts.test.ts",
+    "src/lib/keyboard-event-key.test.ts",
     "src/lib/settings-familiar-picker.test.ts",
     "src/components/familiar-studio-inline.test.ts",
     "src/lib/session-rail-title.test.ts",
@@ -1321,6 +1337,7 @@ export const SUITES = {
     "scripts/dev-app-teardown.test.mjs",
     "scripts/dev-port-owner.test.mjs",
     "scripts/port-contract.test.mjs",
+    "scripts/heap-limits.test.mjs",
     "scripts/sync-runtimes.test.mjs",
     "scripts/surface-claim-guard.test.mjs",
     "scripts/worktree-guard.test.mjs",
@@ -1382,6 +1399,7 @@ export const SUITES = {
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
+    "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
     "src/lib/server/client-v1/pairing-store.test.ts",
     "src/lib/server/client-v1/credential-store.test.ts",
@@ -1407,6 +1425,9 @@ export const SUITES = {
     "src/app/api/client/v1/conversations/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/route.test.ts",
     "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
+    // Derived from CLIENT_V1_AUTHENTICATED_PATHS: every pre-authorized path
+    // must behaviourally refuse an uncredentialed request (cave-cm2i0).
+    "src/app/api/client/v1/authenticated-route-refusal.test.ts",
     "src/app/api/x/account-routes.test.ts",
     "src/app/api/x/connection-route-behavior.test.ts",
     "src/app/api/x/research-routes.test.ts",
@@ -1424,6 +1445,7 @@ export const SUITES = {
     "src/app/api/opencoven-executions-route.test.ts",
     "src/app/api/opencoven-submissions-route.test.ts",
     "src/app/api/familiars/route.test.ts",
+    "src/app/api/familiars/[id]/dashboard/route.test.ts",
     "src/app/api/familiars/[id]/avatar/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
@@ -1498,6 +1520,7 @@ export const SUITES = {
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/sessions/route.test.ts",
     "src/app/api/sessions/list/route.test.ts",
+    "src/lib/server/sessions-list.test.ts",
     "src/app/api/chat/send/harness-routing-host-session.test.ts",
     "src/app/api/chat/send/ios-first-turn-project-contract.test.ts",
     "src/app/api/chat/send/chat-attention-persistence.test.ts",
@@ -1590,6 +1613,8 @@ export const SUITES = {
     "src/lib/github-tasks-cache.test.ts",
     "src/lib/swr-cache.test.ts",
     "src/lib/server/sessions-list-cache.test.ts",
+    "src/lib/familiar-dashboard.test.ts",
+    "src/lib/server/familiar-dashboard-data.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
     "src/lib/server/familiar-contract-context.test.ts",
@@ -1863,6 +1888,9 @@ const STRIP_TYPES_MJS = new Set([
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
+  // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
+  "scripts/worktree-lifecycle-filemode.test.mjs",
+  "scripts/worktree-lifecycle-windows-cwd.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
@@ -1874,6 +1902,12 @@ export const SUITE_PREFLIGHTS = {
 };
 
 const ALIAS_LOADER = new Set([
+  // work-scheduler.ts imports "@/lib/presence" as a runtime value, and
+  // presence.ts in turn resolves "@/lib/types".
+  "src/lib/work-scheduler.test.ts",
+  // Renders RunningSessionList, which resolves "@/lib/icon", "@/lib/types"
+  // and friends, and the spec itself imports "@/lib/auto-mission-state".
+  "src/components/running-sessions-mission-row.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",
   "src/app/api/client/v1/pairing/requests/route.test.ts",
@@ -1892,6 +1926,10 @@ const ALIAS_LOADER = new Set([
   "src/app/api/client/v1/conversations/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/route.test.ts",
   "src/app/api/client/v1/conversations/[id]/messages/route.test.ts",
+  // The refusal gate imports "@/proxy-helpers" and the client-v1 runtime, and
+  // dynamically imports every pre-authorized route module — each of which
+  // resolves "@/lib/server/..." as a runtime value.
+  "src/app/api/client/v1/authenticated-route-refusal.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",
@@ -1976,6 +2014,9 @@ const ALIAS_LOADER = new Set([
   "src/app/api/sessions/list/route.test.ts",
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
+  "src/app/api/familiars/[id]/dashboard/route.test.ts",
+  "src/lib/server/familiar-dashboard-data.test.ts",
+  "src/lib/server/sessions-list.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
   "src/lib/opencode-compatibility.test.ts",
@@ -2176,6 +2217,10 @@ const ALIAS_LOADER = new Set([
 const RAW_SOURCE_SCANNER_TESTS = new Set([
   "src/app/route-inventory.test.ts",
   "src/lib/design-token-drift.test.ts",
+  // Counts var() references per token name. Under the facade hook every sheet
+  // imported by globals.css is read twice, so every per-name bank reads as
+  // "went UP" (cave-apg39).
+  "src/lib/undefined-token-reference.test.ts",
 ]);
 
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
@@ -2187,6 +2232,7 @@ const VITEST_TESTS = new Set([
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/chat-preview-card.test.tsx",
+  "src/components/composer-markdown-layer.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",
@@ -2200,7 +2246,10 @@ const VITEST_TESTS = new Set([
   "src/components/familiar-x-section-behavior.test.tsx",
   "src/components/role-surfaces/x-publish-panel-behavior.test.tsx",
   "src/components/role-surfaces/research-x-sources.test.tsx",
+  // drives the Studio config + review dialogs through react-test-renderer
+  "src/components/role-surfaces/research-studio-podcast-direction.test.tsx",
   "src/components/role-surfaces/use-research-missions.test.tsx",
+  "src/components/role-surfaces/research-mission-detail-origin.test.tsx",
   "src/components/voice-provider-settings.test.tsx",
   "src/components/voice-provider-settings.integration.test.tsx",
   "src/components/use-openai-voice-preview.test.tsx",
@@ -2213,6 +2262,9 @@ const VITEST_TESTS = new Set([
   "src/components/chat-router-removal-race.test.tsx",
   "src/components/mobile-drawer-inert-focus-order.test.tsx",
   "src/components/mobile-drawer-nav-list-focus.test.tsx",
+  // drives Home's Continue carousel — paging, arrow-key traversal and the
+  // focus handoff across a page turn — through the real component (JSX)
+  "src/components/home-continue-carousel.behavior.test.tsx",
   "src/components/streaming-turn-response.test.tsx",
   // vi.fn() for the subscriber assertions
   "src/lib/surface-history.test.ts",
