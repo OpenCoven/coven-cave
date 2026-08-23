@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { GitHubActionCard } from "@/components/github-action-card";
 import { GitHubCard } from "@/components/github-card";
 import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
+import { ResearchRunInlineCard } from "@/components/research-run-surface";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { Button } from "@/components/ui/button";
@@ -129,6 +130,7 @@ function QuickChatBubble({
     copyText: visible,
     pieces,
     skillUpdates,
+    researchRuns,
     authoredResults,
     suggestions: typedSuggestions,
   } = formatted;
@@ -151,7 +153,7 @@ function QuickChatBubble({
     emptySuccessful: streamingModel.emptySuccessful,
     visibleProse: visible,
     hasRichBlocks:
-      pieces.some((piece) => piece.kind !== "text"),
+      pieces.some((piece) => piece.kind !== "text") || researchRuns.length > 0,
     resultCount: streamingModel.results.length,
     skillUpdateCount: skillUpdates.length,
     followUpCount: suggestions.length,
@@ -185,6 +187,14 @@ function QuickChatBubble({
     ) : undefined;
   const quickChatSupplementaryContent = (
     <div data-quick-chat-supplementary-content={true}>
+      {researchRuns.length ? (
+        <div className="mt-2 space-y-2">
+          {researchRuns.map((run) => (
+            <ResearchRunInlineCard key={run.runId} snapshot={run} />
+          ))}
+        </div>
+      ) : null}
+
       {skillUpdates.length ? (
         <div className="mt-2 space-y-2">
           {skillUpdates.map((update) => (

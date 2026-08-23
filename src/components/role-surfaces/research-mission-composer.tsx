@@ -120,27 +120,6 @@ export function modeCardMeta(mode: ResearchMissionMode): string {
   return `${passes} · ${bounds.wallClockMinutes} min · ${bounds.sourceTarget} sources`;
 }
 
-/** Builds a recommendation-initiated mission exactly as the auto-routed
- * composer does: no inferred title is persisted, and the standard route still
- * owns final validation and normalization. */
-export function createRecommendedResearchMissionInput(
-  familiarId: string,
-  topic: string,
-): CreateResearchMissionInput {
-  const intent = topic.trim();
-  const inferred = inferResearchMissionMode(intent);
-  const plan = defaultResearchPlan(inferred.mode);
-  return {
-    familiarId,
-    intent,
-    mode: inferred.mode,
-    modeSource: "auto",
-    deliverable: plan.deliverables.join(" + "),
-    bounds: { ...plan.bounds },
-    harness: RESEARCH_RUNTIME_DEFAULT_HARNESS,
-  };
-}
-
 /** A trailing slash token opens the command palette (design logic 785–811). */
 export function matchSlashCommand(text: string): { query: string } | null {
   const match = text.match(/(^|\s)\/([a-z]*)$/i);

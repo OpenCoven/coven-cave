@@ -104,6 +104,17 @@ try {
       "list --all --json": {
         stdout: '[{"id":"cave-shared","title":"Shared","status":"open","priority":1,"updated_at":"2026-08-09T00:00:00.000Z","labels":["surface:shared"]}]\n',
       },
+      // The gates rail (cave-7c329): blocked beads, plus the ONE join that
+      // turns their blocker ids into names.
+      "blocked --json": {
+        stdout: '[{"id":"cave-gated","title":"Gated","status":"blocked","priority":2,"blocked_by":["cave-blocker"],"blocked_by_count":1}]\n',
+      },
+      "list --id cave-blocker --json": {
+        stdout: '[{"id":"cave-blocker","title":"Provision the signing key","status":"open","priority":1}]\n',
+      },
+      "update cave-shared --priority 0 --json": {
+        stdout: '{"id":"cave-shared","priority":0}\n',
+      },
       "update cave-shared --claim --json": {
         stdout: '{"id":"cave-shared","status":"in_progress"}\n',
       },
@@ -130,6 +141,17 @@ try {
       },
       "ready --json": {
         stdout: "[]\n",
+      },
+      "blocked --json": {
+        stdout: "[]\n",
+      },
+      // Deliberately IDENTICAL to project A's join result. A blocker-name join
+      // that leaked into the wrong repository would then return something
+      // entirely plausible, so no assertion about the RESPONSE could catch it —
+      // only the cwd sweep can. Two projects whose beads look alike is the case
+      // that check exists for; make the fixture actually pose it.
+      "list --id cave-blocker --json": {
+        stdout: '[{"id":"cave-blocker","title":"Provision the signing key","status":"open","priority":1}]\n',
       },
     }),
   ]);
@@ -183,6 +205,73 @@ printf '[]\\n'
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal((await response.json()).projectRoot, canonicalProjectA);
   }
+  // ── mode=blocked names its blockers (cave-7c329) ──────────────────────────
+  //
+  // The gates rail must NAME each unresolved dependency, not print a bare id:
+  // the repo's own dependency rule is "name the dependency in the imperative"
+  // (docs/orchestration-ready-tasks.md). `bd blocked --json` returns ids only,
+  // so the route owes a join — and this asserts the joined TITLE arrives, not
+  // merely that a second command was spawned.
+  const blockedResponse = await beads.GET(
+    localRequest(`http://127.0.0.1/api/beads?mode=blocked&projectRoot=${root}`),
+  );
+  assert.equal(blockedResponse.status, 200, await blockedResponse.clone().text());
+  const blockedBody = await blockedResponse.json();
+  assert.equal(blockedBody.mode, "blocked");
+  assert.equal(blockedBody.projectRoot, canonicalProjectA);
+  assert.deepEqual(
+    (blockedBody.data ?? []).map((bead) => bead.id),
+    ["cave-gated"],
+    "mode=blocked returns bd blocked rows",
+  );
+  assert.deepEqual(
+    blockedBody.blockers,
+    [{ id: "cave-blocker", title: "Provision the signing key", status: "open", priority: 1 }],
+    "the blocker id is joined to its real record so the gate card can name it",
+  );
+  const joinCalls = (await readCommands()).filter(
+    (entry) => entry.command === "bd" && entry.args[0] === "list" && entry.args.includes("--id"),
+  );
+  assert.equal(joinCalls.length, 1, "the whole blocker set is named in ONE join, not one bd show per id");
+  assert.deepEqual(joinCalls[0].args, ["list", "--id", "cave-blocker", "--json"]);
+
+  // The empty-blocker-set case needs a SECOND project, so it cannot run here:
+  // every request before the blanket cwd sweep below must target project A, or
+  // the sweep's own invariant ("bd never falls back to an unrelated root")
+  // stops meaning anything. It runs against project B at the end of this file,
+  // where the isolation checks live — see "mode=blocked stays inside the
+  // project it was asked for".
+
+  // ── action=priority is the ONLY ordering write (cave-7c329) ───────────────
+  //
+  // The scheduler has no free-position reorder because bd stores no rank. It
+  // writes a band instead, and the scheduler's undo replays a recorded previous
+  // band — so a value bd would reinterpret must never reach the CLI.
+  const priorityOk = await beads.POST(localRequest("http://127.0.0.1/api/beads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "priority", id: "cave-shared", priority: 0, projectRoot: projectA }),
+  }));
+  assert.equal(priorityOk.status, 200, await priorityOk.clone().text());
+  const priorityCalls = (await readCommands()).filter(
+    (entry) => entry.command === "bd" && entry.args.includes("--priority"),
+  );
+  assert.deepEqual(priorityCalls.map((entry) => entry.args), [
+    ["update", "cave-shared", "--priority", "0", "--json"],
+  ]);
+
+  for (const priority of [-1, 5, 2.5, "0", null, NaN]) {
+    const before = (await readCommands()).length;
+    const rejected = await beads.POST(localRequest("http://127.0.0.1/api/beads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "priority", id: "cave-shared", priority, projectRoot: projectA }),
+    }));
+    assert.equal(rejected.status, 400, `priority ${String(priority)} must be rejected`);
+    assert.match((await rejected.json()).error, /priority must be an integer 0-4/);
+    assert.equal((await readCommands()).length, before, `priority ${String(priority)} must never reach bd`);
+  }
+
   const prResponse = await prs.GET(localRequest(`http://127.0.0.1/api/beads/prs?projectRoot=${root}`));
   assert.equal(prResponse.status, 200);
   assert.equal((await prResponse.json()).projectRoot, canonicalProjectA);
@@ -304,6 +393,47 @@ printf '[]\\n'
   commands = await readCommands();
   assert.equal(countOverviewCommands(commands, canonicalProjectA), 2);
   assert.equal(countOverviewCommands(commands, canonicalProjectB), 2);
+
+  // ── mode=blocked stays inside the project it was asked for (cave-7c329) ───
+  //
+  // The mirror of the blanket sweep above: that one proves a project-A request
+  // never reaches another root, this proves a project-B request never reaches
+  // project A. A scheduler that read or mutated beads in the wrong repository
+  // would be exactly the dishonesty the Work surface exists to avoid, and the
+  // join is the new place that could do it — it spawns a SECOND bd off the
+  // first one's result, so it has its own chance to resolve a different root.
+  //
+  // Project B's blocked set is empty, which also pins the other half: no
+  // blocker ids means no join is spawned at all.
+  source.__clearBeadsDeliveryOverviewCacheForTests();
+  await clearCommands();
+  const emptyBlocked = await beads.GET(
+    localRequest(`http://127.0.0.1/api/beads?mode=blocked&projectRoot=${encodeURIComponent(projectB)}`),
+  );
+  assert.equal(emptyBlocked.status, 200, await emptyBlocked.clone().text());
+  const emptyBlockedBody = await emptyBlocked.json();
+  assert.equal(emptyBlockedBody.projectRoot, canonicalProjectB);
+  assert.deepEqual(emptyBlockedBody.data, []);
+  assert.deepEqual(emptyBlockedBody.blockers, []);
+
+  const blockedBCommands = await readCommands();
+  assert.deepEqual(
+    blockedBCommands.map((command) => command.args),
+    [["blocked", "--json"]],
+    "a blocked set with no blocker ids spawns no join",
+  );
+  for (const command of blockedBCommands) {
+    assert.equal(
+      command.cwd,
+      canonicalProjectB,
+      `${command.command} never falls back to unrelated process.cwd() or project A`,
+    );
+    assert.equal(
+      command.beadsDir,
+      path.join(canonicalProjectB, ".beads"),
+      "a mode=blocked read stays inside the requested project's Beads workspace",
+    );
+  }
 } finally {
   process.chdir(previous.cwd);
   if (previous.path === undefined) delete process.env.PATH;

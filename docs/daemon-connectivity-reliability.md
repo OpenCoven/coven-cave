@@ -54,6 +54,7 @@ Primary implementation seams:
 
 - `src-tauri/src/tauri_setup.rs`
 - `src-tauri/src/sidecar_startup.rs`
+- `src-tauri/src/sidecar_port_lock.rs`
 - `src-tauri/src/sidecar_lifecycle.rs`
 - `src-tauri/src/sidecar_supervisor.rs`
 - `server.ts`
@@ -69,7 +70,13 @@ Primary implementation seams:
 2. Desktop setup acquires the GUI reachability lease and installs cleanup
    guards before starting the sidecar.
 3. Development uses a reachable configured dev origin. Packaged builds resolve
-   bundled Node, server, speech runtimes, and the fixed Cave port.
+   bundled Node, server, speech runtimes, and the fixed Cave port, then *claim*
+   that port before spawning anything. The claim is an advisory OS lock keyed on
+   the resolved port and held for the life of the process, so a second copy
+   loses it deterministically instead of racing the first into `EADDRINUSE`. A
+   claim that cannot be evaluated never blocks a launch. Only once the claim is
+   held is the port probed for identity, which answers *who* holds it rather
+   than merely whether it is busy.
 4. Windows renders `startup.html` and performs sidecar preparation on a worker.
    macOS/Linux block setup while starting the sidecar.
 5. The implemented native readiness loop requires the launched child's exact
@@ -142,8 +149,9 @@ Illegal transitions:
 
 | Failure mode | Detection | Current effect | Safe recovery | Residual risk |
 | --- | --- | --- | --- | --- |
-| Duplicate GUI | PID/birth identity and GUI lease | Second instance exits with owner evidence | Focus existing owner where supported | Cross-platform UX differs |
-| Fixed port occupied | Pre-spawn port check | Startup fails with named port guidance | Quit verified owner or choose explicit free port | Port owner is not yet included in one diagnostic bundle |
+| Duplicate GUI | Pre-spawn advisory claim on the resolved port, then the macOS GUI lease | Second instance names the owning process and exits before touching shared state | Switch to the running copy, or set `COVEN_CAVE_PORT` | The claim now runs first on every desktop platform; the macOS lease remains as a second, later gate |
+| Fixed port occupied by another copy | Pre-spawn advisory claim on the resolved port | Startup refuses and names the owning process | Switch to the running copy, quit it, or set `COVEN_CAVE_PORT` | The claim covers the GUI sidecar only; the macOS background daemon still binds by scan |
+| Fixed port occupied by something else | Unauthenticated `/api/app/build-info` probe, classified `Cave`/`Gated`/`Stranger` | Startup refuses and names what kind of occupant it found | Stop the named occupant, or set `COVEN_CAVE_PORT` | `Cave` covers both a second copy and a dev server; the probe cannot separate them, so the claim is what identifies a second copy |
 | Child exits before ready | Owned-child `try_wait` during readiness | Startup fails and cleanup runs | Retry after classified evidence | Tail is bounded but not correlated across components |
 | Child hangs before ready | Condition timeout | Fails after 60/90 seconds | Cancel or retry; preserve bounded output tail | Timeout budget is not yet measured by platform |
 | Child dies after ready, macOS/Linux | Native liveness poll | Bounded refillable revive and webview re-navigation | Automatic | Full end-to-end revive test is still missing |
@@ -205,7 +213,7 @@ Local diagnostics and opt-in telemetry remain separate systems.
 | Temporary transport loss | Bounded reconnect/read retry | None while recovering | Retry |
 | Sidecar crash on macOS/Linux | Native bounded revive | None | Restart daemon/app |
 | Sidecar crash on Windows | Bounded native supervisor revival | None | Restart app if the recovery budget/cooldown cannot restore readiness |
-| Port conflict | Refuse duplicate start | Quit the named/verified owner | Set an explicit free Cave port |
+| Port conflict | Refuse duplicate start, naming the owning process where the claim identifies it | Switch to the running copy, or quit the named occupant | Set an explicit free Cave port with `COVEN_CAVE_PORT` |
 | Unauthorized hub | Do not retry credentials | Reconnect/repair authorization | Re-enter verified hub invite/token |
 | Incompatible runtime | Refuse adoption | Update Coven, then restart | Repair/reinstall Coven |
 | Missing bundled runtime | Refuse partial startup | Repair/reinstall CovenCave | Copy redacted diagnostics for support |
@@ -318,9 +326,12 @@ Outcomes are:
   readiness was not. It is eligible in the success-rate denominator and is not
   success.
 - `failure`: an eligible operation failed.
-- `blocked`: the operation could not start because of contention, such as the
-  dedicated port already being occupied. Blocked records are reported
-  separately and excluded from both success and failure rates.
+- `blocked`: the operation could not start because of contention, such as a
+  program this app does not own holding the dedicated port. Blocked records are
+  reported separately and excluded from both success and failure rates. Note a
+  second copy refused by the port claim records nothing at all: it exits from
+  the setup hook, deliberately before the reliability store is configured, so
+  that a copy which may not run never mutates the running copy's state.
 - `cancelled`: shutdown or explicit cancellation ended the operation. It is
   reported separately and excluded from the success-rate denominator.
 

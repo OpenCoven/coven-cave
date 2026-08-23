@@ -18,7 +18,11 @@ struct CaveClient {
     var connection: CaveConnection
     private let injectedSession: URLSession?
     private let idempotentMutationRetryBudget: Duration
-    private static let pathSegmentAllowed = CharacterSet(
+    // Internal rather than private so sibling client extensions in other files
+    // (e.g. the Familiar dashboard read) encode a familiar id EXACTLY the way
+    // the avatar routes already do. A second copy of this rule is how
+    // `nova/familiar` ends up escaped one way here and another way there.
+    static let pathSegmentAllowed = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
     )
 
@@ -273,7 +277,10 @@ struct CaveClient {
         }
     }
 
-    private func request(
+    // Internal so sibling client extensions in other files build requests the
+    // same way this one does — including callers whose opaque path segment is
+    // already percent-encoded — and use the injected URLSession in tests.
+    func request(
         _ path: String,
         method: String = "GET",
         body: Data? = nil,
@@ -409,7 +416,7 @@ struct CaveClient {
         return try await familiarAvatarMutation(for: req)
     }
 
-    private static func encodedPathSegment(
+    static func encodedPathSegment(
         _ value: String,
         describing subject: String = "familiar identifier"
     ) throws -> String {

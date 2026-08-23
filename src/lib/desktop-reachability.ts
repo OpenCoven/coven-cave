@@ -26,6 +26,23 @@ type DesktopReachabilityListener = (status: DesktopReachabilityStatus) => void;
 const desktopReachabilityListeners = new Set<DesktopReachabilityListener>();
 let latestDesktopReachability: DesktopReachabilityStatus | null = null;
 
+export function desktopReachabilityError(
+  cause: unknown,
+  fallback: string,
+): Error {
+  if (cause instanceof Error && cause.message.trim()) return cause;
+  if (typeof cause === "string" && cause.trim()) return new Error(cause.trim());
+  if (cause && typeof cause === "object") {
+    for (const key of ["message", "error", "stderr"] as const) {
+      const detail = Reflect.get(cause, key);
+      if (typeof detail === "string" && detail.trim()) {
+        return new Error(detail.trim());
+      }
+    }
+  }
+  return new Error(fallback);
+}
+
 function publishDesktopReachability(status: DesktopReachabilityStatus): void {
   if (latestDesktopReachability === status) return;
   latestDesktopReachability = status;
@@ -68,7 +85,11 @@ const UNSUPPORTED: DesktopReachabilityStatus = {
   detail: "Desktop reachability controls are available in the macOS app.",
 };
 
-async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
+async function tauriInvoke<T>(
+  command: string,
+  args: Record<string, unknown> | undefined,
+  fallbackError: string,
+): Promise<T | null> {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return null;
   try {
     const { platform } = await import("@tauri-apps/plugin-os");
@@ -78,12 +99,20 @@ async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): 
     // Older desktop builds or minimal shells may not have the OS plugin; assume desktop.
   }
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<T>(command, args);
+  try {
+    return await invoke<T>(command, args);
+  } catch (cause) {
+    throw desktopReachabilityError(cause, fallbackError);
+  }
 }
 
 export async function readDesktopReachability(): Promise<DesktopReachabilityStatus> {
   const status =
-    (await tauriInvoke<DesktopReachabilityStatus>("desktop_reachability_status")) ?? UNSUPPORTED;
+    (await tauriInvoke<DesktopReachabilityStatus>(
+      "desktop_reachability_status",
+      undefined,
+      "Couldn’t load Mac reachability settings.",
+    )) ?? UNSUPPORTED;
   publishDesktopReachability(status);
   return status;
 }
@@ -91,9 +120,11 @@ export async function readDesktopReachability(): Promise<DesktopReachabilityStat
 export async function writeDesktopReachability(
   config: DesktopReachabilityConfig,
 ): Promise<DesktopReachabilityStatus> {
-  const result = await tauriInvoke<DesktopReachabilityStatus>("desktop_reachability_configure", {
-    config,
-  });
+  const result = await tauriInvoke<DesktopReachabilityStatus>(
+    "desktop_reachability_configure",
+    { config },
+    "Couldn’t update Mac reachability.",
+  );
   if (!result) throw new Error(UNSUPPORTED.detail ?? "Desktop reachability is unavailable.");
   publishDesktopReachability(result);
   return result;

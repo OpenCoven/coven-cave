@@ -83,7 +83,7 @@ assert.match(chatView, /runtime=\{session\?\.runtime \?\? null\}/, "runtime ride
 assert.match(chatView, /hasTurns=\{turns\.length > 0\}/, "empty-state chats keep the transcript clean");
 // The panel must live INSIDE the transcript scroll container so its sticky
 // wrapper tracks the reading pane, not the whole chat column.
-const transcriptIdx = chatView.indexOf('className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto"');
+const transcriptIdx = chatView.indexOf('className="cave-chat-transcript relative h-full min-h-0 overflow-y-auto"');
 const panelIdx = chatView.indexOf("<ChatEnvironmentPanel");
 const threadIdx = chatView.indexOf('className="cave-chat-thread"');
 assert.ok(transcriptIdx !== -1 && panelIdx !== -1 && threadIdx !== -1, "transcript, panel and thread markers all present");

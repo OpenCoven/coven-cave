@@ -108,7 +108,7 @@
   min-width: 16px; height: 15px; padding: 0 4px;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: var(--text-2xs); color: var(--text-secondary);
-  background: var(--bg-base); border: 1px solid var(--border-hairline); border-radius: 999px;
+  background: var(--bg-base); border: 1px solid var(--border-hairline); border-radius: var(--radius-pill);
 }
 
 /* task row */

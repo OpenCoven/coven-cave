@@ -338,6 +338,96 @@ pub fn run() {
     #[cfg(desktop)]
     builder
         .setup(move |app| {
+            // Release builds always get `None` here without touching the
+            // network, so this costs a packaged launch nothing.
+            let dev_server_url = live_dev_server_url(app);
+            // `live_dev_server_url` logs its own decision, but the log plugin
+            // is registered further down this closure — so without this a dev
+            // whose Next server is not up gets a stale bundled build with
+            // nothing on screen or in the terminal explaining why.
+            if cfg!(debug_assertions) {
+                eprintln!(
+                    "[cave] dev server {}",
+                    if dev_server_url.is_some() {
+                        "is live; using it for the main webview"
+                    } else {
+                        "is not serving; falling back to the bundled sidecar"
+                    }
+                );
+            }
+
+            // A translocated app exits here, before it can persist a
+            // LaunchAgent that points at the temporary DMG/quarantine path.
+            check_app_translocation();
+
+            // Refuse a second copy BEFORE it touches anything shared.
+            //
+            // Sidecar startup takes this same claim, and that is what stops two
+            // copies racing `node` onto one port. But everything below this
+            // point runs first, and a copy that is going to be refused should
+            // not have run any of it: it truncates the FIRST copy's live
+            // diagnostics file, starts a second Discord presence worker, and
+            // builds a second, indistinguishable tray icon. On Windows the
+            // refusal then arrives only after the runtime-cache lock, which can
+            // hold for minutes, behind a Retry button that can never succeed
+            // while the other copy lives.
+            //
+            // macOS already refused a second GUI, via the reachability lease —
+            // but that lease sits further down, AFTER the reliability store and
+            // the diagnostics reset, so even there a refused copy had already
+            // written to both. This is earlier and it is on every desktop
+            // platform, keyed on the port so `COVEN_CAVE_PORT` still admits a
+            // deliberate second copy.
+            //
+            // Skipped when a dev server owns the origin: `pnpm dev` holds the
+            // port on purpose, and the bundled sidecar is never started then.
+            // That answer is resolved ONCE, above, and reused for the webview
+            // URL below — probing twice let the two decisions disagree and
+            // strand a claim on a port this copy would never bind.
+            //
+            // Only two things run above it. `check_app_translocation` was moved
+            // up to get there; the dev-server probe was already first.
+            // `check_app_translocation` shows a BLOCKING dialog, so a copy
+            // about to be told it is translocated must not be holding the port
+            // while that alert waits for a click — the good copy in
+            // /Applications would then be refused, naming a process that never
+            // binds anything. The dev-server probe is above it because this
+            // block reads the answer. Everything else in the prologue —
+            // configuring the reliability store, the offline cache, and the
+            // diagnostics reset — mutates state the OTHER copy is using, so it
+            // belongs below, which is the whole point.
+            if dev_server_url.is_none() {
+                let port = sidecar_ports::dedicated_port();
+                match app
+                    .path()
+                    .app_local_data_dir()
+                    .map_err(|error| format!("could not resolve local app data: {error}"))
+                    .and_then(|state_dir| {
+                        crate::sidecar_port_lock::claim_dedicated_port(&state_dir, port)
+                    }) {
+                    Ok(crate::sidecar_port_lock::PortClaim::Acquired) => {}
+                    Ok(crate::sidecar_port_lock::PortClaim::HeldBy { pid }) => {
+                        report_existing_port_owner(port, pid)
+                    }
+                    // Fail open, exactly as sidecar startup does: a claim that
+                    // cannot be evaluated must never be the reason a launch is
+                    // refused.
+                    Err(error) => {
+                        // Both, and not just the `log` line: this claim runs
+                        // above the log-plugin registration further down, so on
+                        // its own that message goes to a facade with no logger
+                        // and is dropped. This is the one path where that would
+                        // matter most — failing open means cross-copy exclusion
+                        // is silently OFF, and the next launch gets node's raw
+                        // EADDRINUSE with nothing anywhere naming the cause.
+                        log::warn!("[cave] could not claim the dedicated port {port}: {error}");
+                        eprintln!(
+                            "[cave] could not claim the dedicated port {port}: {error};                              a second copy will not be refused"
+                        );
+                    }
+                }
+            }
+
             if let Ok(app_data_dir) = app.path().app_data_dir() {
                 app.state::<Arc<ReliabilityRecorder>>()
                     .configure(app_data_dir);
@@ -370,10 +460,6 @@ pub fn run() {
                         .build(),
                 )?;
             }
-
-            // A translocated app exits here, before it can persist a
-            // LaunchAgent that points at the temporary DMG/quarantine path.
-            check_app_translocation();
 
             app.handle().plugin(tauri_plugin_notification::init())?;
             // A second GUI must not be reported through `?`. This closure is
@@ -416,7 +502,7 @@ pub fn run() {
             // production build instead of live code.
             #[cfg(not(target_os = "windows"))]
             let mut pending_native_startup_terminal = None;
-            let main_url: Option<tauri::Url> = if let Some(dev_url) = live_dev_server_url(app) {
+            let main_url: Option<tauri::Url> = if let Some(dev_url) = dev_server_url {
                 Some(dev_url)
             } else {
                 #[cfg(target_os = "windows")]

@@ -117,6 +117,43 @@ async function boot(page: Page) {
   await page.route("**/api/changes**", (route) =>
     route.fulfill({ json: { ok: true, repo: true, repoRoot: "/repo/alpha", files: [] } }),
   );
+  await page.route(/\/api\/journal(?:\?.*)?$/, (route) => {
+    const url = new URL(route.request().url());
+    const date = url.searchParams.get("date");
+    if (!date) return route.fulfill({ json: { ok: true, days: [] } });
+    if (url.searchParams.has("stats")) {
+      return route.fulfill({
+        json: {
+          ok: true,
+          date,
+          stats: { covenOrigin: 0, externalRuntimes: 0, runtimeMemory: 0 },
+          context: "",
+          sources: [],
+        },
+      });
+    }
+    return route.fulfill({
+      json: {
+        ok: true,
+        date,
+        exists: false,
+        entry: { reflectedBy: null, generatedAt: null, reflection: "" },
+        modified: null,
+      },
+    });
+  });
+  await page.route(/\/api\/knowledge\/collections(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, collections: [] } }),
+  );
+  await page.route(/\/api\/knowledge(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, entries: [] } }),
+  );
+  await page.route(/\/api\/memory(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, entries: [] } }),
+  );
+  await page.route(/\/api\/grimoire\/graph(?:\?.*)?$/, (route) =>
+    route.fulfill({ json: { ok: true, graph: { nodes: [], edges: [] } } }),
+  );
   await page.route("**/api/chat/conversation/**", (route) =>
     route.fulfill({
       json: {
@@ -126,7 +163,7 @@ async function boot(page: Page) {
       },
     }),
   );
-  await page.route("**/api/board**", (route) =>
+  await page.route(/\/api\/board(?:\?.*)?$/, (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ json: { ok: true, cards: [WARMUP_CARD] } })
       : route.continue(),
@@ -193,4 +230,9 @@ test("warm the code-split surface chunks", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Card inspector" })).toBeVisible({
     timeout: CHUNK_TIMEOUT,
   });
+
+  // `grimoire-view` — compile the Journal tab before its parallel specs open
+  // the surface so their assertions measure behavior rather than Turbopack.
+  await page.goto("/?mode=journal", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".journal-list")).toBeVisible({ timeout: CHUNK_TIMEOUT });
 });
