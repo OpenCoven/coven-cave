@@ -1,7 +1,9 @@
 /* dash-act.css — compact action buttons + snooze menu shared by the
  * dashboard, inbox toasts, and calendar (SnoozeMenu). Split out of
  * dashboard.css (#3264) so cross-surface consumers don't pull the
- * whole dashboard sheet. */
+ * whole dashboard sheet. Also carries the inbox toast stack's own
+ * geometry (bottom of this file), because that geometry is responsive
+ * and Tailwind utilities described only its desktop shape. */
 
 .dash-act {
   display: inline-flex;
@@ -86,5 +88,73 @@
   .dash-snooze__menu {
     background: var(--bg-elevated);
     backdrop-filter: none;
+  }
+}
+
+/* ── Inbox toast stack geometry (cave-lcxc6) ─────────────────────────────────
+ *
+ * Lives here rather than in Tailwind utilities on the element because the
+ * phone layout is a different shape, not a tweak — and while it WAS a set of
+ * utilities (`fixed top-4 right-4 w-80`) that one desktop shape was the only
+ * shape there was. On a phone the top-right corner is not empty canvas: it is
+ * the shell's own chrome. Measured on Pixel 5 (393px) with a toast up, the
+ * card spanned x 57..377 / y 17..156 while the persistent "Open Chat panel"
+ * toggle sits at x 353..381 / y 12..40 — `document.elementFromPoint` at the
+ * toggle's own centre returned the toast card, leaving a ~4px sliver of the
+ * control exposed. A transient notification was taking a persistent control's
+ * hit area, so neither a user nor the e2e suite could reach it.
+ *
+ * Desktop is the same defect, milder: the `.shell-top` band is 34px and the
+ * stack started at 16px, so at 1280px the toggle sat at y 3..31 under a card
+ * starting at y 16 — the top half of the control was reachable and its centre,
+ * which is where a click lands, was not. Measured while fixing the phone case;
+ * it is one defect with two expressions, so the stack clears the chrome at
+ * every width rather than only below the breakpoint.
+ *
+ * Both offsets are the shell's own band heights restated as the same
+ * expressions their owners use, so the two move together: 34px is
+ * `.shell-top`'s min-height here in desktop-chrome.css (and equals
+ * `--shell-native-titlebar-height`, which at >=1024 overlays that same row
+ * rather than stacking above it, so the macOS shell needs no separate rule),
+ * and `52px + var(--sai-top)` is the mobile `.top-bar` height from
+ * shell-responsive.css.
+ *
+ * tests/mobile/inbox-toast-chrome-clearance.spec.ts is the geometric guard,
+ * and it asserts both directions: the toggle must win its own centre, and the
+ * toast's own controls must stay clickable. */
+.inbox-toast-stack {
+  position: fixed;
+  top: calc(34px + var(--space-2));
+  right: var(--space-4);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 20rem;
+  /* The column is inert; only the cards inside it are pointer-events: auto,
+     so the gaps between stacked toasts never swallow a tap meant for the app.
+     This is why the fix has to be geometric — the card itself must keep
+     taking pointer events or its Snooze/Open/Dismiss controls go dead. */
+  pointer-events: none;
+}
+
+@media (max-width: 1023px) {
+  .inbox-toast-stack {
+    top: calc(52px + var(--sai-top) + var(--space-2));
+    right: calc(var(--space-3) + var(--sai-right));
+    /* Also fixes an unrelated overflow at the narrow end: a fixed 20rem card
+       ran off the left edge of a 320px viewport. */
+    left: calc(var(--space-3) + var(--sai-left));
+    width: auto;
+    max-width: 20rem;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Phone: span the gutters. A right-pinned 20rem panel with dead space
+     beside it is the desktop card wearing a phone's viewport. */
+  .inbox-toast-stack {
+    max-width: none;
   }
 }
