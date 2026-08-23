@@ -154,7 +154,7 @@ describe("thread-signal-card module wiring", () => {
   it("floats the complete card above chat content without changing transcript height", () => {
     assert.match(
       styles,
-      /\.cave-thread-signal-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:[\s\S]*?pointer-events:\s*none;/,
+      /\.cave-thread-signal-overlay\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:[\s\S]*?z-index:\s*6;[\s\S]*?pointer-events:\s*none;/,
     );
     assert.match(
       styles,
