@@ -1,10 +1,10 @@
 # Client v1 Operational Capability Semantics Plan
 
-**Status:** Proposed implementation plan  
-**Date:** 2026-08-22  
-**Cave base audited:** `dbc63f49ab60b7f065ff0d101bd50e37d6f8ff98`  
-**Tracking:** [OpenCoven/coven-cave#4869](https://github.com/OpenCoven/coven-cave/issues/4869)  
-**Upstream consumer program:** [OpenCoven/sdk#31](https://github.com/OpenCoven/sdk/issues/31)
+- **Status:** Proposed implementation plan
+- **Date:** 2026-08-22
+- **Cave base audited:** `dbc63f49ab60b7f065ff0d101bd50e37d6f8ff98`
+- **Tracking:** [OpenCoven/coven-cave#4869](https://github.com/OpenCoven/coven-cave/issues/4869)
+- **Upstream consumer program:** [OpenCoven/sdk#31](https://github.com/OpenCoven/sdk/issues/31)
 
 ## 1. Goal
 
@@ -139,14 +139,20 @@ The envelope may retain broad capability families for display while adding exact
 Use **Option C with a compatibility bridge**:
 
 ```ts
-type ClientV1Contract = {
+type ClientV1ProducedContract = {
   capabilities: readonly ClientV1CapabilityFamily[];
   operations: readonly ClientV1Operation[];
+};
+
+type ClientV1CompatibilityEnvelope = {
+  capabilities: readonly string[];
+  operations: readonly string[];
 };
 ```
 
 - `operations` is the authoritative programmatic support inventory.
 - `capabilities` is a derived or explicitly mapped family summary containing only live operation families.
+- Cave builds the wire envelope from the closed, reviewed producer types; consumers parse the arrays as string IDs and narrow only IDs they understand.
 - No planned capability appears in either live list.
 - Roadmap commitments remain in documentation and issues rather than the compatibility envelope.
 
@@ -165,6 +171,7 @@ type ClientV1OperationDefinition = {
   path: string;
   ingress: "public" | "admin" | "authenticated";
   scope: ClientV1Scope | null;
+  families: readonly ClientV1CapabilityFamily[];
 };
 ```
 
@@ -177,8 +184,11 @@ Example:
   path: "/api/client/v1/conversations",
   ingress: "authenticated",
   scope: "chat:read",
+  families: ["conversations", "cursors"],
 }
 ```
+
+Family membership is explicit metadata rather than path inference. An operation may contribute to more than one family, so cross-cutting behavior such as cursor pagination remains derivable even though there is no standalone cursor route. CI must derive the advertised family set from this reviewed membership and fail if a declared family has no live member or a registry member names an unknown family.
 
 The public-route list remains the authority for unauthenticated bootstrap ingress. Administrator routes remain explicit and do not accidentally join the public or paired-client list.
 
@@ -249,7 +259,8 @@ Required cases:
 - [ ] public health and pairing operations name no bearer scope;
 - [ ] administrator operations do not appear as paired-client capabilities accidentally;
 - [ ] safe unknown additive fields remain compatible;
-- [ ] malformed, duplicate, or unknown required operation records fail closed.
+- [ ] producer-side malformed, duplicate, or unregistered operation records fail closed;
+- [ ] consumer-side unknown additive operation and family IDs remain parseable and are preserved or ignored for feature checks.
 
 Run the focused tests and retain the expected pre-implementation failure in the PR evidence.
 
@@ -257,7 +268,7 @@ Run the focused tests and retain the expected pre-implementation failure in the 
 
 - [ ] Add the pure operation/family definitions.
 - [ ] Update compatibility/envelope types.
-- [ ] Update strict parsers.
+- [ ] Keep envelope shape and value-type parsing strict while allowing consumer parsers to retain unknown string IDs.
 - [ ] Preserve a deterministic canonical order.
 - [ ] Remove `streaming` and `revisions` from the live declaration unless a reviewed live owner lands first.
 - [ ] Keep roadmap information outside the operational compatibility inventory.
@@ -266,6 +277,12 @@ Run the focused tests and retain the expected pre-implementation failure in the 
 ### Compatibility rule
 
 Adding a new live operation in a compatible Client v1 minor release is additive. Removing or renaming an existing live operation is a compatibility decision and requires a minimum-client/versioning review.
+
+The producer and consumer rules are intentionally different:
+
+- Cave is the producer and must validate its registry strictly. It must refuse to export an operation or family ID that is absent from the reviewed registry and generated fixture.
+- Chat, SDKs, and other consumers must tolerate unknown operation and family IDs introduced by a newer compatible minor producer. They may preserve those IDs for diagnostics, but must not claim support for behavior they do not understand.
+- A new operation may not become required merely by appearing in the additive inventory. If an older consumer must understand or invoke it for the protocol to work, that change requires an explicit minimum-client or API-version transition and corresponding compatibility tests.
 
 ## 10. Task 4 — bind declarations to route ownership
 
@@ -282,6 +299,8 @@ Required assertions:
 - [ ] ingress metadata agrees with `clientV1IngressKind` and admin-family classification;
 - [ ] a route addition without operation metadata fails;
 - [ ] operation metadata without a route fails.
+- [ ] every operation names at least one reviewed capability family;
+- [ ] cross-cutting families such as `cursors` are derived from explicit membership rather than a same-named route.
 
 Do not make the test derive its expectation entirely from the same registry it validates. Retain a review ratchet for the exact live operation set.
 
@@ -301,13 +320,13 @@ The SDK must record this Cave commit as producer provenance rather than copying 
 Extend the Client v1 conformance run to assert:
 
 - [ ] health returns the exact expected live operation/family inventory;
-- [ ] every advertised operation can reach its owning route under the correct authority, or is exercised through an approved non-mutating availability probe;
+- [ ] every one of the 13 currently advertised operations executes successfully against its owning route under the correct authority using isolated Cave fixture state;
 - [ ] removed aspirational entries are absent;
 - [ ] the compatibility inventory is identical to the generated fixture;
 - [ ] proxy behavior does not widen because of the metadata change;
 - [ ] the evidence record names the Cave commit and fixture digest.
 
-For destructive administrator operations, the conformance runner may use isolated fixture state and no-op-safe records. It must not mutate the operator’s real Cave.
+For destructive administrator operations, the conformance runner must use isolated fixture state and no-op-safe records. It must not mutate the operator’s real Cave. An existence or availability probe is not sufficient for any of the 13 current operations. A future operation may use a non-mutating probe only when successful execution is genuinely unavailable in the conformance environment and the registry entry documents a specifically reviewed exception, rationale, and substitute assertion.
 
 ## 13. Validation matrix
 
@@ -348,6 +367,8 @@ At least these mutations must be caught:
 8. add a route without operation metadata;
 9. make family derivation omit a live operation;
 10. let fixture/docs remain stale after the contract change.
+11. make a consumer reject an otherwise valid envelope solely because it contains a newer unknown additive operation;
+12. replace successful execution of any current operation with an existence-only probe.
 
 No mutation may survive solely because the test derives both actual and expected values from one changed source.
 
