@@ -29,6 +29,7 @@ import {
   requiresPasskeyPresence,
   clientV1IngressKind,
   isClientV1AdminPath,
+  isClientV1Path,
   isRefusedClientV1Path,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
@@ -515,7 +516,13 @@ export async function proxy(req: NextRequest) {
     return nextWithMobileAccessMarker(req, remoteIngress);
   }
 
-  if (!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalPeer) {
+  // Direct loopback is the prompt-free browser path for ordinary app APIs.
+  // Client v1 is different: its reviewed public/authenticated routes returned
+  // above, while every remaining path intentionally stays on this credential
+  // boundary (especially the human-consent admin surface).
+  const trustedLocalBrowserApi =
+    trustedLocalPeer && !isClientV1Path(req.nextUrl.pathname);
+  if (!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi) {
     if (mediaTicketAuthenticated) {
       return nextWithMobileAccessMarker(req, remoteIngress);
     }

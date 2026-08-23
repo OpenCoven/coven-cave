@@ -121,8 +121,13 @@ assert.match(source, /missing request source/, "tokenless GET webhooks should re
 // extend to mobile-cookie-authenticated requests in exchange.
 assert.match(
   source,
-  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalPeer\) \{/,
-  "the final sidecar gate must independently admit a verified access token or trusted direct loopback",
+  /const trustedLocalBrowserApi =\s*trustedLocalPeer && !isClientV1Path\(req\.nextUrl\.pathname\)/,
+  "the trusted-loopback browser exemption must not cross Client v1's private boundary",
+);
+assert.match(
+  source,
+  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi\) \{/,
+  "the final sidecar gate must independently admit a verified access token or a trusted ordinary app API",
 );
 assert.match(
   source,
@@ -236,8 +241,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalPeer\) \{/,
-  "the final API credential gate must preserve prompt-free trusted loopback access",
+  /if \(!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi\) \{/,
+  "the final API credential gate must preserve prompt-free trusted loopback access outside Client v1",
 );
 assert.match(
   source,

@@ -585,12 +585,16 @@ test("reviewed client-v1 routes use loopback ingress without exposing private ro
       "/api/client/v1/admin/credentials",
       "/api/client/v1/private",
       "/api/client/v1/messages/send",
-      "/api/chat/conversation",
     ]) {
       const response = await proxy(proxyRequest(route, { headers }));
       assert.equal(passedThrough(response), false, route);
       assert.equal(response.status, 401, route);
     }
+
+    // Ordinary app APIs use the trusted-loopback browser exemption. They are
+    // outside Client v1's separately reviewed ingress and admin boundaries.
+    const appResponse = await proxy(proxyRequest("/api/chat/conversation", { headers }));
+    assert.equal(passedThrough(appResponse), true);
   } finally {
     restoreProxyEnv();
   }
