@@ -6,6 +6,8 @@ import {
   extractChatRenderedText,
 } from "./chat-rendered-text.ts";
 import { findTranscriptHits } from "./transcript-find.ts";
+import { researchMissionToRunSurface } from "./research-run-surface.ts";
+import type { ResearchMission } from "./research-missions.ts";
 
 const CONTROL_HEAVY_ASSISTANT_TEXT = [
   "```coven:attachment",
@@ -47,6 +49,7 @@ test("rendered assistant text keeps prose while removing every non-prose control
   assert.match(result.cardText, /<coven:github/);
   assert.match(result.cardText, /<coven:image/);
   assert.match(result.cardText, /<coven:preview/);
+  assert.match(result.cardText, /__coven\/research\/research-42/);
   assert.doesNotMatch(result.visible, /coven:research/);
   assert.doesNotMatch(result.cardText, /coven:research/);
 });
@@ -189,4 +192,44 @@ test("rendered assistant text keeps later authored results visible after backtic
   ]);
   assert.doesNotMatch(result.visible, /coven:result/);
   assert.doesNotMatch(result.cardText, /coven:result/);
+});
+
+test("research missions project into truthful compact run state", () => {
+  const mission = {
+    id: "run-1",
+    familiarId: "sage",
+    title: "Dependency risk",
+    mode: "paper",
+    harness: "codex",
+    model: "gpt-5",
+    status: "running",
+    sources: [
+      { status: "used" },
+      { status: "rejected" },
+    ],
+    artifacts: [{ state: "working" }],
+    iterations: [{
+      summary: "Reviewing incidents",
+      steps: [
+        { id: "scope", type: "scope", status: "succeeded" },
+        { id: "gather", type: "gather", status: "running", detail: "Reviewing incidents" },
+        { id: "synthesize", type: "synthesize", status: "pending" },
+      ],
+    }],
+    createdAt: "2026-08-22T10:00:00.000Z",
+    updatedAt: "2026-08-22T10:05:00.000Z",
+  } as ResearchMission;
+
+  const run = researchMissionToRunSurface(mission);
+  assert.equal(run.runId, "run-1");
+  assert.equal(run.status, "running");
+  assert.equal(run.activity, "Reviewing incidents");
+  assert.equal(run.runtime, "codex · gpt-5");
+  assert.deepEqual(run.steps.map((step) => step.status), ["completed", "active", "pending"]);
+  assert.deepEqual(run.evidence, {
+    sources: 2,
+    retained: 1,
+    rejected: 1,
+    artifacts: 1,
+  });
 });
