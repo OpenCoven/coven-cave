@@ -102,6 +102,9 @@ globalThis.fetch = (async () => {
 
 const POST_TEXT = "Bounded reads are the whole point of a cost-aware client.";
 const NOW = new Date("2026-08-22T12:00:00.000Z");
+// Cache freshness is a wall-clock contract. Keep mission lifecycle time fixed,
+// but seed cache entries relative to the test run so they do not expire tomorrow.
+const CACHE_NOW = new Date();
 
 function post(postId: string, text = POST_TEXT): NormalizedXPost {
   return {
@@ -257,7 +260,7 @@ beforeEach(() => {
 test("hydration writes each attached post into runtime/x and returns identity-only refs", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "1001", "why this thread matters");
-  await cacheNormalizedXPosts([post("1001")], NOW);
+  await cacheNormalizedXPosts([post("1001")], CACHE_NOW);
 
   const hydration = await hydrateMissionXSources(mission);
 
@@ -311,7 +314,7 @@ test("a saved source not attached to this mission is never hydrated into it", as
   const mission = await makeMission();
   const other = await makeMission();
   await attachSource("nova", other.id, "1003");
-  await cacheNormalizedXPosts([post("1003")], NOW);
+  await cacheNormalizedXPosts([post("1003")], CACHE_NOW);
 
   const hydration = await hydrateMissionXSources(mission);
 
@@ -324,7 +327,7 @@ test("hydration is familiar-scoped: another familiar's source cannot reach this 
   // `dusk` claims nova's mission id on its own saved source. Only sources saved
   // under the MISSION's familiar are ever read, so the claim goes nowhere.
   await attachSource("dusk", mission.id, "1004");
-  await cacheNormalizedXPosts([post("1004")], NOW);
+  await cacheNormalizedXPosts([post("1004")], CACHE_NOW);
 
   const hydration = await hydrateMissionXSources(mission);
 
@@ -337,7 +340,7 @@ test("hydration replaces residue from a previous run instead of presenting it as
   await mkdir(runtimeDir(mission.id), { recursive: true });
   await writeFile(path.join(runtimeDir(mission.id), "x-post-9999.md"), "stale run residue", "utf8");
   await attachSource("nova", mission.id, "1005");
-  await cacheNormalizedXPosts([post("1005")], NOW);
+  await cacheNormalizedXPosts([post("1005")], CACHE_NOW);
 
   await hydrateMissionXSources(mission);
 
@@ -372,7 +375,7 @@ test("a mission with no attached X sources touches neither X nor the network, an
 test("a deleted post is recorded durably, omitted from runtime/x, and reported to the run", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "1006", "keep this note");
-  await cacheNormalizedXPosts([post("1006")], NOW);
+  await cacheNormalizedXPosts([post("1006")], CACHE_NOW);
   // Expire the cache entry so hydration has to ask X, which answers 404.
   await rm(path.join(cacheDir, "1006.json"), { force: true });
   respond = async () => errorResponse(404);
@@ -473,7 +476,7 @@ test("an authorization X rejects even after one refresh refuses the launch", asy
 test("an attached source on a familiar without X research refuses the launch", async () => {
   const mission = await makeMission("dusk");
   await attachSource("dusk", mission.id, "2001");
-  await cacheNormalizedXPosts([post("2001")], NOW);
+  await cacheNormalizedXPosts([post("2001")], CACHE_NOW);
 
   const error = await hydrateMissionXSources(mission).then(
     () => null,
@@ -495,7 +498,7 @@ test("an attached source on a familiar without X research refuses the launch", a
 test("dropping the runtime removes every hydrated file and is safe to repeat", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "3001");
-  await cacheNormalizedXPosts([post("3001")], NOW);
+  await cacheNormalizedXPosts([post("3001")], CACHE_NOW);
   await hydrateMissionXSources(mission);
   assert.equal((await runtimeFiles(mission.id)).length, 1);
 
@@ -636,7 +639,7 @@ function settlingRunner(
 test("continuing a mission hydrates before the iteration starts and names the files in its prompt", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "5001");
-  await cacheNormalizedXPosts([post("5001")], NOW);
+  await cacheNormalizedXPosts([post("5001")], CACHE_NOW);
   const harness = runnerFor();
 
   const updated = await harness.runner.act(mission.id, { action: "continue" });
@@ -672,7 +675,7 @@ test("continuing a mission hydrates before the iteration starts and names the fi
 test("the run's post text is removed when the mission settles", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "5002");
-  await cacheNormalizedXPosts([post("5002")], NOW);
+  await cacheNormalizedXPosts([post("5002")], CACHE_NOW);
   const harness = runnerFor();
   await harness.runner.act(mission.id, { action: "continue" });
   assert.equal((await runtimeFiles(mission.id)).length, 1, "hydrated before the settle under test");
@@ -694,7 +697,7 @@ test("the run's post text is removed when the mission settles", async () => {
 test("a still-running mission keeps its hydrated post text", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "5003");
-  await cacheNormalizedXPosts([post("5003")], NOW);
+  await cacheNormalizedXPosts([post("5003")], CACHE_NOW);
   const harness = runnerFor();
   await harness.runner.act(mission.id, { action: "continue" });
 
@@ -711,7 +714,7 @@ test("a still-running mission keeps its hydrated post text", async () => {
 test("cancelling a running mission removes its hydrated post text", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "5004");
-  await cacheNormalizedXPosts([post("5004")], NOW);
+  await cacheNormalizedXPosts([post("5004")], CACHE_NOW);
   const harness = runnerFor();
   await harness.runner.act(mission.id, { action: "continue" });
   assert.equal((await runtimeFiles(mission.id)).length, 1);
@@ -767,7 +770,7 @@ test("a deleted attached post lets the run proceed, visibly short of that source
 test("a normal iteration completion settles to checkpoint and removes the hydrated post text", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "6001");
-  await cacheNormalizedXPosts([post("6001")], NOW);
+  await cacheNormalizedXPosts([post("6001")], CACHE_NOW);
   const harness = runnerFor();
   await harness.runner.act(mission.id, { action: "continue" });
   assert.equal((await runtimeFiles(mission.id)).length, 1, "hydrated before the settle under test");
@@ -815,7 +818,7 @@ test("only an active mission may hold hydrated post text", () => {
 test("an agent's own sources.json entry cannot strip the X identity off an attached post", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "6003");
-  await cacheNormalizedXPosts([post("6003")], NOW);
+  await cacheNormalizedXPosts([post("6003")], CACHE_NOW);
   const harness = runnerFor();
   await harness.runner.act(mission.id, { action: "continue" });
 
@@ -854,7 +857,7 @@ test("no author display data reaches a durable record, on either surface", async
   // @opencoven / "Open Coven", the stored URL carries neither.
   const mission = await makeMission();
   await attachSource("nova", mission.id, "7001", "", "https://x.com/i/web/status/7001");
-  await cacheNormalizedXPosts([post("7001")], NOW);
+  await cacheNormalizedXPosts([post("7001")], CACHE_NOW);
 
   const hydration = await hydrateMissionXSources(mission);
   assert.equal(
@@ -885,7 +888,7 @@ test("no author display data reaches a durable record, on either surface", async
 test("removal leaves no empty runtime/ scaffolding in the workspace", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "7002");
-  await cacheNormalizedXPosts([post("7002")], NOW);
+  await cacheNormalizedXPosts([post("7002")], CACHE_NOW);
   await hydrateMissionXSources(mission);
 
   await dropMissionXRuntime(mission.id);
@@ -900,7 +903,7 @@ test("removal leaves no empty runtime/ scaffolding in the workspace", async () =
 test("a populated runtime/ directory survives removal of runtime/x", async () => {
   const mission = await makeMission();
   await attachSource("nova", mission.id, "7003");
-  await cacheNormalizedXPosts([post("7003")], NOW);
+  await cacheNormalizedXPosts([post("7003")], CACHE_NOW);
   await hydrateMissionXSources(mission);
   const sibling = path.join(researchMissionWorkspacePath(mission.id), "runtime", "notes.md");
   await writeFile(sibling, "something else is using runtime/", "utf8");
