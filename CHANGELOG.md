@@ -12,7 +12,13 @@ breaking config changes; patch releases stay additive.
   the dedicated port. Launching another CovenCave used to end on a raw
   `EADDRINUSE` dump from Node; it now names the copy that already holds port
   3020, or says what kind of program is holding it, and points at
-  `COVEN_CAVE_PORT` for running two copies side by side.
+  `COVEN_CAVE_PORT` for running two copies side by side. The refusal now
+  arrives before the second copy touches anything the running one is using, so
+  it no longer wipes the live diagnostics file, prunes the shared reliability
+  store, or adds a duplicate tray icon on its way out. On Windows that means
+  the second copy no longer opens a window at all: the message appears the way
+  other early-exit messages do, rather than inside the startup screen behind a
+  runtime-preparation wait that can take minutes.
 
 ## [0.3.9] - 2026-08-21
 

@@ -1,6 +1,6 @@
 //! Cross-process exclusion on the dedicated sidecar port.
 //!
-//! `port_is_occupied()` could only ever answer whether the port was busy *at
+//! The old `port_is_occupied()` could only answer whether the port was busy *at
 //! the instant it looked*. Seconds pass between that answer and `node`
 //! binding — long enough for a second copy to make the same observation and
 //! draw the same conclusion. The two copies do not even race by chance: they
@@ -76,6 +76,20 @@ fn lock_is_contended(error: &io::Error) -> bool {
     }
 }
 
+/// Say it twice, because neither channel covers every caller.
+///
+/// The claim is taken near the top of the Tauri setup hook, above the only
+/// `log` implementation this binary has (`tauri_plugin_log`, registered further
+/// down and only in debug builds) — so a bare `log::warn!` from here reaches a
+/// facade with no logger and is dropped. But `release_all_claims` is also
+/// reached from fatal-exit paths well BELOW that registration, where the log
+/// file is the only place a double-clicked packaged build can leave a trace.
+#[cfg(desktop)]
+fn warn_without_a_logger(message: &str) {
+    log::warn!("{message}");
+    eprintln!("{message}");
+}
+
 /// Take the process-wide claim on `port`, or report the copy that already has
 /// it.
 pub(super) fn claim_dedicated_port(state_dir: &Path, port: u16) -> Result<PortClaim, String> {
@@ -120,7 +134,7 @@ pub(super) fn claim_dedicated_port(state_dir: &Path, port: u16) -> Result<PortCl
             Ok(PortClaim::Acquired)
         }
         Err(error) if lock_is_contended(&error) => Ok(PortClaim::HeldBy {
-            pid: read_port_owner(state_dir, port),
+            pid: await_port_owner(state_dir, port),
         }),
         Err(error) => Err(format!(
             "could not evaluate the claim on port {port} ({}): {error}",
@@ -131,12 +145,17 @@ pub(super) fn claim_dedicated_port(state_dir: &Path, port: u16) -> Result<PortCl
 
 /// Drop every claim this process holds.
 ///
-/// For an exit path that shows a BLOCKING dialog. `show_fatal_dialog` waits on
-/// `osascript`/`zenity` until someone clicks, and a copy that is on its way out
-/// must not keep the port reserved for the length of that wait — the next copy
-/// would be refused, naming a process that is never going to bind anything.
-/// A translocated DMG copy sitting on the "drag me to /Applications" alert is
-/// the concrete case.
+/// For an exit path where this process is leaving WITHOUT ever binding the
+/// port. On macOS/Linux `show_fatal_dialog` waits on `osascript`/`zenity` until
+/// someone clicks, so holding the claim across that wait would refuse the next
+/// copy while naming a process that never binds anything - a translocated DMG
+/// copy sitting on the "drag me to /Applications" alert is the concrete case.
+///
+/// Deliberately NOT called from `show_fatal_dialog` itself. `fatal_exit` also
+/// goes through that dialog, and one of its call sites fires after the sidecar
+/// has started; releasing there would drop the claim while `node` still holds
+/// the port, and the next copy would then be told a stale story about its own
+/// predecessor's orphan.
 ///
 /// Removing the registry entry as well as unlocking means a caller that somehow
 /// continues can re-claim cleanly rather than short-circuit on a lock it no
@@ -150,9 +169,10 @@ pub(super) fn release_all_claims() {
         if let Err(error) = Fs2FileExt::unlock(&file) {
             // Dropping `file` at the end of this iteration closes the handle,
             // which releases the lock on both platforms regardless — so this is
-            // a report, not a leak. `eprintln!` because the only caller is an
-            // exit path that runs before the log plugin exists.
-            eprintln!("[cave] could not release the claim on port {port}: {error}");
+            // a report, not a leak.
+            warn_without_a_logger(&format!(
+                "[cave] could not release the claim on port {port}: {error}"
+            ));
         }
     }
 }
@@ -168,16 +188,18 @@ fn record_port_owner(state_dir: &Path, port: u16) {
     let encoded = match serde_json::to_vec(&record) {
         Ok(encoded) => encoded,
         Err(error) => {
-            log::warn!("[cave] could not encode the port {port} owner record: {error}");
+            warn_without_a_logger(&format!(
+                "[cave] could not encode the port {port} owner record: {error}"
+            ));
             remove_stale_port_owner(&path, port);
             return;
         }
     };
     if let Err(error) = fs::write(&path, encoded) {
-        log::warn!(
+        warn_without_a_logger(&format!(
             "[cave] could not record this process as the owner of port {port} ({}): {error}",
             path.display()
-        );
+        ));
         remove_stale_port_owner(&path, port);
     }
 }
@@ -192,10 +214,45 @@ fn remove_stale_port_owner(path: &Path, port: u16) {
     match fs::remove_file(path) {
         Ok(()) => (),
         Err(error) if error.kind() == io::ErrorKind::NotFound => (),
-        Err(error) => log::warn!(
+        Err(error) => warn_without_a_logger(&format!(
             "[cave] could not clear the stale owner record for port {port} ({}): {error}",
             path.display()
-        ),
+        )),
+    }
+}
+
+/// How long a loser will wait for the winner to name itself. Deliberately
+/// short: this runs on a path that is already refusing to start, and a missing
+/// name costs a nicety, never correctness.
+#[cfg(desktop)]
+const OWNER_RECORD_WAIT: Duration = Duration::from_millis(60);
+
+#[cfg(desktop)]
+const OWNER_RECORD_POLL: Duration = Duration::from_millis(10);
+
+/// The owner's pid, waiting briefly for the winner to write it.
+///
+/// The winner can only name itself AFTER it holds the lock, so there is a
+/// window in which a loser sees the refusal but no record. Measured on Windows
+/// with six processes released from a shared wall-clock barrier, the loser read
+/// `None` on most attempts — and two copies launched together is exactly the
+/// case this whole module exists for, so the anonymous message would be the one
+/// operators actually saw. A copy that lost to an already-established owner
+/// never needed this: the record was always there.
+///
+/// Bounded and cheap. Startup is being refused either way; the only question is
+/// whether the refusal can say which process to switch to.
+#[cfg(desktop)]
+fn await_port_owner(state_dir: &Path, port: u16) -> Option<u32> {
+    let deadline = Instant::now() + OWNER_RECORD_WAIT;
+    loop {
+        if let Some(pid) = read_port_owner(state_dir, port) {
+            return Some(pid);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        thread::sleep(OWNER_RECORD_POLL);
     }
 }
 
@@ -356,6 +413,53 @@ mod tests {
         );
 
         let _ = Fs2FileExt::unlock(&next);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_loser_waits_briefly_for_the_winner_to_name_itself() {
+        // The winner can only write the record AFTER it holds the lock, so two
+        // copies launched together race into a window where the refusal is
+        // already decided and the name is not yet written. Measured on Windows
+        // with six barrier-synchronised processes, the loser read `None` on
+        // most attempts — and two copies launched together is precisely what
+        // this module exists for, so that would be the message operators
+        // actually saw.
+        let _serialized = claim_test_guard();
+        let dir = test_dir("await-owner");
+        let port = 39_008;
+
+        let other = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(dir.join(port_lock_file_name(port)))
+            .expect("open the stand-in winner's handle");
+        Fs2FileExt::lock_exclusive(&other).expect("the stand-in winner takes the lock");
+
+        // The winner names itself only after the loser is already asking.
+        let naming_dir = dir.clone();
+        let naming = std::thread::spawn(move || {
+            // 5ms against a 60ms budget: a 12x margin, because a 3x one
+            // flaked on a loaded machine. The test still fails if the wait is
+            // removed, since the read would then happen before this write.
+            thread::sleep(Duration::from_millis(5));
+            fs::write(
+                naming_dir.join(port_owner_file_name(port)),
+                serde_json::to_vec(&PortOwnerRecord { pid: 7171 }).expect("encode owner"),
+            )
+            .expect("record the stand-in winner");
+        });
+
+        assert_eq!(
+            claim_dedicated_port(&dir, port).expect("evaluate the contended claim"),
+            PortClaim::HeldBy { pid: Some(7171) },
+            "a refusal should name the copy to switch to, not just say one exists"
+        );
+
+        let _ = naming.join();
+        let _ = Fs2FileExt::unlock(&other);
         let _ = fs::remove_dir_all(&dir);
     }
 

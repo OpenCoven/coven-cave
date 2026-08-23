@@ -1275,10 +1275,11 @@ fn build_info_response(status: &str, body: &str) -> Vec<u8> {
 
 #[test]
 fn an_unauthenticated_cave_identifies_itself() {
-    // Only a tokenless server can answer this — src/proxy.ts 401s an
-    // unauthenticated `/api/` request whenever COVEN_CAVE_AUTH_TOKEN is set,
-    // which the packaged sidecar always sets. In practice this verdict means
-    // `pnpm dev`.
+    // Both a packaged copy and a `pnpm dev` server answer this way, so it is
+    // the ordinary second-copy verdict rather than a dev-only one. A packaged
+    // copy answers despite holding a sidecar token because `server.ts` stamps
+    // the local-peer header on any direct loopback request and `src/proxy.ts`
+    // lets a trusted local peer through ordinary app APIs without one.
     assert_eq!(
         classify_build_info_response(&build_info_response(
             "200 OK",
@@ -1305,9 +1306,11 @@ fn a_chunked_answer_is_decoded_rather_than_read_as_a_stranger() {
 
 #[test]
 fn a_gated_answer_is_its_own_verdict() {
-    // This is what a RUNNING PACKAGED COPY looks like from an unauthenticated
-    // probe, so it must not be flattened into `Stranger` — the message it
-    // produces is the one most operators will actually read.
+    // Not the ordinary second copy — that answers 200 and lands in `Cave`.
+    // This is a Cave reached without `server.ts` in front of it, or something
+    // else gating the same path, and it must not be flattened into `Stranger`:
+    // "will not identify itself" and "is another program" call for different
+    // actions.
     for status in ["401 Unauthorized", "403 Forbidden"] {
         assert_eq!(
             classify_build_info_response(&build_info_response(
@@ -1501,7 +1504,9 @@ fn a_trickling_occupant_cannot_stall_startup() {
 
     assert_eq!(verdict, PortOccupant::Stranger);
     assert!(
-        elapsed < Duration::from_secs(15),
+        // Generous on purpose: the regression this detects takes HOURS, so a
+        // wide bound costs nothing and a tight one flakes on a loaded runner.
+        elapsed < Duration::from_secs(30),
         "the probe must give up on its own budget, took {elapsed:?}"
     );
 }
@@ -1573,7 +1578,9 @@ fn a_stalled_sidecar_cannot_hold_the_readiness_wait_past_its_deadline() {
         "a sidecar that never completes a response is not ready"
     );
     assert!(
-        elapsed < Duration::from_secs(20),
+        // Same reasoning as the sibling above: reverting the fix costs ~55
+        // minutes here, so 45s separates regression from load noise by ~70x.
+        elapsed < Duration::from_secs(45),
         "the wait must honour its own deadline, took {elapsed:?}"
     );
 }
