@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AUTO_MISSION_TIMEOUT_MS,
+  autoMissionStatusDraft,
   clearAutoMission,
   isAutoMissionArmed,
   isAutoModeDraft,
@@ -84,6 +85,12 @@ test("mobile Auto selection adds and removes the existing slash command without 
   assert.equal(toggleAutoModeDraft("  /autopilot verify release"), "verify release");
   assert.equal(isAutoModeDraft("/auto investigate the failure"), true);
   assert.equal(isAutoModeDraft("/automatic is a different command"), false);
+});
+
+test("active Auto status preparation never overwrites an existing draft", () => {
+  assert.equal(autoMissionStatusDraft(""), "/auto status");
+  assert.equal(autoMissionStatusDraft("   "), "/auto status");
+  assert.equal(autoMissionStatusDraft("keep this draft"), null);
 });
 
 // ── ping decision ────────────────────────────────────────────────────────────

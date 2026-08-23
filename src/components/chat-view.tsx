@@ -235,6 +235,7 @@ import { copyText } from "@/lib/clipboard";
 import { sliceSpecBlocks } from "@/lib/spec-blocks";
 import {
   AUTO_BRIEFED_KEY,
+  autoMissionStatusDraft,
   clearAutoMission,
   isAutoMissionTimedOut,
   isAutoMissionArmed,
@@ -3149,8 +3150,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const toggleMobileAutoMode = useCallback(() => {
     if (autoMissionActive) {
-      if (!input.trim()) setInput("/auto status");
-      announce("Auto mission is active. The status command is ready.");
+      const statusDraft = autoMissionStatusDraft(input);
+      if (statusDraft) {
+        setInput(statusDraft);
+        announce("Auto mission is active. The status command is ready.");
+      } else {
+        announce("Auto mission is active. Your existing draft is unchanged.");
+      }
     } else {
       const next = toggleAutoModeDraft(input);
       setInput(next);

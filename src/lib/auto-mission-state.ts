@@ -283,6 +283,10 @@ export const AUTO_BRIEFED_KEY = "cave:auto-mission:briefed";
 
 const AUTO_DRAFT_PREFIX = /^\/(?:auto|autopilot)(?=\s|$)/i;
 
+export function autoMissionStatusDraft(value: string): string | null {
+  return value.trim() ? null : "/auto status";
+}
+
 export function isAutoModeDraft(value: string): boolean {
   return AUTO_DRAFT_PREFIX.test(value.trimStart());
 }
