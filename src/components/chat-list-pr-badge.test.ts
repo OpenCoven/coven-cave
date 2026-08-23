@@ -69,7 +69,7 @@ assert.match(
 );
 
 // ── Badge styling: GitHub's state colors ─────────────────────────────────────
-for (const state of ["merged", "closed", "draft"]) {
+for (const state of ["merged", "closed", "draft", "unknown"]) {
   assert.match(
     css,
     new RegExp(`\\.chat-list-pr-badge\\[data-pr-state="${state}"\\]`),
