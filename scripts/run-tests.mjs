@@ -1097,6 +1097,7 @@ export const SUITES = {
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
     "src/lib/design-token-drift.test.ts",
+    "src/lib/undefined-token-reference.test.ts",
     "src/lib/design-handoff-ledger.test.ts",
     "src/lib/podcast-script.test.ts",
     "src/lib/dev-shell-recovery.test.ts",
@@ -2186,6 +2187,10 @@ const ALIAS_LOADER = new Set([
 const RAW_SOURCE_SCANNER_TESTS = new Set([
   "src/app/route-inventory.test.ts",
   "src/lib/design-token-drift.test.ts",
+  // Counts var() references per token name. Under the facade hook every sheet
+  // imported by globals.css is read twice, so every per-name bank reads as
+  // "went UP" (cave-apg39).
+  "src/lib/undefined-token-reference.test.ts",
 ]);
 
 // Rendered TSX interaction tests run through Vitest's Vite transform rather
