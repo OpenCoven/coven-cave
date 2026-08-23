@@ -180,12 +180,20 @@ test("warm the code-split surface chunks", async ({ page }) => {
   await reopen.click();
   await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: CHUNK_TIMEOUT });
 
-  // `board` — the last heavy surface this file did not warm, and the one two
-  // specs rotate on (cave-18kpz). `BoardInspector` is a static import of
-  // `board-view`, so the "Card inspector" dialog ships inside the same lazy
-  // chunk: chat-task-chip-nav clicks the task chip and gives that dialog 10s,
-  // against a cold compile the header above measured at 28.3s. Deep-link to
-  // the card so the drawer itself renders, not just the empty board shell.
+  // `board` — the last heavy surface this file did not warm. `BoardInspector`
+  // is a static import of `board-view`, so the "Card inspector" dialog ships
+  // inside the same lazy chunk, and the two specs that need it
+  // (chat-task-chip-nav, task-work-fit) were paying its compile inside their
+  // own budgets — chat-task-chip-nav allows the dialog 10s. Measured on a cold
+  // `.next`: adding this step moves the warmup from 20.1s to 29.2s, which is
+  // that compile being paid here instead of there. Deep-link to the card so
+  // the drawer itself renders, not just the empty board shell.
+  //
+  // ⚠️ This closes a real gap but did NOT fix chat-task-chip-nav on CI
+  // (cave-18kpz): run 32621714561 still failed it with the chunk warmed. That
+  // spec is failing because hosted runners are ~3.3x slower than they were
+  // before 2026-08-23T02:00Z, not because of this chunk — see the bead. Do not
+  // read this step as that spec's fix.
   await page.goto(`/?mode=board#card-${WARMUP_CARD.id}`);
   await page.waitForSelector(".board-shell", { timeout: CHUNK_TIMEOUT });
   await expect(page.getByRole("dialog", { name: "Card inspector" }))
