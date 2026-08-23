@@ -1306,11 +1306,16 @@ fn a_chunked_answer_is_decoded_rather_than_read_as_a_stranger() {
 
 #[test]
 fn a_gated_answer_is_its_own_verdict() {
-    // Not the ordinary second copy — that answers 200 and lands in `Cave`.
-    // This is a Cave reached without `server.ts` in front of it, or something
-    // else gating the same path, and it must not be flattened into `Stranger`:
-    // "will not identify itself" and "is another program" call for different
-    // actions.
+    // Most often ANOTHER PACKAGED COVENCAVE. `trustedLocalBrowserApi` — the
+    // local-peer bypass that makes a running copy answer 200 and land in
+    // `Cave` — landed in #4874 on 2026-08-22, after v0.3.9 was stamped on
+    // 2026-08-21, so no build in the field has it: every shipped copy answers
+    // 401 here. The residual cases are a Cave reached without `server.ts` in
+    // front of it, or something else gating the same path.
+    //
+    // Either way it must not be flattened into `Stranger`: "will not identify
+    // itself" and "is another program" call for different actions, which
+    // `the_gated_and_stranger_refusals_prescribe_different_actions` pins.
     for status in ["401 Unauthorized", "403 Forbidden"] {
         assert_eq!(
             classify_build_info_response(&build_info_response(
@@ -1406,6 +1411,44 @@ fn every_refusal_offers_the_documented_way_to_run_a_second_copy() {
     // work around, so re-launching is the whole instruction.
     let vanished = port_conflict_message(3020, &PortOccupant::Free);
     assert!(vanished.contains("Re-launch"), "{vanished}");
+}
+
+#[test]
+fn the_gated_and_stranger_refusals_prescribe_different_actions() {
+    // `a_gated_answer_is_its_own_verdict` keeps the two CLASSIFICATIONS apart
+    // and cites the different actions they call for as the reason for the
+    // split. Nothing kept the two MESSAGES apart, and they drifted to a
+    // word-for-word identical instruction while that justification stood.
+    //
+    // Compare the INSTRUCTION paragraph, not the whole message. Both open
+    // with a diagnosis that has always differed, so a whole-message
+    // comparison passes on that alone — it would have passed throughout the
+    // drift this pins. The shared `second_copy_hint()` is stripped for the
+    // same reason in reverse: it is boilerplate both must carry, so leaving
+    // it in only adds identical text to both sides.
+    let hint = second_copy_hint();
+    let instruction = |occupant: &PortOccupant| {
+        let message = port_conflict_message(3020, occupant);
+        let (_diagnosis, tail) = message.split_once("\n\n").unwrap_or_else(|| {
+            panic!("{occupant:?} refusal must separate diagnosis from instruction: {message}")
+        });
+        tail.strip_suffix(hint.as_str())
+            .unwrap_or_else(|| {
+                panic!("{occupant:?} refusal must end with the second-copy hint: {message}")
+            })
+            .trim()
+            .to_string()
+    };
+
+    let gated = instruction(&PortOccupant::Gated);
+    let stranger = instruction(&PortOccupant::Stranger);
+    assert!(!gated.is_empty(), "Gated must instruct the operator");
+    assert!(!stranger.is_empty(), "Stranger must instruct the operator");
+    assert_ne!(
+        gated, stranger,
+        "a refusal that will not identify itself is most often another CovenCave — telling the \
+         operator to quit it is not the same move as telling them to switch to it"
+    );
 }
 
 #[test]
