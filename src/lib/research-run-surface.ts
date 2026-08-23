@@ -146,6 +146,16 @@ function nonNegativeInt(value: string | undefined): number | undefined {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
+function hasUnquotedGtAfter(value: string, from: number): boolean {
+  let inQuote = false;
+  for (let index = from; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === '"') inQuote = !inQuote;
+    else if (char === ">" && !inQuote) return true;
+  }
+  return false;
+}
+
 /**
  * Chat transport for research-run snapshots emitted by Coven-native skills.
  * Markers are deliberately small and declarative; durable state continues to
@@ -165,7 +175,7 @@ export function extractResearchRunMarkers(
   const codeRanges = markdownCodeRanges(text);
   const byId = new Map<string, ResearchRunMarker>();
   MARKER_RE.lastIndex = 0;
-  const visible = text.replace(MARKER_RE, (marker, raw: string, index: number) => {
+  let visible = text.replace(MARKER_RE, (marker, raw: string, index: number) => {
     if (codeRanges.some(([start, end]) => index >= start && index < end)) return marker;
     const value = attrs(raw ?? "");
     const runId = value["run-id"]?.trim();
@@ -206,6 +216,21 @@ export function extractResearchRunMarkers(
     });
     return "";
   });
+
+  // Hide an unterminated marker tail while a streamed turn is still building
+  // it. Fenced examples remain literal, mirroring the skill/GitHub marker
+  // contracts so protocol syntax never flashes in user-visible prose.
+  const tail = visible.lastIndexOf("<coven:r");
+  if (
+    tail !== -1
+    && !hasUnquotedGtAfter(visible, tail)
+    && !markdownCodeRanges(visible).some(([start, end]) => tail >= start && tail < end)
+  ) {
+    const fragment = visible.slice(tail);
+    if ("<coven:research".startsWith(fragment.slice(0, "<coven:research".length))) {
+      visible = visible.slice(0, tail);
+    }
+  }
 
   return { visible, runs: [...byId.values()] };
 }
