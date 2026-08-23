@@ -104,6 +104,17 @@ try {
       "list --all --json": {
         stdout: '[{"id":"cave-shared","title":"Shared","status":"open","priority":1,"updated_at":"2026-08-09T00:00:00.000Z","labels":["surface:shared"]}]\n',
       },
+      // The gates rail (cave-7c329): blocked beads, plus the ONE join that
+      // turns their blocker ids into names.
+      "blocked --json": {
+        stdout: '[{"id":"cave-gated","title":"Gated","status":"blocked","priority":2,"blocked_by":["cave-blocker"],"blocked_by_count":1}]\n',
+      },
+      "list --id cave-blocker --json": {
+        stdout: '[{"id":"cave-blocker","title":"Provision the signing key","status":"open","priority":1}]\n',
+      },
+      "update cave-shared --priority 0 --json": {
+        stdout: '{"id":"cave-shared","priority":0}\n',
+      },
       "update cave-shared --claim --json": {
         stdout: '{"id":"cave-shared","status":"in_progress"}\n',
       },
@@ -129,6 +140,9 @@ try {
         stdout: '[{"id":"project-b-open","title":"Project B Open","status":"open","priority":1,"updated_at":"2026-08-09T00:00:00.000Z","labels":["surface:shared"]}]\n',
       },
       "ready --json": {
+        stdout: "[]\n",
+      },
+      "blocked --json": {
         stdout: "[]\n",
       },
     }),
@@ -183,6 +197,81 @@ printf '[]\\n'
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal((await response.json()).projectRoot, canonicalProjectA);
   }
+  // ── mode=blocked names its blockers (cave-7c329) ──────────────────────────
+  //
+  // The gates rail must NAME each unresolved dependency, not print a bare id:
+  // the repo's own dependency rule is "name the dependency in the imperative"
+  // (docs/orchestration-ready-tasks.md). `bd blocked --json` returns ids only,
+  // so the route owes a join — and this asserts the joined TITLE arrives, not
+  // merely that a second command was spawned.
+  const blockedResponse = await beads.GET(
+    localRequest(`http://127.0.0.1/api/beads?mode=blocked&projectRoot=${root}`),
+  );
+  assert.equal(blockedResponse.status, 200, await blockedResponse.clone().text());
+  const blockedBody = await blockedResponse.json();
+  assert.equal(blockedBody.mode, "blocked");
+  assert.equal(blockedBody.projectRoot, canonicalProjectA);
+  assert.deepEqual(
+    (blockedBody.data ?? []).map((bead) => bead.id),
+    ["cave-gated"],
+    "mode=blocked returns bd blocked rows",
+  );
+  assert.deepEqual(
+    blockedBody.blockers,
+    [{ id: "cave-blocker", title: "Provision the signing key", status: "open", priority: 1 }],
+    "the blocker id is joined to its real record so the gate card can name it",
+  );
+  const joinCalls = (await readCommands()).filter(
+    (entry) => entry.command === "bd" && entry.args[0] === "list" && entry.args.includes("--id"),
+  );
+  assert.equal(joinCalls.length, 1, "the whole blocker set is named in ONE join, not one bd show per id");
+  assert.deepEqual(joinCalls[0].args, ["list", "--id", "cave-blocker", "--json"]);
+
+  // No blockers to name means no join at all.
+  const rootB = encodeURIComponent(projectB);
+  const emptyBlocked = await beads.GET(
+    localRequest(`http://127.0.0.1/api/beads?mode=blocked&projectRoot=${rootB}`),
+  );
+  assert.equal(emptyBlocked.status, 200, await emptyBlocked.clone().text());
+  assert.deepEqual((await emptyBlocked.json()).blockers, []);
+  assert.equal(
+    (await readCommands()).filter(
+      (entry) => entry.command === "bd" && entry.args[0] === "list" && entry.args.includes("--id"),
+    ).length,
+    1,
+    "a blocked set with no blocker ids spawns no join",
+  );
+
+  // ── action=priority is the ONLY ordering write (cave-7c329) ───────────────
+  //
+  // The scheduler has no free-position reorder because bd stores no rank. It
+  // writes a band instead, and the scheduler's undo replays a recorded previous
+  // band — so a value bd would reinterpret must never reach the CLI.
+  const priorityOk = await beads.POST(localRequest("http://127.0.0.1/api/beads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "priority", id: "cave-shared", priority: 0, projectRoot: projectA }),
+  }));
+  assert.equal(priorityOk.status, 200, await priorityOk.clone().text());
+  const priorityCalls = (await readCommands()).filter(
+    (entry) => entry.command === "bd" && entry.args.includes("--priority"),
+  );
+  assert.deepEqual(priorityCalls.map((entry) => entry.args), [
+    ["update", "cave-shared", "--priority", "0", "--json"],
+  ]);
+
+  for (const priority of [-1, 5, 2.5, "0", null, NaN]) {
+    const before = (await readCommands()).length;
+    const rejected = await beads.POST(localRequest("http://127.0.0.1/api/beads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "priority", id: "cave-shared", priority, projectRoot: projectA }),
+    }));
+    assert.equal(rejected.status, 400, `priority ${String(priority)} must be rejected`);
+    assert.match((await rejected.json()).error, /priority must be an integer 0-4/);
+    assert.equal((await readCommands()).length, before, `priority ${String(priority)} must never reach bd`);
+  }
+
   const prResponse = await prs.GET(localRequest(`http://127.0.0.1/api/beads/prs?projectRoot=${root}`));
   assert.equal(prResponse.status, 200);
   assert.equal((await prResponse.json()).projectRoot, canonicalProjectA);
