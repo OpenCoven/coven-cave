@@ -203,7 +203,7 @@ test("the redesigned modal separates selection from navigation", () => {
 
 test("the redesigned modal keeps breadcrumbs, filtering, and per-folder state resets", () => {
   const src = read("./directory-picker-modal.tsx");
-  assert.match(src, /aria-label="Folder path"/, "the toolbar exposes a breadcrumb nav");
+  assert.match(src, /aria-label="Folder breadcrumbs"/, "the toolbar exposes a breadcrumb nav");
   assert.match(src, /aria-current=\{isLast \? "location" : undefined\}/, "the current crumb is marked for assistive tech");
   assert.match(src, /onClick=\{\(\) => navigateTo\(crumb\.path\)\}/, "crumbs jump straight to any ancestor");
   assert.match(src, /aria-label="Filter folders"/, "the filter input is labelled");
@@ -219,9 +219,32 @@ test("the redesigned modal keeps breadcrumbs, filtering, and per-folder state re
   );
   assert.match(
     src,
-    /const navigateTo = useCallback\(\s*\(dir: string \| null\) => \{\s*setFilter\(""\);\s*setSelectedPath\(null\);\s*resetCreateFolderState\(\);/,
+    /const navigateTo = useCallback\(\s*\(dir: string \| null,[\s\S]*?\) => \{\s*setFilter\(""\);\s*setSelectedPath\(null\);\s*resetCreateFolderState\(\);/,
     "navigation clears filter, highlight, and inline create before loading",
   );
+});
+
+test("the modal accepts a pasted folder path and preserves invalid drafts", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /const \[pathDraft, setPathDraft\] = useState\(""\);/, "keeps an editable path draft");
+  assert.match(src, /const \[pathError, setPathError\] = useState<string \| null>\(null\);/, "tracks direct-path failures separately");
+  assert.match(
+    src,
+    /setPathDraft\(body\.cwd === DRIVES \? "" : body\.cwd\);/,
+    "successful folder loads synchronize the address field",
+  );
+  assert.match(
+    src,
+    /const nextPath = pathDraft\.trim\(\);[\s\S]*navigateTo\(nextPath, \{ fromPathEntry: true \}\);/,
+    "pasted paths navigate through the existing browse flow",
+  );
+  assert.match(src, /<label[\s\S]*htmlFor="directory-picker-path"[\s\S]*Folder path/, "the field has a persistent visible label");
+  assert.match(src, /onSubmit=\{\(event\) => \{[\s\S]*submitPathDraft\(\);/, "Enter submits the path field");
+  assert.match(src, /onFocus=\{\(event\) => event\.currentTarget\.select\(\)\}/, "focus selects the current path for replacement");
+  assert.match(src, /aria-invalid=\{Boolean\(pathError\)\}/, "invalid pasted paths expose their state");
+  assert.match(src, /if \(fromPathEntry\) setPathError\(message\);/, "browse failures stay attached to direct path entry");
+  assert.match(src, /\{error && !pathError \? \(/, "direct path errors do not replace the current folder listing");
+  assert.match(src, /setPathDraft\(""\);[\s\S]*setPathError\(null\);/, "closing the modal clears path-local state");
 });
 
 test("the redesigned modal badges workspace folders and keeps the design-language chrome", () => {
