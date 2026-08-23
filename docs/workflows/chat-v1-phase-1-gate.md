@@ -130,6 +130,18 @@ adding a URL-query fallback for the pairing secret.
 This is the more consequential of the two routes. The poll route discloses a
 status; the exchange route **mints the bearer**.
 
+Nor does the socket-level run cover it. The recorded conformance run asserts
+`ingress.forwarded.public`, `ingress.forwarded.authenticated` and
+`ingress.forwarded.admin` — but those exercise **`proxy.ts`'s** ingress
+classification, which refuses a forwarded request before any handler runs, so
+they answer the same whether or not the route keeps a gate of its own. The
+route-level check is precisely the fallback `cave-f1xki` added *because* the
+proxy's classification had been slipped with a percent escape, and it is the
+layer neither the unit suites nor the conformance run could observe. (Reasoned
+from the assertion ids and what each layer refuses; the conformance run was
+**not** re-executed under `M17`, which would need a full build of the mutated
+tree.)
+
 Repaired by porting both refusal tests onto the exchange route, with a positive
 control (C2) proving they are not satisfied by blanket refusal, and an assertion
 that a refusal neither mints a credential nor spends the approval — an unstamped
