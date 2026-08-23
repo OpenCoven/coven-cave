@@ -19,6 +19,12 @@ streaming route, no attachment route, and the other five scopes
 (`chat:write`, `conversations:write`, `attachments:write`, `tasks:write`,
 `github:write`) are recorded on a credential and read by nothing.
 
+If you are operating approvals from the Cave UI rather than implementing a
+client, read [Client access in Settings](../client-v1-settings.md) alongside
+this reference. That guide covers the current desktop workflow over
+`GET /api/client/v1/health`, the three pairing routes, and the four
+administrator routes without repeating the contract below.
+
 ## Where the contract actually lives
 
 This document describes behaviour; it is not the authority for it. When the two

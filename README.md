@@ -175,6 +175,10 @@ to describe current behavior. For deeper design context, start with
 [`docs/golden-paths.md`](docs/golden-paths.md),
 [`docs/coven-design-language.md`](docs/coven-design-language.md), and
 [`docs/multi-session-coordination.md`](docs/multi-session-coordination.md).
+For Client v1 specifically, see
+[`docs/api/client-v1.md`](docs/api/client-v1.md) for the public HTTP contract
+and [`docs/client-v1-settings.md`](docs/client-v1-settings.md) for the desktop
+approval and credential-management workflow.
 
 For interface direction explored outside this repository,
 [**OpenCoven UI**](https://ui.opencoven.ai) is a standalone, dependency-free

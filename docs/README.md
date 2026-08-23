@@ -31,6 +31,7 @@ A document in `docs/` proper should be one somebody keeps current.
 ### Public APIs
 
 - [`api/client-v1.md`](api/client-v1.md) — the Client v1 HTTP surface: the shared envelope, the loopback ingress rules, the pairing handshake, the administrator routes, the rate limits, and the routes that do not exist yet
+- [`client-v1-settings.md`](client-v1-settings.md) — operator guide for Settings → Client access: reviewing pairing requests, approving or denying them, auditing issued credentials, and revoking access
 
 ### Platform and runtime
 
