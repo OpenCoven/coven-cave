@@ -7,6 +7,11 @@ import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { sessionDisplayTitle } from "@/lib/session-title";
 import { shortProjectRoot } from "@/lib/command-palette-grouping";
+import {
+  armedAutoMissionsFor,
+  autoMissionRowPresentation,
+} from "@/lib/auto-mission-presence";
+import type { AutoMissionStorage } from "@/lib/auto-mission-state";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type Props = {
@@ -17,6 +22,9 @@ type Props = {
   familiars: Familiar[];
   /** Jump to the process's chat (workspace openFamiliarSession). */
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
+  /** Where armed `/auto` records are read from. Defaults to window.localStorage;
+   *  injected by tests (the auto-mission-state.ts convention). */
+  missionStorage?: AutoMissionStorage | null;
 };
 
 function fmtBadge(n: number): string {
@@ -28,16 +36,35 @@ function fmtBadge(n: number): string {
 // Live per-row timestamps: tick each minute so a popover left open doesn't
 // show a stale "started 2m ago" forever. Rows unmount with the popover, so
 // the always-mounted trigger pays nothing while closed.
-function RunningSessionList({
+export function RunningSessionList({
   sessions,
   familiars,
   onOpen,
+  missionStorage,
 }: {
   sessions: SessionRow[];
   familiars: Familiar[];
   onOpen: (session: SessionRow) => void;
+  missionStorage?: AutoMissionStorage | null;
 }) {
   useMinuteTick();
+  // Read at mount — the list only mounts when the popover opens, so the
+  // records are as fresh as the moment the human looked. Only the sessions the
+  // server already reports as running are consulted, so a record left armed by
+  // a mission that ended elsewhere can never surface here (see
+  // auto-mission-presence.ts).
+  const missions = useMemo(
+    () =>
+      armedAutoMissionsFor(
+        sessions.map((session) => session.id),
+        missionStorage !== undefined
+          ? missionStorage
+          : typeof window === "undefined"
+            ? null
+            : window.localStorage,
+      ),
+    [sessions, missionStorage],
+  );
   return (
     <ul className="running-sessions__list max-h-80 overflow-y-auto p-1">
       {sessions.map((session) => {
@@ -47,24 +74,44 @@ function RunningSessionList({
         const meta = [familiarName ?? session.harness, shortProjectRoot(session.project_root)]
           .filter(Boolean)
           .join(" · ");
+        const armed = missions.get(session.id);
+        const mission = armed ? autoMissionRowPresentation(armed) : null;
+        // A mission row names the WORK, not the chat: an /auto session's title
+        // is derived from the generated directive, so the untouched row reads
+        // "Run this as an autonomous /auto mission: …".
+        const title = mission ? mission.title : sessionDisplayTitle(session);
         return (
           <li key={session.id}>
             <button
               type="button"
               className="running-sessions__row focus-ring flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+              data-auto-mission={mission ? "true" : undefined}
               onClick={() => onOpen(session)}
-              title={`Open this chat — ${sessionDisplayTitle(session)}`}
+              title={
+                mission
+                  ? `${mission.description} — open this chat`
+                  : `Open this chat — ${sessionDisplayTitle(session)}`
+              }
             >
               <span
                 aria-hidden
                 className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-[var(--color-success)]"
               />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[length:var(--text-xs)] text-[var(--text-primary)]">
-                  {sessionDisplayTitle(session)}
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {mission ? (
+                    // Never colour-only: the word itself carries the meaning.
+                    <span className="running-sessions__tag flex-shrink-0 rounded px-1 py-px text-[length:var(--text-2xs)] font-medium uppercase tracking-wide text-[var(--accent-presence)]">
+                      {mission.tag}
+                    </span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--text-xs)] text-[var(--text-primary)]">
+                    {title}
+                  </span>
                 </span>
                 <span className="mt-0.5 block truncate text-[length:var(--text-2xs)] text-[var(--text-muted)]">
-                  {meta} · started <RelativeTime iso={session.created_at} fallback="—" />
+                  {meta} · started{" "}
+                  <RelativeTime iso={mission ? armed!.startedAt : session.created_at} fallback="—" />
                 </span>
               </span>
             </button>
@@ -81,7 +128,12 @@ function RunningSessionList({
  * now opens a popover listing each live daemon process — familiar, chat
  * title, project, and start time — and a click jumps into that chat.
  */
-export function RunningSessionsPopover({ sessions, familiars, onOpenSession }: Props) {
+export function RunningSessionsPopover({
+  sessions,
+  familiars,
+  onOpenSession,
+  missionStorage,
+}: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -145,6 +197,7 @@ export function RunningSessionsPopover({ sessions, familiars, onOpenSession }: P
           <RunningSessionList
             sessions={rows}
             familiars={familiars}
+            missionStorage={missionStorage}
             onOpen={(session) => {
               setOpen(false);
               onOpenSession(session.id, session.familiarId);

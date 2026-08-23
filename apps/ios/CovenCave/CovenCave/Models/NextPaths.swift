@@ -25,6 +25,11 @@ enum NextPaths {
                     s = String(s.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
                     break
                 }
+                s = s.replacingOccurrences(
+                    of: #"^\[(?:reply|task|action:open-tasks|action:save-link)(?::recommended)?\]\s*"#,
+                    with: "",
+                    options: .regularExpression
+                )
                 return s
             }
             .filter { !$0.isEmpty && !$0.hasPrefix("first next step") && !$0.hasPrefix("second next step") }

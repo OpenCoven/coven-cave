@@ -48,6 +48,7 @@ import type {
   ResearchTopicRecommendation,
   ResearchTopicRecommendationPayload,
 } from "@/lib/research-topic-recommendations";
+import { createResearchMissionInputFromIntent } from "@/lib/research-mission-routing";
 import { relativeTime } from "@/lib/relative-time";
 import { useAgenticRecommendations } from "@/lib/use-agentic-recommendations";
 import {
@@ -56,7 +57,6 @@ import {
   type QuickSaveGroup,
 } from "./research-quick-saves";
 import {
-  createRecommendedResearchMissionInput,
   ResearchMissionComposer,
   type AttachedResearchLink,
 } from "./research-mission-composer";
@@ -400,7 +400,7 @@ export function ResearchTabPrompt({ research, context, onNavigate, initialMode }
 
       if (payload.recommendationKind === "start-mission") {
         const result = await research.start(
-          createRecommendedResearchMissionInput(context.activeFamiliar.id, payload.topic),
+          createResearchMissionInputFromIntent(context.activeFamiliar.id, payload.topic),
         );
         if (!result.ok) {
           throw new Error(result.error);

@@ -120,12 +120,66 @@ test("cursor decoding refuses everything that is not a cursor this Cave minted",
     assert.throws(() => decodeClientV1Cursor(candidate), /cursor/i, label);
   }
   // The budget boundary itself is admissible, not merely one below it.
-  assert.doesNotThrow(() => {
-    const key = { sort: "s".repeat(120), id: "i" };
-    const encoded = encodeClientV1Cursor(key);
-    assert.ok(encoded.length <= CLIENT_V1_LIMITS.cursorCharacters);
-    decodeClientV1Cursor(encoded);
-  });
+  //
+  // This used to encode a 120-character sort key and assert only that the token
+  // came out `<= cursorCharacters`. That token is around 180 characters — it
+  // never reaches the ceiling, so the sentence above was a claim the test did
+  // not make, and the ceiling could be wrong by hundreds of characters with
+  // nothing failing. Measured: moving the check to
+  // `cursorCharacters - 200` left this case green. So the key is now grown
+  // until the encoded token sits EXACTLY on the budget, and one character more
+  // is required to be refused — which is what makes `>` rather than `>=` the
+  // tested comparison.
+  let sortLength = 1;
+  let encoded = encodeClientV1Cursor({ sort: "s".repeat(sortLength), id: "i" });
+  while (encoded.length < CLIENT_V1_LIMITS.cursorCharacters && sortLength < 2000) {
+    sortLength += 1;
+    encoded = encodeClientV1Cursor({ sort: "s".repeat(sortLength), id: "i" });
+  }
+  // base64url of a 3-byte-aligned payload lands on the ceiling exactly; if the
+  // arithmetic ever stops working out the loop above overshoots and this fails
+  // loudly rather than testing a token below the boundary again.
+  assert.equal(
+    encoded.length,
+    CLIENT_V1_LIMITS.cursorCharacters,
+    "no key encodes to a token exactly on the cursor budget",
+  );
+  assert.deepEqual(decodeClientV1Cursor(encoded), { sort: "s".repeat(sortLength), id: "i" });
+  // One character past the budget is refused, so the boundary is a boundary
+  // rather than a suggestion.
+  assert.throws(
+    () => decodeClientV1Cursor(`${encoded}A`),
+    /exceeds 512 characters/,
+  );
+});
+
+test("a full continuation page that is also the last page publishes no next", () => {
+  // The over-fetch is the ONLY evidence for `hasMore`, and this is the case
+  // where a page is full and the set is nonetheless exhausted. Getting it wrong
+  // hands the client a `next` that leads to an empty page — which terminates,
+  // so a walk-to-exhaustion test cannot see it, and every route-level walk here
+  // is one. Only asserting `hasMore`/`next` on the boundary page catches it.
+  const first = page(2, null);
+  const second = page(2, decodeClientV1Cursor(first.cursor!.next!));
+  assert.deepEqual(second.items.map((row) => row.id), ["c", "b"]);
+  assert.equal(second.cursor!.hasMore, true);
+  // The set holds five rows, so the third page is exactly one short of full and
+  // must not publish a token. The exact-multiple case is the fourth page below.
+  const third = page(2, decodeClientV1Cursor(second.cursor!.next!));
+  assert.deepEqual(third.items.map((row) => row.id), ["a"]);
+  assert.equal(third.cursor!.hasMore, false);
+  assert.equal(third.cursor!.next, undefined);
+
+  // Now the exact multiple: a limit that divides the remaining set evenly, so
+  // the final page comes back FULL. `hasMore` must still be false.
+  const firstOfFour = page(4, null);
+  assert.equal(firstOfFour.items.length, 4);
+  assert.equal(firstOfFour.cursor!.hasMore, true);
+  const finalFull = page(1, decodeClientV1Cursor(firstOfFour.cursor!.next!));
+  assert.deepEqual(finalFull.items.map((row) => row.id), ["a"]);
+  assert.equal(finalFull.items.length, 1, "the final page is exactly full at this limit");
+  assert.equal(finalFull.cursor!.hasMore, false);
+  assert.equal(finalFull.cursor!.next, undefined);
 });
 
 test("page limit defaults to the contract page size and is bounded by its ceiling", () => {

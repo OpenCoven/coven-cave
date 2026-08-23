@@ -2,7 +2,7 @@
 
 import "@/styles/settings-client-access.css";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SettingsOverview } from "@/components/settings-overview";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
@@ -560,13 +560,13 @@ function SettingsClientAccessContent({
       || (!loading && error === null && errorHeadline === null)
     );
   const showInitialLoading = loading && !confirmedSnapshot;
-  const describePendingActionIdentity = createActionIdentityResolver(
-    pendingRequests,
-    "request",
+  const describePendingActionIdentity = useMemo(
+    () => createActionIdentityResolver(pendingRequests, "request"),
+    [pendingRequests],
   );
-  const describeCredentialActionIdentity = createActionIdentityResolver(
-    credentials,
-    "credential",
+  const describeCredentialActionIdentity = useMemo(
+    () => createActionIdentityResolver(credentials, "credential"),
+    [credentials],
   );
   return (
     <div className="settings-client-access">

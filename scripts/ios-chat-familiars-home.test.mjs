@@ -195,23 +195,22 @@ assert.match(
 
 const chat = await read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
 
-// --- Session selection lives in the config card ------------------------------
-// The card already holds Model / Runtime / Inventory; Session joins them,
-// mirroring the Project row that is already scoped to the conversation.
+// --- Conversation selection lives in the config card -------------------------
+// The card groups runtime identity, model choice, project, and conversation.
 assert.match(
   chat,
-  /sessionDetailsCard[\s\S]*?sessionDetailRow\(\s*\n?\s*"Session"/,
-  "the config card exposes a Session row",
+  /sessionDetailsCard[\s\S]*?sessionDetailRow\(\s*\n?\s*"Conversation"/,
+  "the config card exposes a Conversation row",
 );
 assert.match(
   chat,
-  /"Session",[\s\S]{0,200}?showsChevron: true/,
-  "the Session row is tappable",
+  /"Conversation",[\s\S]{0,200}?showsChevron: true/,
+  "the Conversation row is tappable",
 );
 assert.match(
   chat,
   /showSessionPicker\s*=\s*true/,
-  "tapping the Session row opens the picker",
+  "tapping the Conversation row opens the picker",
 );
 assert.match(
   chat,

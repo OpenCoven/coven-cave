@@ -33,18 +33,7 @@ async function dispatchTouchSwipe(
   );
 }
 
-// QUARANTINED — cave-z2bvz. Not stale: PR #4758 ("Consolidate recovered
-// product experience work") silently reverted PR #4747 ("Fully hide the
-// collapsed sidebar") nine hours after it landed, so a closed desktop nav is
-// an icons-only 56px rail again and lost its aria-hidden and inert. #4758's
-// description never mentions the sidebar, the rail, or #4747, so this reads as
-// an accidental clobber during consolidation rather than a decision.
-//
-// These assertions are kept verbatim because they are the only surviving
-// record of what #4747 intended. Rewriting them would ratify the revert and
-// destroy that evidence. Restoring #4747 makes them pass unedited — it touches
-// 11 files including CSS, so it belongs in its own reviewed PR.
-test.fixme("closing navigation removes the rail and opening pushes the main panel", async ({ page }) => {
+test("closing navigation removes the rail and opening pushes the main panel", async ({ page }) => {
   await seedClosedSidebar(page);
   await page.goto("/?demo=1");
 
@@ -74,8 +63,7 @@ test.fixme("closing navigation removes the rail and opening pushes the main pane
   await expect.poll(async () => (await navPanel.boundingBox())?.width ?? 1).toBeLessThanOrEqual(1);
 });
 
-// QUARANTINED — cave-z2bvz, same accidental revert as the test above.
-test.fixme("the fully closed sidebar remains closed after reload", async ({ page }) => {
+test("the fully closed sidebar remains closed after reload", async ({ page }) => {
   await seedClosedSidebar(page);
   await page.goto("/?demo=1");
   await expect(page.locator(".shell-top-toggle--nav")).toHaveAttribute("aria-expanded", "false");

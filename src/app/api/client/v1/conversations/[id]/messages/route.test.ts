@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import type { ChatTurn, ConversationFile } from "@/lib/cave-conversations.ts";
+import { CLIENT_V1_LIMITS } from "@/lib/server/client-v1/contract.ts";
 import { encodeClientV1Cursor } from "@/lib/server/client-v1/pagination.ts";
 import type { ClientV1ReadSources } from "@/lib/server/client-v1/read-sources.ts";
 import { createClientV1Runtime, type ClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
@@ -201,6 +202,71 @@ test("an empty transcript is an empty page with no cursor", async () => {
     const body = await response.json() as { cursor?: unknown; data: { messages: unknown[] } };
     assert.deepEqual(body.data.messages, []);
     assert.equal("cursor" in body, false);
+  });
+});
+
+test("the route refuses a query it does not serve instead of guessing a page", async () => {
+  // This route had no refusal test of its own, so replacing its `catch` with a
+  // silent fallback to the default page survived the whole suite — the shared
+  // helper's unit coverage says the helper refuses, not that this route calls
+  // it. The ceiling matters most here: a transcript is the one canonical read
+  // whose page cost scales with how much was said.
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1ConversationMessagesGetHandler(runtime, sources());
+    const authorization = `Bearer ${bearer}`;
+    for (const query of [
+      `?limit=${CLIENT_V1_LIMITS.maxPageSize + 1}`,
+      "?limit=0",
+      "?limit=1e2",
+      "?cursor=not%2Ba%2Bcursor",
+      "?offset=10",
+      "?limit=2&limit=3",
+    ]) {
+      const response = await handler(
+        request("conversation-1", { authorization }, query),
+        context("conversation-1"),
+      );
+      assert.equal(response.status, 400, query);
+      const body = await response.json() as {
+        error: { code: string; retryable: boolean; details?: { reason?: unknown } };
+      };
+      assert.equal(body.error.code, "invalid_request", query);
+      assert.equal(body.error.retryable, false, query);
+      assert.equal(typeof body.error.details?.reason, "string", query);
+    }
+    // The ceiling itself is served, and the transcript is shorter than it, so
+    // the whole active branch comes back on one page.
+    const atCeiling = await handler(
+      request("conversation-1", { authorization }, `?limit=${CLIENT_V1_LIMITS.maxPageSize}`),
+      context("conversation-1"),
+    );
+    assert.equal(atCeiling.status, 200);
+    const body = await atCeiling.json() as { data: { messages: { id: string }[] } };
+    assert.deepEqual(body.data.messages.map((row) => row.id), ["t1", "t3", "t4"]);
+  });
+});
+
+test("a query is refused before the transcript is read", async () => {
+  // The refusal above must not be reachable only after the file has been
+  // opened: a malformed `limit` is a client bug, and answering it should cost
+  // no disk read at all.
+  let reads = 0;
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const handler = createClientV1ConversationMessagesGetHandler(
+      runtime,
+      sources({
+        loadConversation: async () => {
+          reads += 1;
+          return BRANCHED;
+        },
+      }),
+    );
+    const response = await handler(
+      request("conversation-1", { authorization: `Bearer ${bearer}` }, "?offset=10"),
+      context("conversation-1"),
+    );
+    assert.equal(response.status, 400);
+    assert.equal(reads, 0);
   });
 });
 

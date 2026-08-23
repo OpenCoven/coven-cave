@@ -182,6 +182,7 @@ export const EXPECTED_ASSERTION_IDS = [
   "admin.unconfigured.pairing-still-opens",
   "admin.unconfigured.exchange-stays-pending",
   "health.envelope",
+  "health.live-inventory",
   "health.instance-stable",
   "health.discovery-record",
   "ingress.escaped-path.percent",
@@ -256,6 +257,11 @@ export const EXPECTED_ASSERTION_IDS = [
   "reads.conversations-row-deleted-mid-walk-does-not-strand",
   "reads.conversations-tied-sort-key-breaks-on-id",
   "reads.conversations-without-created-at-are-served-last",
+  "reads.conversations-keyless-row-written-mid-walk-is-still-served",
+  "reads.conversations-keyless-rows-tie-on-the-id-tiebreak",
+  "reads.conversations-keyless-row-keyed-between-walks-moves-once",
+  "reads.conversations-unreadable-row-keeps-its-position-mid-walk",
+  "reads.conversations-recovering-row-keeps-its-position-mid-walk",
   "reads.messages-active-branch",
   "reads.messages-values",
   "reads.messages-paging",
@@ -352,6 +358,13 @@ export function checkEnvelope(body, expectation) {
   }
   if (!Array.isArray(body.capabilities) || body.capabilities.length === 0) {
     failures.push("capabilities is missing or empty");
+  }
+  // The live operation inventory rides every response too, and it is what an
+  // SDK's supports() reads. Checked on every response for the same reason the
+  // capability list is: a route that drops it publishes a Cave that appears to
+  // be able to do nothing (cave-8a0s2).
+  if (!Array.isArray(body.operations) || body.operations.length === 0) {
+    failures.push("operations is missing or empty");
   }
   if (expectation?.kind === "success") {
     if (!isRecord(body.data)) failures.push("success envelope carries no data record");
@@ -988,6 +1001,46 @@ async function removeConversation(caveHomeDir, sessionId) {
 }
 
 /**
+ * A transcript file Cave can stat but cannot parse.
+ *
+ * `listConversations` answers with `fallbackConversationSummary` for one of
+ * these — the row a walk has to keep serving, and keep in the same place, or a
+ * file that flips between readable and unreadable moves a row under an open
+ * cursor. Truncated JSON rather than a deleted file on purpose: the trigger the
+ * defect named is a torn write that a later atomic replace completes.
+ */
+async function writeCorruptConversation(caveHomeDir, sessionId) {
+  const dir = path.join(caveHomeDir, "conversations");
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, `${sessionId}.json`), '{"sessionId": "', "utf8");
+}
+
+/**
+ * Append a turn through `POST /api/chat/conversation/:id` — Cave's own write
+ * path, over the socket, not a rewritten file.
+ *
+ * This is the route that used to stamp `createdAt` onto a record that had none
+ * (`args.existing?.createdAt ?? now`), which is the whole of cave-wbxcu. A test
+ * that simulated the stamp by writing the file would keep passing after the
+ * write path was fixed, and would keep failing after it was broken again.
+ */
+async function appendChatTurn(client, sessionId) {
+  return client.request({
+    method: "POST",
+    path: `/api/chat/conversation/${encodeURIComponent(sessionId)}`,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      turn: {
+        id: `${sessionId}-mid-walk`,
+        role: "user",
+        text: "written while a cursor was open",
+        createdAt: "2026-04-09T00:00:00.000Z",
+      },
+    }),
+  });
+}
+
+/**
  * The order `/conversations` owes a client: `createdAt` descending, `id`
  * descending on a tie, and every row without a `createdAt` at the tail.
  *
@@ -1307,6 +1360,44 @@ async function runIngressLeg(client, recorder, adminToken) {
   );
 }
 
+/**
+ * The live declaration a real listener serves, against the generated fixture.
+ *
+ * This is the only vantage point from which the DECLARATION can be checked as a
+ * thing a client actually receives: every unit test in
+ * `src/lib/server/client-v1/**` reads the same constants the route builds its
+ * envelope from, so a build that shipped a different fixture than it serves
+ * would satisfy all of them. Here the bytes come off a socket and the
+ * expectation comes off disk.
+ */
+export function checkLiveInventory(envelope, fixtureContract) {
+  const failures = [];
+  const expectedCapabilities = fixtureContract?.capabilities ?? [];
+  const expectedOperations = (fixtureContract?.operations ?? []).map((operation) => operation.id);
+  if (JSON.stringify(envelope?.capabilities) !== JSON.stringify(expectedCapabilities)) {
+    failures.push(
+      `capabilities are ${JSON.stringify(envelope?.capabilities)}, the generated fixture pins ${JSON.stringify(expectedCapabilities)}`,
+    );
+  }
+  if (JSON.stringify(envelope?.operations) !== JSON.stringify(expectedOperations)) {
+    failures.push(
+      `operations are ${JSON.stringify(envelope?.operations)}, the generated fixture pins ${JSON.stringify(expectedOperations)}`,
+    );
+  }
+  // Named individually rather than left to the comparison above, because these
+  // two are the reason the check exists (#4869) and a diff of two long arrays
+  // does not say so.
+  for (const retired of ["streaming", "revisions"]) {
+    if ((envelope?.capabilities ?? []).includes(retired)) {
+      failures.push(`capabilities still advertises ${retired}, which no route serves`);
+    }
+    if ((envelope?.operations ?? []).some((id) => String(id).startsWith(`${retired}.`))) {
+      failures.push(`operations still advertises ${retired}, which no route serves`);
+    }
+  }
+  return failures;
+}
+
 async function runHealthLeg(client, recorder, caveHomeDir) {
   const first = await client.request({ path: `${CLIENT_V1_PREFIX}/health` });
   const failures = [];
@@ -1318,6 +1409,24 @@ async function runHealthLeg(client, recorder, caveHomeDir) {
   }
   if (first.json?.data?.pairingRequired !== true) failures.push("pairingRequired is not true");
   recorder.expect("health.envelope", failures);
+
+  // The declaration a client reads before it holds any credential, compared to
+  // the byte-pinned fixture an SDK vendors. If these disagree, the SDK's
+  // supports() is answering for a build other than the one running.
+  let fixtureContract = null;
+  try {
+    fixtureContract = JSON.parse(
+      await readFile(
+        path.join(repositoryRoot, "src", "lib", "server", "client-v1", "contract-fixture.json"),
+        "utf8",
+      ),
+    ).contract;
+  } catch (error) {
+    recorder.fail("health.live-inventory", `cannot read the generated contract fixture: ${error.message}`);
+  }
+  if (fixtureContract) {
+    recorder.expect("health.live-inventory", checkLiveInventory(first.json, fixtureContract));
+  }
 
   const second = await client.request({ path: `${CLIENT_V1_PREFIX}/health` });
   recorder.expect(
@@ -2039,6 +2148,67 @@ function checkTouchLanded(walk, sessionId) {
 }
 
 /**
+ * The chat write has to have reached the ledger, AND it has to have left the
+ * row keyless — those are two different claims and a walk proves neither.
+ *
+ * `saveConversation` stamps `updatedAt` on every write and the appended turn
+ * changes the file's size, so the (mtime, ctime, size) summary cache cannot
+ * answer the probe from a stale entry: if `updatedAt` still reads the seeded
+ * value, nothing was written and the walk below survived nothing. The second
+ * check is the fix stated directly — a row that came back carrying a
+ * `createdAt` was stamped, which is the defect whatever the walk then did.
+ */
+function checkChatWriteLanded(response, walk, sessionId, seededUpdatedAt) {
+  const failures = [];
+  if (!response || response.status !== 200) {
+    failures.push(
+      `POST /api/chat/conversation/${sessionId} answered ${response?.status ?? "nothing"}` +
+      `${response?.text ? `: ${response.text.slice(0, 160)}` : ""} — nothing was written`,
+    );
+  }
+  const row = walk.observed.get(sessionId);
+  if (!row) {
+    failures.push(`${sessionId} was not in the ledger after the write, so nothing was written`);
+    return failures;
+  }
+  if (row.updatedAt === seededUpdatedAt) {
+    failures.push(
+      `${sessionId} still reads updatedAt ${JSON.stringify(row.updatedAt)} after the write — the` +
+      " ledger did not move, so this walk proves nothing",
+    );
+  }
+  if ("createdAt" in row) {
+    failures.push(
+      `${sessionId} had no createdAt and was written; it now reads` +
+      ` ${JSON.stringify(row.createdAt)}, so the write path stamped it`,
+    );
+  }
+  return failures;
+}
+
+/**
+ * The readability flip has to have reached the ledger too.
+ *
+ * A file Cave cannot parse projects as `fallbackConversationSummary`, whose
+ * `familiarId` is the empty string — the one field that says, over the wire,
+ * which of the two rows a walk is looking at. Without this probe both cases
+ * below pass against a Cave that never noticed the file changed at all.
+ */
+function checkFallbackRow(walk, sessionId, expectFallback) {
+  const row = walk.observed.get(sessionId);
+  if (!row) return [`${sessionId} left the ledger entirely, which is neither state under test`];
+  const isFallback = row.familiarId === "";
+  if (isFallback === expectFallback) return [];
+  return [
+    expectFallback
+      ? `${sessionId} still reads familiarId ${JSON.stringify(row.familiarId)}, so Cave never saw the` +
+        " file become unreadable and this walk proves nothing"
+      : `${sessionId} still projects as the unreadable-file fallback, so Cave never saw the file` +
+        " recover and this walk proves nothing",
+  ];
+}
+
+/**
  * The whole walk, as an ORDERED sequence against what the ledger should have
  * produced — not as a set, and not as a "did it contain the touched row".
  *
@@ -2313,6 +2483,178 @@ async function runConversationsLeg(client, recorder, bearer, caveHomeDir) {
     "an optional page key is only safe if the rows that lack it are served, not stranded",
   );
   await removeConversation(caveHomeDir, "conversation-keyless");
+  await restore();
+
+  // ── the keyless tail block, under writes (cave-wbxcu) ────────────────────
+  //
+  // Case 7 proves the rows with no `createdAt` are SERVED. That is only half of
+  // what keying on an optional field needs: the block also has to be STABLE,
+  // because a row that leaves it mid-walk sorts above every open cursor and is
+  // then skipped by the rest of the walk — cave-fhjlu again, on exactly the rows
+  // the sentinel exists to protect.
+  //
+  // One writer could move a row out of it: `buildConversation` on POST/PUT
+  // /api/chat/conversation/:id composed `args.existing?.createdAt ?? now`, so a
+  // legacy transcript that never had the field was STAMPED with `now` on its
+  // next turn and jumped to the head of the ordering. The three cases below
+  // drive that real route over the socket rather than rewriting the file,
+  // because the file is not where the defect lived.
+  const keylessSeed = (sessionId) => ({ ...keyless, sessionId });
+  const keylessIds = ["conversation-keyless-written", "conversation-keyless-quiet"];
+  const seedKeyless = async () => {
+    for (const sessionId of keylessIds) await writeConversation(caveHomeDir, keylessSeed(sessionId));
+  };
+  const dropKeyless = async () => {
+    for (const sessionId of keylessIds) await removeConversation(caveHomeDir, sessionId);
+  };
+  const keylessOrder = expectedConversationOrder([
+    ...conversations,
+    ...keylessIds.map((sessionId) => keylessSeed(sessionId)),
+  ]);
+
+  // 8. A keyless row WRITTEN mid-walk, through the route that used to stamp it,
+  //    walked alongside a keyless row that is not written at all. The quiet row
+  //    is the control: if the walk lost both, the ledger moved for some reason
+  //    other than the write.
+  await seedKeyless();
+  let chatWrite = null;
+  const written = await walkConversationsAcross(client, bearer, async () => {
+    chatWrite = await appendChatTurn(client, "conversation-keyless-written");
+  });
+  const writtenFailures = written.opened
+    ? [
+        ...checkChatWriteLanded(chatWrite, written, "conversation-keyless-written", keyless.updatedAt),
+        ...checkConversationWalk(written, keylessOrder),
+      ]
+    : ["the ledger did not page at limit 2, so no cursor was open across the write"];
+  recorder.expect(
+    "reads.conversations-keyless-row-written-mid-walk-is-still-served",
+    writtenFailures,
+    `wrote a turn to the unserved conversation-keyless-written; the whole walk served [${written.served}]`,
+  );
+
+  // 9. The two keyless rows share the empty-string sort key, so a page boundary
+  //    at limit 1 lands between them. Case 6 covers a tie between two real
+  //    instants; this covers a tie between two sentinels, which is a different
+  //    pair of values reaching the same comparator. Re-seeded first: case 8
+  //    leaves the ledger in whatever state its write produced, and a tie
+  //    assertion that inherits a stamped row is asserting case 8 again.
+  await seedKeyless();
+  const keylessSingles = await walk(client, "/conversations", bearer, "conversations", 1);
+  const keylessTie = [...keylessIds].sort().reverse();
+  const tiedKeylessFailures = checkPageWalk(keylessSingles, { limit: 1, expectedIds: keylessOrder });
+  const walkedKeylessTie = keylessSingles
+    .flatMap((page) => page.ids)
+    .filter((id) => keylessIds.includes(id))
+    .join(",");
+  if (walkedKeylessTie !== keylessTie.join(",")) {
+    tiedKeylessFailures.push(
+      `the tied keyless rows were served as [${walkedKeylessTie}], expected id-descending [${keylessTie}]`,
+    );
+  }
+  recorder.expect(
+    "reads.conversations-keyless-rows-tie-on-the-id-tiebreak",
+    tiedKeylessFailures,
+    "two rows with no createdAt share the sentinel, so only the id makes their order total",
+  );
+
+  // 10. A keyless row that acquires a `createdAt` BETWEEN two walks. Nothing in
+  //     Cave does this any more, but an external writer can, and the promise is
+  //     scoped to one walk: the second walk sees a consistent ledger and serves
+  //     the row exactly once at its new position. If this ever fails while 8
+  //     passes, the ordering — not the write path — is what moved.
+  const keyedAt = "2026-03-05T12:00:00.000Z";
+  await writeConversation(caveHomeDir, {
+    ...keylessSeed("conversation-keyless-written"),
+    createdAt: keyedAt,
+  });
+  const afterKeyed = await walk(client, "/conversations", bearer, "conversations", 2);
+  const keyedOrder = expectedConversationOrder([
+    ...conversations,
+    { ...keylessSeed("conversation-keyless-written"), createdAt: keyedAt },
+    keylessSeed("conversation-keyless-quiet"),
+  ]);
+  recorder.expect(
+    "reads.conversations-keyless-row-keyed-between-walks-moves-once",
+    checkPageWalk(afterKeyed, { limit: 2, expectedIds: keyedOrder }),
+    `conversation-keyless-written acquired ${keyedAt} between two walks and the next walk placed it`,
+  );
+  await dropKeyless();
+  await restore();
+
+  // ── the fallback row a file Cave cannot read produces (cave-wbxcu) ───────
+  //
+  // `fallbackConversationSummary` is the row `listConversations` substitutes for
+  // a transcript it cannot read or parse. It carried no `createdAt`, so a file
+  // that flipped between readable and unreadable moved a row into and out of the
+  // tail block under an open cursor — the same skip as case 8, reached without
+  // any writer at all, and recurring every time the flip happens.
+  //
+  // The transcript's real `createdAt` is immutable, so the last one Cave read is
+  // still true for a file it cannot read this time. That is what these two cases
+  // pin: an unreadable scan does not move the row, and neither does the scan
+  // that recovers it.
+  // The two directions need rows in different PLACES, which is the detail that
+  // makes one of them prove anything at all. A walk at limit 2 opens its cursor
+  // after the two newest rows, so:
+  //
+  //   - falling out of the ledger's middle into the tail is visible as a
+  //     reordering, whichever side of the cursor it happens on;
+  //   - rising out of the tail is only a SKIP if the row's real position is
+  //     ABOVE the open cursor. A recovering row whose createdAt is older than
+  //     the cursor rises to a position the walk has not passed yet and is still
+  //     served — measured, and it passed against the unfixed build, which is
+  //     exactly the vacuous assertion this harness exists to refuse.
+  const flaky = { ...byId.get("conversation-01"), sessionId: "conversation-flaky" };
+  const recovering = {
+    ...byId.get("conversation-01"),
+    sessionId: "conversation-recovering",
+    createdAt: "2026-03-07T00:00:00.000Z",
+  };
+
+  // 11. Readable at the start of the walk, unreadable mid-walk. Its createdAt
+  //     ties conversation-01's, so it sits sixth of seven and the fall to the
+  //     tail is a reordering the whole walk can see.
+  await writeConversation(caveHomeDir, flaky);
+  await client.read("/conversations?limit=100", bearer); // Cave reads it once, while it can.
+  const corrupted = await walkConversationsAcross(client, bearer, () =>
+    writeCorruptConversation(caveHomeDir, "conversation-flaky"));
+  recorder.expect(
+    "reads.conversations-unreadable-row-keeps-its-position-mid-walk",
+    corrupted.opened
+      ? [
+          ...checkFallbackRow(corrupted, "conversation-flaky", true),
+          ...checkConversationWalk(corrupted, expectedConversationOrder([...conversations, flaky])),
+        ]
+      : ["the ledger did not page at limit 2, so no cursor was open across the corruption"],
+    `conversation-flaky became unreadable mid-walk; the whole walk served [${corrupted.served}]`,
+  );
+  await removeConversation(caveHomeDir, "conversation-flaky");
+
+  // 12. Unreadable at the start of the walk, readable again mid-walk — the torn
+  //     write a later atomic replace completes, or the sharing violation that
+  //     clears. Its createdAt is the newest in the ledger, so recovering puts it
+  //     above the open cursor: this is the direction that SKIPS.
+  await writeConversation(caveHomeDir, recovering);
+  await client.read("/conversations?limit=100", bearer); // Cave reads it once, while it can.
+  await writeCorruptConversation(caveHomeDir, "conversation-recovering");
+  const recovered = await walkConversationsAcross(client, bearer, async () => {
+    await writeConversation(caveHomeDir, recovering);
+  });
+  recorder.expect(
+    "reads.conversations-recovering-row-keeps-its-position-mid-walk",
+    recovered.opened
+      ? [
+          ...checkFallbackRow(recovered, "conversation-recovering", false),
+          ...checkConversationWalk(
+            recovered,
+            expectedConversationOrder([...conversations, recovering]),
+          ),
+        ]
+      : ["the ledger did not page at limit 2, so no cursor was open across the recovery"],
+    `conversation-recovering became readable again mid-walk; the whole walk served [${recovered.served}]`,
+  );
+  await removeConversation(caveHomeDir, "conversation-recovering");
   await restore();
 }
 

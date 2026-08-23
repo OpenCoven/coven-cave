@@ -177,8 +177,10 @@ function createAbortError(): DOMException {
 }
 
 function hangingResponse(signal?: AbortSignal): Promise<Response> {
+  if (!signal) {
+    return Promise.reject(new Error("hangingResponse requires an AbortSignal"));
+  }
   return new Promise((_resolve, reject) => {
-    if (!signal) return;
     if (signal.aborted) {
       reject(createAbortError());
       return;
@@ -237,6 +239,12 @@ afterEach(() => {
 });
 
 describe("SettingsClientAccess", () => {
+  test("fails fast when the hung-response fixture lacks an abort signal", async () => {
+    await expect(hangingResponse()).rejects.toThrow(
+      "hangingResponse requires an AbortSignal",
+    );
+  });
+
   test("renders exact request and credential metadata without secret material", async () => {
     const renderer = await render({
       pendingRequests: [pendingRequest, deniedRequest, expiredRequest],
@@ -549,7 +557,7 @@ describe("SettingsClientAccess", () => {
         ([url, init]) => url === "/api/client/v1/admin/credentials/credential-active"
           && init?.method === "DELETE",
       ),
-    ).toBe(true    );
+    ).toBe(true);
   });
 
   test("announces exact duplicate app-install mutations with stable record distinguishers", async () => {

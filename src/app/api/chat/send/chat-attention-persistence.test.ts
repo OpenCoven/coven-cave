@@ -251,7 +251,7 @@ test("the shared projection never strips preview/GitHub/image markers before att
   );
 });
 
-test("the shared projection strips preview/GitHub/image markers only after next-path extraction", () => {
+test("the shared projection extracts research and strips display markers only after next paths", () => {
   // Complements the two tests above: this pins the TAIL of the pipeline.
   // Marker cleanup must consume the next-path extraction's visible output
   // output) unconditionally — not gated behind `turn.pending ? visibleWithGh :
@@ -261,8 +261,8 @@ test("the shared projection strips preview/GitHub/image markers only after next-
   const pipeline = renderedTextAttentionPipeline();
   assert.match(
     pipeline,
-    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(nextPathSplit\.visible\)\)\)/,
-    "preview/GitHub/image cleanup must run unconditionally after next-path extraction on both pending and settled turns",
+    /const nextPathSplit = extractNextPaths\(attentionSplit\.visible\);\s*const researchSplit = extractResearchRunMarkers\(nextPathSplit\.visible\);[\s\S]*visible: stripPreviewMarkers\(stripImageMarkers\(stripGitHubMarkers\(researchSplit\.visible\)\)\)/,
+    "research extraction and preview/GitHub/image cleanup must run unconditionally after next-path extraction on both pending and settled turns",
   );
 });
 

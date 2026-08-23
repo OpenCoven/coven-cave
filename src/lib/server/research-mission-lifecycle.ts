@@ -56,6 +56,9 @@ export function createMissionRecord(
     title: missionTitle(input),
     titleSource: input.title?.trim() ? "explicit" : "generated",
     intent: input.intent.trim(),
+    // Recorded once, at creation, and never re-derived: the surface that
+    // invoked a run is a fact about the request, not about its later state.
+    ...(input.origin ? { origin: input.origin } : {}),
     mode: input.mode,
     modeSource: input.modeSource,
     deliverable: input.deliverable,
