@@ -21,6 +21,35 @@ export type ResearchMissionStatus =
   | "cancelled"
   | "archived";
 
+/**
+ * Where a run was invoked from. A research run is ONE object with several
+ * projections (#4808): the Research Desk workspace and the chat surface both
+ * address the same mission, so the mission itself has to say which surface
+ * started it and how to get back there. Without this a chat-invoked run and a
+ * desk-invoked run are indistinguishable once persisted, and the desk has no
+ * way to project a run back into the conversation that asked for it.
+ */
+export const RESEARCH_RUN_ORIGIN_SURFACES = ["chat", "research-desk"] as const;
+
+export type ResearchRunOriginSurface = (typeof RESEARCH_RUN_ORIGIN_SURFACES)[number];
+
+export type ResearchRunOrigin = {
+  surface: ResearchRunOriginSurface;
+  /**
+   * The conversation the run was invoked from — the chat the user was in, NOT
+   * `iterations[].sessionId`, which is the executor session the run itself
+   * spawned. Only a `chat` origin can carry one.
+   */
+  sessionId?: string;
+};
+
+/** Human label for a run's origin surface; shared so chat and the desk cannot
+ *  drift into describing the same run two different ways. */
+export const RESEARCH_RUN_ORIGIN_LABELS: Record<ResearchRunOriginSurface, string> = {
+  chat: "Started from chat",
+  "research-desk": "Started from the Research Desk",
+};
+
 export type ResearchMissionAction =
   | "retry"
   | "continue"
@@ -185,6 +214,9 @@ export type ResearchMission = {
   titleSource?: "explicit" | "generated";
   intent: string;
   direction?: string;
+  /** Which surface invoked this run, and the conversation to project it back
+   *  into. Absent on missions created before the field existed. */
+  origin?: ResearchRunOrigin;
   mode: ResearchMissionMode;
   modeSource: "auto" | "user";
   deliverable: string;
@@ -358,6 +390,9 @@ export type CreateResearchMissionInput = {
   model?: string;
   /** Saved Research resources made available before iteration one launches. */
   savedLinkIds?: string[];
+  /** Which surface is invoking the run. Callers that omit it create a run with
+   *  no recorded origin rather than a guessed one. */
+  origin?: ResearchRunOrigin;
 };
 
 export type ResearchMissionActionInput =
@@ -442,6 +477,47 @@ function optionalTimestamp(
   const candidate = value[key];
   if (candidate === undefined) return undefined;
   return validTimestamp(candidate) ? candidate : null;
+}
+
+/** Upper bound on an origin session id — matches the conversation store's own
+ *  ceiling (isSafeConversationSessionId). */
+export const RESEARCH_ORIGIN_SESSION_ID_MAX_LENGTH = 240;
+
+/**
+ * A stored origin session id has to be safe to hand straight back to the
+ * conversation store, which resolves it as a file name. Reject anything that
+ * could traverse — the same predicate as `isSafeConversationSessionId`, spelled
+ * without `node:path` so this module stays free of runtime imports.
+ */
+function isSafeOriginSessionId(value: string): boolean {
+  if (!value || value.length > RESEARCH_ORIGIN_SESSION_ID_MAX_LENGTH) return false;
+  if (value === "." || value === "..") return false;
+  return !/[/\\\0]/.test(value);
+}
+
+/**
+ * Parse a run origin. Returns `undefined` when absent and `null` when present
+ * but malformed — a malformed origin is refused rather than dropped, because a
+ * run that silently forgets where it came from is exactly the "two surfaces,
+ * two models" failure this field exists to close.
+ */
+export function parseResearchRunOrigin(
+  value: unknown,
+): ResearchRunOrigin | null | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const surface = value.surface;
+  if (typeof surface !== "string"
+    || !(RESEARCH_RUN_ORIGIN_SURFACES as readonly string[]).includes(surface)) {
+    return null;
+  }
+  const sessionId = value.sessionId;
+  if (sessionId === undefined) return { surface: surface as ResearchRunOriginSurface };
+  if (typeof sessionId !== "string" || !isSafeOriginSessionId(sessionId)) return null;
+  // Only chat can name a conversation. A desk-invoked run carrying a session id
+  // would make the desk offer a "back to the chat" jump that never existed.
+  if (surface !== "chat") return null;
+  return { surface, sessionId };
 }
 
 function parseResearchIteration(value: unknown): ResearchIteration | null {
@@ -672,6 +748,11 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
   // creation, then erased the first time the mission was re-read and saved.
   const harness = optionalString(value, "harness");
   const model = optionalString(value, "model");
+  // Same trap as `harness` above: a field this parser does not name is dropped
+  // on the next read/write round trip, and the mission would quietly forget the
+  // surface that started it.
+  const origin = parseResearchRunOrigin(value.origin);
+  if (origin === null) return null;
   if (direction === null
     || audience === null
     || projectRoot === null
@@ -718,6 +799,7 @@ export function parseResearchMission(value: unknown): ResearchMission | null {
       : {}),
     intent: value.intent,
     ...(direction !== undefined ? { direction } : {}),
+    ...(origin !== undefined ? { origin } : {}),
     mode: value.mode as ResearchMissionMode,
     modeSource: value.modeSource as ResearchMission["modeSource"],
     deliverable: value.deliverable,
@@ -939,6 +1021,16 @@ export function validateCreateResearchMissionInput(
     }
     model = rawModel.trim();
   }
+  // A malformed origin is refused, never coerced: a run whose recorded origin
+  // is a guess would send the desk's "open the chat that started this" jump to
+  // a conversation that never asked for it.
+  const origin = parseResearchRunOrigin(value.origin);
+  if (origin === null) {
+    return {
+      ok: false,
+      error: `origin.surface must be one of: ${RESEARCH_RUN_ORIGIN_SURFACES.join(", ")}, with origin.sessionId only on a chat origin`,
+    };
+  }
   return {
     ok: true,
     value: {
@@ -955,6 +1047,7 @@ export function validateCreateResearchMissionInput(
       ...(harness ? { harness } : {}),
       ...(model ? { model } : {}),
       ...(savedLinkIds.length > 0 ? { savedLinkIds } : {}),
+      ...(origin !== undefined ? { origin } : {}),
     },
   };
 }

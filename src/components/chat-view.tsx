@@ -10,6 +10,11 @@ import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
 import { extractLinks } from "@/lib/link-extractor";
+import { createResearchMission } from "@/lib/research-mission-client";
+import {
+  buildResearchChatRunInput,
+  formatResearchRunStarted,
+} from "@/lib/research-chat-command";
 import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
 import {
@@ -4907,6 +4912,33 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           );
         })
         .catch(() => appendSystem("Couldn't save — is the desktop reachable?"));
+      return true;
+    }
+    if (command === "/research") {
+      // Chat-invoked research (#4808): this does NOT create a chat-local
+      // research widget. It creates the same ResearchMission the Research Desk
+      // creates, stamped with a chat origin naming this conversation, so the
+      // run is one object the desk can work on and project back to here.
+      const built = buildResearchChatRunInput({
+        familiarId: familiar.id,
+        sessionId: sessionId ?? "",
+        intent: args,
+      });
+      if (!built.ok) {
+        appendSystem(built.message);
+        setInput("");
+        return true;
+      }
+      setInput("");
+      void createResearchMission(built.input)
+        .then((result) => {
+          if (!result.ok || !result.mission) {
+            appendSystem(`Research couldn't start: ${result.error ?? "the run was refused"}`);
+            return;
+          }
+          appendSystem(formatResearchRunStarted(result.mission));
+        })
+        .catch(() => appendSystem("Research couldn't start — is the desktop reachable?"));
       return true;
     }
     if (command === "/doctor" || command === "/daemon") {

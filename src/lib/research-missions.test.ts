@@ -90,6 +90,60 @@ test("mission parser preserves valid title provenance and rejects unknown values
   assert.equal(parseResearchMission({ ...validMission(), titleSource: new String("explicit") }), null);
 });
 
+test("a run's origin survives the read/write round trip both surfaces share", () => {
+  // parseResearchMission rebuilds from an explicit field list, so a field it
+  // does not name evaporates the first time a mission is re-read and saved —
+  // exactly what happened to `harness`. A run that forgets it came from chat
+  // can never be projected back into that conversation, so pin the round trip.
+  const fromChat = {
+    ...validMission(),
+    origin: { surface: "chat", sessionId: "conv-42" },
+  } as const;
+  assert.deepEqual(parseResearchMission(fromChat), fromChat);
+
+  const fromDesk = { ...validMission(), origin: { surface: "research-desk" } } as const;
+  assert.deepEqual(parseResearchMission(fromDesk), fromDesk);
+
+  // Absent stays absent — legacy missions predate the field.
+  assert.equal(parseResearchMission(validMission())?.origin, undefined);
+
+  // A malformed origin is refused, never dropped: silently discarding it would
+  // reintroduce the very "two surfaces, two models" split the field closes.
+  for (const origin of [
+    { surface: "automation" },
+    { surface: "chat", sessionId: "../../escape" },
+    { surface: "chat", sessionId: "conv/42" },
+    { surface: "chat", sessionId: "" },
+    { surface: "chat", sessionId: 7 },
+    // Only chat names a conversation; a desk run carrying one would make the
+    // desk offer a jump back to a chat that never asked for the run.
+    { surface: "research-desk", sessionId: "conv-42" },
+    "chat",
+    [],
+  ]) {
+    assert.equal(parseResearchMission({ ...validMission(), origin }), null);
+  }
+});
+
+test("create input carries a valid origin through and refuses a malformed one", () => {
+  const base = { ...validMission(), origin: undefined } as Record<string, unknown>;
+  const accepted = validateCreateResearchMissionInput({
+    ...base,
+    origin: { surface: "chat", sessionId: "conv-42" },
+  });
+  assert.equal(accepted.ok, true);
+  assert.deepEqual(accepted.ok && accepted.value.origin, { surface: "chat", sessionId: "conv-42" });
+
+  // Omitted means "no recorded origin", never a guessed one.
+  const withoutOrigin = validateCreateResearchMissionInput(base);
+  assert.equal(withoutOrigin.ok, true);
+  assert.equal(withoutOrigin.ok && withoutOrigin.value.origin, undefined);
+
+  const refused = validateCreateResearchMissionInput({ ...base, origin: { surface: "nowhere" } });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.ok === false && refused.error.includes("origin.surface"), true);
+});
+
 test("research prompt limits validate intent capacity and pin the shared direction ceiling", () => {
   assert.equal(RESEARCH_INTENT_MAX_LENGTH, 25_000);
   assert.equal(RESEARCH_DIRECTION_MAX_LENGTH, 10_000);

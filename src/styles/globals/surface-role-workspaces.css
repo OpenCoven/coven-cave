@@ -1047,6 +1047,16 @@
 .research-mission-detail__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 4px 2px 14px; }
 .research-mission-detail__header h2 { margin-top: 4px; font-family: var(--font-serif, ui-serif, serif); font-size: clamp(19px, 2.5vw, 28px); font-weight: 500; color: var(--text-primary); }
 .research-mission-detail__header p { max-width: 780px; margin-top: 5px; color: var(--text-muted); font-size: var(--text-base); line-height: 1.6; }
+/* Header actions: a run can offer both the executor session and — when it was
+   invoked from chat — the conversation that started it, so the slot wraps
+   rather than squeezing the title. */
+.research-mission-detail__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
 .research-mission-detail__body { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(230px, 300px); gap: 12px; min-height: 0; }
 
 .research-output-shelf > section {
@@ -1140,5 +1150,6 @@
   .research-bounds-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-mission-detail { padding-inline: 10px; }
   .research-mission-detail__header { flex-direction: column; }
+  .research-mission-detail__header-actions { justify-content: flex-start; }
   .research-bound-meter, .research-output-shelf { grid-template-columns: 1fr; }
 }
