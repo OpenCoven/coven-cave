@@ -156,12 +156,19 @@ a claim about *which bytes* answered, and one that cannot say which has not made
 the claim.
 
 The current record is
+[`2026-08-23-v0.3.9-win32-cave-wbxcu.json`](../client-v1-conformance-results/2026-08-23-v0.3.9-win32-cave-wbxcu.json):
+**104 passed, 0 failed, 0 skipped** at `d64ab964` on `win32-x64`, run with
+`--include-ttl`. It is the first record taken after the keyless tail block was
+made immutable in the write and store paths, so it carries all twelve mid-walk
+assertions.
+
+The record before it is
 [`2026-08-22-v0.3.9-win32-cave-fhjlu.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32-cave-fhjlu.json):
-**99 passed, 0 failed, 0 skipped** at `ed6cc4b1` on `win32-x64`, run with
-`--include-ttl`, so `pairing.ttl-poll-expired` and `pairing.ttl-exchange-expired`
-are recorded as passes rather than skips. It is the first record taken after
+**99 passed, 0 failed, 0 skipped** at `ed6cc4b1`, also with `--include-ttl`, so
+`pairing.ttl-poll-expired` and `pairing.ttl-exchange-expired` are recorded as
+passes rather than skips there too. It is the first record taken after
 `/conversations` moved to an immutable page key, so it carries the seven
-mid-walk assertions described above and two findings rather than three.
+mid-walk assertions and two findings rather than three.
 
 The record for `cave-2hjtv` is
 [`2026-08-22-v0.3.9-win32.json`](../client-v1-conformance-results/2026-08-22-v0.3.9-win32.json):
