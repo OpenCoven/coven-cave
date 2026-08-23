@@ -3089,5 +3089,49 @@ console.log("cave-conversations structural-root perf/regression test OK");
     "a different conversation reusing the id inherits nothing",
   );
   assert.equal(await deleteConversation("recycled-id"), true);
+
+  // 5. Only a createdAt the transcript really carried may be remembered. A
+  //    legacy transcript that has none, read successfully and then torn, must
+  //    still produce a fallback row with none: substituting any other timestamp
+  //    would lift the row out of the tail block on nothing but a read failure,
+  //    which is the move this whole change exists to stop.
+  const keylessTranscript = JSON.stringify({
+    sessionId: "keyless-then-torn",
+    familiarId: "charm",
+    harness: "codex",
+    updatedAt: "2026-02-02T00:00:00.000Z",
+    turns: [],
+  });
+  await writeRaw("keyless-then-torn", keylessTranscript);
+  assert.equal((await rowFor("keyless-then-torn"))?.familiarId, "charm", "read successfully first");
+  await writeRaw("keyless-then-torn", tornTranscript);
+  const tornKeylessRow = await rowFor("keyless-then-torn");
+  assert.equal(tornKeylessRow?.familiarId, "", "the row really is the fallback");
+  assert.equal(
+    tornKeylessRow?.createdAt,
+    undefined,
+    "a transcript with no createdAt must not gain one from being unreadable",
+  );
+  assert.equal(await deleteConversation("keyless-then-torn"), true);
+
+  // 6. ...and a remembered value is forgotten when a later readable scan finds
+  //    the field gone, so an externally rewritten transcript cannot keep being
+  //    sorted by a createdAt it no longer carries.
+  await writeRaw("createdat-removed", goodTranscript("createdat-removed"));
+  assert.equal((await rowFor("createdat-removed"))?.createdAt, "2026-02-01T00:00:00.000Z");
+  await writeRaw("createdat-removed", JSON.stringify({
+    sessionId: "createdat-removed",
+    familiarId: "charm",
+    harness: "codex",
+    title: "Rewritten without a createdAt",
+    updatedAt: "2026-02-03T00:00:00.000Z",
+    turns: [],
+  }));
+  assert.equal((await rowFor("createdat-removed"))?.createdAt, undefined);
+  await writeRaw("createdat-removed", tornTranscript);
+  const staleRow = await rowFor("createdat-removed");
+  assert.equal(staleRow?.familiarId, "");
+  assert.equal(staleRow?.createdAt, undefined, "the remembered value did not outlive the field");
+  assert.equal(await deleteConversation("createdat-removed"), true);
 }
 console.log("cave-conversations createdAt-stability test OK");
