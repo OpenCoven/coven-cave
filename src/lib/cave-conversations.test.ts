@@ -3000,3 +3000,138 @@ console.log("cave-conversations model-lock test OK");
   await deleteConversation("structural-root-long-root-siblings");
 }
 console.log("cave-conversations structural-root perf/regression test OK");
+
+// cave-wbxcu: `createdAt` is the client-v1 conversations page key, so the store
+// has to keep a row's value STILL — including for the rows it cannot read.
+{
+  const {
+    clearConversationListMetadataCache,
+    CONV_DIR,
+  } = await import("./cave-conversations.ts");
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  await mkdir(CONV_DIR, { recursive: true });
+
+  const rowFor = async (sessionId) =>
+    (await listConversations()).find((row) => row.sessionId === sessionId);
+  const writeRaw = (sessionId, body) =>
+    writeFile(path.join(CONV_DIR, `${sessionId}.json`), body, "utf8");
+  const goodTranscript = (sessionId) => JSON.stringify({
+    sessionId,
+    familiarId: "charm",
+    harness: "codex",
+    title: "Readable",
+    createdAt: "2026-02-01T00:00:00.000Z",
+    updatedAt: "2026-02-02T00:00:00.000Z",
+    turns: [{ id: `${sessionId}-t1`, role: "user", text: "hello", createdAt: "2026-02-01T00:00:00.000Z" }],
+  });
+  // Truncated JSON: what a torn write leaves behind, and what a later atomic
+  // replace completes. Deliberately a different size from the good transcript,
+  // so the (mtime, ctime, size) summary cache cannot answer from a stale entry
+  // and every assertion below is measuring a fresh read.
+  const tornTranscript = '{"sessionId": "';
+
+  // 1. A transcript older than the field round-trips WITHOUT one. If saving
+  //    invented a createdAt here, every legacy row would move to the head of
+  //    the client-v1 ordering the first time anything touched it.
+  await saveConversation({
+    sessionId: "keyless-roundtrip",
+    familiarId: "charm",
+    harness: "codex",
+    updatedAt: "2026-02-02T00:00:00.000Z",
+    turns: [],
+  });
+  const reloadedKeyless = await loadConversation("keyless-roundtrip");
+  assert.equal(reloadedKeyless.createdAt, undefined, "saveConversation must not stamp createdAt");
+  assert.equal((await rowFor("keyless-roundtrip"))?.createdAt, undefined);
+  assert.equal(await deleteConversation("keyless-roundtrip"), true);
+
+  // 2. A file that becomes unreadable keeps the createdAt the last readable
+  //    scan saw. It is immutable, so the last value read is still the true one
+  //    — and dropping it drops the row to the tail of the client-v1 ordering
+  //    under any open cursor.
+  await writeRaw("flaky-transcript", goodTranscript("flaky-transcript"));
+  assert.equal((await rowFor("flaky-transcript"))?.createdAt, "2026-02-01T00:00:00.000Z");
+  await writeRaw("flaky-transcript", tornTranscript);
+  const tornRow = await rowFor("flaky-transcript");
+  assert.equal(tornRow?.familiarId, "", "the row really is the unreadable-file fallback");
+  assert.equal(
+    tornRow?.createdAt,
+    "2026-02-01T00:00:00.000Z",
+    "an unreadable scan must not move the row",
+  );
+  // ...and recovering does not move it either, which is the direction that
+  // skips: a row rising out of the tail passes every open cursor.
+  await writeRaw("flaky-transcript", goodTranscript("flaky-transcript"));
+  const healedRow = await rowFor("flaky-transcript");
+  assert.equal(healedRow?.familiarId, "charm", "the file really did become readable again");
+  assert.equal(healedRow?.createdAt, "2026-02-01T00:00:00.000Z");
+  assert.equal(await deleteConversation("flaky-transcript"), true);
+
+  // 3. A file this process has NEVER read has nothing to carry forward — the
+  //    contents are exactly what cannot be reached — so it carries no createdAt
+  //    and sorts to the tail, where it is served rather than stranded.
+  clearConversationListMetadataCache();
+  await writeRaw("never-readable", tornTranscript);
+  const strangerRow = await rowFor("never-readable");
+  assert.equal(strangerRow?.familiarId, "");
+  assert.equal(strangerRow?.createdAt, undefined, "nothing may be invented for a file never read");
+  assert.equal(await deleteConversation("never-readable"), true);
+
+  // 4. The memory belongs to the transcript, not to the id. A deleted
+  //    conversation whose id is reused must not inherit the old createdAt.
+  await writeRaw("recycled-id", goodTranscript("recycled-id"));
+  assert.equal((await rowFor("recycled-id"))?.createdAt, "2026-02-01T00:00:00.000Z");
+  assert.equal(await deleteConversation("recycled-id"), true);
+  await writeRaw("recycled-id", tornTranscript);
+  assert.equal(
+    (await rowFor("recycled-id"))?.createdAt,
+    undefined,
+    "a different conversation reusing the id inherits nothing",
+  );
+  assert.equal(await deleteConversation("recycled-id"), true);
+
+  // 5. Only a createdAt the transcript really carried may be remembered. A
+  //    legacy transcript that has none, read successfully and then torn, must
+  //    still produce a fallback row with none: substituting any other timestamp
+  //    would lift the row out of the tail block on nothing but a read failure,
+  //    which is the move this whole change exists to stop.
+  const keylessTranscript = JSON.stringify({
+    sessionId: "keyless-then-torn",
+    familiarId: "charm",
+    harness: "codex",
+    updatedAt: "2026-02-02T00:00:00.000Z",
+    turns: [],
+  });
+  await writeRaw("keyless-then-torn", keylessTranscript);
+  assert.equal((await rowFor("keyless-then-torn"))?.familiarId, "charm", "read successfully first");
+  await writeRaw("keyless-then-torn", tornTranscript);
+  const tornKeylessRow = await rowFor("keyless-then-torn");
+  assert.equal(tornKeylessRow?.familiarId, "", "the row really is the fallback");
+  assert.equal(
+    tornKeylessRow?.createdAt,
+    undefined,
+    "a transcript with no createdAt must not gain one from being unreadable",
+  );
+  assert.equal(await deleteConversation("keyless-then-torn"), true);
+
+  // 6. ...and a remembered value is forgotten when a later readable scan finds
+  //    the field gone, so an externally rewritten transcript cannot keep being
+  //    sorted by a createdAt it no longer carries.
+  await writeRaw("createdat-removed", goodTranscript("createdat-removed"));
+  assert.equal((await rowFor("createdat-removed"))?.createdAt, "2026-02-01T00:00:00.000Z");
+  await writeRaw("createdat-removed", JSON.stringify({
+    sessionId: "createdat-removed",
+    familiarId: "charm",
+    harness: "codex",
+    title: "Rewritten without a createdAt",
+    updatedAt: "2026-02-03T00:00:00.000Z",
+    turns: [],
+  }));
+  assert.equal((await rowFor("createdat-removed"))?.createdAt, undefined);
+  await writeRaw("createdat-removed", tornTranscript);
+  const staleRow = await rowFor("createdat-removed");
+  assert.equal(staleRow?.familiarId, "");
+  assert.equal(staleRow?.createdAt, undefined, "the remembered value did not outlive the field");
+  assert.equal(await deleteConversation("createdat-removed"), true);
+}
+console.log("cave-conversations createdAt-stability test OK");

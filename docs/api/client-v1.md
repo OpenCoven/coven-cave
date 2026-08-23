@@ -32,7 +32,8 @@ handling are visible at all.
 
 | Concern | Authority |
 |---|---|
-| Versions, scopes, capabilities, error codes, limits, public-route list | [`src/lib/server/client-v1/contract.ts`](../../src/lib/server/client-v1/contract.ts) |
+| Versions, scopes, capabilities, operation ids, error codes, limits, public-route list | [`src/lib/server/client-v1/contract.ts`](../../src/lib/server/client-v1/contract.ts) |
+| Which method, path, authority and scope each operation names | [`src/lib/server/client-v1/operations.ts`](../../src/lib/server/client-v1/operations.ts) |
 | Byte-pinned export of all of the above, plus example envelopes | [`contract-fixture.json`](../../src/lib/server/client-v1/contract-fixture.json) and its `.sha256` |
 | Who may reach which route, and from where | [`src/proxy.ts`](../../src/proxy.ts) and [`src/proxy-helpers.ts`](../../src/proxy-helpers.ts) |
 | Per-route request and response shapes | the thirteen `route.ts` files under `src/app/api/client/v1/` |
@@ -48,7 +49,10 @@ constants should vendor the fixture, not re-type the tables below.
 `scripts/client-v1-doc-contract.test.mjs` pins *this document* to both — every
 route file on disk and every entry in the contract's `publicRoutes`, every
 scope, and every error code must appear here, so a fourteenth route cannot land
-undocumented.
+undocumented. It also compares the operation table in *Capability discovery*
+against the fixture record by record, so a method, path or authority class that
+moves fails here rather than leaving a client author reading a table that
+describes a previous build.
 
 ## The envelope
 
@@ -60,8 +64,15 @@ one shape, so a client parses once:
   "apiVersion": "1.0",
   "minimumClientVersion": "0.1.0",
   "capabilities": [
-    "pairing", "credentials", "familiars", "projects", "conversations",
-    "conversation-messages", "streaming", "cursors", "revisions"
+    "health", "pairing", "credentials", "familiars", "projects",
+    "conversations", "conversation-messages", "cursors"
+  ],
+  "operations": [
+    "health.read", "pairing.create", "pairing.poll", "pairing.exchange",
+    "pairing.admin.list", "pairing.admin.decide",
+    "credentials.admin.list", "credentials.admin.revoke",
+    "familiars.list", "projects.list",
+    "conversations.list", "conversations.read", "messages.list"
   ],
   "data": { }
 }
@@ -75,6 +86,7 @@ type level as well as in practice:
   "apiVersion": "1.0",
   "minimumClientVersion": "0.1.0",
   "capabilities": ["pairing", "credentials", "..."],
+  "operations": ["pairing.create", "pairing.exchange", "..."],
   "error": {
     "code": "rate_limited",
     "message": "Rate limit exceeded.",
@@ -87,12 +99,14 @@ type level as well as in practice:
 - **`apiVersion`** is `"1.0"` and **`minimumClientVersion`** is `"0.1.0"`. A
   client older than the minimum should stop and tell its user to update rather
   than pair.
-- **`capabilities`** is the full list above on every response. It is what the
-  surface *declares*, and it is now partly an inventory: `familiars`,
-  `projects`, `conversations`, `conversation-messages` and `cursors` name live
-  routes (see *Canonical read routes*). `streaming` and `revisions` still name
-  route families that do not exist. Treat the list as the roadmap the Cave
-  commits to rather than as proof any one endpoint is there.
+- **`operations`** is the live inventory: every operation this build can
+  actually be asked to perform, and nothing else. This is what a
+  `client.supports("…")` helper should read. See *Capability discovery* below
+  for the id→route table, the authority classes, and the compatibility rules.
+- **`capabilities`** is the coarse family summary of the same inventory,
+  derived from it rather than kept alongside it. Use it for display and for a
+  quick "does this Cave do conversations at all"; use `operations` for anything
+  a code path branches on.
 - **`error.retryable`** defaults to `false` and is set true only where the
   route means it. Today that is exactly `pairing_pending`, `rate_limited`, and
   the `internal_error` a failed credential issue returns.
@@ -104,10 +118,137 @@ type level as well as in practice:
   protocol (a conditional read or write keyed on the token) that nothing
   implements, and a token nothing consumes is worse than an absent field.
 
-`apiVersion`, `minimumClientVersion`, and `capabilities` deliberately ride the
-envelope and are *not* repeated inside `data` — including on `/health`, where
-you might expect them. One source, so a single response can never carry two
-different answers to the same question.
+`apiVersion`, `minimumClientVersion`, `capabilities` and `operations`
+deliberately ride the envelope and are *not* repeated inside `data` — including
+on `/health`, where you might expect them. One source, so a single response can
+never carry two different answers to the same question.
+
+### Capability discovery
+
+**`operations` answers what this build can be asked to perform. It is not a
+roadmap, and nothing aspirational is allowed in it.**
+
+That distinction is the whole point of this section. Until #4869 the envelope
+advertised `streaming` and `revisions` on every response and **neither had a
+route** — nothing emitted a stream, and nothing emitted or consumed a revision
+token. A client helper spelled `client.supports("streaming")` would therefore
+have returned a false operational claim. The list is now derived from a reviewed
+operation registry (`src/lib/server/client-v1/operations.ts`), and CI asserts
+that every record in it is served by a `route.ts` on disk and that every
+advertised family is claimed by such a record. A capability with no owning route
+cannot be advertised, because it cannot get into the list.
+
+#### The live inventory
+
+Each id names a fixed method and path for the life of `apiVersion` 1.x, so a
+client resolves an id to a request from this table — or from the vendored
+contract fixture, which carries the same records — rather than by probing paths.
+
+| Operation | Route | Authority | Scope | Families |
+|---|---|---|---|---|
+| `health.read` | `GET /api/client/v1/health` | public | — | `health` |
+| `pairing.create` | `POST /api/client/v1/pairing/requests` | public | — | `pairing` |
+| `pairing.poll` | `GET /api/client/v1/pairing/requests/:id` | public | — | `pairing` |
+| `pairing.exchange` | `POST /api/client/v1/pairing/requests/:id/exchange` | public | — | `pairing` |
+| `pairing.admin.list` | `GET /api/client/v1/admin/pairing-requests` | admin | — | `pairing` |
+| `pairing.admin.decide` | `POST /api/client/v1/admin/pairing-requests/:id/decision` | admin | — | `pairing` |
+| `credentials.admin.list` | `GET /api/client/v1/admin/credentials` | admin | — | `credentials` |
+| `credentials.admin.revoke` | `DELETE /api/client/v1/admin/credentials/:id` | admin | — | `credentials` |
+| `familiars.list` | `GET /api/client/v1/familiars` | authenticated | `chat:read` | `familiars`, `cursors` |
+| `projects.list` | `GET /api/client/v1/projects` | authenticated | `chat:read` | `projects`, `cursors` |
+| `conversations.list` | `GET /api/client/v1/conversations` | authenticated | `chat:read` | `conversations`, `cursors` |
+| `conversations.read` | `GET /api/client/v1/conversations/:id` | authenticated | `chat:read` | `conversations` |
+| `messages.list` | `GET /api/client/v1/conversations/:id/messages` | authenticated | `chat:read` | `conversation-messages`, `cursors` |
+
+#### Three authority classes, and why the id tells you which
+
+The inventory describes **the build**, not your credential. A response carries
+the same list whoever asked for it, which is what makes it comparable against
+the generated fixture — a per-caller list could not be pinned by anything.
+
+The authority class is therefore legible from the id itself, so a client never
+has to consult a table to avoid calling something it can never reach:
+
+- **public** — no credential. `health.read` and the three `pairing.*` bootstrap
+  operations. Still loopback-only; "public" names the absence of a *credential*,
+  never the absence of an ingress rule.
+- **authenticated** — a paired bearer carrying the named scope. Every id without
+  `.admin.` that is not one of the four above. **This is the only class an
+  external application can ever hold.**
+- **admin** — any id containing **`.admin.`**. These require the Cave's own
+  per-launch sidecar token over direct loopback and back the Cave's settings UI.
+  **A paired bearer never satisfies one, whatever scopes it holds.** An SDK
+  should treat a `.admin.` id as present-but-not-yours.
+
+That is also the exact answer to what `credentials` means: **administrator
+credential management, and nothing else**. `credentials.admin.list` and
+`credentials.admin.revoke` are how the Cave's own UI sees and revokes issued
+credentials. A paired client *obtaining* a credential is `pairing.exchange`, in
+the `pairing` family. A paired client cannot list, inspect, or revoke its own
+credential through this API.
+
+`cursors` is the one family with no route of its own. It is cross-cutting: the
+four paged reads claim it and `conversations.read` does not, because that route
+refuses `limit` and `cursor` outright. Membership is explicit metadata on each
+operation rather than inferred from a path, which is what lets a family like
+this exist truthfully.
+
+#### Compatibility rules
+
+**Additive by default.**
+
+- Adding an operation or a family in a compatible Client v1 release is additive.
+  A new id never becomes *required* merely by appearing: if an older client had
+  to understand it for the protocol to work, that would be a
+  `minimumClientVersion` transition instead.
+- **Consumers must tolerate ids they do not know.** A newer Cave will advertise
+  ids your build has never heard of. Parse the arrays as opaque strings, narrow
+  only the ids you understand, and keep the rest for diagnostics. Do not reject
+  an envelope because it advertises something new — that would turn every
+  additive minor release into a breaking one for you.
+- **But never claim support you do not have.** Preserving an unknown id is not
+  understanding it.
+- Cave, as the producer, is strict in the other direction: it refuses to export
+  an id no reviewed record backs, and the generated fixture pins what it does
+  export.
+
+**An unavailable operation is simply absent — there is no tombstone, and
+absence is never a protocol change.** If an id is missing, this build does not
+serve it; that is all it means. Read it as a runtime fact about the Cave in
+front of you, never as evidence that the contract moved.
+
+**Removing or renaming a live operation is a compatibility decision**, not an
+edit. It requires a `minimumClientVersion` review and cannot happen as a side
+effect of deleting a route: the reviewed literals in `contract.ts` and in
+`scripts/export-client-v1-contract.mjs` both have to be changed by hand, and CI
+compares them against each other and against the routes on disk.
+
+#### Migration note for SDK and Chat consumers
+
+Changing from the previous declaration to this one:
+
+1. **`streaming` and `revisions` are gone from `capabilities`.** Neither was
+   ever live, so **nothing that worked stops working** — no shipped client can
+   have been calling a streaming or revision route, because none existed. What
+   changes is the answer to a question: `capabilities.includes("streaming")` was
+   `true` and is now `false`. A client that gated a UI affordance on it was
+   showing a control that had nothing behind it, and should now correctly hide
+   it. A client that *refuses to run* without `streaming` will now refuse — it
+   was previously proceeding on a false premise, and the honest fix is to drop
+   the requirement, not to restore the claim. When streaming lands it will
+   arrive as a new `operations` id, additively.
+2. **`health` is new in `capabilities`,** and `operations` is a new envelope
+   field. Both are additive. If your parser rejects unknown capability ids or
+   unknown envelope fields, relax it — see the consumer rule above.
+3. **Prefer `operations` over `capabilities` for feature checks.** `supports()`
+   should read the operation ids; `conversations` alone could not tell you
+   whether a single conversation can be read as well as listed.
+4. **Do not read `credentials` as self-service.** It has always meant
+   administrator credential management and now says so; the operation ids make
+   it unambiguous.
+5. **Vendor the generated fixture** (`contract-fixture.json` and its `.sha256`)
+   from a merged Cave commit rather than re-typing these tables. It carries the
+   full operation records, which is how an id resolves to a request offline.
 
 ### Error codes and their HTTP statuses
 
@@ -279,7 +420,8 @@ to fail a paired request.
 {
   "apiVersion": "1.0",
   "minimumClientVersion": "0.1.0",
-  "capabilities": ["pairing", "credentials", "..."],
+  "capabilities": ["health", "pairing", "credentials", "..."],
+  "operations": ["health.read", "pairing.create", "..."],
   "data": {
     "instanceId": "00000000-0000-4000-8000-000000000000",
     "pairingRequired": true,
@@ -307,6 +449,12 @@ because the whole body is public.
   would have nowhere to send an unauthenticated request.
 - **`releaseVersion`** is the running Cave's package version. The fixture's
   `"0.0.0"` is a placeholder and never served.
+
+The live inventory is **not** in `data`: `capabilities` and `operations` ride
+the envelope, here as on every other response. This is nonetheless the response
+a client reads them from, because it is the only one reachable before pairing —
+so it is the first place the declaration has to be true. See *Capability
+discovery*.
 
 **Errors:** none. The route has no failure branch of its own.
 
@@ -477,11 +625,15 @@ ten and lock out both.
 
 ## Canonical read routes
 
-The four resources the capability list has always advertised —
+The four resource families the inventory advertises to a paired bearer —
 `"familiars"`, `"projects"`, `"conversations"`, `"conversation-messages"` —
 served as paged reads over `"cursors"`. Every one of them is a `GET`, requires
 the `chat:read` scope, and projects a store the Cave itself reads, so a paired
 client and the desktop never disagree about what exists.
+
+Five operations, not four: `conversations.list` and `conversations.read` are
+separately invokable and share the `conversations` family, which is why the
+`operations` list is the one to branch on.
 
 ### Authentication, and how it fails
 
@@ -593,13 +745,15 @@ both or skip both:
 | `/conversations` | `createdAt` descending, then `id` descending. A conversation with no `createdAt` sorts **last**, ordered among its peers by `id` descending. |
 | `/conversations/:id/messages` | Transcript order, oldest first. **Not** a keyset — see that route. |
 
-**Every sort key here is immutable, with one narrow exception named in the third
-bullet.** Nothing rewrites a project's `createdAt` or a conversation's, a
-familiar's id is its identity, and saving a conversation stamps only its
-`updatedAt` — so the position a cursor names is a position the ordering still
-has when you resume. A walk that starts now serves the rows that existed when it
-started, in the order it started with, however much the Cave is written to
-underneath it. Three things are worth planning for:
+**Every sort key here is immutable.** Nothing rewrites a project's `createdAt`
+or a conversation's, a familiar's id is its identity, and saving a conversation
+stamps only its `updatedAt` — so the position a cursor names is a position the
+ordering still has when you resume. A conversation's `createdAt` is decided when
+the record is created and is read-only after that: a client body cannot rewrite
+it, and a transcript that has none is never given one. A walk that starts now
+serves the rows that existed when it started, in the order it started with,
+however much the Cave is written to underneath it. Three things are worth
+planning for:
 
 - **A conversation created while you are paging is not served by that walk.**
   Its `createdAt` is *now*, which sorts above every cursor you already hold.
@@ -609,15 +763,15 @@ underneath it. Three things are worth planning for:
 - **A conversation deleted while you are paging simply stops appearing.** The
   cursor names a position in the ordering rather than an index, so the walk
   continues at the next surviving record.
-- **A conversation that has no `createdAt` at all can leave the tail block.**
-  Such a record is served last (see below), and it stays there for as long as it
-  has no `createdAt` — but the moment it acquires one it sorts above every
-  cursor you hold, so the walk in progress will not serve it. This is the one
-  row this ordering can still miss. It is rare (a transcript older than the
-  field, or one Cave could not read on the last scan) and it settles once the
-  record has a `createdAt`, but a walk cannot tell that it happened. If you must
-  not miss a conversation, re-read from the top and dedupe by `id`; that costs
-  nothing and covers this case.
+- **A conversation that has no `createdAt` at all stays in the tail block.**
+  Such a record is served last (see below), and it stays there: nothing in Cave
+  gives a stored record a `createdAt` it did not already have. It used to —
+  writing a turn to a transcript older than the field stamped it with *now*,
+  which moved the row from the tail to the head, past every open cursor, and the
+  rest of that walk never served it. Fixed on 2026-08-23; if you are talking to
+  an older Cave, that row can still be missed. Re-reading from the top and
+  deduping by `id` costs nothing and covers it, as it covers every other reason
+  a ledger might have moved.
 
 ⚠️ **The ordering of `/conversations` changed.** It was `updatedAt` descending —
 the order the Cave's own sessions list shows — until 2026-08-22. `updatedAt`
@@ -641,11 +795,18 @@ warm; there is no server-side shortcut, and there cannot be one, because a
 keyset cursor cannot name a position in an order that moves. Deduplicating by
 `id` still costs nothing and is still worth doing across walks you restart.
 
-`createdAt` is optional on a conversation record — a transcript written before
-the field existed has none, and neither does the row Cave substitutes for a file
-it cannot read. Those rows are **served at the end of the walk**, not stranded
-and not skipped: they sort as if their key were empty, which is below every
-timestamp.
+`createdAt` is optional on a conversation record: a transcript written before
+the field existed has none. Those rows are **served at the end of the walk**,
+not stranded and not skipped — they sort as if their key were empty, which is
+below every timestamp — and they stay there, because Cave never adds the field
+to a record that lacks it.
+
+Cave substitutes a placeholder row for a transcript it cannot read or parse this
+scan; you can recognise one by its empty `familiarId`. It carries the `createdAt`
+Cave last read from that file, so it holds its place in the ordering rather than
+dropping to the tail and climbing back out as the file becomes readable again. A
+file Cave has *never* managed to read has no such value and is served in the tail
+block with the legacy rows.
 
 ### `GET /api/client/v1/familiars`
 
@@ -1275,10 +1436,14 @@ against something that is not there.
   There is no way to send a message, create a conversation, upload an
   attachment, or act on a task through this API, and the five write scopes are
   recorded on a credential and read by nothing.
-- **`streaming` and `revisions` are advertised and unbuilt.** Both are in the
-  capability list; neither has a route. To follow a running conversation today
-  you re-read `GET /conversations/:id/messages` and diff — there is no
+- **No streaming, and no revision tokens.** To follow a running conversation
+  today you re-read `GET /conversations/:id/messages` and diff — there is no
   server-push channel, and no revision token to make a conditional read cheap.
+  Both were *advertised* as capabilities until #4869 while having no route at
+  all, so a client could read a declaration that promised them; they are now
+  absent from the live inventory, which is the truthful statement of the same
+  gap. When either lands it arrives as a new `operations` id. See *Capability
+  discovery*.
 - **`/conversations` pages on a mutable key.** A conversation whose transcript
   grows while you are paging moves to the front of the ordering, so one you have
   not reached yet is **skipped** by the rest of the walk. Re-read from the top
