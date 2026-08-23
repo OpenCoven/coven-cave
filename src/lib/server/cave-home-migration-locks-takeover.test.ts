@@ -6,7 +6,7 @@ import path from "node:path";
 
 const roots: string[] = [];
 const { ensureCaveHomeReconciled, migrateCaveHome, withCaveHomeReconciledStore } = await import("./cave-home-migration.ts");
-const { reconcileCaveHome } = await import("./cave-home-reconciliation.ts");
+const { reconcileCaveHome, withCaveHomeReconciliationLock } = await import("./cave-home-reconciliation.ts");
 const { caveHomeMigrationStatus } = await import("./cave-home-migration-status.ts");
 const { createDefaultPreferences } = await import("../preferences-schema.ts");
 
@@ -170,6 +170,34 @@ try {
     assert.deepEqual(second.errors, []);
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // Same-process store requests wait their turn before starting the bounded
+  // cross-process acquisition deadline. A busy request must not make every
+  // local waiter time out together and cascade unrelated route failures.
+  {
+    await home("same-process-store-queue");
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let markFirstEntered!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+    const first = withCaveHomeReconciliationLock(async () => {
+      markFirstEntered();
+      await firstMayFinish;
+      return "first";
+    });
+    await firstEntered;
+
+    let secondSettled = false;
+    const second = withCaveHomeReconciliationLock(
+      async () => "second",
+      { lockTimeoutMs: 75 },
+    ).finally(() => { secondSettled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(secondSettled, false, "local queue time does not consume the filesystem-lock deadline");
+
+    releaseFirst();
+    assert.deepEqual(await Promise.all([first, second]), ["first", "second"]);
   }
 
   // A process crash leaves a fresh lock directory behind. Its recorded dead

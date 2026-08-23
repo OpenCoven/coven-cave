@@ -73,6 +73,8 @@ declare global {
   var __caveHomeReconciliationLockTokens: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __caveHomeReconciliationTakeoverTokens: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __caveHomeReconciliationStoreQueues: Map<string, Promise<void>> | undefined;
 }
 
 function activeLockTokens(): Set<string> {
@@ -83,6 +85,11 @@ function activeLockTokens(): Set<string> {
 function activeTakeoverTokens(): Set<string> {
   return globalThis.__caveHomeReconciliationTakeoverTokens ??=
     new Set<string>();
+}
+
+function activeStoreQueues(): Map<string, Promise<void>> {
+  return globalThis.__caveHomeReconciliationStoreQueues ??=
+    new Map<string, Promise<void>>();
 }
 
 export const migrationJournalPath = () => path.join(caveHome(), "migration-state.json");
@@ -632,13 +639,34 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
 }
 
 /** Serialize a Cave store operation with reconciliation in every process. */
-export async function withCaveHomeReconciliationLock<T>(operation: () => Promise<T>): Promise<T> {
+export async function withCaveHomeReconciliationLock<T>(
+  operation: () => Promise<T>,
+  options: ReconciliationOptions = {},
+): Promise<T> {
   await mkdir(caveHome(), { recursive: true });
-  const release = await acquireLock({});
+  const queueKey = migrationLockPath();
+  const queues = activeStoreQueues();
+  const previous = queues.get(queueKey) ?? Promise.resolve();
+  let releaseTurn!: () => void;
+  const turn = new Promise<void>((resolve) => { releaseTurn = resolve; });
+  const tail = previous.catch(() => {}).then(() => turn);
+  queues.set(queueKey, tail);
+  await previous.catch(() => {});
   try {
-    return await operation();
+    // Start the bounded filesystem-lock deadline only after this process owns
+    // its turn. Local request fan-out cannot otherwise make every waiter burn
+    // the same deadline while one healthy operation holds the lock.
+    const release = await acquireLock(options);
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
   } finally {
-    await release();
+    releaseTurn();
+    void tail.then(() => {
+      if (queues.get(queueKey) === tail) queues.delete(queueKey);
+    });
   }
 }
 
