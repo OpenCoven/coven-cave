@@ -2104,7 +2104,7 @@ function fetchTasks(root: string): { tasks: BeadTask[]; error: string | null } {
  * Pure and total: every malformed, truncated, or missing part of the output
  * comes back as an absence rather than a throw, so the caller decides what each
  * absence means. Every absence it can produce means "cannot prove", never
- * "proven free" — see {@link fetchWindowsProcessOwners}.
+ * "proven free" — see {@link evaluateWindowsCwdProbe}, which does the deciding.
  */
 export type WindowsCwdProbeOutput = {
   /**
