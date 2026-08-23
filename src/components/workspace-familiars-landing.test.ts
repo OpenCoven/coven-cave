@@ -302,12 +302,12 @@ assert.doesNotMatch(
   /if \(!id\) return;[\s\S]*getLastSurface\(id\)/,
   "main context selection no longer restores an unrelated familiar surface",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
-  /This view is not filtered by project yet/,
-  "non-pilot surfaces do not imply filtering that Stage 1 has not implemented",
+  /Applies to new chats\. This view is not filtered by project yet\./,
+  "the left rail does not show the obsolete project-scope disclaimer",
 );
-// Both rail components receive the full project/crew/notice context so
+// Both rail components receive the full project/crew context, with no notice, so
 // workspaceContextReady becomes true in SidebarRailHeader.
 assert.match(
   workspace,
