@@ -1201,12 +1201,15 @@ test("app shutdown seals admission, proves trees before persistence, and retains
   assert.equal(isCopilotFlowRunActive(failed.sessionId), false);
 });
 
-// ─── degraded direct-spawn fallback (cave-hhwc5) ─────────────────────────────
-// #4524 routed every launch through Coven's native process supervisor, but no
-// published @opencoven/cli ships it — `coven --print-native-binary-path` is an
-// unrecognized flag as of 0.3.1, the newest release — so every research mission
-// failed at its first iteration. The fallback restores the pre-#4524 transport
-// when, and only when, the supervisor is genuinely absent.
+// ─── degraded direct-spawn fallback (cave-hhwc5, cave-3458e) ─────────────────
+// #4524 routed every launch through Coven's native process supervisor, which
+// no published @opencoven/cli shipped at the time — `coven
+// --print-native-binary-path` was an unrecognized flag through 0.3.1 — so every
+// research mission failed at its first iteration. 0.4.0's wrapper implements
+// that flag, so a current install takes the supervised path and none of these
+// tests describes its steady state. They pin what happens on an older CLI:
+// the fallback restores the pre-#4524 transport when, and only when, the
+// supervisor is genuinely absent, and says how to get supervision back.
 const { CovenProcessSupervisorUnavailableError } = await import("./coven-process-supervisor.ts");
 
 // The shutdown tests above seal admission through a process-global flag that
@@ -1251,6 +1254,34 @@ test("an absent native supervisor falls back to spawning Copilot directly", asyn
   // one, and the difference only shows up when someone cancels.
   assert.match(assistant.text, /native process supervisor is unavailable/i);
   assert.match(assistant.text, /may keep running/i);
+});
+
+test("the degraded run names the upgrade that restores supervision", async () => {
+  admitStarts();
+  const started = await startCopilotFlowRun({
+    spec: SPEC,
+    prompt: "hello",
+    projectRoot: TMP,
+    familiarId: null,
+    spawnCommand: FAKE_LAUNCH,
+  }, {
+    resolveSupervisorCommand: async () => {
+      throw new CovenProcessSupervisorUnavailableError();
+    },
+  });
+  started.confirmBookkeeping();
+  await started.done;
+
+  const assistant = readConversation(started.sessionId).turns.find((t) => t.role === "assistant");
+  assert.ok(assistant, "a degraded run still persists its transcript");
+  // Stating the degradation is only half the contract — whoever reads the run
+  // has to be able to get supervision back. The published CLI that first
+  // implements the wrapper's machine-path contract is 0.4.0; 0.3.1, the newest
+  // release when this fallback landed, did not, which is why the original
+  // wording told readers to wait for a build. That build shipped, so the
+  // remedy must name the floor and the command instead of a wait.
+  assert.match(assistant.text, /0\.4\.0 or newer/);
+  assert.match(assistant.text, /npm i -g @opencoven\/cli@latest/);
 });
 
 test("the degraded fallback cancels by terminating the direct Copilot child", async () => {
