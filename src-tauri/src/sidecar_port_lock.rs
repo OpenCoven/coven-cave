@@ -129,6 +129,30 @@ pub(super) fn claim_dedicated_port(state_dir: &Path, port: u16) -> Result<PortCl
     }
 }
 
+/// Drop every claim this process holds.
+///
+/// For an exit path that shows a BLOCKING dialog. `show_fatal_dialog` waits on
+/// `osascript`/`zenity` until someone clicks, and a copy that is on its way out
+/// must not keep the port reserved for the length of that wait — the next copy
+/// would be refused, naming a process that is never going to bind anything.
+/// A translocated DMG copy sitting on the "drag me to /Applications" alert is
+/// the concrete case.
+///
+/// Removing the registry entry as well as unlocking means a caller that somehow
+/// continues can re-claim cleanly rather than short-circuit on a lock it no
+/// longer holds.
+#[cfg(desktop)]
+pub(super) fn release_all_claims() {
+    let Ok(mut held) = held_claims().lock() else {
+        return;
+    };
+    for (port, file) in held.drain() {
+        if let Err(error) = Fs2FileExt::unlock(&file) {
+            log::warn!("[cave] could not release the claim on port {port}: {error}");
+        }
+    }
+}
+
 /// Name this process as the owner. A failure here costs the next copy a pid in
 /// its error message and nothing else, so it warns rather than failing the
 /// claim we have already won.
@@ -276,6 +300,42 @@ mod tests {
         );
 
         let _ = Fs2FileExt::unlock(&other);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn releasing_lets_the_next_copy_take_the_port() {
+        // The exit paths that show a dialog block until someone clicks it. A
+        // copy on its way out must not keep the port reserved for that long —
+        // a translocated DMG copy sitting on the "drag me to /Applications"
+        // alert would otherwise have the good copy refused, naming a process
+        // that never binds anything.
+        //
+        // Safe to run beside the other tests despite draining a process-global
+        // registry: every sibling asserts on a claim it has just taken, and a
+        // re-claim after an interleaved release still returns `Acquired`.
+        let dir = test_dir("release");
+        let port = 39_007;
+        assert_eq!(
+            claim_dedicated_port(&dir, port).expect("claim the port"),
+            PortClaim::Acquired
+        );
+
+        release_all_claims();
+
+        let next = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(dir.join(port_lock_file_name(port)))
+            .expect("open the next copy's handle");
+        assert!(
+            Fs2FileExt::try_lock_exclusive(&next).is_ok(),
+            "a released claim must be available to the next copy immediately"
+        );
+
+        let _ = Fs2FileExt::unlock(&next);
         let _ = fs::remove_dir_all(&dir);
     }
 

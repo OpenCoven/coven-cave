@@ -26,6 +26,11 @@ pub(super) fn log_linux_tray_unavailable(reason: &str) {
 /// Linux tries zenity/kdialog. Best-effort; ignored on failure.
 #[cfg(desktop)]
 pub(super) fn show_fatal_dialog(msg: &str) {
+    // Every caller exits immediately after this returns, and on macOS/Linux
+    // this blocks until the alert is dismissed. Give up the dedicated-port
+    // claim first so a copy on its way out cannot reserve the port for as long
+    // as its dialog is on screen (crate::sidecar_port_lock::release_all_claims).
+    crate::sidecar_port_lock::release_all_claims();
     #[cfg(target_os = "macos")]
     {
         let script = format!(
@@ -141,6 +146,11 @@ pub(super) fn report_existing_port_owner(port: u16, pid: Option<u32>) -> ! {
             "[cave] another CovenCave already holds port {port}; this instance is exiting"
         ),
     }
+    // The log plugin is registered further down the setup hook and only in
+    // debug builds, so by itself the line above is dropped on the very path
+    // that needs a trace: someone running the binary twice from a terminal
+    // would see a dialog and nothing else. `fatal_exit` has the same fallback.
+    eprintln!("[cave] another CovenCave already holds port {port}; this instance is exiting");
     show_fatal_dialog(&crate::sidecar_startup::already_running_message(port, pid));
     std::process::exit(1);
 }

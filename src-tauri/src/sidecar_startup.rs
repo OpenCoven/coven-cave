@@ -192,6 +192,12 @@ fn read_bounded_response(mut stream: std::net::TcpStream, limit: usize) -> Vec<u
         match stream.read(&mut chunk[..want]) {
             Ok(0) => break,
             Ok(read) => response.extend_from_slice(&chunk[..read]),
+            // `read_to_end` retried this and a bare `TcpStream::read` does not.
+            // A signal delivered mid-response would otherwise truncate a
+            // perfectly good answer and downgrade a real Cave to `Stranger`,
+            // which selects the wrong instruction for the operator. The
+            // deadline above still bounds the retry.
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => break,
         }
     }
