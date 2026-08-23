@@ -59,8 +59,7 @@ export function extractChatRenderedText(
   options: { pending?: boolean } = {},
 ): ChatRenderedTextProjection {
   const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(text).text);
-  const researchSplit = extractResearchRunMarkers(reasoningSplit.visible);
-  const skillSplit = extractSkillMarkers(researchSplit.visible);
+  const skillSplit = extractSkillMarkers(reasoningSplit.visible);
   const autoStatusSplit = extractAutoStatusMarkers(skillSplit.visible);
   const resultSplit = extractChatResultMarkers(autoStatusSplit.visible, {
     pending: Boolean(options.pending),
@@ -69,13 +68,14 @@ export function extractChatRenderedText(
     pending: Boolean(options.pending),
   });
   const nextPathSplit = extractNextPaths(attentionSplit.visible);
+  const researchSplit = extractResearchRunMarkers(nextPathSplit.visible);
   const researchCards = researchSplit.runs.map(researchPreviewMarker);
   const cardSource = researchCards.length > 0
-    ? `${nextPathSplit.visible.trimEnd()}\n${researchCards.join("\n")}`
-    : nextPathSplit.visible;
+    ? `${researchSplit.visible.trimEnd()}\n${researchCards.join("\n")}`
+    : researchSplit.visible;
 
   return {
-    visible: stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(nextPathSplit.visible))),
+    visible: stripPreviewMarkers(stripImageMarkers(stripGitHubMarkers(researchSplit.visible))),
     cardText: stripIncompletePreviewMarker(cardSource),
     inlineReasoning: reasoningSplit.reasoning,
     skillUpdates: skillSplit.updates,
