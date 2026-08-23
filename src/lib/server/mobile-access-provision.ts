@@ -157,9 +157,17 @@ export async function provisionMobileAccessSecret(
     );
 
     // Re-verified on the reuse path too, not trusted because it is already
-    // there: every install that ran the version whose chmod did nothing has a
-    // readable secret on disk right now, and this is the path they come back
-    // through.
+    // there: an install that ran the version whose chmod did nothing has a
+    // readable secret on disk right now.
+    //
+    // ⚠️ This does NOT reach every such install, and it would be worth more if
+    // it did. server.ts arms COVEN_CAVE_ACCESS_TOKEN from that same file at
+    // boot with no ownership check at all, and `resolveMobileAccessSecret`
+    // returns that armed value before it ever calls this function — so on any
+    // install whose token file already exists, provisioning is never entered
+    // and this repair never runs. What it does reach is a fresh mint, and a
+    // secret the `mobile:tailscale` script persisted after this server booted.
+    // Closing the gap means guarding the two sync readers; that is cave-8pd39.
     const existing = loadPersistedMobileAccessSecret(env);
     if (existing) {
       await restrictToCurrentUser(file, "Mobile access token file", env, options);

@@ -1121,7 +1121,16 @@ ordinary user; no elevation is needed).
 withheld, `clientV1DiscoveryPublished` stays false, and a banner naming the
 failure goes to stderr, but the server finishes starting and serves everything
 else. That is not a relaxation of the check: no path the guard refused is used,
-and the request-side guard keeps refusing every client v1 call. It is a
+and the request-side guard keeps refusing every client v1 call that presents a
+credential — the credential store re-asserts ownership on every read and write,
+so `findByBearer` cannot answer on a path the guard refused. Measured on a host
+with no reachable `powershell.exe`: the server answers `Ready on …`, the record
+is absent, `GET /api/client/v1/health` still answers (it is unauthenticated by
+design and carries no user data), and a bearer-carrying request is refused. The
+one case that survives is narrow and deliberate: if the discovery *file* alone
+is unverifiable while the store's root is exclusive, a client that already
+holds a credential and a cached endpoint keeps working against the real server
+— it is the record, not the server, that could have been redirected. It is a
 correction of blast radius — this used to close the listener and exit 1, which
 on a host that cannot read a DACL at all (PowerShell in Constrained Language
 Mode, or no `powershell.exe` under `%SystemRoot%`, both measured on Windows 11
