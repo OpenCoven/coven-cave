@@ -1176,6 +1176,11 @@ if (allowedTailnetNodeIds().size > 0) {
 }
 server.once("error", (err) => {
   cleanupStandaloneClientV1Discovery();
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `> Port ${port} on ${hostname} is already in use (EADDRINUSE); CovenCave cannot serve here.`
+    );
+  }
   console.error(err);
   process.exit(1);
 });

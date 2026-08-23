@@ -661,6 +661,57 @@ in-app instead. A dev-only recovery overlay replaces the raw `ChunkLoadError` /
 `ERR_CONNECTION_REFUSED` page, polls the origin, and hard-reloads the window as
 soon as the server answers so no stale chunk ids survive the restart.
 
+### A long dev session will OOM. Restart it — a bigger heap only defers it.
+
+`bash scripts/dev-app.sh` sessions die with `FATAL ERROR: Ineffective
+mark-compacts near heap limit`, taking the Tauri window with them through a
+non-zero `beforeDevCommand`. Four episodes are on record on one machine at 9.1h,
+5.75h, ~37.2h and "a few hours" (`cave-ksjt`), so the clock runs on **edit
+churn, not uptime** — an agent-driven session recompiling constantly gets there
+much faster than an idle one.
+
+**It is not Cave code, and it is not a bug you can fix here.** `cave-r13x`
+streamed two in-the-wild 5.3 GB / 5.8 GB captures through
+`scripts/analyze-heapsnapshot.mjs`: the retention is Turbopack HMR rebuild
+generations, React 19's dev debug capture (hundreds of thousands of retained
+`Error`s carrying ~10M `CallSiteInfo` frames) and Flight dev registries. No Cave
+constructor appeared in either top-40. Findings on issue #3803.
+
+**The remedy is to restart the dev server**, which costs nothing but a recompile.
+`server.ts`'s heap monitor gives the loss-free signal — it logs at 85% of the
+V8 limit and writes ONE snapshot per episode at 95%:
+
+```text
+[heap-monitor] heapUsed=3648MB heapLimit=4288MB (85%) rss=… uptimeMin=…
+```
+
+Grep the wrapper's own output for `[heap-monitor]`; when it appears, `Ctrl-C`
+and relaunch. Snapshots land in `~/.coven/cave/diagnostics/`; read one with
+`node scripts/analyze-heapsnapshot.mjs <file>` rather than Chrome DevTools,
+which cannot open a 5 GB snapshot. `COVEN_CAVE_HEAP_MONITOR=0` disables the
+monitor.
+
+**Verify on a production build, not a long dev server.** The packaged sidecar
+runs the same `server.mjs` and does *not* show this growth: measured flat at a
+39-42 MB heap over 12,360 requests (`cave-ksjt`) and 183.0 MB -> 182.4 MB RSS
+over 4,570 polls (`cave-wgbk`). The `run-cave-app` skill already builds
+production for this reason.
+
+**The ceiling is now chosen rather than inherited.** Both the dev server and the
+packaged sidecar run with `--max-old-space-size` pinned by
+`scripts/heap-limits.mjs` (Rust copy in `src-tauri/src/sidecar_heap.rs`).
+Before that, V8 derived it from host memory, so how long a dev session survived
+and what `[heap-monitor]`'s percentages meant both varied by machine. Raise or
+lower it for one run with
+
+```bash
+COVEN_CAVE_HEAP_LIMIT_MB=8192 bash scripts/dev-app.sh
+```
+
+but understand what that buys: the retention above is unbounded, so a bigger
+ceiling defers the same death while holding more of the machine. It is a
+guardrail, not a fix.
+
 ## Local remote hygiene — keep the Desktop branch list honest
 
 GitHub Desktop lists every remote-tracking ref in this checkout, so anything

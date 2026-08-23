@@ -50,8 +50,10 @@ assert.match(
 );
 
 // The session list sweep is wired through the shared sweep module.
+// The session-list computation moved to @/lib/server/sessions-list (cave-9rwd.1);
+// the route now owns only query parsing and the cache. Read the compute source.
 const sessionsListRoute = readFileSync(
-  new URL("../app/api/sessions/list/route.ts", import.meta.url),
+  new URL("./server/sessions-list.ts", import.meta.url),
   "utf8",
 );
 assert.match(

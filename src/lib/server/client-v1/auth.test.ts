@@ -9,6 +9,7 @@ import {
   type ClientV1AuthResult,
 } from "./auth.ts";
 import { CLIENT_V1_PUBLIC_ROUTES } from "./contract.ts";
+import { CLIENT_V1_OPERATION_DEFINITIONS } from "./operations.ts";
 import type {
   ClientV1CredentialRecord,
   CredentialStore,
@@ -345,6 +346,43 @@ test("every pre-authorized path is one the proxy hands to a client-v1 handler", 
     "/api/client/v1/conversations/conversation-1/messages",
   ]) {
     assert.notEqual(clientV1IngressKind(path), CLIENT_V1_PUBLIC_INGRESS, path);
+  }
+});
+
+test("every declared operation's authority class matches what the proxy enforces", () => {
+  // The operation inventory publishes an authority class per operation
+  // (cave-8a0s2), and a client reads it to decide what it can call. Metadata
+  // that disagrees with the proxy would either promise access the proxy refuses
+  // or, worse, describe an admin route as something a paired bearer reaches.
+  //
+  // The mapping is deliberately not one-to-one: `admin` classifies NULL here,
+  // because the admin family keeps the ordinary sidecar-token gate rather than
+  // taking the client-v1 demotion. Writing that out is the point — an admin
+  // operation that started classifying "authenticated" would have been demoted
+  // to a bearer check without anyone deciding to do that.
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    const probe = operation.path.replace(/:[^/]+/gu, "probe-segment");
+    const expected =
+      operation.ingress === "public"
+        ? CLIENT_V1_PUBLIC_INGRESS
+        : operation.ingress === "authenticated"
+          ? "authenticated"
+          : null;
+    assert.equal(clientV1IngressKind(probe), expected, `${operation.id} (${probe})`);
+    // And the converse of the demotion rule: an operation the proxy
+    // pre-authorizes must be one whose own handler checks a credential, which
+    // for this surface means it declares a scope.
+    if (clientV1IngressKind(probe) === "authenticated") {
+      assert.notEqual(operation.scope, null, operation.id);
+    }
+  }
+  // No operation may claim the admin family and a non-admin authority at once.
+  for (const operation of CLIENT_V1_OPERATION_DEFINITIONS) {
+    assert.equal(
+      operation.path.startsWith("/api/client/v1/admin/"),
+      operation.ingress === "admin",
+      operation.id,
+    );
   }
 });
 

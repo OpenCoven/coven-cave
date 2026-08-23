@@ -666,3 +666,149 @@ test("GET redacts legacy secret-bearing response metadata and model intent", asy
   assert.equal(json.conversation.turns[0].responseMetadata.model, "anthropic/claude-sonnet-4-6");
   assert.equal(json.conversation.modelIntent.reason, undefined);
 });
+
+// --- cave-wbxcu: createdAt is decided at creation and read-only afterwards ---
+//
+// `GET /api/client/v1/conversations` pages on createdAt descending, so the
+// field is a keyset cursor's coordinate: a record whose createdAt moves moves
+// under every open cursor, and if it moves UP the rest of that walk never
+// serves it. This route was the only writer in Cave that could move one — it
+// composed `body.createdAt || existing?.createdAt || now`, so a transcript
+// older than the field was stamped with `now` on its next turn (wrong fact,
+// and a silent skip), and any client body could rewrite a stored value.
+
+function writeKeylessConversation(id: string, turns: unknown[] = []) {
+  mkdirSync(CONV_DIR, { recursive: true });
+  // No createdAt at all — the shape a transcript written before the field has.
+  writeFileSync(
+    join(CONV_DIR, `${id}.json`),
+    JSON.stringify({
+      sessionId: id,
+      familiarId: "milo",
+      harness: "claude",
+      title: "Legacy chat",
+      updatedAt: "2026-06-01T00:00:00Z",
+      turns,
+    }),
+  );
+}
+
+function postReq(bodyObj: unknown) {
+  return new Request("http://test/api/chat/conversation/x", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(bodyObj),
+  });
+}
+
+function storedConversation(id: string) {
+  return JSON.parse(readFileSync(conversationPath(id), "utf8"));
+}
+
+test("POST leaves a legacy record with no createdAt without one", async () => {
+  writeKeylessConversation("sess-legacy-keyless-post", [
+    { id: "t1", role: "user", text: "hi", createdAt: "2026-06-01T00:00:00Z" },
+  ]);
+  const res = await POST(
+    postReq({ turn: { id: "t2", role: "user", text: "again", createdAt: "2026-06-02T00:00:00Z" } }),
+    paramsFor("sess-legacy-keyless-post"),
+  );
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  // The turn landed — a record that refused the write would pass the createdAt
+  // assertion for the wrong reason.
+  assert.equal(json.conversation.turns.length, 2);
+  assert.equal(
+    "createdAt" in json.conversation,
+    false,
+    "the response must not invent a createdAt the store does not have",
+  );
+  const stored = storedConversation("sess-legacy-keyless-post");
+  assert.equal(stored.turns.length, 2, "the turn was persisted, so the write really happened");
+  assert.equal(
+    "createdAt" in stored,
+    false,
+    "stamping `now` here moves the row from the tail of the client-v1 ordering to its head",
+  );
+});
+
+test("PUT leaves a legacy record with no createdAt without one", async () => {
+  writeKeylessConversation("sess-legacy-keyless-put", [
+    { id: "t1", role: "user", text: "hi", createdAt: "2026-06-01T00:00:00Z" },
+  ]);
+  const res = await PUT(
+    writeReq({
+      turns: [{ id: "t9", role: "user", text: "replaced", createdAt: "2026-06-03T00:00:00Z" }],
+    }),
+    paramsFor("sess-legacy-keyless-put"),
+  );
+  assert.equal(res.status, 200);
+  const stored = storedConversation("sess-legacy-keyless-put");
+  assert.equal(stored.turns.length, 1);
+  assert.equal(stored.turns[0].id, "t9", "the turns really were replaced");
+  assert.equal("createdAt" in stored, false);
+});
+
+test("POST creating a conversation stamps createdAt, because that IS the creation", async () => {
+  const res = await POST(
+    postReq({
+      familiarId: "milo",
+      harness: "claude",
+      turn: { id: "t1", role: "user", text: "new", createdAt: "2026-06-04T00:00:00Z" },
+    }),
+    paramsFor("sess-brand-new"),
+  );
+  assert.equal(res.status, 200);
+  const stored = storedConversation("sess-brand-new");
+  assert.equal(
+    Number.isFinite(Date.parse(stored.createdAt)),
+    true,
+    "a record created now has been created now — this is the one write that may stamp",
+  );
+});
+
+test("a body createdAt seeds a NEW conversation and cannot rewrite a stored one", async () => {
+  // An import or an offline replay knows the real creation time better than the
+  // clock does, so the body is honoured while there is no record to contradict
+  // it...
+  const created = await POST(
+    postReq({
+      familiarId: "milo",
+      harness: "claude",
+      createdAt: "2024-01-02T03:04:05.000Z",
+      turn: { id: "t1", role: "user", text: "imported", createdAt: "2024-01-02T03:04:05.000Z" },
+    }),
+    paramsFor("sess-imported"),
+  );
+  assert.equal(created.status, 200);
+  assert.equal(storedConversation("sess-imported").createdAt, "2024-01-02T03:04:05.000Z");
+
+  // ...and refused afterwards. A stored createdAt is a cursor coordinate, and a
+  // client that can rewrite it can move any row past any open walk.
+  const rewritten = await PUT(
+    writeReq({
+      createdAt: "2036-12-31T00:00:00.000Z",
+      turns: [{ id: "t2", role: "user", text: "again", createdAt: "2036-12-31T00:00:00.000Z" }],
+    }),
+    paramsFor("sess-imported"),
+  );
+  assert.equal(rewritten.status, 200);
+  const stored = storedConversation("sess-imported");
+  assert.equal(stored.turns[0].id, "t2", "the write landed, so the refusal below is not vacuous");
+  assert.equal(stored.createdAt, "2024-01-02T03:04:05.000Z");
+
+  // Nor can a body ADD one to a record that has none — the same rewrite, onto
+  // the rows the empty-string sentinel exists to protect.
+  writeKeylessConversation("sess-legacy-body-createdat", []);
+  const forced = await PUT(
+    writeReq({
+      createdAt: "2036-12-31T00:00:00.000Z",
+      turns: [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-01T00:00:00Z" }],
+    }),
+    paramsFor("sess-legacy-body-createdat"),
+  );
+  assert.equal(forced.status, 200);
+  const legacy = storedConversation("sess-legacy-body-createdat");
+  assert.equal(legacy.turns.length, 1, "the write landed");
+  assert.equal("createdAt" in legacy, false);
+});

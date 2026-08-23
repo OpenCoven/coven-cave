@@ -84,7 +84,7 @@
   margin: 0 0 14px;
 }
 .dr-eyebrow__dot {
-  width: 7px; height: 7px; border-radius: 999px;
+  width: 7px; height: 7px; border-radius: var(--radius-pill);
   background: var(--accent-presence);
   box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent-presence) 22%, transparent);
 }
@@ -599,7 +599,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .dr-cta:hover { border-color: var(--accent-presence); transform: translateY(-2px); }
 .dr-cta__icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 46px; height: 46px; border-radius: 12px; font-size: 24px; flex-shrink: 0;
+  width: 46px; height: 46px; border-radius: var(--radius-card); font-size: 24px; flex-shrink: 0;
   color: var(--accent-presence);
   background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
 }

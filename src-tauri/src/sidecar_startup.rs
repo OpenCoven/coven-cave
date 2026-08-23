@@ -85,23 +85,259 @@ pub(super) fn sidecar_output_text(output: &Arc<Mutex<SidecarOutputTail>>) -> Str
     }
 }
 
-/// Whether anything is already listening on the dedicated loopback port.
+/// Who is already on the dedicated loopback port.
 ///
-/// Replaces `find_free_port()`, which bound `127.0.0.1:0` and let the kernel
-/// pick — that is what made the packaged app's port different on every launch.
-/// See src-tauri/src/sidecar_ports.rs and scripts/ports.mjs for why a moving
-/// port is more than an inconvenience.
-///
-/// A busy port is NOT worked around by relocating. The desktop app already
-/// refuses to run a second GUI (the reachability owner check), so a stranger on
-/// the dedicated port is an operator-visible conflict, not something to route
-/// around silently — relocating is exactly how the address stopped being
-/// dependable in the first place.
+/// The verdicts `classify_port_occupant` below can return. See that function
+/// for why the conflict is resolved by identity rather than by relocating.
 #[cfg(desktop)]
-pub(super) fn port_is_occupied(port: u16) -> bool {
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum PortOccupant {
+    /// Nothing accepted a connection.
+    Free,
+    /// Answered `/api/app/build-info` as CovenCave.
+    ///
+    /// Both a packaged copy and a `pnpm dev` server land here, and the probe
+    /// cannot tell them apart — `/api/app/build-info` is deliberately
+    /// value-free. A packaged copy answers even though it holds a sidecar
+    /// token: `server.ts` stamps the local-peer header on any direct loopback
+    /// request, and `src/proxy.ts` lets a trusted local peer through ordinary
+    /// app APIs without one (`trustedLocalBrowserApi`). Reading only the token
+    /// check in that file suggests a 401; the request never reaches it.
+    Cave,
+    /// Answered, but refused the unauthenticated probe (401/403).
+    ///
+    /// Not the ordinary second-copy case — that answers 200 and lands in
+    /// `Cave` above. This is a Cave reached without `server.ts` in front of it,
+    /// or something else entirely that gates the same path, so it stays its own
+    /// verdict rather than being guessed in either direction.
+    Gated,
+    /// Accepted a connection but is not a Cave this build can name.
+    Stranger,
+}
+
+/// Total wall-clock a loopback read LOOP may spend.
+///
+/// Not a hard ceiling: the deadline is checked before entering each
+/// `read()`, so the worst case is this plus one `set_read_timeout` window.
+///
+/// Both readers on this path need one. The occupant probe talks to a program we
+/// know nothing about, and the readiness handshake runs inside a loop whose
+/// deadline is checked only BETWEEN calls — neither has a cancellation
+/// checkpoint mid-read, so this is the whole budget for each.
+#[cfg(desktop)]
+const LOOPBACK_READ_BUDGET: Duration = Duration::from_secs(2);
+
+/// Classify whoever holds `port`.
+///
+/// Replaces the old `find_free_port()`, which bound `127.0.0.1:0` and let the
+/// kernel pick — that is what made the packaged app's port different on every
+/// launch. See src-tauri/src/sidecar_ports.rs and scripts/ports.mjs for why a
+/// moving port is more than an inconvenience.
+///
+/// A busy port is NOT worked around by relocating: relocating is exactly how
+/// the address stopped being dependable in the first place. The conflict is
+/// resolved by identity instead — the same verdict `scripts/dev-port-owner.mjs`
+/// has been giving the dev launcher, read from the same value-free
+/// `/api/app/build-info` route.
+///
+/// This can only ever narrow the window, never close it: an answer describes
+/// the instant it was collected, and `node` binds seconds later.
+/// `sidecar_port_lock` is what actually excludes a second copy; this exists to
+/// say WHO, so the refusal names something instead of guessing.
+///
+/// One deliberate difference from `scripts/dev-port-owner.mjs`: it downgrades a
+/// connected-but-silent port to "free" so the caller's own bind produces the
+/// real error. Here the caller's "real error" is the `node` that dies on
+/// `EADDRINUSE` and prints an error object at the operator — the outcome this
+/// exists to prevent — so a completed TCP connection is never downgraded.
+/// Something is listening; the only open question is who.
+#[cfg(desktop)]
+pub(super) fn classify_port_occupant(port: u16) -> PortOccupant {
+    use std::io::Write;
     use std::net::{SocketAddr, TcpStream};
+
+    const MAX_RESPONSE_BYTES: usize = 64 * 1024;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(250)) else {
+        return PortOccupant::Free;
+    };
+    if stream
+        .set_read_timeout(Some(Duration::from_millis(750)))
+        .is_err()
+        || stream
+            .set_write_timeout(Some(Duration::from_millis(500)))
+            .is_err()
+    {
+        return PortOccupant::Stranger;
+    }
+    if write!(
+        stream,
+        "GET /api/app/build-info HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+    )
+    .is_err()
+    {
+        return PortOccupant::Stranger;
+    }
+    classify_build_info_response(&read_bounded_response(stream, MAX_RESPONSE_BYTES))
+}
+
+/// Read at most `limit` bytes, and for at most `LOOPBACK_READ_BUDGET`.
+///
+/// `set_read_timeout` bounds each `read()`, not the total, and `Read::take`
+/// bounds bytes rather than time — so `read_to_end` against an occupant that
+/// trickles one byte inside every timeout window runs for as long as it cares
+/// to. That is not hypothetical for this caller: it talks to whatever holds the
+/// port, and the old `port_is_occupied` refused such a peer in 250 ms. Startup
+/// has no cancellation checkpoint inside the probe, so an unbounded read here
+/// freezes the Windows startup screen with a Retry button that reports
+/// "sidecar startup is already running".
+///
+/// A short read is fine. Whatever arrived either parses as CovenCave or does
+/// not, and every other outcome is `Stranger` — which is already the right
+/// verdict for a peer that will not answer promptly.
+#[cfg(desktop)]
+fn read_bounded_response(mut stream: std::net::TcpStream, limit: usize) -> Vec<u8> {
+    use std::io::Read;
+
+    let deadline = Instant::now() + LOOPBACK_READ_BUDGET;
+    let mut response = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    while response.len() < limit && Instant::now() < deadline {
+        let want = chunk.len().min(limit - response.len());
+        match stream.read(&mut chunk[..want]) {
+            Ok(0) => break,
+            Ok(read) => response.extend_from_slice(&chunk[..read]),
+            // `read_to_end` retried this and a bare `TcpStream::read` does not.
+            // A signal delivered mid-response would otherwise truncate a
+            // perfectly good answer and downgrade a real Cave to `Stranger`,
+            // which selects the wrong instruction for the operator. The
+            // deadline above still bounds the retry.
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+    response
+}
+
+/// The verdict for a collected response. Split out from the socket work so the
+/// classification is testable without a listener.
+#[cfg(desktop)]
+pub(super) fn classify_build_info_response(response: &[u8]) -> PortOccupant {
+    let Some((status, body)) = parse_http_response(response) else {
+        return PortOccupant::Stranger;
+    };
+    if matches!(status, 401 | 403) {
+        return PortOccupant::Gated;
+    }
+    if status != 200 {
+        return PortOccupant::Stranger;
+    }
+    let Ok(payload) = serde_json::from_slice::<serde_json::Value>(body.as_slice()) else {
+        return PortOccupant::Stranger;
+    };
+    if payload.get("name").and_then(|name| name.as_str()) == Some("CovenCave") {
+        PortOccupant::Cave
+    } else {
+        PortOccupant::Stranger
+    }
+}
+
+/// Status code and decoded body of a bounded HTTP/1.x response, or `None` when
+/// the bytes are not one this can read. Deliberately narrow: the only caller is
+/// deciding who holds a port, and every parse failure means a stranger.
+#[cfg(desktop)]
+fn parse_http_response(response: &[u8]) -> Option<(u16, Vec<u8>)> {
+    let separator = b"\r\n\r\n";
+    let header_end = response
+        .windows(separator.len())
+        .position(|window| window == separator)?;
+    let headers = std::str::from_utf8(&response[..header_end]).ok()?;
+    let status = headers
+        .lines()
+        .next()?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u16>()
+        .ok()?;
+    let encoded = &response[header_end + separator.len()..];
+    let body = if headers_declare_chunked(headers) {
+        decode_chunked_body(encoded).ok()?
+    } else {
+        encoded.to_vec()
+    };
+    Some((status, body))
+}
+
+/// What to tell an operator whose copy lost the claim in `sidecar_port_lock`.
+///
+/// Only CovenCave takes that lock, so unlike the probe above this is never a
+/// guess: a refused claim IS another copy of this app, and a live one — the OS
+/// releases the lock when its holder's handle closes.
+#[cfg(desktop)]
+pub(super) fn already_running_message(port: u16, owner_pid: Option<u32>) -> String {
+    let who = match owner_pid {
+        Some(pid) => format!("CovenCave is already running (process {pid})"),
+        None => "CovenCave is already running".to_string(),
+    };
+    format!(
+        "{who} and is using port {port}.\n\n\
+         Switch to the window that is already open, or quit it before starting another copy. {}",
+        second_copy_hint()
+    )
+}
+
+/// The operator-facing text for a port this copy cannot have.
+#[cfg(desktop)]
+pub(super) fn port_conflict_message(port: u16, occupant: &PortOccupant) -> String {
+    match occupant {
+        // Only reachable from the EADDRINUSE post-mortem in
+        // `run_sidecar_runtime`: the squatter that killed the sidecar let go
+        // again before we could ask who it was.
+        PortOccupant::Free => format!(
+            "Port {port} was taken by another program while CovenCave was starting, and is free \
+             again now.\n\nRe-launch CovenCave."
+        ),
+        PortOccupant::Cave => format!(
+            "Port {port} is already serving CovenCave — either another copy of the app, or a \
+             dev server started with `pnpm dev`.\n\nSwitch to it, or stop it and re-launch. {}",
+            second_copy_hint()
+        ),
+        PortOccupant::Gated => format!(
+            "Port {port} is serving something that will not identify itself to this copy.\n\n\
+             Quit whatever is using port {port} and re-launch. {}",
+            second_copy_hint()
+        ),
+        PortOccupant::Stranger => format!(
+            "Port {port} is held by another program, so CovenCave cannot start its local \
+             server.\n\nQuit whatever is using port {port} and re-launch. {}",
+            second_copy_hint()
+        ),
+    }
+}
+
+/// Whether a dead sidecar's output tail says it failed to BIND, as opposed to
+/// merely mentioning `EADDRINUSE` somewhere in 256 KiB of unrelated logging.
+///
+/// The distinction matters because the conflict message it selects tells the
+/// operator to go quit a program — advice that is actively misleading if the
+/// real failure was something else that happened to log the string. `server.ts`
+/// prints a dedicated line for this, and Node's own message is
+/// `listen EADDRINUSE: …`; anything looser would let one stray token in a
+/// dependency's log rewrite the diagnosis.
+#[cfg(desktop)]
+pub(super) fn tail_reports_bind_conflict(tail: &str) -> bool {
+    tail.contains("listen EADDRINUSE") || tail.contains("is already in use (EADDRINUSE)")
+}
+
+/// Every refusal names the same escape hatch, because `COVEN_CAVE_PORT` is what
+/// makes "quit the other one" a choice rather than the only move — and the port
+/// claim is keyed on the resolved port precisely so this stays true.
+#[cfg(desktop)]
+fn second_copy_hint() -> String {
+    format!(
+        "To run a second copy alongside the first, start it with {} set to a free port.",
+        sidecar_ports::CAVE_PORT_ENV
+    )
 }
 
 /// Dev builds only: the dev-server URL from tauri.conf.json `build.devUrl`,
@@ -214,7 +450,7 @@ fn authenticated_readiness_handshake(
     port: u16,
     auth_token: &str,
 ) -> Result<(), SidecarReadinessRefusal> {
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::net::{SocketAddr, TcpStream};
 
     const MAX_RESPONSE_BYTES: usize = 64 * 1024;
@@ -253,16 +489,19 @@ fn authenticated_readiness_handshake(
         )
     })?;
 
-    let mut response = Vec::new();
-    stream
-        .take((MAX_RESPONSE_BYTES + 1) as u64)
-        .read_to_end(&mut response)
-        .map_err(|error| {
-            readiness_refusal(
-                ReliabilityFailureClass::Transport,
-                format!("readiness response failed: {error}"),
-            )
-        })?;
+    // Bounded in time as well as bytes, for the reason spelled out on
+    // `read_bounded_response`: `set_read_timeout` bounds each read and `take`
+    // bounds bytes, so `read_to_end` runs as long as a peer keeps trickling.
+    // It matters more here than at the probe, because the caller's deadline is
+    // an illusion — `wait_for_sidecar_ready` checks it only between calls and
+    // never polls `should_cancel` inside one. A sidecar that stalls mid-response
+    // could therefore hold the startup worker far past its 60/90 s budget, and
+    // the worker never reaching `finish()` leaves `running` pinned true, which
+    // deadens Retry for the life of the process.
+    //
+    // The +1 is kept so an oversized response is still detected rather than
+    // silently truncated to exactly the cap.
+    let response = read_bounded_response(stream, MAX_RESPONSE_BYTES + 1);
     if response.len() > MAX_RESPONSE_BYTES {
         return Err(readiness_refusal(
             ReliabilityFailureClass::Transport,
@@ -310,14 +549,7 @@ pub(super) fn validate_readiness_response_classified(
         ));
     }
     let encoded_body = &response[header_end + separator.len()..];
-    let body = if headers.lines().any(|line| {
-        line.split_once(':').is_some_and(|(name, value)| {
-            name.eq_ignore_ascii_case("transfer-encoding")
-                && value
-                    .split(',')
-                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
-        })
-    }) {
+    let body = if headers_declare_chunked(headers) {
         decode_chunked_body(encoded_body)
             .map_err(|message| readiness_refusal(ReliabilityFailureClass::Transport, message))?
     } else {
@@ -369,6 +601,24 @@ pub(super) fn validate_readiness_response_classified(
     Ok(())
 }
 
+/// Whether a response's headers declare a chunked body.
+///
+/// Shared by the two HTTP readers on this path. They were separate copies of
+/// the same block, which matters more than tidiness: the hostile-chunk fix
+/// landed in the shared `decode_chunked_body`, but a fix to header parsing
+/// would have had to be made twice, and the second one is easy to miss.
+#[cfg(desktop)]
+fn headers_declare_chunked(headers: &str) -> bool {
+    headers.lines().any(|line| {
+        line.split_once(':').is_some_and(|(name, value)| {
+            name.eq_ignore_ascii_case("transfer-encoding")
+                && value
+                    .split(',')
+                    .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
+        })
+    })
+}
+
 #[cfg(desktop)]
 fn decode_chunked_body(encoded: &[u8]) -> Result<Vec<u8>, String> {
     let mut remaining = encoded;
@@ -390,11 +640,25 @@ fn decode_chunked_body(encoded: &[u8]) -> Result<Vec<u8>, String> {
             }
             return Err("readiness endpoint returned malformed chunk terminator".to_string());
         }
-        if remaining.len() < size + 2 || &remaining[size..size + 2] != b"\r\n" {
+        // `size` is whatever the peer wrote in hex, so the trailer arithmetic
+        // must not be allowed to wrap. Release builds carry no overflow checks,
+        // and `FFFFFFFFFFFFFFFF\r\nx` makes `size + 2` wrap to 1 — which passes
+        // the length test and then panics on `&remaining[usize::MAX..1]`.
+        //
+        // This body used to be reachable only after our own sidecar had logged
+        // its ready line. The build-info probe now feeds it bytes from whoever
+        // holds the port, on every launch, so a malformed chunk header has to
+        // be an error rather than a crash: an unwind here would leave
+        // `SidecarStartupControl.running` stuck true and permanently deaden the
+        // Retry button.
+        let chunk_end = size
+            .checked_add(2)
+            .ok_or_else(|| "readiness endpoint returned an out-of-range chunk size".to_string())?;
+        if remaining.len() < chunk_end || &remaining[size..chunk_end] != b"\r\n" {
             return Err("readiness endpoint returned a truncated chunk".to_string());
         }
         decoded.extend_from_slice(&remaining[..size]);
-        remaining = &remaining[size + 2..];
+        remaining = &remaining[chunk_end..];
     }
 }
 
@@ -585,20 +849,49 @@ fn run_sidecar_runtime(
     };
 
     let port = sidecar_ports::dedicated_port();
-    if port_is_occupied(port) {
-        // Name the conflict instead of relocating. The old behaviour asked the
-        // kernel for any free port, which always "worked" and left the app on a
-        // different address every launch — including in the pairing-secret path
-        // (`mobile-tailscale-${port}`), so phones could not find it twice.
+    // Take the claim BEFORE looking at the port. The probe below can only
+    // describe the instant it ran, and two copies launched together do not race
+    // by chance — they queue on `.runtime-cache.lock` while one extracts the
+    // runtime, which releases the loser into exactly the window where the
+    // winner has finished extracting and has not yet bound. The claim is what
+    // makes that ordering harmless (sidecar_port_lock.rs).
+    //
+    // The setup hook already claimed this port, so in practice the call below
+    // hits the same-process short-circuit and returns `Acquired`. That is
+    // deliberate defence in depth rather than dead weight: the `HeldBy` arm is
+    // still reachable when the setup claim itself failed open, which is exactly
+    // the case where nothing else is guarding the port.
+    match app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("could not resolve local app data: {error}"))
+        .and_then(|state_dir| crate::sidecar_port_lock::claim_dedicated_port(&state_dir, port))
+    {
+        Ok(crate::sidecar_port_lock::PortClaim::Acquired) => {}
+        Ok(crate::sidecar_port_lock::PortClaim::HeldBy { pid }) => {
+            return Err(SidecarStartError::failed(
+                ReliabilityFailureClass::Contention,
+                already_running_message(port, pid),
+            ));
+        }
+        // Fail open. A claim that cannot be evaluated is a worse reason to
+        // refuse startup than the conflict it was meant to catch, and the probe
+        // below plus the EADDRINUSE post-mortem still describe what happens
+        // next.
+        Err(error) => {
+            log::warn!("[cave] could not claim the dedicated port {port}: {error}");
+        }
+    }
+
+    // Name the conflict instead of relocating. The old behaviour asked the
+    // kernel for any free port, which always "worked" and left the app on a
+    // different address every launch — including in the pairing-secret path
+    // (`mobile-tailscale-${port}`), so phones could not find it twice.
+    let occupant = classify_port_occupant(port);
+    if occupant != PortOccupant::Free {
         return Err(SidecarStartError::failed(
             ReliabilityFailureClass::Contention,
-            format!(
-                "Port {port} is already in use, so CovenCave cannot start its local server.\n\n\
-                 This is usually another CovenCave that is still running, or a dev server \
-                 started with `pnpm dev`. Quit that one and re-launch, or start CovenCave with \
-                 {} set to a free port.",
-                sidecar_ports::CAVE_PORT_ENV,
-            ),
+            port_conflict_message(port, &occupant),
         ));
     }
     let auth_token = sidecar_auth_token();
@@ -663,6 +956,10 @@ fn run_sidecar_runtime(
     })?;
     let server_js_arg = node_arg_path(&server_entry);
     let server_dir_arg = node_arg_path(server_dir);
+    // The sidecar's old-space ceiling, chosen rather than inherited from host
+    // memory. Built as a whole vector because node only honours V8 flags that
+    // appear BEFORE the entry path — see src-tauri/src/sidecar_heap.rs.
+    let node_args = sidecar_heap::sidecar_node_args(&server_js_arg);
 
     let path_sep = if cfg!(target_os = "windows") {
         ";"
@@ -731,7 +1028,7 @@ fn run_sidecar_runtime(
             )
         })?;
         let launcher = launch_gate
-            .launcher(&node, [&server_js_arg])
+            .launcher(&node, &node_args)
             .map_err(|error| {
                 diagnostics.record_io_error("sidecar-spawn", "launcher-preparation-failed", &error);
                 SidecarStartError::failed(
@@ -744,7 +1041,7 @@ fn run_sidecar_runtime(
     #[cfg(not(target_os = "windows"))]
     let mut command = {
         let mut command = Command::new(&node);
-        command.arg(&server_js_arg);
+        command.args(&node_args);
         command
     };
     command
@@ -917,6 +1214,28 @@ fn run_sidecar_runtime(
         result @ (PortWaitResult::Exited
         | PortWaitResult::Refused(_)
         | PortWaitResult::TimedOut) => {
+            let tail = sidecar_output_text(&sidecar_output);
+            // Last line of defence, and the one that would have made the
+            // original report legible. The claim above makes a lost bind
+            // unreachable between two managed copies, but nothing can claim the
+            // port on behalf of a stranger that arrives mid-startup. When that
+            // happens the evidence is already in the tail, and reading it is
+            // the difference between naming the conflict and pasting node's
+            // error object at someone whose only real problem is that the
+            // address is taken.
+            if matches!(result, PortWaitResult::Exited) && tail_reports_bind_conflict(&tail) {
+                return Err(SidecarStartError::failed(
+                    ReliabilityFailureClass::Contention,
+                    format!(
+                        "{}
+
+Bounded sidecar output tail:
+{}",
+                        port_conflict_message(port, &classify_port_occupant(port)),
+                        tail
+                    ),
+                ));
+            }
             let failure_class = match &result {
                 PortWaitResult::Exited => ReliabilityFailureClass::ProcessExit,
                 PortWaitResult::TimedOut => ReliabilityFailureClass::Timeout,
@@ -944,7 +1263,7 @@ fn run_sidecar_runtime(
                     node.display(),
                     reason,
                     port,
-                    sidecar_output_text(&sidecar_output)
+                    tail
                 ),
             ));
         }
