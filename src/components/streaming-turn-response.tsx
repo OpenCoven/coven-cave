@@ -25,6 +25,8 @@ export type StreamingTurnResponseProps = {
   activityDetails?: ReactNode;
   supplementaryContent?: ReactNode;
   announceLifecycle?: boolean;
+  startedAt?: string;
+  durationMs?: number;
   onStop?: () => void;
   canContinue?: boolean;
   onContinue?: () => void;
@@ -66,70 +68,6 @@ function TurnResults({ model }: { model: StreamingTurnViewModel }) {
   );
 }
 
-function TurnState({
-  model,
-  onContinue,
-  canContinue,
-  onRetry,
-  announceLifecycle,
-}: {
-  model: StreamingTurnViewModel;
-  onContinue?: () => void;
-  canContinue?: boolean;
-  onRetry?: () => void;
-  announceLifecycle: boolean;
-}) {
-  if (model.status === "interrupted") {
-    return (
-      <section
-        className="streaming-turn-state streaming-turn-state--interrupted"
-        role={announceLifecycle ? "status" : undefined}
-        data-turn-state={true}
-      >
-        <Icon name="ph:warning-circle" width={14} aria-hidden={true} />
-        <span>Response stopped</span>
-        {canContinue && onContinue ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            className="focus-ring"
-            aria-label="Continue response"
-            onClick={onContinue}
-          >
-            Continue
-          </Button>
-        ) : null}
-      </section>
-    );
-  }
-
-  if (model.status === "failed") {
-    return (
-      <section
-        className="streaming-turn-state streaming-turn-state--failed"
-        role={announceLifecycle ? "alert" : undefined}
-        data-turn-state={true}
-      >
-        <Icon name="ph:x-circle" width={14} aria-hidden={true} />
-        <span>Response failed</span>
-        {onRetry ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            className="focus-ring"
-            aria-label="Retry response"
-            onClick={onRetry}
-          >
-            Retry
-          </Button>
-        ) : null}
-      </section>
-    );
-  }
-
-  return null;
-}
-
 function TurnActivityDisclosure({
   activityDetails,
   activityOpen,
@@ -151,11 +89,29 @@ function TurnActivityDisclosure({
       onToggle={(event) => onOpenChange(event.currentTarget.open)}
     >
       <summary className="focus-ring" onClick={onUserToggle}>
-        {`View activity · ${activityCount} ${activityCount === 1 ? "update" : "updates"}`}
+        <Icon name={activityOpen ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
+        {`${activityCount} activity ${activityCount === 1 ? "update" : "updates"}`}
       </summary>
       {activityDetails}
     </details>
   );
+}
+
+function formatDuration(durationMs?: number): string | null {
+  if (durationMs === undefined || !Number.isFinite(durationMs)) return null;
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function transientPreambleFrom(text: string): string | null {
+  const candidate = text.trim();
+  if (!candidate || candidate.length > 120 || candidate.includes("\n")) return null;
+  if (!/[.!…]$/.test(candidate)) return null;
+  return /^(?:let me|i(?:'ll| will)|i'm going to)\s+(?:take a look|look|check|inspect|review|search|open|read)\b/i.test(candidate)
+    ? candidate
+    : null;
 }
 
 export function StreamingTurnResponse({
@@ -167,6 +123,8 @@ export function StreamingTurnResponse({
   activityDetails,
   supplementaryContent,
   announceLifecycle = true,
+  startedAt,
+  durationMs,
   onStop,
   canContinue,
   onContinue,
@@ -174,11 +132,30 @@ export function StreamingTurnResponse({
   onCopyCompleted,
 }: StreamingTurnResponseProps) {
   const live = isLive(model);
-  const [activityOpen, setActivityOpen] = useState(
-    density === "full" && model.status === "working",
-  );
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const userToggledActivityRef = useRef(false);
   const previousStatusRef = useRef(model.status);
+  const startedAtMs = startedAt ? Date.parse(startedAt) : Number.NaN;
+  const elapsedMs = live && Number.isFinite(startedAtMs)
+    ? Math.max(0, now - startedAtMs)
+    : durationMs;
+  const elapsedLabel = formatDuration(elapsedMs);
+  const statusLabel =
+    model.status === "working"
+      ? "Using tools"
+      : model.status === "answering"
+        ? "Responding"
+        : model.status === "complete"
+          ? elapsedLabel
+            ? `Completed in ${elapsedLabel}`
+            : "Completed"
+          : model.status === "interrupted"
+            ? "Stopped"
+            : "Failed";
+  const transientPreamble = live && !model.currentActivity
+    ? transientPreambleFrom(model.committedText)
+    : null;
 
   useEffect(() => {
     const enteredComplete =
@@ -189,6 +166,18 @@ export function StreamingTurnResponse({
     previousStatusRef.current = model.status;
   }, [model.status]);
 
+  useEffect(() => {
+    if (!live || !startedAt) return;
+    setNow(Date.now());
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      setNow(Date.now());
+      timer = globalThis.setTimeout(tick, 1_000);
+    };
+    timer = globalThis.setTimeout(tick, 1_000);
+    return () => globalThis.clearTimeout(timer);
+  }, [live, startedAt]);
+
   return (
     <div
       className="streaming-turn-response"
@@ -196,60 +185,99 @@ export function StreamingTurnResponse({
       data-streaming-turn-response={true}
       data-streaming-turn-id={turnId}
     >
-      {live ? (
-        <div
-          className="streaming-turn-current"
-          role={announceLifecycle ? "status" : undefined}
-        >
+      <div
+        className="streaming-turn-current"
+        role={live && announceLifecycle ? "status" : undefined}
+      >
+        <div className="streaming-turn-current__row">
+          <Icon
+            name={
+              live
+                ? "ph:circle-notch-bold"
+                : model.status === "failed"
+                  ? "ph:x-circle"
+                  : model.status === "interrupted"
+                    ? "ph:warning-circle"
+                    : "ph:check-circle"
+            }
+            width={14}
+            aria-hidden
+            className={live ? "streaming-turn-current__spinner" : undefined}
+          />
           <div className="streaming-turn-current__phase">
-            {`${familiarName} is ${model.status === "working" ? "working" : "responding"}`}
+            <strong>{familiarName}</strong>
+            <span aria-hidden> · </span>
+            {statusLabel}
           </div>
-          {model.currentActivity ? (
-            <div
-              className="streaming-turn-current__detail"
-              data-turn-current-activity={true}
-            >
-              {model.currentActivity.label}
-            </div>
+          {live && elapsedLabel ? (
+            <time className="streaming-turn-current__time">{elapsedLabel}</time>
           ) : null}
-          {onStop ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="focus-ring"
-              aria-label="Stop response"
-              onClick={onStop}
-            >
-              Stop
-            </Button>
-          ) : null}
-          {onCopyCompleted ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="focus-ring"
-              aria-label="Copy completed text"
-              onClick={onCopyCompleted}
-            >
-              Copy
-            </Button>
+          <div className="streaming-turn-current__actions">
+            {live && onStop ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                className="focus-ring"
+                aria-label="Stop response"
+                onClick={onStop}
+              >
+                Stop
+              </Button>
+            ) : null}
+            {onCopyCompleted && model.committedText ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                className="focus-ring"
+                aria-label="Copy completed text"
+                onClick={onCopyCompleted}
+              >
+                <Icon name="ph:copy" width={12} aria-hidden />
+                Copy
+              </Button>
+            ) : null}
+            {model.status === "interrupted" && canContinue && onContinue ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                className="focus-ring"
+                aria-label="Continue response"
+                onClick={onContinue}
+              >
+                Continue
+              </Button>
+            ) : null}
+            {model.status === "failed" && onRetry ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                className="focus-ring"
+                aria-label="Retry response"
+                onClick={onRetry}
+              >
+                Retry
+              </Button>
+            ) : null}
+          </div>
+
+          {announceLifecycle && model.status === "complete" ? (
+            <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {`${familiarName} completed response`}
+            </span>
           ) : null}
         </div>
-      ) : null}
-
-      {announceLifecycle && model.status === "complete" ? (
-        <span
-          className="sr-only"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {`${familiarName} completed response`}
-        </span>
-      ) : null}
+        {live && (model.currentActivity?.label || transientPreamble) ? (
+          <div
+            className="streaming-turn-current__detail"
+            data-turn-current-activity={true}
+          >
+            {model.currentActivity?.label ?? transientPreamble}
+          </div>
+        ) : null}
+      </div>
 
       <div className="streaming-turn-prose">
-        {proseContent !== undefined ? (
+        {transientPreamble ? null : proseContent !== undefined ? (
           proseContent
         ) : (
           <StreamingMarkdownBlocks
@@ -261,14 +289,6 @@ export function StreamingTurnResponse({
       </div>
 
       <TurnResults model={model} />
-
-      <TurnState
-        model={model}
-        canContinue={canContinue}
-        onContinue={onContinue}
-        onRetry={onRetry}
-        announceLifecycle={announceLifecycle}
-      />
 
       {supplementaryContent}
 

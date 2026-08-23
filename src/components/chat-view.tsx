@@ -9238,9 +9238,9 @@ function TurnRowImpl({
               trailing cluster that reveals on turn hover / keyboard focus
               (reveal-scope on the turn content above). Nothing is removed; the
               default view just reads "Name · 2h ago" like ChatGPT. */}
-          <div className="cave-linear-turn-meta">
+          <div className={`cave-linear-turn-meta${turn.pending ? " cave-linear-turn-meta--streaming" : ""}`}>
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus !== "complete" && !indicatorVisible && (
+            {turnStatus !== "complete" && !indicatorVisible && !turn.pending && (
               <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
                 {lifecycleLabel(turnStatus)}
               </span>
@@ -9299,6 +9299,7 @@ function TurnRowImpl({
                 timestamp={turn.createdAt}
                 showTimestamp={false}
                 pending={turn.pending}
+                hideCopyAction
                 isError={Boolean(turn.error) || showEmptySuccessfulFallback}
                 label={familiar.display_name}
                 messageId={turn.id}
@@ -9319,11 +9320,13 @@ function TurnRowImpl({
                       model={streamingModel}
                       density="full"
                       announceLifecycle={announceLifecycle}
+                      startedAt={turn.createdAt}
+                      durationMs={turn.durationMs}
                       onStop={pending ? () => handlersRef.current.cancelSend?.() : undefined}
                       canContinue={false}
                       onRetry={turn.error ? onRegenerate : undefined}
                       onCopyCompleted={
-                        pending && streamingModel.committedText
+                        streamingModel.committedText
                           ? () => { void copyText(streamingModel.committedText); }
                           : undefined
                       }

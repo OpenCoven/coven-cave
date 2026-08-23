@@ -5,7 +5,6 @@ import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { shouldUseEmptySuccessfulFallback } from "@/lib/chat-assistant-output";
 import { copyText } from "@/lib/clipboard";
 import { Icon, type IconName } from "@/lib/icon";
@@ -92,7 +91,6 @@ function QuickChatBubble({
   onSuggestion?: (value: string) => void;
   onStop?: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
   const streaming = message.role === "assistant" && Boolean(message.pending);
   const formatted = formatQuickChatAssistantMessage(
     message.role === "assistant" ? message.text : "",
@@ -102,12 +100,6 @@ function QuickChatBubble({
     formatted.visibleProse,
     streaming,
   );
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
 
   if (message.role === "user") {
     return (
@@ -202,24 +194,12 @@ function QuickChatBubble({
 
       <QuickChatResponseMetadata lines={responseMetadataLines} />
 
-      {canAct ? (
+      {canAct && isLastAssistant && onRegenerate && !message.error ? (
         <div className="quick-chat-turn__actions">
-          <IconButton
-            icon={copied ? "ph:check" : "ph:copy"}
-            size="xs"
-            aria-label={copied ? "Copied" : "Copy reply"}
-            title="Copy reply"
-            onClick={() => { void copyText(visible).then((ok) => { if (ok) setCopied(true); }); }}
-          />
-          {isLastAssistant && onRegenerate && !message.error ? (
-            <IconButton
-              icon="ph:arrow-clockwise"
-              size="xs"
-              aria-label="Regenerate reply"
-              title="Regenerate"
-              onClick={onRegenerate}
-            />
-          ) : null}
+          <Button size="xs" variant="ghost" className="focus-ring" onClick={onRegenerate}>
+            <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+            Regenerate
+          </Button>
         </div>
       ) : null}
 
@@ -260,6 +240,8 @@ function QuickChatBubble({
             model={streamingModel}
             density="compact"
             announceLifecycle={announceLifecycle}
+            startedAt={message.startedAt}
+            durationMs={message.durationMs}
             proseContent={orderedProseContent}
             onStop={streaming ? onStop : undefined}
             onRetry={message.error && isLastAssistant ? onRegenerate : undefined}
