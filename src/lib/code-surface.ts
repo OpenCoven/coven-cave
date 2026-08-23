@@ -121,7 +121,9 @@ export function codeWorkbenchFitsSplit(
 /** Top-level surface tabs: the session workbench plus Activity (the former
  *  all-content GitHub feed) and focused GitHub slices. Legacy `ctab=github`
  *  deep links normalize onto Activity. */
-export const CODE_TOP_TABS = ["sessions", "activity", "prs", "issues", "reviews"] as const;
+// `work` is the frame's Work scheduler (cave-7c329) — familiar lanes, the ready
+// queue, and the blocked-bead gates rail. It is deliberately NOT a GitHub tab.
+export const CODE_TOP_TABS = ["sessions", "work", "activity", "prs", "issues", "reviews"] as const;
 export type CodeTopTab = (typeof CODE_TOP_TABS)[number];
 
 export function isCodeTopTab(value: string | null | undefined): value is CodeTopTab {
