@@ -1,6 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  type Stats,
+} from "node:fs";
 import { devNull } from "node:os";
 
 import path from "node:path";
@@ -10,6 +19,7 @@ import {
   classifyWorktree,
   isDisposableIgnoredPath,
   normalizeAbsoluteWorktreePath,
+  retainedStatusChanges,
   type ManagedCreationException,
   type WorktreeLifecycleBudgets,
   type WorktreeLifecycleItem,
@@ -665,6 +675,110 @@ function processOwnersFor(
     .map(({ pid, command: processCommand }) => ({ pid, command: processCommand }));
 }
 
+/** Minimal shape of this module's `git()` result, so callers can pass their own. */
+export type LifecycleGitRunner = (
+  root: string,
+  args: string[],
+) => { ok: boolean; stdout: string; stderr: string };
+
+/**
+ * Does the filesystem backing this worktree store the POSIX executable bit?
+ *
+ * This is the same question git answers for itself when it auto-detects
+ * `core.fileMode`, asked the same way and in the same place: git probes its own
+ * git directory by writing a file, setting the executable bit, and re-reading
+ * the mode. Probing the git directory rather than the worktree root also means
+ * the scratch file can never appear in the `git status` output we are about to
+ * read.
+ *
+ * Fails closed. Every error — an unreadable git directory, a filesystem that
+ * refuses the write, a chmod that throws — returns `true`, which discounts
+ * nothing and leaves the caller with exactly the behaviour it had before.
+ */
+function executableBitRepresentable(root: string, runGit: LifecycleGitRunner): boolean {
+  const gitDir = runGit(root, ["rev-parse", "--absolute-git-dir"]);
+  if (!gitDir.ok || gitDir.stderr) return true;
+  const resolved = gitDir.stdout.trim();
+  if (resolved.length === 0) return true;
+  const probePath = path.join(resolved, `.filemode-probe-${randomUUID()}`);
+  try {
+    writeFileSync(probePath, "", { mode: 0o644 });
+    try {
+      chmodSync(probePath, 0o755);
+      return (statSync(probePath).mode & 0o111) !== 0;
+    } finally {
+      try {
+        rmSync(probePath, { force: true });
+      } catch {
+        // A probe file we could not remove is inert: it lives inside the git
+        // directory, never enters status output, and is overwritten by name on
+        // no future run. Losing the result would be worse than losing the file.
+      }
+    }
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Hashes worktree files exactly as `git add` would, so the result is directly
+ * comparable with the object ids `git status` reports from the index.
+ *
+ * `git hash-object` without `-w` writes nothing to the object database. Filters
+ * and end-of-line conversion are deliberately left ON (no `--no-filters`): the
+ * index holds post-clean content, so a checkout with `core.autocrlf` would
+ * otherwise mismatch on every text file.
+ *
+ * Returns `null` — meaning "no answer", which callers must treat as "changed" —
+ * if any batch fails or returns the wrong number of ids.
+ */
+function worktreeBlobOids(
+  root: string,
+  paths: string[],
+  runGit: LifecycleGitRunner,
+): Map<string, string> | null {
+  const oids = new Map<string, string>();
+  const batchSize = 64;
+  for (let offset = 0; offset < paths.length; offset += batchSize) {
+    const batch = paths.slice(offset, offset + batchSize);
+    const result = runGit(root, ["hash-object", "--", ...batch]);
+    if (!result.ok || result.stderr) return null;
+    const hashed = result.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (hashed.length !== batch.length) return null;
+    batch.forEach((batchPath, index) => oids.set(batchPath, hashed[index]));
+  }
+  return oids;
+}
+
+/**
+ * Removes the phantom "changes" a filesystem without an executable bit invents,
+ * without weakening what the status probe can see.
+ *
+ * The `-c core.fileMode=true` override on the status call is deliberate and
+ * stays: it stops repository configuration hiding a real permission change from
+ * a gate that authorises deletion. On NTFS, though, that override makes git
+ * compare a mode it recorded (100755) against a mode the filesystem cannot
+ * represent (100644), and every shell script and git hook in the checkout is
+ * reported modified forever. Measured on this repository: 24 such entries in a
+ * byte-for-byte clean worktree, which pinned every Windows worktree to `active`
+ * and made retirement structurally unreachable.
+ *
+ * So the override is kept and the false positive is removed one layer later,
+ * where both facts needed to prove an entry is an artifact are available.
+ */
+export function discountUnrepresentableExecutableBitChanges(
+  root: string,
+  changes: string[],
+  runGit: LifecycleGitRunner,
+): string[] {
+  if (changes.length === 0) return changes;
+  return retainedStatusChanges(
+    changes,
+    executableBitRepresentable(root, runGit),
+    (paths) => worktreeBlobOids(root, paths, runGit),
+  );
+}
+
 function statusState(root: string): {
   changes: string[];
   ignoredPaths: string[];
@@ -699,7 +813,11 @@ function statusState(root: string): {
     };
   }
   const entries = result.stdout.split("\0").filter(Boolean);
-  const changes = entries.filter((entry) => !entry.startsWith("# ") && !entry.startsWith("! "));
+  const changes = discountUnrepresentableExecutableBitChanges(
+    root,
+    entries.filter((entry) => !entry.startsWith("# ") && !entry.startsWith("! ")),
+    git,
+  );
   const ignoredPaths = entries
     .filter((entry) => entry.startsWith("! "))
     .map((entry) => entry.slice(2));
