@@ -253,7 +253,9 @@ fn validate_name(value: &str, subject: &'static str) -> Result<(), String> {
         return Err(format!("offline cache {subject} is too long"));
     }
     if value.chars().any(char::is_control) {
-        return Err(format!("offline cache {subject} contains control characters"));
+        return Err(format!(
+            "offline cache {subject} contains control characters"
+        ));
     }
     Ok(())
 }
@@ -262,8 +264,7 @@ impl OfflineCacheContext {
     /// Entries are filed under the schema generation first so that a bump can
     /// discard an entire past layout with one directory removal.
     fn generation_dir(&self) -> PathBuf {
-        self.root
-            .join(format!("v{OFFLINE_CACHE_SCHEMA_VERSION}"))
+        self.root.join(format!("v{OFFLINE_CACHE_SCHEMA_VERSION}"))
     }
 
     fn instance_dir(&self) -> PathBuf {
@@ -489,10 +490,7 @@ fn write_entry_file(path: &Path, contents: &[u8]) -> Result<(), String> {
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| "offline cache entry path has no file name".to_string())?;
-    let staging = parent.join(format!(
-        "{file_name}.tmp-{}-{sequence}",
-        std::process::id()
-    ));
+    let staging = parent.join(format!("{file_name}.tmp-{}-{sequence}", std::process::id()));
 
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -531,9 +529,7 @@ struct EntryFile {
 fn is_entry_file(name: &std::ffi::OsStr) -> bool {
     name.to_str()
         .and_then(|name| name.strip_suffix(&format!(".{ENTRY_EXTENSION}")))
-        .is_some_and(|stem| {
-            stem.len() == 64 && stem.bytes().all(|byte| byte.is_ascii_hexdigit())
-        })
+        .is_some_and(|stem| stem.len() == 64 && stem.bytes().all(|byte| byte.is_ascii_hexdigit()))
 }
 
 /// Every entry currently filed for this instance, newest first. Staging files
@@ -747,9 +743,8 @@ fn clear_entries(context: &OfflineCacheContext, scope: Option<&str>) -> Result<(
 fn read_instance_id(path: &Path) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     let trimmed = raw.trim();
-    (trimmed.len() == INSTANCE_ID_BYTES * 2
-        && trimmed.bytes().all(|byte| byte.is_ascii_hexdigit()))
-    .then(|| trimmed.to_string())
+    (trimmed.len() == INSTANCE_ID_BYTES * 2 && trimmed.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| trimmed.to_string())
 }
 
 /// The instance id is what keeps one Cave's cache out of another's. A missing
@@ -984,7 +979,15 @@ mod tests {
     #[test]
     fn round_trip_returns_the_payload_and_marks_it_read_only() {
         let context = context("round-trip");
-        write_entry(&context, "conversation", "abc", "{\"ok\":true}", "rev-1", 42).unwrap();
+        write_entry(
+            &context,
+            "conversation",
+            "abc",
+            "{\"ok\":true}",
+            "rev-1",
+            42,
+        )
+        .unwrap();
 
         let result = read_entry(&context, "conversation", "abc");
         let entry = result.entry.expect("entry should be readable");
@@ -1063,11 +1066,7 @@ mod tests {
         let envelope = std::fs::read(context.entry_path("conversation", "abc")).unwrap();
 
         for (scope, key, expected) in [
-            (
-                "conversation",
-                "xyz",
-                OfflineCacheFaultKind::EntryMismatch,
-            ),
+            ("conversation", "xyz", OfflineCacheFaultKind::EntryMismatch),
             ("summary", "abc", OfflineCacheFaultKind::EntryMismatch),
         ] {
             write_entry_file(&context.entry_path(scope, key), &envelope).unwrap();
@@ -1115,9 +1114,11 @@ mod tests {
         // Rewriting the header's timestamp keeps the JSON valid, so only the
         // AAD binding catches it.
         let header_start = ENVELOPE_MAGIC.len() + HEADER_LEN_BYTES;
-        let header_len =
-            u32::from_le_bytes(original[ENVELOPE_MAGIC.len()..header_start].try_into().unwrap())
-                as usize;
+        let header_len = u32::from_le_bytes(
+            original[ENVELOPE_MAGIC.len()..header_start]
+                .try_into()
+                .unwrap(),
+        ) as usize;
         let mut header: OfflineCacheHeader =
             serde_json::from_slice(&original[header_start..header_start + header_len]).unwrap();
         header.updated_at_unix_ms = 999;
@@ -1219,7 +1220,13 @@ mod tests {
             modified_unix_ms,
         };
         let by_count: Vec<EntryFile> = (0..MAX_ENTRIES + 2)
-            .map(|index| file(&format!("entry-{index}"), 1, (MAX_ENTRIES + 2 - index) as u64))
+            .map(|index| {
+                file(
+                    &format!("entry-{index}"),
+                    1,
+                    (MAX_ENTRIES + 2 - index) as u64,
+                )
+            })
             .collect();
         let evicted = entries_over_budget(&by_count);
         assert_eq!(evicted.len(), 2);
@@ -1317,11 +1324,20 @@ mod tests {
         write_entry(&theirs, "conversation", "abc", "{\"b\":2}", "r", 1).unwrap();
 
         purge_incompatible_generations(&mine, now_unix_ms());
-        assert!(theirs.instance_dir().exists(), "a live instance is left alone");
+        assert!(
+            theirs.instance_dir().exists(),
+            "a live instance is left alone"
+        );
 
         purge_incompatible_generations(&mine, now_unix_ms() + FOREIGN_INSTANCE_MAX_AGE_MS + 1);
-        assert!(!theirs.instance_dir().exists(), "an abandoned instance is reclaimed");
-        assert!(mine.instance_dir().exists(), "the current instance is never a candidate");
+        assert!(
+            !theirs.instance_dir().exists(),
+            "an abandoned instance is reclaimed"
+        );
+        assert!(
+            mine.instance_dir().exists(),
+            "the current instance is never a candidate"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
