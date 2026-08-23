@@ -327,6 +327,10 @@ const contracts: RouteContract[] = [
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/search", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  // The scry takes raw image bytes as the body, not JSON — the harness rides a
+  // query parameter — so there is no readsJson/invalidJson contract to keep. It
+  // both writes a file and spawns a runtime, so it is local-origin only.
+  { route: "/scry", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
   { route: "/sessions/[id]/input", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/sessions/[id]/kill", methods: ["POST"], kind: "json" },
