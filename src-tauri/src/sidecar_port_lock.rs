@@ -388,11 +388,13 @@ mod tests {
 
     #[test]
     fn releasing_lets_the_next_copy_take_the_port() {
-        // The exit paths that show a dialog block until someone clicks it. A
-        // copy on its way out must not keep the port reserved for that long —
-        // a translocated DMG copy sitting on the "drag me to /Applications"
-        // alert would otherwise have the good copy refused, naming a process
-        // that never binds anything.
+        // An exit path that holds a claim, will never bind the port, and then
+        // blocks on a dialog must give the claim up first, or the next copy is
+        // refused while being told to switch to a process that never bound
+        // anything. The live cases are `report_existing_gui_owner` and the two
+        // reaped-child `fatal_exit` arms in tauri_setup.rs — NOT the
+        // translocated-DMG path this comment used to cite, which runs before
+        // the claim is taken and can never hold one.
         //
         let _serialized = claim_test_guard();
         let dir = test_dir("release");

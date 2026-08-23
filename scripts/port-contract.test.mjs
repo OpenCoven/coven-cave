@@ -166,8 +166,16 @@ assert.doesNotMatch(
 // holding the claim through that wait refused the user's own retry, naming a
 // process that never bound anything. Source-level because the wiring is what
 // regressed: `release_all_claims` itself was unit-tested the whole time.
+// Anchored on each arm's own `Err(SidecarStartError::…)` rather than on a
+// character budget between the reap and the exit. A budget encodes an ordering
+// as a distance, so adding a comment between them breaks the test while the
+// property it names is intact — which is exactly what this change did to the
+// sibling assertion in scripts/desktop-reachability.test.mjs. Widening the
+// budget is not the fix either: an unbounded gap lets one arm's reap satisfy
+// the other arm's exit, so dropping the release from a single arm would still
+// pass.
 const reapedThenExit = [
-  ...setup.matchAll(/stop_after_startup_error\([\s\S]{0,800}?fatal_exit\(/g),
+  ...setup.matchAll(/Err\(SidecarStartError::[\s\S]*?fatal_exit\(/g),
 ].map((m) => m[0]);
 assert.equal(
   reapedThenExit.length,

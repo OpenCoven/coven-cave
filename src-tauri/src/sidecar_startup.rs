@@ -341,7 +341,7 @@ pub(super) fn tail_reports_bind_conflict(tail: &str) -> bool {
 /// makes "quit the other one" a choice rather than the only move — and the port
 /// claim is keyed on the resolved port precisely so this stays true.
 #[cfg(desktop)]
-fn second_copy_hint() -> String {
+pub(super) fn second_copy_hint() -> String {
     format!(
         "To run a second copy alongside the first, start it with {} set to a free port.",
         sidecar_ports::CAVE_PORT_ENV
