@@ -19,6 +19,7 @@ import {
   createRecorder,
   expectedAssertionIds,
   expectedBranchedMessages,
+  expectedConversationOrder,
   fixtureBranchedConversation,
   fixtureConversations,
   fixtureProjects,
@@ -481,6 +482,64 @@ test("the fixture conversation set exercises an exact multiple at limit 3", () =
     assert.ok(conversation.branch);
     assert.ok(conversation.prUrl);
   }
+});
+
+test("the fixture orders by createdAt and by updatedAt in opposite directions", () => {
+  // Without this the run cannot tell which field keys the page. The two
+  // orderings used to coincide, so `reads.conversations-shape` passed whether
+  // the route keyed on the immutable createdAt or on the mutable updatedAt that
+  // silently skipped a touched row (cave-fhjlu). A fixture edit that lets them
+  // agree again would re-open exactly that blind spot with nothing failing.
+  const conversations = fixtureConversations();
+  const byCreated = expectedConversationOrder(conversations);
+  const byUpdated = [...conversations]
+    .sort((left, right) => (left.updatedAt < right.updatedAt ? 1 : left.updatedAt > right.updatedAt ? -1 : 0))
+    .map((conversation) => conversation.sessionId);
+  assert.deepEqual(byCreated, [
+    "conversation-06",
+    "conversation-05",
+    "conversation-04",
+    "conversation-03",
+    "conversation-02",
+    "conversation-01",
+  ]);
+  assert.notDeepEqual(byCreated, byUpdated, "the two orderings must disagree or the page key is unobservable");
+  assert.deepEqual([...byUpdated].reverse(), byCreated, "the fixture inverts them, so every position disagrees");
+});
+
+test("the fixture ties exactly two conversations on createdAt so the id tiebreak is exercised", () => {
+  // A tiebreak nothing ties cannot be wrong. The tie is also placed so it does
+  // not reorder the expected walk — 04 before 03 is both id-descending and the
+  // order the untied fixture had — which keeps every other leg readable.
+  const conversations = fixtureConversations();
+  const counts = new Map();
+  for (const conversation of conversations) {
+    counts.set(conversation.createdAt, (counts.get(conversation.createdAt) ?? 0) + 1);
+  }
+  const tied = [...counts.entries()].filter(([, count]) => count > 1);
+  assert.equal(tied.length, 1, "exactly one createdAt is shared");
+  assert.equal(tied[0][1], 2);
+  const sharing = conversations
+    .filter((conversation) => conversation.createdAt === tied[0][0])
+    .map((conversation) => conversation.sessionId)
+    .sort();
+  assert.deepEqual(sharing, ["conversation-03", "conversation-04"]);
+});
+
+test("expectedConversationOrder puts a row with no createdAt at the tail, not first", () => {
+  // The empty-string sentinel is what makes an OPTIONAL field safe to key on:
+  // it is below every ISO instant, so a descending walk reaches such a row last
+  // rather than stranding it. An ascending sentinel would put it on the first
+  // page and hide whether a cursor can reach it at all.
+  const conversations = fixtureConversations();
+  const order = expectedConversationOrder([...conversations, { sessionId: "conversation-keyless" }]);
+  assert.equal(order.at(-1), "conversation-keyless");
+  assert.deepEqual(order.slice(0, -1), expectedConversationOrder(conversations));
+  // Two keyless rows fall back to the id tiebreak rather than to input order.
+  assert.deepEqual(
+    expectedConversationOrder([{ sessionId: "a-keyless" }, { sessionId: "b-keyless" }]),
+    ["b-keyless", "a-keyless"],
+  );
 });
 
 test("the branched fixture's active path is the declared sequence and omits the abandoned branch", () => {

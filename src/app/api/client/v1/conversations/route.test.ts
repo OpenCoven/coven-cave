@@ -15,14 +15,23 @@ import { createClientV1ConversationsGetHandler } from "./route.ts";
 const scratchPrefix = resolve(process.cwd(), ".scratch-client-v1-conversations-");
 const STAMP = "loopback-secret";
 
-function summary(sessionId: string, updatedAt: string): ConversationSummary {
-  return { sessionId, familiarId: "scribe", harness: "claude", updatedAt };
+function summary(sessionId: string, createdAt: string, updatedAt = createdAt): ConversationSummary {
+  return { sessionId, familiarId: "scribe", harness: "claude", createdAt, updatedAt };
 }
 
+/**
+ * Three rows whose `createdAt` and `updatedAt` orderings DISAGREE.
+ *
+ * `createdAt` descending is [b, a, c]; `updatedAt` descending is [c, b, a]. A
+ * route that reverted to the mutable key would serve a perfectly plausible
+ * order, so a fixture where the two agree cannot see the regression this file
+ * exists to pin (cave-fhjlu). `a` and `b` also share a `createdAt`, so the id
+ * tiebreak is exercised rather than merely present.
+ */
 const LEDGER: ConversationSummary[] = [
-  summary("conversation-a", "2026-08-01T00:00:00.000Z"),
-  summary("conversation-b", "2026-08-05T00:00:00.000Z"),
-  summary("conversation-c", "2026-08-05T00:00:00.000Z"),
+  summary("conversation-a", "2026-08-05T00:00:00.000Z", "2026-08-01T00:00:00.000Z"),
+  summary("conversation-b", "2026-08-05T00:00:00.000Z", "2026-08-05T00:00:00.000Z"),
+  summary("conversation-c", "2026-08-01T00:00:00.000Z", "2026-08-05T00:00:00.000Z"),
 ];
 
 function sources(overrides: Partial<ClientV1ReadSources> = {}): ClientV1ReadSources {
@@ -62,7 +71,7 @@ async function withRuntime<T>(
   }
 }
 
-test("conversations are served most-recently-updated first, id breaking the tie", async () => {
+test("conversations are served most-recently-created first, id breaking the tie", async () => {
   await withRuntime(["chat:read"], async (runtime, bearer) => {
     const handler = createClientV1ConversationsGetHandler(runtime, sources());
     const response = await handler(request("", { authorization: `Bearer ${bearer}` }));
@@ -73,12 +82,19 @@ test("conversations are served most-recently-updated first, id breaking the tie"
     };
     assert.deepEqual(
       body.data.conversations.map((row) => row.id),
+      ["conversation-b", "conversation-a", "conversation-c"],
+    );
+    // NOT the updatedAt-descending order, which is the whole point: that key
+    // moves under an open cursor and skipped rows off the bottom of a walk.
+    assert.notDeepEqual(
+      body.data.conversations.map((row) => row.id),
       ["conversation-c", "conversation-b", "conversation-a"],
     );
     assert.deepEqual(body.data.conversations[0], {
-      id: "conversation-c",
+      id: "conversation-b",
       familiarId: "scribe",
       harness: "claude",
+      createdAt: "2026-08-05T00:00:00.000Z",
       updatedAt: "2026-08-05T00:00:00.000Z",
     });
     assert.ok(body.capabilities.includes("conversations"));
@@ -97,13 +113,13 @@ test("the ledger pages through a cursor without repeating a tied conversation", 
     };
     assert.deepEqual(
       firstBody.data.conversations.map((row) => row.id),
-      ["conversation-c", "conversation-b"],
+      ["conversation-b", "conversation-a"],
     );
-    // conversation-b and conversation-c share an updatedAt, so the cursor must
-    // carry the id as well or the second page starts at conversation-c again.
+    // conversation-a and conversation-b share a createdAt, so the cursor must
+    // carry the id as well or the second page starts at conversation-b again.
     assert.deepEqual(decodeClientV1Cursor(firstBody.cursor.next), {
       sort: "2026-08-05T00:00:00.000Z",
-      id: "conversation-b",
+      id: "conversation-a",
     });
 
     const second = await handler(
@@ -113,9 +129,189 @@ test("the ledger pages through a cursor without repeating a tied conversation", 
       cursor: { hasMore: boolean; next?: string };
       data: { conversations: { id: string }[] };
     };
-    assert.deepEqual(secondBody.data.conversations.map((row) => row.id), ["conversation-a"]);
+    assert.deepEqual(secondBody.data.conversations.map((row) => row.id), ["conversation-c"]);
     assert.equal(secondBody.cursor.hasMore, false);
     assert.equal(secondBody.cursor.next, undefined);
+  });
+});
+
+// ── a ledger that moves while the client is paging (cave-fhjlu) ──────────────
+//
+// The route used to key on `updatedAt`. That field only ever rises and the
+// ordering is descending, so a conversation touched mid-walk jumped ABOVE the
+// open cursor and, if the walk had not reached it yet, was never served: silent
+// data loss in a canonical read, and not the deduplicable repeat the reference
+// claimed. Every case below walks to EXHAUSTION rather than checking the page
+// after the mutation — a row that comes back three pages later is a repeat, a
+// row that never comes back is a skip, and one page cannot tell them apart.
+
+/** conversation-06 down to conversation-01, createdAt descending. */
+function ledgerOfSix(): ConversationSummary[] {
+  return Array.from({ length: 6 }, (_, index) => {
+    const n = String(index + 1).padStart(2, "0");
+    return summary(
+      `conversation-${n}`,
+      `2026-03-${n}T00:00:00.000Z`,
+      // updatedAt runs the other way, so an updatedAt-keyed walk serves a
+      // visibly different sequence rather than accidentally the same one.
+      `2026-04-${String(6 - index).padStart(2, "0")}T00:00:00.000Z`,
+    );
+  });
+}
+
+const SIX_IN_ORDER = [
+  "conversation-06",
+  "conversation-05",
+  "conversation-04",
+  "conversation-03",
+  "conversation-02",
+  "conversation-01",
+];
+
+/**
+ * Walk the ledger at limit 2, apply `mutate` with the first cursor OPEN, then
+ * follow that cursor to exhaustion. Returns every id the walk served, in order.
+ */
+async function walkAcrossMutation(
+  runtime: ClientV1Runtime,
+  bearer: string,
+  ledger: { rows: ConversationSummary[] },
+  mutate: (served: string[], cursorNames: string) => void,
+): Promise<{ served: string[]; statuses: number[] }> {
+  const handler = createClientV1ConversationsGetHandler(
+    runtime,
+    sources({ listConversations: async () => ledger.rows }),
+  );
+  const authorization = `Bearer ${bearer}`;
+  const page = async (query: string) => {
+    const response = await handler(request(query, { authorization }));
+    const body = await response.json() as {
+      cursor?: { next?: string };
+      data?: { conversations?: { id: string }[] };
+    };
+    return {
+      status: response.status,
+      ids: (body.data?.conversations ?? []).map((row) => row.id),
+      next: body.cursor?.next,
+    };
+  };
+
+  const first = await page("?limit=2");
+  const statuses = [first.status];
+  const served = [...first.ids];
+  mutate(first.ids, first.ids[first.ids.length - 1]);
+
+  let token = first.next;
+  for (let index = 0; index < 20 && token; index += 1) {
+    const next = await page(`?limit=2&cursor=${encodeURIComponent(token)}`);
+    statuses.push(next.status);
+    if (next.status !== 200) break;
+    served.push(...next.ids);
+    token = next.next;
+  }
+  return { served, statuses };
+}
+
+test("a conversation touched mid-walk is still served by the rest of the walk", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const ledger = { rows: ledgerOfSix() };
+    // conversation-01 is LAST in the ordering, so the first page has not reached
+    // it. Under the old key this touch moved it above the open cursor and the
+    // walk never served it again — measured, not hypothesised.
+    const walk = await walkAcrossMutation(runtime, bearer, ledger, () => {
+      ledger.rows = ledger.rows.map((row) =>
+        row.sessionId === "conversation-01"
+          ? { ...row, updatedAt: "2026-12-31T00:00:00.000Z" }
+          : row);
+    });
+    assert.deepEqual(walk.statuses, [200, 200, 200]);
+    assert.deepEqual(walk.served, SIX_IN_ORDER);
+  });
+});
+
+test("touching a conversation the walk has already served does not repeat it", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const ledger = { rows: ledgerOfSix() };
+    const walk = await walkAcrossMutation(runtime, bearer, ledger, (served) => {
+      ledger.rows = ledger.rows.map((row) =>
+        row.sessionId === served[0] ? { ...row, updatedAt: "2026-12-31T00:00:00.000Z" } : row);
+    });
+    assert.deepEqual(walk.served, SIX_IN_ORDER);
+    assert.equal(new Set(walk.served).size, walk.served.length);
+  });
+});
+
+test("touching the row the open cursor names leaves the cursor's position intact", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const ledger = { rows: ledgerOfSix() };
+    // The token carries this row's sort key. A key that can move leaves the
+    // cursor naming a position the ordering no longer has.
+    const walk = await walkAcrossMutation(runtime, bearer, ledger, (_served, cursorNames) => {
+      ledger.rows = ledger.rows.map((row) =>
+        row.sessionId === cursorNames ? { ...row, updatedAt: "2026-12-31T00:00:00.000Z" } : row);
+    });
+    assert.deepEqual(walk.served, SIX_IN_ORDER);
+  });
+});
+
+test("a conversation created mid-walk sorts above the cursor and waits for the next read", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const ledger = { rows: ledgerOfSix() };
+    const walk = await walkAcrossMutation(runtime, bearer, ledger, () => {
+      ledger.rows = [
+        ...ledger.rows,
+        summary("conversation-new", "2026-12-31T00:00:00.000Z"),
+      ];
+    });
+    // Every pre-existing row exactly once, and the new one left for a read from
+    // the top. That is inherent to a forward keyset over a growing set — it
+    // costs no row that existed when the walk began, which is the difference
+    // between this and the skip.
+    assert.deepEqual(walk.served, SIX_IN_ORDER);
+    assert.equal(walk.served.includes("conversation-new"), false);
+  });
+});
+
+test("a conversation deleted mid-walk does not strand the rest of the walk", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    const ledger = { rows: ledgerOfSix() };
+    let deleted = "";
+    const walk = await walkAcrossMutation(runtime, bearer, ledger, (served) => {
+      deleted = SIX_IN_ORDER.filter((id) => !served.includes(id))[0];
+      ledger.rows = ledger.rows.filter((row) => row.sessionId !== deleted);
+    });
+    assert.equal(deleted, "conversation-04");
+    assert.deepEqual(walk.served, SIX_IN_ORDER.filter((id) => id !== deleted));
+    assert.ok(walk.statuses.every((status) => status === 200));
+  });
+});
+
+test("a conversation with no createdAt is served at the tail rather than stranded", async () => {
+  await withRuntime(["chat:read"], async (runtime, bearer) => {
+    // A transcript written before the field existed, and the fallback row a
+    // corrupt file produces, both reach the projection with no createdAt. They
+    // are the reason #4856 rejected this key; the empty-string sentinel is the
+    // answer, and it has to be reachable THROUGH a cursor, not just present.
+    const keyless: ConversationSummary = {
+      sessionId: "conversation-keyless",
+      familiarId: "",
+      // The newest updatedAt in the set, so an updatedAt-keyed route would put
+      // it first. It must still come last.
+      updatedAt: "2036-01-01T00:00:00.000Z",
+    };
+    const ledger = { rows: [...ledgerOfSix(), keyless] };
+    const walk = await walkAcrossMutation(runtime, bearer, ledger, () => {});
+    assert.deepEqual(walk.served, [...SIX_IN_ORDER, "conversation-keyless"]);
+
+    const handler = createClientV1ConversationsGetHandler(
+      runtime,
+      sources({ listConversations: async () => ledger.rows }),
+    );
+    const response = await handler(request("?limit=100", { authorization: `Bearer ${bearer}` }));
+    const body = await response.json() as { data: { conversations: Record<string, unknown>[] } };
+    const row = body.data.conversations.at(-1)!;
+    assert.equal(row.id, "conversation-keyless");
+    assert.equal("createdAt" in row, false, "the record must not invent a createdAt the store lacks");
   });
 });
 
