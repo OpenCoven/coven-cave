@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AUTO_MISSION_TIMEOUT_MS,
+  autoMissionStatusDraft,
   clearAutoMission,
   isAutoMissionArmed,
+  isAutoModeDraft,
   isAutoMissionTimedOut,
   pendingAutoMissionPings,
   readAutoMission,
   reconcileAutoMissionOnSessionChange,
+  toggleAutoModeDraft,
   touchAutoMission,
   writeAutoMission,
   type AutoMissionRecord,
@@ -73,6 +76,21 @@ test("armed until completed", () => {
   assert.equal(isAutoMissionArmed(null), false);
   assert.equal(isAutoMissionArmed(base), true);
   assert.equal(isAutoMissionArmed({ ...base, completedAt: "2026-01-01T01:00:00.000Z" }), false);
+});
+
+test("mobile Auto selection adds and removes the existing slash command without losing the draft", () => {
+  assert.equal(toggleAutoModeDraft(""), "/auto ");
+  assert.equal(toggleAutoModeDraft("ship the mobile shell"), "/auto ship the mobile shell");
+  assert.equal(toggleAutoModeDraft("/auto ship the mobile shell"), "ship the mobile shell");
+  assert.equal(toggleAutoModeDraft("  /autopilot verify release"), "verify release");
+  assert.equal(isAutoModeDraft("/auto investigate the failure"), true);
+  assert.equal(isAutoModeDraft("/automatic is a different command"), false);
+});
+
+test("active Auto status preparation never overwrites an existing draft", () => {
+  assert.equal(autoMissionStatusDraft(""), "/auto status");
+  assert.equal(autoMissionStatusDraft("   "), "/auto status");
+  assert.equal(autoMissionStatusDraft("keep this draft"), null);
 });
 
 // ── ping decision ────────────────────────────────────────────────────────────
