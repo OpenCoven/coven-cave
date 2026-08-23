@@ -108,6 +108,21 @@ assert.match(
   /confirms the owned process tree was[\s\S]*stop the surviving process tree before retrying[\s\S]*concurrent syncs/i,
   "the executable plan must preserve conditional retry and concurrent-ref guidance",
 );
+assert.match(
+  watchdogPlan,
+  /resolveBdLaunchCommand\(\{[\s\S]*env: options\.env,[\s\S]*platform: options\.platform,/,
+  "the executable plan must resolve the Beads launcher from the injected environment and platform",
+);
+assert.match(
+  watchdogPlan,
+  /releaseUnprovenChildHandles[\s\S]*if \(!cleanupProven\) releaseUnprovenChildHandles\(\)[\s\S]*\.catch\(\(\) => \{[\s\S]*releaseUnprovenChildHandles\(\)/,
+  "the executable plan must release child pipes and references when cleanup is unproven",
+);
+assert.match(
+  watchdogPlan,
+  /child\.once\("error", \(error\) => \{[\s\S]*if \(terminating\) return;/,
+  "the executable plan must ignore delayed child errors after termination begins",
+);
 assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
 assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");
 assert.match(

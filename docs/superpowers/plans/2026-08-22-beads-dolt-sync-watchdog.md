@@ -362,7 +362,7 @@ import {
   type SpawnOptions,
 } from "node:child_process";
 
-import { withBdLaunch } from "../src/lib/bd-bin.ts";
+import { resolveBdLaunchCommand, withBdLaunch } from "../src/lib/bd-bin.ts";
 import {
   BoundedProcessOutput,
   safeProcessErrorMessage,
@@ -451,7 +451,14 @@ async function runPhase(
     >
   > & Pick<BeadsSyncOptions, "terminationGraceMs">,
 ): Promise<PhaseResult> {
-  const launch = withBdLaunch("bd", ["dolt", phase]);
+  const launch = withBdLaunch(
+    "bd",
+    ["dolt", phase],
+    resolveBdLaunchCommand({
+      env: options.env,
+      platform: options.platform,
+    }),
+  );
   const stdout = new BoundedProcessOutput(OUTPUT_BYTES);
   const stderr = new BoundedProcessOutput(OUTPUT_BYTES);
   let child: ChildProcess;
@@ -481,6 +488,12 @@ async function runPhase(
   child.stdout?.on("data", (chunk) => stdout.append(chunk));
   child.stderr?.on("data", (chunk) => stderr.append(chunk));
 
+  const releaseUnprovenChildHandles = () => {
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    child.unref();
+  };
+
   return new Promise((resolve) => {
     let settled = false;
     let timedOut = false;
@@ -502,6 +515,7 @@ async function runPhase(
           graceMs: options.terminationGraceMs,
         })
         .then((cleanupProven) => {
+          if (!cleanupProven) releaseUnprovenChildHandles();
           finish({
             status: cleanupProven ? 124 : 1,
             ...retained(),
@@ -509,6 +523,7 @@ async function runPhase(
           });
         })
         .catch(() => {
+          releaseUnprovenChildHandles();
           finish({
             status: 1,
             ...retained(),
@@ -518,6 +533,7 @@ async function runPhase(
     }, options.timeoutMs);
 
     child.once("error", (error) => {
+      if (timedOut) return;
       finish({
         status: 1,
         ...retained(),
@@ -688,6 +704,7 @@ const terminate = (
       graceMs: options.terminationGraceMs,
     })
     .then((cleanupProven) => {
+      if (!cleanupProven) releaseUnprovenChildHandles();
       finish({
         status: cleanupProven ? successStatus : 1,
         ...retained(),
@@ -695,6 +712,7 @@ const terminate = (
       });
     })
     .catch(() => {
+      releaseUnprovenChildHandles();
       finish({
         status: 1,
         ...retained(),
@@ -718,9 +736,20 @@ if (options.signal.aborted) onAbort();
 ```
 
 Remove the abort listener inside `finish`, ignore `close` while `terminating`,
-and report cancellation separately:
+ignore delayed child `error` events while `terminating`, and report cancellation
+separately:
 
 ```ts
+child.once("error", (error) => {
+  if (terminating) return;
+  finish({
+    status: 1,
+    ...retained(),
+    kind: "spawn-failed",
+    error: safeProcessErrorMessage(error, "Beads CLI"),
+  });
+});
+
 if (result.kind === "cancelled") {
   writeStderr(
     `[beads:sync] ${phase} cancelled; owned process tree terminated.\n`,
