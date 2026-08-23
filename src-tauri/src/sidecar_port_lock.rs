@@ -141,6 +141,7 @@ fn record_port_owner(state_dir: &Path, port: u16) {
         Ok(encoded) => encoded,
         Err(error) => {
             log::warn!("[cave] could not encode the port {port} owner record: {error}");
+            remove_stale_port_owner(&path, port);
             return;
         }
     };
@@ -149,6 +150,24 @@ fn record_port_owner(state_dir: &Path, port: u16) {
             "[cave] could not record this process as the owner of port {port} ({}): {error}",
             path.display()
         );
+        remove_stale_port_owner(&path, port);
+    }
+}
+
+/// If this process could not name itself, make sure the previous owner's name
+/// does not outlive it. A pid is recycled freely, so a record left behind by a
+/// dead owner would have the next refusal point confidently at an unrelated
+/// process. No name at all is the honest answer, and the message degrades to it
+/// cleanly.
+#[cfg(desktop)]
+fn remove_stale_port_owner(path: &Path, port: u16) {
+    match fs::remove_file(path) {
+        Ok(()) => (),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+        Err(error) => log::warn!(
+            "[cave] could not clear the stale owner record for port {port} ({}): {error}",
+            path.display()
+        ),
     }
 }
 

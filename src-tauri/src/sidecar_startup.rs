@@ -122,6 +122,12 @@ pub(super) enum PortOccupant {
     Stranger,
 }
 
+/// Total wall-clock a single occupant probe may spend. Startup has no
+/// cancellation checkpoint inside the probe, so this is the whole budget for
+/// talking to a program we know nothing about.
+#[cfg(desktop)]
+const PORT_PROBE_BUDGET: Duration = Duration::from_secs(2);
+
 /// Classify whoever holds `port`.
 ///
 /// One deliberate difference from `scripts/dev-port-owner.mjs`: it downgrades a
@@ -132,7 +138,7 @@ pub(super) enum PortOccupant {
 /// Something is listening; the only open question is who.
 #[cfg(desktop)]
 pub(super) fn classify_port_occupant(port: u16) -> PortOccupant {
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::net::{SocketAddr, TcpStream};
 
     const MAX_RESPONSE_BYTES: usize = 64 * 1024;
@@ -157,15 +163,39 @@ pub(super) fn classify_port_occupant(port: u16) -> PortOccupant {
     {
         return PortOccupant::Stranger;
     }
+    classify_build_info_response(&read_bounded_response(stream, MAX_RESPONSE_BYTES))
+}
+
+/// Read at most `limit` bytes, and for at most `PORT_PROBE_BUDGET`.
+///
+/// `set_read_timeout` bounds each `read()`, not the total, and `Read::take`
+/// bounds bytes rather than time — so `read_to_end` against an occupant that
+/// trickles one byte inside every timeout window runs for as long as it cares
+/// to. That is not hypothetical for this caller: it talks to whatever holds the
+/// port, and the old `port_is_occupied` refused such a peer in 250 ms. Startup
+/// has no cancellation checkpoint inside the probe, so an unbounded read here
+/// freezes the Windows startup screen with a Retry button that reports
+/// "sidecar startup is already running".
+///
+/// A short read is fine. Whatever arrived either parses as CovenCave or does
+/// not, and every other outcome is `Stranger` — which is already the right
+/// verdict for a peer that will not answer promptly.
+#[cfg(desktop)]
+fn read_bounded_response(mut stream: std::net::TcpStream, limit: usize) -> Vec<u8> {
+    use std::io::Read;
+
+    let deadline = Instant::now() + PORT_PROBE_BUDGET;
     let mut response = Vec::new();
-    if stream
-        .take((MAX_RESPONSE_BYTES + 1) as u64)
-        .read_to_end(&mut response)
-        .is_err()
-    {
-        return PortOccupant::Stranger;
+    let mut chunk = [0_u8; 8192];
+    while response.len() < limit && Instant::now() < deadline {
+        let want = chunk.len().min(limit - response.len());
+        match stream.read(&mut chunk[..want]) {
+            Ok(0) => break,
+            Ok(read) => response.extend_from_slice(&chunk[..read]),
+            Err(_) => break,
+        }
     }
-    classify_build_info_response(&response)
+    response
 }
 
 /// The verdict for a collected response. Split out from the socket work so the
@@ -271,6 +301,20 @@ pub(super) fn port_conflict_message(port: u16, occupant: &PortOccupant) -> Strin
             second_copy_hint()
         ),
     }
+}
+
+/// Whether a dead sidecar's output tail says it failed to BIND, as opposed to
+/// merely mentioning `EADDRINUSE` somewhere in 256 KiB of unrelated logging.
+///
+/// The distinction matters because the conflict message it selects tells the
+/// operator to go quit a program — advice that is actively misleading if the
+/// real failure was something else that happened to log the string. `server.ts`
+/// prints a dedicated line for this, and Node's own message is
+/// `listen EADDRINUSE: …`; anything looser would let one stray token in a
+/// dependency's log rewrite the diagnosis.
+#[cfg(desktop)]
+pub(super) fn tail_reports_bind_conflict(tail: &str) -> bool {
+    tail.contains("listen EADDRINUSE") || tail.contains("is already in use (EADDRINUSE)")
 }
 
 /// Every refusal names the same escape hatch, because `COVEN_CAVE_PORT` is what
@@ -570,11 +614,25 @@ fn decode_chunked_body(encoded: &[u8]) -> Result<Vec<u8>, String> {
             }
             return Err("readiness endpoint returned malformed chunk terminator".to_string());
         }
-        if remaining.len() < size + 2 || &remaining[size..size + 2] != b"\r\n" {
+        // `size` is whatever the peer wrote in hex, so the trailer arithmetic
+        // must not be allowed to wrap. Release builds carry no overflow checks,
+        // and `FFFFFFFFFFFFFFFF\r\nx` makes `size + 2` wrap to 1 — which passes
+        // the length test and then panics on `&remaining[usize::MAX..1]`.
+        //
+        // This body used to be reachable only after our own sidecar had logged
+        // its ready line. The build-info probe now feeds it bytes from whoever
+        // holds the port, on every launch, so a malformed chunk header has to
+        // be an error rather than a crash: an unwind here would leave
+        // `SidecarStartupControl.running` stuck true and permanently deaden the
+        // Retry button.
+        let chunk_end = size
+            .checked_add(2)
+            .ok_or_else(|| "readiness endpoint returned an out-of-range chunk size".to_string())?;
+        if remaining.len() < chunk_end || &remaining[size..chunk_end] != b"\r\n" {
             return Err("readiness endpoint returned a truncated chunk".to_string());
         }
         decoded.extend_from_slice(&remaining[..size]);
-        remaining = &remaining[size + 2..];
+        remaining = &remaining[chunk_end..];
     }
 }
 
@@ -1129,10 +1187,17 @@ fn run_sidecar_runtime(
             // the difference between naming the conflict and pasting node's
             // error object at someone whose only real problem is that the
             // address is taken.
-            if matches!(result, PortWaitResult::Exited) && tail.contains("EADDRINUSE") {
+            if matches!(result, PortWaitResult::Exited) && tail_reports_bind_conflict(&tail) {
                 return Err(SidecarStartError::failed(
                     ReliabilityFailureClass::Contention,
-                    port_conflict_message(port, &classify_port_occupant(port)),
+                    format!(
+                        "{}
+
+Bounded sidecar output tail:
+{}",
+                        port_conflict_message(port, &classify_port_occupant(port)),
+                        tail
+                    ),
                 ));
             }
             let failure_class = match &result {

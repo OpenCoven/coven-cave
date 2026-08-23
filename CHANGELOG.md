@@ -8,6 +8,11 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 - Remove the recurring fresh-pairing-token interruption for trusted local browser REST and terminal access.
+- Refuse a second desktop copy cleanly instead of letting it race the first onto
+  the dedicated port. Launching another CovenCave used to end on a raw
+  `EADDRINUSE` dump from Node; it now names the copy that already holds port
+  3020, or says what kind of program is holding it, and points at
+  `COVEN_CAVE_PORT` for running two copies side by side.
 
 ## [0.3.9] - 2026-08-21
 

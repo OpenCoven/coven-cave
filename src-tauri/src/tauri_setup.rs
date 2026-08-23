@@ -338,6 +338,45 @@ pub fn run() {
     #[cfg(desktop)]
     builder
         .setup(move |app| {
+            // Refuse a second copy BEFORE it touches anything shared.
+            //
+            // Sidecar startup takes this same claim, and that is what stops two
+            // copies racing `node` onto one port. But everything below this
+            // point runs first, and a copy that is going to be refused should
+            // not have run any of it: it truncates the FIRST copy's live
+            // diagnostics file, starts a second Discord presence worker, and
+            // builds a second, indistinguishable tray icon. On Windows the
+            // refusal then arrives only after the runtime-cache lock, which can
+            // hold for minutes, behind a Retry button that can never succeed
+            // while the other copy lives.
+            //
+            // macOS has always exited here instead, via the reachability lease.
+            // This gives every desktop platform that behaviour, keyed on the
+            // port so `COVEN_CAVE_PORT` still admits a deliberate second copy.
+            //
+            // Skipped when a dev server owns the origin: `pnpm dev` holds the
+            // port on purpose, and the bundled sidecar is never started then.
+            if live_dev_server_url(app).is_none() {
+                let port = sidecar_ports::dedicated_port();
+                match app
+                    .path()
+                    .app_local_data_dir()
+                    .map_err(|error| format!("could not resolve local app data: {error}"))
+                    .and_then(|state_dir| {
+                        crate::sidecar_port_lock::claim_dedicated_port(&state_dir, port)
+                    }) {
+                    Ok(crate::sidecar_port_lock::PortClaim::Acquired) => {}
+                    Ok(crate::sidecar_port_lock::PortClaim::HeldBy { pid }) => {
+                        report_existing_port_owner(port, pid)
+                    }
+                    // Fail open, exactly as sidecar startup does: a claim that
+                    // cannot be evaluated must never be the reason a launch is
+                    // refused.
+                    Err(error) => {
+                        log::warn!("[cave] could not claim the dedicated port {port}: {error}");
+                    }
+                }
+            }
             if let Ok(app_data_dir) = app.path().app_data_dir() {
                 app.state::<Arc<ReliabilityRecorder>>()
                     .configure(app_data_dir);

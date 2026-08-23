@@ -120,6 +120,31 @@ pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
     std::process::exit(1);
 }
 
+/// Report the copy that already holds the dedicated port, then leave.
+///
+/// Sibling of `report_existing_gui_owner` above, and deliberately not a
+/// replacement for it: that one is macOS's reachability lease, which knows a
+/// GUI owns this machine's Cave but nothing about ports. This one is reached on
+/// every desktop platform, so it can name the port — and therefore say how to
+/// run a second copy on purpose rather than only how to stop wanting one.
+///
+/// It exits for the same reason its sibling does: on macOS the setup hook runs
+/// inside an Objective-C callback that cannot unwind, so returning an error
+/// here would turn "you launched it twice" into a crash report.
+#[cfg(desktop)]
+pub(super) fn report_existing_port_owner(port: u16, pid: Option<u32>) -> ! {
+    match pid {
+        Some(pid) => log::warn!(
+            "[cave] another CovenCave (pid {pid}) already holds port {port}; this instance is exiting"
+        ),
+        None => log::warn!(
+            "[cave] another CovenCave already holds port {port}; this instance is exiting"
+        ),
+    }
+    show_fatal_dialog(&crate::sidecar_startup::already_running_message(port, pid));
+    std::process::exit(1);
+}
+
 /// The variable `scripts/dev-app.sh` sets to the file this GUI touches once
 /// startup finishes. Nothing else sets it, so an app started any other way
 /// never writes a marker.

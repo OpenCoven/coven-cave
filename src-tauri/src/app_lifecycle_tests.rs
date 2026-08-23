@@ -1417,3 +1417,91 @@ fn a_lost_claim_names_the_copy_that_won_it() {
     assert!(anonymous.contains("already running"), "{anonymous}");
     assert!(!anonymous.contains("process"), "{anonymous}");
 }
+
+#[test]
+fn a_hostile_chunk_header_is_an_error_rather_than_a_panic() {
+    // `decode_chunked_body` used to be reachable only after our own sidecar had
+    // logged its ready line. The build-info probe now feeds it bytes from
+    // whoever holds the port, on every launch — so an attacker-shaped chunk
+    // size must not wrap the trailer arithmetic. `FFFFFFFFFFFFFFFF` made
+    // `size + 2` wrap to 1 in a release build, which passed the length test and
+    // then panicked slicing `[usize::MAX..1]`.
+    //
+    // A panic here is worse than a wrong verdict: it unwinds the Windows
+    // startup worker, leaves SidecarStartupControl.running stuck true, and
+    // deadens the Retry button for the life of the process.
+    for size_hex in ["FFFFFFFFFFFFFFFF", "FFFFFFFFFFFFFFFE", "fffffffffffffff0"] {
+        let hostile =
+            format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{size_hex}\r\nx");
+        assert_eq!(
+            classify_build_info_response(hostile.as_bytes()),
+            PortOccupant::Stranger,
+            "chunk size {size_hex} must classify, not crash"
+        );
+    }
+
+    // The ordinary truncation case still reports itself as one.
+    let truncated = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n20\r\n{}\r\n0\r\n\r\n";
+    assert!(validate_readiness_response(truncated)
+        .expect_err("truncated chunks must fail")
+        .contains("truncated chunk"));
+}
+
+#[test]
+fn a_bind_conflict_is_recognised_by_its_line_not_by_a_stray_token() {
+    // The predicate picks the message that tells someone to go quit a program,
+    // so a loose substring would let one stray token in a dependency's log
+    // rewrite the diagnosis and discard the real evidence.
+    assert!(tail_reports_bind_conflict(
+        "Error: listen EADDRINUSE: address already in use 127.0.0.1:3020"
+    ));
+    assert!(tail_reports_bind_conflict(
+        "> Port 3020 on 127.0.0.1 is already in use (EADDRINUSE); CovenCave cannot serve here."
+    ));
+    assert!(
+        !tail_reports_bind_conflict("retrying upstream fetch after EADDRINUSE from a peer socket"),
+        "a mention is not a failure to bind"
+    );
+    assert!(!tail_reports_bind_conflict("(no output captured)"));
+}
+
+#[test]
+fn a_trickling_occupant_cannot_stall_startup() {
+    // set_read_timeout bounds each read, not the total, and Read::take bounds
+    // bytes rather than time — so a peer that emits one byte inside every
+    // timeout window used to hold the probe for as long as it liked. Startup
+    // has no cancellation checkpoint inside the probe, so that froze the
+    // Windows startup screen outright.
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind trickle fixture");
+    let port = listener.local_addr().expect("fixture address").port();
+    let stop = Arc::new(AtomicBool::new(false));
+    let trickling = Arc::clone(&stop);
+    let server = std::thread::spawn(move || {
+        let Ok((mut stream, _)) = listener.accept() else {
+            return;
+        };
+        // Never a complete response, never a close.
+        while !trickling.load(Ordering::Relaxed) {
+            if stream.write_all(b"x").is_err() {
+                return;
+            }
+            let _ = stream.flush();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    let started = Instant::now();
+    let verdict = classify_port_occupant(port);
+    let elapsed = started.elapsed();
+    stop.store(true, Ordering::Relaxed);
+    let _ = server.join();
+
+    assert_eq!(verdict, PortOccupant::Stranger);
+    assert!(
+        elapsed < Duration::from_secs(15),
+        "the probe must give up on its own budget, took {elapsed:?}"
+    );
+}
