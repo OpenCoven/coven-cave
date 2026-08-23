@@ -89,8 +89,8 @@ assert.match(modals, /shareImageUrl/, "the share modal renders the frozen genera
 // ── one screen at md and up ────────────────────────────────────────────────
 // The report is a single screen from 768px: the page itself must not scroll,
 // the columns take their own scrollbars instead. `.dr-page` is its own scroll
-// container nested inside `.aps-main`, so the lock has to clamp the day
-// variant or the outer pane picks the scroll back up.
+// container nested inside the Shell detail pane, so the lock has to clamp the
+// day variant or the outer pane picks the scroll back up.
 
 {
   const css = read("../styles/daily-report-day.css");
