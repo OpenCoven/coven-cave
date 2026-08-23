@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencoven.run-event/v1",
+  "title": "OpenCoven Run Event v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema", "runId", "sequence", "type", "at", "data"],
+  "properties": {
+    "schema": { "const": "opencoven.run-event/v1" },
+    "runId": { "$ref": "#/$defs/runId" },
+    "sequence": { "$ref": "#/$defs/positiveSafeInteger" },
+    "type": { "$ref": "#/$defs/eventType" },
+    "at": { "$ref": "#/$defs/utcTimestamp" },
+    "data": { "$ref": "#/$defs/data" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "content.deleted" } },
+        "required": ["type"]
+      },
+      "then": {
+        "propertyNames": {
+          "anyOf": [
+            {
+              "enum": ["schema", "runId", "sequence", "type", "at", "data"]
+            },
+            { "$ref": "#/$defs/deletionExtensionPropertyName" }
+          ]
+        },
+        "properties": {
+          "data": { "$ref": "#/$defs/contentDeletedData" }
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/deletionSafeExtensionValue"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[A-Za-z0-9_-]+$"
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 20,
+      "maxLength": 30,
+      "pattern": "^(?:(?:\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d)|(?:1972-(?:06-30|12-31)|197[3-9]-12-31|198[1235]-06-30|198[79]-12-31|1990-12-31|199[2347]-06-30|199[58]-12-31|200[58]-12-31|201[25]-06-30|2016-12-31)T23:59:60)(?:\\.\\d{1,9})?Z$"
+    },
+    "eventType": {
+      "enum": [
+        "run.created",
+        "run.status",
+        "phase.started",
+        "phase.completed",
+        "model-task.available",
+        "model-task.leased",
+        "model-task.completed",
+        "checkpoint.required",
+        "artifact.registered",
+        "run.completed",
+        "run.failed",
+        "run.cancelled",
+        "retention.changed",
+        "content.deleted"
+      ]
+    },
+    "nonNegativeSafeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "sensitivePropertyName": {
+      "type": "string",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^(?:(?:[pP][rR][iI][vV][aA][tT][eE]|[pP][rR][iI][vV][aA][cC][yY]|[rR][aA][wW])[_.-]*)?(?:[pP][rR][oO][mM][pP][tT][sS]?|[eE][xX][cC][eE][rR][pP][tT][sS]?|[tT][eE][xX][tT][sS]?|[cC][oO][nN][tT][eE][nN][tT][sS]?|[bB][lL][oO][bB][sS]?|[fF][iI][lL][eE][nN][aA][mM][eE][sS]?|[pP][aA][tT][hH][sS]?|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|[sS][eE][cC][rR][eE][tT][sS]?|[lL][oO][cC][aA][lL][_.-]*[pP][aA][tT][hH][sS]?|[fF][iI][lL][eE][_.-]*[pP][aA][tT][hH][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[kK][eE][yY][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[sS][tT][oO][rR][eE][_.-]*[kK][eE][yY][sS]?|[sS][tT][oO][rR][aA][gG][eE][_.-]*[kK][eE][yY][sS]?|[bB][uU][cC][kK][eE][tT][_.-]*[kK][eE][yY][sS]?|[dD][eE][lL][eE][tT][eE][dD][_.-]*[cC][oO][nN][tT][eE][nN][tT][sS]?)(?:[_.-]*(?:[vV][aA][lL][uU][eE]|[vV][aA][lL][uU][eE][sS]|[dD][aA][tT][aA]|[fF][iI][eE][lL][dD]|[fF][iI][eE][lL][dD][sS]|[iI][tT][eE][mM]|[iI][tT][eE][mM][sS]|[lL][iI][sS][tT]|[mM][aA][pP]|[mM][eE][tT][aA][dD][aA][tT][aA]|[hH][iI][nN][tT]|[hH][iI][nN][tT][sS]|[rR][eE][fF]|[rR][eE][fF][sS]))?$"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^(?:(?:[pP][rR][iI][vV][aA][tT][eE]|[pP][rR][iI][vV][aA][cC][yY]|[rR][aA][wW])[_.-]*)?(?:[pP][rR][oO][mM][pP][tT][sS]?|[eE][xX][cC][eE][rR][pP][tT][sS]?|[tT][eE][xX][tT][sS]?|[cC][oO][nN][tT][eE][nN][tT][sS]?|[bB][lL][oO][bB][sS]?|[fF][iI][lL][eE][nN][aA][mM][eE][sS]?|[pP][aA][tT][hH][sS]?|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|[sS][eE][cC][rR][eE][tT][sS]?|[lL][oO][cC][aA][lL][pP][aA][tT][hH][sS]?|[fF][iI][lL][eE][pP][aA][tT][hH][sS]?|[oO][bB][jJ][eE][cC][tT][kK][eE][yY][sS]?|[oO][bB][jJ][eE][cC][tT][sS][tT][oO][rR][eE][kK][eE][yY][sS]?|[sS][tT][oO][rR][aA][gG][eE][kK][eE][yY][sS]?|[bB][uU][cC][kK][eE][tT][kK][eE][yY][sS]?|[dD][eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT][sS]?)(?:[pP][aA][yY][lL][oO][aA][dD])[sS]?$"
+          }
+        }
+      ],
+      "not": {
+        "pattern": "(?:(?:^|[_.-])(?:[pP][rR][oO][mM][pP][tT][sS]?|[eE][xX][cC][eE][rR][pP][tT][sS]?|[tT][eE][xX][tT][sS]?|[cC][oO][nN][tT][eE][nN][tT][sS]?|[bB][lL][oO][bB][sS]?|[fF][iI][lL][eE][nN][aA][mM][eE][sS]?|[pP][aA][tT][hH][sS]?|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|[sS][eE][cC][rR][eE][tT][sS]?|[lL][oO][cC][aA][lL][_.-]*[pP][aA][tT][hH][sS]?|[fF][iI][lL][eE][_.-]*[pP][aA][tT][hH][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[kK][eE][yY][sS]?|[oO][bB][jJ][eE][cC][tT][_.-]*[sS][tT][oO][rR][eE][_.-]*[kK][eE][yY][sS]?|[sS][tT][oO][rR][aA][gG][eE][_.-]*[kK][eE][yY][sS]?|[bB][uU][cC][kK][eE][tT][_.-]*[kK][eE][yY][sS]?|[dD][eE][lL][eE][tT][eE][dD][_.-]*[cC][oO][nN][tT][eE][nN][tT][sS]?)(?:$|[_.-]|[A-Z0-9])|(?:^|[_.-]|[a-z0-9])(?:P[rR][oO][mM][pP][tT][sS]?|E[xX][cC][eE][rR][pP][tT][sS]?|T[eE][xX][tT][sS]?|C[oO][nN][tT][eE][nN][tT][sS]?|B[lL][oO][bB][sS]?|F[iI][lL][eE][nN][aA][mM][eE][sS]?|P[aA][tT][hH][sS]?|C[rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|S[eE][cC][rR][eE][tT][sS]?|L[oO][cC][aA][lL][pP][aA][tT][hH][sS]?|F[iI][lL][eE][pP][aA][tT][hH][sS]?|O[bB][jJ][eE][cC][tT][kK][eE][yY][sS]?|O[bB][jJ][eE][cC][tT][sS][tT][oO][rR][eE][kK][eE][yY][sS]?|S[tT][oO][rR][aA][gG][eE][kK][eE][yY][sS]?|B[uU][cC][kK][eE][tT][kK][eE][yY][sS]?|D[eE][lL][eE][tT][eE][dD][cC][oO][nN][tT][eE][nN][tT][sS]?)(?:$|[_.-]|[A-Z0-9])|(?:^|[_.-]|[a-z0-9])(?:PROMPTS?|EXCERPTS?|TEXTS?|CONTENTS?|BLOBS?|FILENAMES?|PATHS?|CREDENTIALS?|SECRETS?|LOCALPATHS?|FILEPATHS?|OBJECTKEYS?|OBJECTSTOREKEYS?|STORAGEKEYS?|BUCKETKEYS?|DELETEDCONTENTS?)(?:$|[_.-]|[A-Za-z0-9]))"
+      }
+    },
+    "safeExtensionValue": {
+      "anyOf": [
+        {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/safeExtensionValue" }
+        },
+        {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/sensitivePropertyName" },
+          "additionalProperties": { "$ref": "#/$defs/safeExtensionValue" }
+        }
+      ]
+    },
+    "deletionExtensionPropertyName": {
+      "type": "string",
+      "pattern": "^[\\x00-\\x7f]+$",
+      "allOf": [
+        { "$ref": "#/$defs/sensitivePropertyName" }
+      ]
+    },
+    "deletionSafeExtensionValue": {
+      "anyOf": [
+        {
+          "type": ["string", "number", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/deletionSafeExtensionValue" }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/deletionExtensionPropertyName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/deletionSafeExtensionValue"
+          }
+        }
+      ]
+    },
+    "contentDeletedData": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/deletionSafeExtensionValue"
+      },
+      "propertyNames": {
+        "anyOf": [
+          { "enum": ["deletedObjectCount", "manifestStatus"] },
+          { "$ref": "#/$defs/deletionExtensionPropertyName" }
+        ]
+      },
+      "required": ["deletedObjectCount", "manifestStatus"],
+      "properties": {
+        "deletedObjectCount": { "$ref": "#/$defs/nonNegativeSafeInteger" },
+        "manifestStatus": { "const": "deleted" }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

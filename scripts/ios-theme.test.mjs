@@ -82,11 +82,21 @@ assert.match(
   /func loadTheme\(\) async \{[\s\S]*client\.fetchTheme\(\)[\s\S]*ChromePalette\(snapshot: snapshot\)/,
   "AppModel.loadTheme should fetch and adopt the desktop palette",
 );
+assert.match(
+  model,
+  /func loadTheme\(\) async \{[\s\S]{0,180}let configurationGeneration = connectionConfigurationGeneration[\s\S]{0,180}client\.fetchTheme\(\)[\s\S]{0,180}guard connectionConfigurationLeaseIsCurrent\(configurationGeneration\) else \{ return \}[\s\S]{0,80}adopt\(snapshot\)/,
+  "an old endpoint's theme poll must not overwrite chrome after re-pairing",
+);
+assert.match(
+  model,
+  /func setDesktopTheme[\s\S]*?let configurationGeneration = connectionConfigurationGeneration[\s\S]*?client\.publishTheme[\s\S]{0,220}guard connectionConfigurationLeaseIsCurrent\(configurationGeneration\) else \{ return false \}[\s\S]{0,80}adopt\(snapshot\)/,
+  "a theme publish response must retain endpoint ownership before adoption",
+);
 // Connect no longer sequences loadFamiliars() → loadTheme(); the concurrent
 // bootstrap fetches familiars + theme + profile together and adopts the theme.
 assert.match(
   model,
-  /private func loadCoreResources\(\) async \{[\s\S]*ConnectionBootstrap\.load\(using: client\)[\s\S]*if case \.success\(let snapshot\) = payload\.theme \{ adopt\(snapshot\) \}/,
+  /private func loadCoreResources\([\s\S]*mirroringProjectContextFailuresTo mirroredSurfaces: ProjectContextFailureSurfaces = \[\][\s\S]*configurationGeneration: UInt64[\s\S]*async let theme = Result\.capturing \{ try await client\.fetchTheme\(\) \}[\s\S]*await loadProjectContext\(using: client, mirrorFailuresTo: mirroredSurfaces\)[\s\S]*if case \.success\(let snapshot\) = await theme,[\s\S]{0,160}connectionConfigurationLeaseIsCurrent\(configurationGeneration\)[\s\S]{0,80}adopt\(snapshot\)/,
   "connect bootstrap should fetch and adopt the desktop theme",
 );
 // Anchored inside the refreshConnection body (start of the func declaration to
@@ -99,7 +109,7 @@ assert.match(
   assert.ok(end > start, "refreshConnection body should close at member indent");
   assert.match(
     model.slice(start, end),
-    /await loadCoreResources\(\)/,
+    /await loadCoreResources\([\s\S]{0,120}configurationGeneration: configurationGeneration/,
     "refreshConnection should run the core-resource bootstrap on connect",
   );
 }

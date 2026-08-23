@@ -1,12 +1,23 @@
+import type {
+  AgenticEvidenceRef,
+  AgenticRecommendation,
+} from "./agentic-recommendations.ts";
+import { contextFingerprint } from "./agentic-recommendations.ts";
+import { containsSecretText, redactSecretText } from "./secret-redaction.ts";
+
 export type PromptEnhanceMode = "chat" | "code" | "image" | "research" | "task";
 
-type PromptEnhanceContext = {
+export type PromptEnhanceContext = {
   activeProject?: {
     name?: unknown;
     root?: unknown;
   };
   selectedFiles?: unknown;
   recentThreadTitle?: unknown;
+  recentMessages?: unknown;
+  recentToolOutcomes?: unknown;
+  linkedTask?: unknown;
+  modelScope?: unknown;
 };
 
 type PromptEnhanceRequest = {
@@ -28,6 +39,31 @@ export type PromptEnhanceResult =
       error: string;
     };
 
+export type PromptEnhancementPayload = {
+  enhanced: string;
+  offline: boolean;
+  mode: PromptEnhanceMode;
+  intent: EnhanceIntent;
+};
+
+/** Matches the chat input route's 64 KiB composer ceiling without loosening shared payload limits. */
+export const MAX_ENHANCED_PROMPT_CHARS = 64 * 1024;
+const MAX_PROMPT_ENHANCEMENT_ENVELOPE_CHARS = MAX_ENHANCED_PROMPT_CHARS * 6 + 128 * 1024;
+const SAFE_EVIDENCE_ID_RE = /^(?:[A-Za-z][A-Za-z0-9._:/-]{0,95}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const RECOMMENDATION_ID_RE = /^[A-Za-z][A-Za-z0-9._:/-]{0,95}$/;
+const CONTEXT_FINGERPRINT_RE = /^ctx-v1-[0-9a-f]{32}$/;
+const MAX_RECOMMENDATION_TEXT_CHARS = 2_000;
+
+export type CreatePromptEnhancementRecommendationInput = {
+  id: string;
+  enhanced: string;
+  offline: boolean;
+  mode: PromptEnhanceMode;
+  intent: EnhanceIntent;
+  contextFingerprint: string;
+  evidenceRefs: AgenticEvidenceRef[];
+};
+
 export function normalizeEnhanceMode(mode: unknown): PromptEnhanceMode {
   return mode === "code" || mode === "image" || mode === "research" || mode === "task" || mode === "chat"
     ? mode
@@ -48,6 +84,57 @@ function asStringList(value: unknown): string[] {
     : [];
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function boundedContextText(value: unknown, maxLength = 480): string | null {
+  const text = asText(value);
+  if (!text) return null;
+  return redactSecretText(text).slice(0, maxLength).trim() || null;
+}
+
+function boundedContextRecords(value: unknown, limit = 3): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value
+      .map(asRecord)
+      .filter((entry): entry is Record<string, unknown> => entry !== null)
+      .slice(-limit)
+    : [];
+}
+
+function safeEvidenceId(value: unknown): string | null {
+  return typeof value === "string"
+    && SAFE_EVIDENCE_ID_RE.test(value)
+    && !containsSecretText(value)
+    ? value
+    : null;
+}
+
+function contextEvidenceRefs(context: PromptEnhanceContext): AgenticEvidenceRef[] {
+  const evidence: AgenticEvidenceRef[] = [];
+  const seen = new Set<string>();
+  const add = (kind: AgenticEvidenceRef["kind"], value: unknown, label: string) => {
+    const id = safeEvidenceId(value);
+    const key = id ? `${kind}:${id}` : null;
+    if (!id || !key || seen.has(key)) return;
+    seen.add(key);
+    evidence.push({ id, kind, label });
+  };
+
+  for (const message of boundedContextRecords(context.recentMessages)) {
+    add("message", message.id, "Recent chat message");
+  }
+  const task = asRecord(context.linkedTask);
+  if (task) add("task", task.id, "Linked task");
+  for (const outcome of boundedContextRecords(context.recentToolOutcomes)) {
+    add("artifact", outcome.id, "Recent tool outcome");
+  }
+  return evidence.slice(0, 8);
+}
+
 function capitalizeDraft(draft: string): string {
   return draft.charAt(0).toUpperCase() + draft.slice(1);
 }
@@ -63,11 +150,90 @@ function contextLines(context: PromptEnhanceContext): string[] {
   if (files.length) lines.push(`Selected files: ${files.slice(0, 8).join(", ")}`);
   const thread = asText(context.recentThreadTitle);
   if (thread) lines.push(`Current thread: ${thread}`);
+  const modelScope = boundedContextText(context.modelScope, 160);
+  if (modelScope) lines.push(`Composer model scope: ${modelScope}`);
+  const messages = boundedContextRecords(context.recentMessages)
+    .map((message) => {
+      const role = asText(message.role) === "assistant" ? "Assistant" : "User";
+      const text = boundedContextText(message.text);
+      return text ? `${role}: ${text}` : null;
+    })
+    .filter((message): message is string => message !== null);
+  if (messages.length) lines.push(`Recent chat context:\n- ${messages.join("\n- ")}`);
+  const outcomes = boundedContextRecords(context.recentToolOutcomes)
+    .map((outcome) => {
+      const name = boundedContextText(outcome.name, 96) ?? "Tool";
+      const status = boundedContextText(outcome.status, 32);
+      const output = boundedContextText(outcome.output, 320);
+      return output ? `${name}${status ? ` (${status})` : ""}: ${output}` : null;
+    })
+    .filter((outcome): outcome is string => outcome !== null);
+  if (outcomes.length) lines.push(`Recent tool outcomes:\n- ${outcomes.join("\n- ")}`);
+  const task = asRecord(context.linkedTask);
+  if (task) {
+    const title = boundedContextText(task.title, 160);
+    const status = boundedContextText(task.status, 48);
+    const notes = boundedContextText(task.notes, 320);
+    if (title || status || notes) {
+      lines.push(`Linked task: ${title ?? "Current task"}${status ? ` (${status})` : ""}${notes ? ` — ${notes}` : ""}`);
+    }
+  }
   return lines;
 }
 
 function normalizeContext(context: unknown): PromptEnhanceContext {
   return typeof context === "object" && context !== null ? (context as PromptEnhanceContext) : {};
+}
+
+/** A bounded, secret-redacted fingerprint input; drafts deliberately stay out. */
+export function promptEnhancementContextFingerprintInput(context: unknown) {
+  const normalized = normalizeContext(context);
+  const task = asRecord(normalized.linkedTask);
+  return {
+    activeProject: {
+      name: boundedContextText(normalized.activeProject?.name, 160),
+      root: boundedContextText(normalized.activeProject?.root, 320),
+    },
+    selectedFiles: asStringList(normalized.selectedFiles)
+      .slice(0, 8)
+      .map((file) => redactSecretText(file).slice(0, 320)),
+    recentThreadTitle: boundedContextText(normalized.recentThreadTitle, 160),
+    modelScope: boundedContextText(normalized.modelScope, 160),
+    recentMessages: boundedContextRecords(normalized.recentMessages).map((message) => ({
+      id: safeEvidenceId(message.id),
+      role: boundedContextText(message.role, 24),
+      text: boundedContextText(message.text),
+    })),
+    recentToolOutcomes: boundedContextRecords(normalized.recentToolOutcomes).map((outcome) => ({
+      id: safeEvidenceId(outcome.id),
+      name: boundedContextText(outcome.name, 96),
+      status: boundedContextText(outcome.status, 32),
+      output: boundedContextText(outcome.output, 320),
+    })),
+    linkedTask: {
+      id: safeEvidenceId(task?.id),
+      title: boundedContextText(task?.title, 160),
+      status: boundedContextText(task?.status, 48),
+      notes: boundedContextText(task?.notes, 320),
+    },
+  };
+}
+
+export function promptEnhancementLifecycleFingerprint({
+  mode,
+  familiarId,
+  context,
+}: {
+  mode: PromptEnhanceMode;
+  familiarId: string | null | undefined;
+  context?: unknown;
+}): string {
+  const contextKey = contextFingerprint({
+    mode,
+    familiarId: familiarId ?? null,
+    context: promptEnhancementContextFingerprintInput(context),
+  });
+  return contextFingerprint({ contextKey });
 }
 
 // ── Model-backed enhancement (cave-b6c2) ─────────────────────────────────────
@@ -159,10 +325,208 @@ export function extractEnhancedPrompt(text: string): { partial: string; complete
   return { partial: cleaned, complete: false };
 }
 
+/** Complete model output is stricter than streaming preview: one clean frame only. */
+export function extractCompleteEnhancedPrompt(text: string): string | null {
+  const match = /^\s*<enhanced>((?:(?!<\/?enhanced>)[\s\S])+)<\/enhanced>\s*$/.exec(text);
+  if (!match) return null;
+  const enhanced = match[1]!.trim();
+  return enhanced && enhanced.length <= MAX_ENHANCED_PROMPT_CHARS ? enhanced : null;
+}
+
 /** The race rule: if the draft changed while the rewrite streamed, never
  *  overwrite — surface the result as a suggestion instead. */
 export function settleEnhance(baseDraft: string, currentDraft: string): "apply" | "suggest" {
   return baseDraft === currentDraft ? "apply" : "suggest";
+}
+
+/** Builds a typed, review-only Chat proposal after the strict `<enhanced>` extraction. */
+export function createPromptEnhancementRecommendation(
+  input: CreatePromptEnhancementRecommendationInput,
+): AgenticRecommendation<PromptEnhancementPayload> {
+  const intent = ENHANCE_INTENTS.find((entry) => entry.id === input.intent) ?? ENHANCE_INTENTS[0]!;
+  const evidenceRefs = input.evidenceRefs.slice(0, 8);
+  return {
+    id: input.id,
+    surface: "chat",
+    kind: "prose",
+    payload: {
+      enhanced: input.enhanced,
+      offline: input.offline,
+      mode: input.mode,
+      intent: input.intent,
+    },
+    rationale: `${intent.label} was selected to improve the current draft without changing its objective.`,
+    inferredGoal: intent.goal,
+    rankReasons: [
+      "Preserves the current draft as an explicit proposal.",
+      ...(evidenceRefs.length ? ["Uses the bounded active chat context."] : ["Uses the selected enhancement intent."]),
+    ],
+    evidenceRefs,
+    contextFingerprint: input.contextFingerprint,
+    verification: { status: "proposal", checks: [] },
+    application: { mode: "review", requiresApproval: true, reversible: false },
+  };
+}
+
+/**
+ * The shared parser accepts only model-shaped fields; code-owned verification
+ * and application state are reconstructed by strict extraction.
+ */
+export function serializePromptEnhancementRecommendation(
+  recommendation: AgenticRecommendation<PromptEnhancementPayload>,
+): string {
+  const { verification: _verification, application: _application, ...modelOutput } = recommendation;
+  return JSON.stringify({ recommendations: [modelOutput] });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+
+function isBoundedRecommendationText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= MAX_RECOMMENDATION_TEXT_CHARS;
+}
+
+function isPromptMode(value: unknown): value is PromptEnhanceMode {
+  return value === "chat" || value === "code" || value === "image" || value === "research" || value === "task";
+}
+
+function isEnhanceIntent(value: unknown): value is EnhanceIntent {
+  return value === "auto"
+    || value === "clarify"
+    || value === "expand"
+    || value === "specific"
+    || value === "shorten"
+    || value === "criteria";
+}
+
+function parsePromptEvidenceRefs(value: unknown): AgenticEvidenceRef[] | null {
+  if (!Array.isArray(value) || value.length > 8) return null;
+  const seen = new Set<string>();
+  const refs: AgenticEvidenceRef[] = [];
+  for (const evidence of value) {
+    if (
+      !isRecord(evidence)
+      || !hasExactKeys(evidence, ["id", "kind", "label"])
+      || typeof evidence.id !== "string"
+      || !SAFE_EVIDENCE_ID_RE.test(evidence.id)
+      || (evidence.kind !== "task"
+        && evidence.kind !== "dependency"
+        && evidence.kind !== "github"
+        && evidence.kind !== "mission"
+        && evidence.kind !== "saved-link"
+        && evidence.kind !== "vault"
+        && evidence.kind !== "message"
+        && evidence.kind !== "artifact")
+      || !isBoundedRecommendationText(evidence.label)
+      || containsSecretText(evidence.id)
+      || containsSecretText(evidence.label)
+    ) {
+      return null;
+    }
+    const key = `${evidence.kind}:${evidence.id}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    refs.push({
+      id: evidence.id,
+      kind: evidence.kind,
+      label: evidence.label,
+    });
+  }
+  return refs;
+}
+
+/**
+ * A narrow parser for Chat's composer-sized prose payload. It leaves shared
+ * recommendation bounds unchanged while retaining the 64 KiB input contract.
+ */
+export function parsePromptEnhancementRecommendationOutput(text: string): AgenticRecommendation<PromptEnhancementPayload>[] {
+  if (text.length > MAX_PROMPT_ENHANCEMENT_ENVELOPE_CHARS) {
+    throw new Error("prompt enhancement output is too large");
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(text);
+  } catch {
+    throw new Error("prompt enhancement output is invalid");
+  }
+  if (!isRecord(decoded) || !hasExactKeys(decoded, ["recommendations"]) || !Array.isArray(decoded.recommendations) || decoded.recommendations.length !== 1) {
+    throw new Error("prompt enhancement envelope is invalid");
+  }
+
+  const modelOutput = decoded.recommendations[0];
+  if (
+    !isRecord(modelOutput)
+    || !hasExactKeys(modelOutput, [
+      "id",
+      "surface",
+      "kind",
+      "payload",
+      "rationale",
+      "inferredGoal",
+      "rankReasons",
+      "evidenceRefs",
+      "contextFingerprint",
+    ])
+    || typeof modelOutput.id !== "string"
+    || !RECOMMENDATION_ID_RE.test(modelOutput.id)
+    || modelOutput.surface !== "chat"
+    || modelOutput.kind !== "prose"
+    || !isBoundedRecommendationText(modelOutput.rationale)
+    || !isBoundedRecommendationText(modelOutput.inferredGoal)
+    || !Array.isArray(modelOutput.rankReasons)
+    || modelOutput.rankReasons.length > 8
+    || !modelOutput.rankReasons.every(isBoundedRecommendationText)
+    || typeof modelOutput.contextFingerprint !== "string"
+    || !CONTEXT_FINGERPRINT_RE.test(modelOutput.contextFingerprint)
+    || !isRecord(modelOutput.payload)
+    || !hasExactKeys(modelOutput.payload, ["enhanced", "offline", "mode", "intent"])
+    || typeof modelOutput.payload.enhanced !== "string"
+    || modelOutput.payload.enhanced.trim().length === 0
+    || modelOutput.payload.enhanced.length > MAX_ENHANCED_PROMPT_CHARS
+    || containsSecretText(modelOutput.payload.enhanced)
+    || typeof modelOutput.payload.offline !== "boolean"
+    || !isPromptMode(modelOutput.payload.mode)
+    || !isEnhanceIntent(modelOutput.payload.intent)
+  ) {
+    throw new Error("prompt enhancement recommendation is invalid");
+  }
+  const evidenceRefs = parsePromptEvidenceRefs(modelOutput.evidenceRefs);
+  if (!evidenceRefs) throw new Error("prompt enhancement evidence is invalid");
+  return [{
+    id: modelOutput.id,
+    surface: "chat",
+    kind: "prose",
+    payload: {
+      enhanced: modelOutput.payload.enhanced,
+      offline: modelOutput.payload.offline,
+      mode: modelOutput.payload.mode,
+      intent: modelOutput.payload.intent,
+    },
+    rationale: modelOutput.rationale,
+    inferredGoal: modelOutput.inferredGoal,
+    rankReasons: [...modelOutput.rankReasons],
+    evidenceRefs,
+    contextFingerprint: modelOutput.contextFingerprint,
+    verification: { status: "proposal", checks: [] },
+    application: { mode: "review", requiresApproval: true, reversible: false },
+  }];
+}
+
+export function isPromptEnhancementRecommendationCurrent(
+  recommendation: Pick<AgenticRecommendation<PromptEnhancementPayload>, "contextFingerprint">,
+  currentContextFingerprint: string,
+): boolean {
+  return recommendation.contextFingerprint === currentContextFingerprint;
+}
+
+export function promptEnhancementEvidenceRefs(context: unknown): AgenticEvidenceRef[] {
+  return contextEvidenceRefs(normalizeContext(context));
 }
 
 // ── Research idempotency (#4628) ──────────────────────────────────────────────

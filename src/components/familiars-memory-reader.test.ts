@@ -6,6 +6,10 @@ const source = await readFile(new URL("./familiars-memory-reader.tsx", import.me
 assert.match(source, /export function MemoryReaderPane\(/, "MemoryReaderPane must be exported");
 assert.match(source, /useMemoryFile\(/, "reader must load file content via the shared hook");
 assert.match(source, /<DocumentReader/, "Rendered mode must use the shared DocumentReader");
+assert.match(source, /<OverflowMenu[\s\S]*?ariaLabel="More memory actions"/, "path and file actions live in overflow");
+assert.match(source, /\{copied \? "Path copied" : "Copy path"\}/, "Copy path remains reachable");
+assert.match(source, />\s*Open file\s*</, "Open file remains reachable");
+assert.match(source, />\s*Open in Memories\s*</, "the cross-surface action uses the approved label");
 assert.match(
   source,
   /parseMarkdownReaderDocument\(content,\s*row\?\.title \?\? "Memory"\)/,
@@ -39,13 +43,13 @@ assert.match(source, /setRefreshToken\(\(current\) => current \+ 1\)/, "leaving 
 
 // Copy-path + empty state + open-file + expand.
 assert.match(source, /copyText\(/, "copy-path button must copy the path");
-assert.match(source, /Select a memory to read/, "empty state when no row selected");
+assert.match(source, /Choose a memory/, "empty state when no row selected");
 assert.match(source, /onOpenFile/, "reader exposes an open-file callback");
 assert.match(source, /onExpand/, "reader exposes an expand callback");
 
 // Shared state primitives: no-selection / loading / error states use
 // ui/EmptyState, ui/Skeleton, and ui/ErrorState instead of bare text.
-assert.match(source, /<EmptyState[\s\S]*?Select a memory to read/, "no-selection state uses the shared EmptyState");
+assert.match(source, /<EmptyState[\s\S]*?Choose a memory/, "no-selection state uses the shared EmptyState");
 assert.match(source, /isFileLoading \?[\s\S]*?<Skeleton[^>]*variant="text"/, "loading shows skeleton text lines, not a bare 'Loading…'");
 assert.doesNotMatch(source, />Loading memory…</, "reader no longer shows a bare 'Loading memory…' line");
 assert.match(source, /fileError \?[\s\S]*?<ErrorState/, "file load failure uses the shared ErrorState");

@@ -1,7 +1,7 @@
 import XCTest
 @testable import CovenCave
 
-/// The four primary drawer destinations and their keyboard order.
+/// The three primary drawer destinations and their keyboard order.
 final class DrawerDestinationOrderTests: XCTestCase {
 
     func testEveryDestinationIsPlacedExactlyOnce() {
@@ -11,7 +11,7 @@ final class DrawerDestinationOrderTests: XCTestCase {
                        "every AppTab case must be placed in the drawer IA")
     }
 
-    /// ⌘1–4 must cover every destination exactly once so every primary surface
+    /// ⌘1–3 must cover every destination exactly once so every primary surface
     /// remains keyboard-reachable.
     func testShortcutOrderCoversAllDestinationsExactlyOnce() {
         XCTAssertEqual(AppTab.shortcutOrder.count, AppTab.allCases.count)
@@ -26,8 +26,7 @@ final class DrawerDestinationOrderTests: XCTestCase {
     /// they must never change spelling.
     func testRawValuesAreStable() {
         let expected: [AppTab: String] = [
-            .chats: "chats", .tasks: "tasks", .terminal: "terminal",
-            .settings: "settings",
+            .chats: "chats", .tasks: "tasks", .settings: "settings",
         ]
         XCTAssertEqual(expected.count, AppTab.allCases.count)
         for (tab, raw) in expected {

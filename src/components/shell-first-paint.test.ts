@@ -44,7 +44,7 @@ assert.match(
 assert.match(
   shell,
   /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_RAIL_PX\}px`/,
-  "Chat and restored desktop nav first paint at the shared expanded width while fresh nav starts at the rail",
+  "Chat and restored desktop nav first paint at the shared expanded width while fresh nav starts on the icon rail",
 );
 
 assert.match(

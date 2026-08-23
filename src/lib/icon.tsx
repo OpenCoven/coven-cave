@@ -383,6 +383,7 @@ export const ICON_NAMES = [
   "ph:hand-grabbing",
   "ph:calendar-x",
   "ph:eye-slash",
+  "ph:eye",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

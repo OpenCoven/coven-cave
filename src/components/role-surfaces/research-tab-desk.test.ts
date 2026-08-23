@@ -37,9 +37,10 @@ test("bounds row keeps the shared readings with not-color-only badges", () => {
   assert.match(detail, /research-bound--\$\{reading\.tone\}/);
   assert.match(detail, /research-bound-badge/);
   assert.match(detail, /<span className="sr-only"> — \{reading\.detail\}<\/span>/);
-  // Pass note sits with the bounds row and derives from real iteration data.
-  assert.match(detail, /research-desk-stepper__pass/);
-  assert.match(detail, /pass \$\{iteration\.number\} of \$\{mission\.bounds\.maxIterations\}/);
+  // Iteration state sits with the bounds row and derives from real mission data.
+  assert.match(detail, /research-desk-stepper__iteration/);
+  assert.match(detail, /Iteration \$\{iteration\.number\} of \$\{mission\.bounds\.maxIterations\}/);
+  assert.match(detail, /No iteration started · \$\{mission\.bounds\.maxIterations\} planned/);
 });
 
 // ── Checkpoint delta: derived-only tiles, omit when missing ─────────────────
@@ -65,7 +66,7 @@ test("checkpoint direction can be drafted agentically without auto-continuing", 
   assert.match(detail, /generateResearchRefineDirection/);
   assert.match(detail, /Draft with familiar/);
   assert.match(detail, /Redraft with familiar/);
-  assert.match(detail, /Reading the checkpoint and choosing the highest-value next pass…/);
+  assert.match(detail, /Reading the checkpoint and choosing the highest-value next iteration…/);
   assert.match(detail, /directionRef\.current === baseDraft/);
   assert.match(detail, /Direction ready — your edits were kept\./);
   assert.match(detail, /Apply direction/);
@@ -75,8 +76,10 @@ test("checkpoint direction can be drafted agentically without auto-continuing", 
   assert.match(detail, /direction\.length\.toLocaleString\(\)\} \/ \{RESEARCH_DIRECTION_MAX_LENGTH\.toLocaleString\(\)/);
   assert.match(
     detail,
-    /onClick=\{\(\) => void runAction\(\{ action: "refine", direction \}\)\}/,
+    /onClick=\{\(\) => void runAction\(\{[\s\S]{0,180}?action: "refine",[\s\S]{0,180}?direction,[\s\S]{0,180}?approveCostUnavailable/,
   );
+  assert.match(detail, /Refine and continue with unreported cost/);
+  assert.match(detail, /title=\{continueInfo\.costApprovalRequired \? continueInfo\.description : undefined\}/);
   assert.doesNotMatch(
     detail,
     /generateResearchRefineDirection\([\s\S]{0,800}?runAction\(\{ action: "refine"/,
@@ -137,8 +140,11 @@ test("Keep/Reject/Verify map onto the ledger's update-source action", () => {
   // Verify keeps the source conflicting and appends a note instead of
   // changing status.
   assert.match(ledger, /status: "conflicting",\s*note: source\.note \? `\$\{source\.note\}\\n\$\{VERIFY_NOTE\}` : VERIFY_NOTE/);
-  // Re-verifying is inert: the button disables once the marker is present.
-  assert.match(ledger, /\(source\.note \?\? ""\)\.includes\(VERIFY_NOTE\)/);
+  // Re-verifying is inert for both the current marker and persisted legacy
+  // notes written before the Desk adopted explicit iteration terminology.
+  assert.match(ledger, /const LEGACY_VERIFY_NOTE = "Verify next pass"/);
+  assert.match(ledger, /hasVerificationRequest\(source\.note\)/);
+  assert.match(ledger, />\s*Verify next iteration\s*<\/Button>/);
   // Triage actions only appear at a checkpoint, on sources still awaiting a
   // verdict; the status control below them stays available always.
   assert.match(ledger, /triage && \(source\.status === "candidate" \|\| source\.status === "conflicting"\)/);
@@ -234,6 +240,12 @@ test("planning missions read as active work in the runs rail", () => {
   assert.match(list, /queued: "busy"/);
 });
 
+test("the run rail states the current iteration without terse iN shorthand", () => {
+  assert.match(list, />Iteration \{iteration\.number\}\/\{mission\.bounds\.maxIterations\}</);
+  assert.match(list, />Not started</);
+  assert.doesNotMatch(list, />i\{iteration\.number\}/);
+});
+
 test("mission navigation composes text scope and priority groups", () => {
   assert.match(list, /scope: ResearchMissionScope/);
   assert.match(list, /matchesResearchMissionScope\(mission, scope\)/);
@@ -320,7 +332,7 @@ test("run state picks the opening pane and the pane's context line", () => {
   assert.match(detail, /\? "sources"\s*: "artifacts"/);
   assert.match(detail, /if \(railTabMission !== missionId\) \{\s*setRailTabMission\(missionId\);\s*setRailTab\(defaultRailTab\);\s*\}/);
   // The context the stacked panel titles used to carry survives as one hint.
-  assert.match(detail, /Evidence delta — pass/);
+  assert.match(detail, /Evidence delta — iteration/);
   assert.match(detail, /targeted — streaming in, review anytime/);
   assert.match(detail, /highlightLatest=\{isLive\}/);
   // The streaming highlight marks the newest ledger entry without faking times.
@@ -359,9 +371,12 @@ test("the action bar stays decision-first, sticky, with end actions split right"
   const actionsIndex = detail.indexOf("research-mission-actions");
   assert.ok(bannerIndex !== -1 && actionsIndex !== -1 && bannerIndex < actionsIndex);
   // Actions still come from the shared gate, with the consequence-labeled
-  // Continue demoting itself when a stop gate refuses.
+  // Continue disabled at hard bounds while missing cost becomes an explicit,
+  // one-pass approval.
   assert.match(detail, /allowedResearchActions\(mission\)/);
-  assert.match(detail, /continueInfo\.gated \? "ghost" : "primary"/);
+  assert.match(detail, /continueInfo\.costApprovalRequired \? "secondary"/);
+  assert.match(detail, /continueInfo\.gated && !continueInfo\.costApprovalRequired/);
+  assert.match(detail, /approveCostUnavailable: true/);
   // Cancel/Archive detach to the right edge of the bar.
   assert.match(detail, /new Set\(\["cancel", "archive"\]\)/);
   assert.match(detail, /\{mainActions\.map\(renderActionButton\)\}/);

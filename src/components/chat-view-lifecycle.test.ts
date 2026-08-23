@@ -250,7 +250,7 @@ assert.match(
 
 assert.match(
   source,
-  /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Cancel \(esc\)"/,
+  /title="Queue message"[\s\S]*?aria-label="Queue message"[\s\S]*?title="Stop response \(esc\)"[\s\S]*?aria-label="Cancel response"/,
   "a live response must expose both Queue and Cancel controls",
 );
 
@@ -779,7 +779,12 @@ assert.match(
 // enhance-draft into the next conversation's next send.
 assert.match(
   source,
-  /setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*clearAttachments\(\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*promptEnhance\.reset\(\);/,
+  /const viewKey = sessionId\s*\?\s*`session:\$\{sessionId\}`\s*:\s*`draft:\$\{projectRoot \?\? ""\}`;/,
+  "existing-session identity is stable while project context hydrates asynchronously",
+);
+assert.match(
+  source,
+  /if \(viewChanged\) \{[\s\S]{0,200}?setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*clearAttachments\(\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*promptEnhance\.reset\(\);/,
   "the session-switch reset effect clears reply-target, attachments, pending branch parent, and enhance state so they don't leak across threads",
 );
 

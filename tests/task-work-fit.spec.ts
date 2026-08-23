@@ -73,7 +73,7 @@ const WORK_SESSION = {
   updated_at: ISO,
 };
 
-/** Every POST the page made to /api/chat/send, so a re-send is countable. */
+/** Every matching task handoff POST, so unrelated background sends are ignored. */
 type SendLog = { count: number };
 
 async function openBoard(page: Page, cards: unknown[], sessions: unknown[], sends?: SendLog) {
@@ -129,7 +129,10 @@ async function openBoard(page: Page, cards: unknown[], sessions: unknown[], send
     }),
   );
   await page.route("**/api/chat/send**", (route) => {
-    if (sends && route.request().method() === "POST") sends.count += 1;
+    if (sends && route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as { prompt?: unknown };
+      if (body.prompt === "Add the Coven stateless spoke protocol.") sends.count += 1;
+    }
     return route.fulfill({ json: { ok: true } });
   });
 

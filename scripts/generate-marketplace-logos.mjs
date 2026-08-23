@@ -40,7 +40,9 @@ function isSimpleIcon(value) {
     && typeof value === "object"
     && typeof value.slug === "string"
     && typeof value.title === "string"
-    && typeof value.path === "string";
+    && typeof value.path === "string"
+    && typeof value.hex === "string"
+    && /^[0-9A-F]{6}$/i.test(value.hex);
 }
 
 const icons = Object.values(simpleIcons).filter(isSimpleIcon);
@@ -71,7 +73,7 @@ function resolveBrand(plugin) {
 function pngFor(icon) {
   const svg = [
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 28 28">',
-    `<path fill="#000" d="${icon.path}"/>`,
+    `<path fill="#${icon.hex}" d="${icon.path}"/>`,
     "</svg>",
   ].join("");
   return sharp(Buffer.from(svg)).resize(128, 128).png().toBuffer();

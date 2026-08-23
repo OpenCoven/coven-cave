@@ -24,6 +24,7 @@ import "@/styles/cave-md.css";
  */
 
 import {
+  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -45,6 +46,7 @@ import {
   renderCitedBody,
   renderCitationReferences,
   type Citation,
+  type ParsedCitations,
 } from "@/lib/citations";
 import { InlineCitationPreviews } from "@/components/ui/citation";
 import { classifyDiffLines, parseFenceInfo, type DiffLine } from "@/lib/message-code-fences";
@@ -774,6 +776,7 @@ async function mdToHtml(
 type MarkdownContentProps = {
   text: string;
   pending?: boolean;
+  showCaret?: boolean;
   onOpenUrl?: (url: string) => void;
   citations?: readonly Citation[];
   decorateResponse?: boolean;
@@ -783,9 +786,46 @@ type MarkdownContentProps = {
   className?: string;
 };
 
+type AssistantMarkdownRenderContextValue = {
+  onOpenUrl?: (url: string) => void;
+  citations: readonly Citation[];
+  parsedCitations: Pick<ParsedCitations, "citations" | "order">;
+  decorateResponse: boolean;
+  citationSignature: string;
+};
+
+const AssistantMarkdownRenderContext =
+  createContext<AssistantMarkdownRenderContextValue | null>(null);
+
+function useStableAssistantMarkdownRenderContext(
+  onOpenUrl: ((url: string) => void) | undefined,
+  parsedCitations: ParsedCitations,
+): AssistantMarkdownRenderContextValue {
+  const citationSignature = JSON.stringify([
+    parsedCitations.citations,
+    [...parsedCitations.order],
+  ]);
+  const valueRef = useRef<AssistantMarkdownRenderContextValue | null>(null);
+  if (
+    valueRef.current === null
+    || valueRef.current.onOpenUrl !== onOpenUrl
+    || valueRef.current.citationSignature !== citationSignature
+  ) {
+    valueRef.current = {
+      onOpenUrl,
+      citations: parsedCitations.citations,
+      parsedCitations,
+      decorateResponse: true,
+      citationSignature,
+    };
+  }
+  return valueRef.current;
+}
+
 function MarkdownContent({
   text,
   pending,
+  showCaret = true,
   onOpenUrl,
   citations = [],
   decorateResponse = false,
@@ -895,12 +935,16 @@ function MarkdownContent({
     return () => { cancelled = true; };
   }, [cacheKey, decorateResponse, pending, renderGate, text]);
 
+  if (decorateResponse && !pending && text.trim().length === 0) {
+    return null;
+  }
+
   if (!html) {
     if (!decorateResponse) {
       return (
         <span className={`whitespace-pre-wrap break-words text-[length:var(--text-md)] leading-relaxed${className ? ` ${className}` : ""}`}>
           {text}
-          {pending ? "▌" : ""}
+          {showCaret ? <>{pending ? "▌" : ""}</> : ""}
         </span>
       );
     }
@@ -932,15 +976,19 @@ function MarkdownContent({
       {/* This is a separate response status, not a cursor intended to trail the
           final rendered line. Keeping it outside sanitized HTML avoids malformed
           Markdown while making its standalone placement deliberate. */}
-      {pending ? (
-        <span className="cave-response-typing" role="status" aria-label="Familiar is writing">
-          <span className="cave-response-typing-dots" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span>Writing</span>
-        </span>
+      {showCaret ? (
+        <>
+          {pending ? (
+            <span className="cave-response-typing" role="status" aria-label="Familiar is writing">
+              <span className="cave-response-typing-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span>Writing</span>
+            </span>
+          ) : null}
+        </>
       ) : null}
       <InlineCitationPreviews
         citations={citations}
@@ -955,11 +1003,26 @@ function MarkdownContent({
 export function ProgressiveMarkdownBlock({
   text,
   pending,
-}: {
-  text: string;
-  pending?: boolean;
-}) {
-  return <MarkdownContent text={text} pending={pending} />;
+  onOpenUrl,
+  citations,
+  decorateResponse,
+  className,
+  showCaret = true,
+}: MarkdownContentProps) {
+  const assistantContext = useContext(AssistantMarkdownRenderContext);
+  const hasExplicitCitations = citations !== undefined;
+  const renderedText = assistantContext && !hasExplicitCitations
+    ? renderCitationReferences(text, assistantContext.parsedCitations)
+    : text;
+  return (
+    <MarkdownContent text={renderedText} pending={pending}
+      onOpenUrl={onOpenUrl ?? assistantContext?.onOpenUrl}
+      citations={citations ?? assistantContext?.citations}
+      decorateResponse={decorateResponse ?? assistantContext?.decorateResponse}
+      className={className}
+      showCaret={showCaret}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1036,6 +1099,9 @@ export type MessageBubbleProps = {
    *  the FULL text so the Copy/Expand actions are unchanged. Only the LAST
    *  text span streams (progressive markdown); earlier spans render settled. */
   segments?: MessageBubbleSegment[];
+  /** Shared assistant presentation. `content` remains the complete source for
+   * copy, reader, feedback, reply, and settled actions. */
+  assistantBody?: ReactNode;
   /** The turn's tool events, forwarded to the reader's "How this was made"
    *  footer (batches, skills, error count). Assistant role only; absent turns
    *  simply have no footer — see message-reader.tsx. */
@@ -1064,7 +1130,7 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, assistantBody, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [readerOpen, setReaderOpen] = useState(false);
@@ -1102,9 +1168,11 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   // pipeline). Bodies without footnotes pass through unchanged. Mid-stream the
   // definition block hasn't arrived, so this is a no-op until the turn settles.
   const cited = useMemo(() => renderCitedBody(content), [content]);
-  const segmentedCitations = useMemo(
-    () => (segments?.length ? parseCitations(content) : null),
-    [content, segments],
+  const parsedCitations = useMemo(() => parseCitations(content), [content]);
+  const segmentedCitations = segments?.length ? parsedCitations : null;
+  const assistantMarkdownContext = useStableAssistantMarkdownRenderContext(
+    onOpenUrl,
+    parsedCitations,
   );
 
   if (role === "system") {
@@ -1202,7 +1270,11 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         ) : (
           <div className="cave-response-body">
             <div className={isError ? "text-[var(--danger-text)]" : ""}>
-              {segments?.length ? (
+              {assistantBody !== undefined ? (
+                <AssistantMarkdownRenderContext.Provider value={assistantMarkdownContext}>
+                  {assistantBody}
+                </AssistantMarkdownRenderContext.Provider>
+              ) : segments?.length ? (
                 segments.map((seg, i) => {
                   if (seg.kind === "block") {
                     return <div key={seg.key} className="my-2">{seg.node}</div>;

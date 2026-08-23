@@ -27,6 +27,16 @@ export type ToolEvent = {
   textOffset?: number;
 };
 
+export type VerificationKind = "test" | "build" | "typecheck" | "lint";
+
+export type VerifiedResultEvidence = {
+  id: string;
+  kind: VerificationKind;
+  label: string;
+  state: "running" | "passed" | "attention" | "failed";
+  source: "verified-event";
+};
+
 export type ProgressEvent = {
   id: string;
   label: string;

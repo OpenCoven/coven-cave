@@ -48,8 +48,8 @@ assert.match(
 );
 assert.match(
   controlRow,
-  /aria-label="Voice call"[\s\S]*?<ComposerContextMeter[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<EnhanceControl[\s\S]*?aria-label="(?:Send message|Cancel response)"/,
-  "the control row should keep direct Voice, truthful context, Enhance, and then submit controls in order",
+  /className="cave-composer-mode-switch"[\s\S]*?<ComposerContextMeter[\s\S]*?<div className="cave-composer-submit-row">[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Voice call"[\s\S]*?aria-label="Send message"/,
+  "the control row should keep direct access modes, truthful context, Enhance, Voice, and Send in order",
 );
 assert.match(
   edgeActions,
@@ -257,8 +257,8 @@ assert.match(
 // ── Footer action family + circular send ────────────────────────────────────
 assert.match(
   controlRow,
-  /className="cave-composer-footer-action focus-ring"[\s\S]*?<Icon name="ph:phone"/,
-  "the direct Voice call button should keep the compact footer action family",
+  /className="cave-composer-footer-action focus-ring"[\s\S]*?<Icon name="ph:microphone"/,
+  "the direct Voice call button should keep the compact microphone action",
 );
 assert.match(
   css,
@@ -272,13 +272,13 @@ assert.match(
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-footer-action,[\s\S]*?\.cave-chat-linear \.cave-composer-plus \{[\s\S]*?width:\s*var\(--space-6\);[\s\S]*?height:\s*var\(--space-6\);/,
-  "in-chat Call and Add controls should use the compact 24px token",
+  /\.cave-chat-linear \.cave-composer-footer-action,[\s\S]*?\.cave-chat-linear \.cave-composer-plus \{[\s\S]*?width:\s*var\(--space-8\);[\s\S]*?height:\s*var\(--space-8\);/,
+  "in-chat Call and Add controls should use the reference-sized 32px token",
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-send \{[\s\S]*?width:\s*var\(--space-6\);[\s\S]*?height:\s*var\(--space-6\);/,
-  "in-chat Send should use the compact 24px token",
+  /\.cave-chat-linear \.cave-composer-send \{[\s\S]*?width:\s*var\(--space-8\);[\s\S]*?height:\s*var\(--space-8\);/,
+  "in-chat Send should use the reference-sized 32px token",
 );
 assert.match(
   css,

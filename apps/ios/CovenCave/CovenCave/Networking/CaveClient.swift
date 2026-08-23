@@ -39,6 +39,14 @@ struct CaveClient {
         var sessionId: String
     }
 
+    /// `POST /api/chat/conversation` request used to pre-create a server
+    /// conversation for live voice providers that need a session before the
+    /// first spoken turn exists.
+    struct VoiceConversationStartRequest: Codable, Sendable {
+        var familiarId: String
+        var projectRoot: String
+    }
+
     /// A prior conversation turn supplied by provider grants that need local
     /// context to continue the call.
     struct VoiceSessionSeedTurn: Codable, Sendable {
@@ -91,6 +99,19 @@ struct CaveClient {
                 ?? missingKey.map { "Missing \($0)." }
             return detail.map { "\(error): \($0)" } ?? error
         }
+    }
+
+    private struct VoiceConversationStartResponse: Decodable {
+        var ok: Bool
+        var sessionId: String?
+        var error: String?
+        var code: String?
+        var message: String?
+    }
+
+    private struct VoiceConversationDiscardResponse: Decodable {
+        var ok: Bool
+        var deleted: Bool
     }
 
     private var base: URL {
@@ -366,9 +387,12 @@ struct CaveClient {
         return try await familiarAvatarMutation(for: req)
     }
 
-    private static func encodedPathSegment(_ value: String) throws -> String {
+    private static func encodedPathSegment(
+        _ value: String,
+        describing subject: String = "familiar identifier"
+    ) throws -> String {
         guard let encoded = value.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) else {
-            throw CaveError.transport("Could not encode the familiar identifier.")
+            throw CaveError.transport("Could not encode the \(subject).")
         }
         return encoded
     }
@@ -424,6 +448,75 @@ struct CaveClient {
             throw CaveError.transport(decoded.error ?? "Voice session was not granted.")
         }
         return decoded
+    }
+
+    /// Pre-create an empty chat conversation for a voice call that has not yet
+    /// spoken its first turn. The server keeps project authorization
+    /// authoritative; iOS only provides the selected project root.
+    func startVoiceConversation(familiarId: String, projectRoot: String) async throws -> String {
+        let payload = try JSONEncoder().encode(
+            VoiceConversationStartRequest(familiarId: familiarId, projectRoot: projectRoot)
+        )
+        let req = try request("api/chat/conversation", method: "POST", body: payload)
+        let (data, resp) = try await data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+
+        let decoded: VoiceConversationStartResponse
+        do {
+            decoded = try JSONDecoder().decode(VoiceConversationStartResponse.self, from: data)
+        } catch {
+            try Self.check(resp)
+            throw CaveError.decoding(String(describing: error))
+        }
+
+        guard (200..<300).contains(status) else {
+            throw CaveError.serverResponse(
+                status: status,
+                code: decoded.code ?? decoded.error,
+                message: decoded.message ?? decoded.error
+            )
+        }
+
+        guard decoded.ok,
+              let sessionId = decoded.sessionId?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !sessionId.isEmpty
+        else {
+            throw CaveError.serverResponse(
+                status: status,
+                code: decoded.code ?? decoded.error,
+                message: decoded.message ?? decoded.error ?? "Voice session was not created."
+            )
+        }
+
+        return sessionId
+    }
+
+    /// `DELETE /api/chat/conversation/{id}?ifEmpty=1` — discard the
+    /// auto-created voice conversation only when it stayed empty. Safe to
+    /// retry: the route keeps the emptiness check authoritative server-side.
+    func discardVoiceConversationIfEmpty(sessionId: String) async throws -> Bool {
+        let escaped = try Self.encodedPathSegment(sessionId)
+        let req = try request("api/chat/conversation/\(escaped)?ifEmpty=1", method: "DELETE")
+        let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+
+        guard (200..<300).contains(status) else {
+            throw Self.serverResponseError(statusCode: status, data: data)
+        }
+
+        let decoded: VoiceConversationDiscardResponse
+        do {
+            decoded = try JSONDecoder().decode(VoiceConversationDiscardResponse.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+
+        guard decoded.ok else {
+            throw CaveError.transport("Voice conversation discard was not accepted.")
+        }
+
+        return decoded.deleted
     }
 
     // MARK: - Marketplace
@@ -613,6 +706,14 @@ struct CaveClient {
         return try await patchTask(cardId: cardId, payload: payload)
     }
 
+    /// PATCH a task's owning project. The server derives the canonical cwd from
+    /// the project id, so callers only send the durable project identity.
+    @discardableResult
+    func updateTaskProject(cardId: String, projectId: String) async throws -> BoardCard {
+        let payload = try JSONSerialization.data(withJSONObject: ["projectId": projectId])
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
     /// Server-side flags a session patch can carry.
     ///
     /// The contract is that an unset field is ABSENT from the body:
@@ -662,10 +763,50 @@ struct CaveClient {
     private func patchTask(cardId: String, payload: Data) async throws -> BoardCard {
         let req = try request("api/board/\(cardId)", method: "PATCH", body: payload)
         let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        if let http = resp as? HTTPURLResponse,
+           !(200..<300).contains(http.statusCode) {
+            throw Self.serverResponseError(statusCode: http.statusCode, data: data)
+        }
         try Self.check(resp)
         let decoded = try JSONDecoder().decode(BoardPatchResponse.self, from: data)
         if let card = decoded.card { return card }
         throw CaveError.transport(decoded.error ?? "Task update did not return a card.")
+    }
+
+    /// `DELETE /api/chat/conversation/{sessionId}/turns/{turnId}` — remove one
+    /// message from a chat, durably.
+    ///
+    /// A per-turn route rather than a re-PUT of the transcript: a client that
+    /// deletes by writing back the list it happens to be holding erases any
+    /// reply that streamed in while the user was deciding. Naming the single
+    /// turn is what lets two clients delete without losing each other's turns.
+    ///
+    /// Idempotent, so it retries like the other DELETEs here: a turn that is
+    /// already gone answers 200 with `deleted: false`, and a conversation the
+    /// server does not have answers 404 — neither is a failure to report, both
+    /// mean the message is not there any more. Returns whether this call was
+    /// the one that removed it (a retry of a call that already landed answers
+    /// `deleted: false`, so a false return is not evidence of failure).
+    @discardableResult
+    func deleteConversationTurn(sessionId: String, turnId: String) async throws -> Bool {
+        let session = try Self.encodedPathSegment(sessionId, describing: "chat identifier")
+        let turn = try Self.encodedPathSegment(turnId, describing: "message identifier")
+        let req = try request("api/chat/conversation/\(session)/turns/\(turn)", method: "DELETE")
+        let (data, resp) = try await data(for: req, retryingIdempotentMutation: true)
+        try Self.checkDelete(resp)
+        struct TurnDeleteResponse: Decodable { var ok: Bool?; var deleted: Bool? }
+        let decoded = try? JSONDecoder().decode(TurnDeleteResponse.self, from: data)
+        // A 404 from THIS route means the chat is not there, so neither is the
+        // message. A 404 from no route at all — a desktop too old to have
+        // shipped it — means the delete never happened, and swallowing that
+        // one would hand back the silent local-only delete this route exists
+        // to end. The route always answers in an `ok` envelope; an unrouted
+        // 404 answers with a page. Said in words rather than as a status code,
+        // because this one is read back to the user in a chat bubble.
+        if (resp as? HTTPURLResponse)?.statusCode == 404, decoded?.ok == nil {
+            throw CaveError.transport("This Cave is too old to delete a single message.")
+        }
+        return decoded?.deleted ?? false
     }
 
     func conversation(sessionId: String) async throws -> Conversation? {
@@ -827,17 +968,39 @@ struct CaveClient {
         return body
     }
 
+    /// Raised only when a caller-owned authority lease is revoked before the
+    /// POST is constructed. The caller can therefore roll its durable attempted
+    /// marker back without risking a duplicate server turn.
+    struct SendPreflightRevoked: Error {}
+
     /// Open the SSE stream for a chat send. Yields decoded frames — keep the
     /// last applied frame's `id` to resume mid-turn via `resumeStream`.
+    ///
+    /// Request creation is deferred into this stream task, so a model-layer
+    /// check before calling `sendStream` is not sufficient. Run the supplied
+    /// authority preflight on MainActor in the same uninterrupted actor turn as
+    /// request construction and the call that starts URLSession. Configure and
+    /// disconnect mutate their epoch on that actor, closing the deferred-task
+    /// window without cancelling requests that already began legitimately.
     func sendStream(_ body: SendBody) -> AsyncThrowingStream<StreamFrame, Error> {
+        sendStream(body, preflight: { true }, onRequestStarted: {})
+    }
+
+    func sendStream(
+        _ body: SendBody,
+        preflight: @escaping @MainActor () -> Bool,
+        onRequestStarted: @escaping @MainActor () -> Void
+    ) -> AsyncThrowingStream<StreamFrame, Error> {
         AsyncThrowingStream { continuation in
-            let task = Task {
+            let task = Task { @MainActor in
                 do {
+                    guard preflight() else { throw SendPreflightRevoked() }
                     let payload = try JSONEncoder().encode(body)
                     var req = try request("api/chat/send", method: "POST", body: payload)
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
+                    onRequestStarted()
                     let (bytes, resp) = try await Self.streamSession.bytes(for: req)
                     if let http = resp as? HTTPURLResponse,
                        !(200..<300).contains(http.statusCode) {
@@ -1036,6 +1199,16 @@ struct CaveClient {
         var deletedIds: [String]
 
         enum CodingKeys: String, CodingKey { case ok, updated, deletedIds }
+
+        init(
+            ok: Bool = true,
+            updated: [Reminder] = [],
+            deletedIds: [String] = []
+        ) {
+            self.ok = ok
+            self.updated = updated
+            self.deletedIds = deletedIds
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)

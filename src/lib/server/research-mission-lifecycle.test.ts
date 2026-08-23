@@ -38,6 +38,17 @@ test("createMissionRecord registers the primary and all standard artifact refs",
   }
 });
 
+test("createMissionRecord records whether the mission title was explicit or generated", () => {
+  const explicit = createMissionRecord(INPUT, "mission-explicit", new Date("2026-07-24T00:00:00.000Z"));
+  const generated = createMissionRecord(
+    { ...INPUT, title: undefined },
+    "mission-generated",
+    new Date("2026-07-24T00:00:00.000Z"),
+  );
+  assert.equal(explicit.titleSource, "explicit");
+  assert.equal(generated.titleSource, "generated");
+});
+
 test("applyStartResult keeps private process-owner provenance out of mission state", () => {
   const mission = createMissionRecord(INPUT, "mission-1", new Date("2026-07-24T00:00:00.000Z"));
   const sessionAuthority = {

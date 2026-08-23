@@ -176,6 +176,26 @@ to describe current behavior. For deeper design context, start with
 [`docs/coven-design-language.md`](docs/coven-design-language.md), and
 [`docs/multi-session-coordination.md`](docs/multi-session-coordination.md).
 
+For interface direction explored outside this repository,
+[**OpenCoven UI**](https://ui.opencoven.ai) is a standalone, dependency-free
+browser of chat-surface specimens — composer, messages, context, and actions.
+It is an exploration workspace
+([`OpenCoven/ui`](https://github.com/OpenCoven/ui)), not a component library and
+not the canonical source for anything in `src/components/`; shipped Cave code
+and `docs/coven-design-language.md` remain authoritative.
+
+### Local client access
+
+Native OpenCoven clients can discover the owner-local Cave listener and request
+scoped access through the Client v1 pairing API. Pairing always requires a human
+decision in **Settings → Client access**, where pending requests can be approved
+or denied and issued credentials can be revoked. Cave stores bearer hashes only;
+the paired native client owns secure bearer storage.
+
+See [`docs/api/client-v1.md`](docs/api/client-v1.md) for the discovery and API
+contract and [`docs/client-v1-settings.md`](docs/client-v1-settings.md) for the
+operator workflow and security boundary.
+
 ---
 
 ## Development
@@ -338,8 +358,9 @@ lifecycle metadata required for safe retirement. Follow the post-merge
 retirement procedure in [`AGENTS.md`](AGENTS.md) instead of deleting a branch or
 worktree ad hoc.
 
-- **Releases, TestFlight uploads, and updater validation start from clean
-  `main`.**
+- **Releases, TestFlight uploads, and updater validation start from a successful
+  signed release candidate on clean `main`, followed by a signed final tag on
+  that exact commit.**
 - See [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) for the workflow
   notes coding agents follow, and
   [`docs/workflows/branching.md`](docs/workflows/branching.md) for branch/release

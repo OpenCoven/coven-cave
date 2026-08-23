@@ -9,6 +9,9 @@ const overlayStyles = readFileSync(new URL("../styles/globals/surface-chat-overl
 const foundations = readFileSync(new URL("../styles/globals/foundations.css", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 const quickHook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+const thread = readFileSync(new URL("./quick-chat-thread.tsx", import.meta.url), "utf8");
+const response = readFileSync(new URL("./streaming-turn-response.tsx", import.meta.url), "utf8");
+const controls = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
 
 // ── Readable measure ─────────────────────────────────────────────────────────
 assert.match(
@@ -42,6 +45,33 @@ assert.doesNotMatch(
   quickHook,
   /reasoningEffort:|responseSpeed:/,
   "Quick Chat does not send global Thinking or Speed defaults without selected-model metadata",
+);
+
+// ── Shared calm response composition ─────────────────────────────────────────
+assert.match(
+  thread,
+  /familiarName=\{familiar\?\.display_name \?\? "Unknown familiar"\}/,
+  "Live status names the selected familiar and only falls back when the roster is unavailable",
+);
+assert.match(
+  thread,
+  /onStop=\{streaming \? onStop : undefined\}[\s\S]*onRetry=\{message\.error && isLastAssistant \? onRegenerate : undefined\}[\s\S]*canContinue=\{false\}/,
+  "Quick Chat exposes shared Stop and Retry without claiming unsupported continuation",
+);
+assert.doesNotMatch(
+  tray,
+  /useAnnouncer|announce\("Response stopped\."/,
+  "Quick Chat does not duplicate the rendered interrupted-state announcement",
+);
+assert.match(
+  response,
+  /role=\{announceLifecycle \? "status" : undefined\}[\s\S]{0,300}<span>Response stopped<\/span>/,
+  "The latest rendered interrupted state can own the explicit accessible Stop announcement",
+);
+assert.doesNotMatch(
+  controls,
+  /onCancel: \(\) => void/,
+  "The composer no longer owns the response cancellation control",
 );
 
 // ── Disabled Send stays visible ──────────────────────────────────────────────

@@ -21,6 +21,7 @@ struct CovenCaveApp: App {
         let app = AppModel()
         let notificationDelegate = CaveNotificationDelegate()
         notificationDelegate.onOpen = { app.handleDeepLink($0) }
+        ConnectionBackgroundRefresh.shared.register(app: app)
         // Register before SwiftUI mounts a view or starts a task. A cold-launch
         // notification response can otherwise arrive before any delegate exists.
         UNUserNotificationCenter.current().delegate = notificationDelegate
@@ -73,15 +74,17 @@ struct CovenCaveApp: App {
                     guard !app.isConnectingPreview else { return }
                     #endif
                     app.startConnectionSupervisor()
-                    if app.connection != nil {
-                        await app.connectWithRetry()
+                    // A cold BGTask launch can mount the scene already
+                    // inactive/background. Never start the full foreground
+                    // discovery loop until the scene actually owns foreground.
+                    await app.setConnectionSupervisorActive(scenePhase == .active)
+                    if scenePhase == .background {
+                        ConnectionBackgroundRefresh.shared.schedule()
                     }
                 }
-                // Returning to the foreground after the desktop was unreachable
-                // (locked the phone, desktop blipped/restarted) should recover on
-                // its own — retry unless we're already connected or mid-check.
-                // A state that *says* connected can be stale after a suspension,
-                // so it gets one cheap validation probe instead of blind trust.
+                // Scene lifecycle feeds the one connection supervisor instead
+                // of launching its own retry task. When iOS grants a background
+                // refresh, it performs one ping/token roll and never a retry loop.
                 .onChange(of: scenePhase) { _, phase in
                     // Leaving the foreground: flush any debounced thread
                     // persistence and WAIT for it, holding a background-task
@@ -110,12 +113,22 @@ struct CovenCaveApp: App {
                             await app.flushThreadsAndWait()
                         }
                     }
-                    guard phase == .active, app.connection != nil else { return }
-                    if app.connectionState != .connected,
-                       app.connectionState != .checking {
-                        Task { await app.connectWithRetry() }
-                    } else if app.connectionState == .connected {
-                        Task { await app.validateConnectionOnForeground() }
+                    #if DEBUG
+                    guard !app.isConnectingPreview else { return }
+                    #endif
+                    switch phase {
+                    case .active:
+                        ConnectionBackgroundRefresh.shared.cancelRunningForForeground()
+                        Task { await app.setConnectionSupervisorActive(true) }
+                    case .background:
+                        Task {
+                            await app.setConnectionSupervisorActive(false)
+                            ConnectionBackgroundRefresh.shared.schedule()
+                        }
+                    case .inactive:
+                        break
+                    @unknown default:
+                        break
                     }
                 }
                 // `.inactive` immediately raises the privacy shield (see

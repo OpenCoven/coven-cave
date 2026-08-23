@@ -5,8 +5,8 @@
  *
  * The same filtered rows every time: the table edits them in place, the gantt
  * shows when each can actually start, and the board shows where each one sits.
- * Every edit is a real write to the card behind the row — except the dependency
- * column, which writes the room's own chart.
+ * Every edit is a real write to the card behind the row — the dependency column
+ * included, which writes canonical dependencies on the card.
  */
 
 import type { CSSProperties } from "react";
@@ -14,6 +14,7 @@ import { Icon } from "@/lib/icon";
 import { ChartDot, ChartSelect, StateTag } from "./chart-room-parts";
 import {
   CHART_STAGES,
+  ancestorsOf,
   ganttRows,
   stageName,
   type ChartSortKey,
@@ -49,7 +50,8 @@ export function ChartRoomTable({
   onProject,
   onStage,
   onOwner,
-  onNeeds,
+  onLink,
+  onUnlink,
   onRemove,
   onToggleColumn,
 }: {
@@ -69,7 +71,8 @@ export function ChartRoomTable({
   onProject: (id: string, projectId: string) => void;
   onStage: (id: string, stage: ChartStageId) => void;
   onOwner: (id: string, familiarId: string) => void;
-  onNeeds: (id: string, needs: string | null) => void;
+  onLink: (id: string, parentId: string) => void;
+  onUnlink: (id: string, parentId: string) => void;
   onRemove: (id: string) => void;
   onToggleColumn: (stage: ChartStageId) => void;
 }) {
@@ -158,18 +161,45 @@ export function ChartRoomTable({
                 <StateTag state={step.state} />
               </td>
               <td>
-                <ChartSelect
-                  value={step.needs ?? ""}
-                  accent={step.needs != null}
-                  label={`What ${step.title} waits on`}
-                  onChange={(next) => onNeeds(step.id, next === "" ? null : next)}
-                  options={[
-                    { value: "", label: "— nothing" },
-                    ...allSteps
-                      .filter((other) => other.id !== step.id)
-                      .map((other) => ({ value: other.id, label: other.title })),
-                  ]}
-                />
+                <span className="cr-node__top">
+                  {step.needs.map((parentId) => {
+                    const upstream = allSteps.find((other) => other.id === parentId);
+                    return (
+                      <span key={parentId} className="cr-chip">
+                        {upstream?.title ?? parentId}
+                        <button
+                          type="button"
+                          className="cr-icon-btn cr-icon-btn--danger focus-ring"
+                          aria-label={`Unlink ${upstream?.title ?? parentId} from ${step.title}`}
+                          onClick={() => onUnlink(step.id, parentId)}
+                        >
+                          <Icon name="ph:x" width={9} height={9} aria-hidden />
+                        </button>
+                      </span>
+                    );
+                  })}
+                  <ChartSelect
+                    value=""
+                    accent={step.needs.length > 0}
+                    label={`Add a dependency for ${step.title}`}
+                    onChange={(next) => {
+                      if (next !== "") onLink(step.id, next);
+                    }}
+                    options={[
+                      { value: "", label: step.needs.length > 0 ? "+ add" : "— nothing" },
+                      ...allSteps
+                        .filter(
+                          (other) =>
+                            other.id !== step.id &&
+                            !step.needs.includes(other.id) &&
+                            // A step whose ancestors include this one is downstream
+                            // of it — linking it upstream would close a loop.
+                            !ancestorsOf(allSteps, other.id).has(step.id),
+                        )
+                        .map((other) => ({ value: other.id, label: other.title })),
+                    ]}
+                  />
+                </span>
               </td>
               <td>
                 <ChartSelect
@@ -294,7 +324,8 @@ export function ChartRoomTable({
                 <span className="cr-mono">empty</span>
               ) : (
                 cards.map((step) => {
-                  const upstream = step.needs ? allSteps.find((other) => other.id === step.needs) : undefined;
+                  const upstream =
+                    step.needs.length > 0 ? allSteps.find((other) => other.id === step.needs[0]) : undefined;
                   return (
                     <button
                       key={step.id}
@@ -316,7 +347,10 @@ export function ChartRoomTable({
                       {upstream ? (
                         <span className="cr-node__need">
                           <Icon name="ph:arrow-bend-left-up" width={9} height={9} aria-hidden />
-                          <span>waits on {upstream.title}</span>
+                          <span>
+                            waits on {upstream.title}
+                            {step.needs.length > 1 ? ` +${step.needs.length - 1}` : ""}
+                          </span>
                         </span>
                       ) : null}
                     </button>

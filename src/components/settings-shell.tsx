@@ -43,6 +43,7 @@ import { ProfileSection } from "./settings-profile";
 import { SettingsOverview } from "./settings-overview";
 import { AboutSection } from "./settings-about";
 import { PhoneSection } from "./settings-phone";
+import { SettingsClientAccess } from "./settings-client-access";
 import {
   SECTIONS,
   SETTINGS_INDEX,
@@ -80,6 +81,10 @@ import {
   formatHostWorkspaceText,
   parseHostWorkspaceText,
 } from "./settings-multihost";
+import {
+  showSettingsSavedAfterPreferencesFlush,
+  showSettingsSavedToast,
+} from "@/lib/settings-save-feedback";
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
@@ -96,6 +101,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   } = useSurfaceHistory<Section>({ id: "settings:section", initial: "general" });
   const setSection = showSection;
   const [suggestedHubUrl, setSuggestedHubUrl] = useState<string | null>(null);
+  const [hashHydrated, setHashHydrated] = useState(embedded);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
   // render that section.
@@ -165,20 +171,16 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   // is still the "general" default while the URL already says `#about`, so an
   // ungated write rewrites the deep link to `#general` and the reader below
   // then honours the value this effect just clobbered.
-  const hashHydratedRef = useRef(false);
   useEffect(() => {
-    if (embedded || typeof window === "undefined" || !hashHydratedRef.current || pickerView) return;
+    if (embedded || typeof window === "undefined" || !hashHydrated || pickerView) return;
     if (window.location.hash === `#${section}`) return;
     window.history.replaceState(null, "", `#${section}`);
-  }, [section, pickerView]);
+  }, [embedded, hashHydrated, pickerView, section]);
 
   // Support hash-based deep-linking. Read it after hydration so SSR and the
   // first client render both start on General.
   useEffect(() => {
-    if (embedded) {
-      hashHydratedRef.current = true;
-      return;
-    }
+    if (embedded) return;
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
@@ -192,7 +194,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
       setPickerView(true);
     };
     applyHashSection();
-    hashHydratedRef.current = true;
+    setHashHydrated(true);
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
   }, [embedded]);
@@ -350,6 +352,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
             />
           )}
           {section === "mobile"   && <PhoneSection onUseAsHub={(url) => { setSuggestedHubUrl(url); openSection("daemon"); }} />}
+          {section === "client-access" && <SettingsClientAccess />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
         </main>
@@ -432,7 +435,10 @@ function CelebrationsToggle() {
         role="switch"
         aria-checked={celebrationsEnabled}
         aria-label="Celebrations"
-        onClick={() => writeCelebrationsEnabled(!celebrationsEnabled)}
+        onClick={() => {
+          writeCelebrationsEnabled(!celebrationsEnabled);
+          void showSettingsSavedAfterPreferencesFlush();
+        }}
         className={`settings-switch focus-ring${celebrationsEnabled ? " is-on" : ""}`}
       >
         <span className="settings-switch__knob" aria-hidden />
@@ -454,6 +460,7 @@ function StopPhraseField() {
   const persist = (value: string, announcement: string) => {
     writeStopPhrase(value);
     announce(announcement);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const addDraft = () => {
@@ -771,6 +778,7 @@ function ScheduledSyncSettings() {
       setOverview(json as BackupSyncOverview);
       window.dispatchEvent(new Event("cave:backup-sync-refresh"));
       announce(announcement);
+      showSettingsSavedToast();
     } catch (err) {
       const text = err instanceof Error ? err.message : "sync update failed";
       setMessage(text);
@@ -1030,6 +1038,7 @@ function WorkspacePathField() {
       }
       setPath(body.workspacePath);
       announce("Workspace path saved.");
+      showSettingsSavedToast("Workspace path saved.");
     } catch {
       setFieldError("Couldn't save the workspace path.");
       announce("Couldn't save the workspace path.", "assertive");
@@ -1205,6 +1214,7 @@ function OmnigentSettingsGroup() {
         throw new Error(json?.error || `save failed (${res.status})`);
       }
       announce("Omnigent settings saved.");
+      showSettingsSavedToast("Omnigent settings saved.");
       const st = await fetch("/api/omnigent/status", { cache: "no-store" }).then((r) => r.json());
       if (st?.online) {
         const mode = st.authMode || (st.hasToken ? "jwt" : "none");
@@ -1237,6 +1247,7 @@ function OmnigentSettingsGroup() {
       }
       setEnabled(next);
       announce(next ? "Omnigent fleet enabled." : "Omnigent fleet disabled.");
+      showSettingsSavedToast();
       // Disabling must hide already-mounted Fleet controls immediately. Enabling
       // publishes the refreshed status below only after the server confirms the
       // token/auth gate, so dependent surfaces continue to fail closed.
@@ -2106,11 +2117,13 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     setActiveTheme(id);
     setCustomData(null);
     applyPreset(id);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const handleSetCornerRadius = (next: CornerRadius) => {
     setCornerRadius(next);
     applyCornerRadius(next);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   const handleSetMode = (next: ModePref) => {
@@ -2120,6 +2133,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     if (activeTheme === "custom" && customData) {
       applyCustomVars(customData.cssVars, resolveMode(next));
     }
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   // Two-step: an imported/tuned theme is unrecoverable once cleared (recovery
@@ -2140,6 +2154,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     clearCustomTheme();
     setActiveTheme("coven");
     setCustomData(null);
+    void showSettingsSavedAfterPreferencesFlush();
   };
 
   function normalizeTweakcnUrl(raw: string): string | null {
@@ -2213,6 +2228,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       setActiveTheme("custom");
       setImportUrl("");
       announce(`Imported theme "${data.name}".`);
+      showSettingsSavedToast("Theme imported.");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Import failed.";
       setImportError(msg);
@@ -2301,7 +2317,10 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
         <ThemeTokenOverrides
           mode={resolveMode(mode)}
           reloadKey={`${activeTheme}:${mode}:${customData ? JSON.stringify(customData.cssVars) : "preset"}`}
-          onChange={reloadCustomData}
+          onChange={() => {
+            reloadCustomData();
+            void showSettingsSavedAfterPreferencesFlush();
+          }}
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
           <Button

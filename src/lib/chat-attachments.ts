@@ -4,6 +4,9 @@ export const MAX_ATTACHMENT_TEXT_CHARS = 64_000;
 /** Hard cap on a decoded image payload, enforced on capture (client) and on
  * normalize (server) — the server never trusts the client-side check. */
 export const MAX_ATTACHMENT_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Hard cap for documents, source files, and archives handed to a local
+ * file-reading harness. */
+export const MAX_ATTACHMENT_FILE_BYTES = 20 * 1024 * 1024;
 /** Hard cap on a decoded audio/video payload. Larger than the image cap
  * because even a short mp4 clears 5 MB; enforced on capture, on normalize,
  * and again by the attachment store on both save and read. */
@@ -20,6 +23,8 @@ const AUDIO_METADATA_ONLY_NOTE =
   "(audio attached as metadata only — sound is not decoded yet)";
 const FILE_METADATA_ONLY_NOTE =
   "(file attached as metadata only — text content was not available)";
+const FILE_ATTACHMENTS_UNSUPPORTED_NOTE =
+  "(file attachments are not supported by this harness)";
 
 /**
  * The playable-media allowlist: MIME types the chat can round-trip through the
@@ -160,6 +165,9 @@ const MEDIA_DATA_URL_HEADER_RE = /^data:((?:audio|video)\/[a-z0-9.+-]{1,60});bas
 
 const MAX_MEDIA_DATA_URL_CHARS =
   Math.ceil(MAX_ATTACHMENT_MEDIA_BYTES / 3) * 4 + 128;
+const FILE_DATA_URL_HEADER_RE = /^data:([a-z0-9.+-]{1,80}\/[a-z0-9.+-]{1,80});base64$/i;
+const MAX_FILE_DATA_URL_CHARS =
+  Math.ceil(MAX_ATTACHMENT_FILE_BYTES / 3) * 4 + 192;
 
 /**
  * Is this the base64 body of a data URL?
@@ -243,6 +251,27 @@ export function cleanMediaDataUrl(
   return { dataUrl, mimeType };
 }
 
+/** Validate a non-image, non-media file payload without letting those types
+ * bypass their tighter dedicated limits. */
+export function cleanFileDataUrl(
+  dataUrl: unknown,
+): { dataUrl: string; mimeType: string } | null {
+  if (typeof dataUrl !== "string" || dataUrl.length > MAX_FILE_DATA_URL_CHARS) return null;
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0 || comma > MAX_DATA_URL_HEADER_CHARS) return null;
+  const header = FILE_DATA_URL_HEADER_RE.exec(dataUrl.slice(0, comma));
+  if (!header) return null;
+  const mimeType = header[1].toLowerCase();
+  if (mimeType.startsWith("image/") || mimeType.startsWith("audio/") || mimeType.startsWith("video/")) {
+    return null;
+  }
+  const body = dataUrl.slice(comma + 1);
+  if (!isBase64Body(body)) return null;
+  const decodedBytes = base64DecodedBytes(body);
+  if (decodedBytes === 0 || decodedBytes > MAX_ATTACHMENT_FILE_BYTES) return null;
+  return { dataUrl, mimeType };
+}
+
 function isImageAttachment(attachment: ChatAttachment): boolean {
   return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("image/"));
 }
@@ -279,6 +308,7 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
       // metadata-only.
       const image = cleanImageDataUrl(raw.dataUrl);
       const media = image ? null : cleanMediaDataUrl(raw.dataUrl);
+      const file = image || media ? null : cleanFileDataUrl(raw.dataUrl);
       const mimeType = cleanType(raw.mimeType);
       const storedId = cleanStoredId(raw.storedId);
       return {
@@ -290,6 +320,7 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
         ...(rawText != null && rawText.length > MAX_ATTACHMENT_TEXT_CHARS ? { truncated: true } : {}),
         ...(image ? { mimeType: image.mimeType, dataUrl: image.dataUrl } : {}),
         ...(media ? { mimeType: media.mimeType, dataUrl: media.dataUrl } : {}),
+        ...(file ? { mimeType: file.mimeType, dataUrl: file.dataUrl } : {}),
         ...(storedId ? { storedId } : {}),
       };
     });
@@ -299,10 +330,9 @@ export function stripPreviewOnlyAttachmentFields(attachments: ChatAttachment[]):
   return attachments.map(({ dataUrl: _dataUrl, mimeType: _mimeType, ...attachment }) => attachment);
 }
 
-/** Send-body variant of stripPreviewOnlyAttachmentFields: image and playable
- * media attachments keep their bounded `dataUrl`/`mimeType` (the only channel
- * that gets the bytes to the server for persistence); everything else is
- * stripped to metadata. */
+/** Send-body variant of stripPreviewOnlyAttachmentFields: validated bounded
+ * payloads keep their `dataUrl`/`mimeType`, which is the only channel that gets
+ * file bytes to the server for runtime staging. */
 export function stripPreviewOnlyAttachmentFieldsKeepingImages(
   attachments: ChatAttachment[],
 ): ChatAttachment[] {
@@ -311,7 +341,9 @@ export function stripPreviewOnlyAttachmentFieldsKeepingImages(
     const image = mimeType?.startsWith("image/") ? cleanImageDataUrl(dataUrl) : null;
     if (image) return { ...rest, mimeType: image.mimeType, dataUrl: image.dataUrl };
     const media = cleanMediaDataUrl(dataUrl);
-    return media ? { ...rest, mimeType: media.mimeType, dataUrl: media.dataUrl } : rest;
+    if (media) return { ...rest, mimeType: media.mimeType, dataUrl: media.dataUrl };
+    const file = cleanFileDataUrl(dataUrl);
+    return file ? { ...rest, mimeType: file.mimeType, dataUrl: file.dataUrl } : rest;
   });
 }
 
@@ -335,6 +367,11 @@ export type AttachmentPromptOptions = {
   /** Absolute path per attachment index where the server saved the image
    * payload so a file-reading harness can open it. */
   imageFilePaths?: ReadonlyMap<number, string>;
+  /** Absolute path per attachment index where the server staged any validated
+   * local file payload. This supersedes inline/truncated text when present. */
+  attachmentFilePaths?: ReadonlyMap<number, string>;
+  /** Whether this harness can read Cave-local staged files. */
+  filesSupported?: boolean;
   /** When false, image entries render an explicit unsupported notice (e.g. a
    * bridge harness with no access to this machine's filesystem). */
   imagesSupported?: boolean;
@@ -356,7 +393,10 @@ export function buildPromptWithAttachments(
   const header = text || `Review the attached file${normalized.length === 1 ? "" : "s"}.`;
   const parts = normalized.map((attachment, index) => {
     let body: string;
-    if (attachment.text) {
+    const savedPath = options.attachmentFilePaths?.get(index) ?? options.imageFilePaths?.get(index);
+    if (savedPath) {
+      body = `${isImageAttachment(attachment) ? "Image" : "File"} saved to ${savedPath} — open it with the Read tool to view.`;
+    } else if (attachment.text) {
       body = [
         "```text",
         attachment.text,
@@ -364,7 +404,6 @@ export function buildPromptWithAttachments(
         attachment.truncated ? "(content truncated)" : "",
       ].filter(Boolean).join("\n");
     } else if (isImageAttachment(attachment)) {
-      const savedPath = options.imageFilePaths?.get(index);
       if (options.imagesSupported === false) {
         body = IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE;
       } else if (savedPath) {
@@ -378,6 +417,8 @@ export function buildPromptWithAttachments(
       body = VIDEO_METADATA_ONLY_NOTE;
     } else if (isAudioAttachment(attachment)) {
       body = AUDIO_METADATA_ONLY_NOTE;
+    } else if (attachment.dataUrl && options.filesSupported === false) {
+      body = FILE_ATTACHMENTS_UNSUPPORTED_NOTE;
     } else {
       body = FILE_METADATA_ONLY_NOTE;
     }
@@ -401,11 +442,20 @@ export function hasDraggedFiles(types: DataTransfer["types"]): boolean {
   return Array.from(types).includes("Files");
 }
 
-/** Files we inline as text (captured into `.text`) vs. keep as metadata/image. */
+/** Files we also inline as text alongside their bounded file payload. */
 export function isTextLike(file: File): boolean {
   if (file.type.startsWith("text/")) return true;
   if (/\/(json|xml|yaml|toml|javascript|typescript|x-sh|csv)$/i.test(file.type)) return true;
   return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
+}
+
+function attachmentMimeType(file: File): string | undefined {
+  const mimeType = file.type.toLowerCase();
+  // Browsers commonly label TypeScript as MPEG-2 transport stream media.
+  // Canonicalize only the .ts filename case so source files stay on the
+  // bounded generic-file path instead of being discarded as unsupported video.
+  if (mimeType === "video/mp2t" && /\.ts$/i.test(file.name)) return "text/typescript";
+  return mimeType || undefined;
 }
 
 /** Phosphor glyph for an attachment chip, by mime/type. */
@@ -420,37 +470,52 @@ export function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "ty
   return "ph:paperclip";
 }
 
-/** Convert a picked File into a ComposerAttachment: inline text bodies, embed
- *  small images and playable media as data URLs, keep everything else as
- *  metadata (truncated). */
+/** Convert a picked File into a ComposerAttachment: inline a bounded text
+ * preview and retain bounded file bytes for local harness materialization. */
 export async function fileToAttachment(file: File): Promise<ComposerAttachment> {
+  const canonicalMimeType = attachmentMimeType(file);
   const attachment: ComposerAttachment = {
     id: crypto.randomUUID(),
     name: file.name,
-    type: file.type || undefined,
-    mimeType: file.type || undefined,
+    type: canonicalMimeType,
+    mimeType: canonicalMimeType,
     size: file.size,
   };
-  const mediaMime = MEDIA_EXT_BY_MIME[file.type.toLowerCase()] ? file.type.toLowerCase() : null;
+  const mediaMime = canonicalMimeType && MEDIA_EXT_BY_MIME[canonicalMimeType]
+    ? canonicalMimeType
+    : null;
+  const readDataUrl = async () => {
+    await new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          const comma = reader.result.indexOf(",");
+          attachment.dataUrl = canonicalMimeType && comma >= 0
+            ? `data:${canonicalMimeType};base64,${reader.result.slice(comma + 1)}`
+            : reader.result;
+        }
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+  };
   if (isTextLike(file)) {
     const text = await file.slice(0, MAX_ATTACHMENT_TEXT_CHARS).text();
     attachment.text = text;
     if (file.size > new Blob([text]).size) attachment.truncated = true;
+    if (file.size <= MAX_ATTACHMENT_FILE_BYTES) await readDataUrl();
   } else if (file.type.startsWith("image/") || mediaMime) {
     const cap = mediaMime ? MAX_ATTACHMENT_MEDIA_BYTES : MAX_ATTACHMENT_IMAGE_BYTES;
     if (file.size > cap) {
       attachment.truncated = true;
       return attachment;
     }
-    await new Promise<void>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") attachment.dataUrl = reader.result;
-        resolve();
-      };
-      reader.onerror = () => resolve();
-      reader.readAsDataURL(file);
-    });
+    await readDataUrl();
+  } else if (file.size <= MAX_ATTACHMENT_FILE_BYTES) {
+    await readDataUrl();
+  } else {
+    attachment.truncated = true;
   }
   return attachment;
 }

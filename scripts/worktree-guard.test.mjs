@@ -12,6 +12,14 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
+import {
+  STRICT_GIT_LOCAL_TIMEOUT_MS,
+  STRICT_GIT_NETWORK_TIMEOUT_MS,
+  STRICT_RETENTION_TIMEOUT_MS,
+  createStrictRetentionDeadline,
+  strictGitTimeoutMs,
+  strictTimeoutWithinDeadline,
+} from "./worktree-guard-timeouts.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "scripts", "worktree-guard.mjs");
@@ -42,6 +50,44 @@ const STRICT_GIT_ENV_KEYS = [
   "GIT_NOGLOB_PATHSPECS",
   "GIT_ICASE_PATHSPECS",
 ];
+
+await test("strict Git network probes have release-safe bounded timeouts", () => {
+  assert.equal(STRICT_GIT_LOCAL_TIMEOUT_MS, 10_000);
+  assert.equal(STRICT_GIT_NETWORK_TIMEOUT_MS, 60_000);
+  assert.equal(STRICT_RETENTION_TIMEOUT_MS, 60_000);
+  assert.equal(strictGitTimeoutMs(["status", "--porcelain"]), STRICT_GIT_LOCAL_TIMEOUT_MS);
+  assert.equal(
+    strictGitTimeoutMs(["-C", "/tmp/example", "fetch", "--quiet", "origin"]),
+    STRICT_GIT_NETWORK_TIMEOUT_MS,
+  );
+  assert.equal(
+    strictGitTimeoutMs(["-C", "/tmp/example", "ls-remote", "origin", "HEAD"]),
+    STRICT_GIT_NETWORK_TIMEOUT_MS,
+  );
+  assert.equal(
+    strictGitTimeoutMs(["-c", "core.fileMode=true", "-C", "/tmp/example", "fetch", "origin"]),
+    STRICT_GIT_NETWORK_TIMEOUT_MS,
+  );
+  assert.equal(
+    strictGitTimeoutMs(["-c", "status.showUntrackedFiles=all", "status", "--porcelain"]),
+    STRICT_GIT_LOCAL_TIMEOUT_MS,
+  );
+  assert.throws(() => strictGitTimeoutMs(["-C"]), /requires a directory/);
+  assert.throws(() => strictGitTimeoutMs(["-c"]), /requires key=value/);
+  assert.throws(() => strictGitTimeoutMs(["-c", "core.fileMode"]), /requires key=value/);
+  assert.throws(() => strictGitTimeoutMs(["-c", "core.fileMode=true"]), /command is required/);
+
+  let now = 1_000;
+  const deadline = createStrictRetentionDeadline({ timeoutMs: 250, now: () => now });
+  assert.equal(strictGitTimeoutMs(["ls-remote", "origin"], deadline), 250);
+  now = 1_249.2;
+  assert.equal(strictTimeoutWithinDeadline(10_000, deadline), 1);
+  now = 1_250;
+  assert.throws(
+    () => strictGitTimeoutMs(["fetch", "origin"], deadline),
+    /aggregate deadline exhausted/,
+  );
+});
 
 function runHook(command, cwd, extraEnv = {}) {
   const payload = JSON.stringify({ session_id: "test", cwd, tool_name: "Bash", tool_input: { command } });
@@ -719,6 +765,36 @@ await test("strict retention has a hard aggregate candidate bound", () => {
   assert.equal(result.status, 2, "more than 256 advertised candidate sources is refused before fetch");
   assert.equal(result.stdout, "");
   assert.deepEqual(gitMetadataSnapshot(excessive.dir), metadataBefore, "candidate overflow changes no refs or FETCH_HEAD");
+});
+
+await test("strict retention fails closed when its aggregate deadline is exhausted", () => {
+  const expired = repoWithWorktree({ push: true });
+  const expiredHead = sh("git", ["-C", expired.wt, "rev-parse", "HEAD"], expired.dir).trim();
+  const metadataBefore = gitMetadataSnapshot(expired.dir);
+  const result = runStrict(strictArgs(expired.wt, expiredHead), expired.dir, {
+    ...strictEnv(),
+    WT_GUARD_TEST_RETENTION_TIMEOUT_MS: "0",
+  });
+  assert.equal(result.status, 2, "an exhausted aggregate retention budget must refuse deletion");
+  assert.equal(result.stdout, "", "aggregate deadline exhaustion emits no allow evidence");
+  assert.match(result.stderr, /aggregate deadline exhausted/);
+  assert.deepEqual(
+    gitMetadataSnapshot(expired.dir),
+    metadataBefore,
+    "aggregate deadline exhaustion changes no refs or FETCH_HEAD",
+  );
+});
+
+await test("strict merged-PR retention shares the aggregate deadline", () => {
+  const expired = repoWithWorktree({ push: false });
+  const expiredHead = sh("git", ["-C", expired.wt, "rev-parse", "HEAD"], expired.dir).trim();
+  const result = runStrict(strictGithubPrArgs(expired.wt, expiredHead), expired.dir, {
+    ...strictEnv(),
+    WT_GUARD_TEST_RETENTION_TIMEOUT_MS: "0",
+  });
+  assert.equal(result.status, 2, "an expired merged-PR proof budget must refuse deletion");
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /aggregate deadline exhausted/);
 });
 
 await test("strict merged PR proof bypasses no limits and avoids a large remote namespace", () => {

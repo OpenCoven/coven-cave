@@ -1,0 +1,1081 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "run-manifest-revision",
+  "objects": {
+    "assembling": {
+      "fixture": "valid/run-manifest-assembling.json"
+    },
+    "active-shortening-next": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "7bb2d0a7636bcf1b52b110f9d351cb8c7badfc3c89ace6cfeaecb75ae71ce1aa",
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "run-only",
+          "status": "active",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "active-shortening-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "retention": {
+          "policy": "7-days",
+          "effectivePolicy": "7-days",
+          "status": "active",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "broken-previous-digest": {
+      "fixture": "scenarios/objects/run-manifest-previous-digest.json"
+    },
+    "changed-manifest-id": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "id": "manifest_other_01"
+      },
+      "digestTargets": [""]
+    },
+    "changed-run-id": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "runId": "run_other_01"
+      },
+      "digestTargets": [""]
+    },
+    "completed-deletion-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deleted",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:00:00.000Z"
+        },
+        "deletion": {
+          "status": "completed",
+          "requestedAt": "2026-08-17T19:00:00.000Z",
+          "completedAt": "2026-08-17T20:00:00.000Z",
+          "deletedObjectCount": 3,
+          "eventSequence": 2
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-2099": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "contentExpiresAt": "2099-01-01T00:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-cleared": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "242559b199acf0bd3277f9f3e7f0c27486ba3b50a44d130f7ff8a9f67807a2d8",
+        "retention": {
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-extended": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "242559b199acf0bd3277f9f3e7f0c27486ba3b50a44d130f7ff8a9f67807a2d8",
+        "retention": {
+          "contentExpiresAt": "2026-08-24T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-extended-beyond-consent": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "242559b199acf0bd3277f9f3e7f0c27486ba3b50a44d130f7ff8a9f67807a2d8",
+        "retention": {
+          "contentExpiresAt": "2026-08-24T20:00:00.000000001Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deadline-shortened": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "242559b199acf0bd3277f9f3e7f0c27486ba3b50a44d130f7ff8a9f67807a2d8",
+        "retention": {
+          "contentExpiresAt": "2026-08-22T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "deletion-cancelled": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "f24b9bbae5824bc848ab050c62056f8dcf73bd0c3a9bf8975d35b4cc8b8ab09c",
+        "retention": {
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "final": {
+      "fixture": "valid/run-manifest-final-local.json"
+    },
+    "final-from-assembling": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d"
+      },
+      "digestTargets": [""]
+    },
+    "gapped-revision": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3
+      },
+      "digestTargets": [""]
+    },
+    "lengthened-retention": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "project"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-usage-final": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "7dcce4ad6b5ab349f157675f29310f23633e3fc05b383b1e931475b0c1bfb32d",
+        "modelExecutions": [
+          {
+            "taskId": "modeltask_partial_01",
+            "phase": "scope",
+            "attempt": 1,
+            "inputDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "outputDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "receipt": {
+              "familiarId": "sage",
+              "runtime": "copilot",
+              "effectiveModel": "gpt-5.6-sol",
+              "modelSource": "session",
+              "providerBilling": "user-connected",
+              "usage": {
+                "inputTokens": 100,
+                "outputTokens": null,
+                "costUsd": null,
+                "reportedByRuntime": true
+              }
+            }
+          }
+        ],
+        "usage": {
+          "inputTokens": 100,
+          "completeness": "partial"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-failure-next": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "f24b9bbae5824bc848ab050c62056f8dcf73bd0c3a9bf8975d35b4cc8b8ab09c",
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-failure-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:00:00.000Z"
+        },
+        "deletion": {
+          "status": "partial_failure",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "post-final-mutation": {
+      "fixture": "scenarios/objects/run-manifest-final-mutation.json"
+    },
+    "post-completed-pending": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "previousDigest": "73d4928072341a118a4c5d4b9e9d2d7180dd7ec80ed3dc46612a8d5ddf3026a9",
+        "retention": {
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-17T20:00:00.000Z",
+          "updatedAt": "2026-08-17T20:01:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-17T19:00:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "scheduled": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "predecessor": "final"
+    },
+    "shortened-retention": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "retention": {
+          "effectivePolicy": "run-only",
+          "contentExpiresAt": "2026-08-17T20:04:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "shortened-retention-compliant-successor": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "242559b199acf0bd3277f9f3e7f0c27486ba3b50a44d130f7ff8a9f67807a2d8",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "contentExpiresAt": "2026-08-17T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "shortened-retention-over-ceiling": {
+      "fixture": "valid/run-manifest-retention-update.json",
+      "mergePatch": {
+        "revision": 3,
+        "previousDigest": "242559b199acf0bd3277f9f3e7f0c27486ba3b50a44d130f7ff8a9f67807a2d8",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "contextless-original": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "context": null,
+        "sources": []
+      },
+      "digestTargets": [""]
+    },
+    "contextless-restoration-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "predecessor": "contextless-original",
+      "mergePatch": {
+        "context": null,
+        "sources": [],
+        "revision": 2,
+        "previousDigest": "34e8bae7a9f6527d9d9e23dd97efb6ef3a61f712e1cb8becedf664c0d202eb6f",
+        "retention": {
+          "effectivePolicy": "run-only",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-17T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "contextless-restoration-next": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "context": null,
+        "sources": [],
+        "revision": 3,
+        "previousDigest": "ebdb999920883bb27d0998adf8ccf880c654a8bfeca9ca001dfe5ca7ceb4f7c4",
+        "retention": {
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-23T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "contextless-beyond-original": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "context": null,
+        "sources": [],
+        "revision": 3,
+        "previousDigest": "ebdb999920883bb27d0998adf8ccf880c654a8bfeca9ca001dfe5ca7ceb4f7c4",
+        "retention": {
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "scheduled-project-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "status": "deletion_scheduled",
+          "contentExpiresAt": "2026-08-20T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "scheduled",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "scheduled-project-restoration": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "b39c000b6bb145c1b49e9c137baa9fc2b9c0865ac595a1aa79005e00c08bc843",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-project-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-20T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "pending",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "pending-project-restoration": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "415ff350a8f461e2ced2d8a659ee6052ab2ed9ccad5d0b35588171284ba4de4e",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-failure-project-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "status": "deletion_pending",
+          "contentExpiresAt": "2026-08-20T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:06:00.000Z"
+        },
+        "deletion": {
+          "status": "partial_failure",
+          "requestedAt": "2026-08-16T20:06:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "partial-failure-project-restoration": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "e4be85cea1c9566fe08b5a15647a2b7d6e3ff8295d5e9226f862b125b5c39f79",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:08:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    },
+    "completed-project-previous": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "status": "deleted",
+          "contentExpiresAt": "2026-08-20T20:04:00.000Z",
+          "updatedAt": "2026-08-16T20:07:00.000Z"
+        },
+        "deletion": {
+          "status": "completed",
+          "requestedAt": "2026-08-16T20:06:00.000Z",
+          "completedAt": "2026-08-16T20:07:00.000Z",
+          "deletedObjectCount": 1,
+          "eventSequence": 2
+        }
+      },
+      "digestTargets": [""]
+    },
+    "completed-project-restoration": {
+      "fixture": "valid/run-manifest-final-local.json",
+      "mergePatch": {
+        "revision": 2,
+        "previousDigest": "00959c9b7ae9b728e3ff7c51b9f8364a3cc14bc9a12f750ccb7f32d30a32145a",
+        "retention": {
+          "policy": "project",
+          "effectivePolicy": "project",
+          "updatedAt": "2026-08-16T20:09:00.000Z"
+        }
+      },
+      "digestTargets": [""]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "manifest.assembling-to-final",
+      "description": "A valid assembling manifest advances to a linked final revision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "final-from-assembling"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.partial-usage",
+      "description": "A linked final manifest accepts correct partial usage completeness and accounting.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "assembling",
+        "next": "partial-usage-final"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.changed-manifest-id",
+      "description": "A linked revision cannot change the manifest identity.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "changed-manifest-id"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.id"
+      }
+    },
+    {
+      "id": "manifest.changed-run-id",
+      "description": "A linked revision cannot move to another run.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "changed-run-id"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.runId"
+      }
+    },
+    {
+      "id": "manifest.broken-previous-digest",
+      "description": "A linked revision must identify the immediately preceding manifest digest.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "broken-previous-digest"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.previousDigest"
+      }
+    },
+    {
+      "id": "manifest.gapped-revision",
+      "description": "A linked manifest revision must advance by exactly one.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "gapped-revision"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.revision"
+      }
+    },
+    {
+      "id": "manifest.post-final-mutation",
+      "description": "A final manifest cannot mutate immutable artifact metadata.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "post-final-mutation"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.artifacts"
+      }
+    },
+    {
+      "id": "manifest.policy-shortening",
+      "description": "Effective retention may be shortened within the Context Pack ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "shortened-retention"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.policy-shortening-preserves-deletion-schedule",
+      "description": "A run-only-compliant successor preserves its required deletion schedule.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "shortened-retention-compliant-successor"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.policy-shortening-revalidates-deadline",
+      "description": "A shortened effective policy revalidates an inherited deadline against its stricter ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "shortened-retention-over-ceiling"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.active-shortening",
+      "description": "A final revision that shortens effective retention must start a deletion clock.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "active-shortening-previous",
+        "next": "active-shortening-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "parse",
+        "input": "next",
+        "code": "semantic_conflict",
+        "path": "$.retention.status"
+      }
+    },
+    {
+      "id": "manifest.lengthening-without-fresh-consent",
+      "description": "Effective retention cannot be lengthened without fresh Context Pack consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "lengthened-retention"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.lengthening-with-fresh-consent",
+      "description": "Fresh consent permits effective retention lengthening within the Context Pack ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "lengthened-retention"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:05:30.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.retention-ceiling",
+      "description": "Effective retention cannot exceed the Context Pack consent ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "lengthened-retention"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:05:30.000Z",
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.contextless-shortening",
+      "description": "A contextless manifest may shorten retention while preserving its original policy ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "contextless-original",
+        "next": "contextless-restoration-previous"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.contextless-restoration-with-fresh-consent",
+      "description": "Fresh consent restores contextless retention up to its immutable original run policy.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "contextless-restoration-previous",
+        "next": "contextless-restoration-next"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:07:00.000Z"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.contextless-restoration-without-fresh-consent",
+      "description": "A contextless retention restoration still requires explicit fresh consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "contextless-restoration-previous",
+        "next": "contextless-restoration-next"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.contextless-restoration-with-stale-consent",
+      "description": "Consent at the prior contextless revision timestamp is stale.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "contextless-restoration-previous",
+        "next": "contextless-restoration-next"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:06:00.000Z"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.contextless-restoration-beyond-original-policy",
+      "description": "An unrelated caller-supplied Context Pack cannot authorize contextless retention beyond the original run policy.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "contextless-restoration-previous",
+        "next": "contextless-beyond-original"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:07:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.effectivePolicy"
+      }
+    },
+    {
+      "id": "manifest.scheduled-project-restoration-with-fresh-consent",
+      "description": "Fresh consent may cancel a merely scheduled project deletion and remove its deadline.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-project-previous",
+        "next": "scheduled-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:07:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.scheduled-project-restoration-without-fresh-consent",
+      "description": "Removing a scheduled project deadline requires explicit fresh consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-project-previous",
+        "next": "scheduled-project-restoration"
+      },
+      "options": {
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.scheduled-project-restoration-with-stale-consent",
+      "description": "Consent at the scheduled project revision timestamp is stale.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled-project-previous",
+        "next": "scheduled-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:06:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.pending-project-restoration-with-fresh-consent",
+      "description": "Fresh consent cannot restore project retention after deletion enters pending work.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "pending-project-previous",
+        "next": "pending-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:07:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.partial-failure-project-restoration-with-fresh-consent",
+      "description": "Fresh consent cannot restore project retention after a partial deletion failure.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "partial-failure-project-previous",
+        "next": "partial-failure-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:07:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.completed-project-restoration-with-fresh-consent",
+      "description": "Fresh consent cannot restore project retention after deletion completed.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-project-previous",
+        "next": "completed-project-restoration"
+      },
+      "options": {
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:08:00.000Z",
+        "contextConsent": "project"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    },
+    {
+      "id": "manifest.partial-failure-continues",
+      "description": "A partial deletion failure may return to pending work in a linked revision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "partial-failure-previous",
+        "next": "partial-failure-next"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.deadline-2099",
+      "description": "A finite seven-day policy cannot schedule deletion in 2099.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "final",
+        "next": "deadline-2099"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deadline-cleared",
+      "description": "A scheduled finite deletion deadline cannot be cleared.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "deadline-cleared"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deletion-cancellation",
+      "description": "A deletion in partial failure cannot move back to scheduled.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "partial-failure-previous",
+        "next": "deletion-cancelled"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.status"
+      }
+    },
+    {
+      "id": "manifest.deadline-shortening",
+      "description": "A scheduled finite deletion deadline may move earlier.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "deadline-shortened"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.deadline-extension-without-fresh-consent",
+      "description": "An unchanged finite policy cannot extend its deadline without fresh consent.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "deadline-extended"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deadline-extension-with-stale-consent",
+      "description": "Consent at the prior revision timestamp is not fresh.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "deadline-extended"
+      },
+      "options": {
+        "contextConsent": "7-days",
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-16T20:06:00.000Z"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.deadline-extension-with-fresh-consent",
+      "description": "Newer explicit consent may extend a deadline within its new seven-day ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "deadline-extended"
+      },
+      "options": {
+        "contextConsent": "7-days",
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-17T20:00:00.000Z"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "manifest.deadline-extension-exceeds-fresh-ceiling",
+      "description": "Fresh consent does not permit a deadline beyond its newly consented ceiling.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "scheduled",
+        "next": "deadline-extended-beyond-consent"
+      },
+      "options": {
+        "contextConsent": "7-days",
+        "freshConsent": true,
+        "freshConsentAt": "2026-08-17T20:00:00.000Z"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.retention.contentExpiresAt"
+      }
+    },
+    {
+      "id": "manifest.completed-deletion-terminal",
+      "description": "A completed deletion cannot return to pending in a later revision.",
+      "validator": "run-manifest-revision",
+      "inputs": {
+        "previous": "completed-deletion-previous",
+        "next": "post-completed-pending"
+      },
+      "options": {
+        "contextConsent": "7-days"
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$.deletion.status"
+      }
+    }
+  ]
+}

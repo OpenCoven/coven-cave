@@ -13,6 +13,10 @@ import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import { CanonicalMemoryRequestError } from "@/lib/canonical-memory-client";
 import type { CanonicalMemoryListLoad } from "@/lib/canonical-memory-resources";
 
+vi.mock("@/components/ui/live-region", () => ({
+  useAnnouncer: () => ({ announce: vi.fn() }),
+}));
+
 const resourceMocks = vi.hoisted(() => ({
   loadList: vi.fn(),
   loadOverview: vi.fn(),

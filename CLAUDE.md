@@ -196,6 +196,39 @@ A related tell: `main`'s CI runs keep showing `cancelled` rather than
 completing, because each new push supersedes the previous run. If you cannot
 find a completed run for a commit on `main`, suspect push churn, not a CI bug.
 
+**Reading the damage fast — `pnpm main:health`.** The reflog above proves a push
+happened; it does not say whether that push broke anything, and on 2026-08-21
+nothing said so for seven hours. `scripts/main-health.mjs` answers it from the
+GitHub API and needs no checkout state:
+
+```bash
+GITHUB_TOKEN="$(gh auth token)" GITHUB_REPOSITORY=OpenCoven/coven-cave pnpm main:health
+```
+
+It walks `main` back from HEAD to the last commit CI judged green and names the
+**oldest** failing commit in the streak — not the head, which after a burst of
+direct pushes is usually just downstream of the break — then says how that commit
+landed: squash-merged from a PR, a local merge of a named branch, or a bare
+commit. Two deliberate refusals to guess: a commit whose pull-request
+association GitHub declines to answer is reported `undetermined` rather than
+accused, and a `cancelled` run is neither blame nor clearance (see the push-churn
+tell just above), so those commits are listed rather than silently dropped.
+
+`.github/workflows/main-health.yml` runs the same script with `--apply` after
+every CI run on `main`, plus an hourly sweep because `workflow_run` deliveries
+drop here — the same gap `ci-recovery.yml` exists for. Apply mode keeps exactly
+ONE open issue labelled `main-red`, deduplicated by culprit SHA: it retargets
+that issue if an earlier culprit turns up and closes it when `main` is green
+again. The workflow holds `issues: write` and nothing else — it observes `main`,
+it never repairs, reverts, or pushes, and it is **not** an argument for changing
+`enforce_admins`.
+
+Verified against the live repository on 2026-08-21, which is also what prompted
+it: `main` RED at `b5f40e54d`, culprit `1257258ce` — a local merge of
+`fix/cave-atox4-marketplace-logo-colors` that never had a PR — with `b4c737dc1`
+the last green head. Seven branches landed that way inside 53 minutes and six of
+them never had a PR at all.
+
 ⚠️ **Remaining gap — the ruleset layer is disabled.** Classic protection is
 the only active gate today. Ruleset `19123333` has `enforcement: disabled` and
 still carries `bypass_actors: [{actor_type: OrganizationAdmin, bypass_mode:
@@ -602,6 +635,81 @@ in-app instead. A dev-only recovery overlay replaces the raw `ChunkLoadError` /
 `ERR_CONNECTION_REFUSED` page, polls the origin, and hard-reloads the window as
 soon as the server answers so no stale chunk ids survive the restart.
 
+## Local remote hygiene — keep the Desktop branch list honest
+
+GitHub Desktop lists every remote-tracking ref in this checkout, so anything
+stale or foreign shows up as branch-list noise. All of it is local-only state,
+so repairing it costs nothing on the server and nothing in any other checkout.
+
+Audit and repair in one place (`scripts/remote-hygiene.mjs`, cave-u426u):
+
+```bash
+pnpm remotes:audit        # read-only; exits 1 when something is off
+pnpm remotes:audit:json   # machine-readable
+pnpm remotes:fix          # apply the local, lossless repairs
+```
+
+It never touches the remote — no push, no branch deletion, no fetch — so the
+`origin` branches other sessions own are reported for information only. The four
+rules it enforces are below, with the reasoning it cannot print.
+
+**One remote: `origin`.** A fork remote mirrors branches nobody here maintains.
+`snowopsdev` sat in this checkout contributing three refs, none of which any
+local branch tracked, long after its only contribution (`#4596`, closed
+unmerged, later re-landed on `main`) was superseded. Removing a remote is
+local-only and lossless — the fork keeps its own branches — so drop one as soon
+as its PR is resolved:
+
+```bash
+git remote -v                    # expect exactly origin (fetch + push)
+git remote remove <fork>
+```
+
+**No remote-tracking refs outside `refs/remotes/origin/`.** A PR head fetched
+explicitly (`gh pr checkout` and friends) writes `refs/remotes/pull/<n>/head`,
+which sits outside every remote's fetch refspec — so nothing ever prunes it and
+it keeps advertising a branch that is usually long merged. `refs/remotes/pull/4753/head`
+was doing exactly that. `pnpm remotes:fix` deletes such a ref only when its tip
+is held by another ref; a stray ref holding commits on no other ref is reported
+with the archive-tag command instead and left in place.
+
+**`fetch.prune = true`.** Without it, deleted remote branches linger as
+tracking refs forever, and this repository deletes branches constantly
+(`delete_branch_on_merge` plus `branch-cap.yml`). Set once per checkout:
+
+```bash
+git config fetch.prune true
+git config fetch.pruneTags false   # tags are the retention store; never prune them
+```
+
+⚠️ Keep `pruneTags` off. `archive/*` and `retention/*` tags are what the
+worktree guard reads as proof a head is retained, and pruning them locally
+would make retained work look at-risk.
+
+**No BOGUS upstream — but do not strip an accurate one.** The distinction is
+load-bearing, and conflating the two is worse than the noise:
+
+- **Bogus, clear it.** `branch.<X>.merge` naming a *different* branch, which is
+  what `git worktree add -b X <path> origin/main` wrote until `cave-t57kr`.
+  Such a branch renders "behind N" in Desktop against a ref it is not a view of,
+  and its bare `git push` is answered with `git push origin HEAD:main`. Same for
+  an upstream naming a remote that is no longer configured. Clear with
+  `git branch --unset-upstream <branch>`.
+- **Accurate, leave it.** `branch.<X>.merge == refs/heads/X`, written by
+  `git push -u origin X`. This renders correct ahead/behind and is *not* noise —
+  and `branch.<X>.remote` is one of three anti-resurrection signals
+  `worktree-retention-push.mjs` reads (`cave-xjuup`). It is the only one that
+  survives a `fetch --prune`, so stripping it from a branch that really was
+  pushed makes a merged, server-deleted head read as "never pushed" and the hook
+  re-creates it. That failure was measured at 9 of 36 remote branches.
+
+An earlier version of this section said flatly that only `main` and the Beads
+dolt sync branch should have an upstream, and offered a bare
+`git for-each-ref … | grep -v ' -> $'` as the audit. That listing flags every
+accurate self-tracking branch as a violation — on 2026-08-20 it flagged 8, all
+of them correct — so following it would have traded branch-list tidiness for
+resurrected merged heads. Use `pnpm remotes:audit`, which separates the cases.
+
 ## Diagnosing concurrent sessions
 
 If git operations keep colliding with surprise pulls/merges, multiple Claude sessions are likely on the same checkout. Diagnose:
@@ -640,6 +748,29 @@ to once a minute via `.claude/worktree-autolock.stamp`. Every lock is appended
 to `.claude/worktree-autolock.log` (gitignored, JSON lines). Disable for a
 command with `WT_AUTOLOCK_DISABLE=1`. It never blocks a tool call and always
 exits 0 — if it cannot read a worktree, it leaves it alone.
+
+**A stale lock no longer deadlocks the scheduled sweep.** The hook re-evaluates
+and releases its own locks once the risk they name is gone, but it only fires as
+a PreToolUse hook inside a Claude Code session — and `scripts/worktree-sweep.sh`
+never runs it. So a stale `auto-locked` reason used to survive indefinitely in
+the one path meant to work without a human: `git worktree remove` failed,
+`beads:worktrees:apply` reported `retirement-blocked`, and registered worktrees
+climbed 14 → 55 until both budgets blew and `beads:worktrees:create` refused for
+every session in the checkout (cave-a245b, cave-2aahf).
+
+`removeWorktree` in `scripts/worktree-lifecycle-retirement.ts` now resolves it.
+By the time it runs, that pass has already re-proven the tree clean
+(`stillRetireReady` after a fresh reprobe) and its head retained on the remote —
+strictly stronger evidence than the hook uses to release a lock on its own — so
+an `auto-locked` reason there is a claim the pipeline has just disproven. It is
+released and the removal retried once.
+
+A **foreign** lock still stands: `active cave-1c8zf PR completion` is a claim
+the tool cannot evaluate, so it is reported, never released. What changed is
+that it is reported *usefully*. Git's own message names neither the lock nor the
+remedy and recommends `worktree remove -f -f` — the one action that destroys the
+work the lock protects. Ignore that advice; instead, confirm with the
+owner, then `git worktree unlock <path>`. Never `-f -f`.
 
 **Retention push (automatic, NON-blocking).** A PostToolUse hook —
 `scripts/worktree-retention-push.mjs`, matcher Bash — pushes any worktree
@@ -685,8 +816,18 @@ something the others do not (`cave-xjuup`):
 
 - `refs/remotes/origin/<branch>`, written by a push. Survives the remote
   dropping the branch, but **not** a `fetch --prune`.
-- `branch.<name>.remote`, written only by `push -u`. Lives in `.git/config`, so
+- `branch.<name>.remote`, written by `push -u`. Lives in `.git/config`, so
   a prune cannot touch it — but plenty of branches never get one.
+
+  ⚠️ It was **also** written by managed worktree creation until `cave-t57kr`:
+  `git worktree add -b <branch> <path> origin/main` tracks its remote start
+  point by default, so this key was true from birth for every canonical
+  worktree. That made the "three signals" below effectively one — the test
+  never reached the log, always read "was deleted", and so always archived a
+  tag instead of the readable branch the paragraph after this one promises.
+  `worktree-lifecycle-create.ts` now passes `--no-track`. A branch created
+  before that fix still carries the stale key; clear it with
+  `git branch --unset-upstream <branch>`.
 - **the hook's own log**, which records that *it* pushed the branch. Survives
   everything short of deleting the file.
 
@@ -770,7 +911,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
    # Team-maintainer opt-in only, unless current instructions forbid it:
    git pull --rebase
-   bd dolt push
+   pnpm beads:sync
    git push
    git status
    ```

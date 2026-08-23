@@ -106,4 +106,37 @@ assert.match(
   "only an actual upward move during a scrollbar grab releases — programmatic pins never do",
 );
 
+// --- Released-reader unseen response state ---------------------------------
+
+assert.match(
+  src,
+  /const \[newResponseContent, setNewResponseContent\] = useState\(false\);/,
+  "released response updates use one boolean state",
+);
+assert.match(
+  src,
+  /const observedAssistantTurnIdRef = useRef<string \| null>\(null\);\s*const observedAssistantSourceRef = useRef\(""\);/,
+  "the visible assistant turn and projected source are observed independently",
+);
+assert.match(
+  src,
+  /activePath\.findLast\(\(turn\) => turn\.role === "assistant"\)[\s\S]*?JSON\.stringify\(\s*extractChatRenderedText\(/,
+  "unseen state observes only the latest visible assistant response projection, including rendered result/card content",
+);
+assert.match(
+  src,
+  /if \(following\) \{[\s\S]*?setNewResponseContent\(false\);[\s\S]*?return;[\s\S]*?if \(activeAssistantTurnId !== null && \(turnChanged \|\| sourceChanged\)\) \{[\s\S]*?setNewResponseContent\(true\);/,
+  "following synchronizes the observation while released assistant changes set one boolean notification",
+);
+assert.doesNotMatch(
+  src,
+  /newTurnsCount|setNewTurnsCount|setNewResponseContent\(\(.*\+|const appendTurn/,
+  "chunks and generic user/system appends never increment an unseen-content count",
+);
+assert.match(
+  src,
+  /className="cave-new-response-content focus-ring"[\s\S]*?updateFollowing\(true\);\s*schedulePin\(\);[\s\S]*?\{newResponseContent \? "New response content" : "Latest"\}/,
+  "the released reader always gets one focused latest-response control",
+);
+
 console.log("chat-view-scroll-pin.test.ts: ok");

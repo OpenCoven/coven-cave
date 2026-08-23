@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
@@ -44,6 +44,14 @@ type Props = {
   /** Home launches one familiar at a time, so it hides the All row and
    * multiselect affordance while retaining the shared picker. */
   singleRequired?: boolean;
+  /** Override the "All familiars" aggregate label shown in the header, list
+   *  option, and trigger accessible name. Defaults to "All familiars". */
+  aggregateLabel?: string;
+  /** Override the header role/description text when the aggregate scope is
+   *  active. Falls back to "${familiars.length} in your coven". */
+  aggregateDescription?: string;
+  /** Disables the trigger button. Defaults to false. */
+  disabled?: boolean;
 };
 
 /**
@@ -63,6 +71,9 @@ export function FamiliarSwitcher({
   placement = "bottom-start",
   labeled = false,
   singleRequired = false,
+  aggregateLabel = "All familiars",
+  aggregateDescription,
+  disabled = false,
 }: Props) {
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -104,6 +115,17 @@ export function FamiliarSwitcher({
     if (!responseNeeded || responseNeeded.size === 0) return false;
     return familiars.some((f) => responseNeeded.has(f.id));
   }, [familiars, responseNeeded]);
+  const popoverOpen = open && !disabled;
+
+  // Close and reset all transient state when the trigger is disabled, so
+  // re-enabling does not reopen the menu to a stale position.
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+      setReordering(false);
+      setQuery("");
+    }
+  }, [disabled]);
 
   const presenceFor = (f: ResolvedFamiliar, needsReply: boolean): Presence =>
     computePresence({
@@ -140,14 +162,14 @@ export function FamiliarSwitcher({
       ? active.display_name
       : singleRequired
         ? "Choose familiar"
-        : "All familiars";
+        : aggregateLabel;
   const triggerLabel = !singleRequired && multiScope
     ? `Switch familiar — scope: ${multiScope.size} familiars`
     : active
       ? `Switch familiar — current: ${active.display_name}`
       : singleRequired
         ? "Choose familiar"
-        : "Switch familiar — scope: all familiars";
+        : `Switch familiar — scope: ${aggregateLabel.toLowerCase()}`;
 
   return (
     <>
@@ -157,9 +179,10 @@ export function FamiliarSwitcher({
         className={`familiar-switcher__trigger focus-ring${labeled ? " familiar-switcher__trigger--labeled" : ""}`}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="dialog"
-        aria-expanded={open}
+        aria-expanded={popoverOpen}
         aria-label={triggerLabel}
         title={triggerText}
+        disabled={disabled}
         style={active && !multiScope ? ({ ["--familiar-accent" as string]: active.color } as CSSProperties) : undefined}
       >
         {active && !multiScope ? (
@@ -173,8 +196,9 @@ export function FamiliarSwitcher({
       </button>
 
       <Popover
-        open={open}
+        open={popoverOpen}
         onOpenChange={(next) => {
+          if (disabled && next) return;
           setOpen(next);
           if (!next) setReordering(false);
         }}
@@ -204,8 +228,8 @@ export function FamiliarSwitcher({
                     <Icon name="ph:sparkle" width={14} />
                   </span>
                   <span className="familiar-switcher__header-text">
-                    <span className="familiar-switcher__header-name">All familiars</span>
-                    <span className="familiar-switcher__header-role">{familiars.length} in your coven</span>
+                    <span className="familiar-switcher__header-name">{aggregateLabel}</span>
+                    <span className="familiar-switcher__header-role">{aggregateDescription ?? `${familiars.length} in your coven`}</span>
                   </span>
                 </>
               )}
@@ -261,7 +285,7 @@ export function FamiliarSwitcher({
                   <span className="familiar-switcher__all-glyph" aria-hidden>
                     <Icon name="ph:sparkle" width={13} />
                   </span>
-                  <span className="familiar-switcher__option-name">All familiars</span>
+                  <span className="familiar-switcher__option-name">{aggregateLabel}</span>
                   {!multiScope && activeFamiliarId == null ? <Icon name="ph:check" width={12} aria-hidden /> : null}
                 </button>
               </li> : null}

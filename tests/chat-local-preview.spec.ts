@@ -102,4 +102,15 @@ test("local preview card opens Browser beside Chat without replacing the transcr
   expect(chatBox).not.toBeNull();
   expect(browserBox).not.toBeNull();
   expect(browserBox!.x).toBeGreaterThan(chatBox!.x);
+
+  // The pane must FILL its half of the split, not shrink-to-fit its toolbar.
+  // Asserting position alone let a 123px-wide sliver ship beside 468px of dead
+  // space, so pin the width to the panel that owns it.
+  const panelBox = await page
+    .locator('[data-panel][id="split-secondary"], .split-host__pane-panel')
+    .first()
+    .boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(browserBox!.width).toBeGreaterThan(panelBox!.width - 8);
+  expect(browserBox!.width).toBeGreaterThan(chatBox!.width * 0.8);
 });

@@ -51,18 +51,15 @@ enum ChatNotifications {
     /// `covencave://thread/<id>` — routed by `AppModel.handleDeepLink` to the
     /// existing `requestOpen` one-shot (same hook the chat list already uses).
     nonisolated static func deepLinkURL(threadId: String) -> URL? {
-        var comps = URLComponents()
-        comps.scheme = "covencave"
-        comps.host = "thread"
-        comps.path = "/" + threadId
-        return comps.url
+        ProjectNavigationIntent(
+            entity: .thread(id: threadId),
+            destination: .chats
+        ).url
     }
 
     /// The thread id carried by a chat deep link, or nil for any other URL.
     nonisolated static func threadId(fromDeepLink url: URL) -> String? {
-        guard url.scheme == "covencave", url.host == "thread" else { return nil }
-        let id = url.pathComponents.count > 1 ? url.pathComponents[1] : ""
-        return id.isEmpty ? nil : id
+        ProjectNavigationIntent(url: url)?.threadId
     }
 
     // MARK: - Posting
@@ -99,5 +96,34 @@ enum ChatNotifications {
     static func removeDelivered(threadId: String) {
         UNUserNotificationCenter.current()
             .removeDeliveredNotifications(withIdentifiers: [idPrefix + threadId])
+    }
+}
+
+/// A quiet confirmation when opportunistic background maintenance discovers
+/// that a previously disconnected Cave is reachable again. Authorization is
+/// never requested from a background launch; this only uses permission the
+/// user already granted for Cave notifications.
+@MainActor
+enum ConnectionNotifications {
+    private static let identifier = "cave.connection.reconnected"
+
+    static func postReconnected() async {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        let canNotify = settings.authorizationStatus == .authorized
+            || settings.authorizationStatus == .provisional
+        guard !Task.isCancelled, canNotify else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Cave reconnected"
+        content.body = "Your desktop Cave is reachable from this phone again."
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: nil
+        )
+        guard !Task.isCancelled else { return }
+        try? await center.add(request)
     }
 }

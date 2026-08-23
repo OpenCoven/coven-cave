@@ -10,7 +10,8 @@ assert.match(source, /import \{ MemoryRowItem \}/, "must render MemoryRowItem ro
 assert.match(source, /import \{ MemoryReaderPane \}/, "must render the reader pane");
 assert.match(source, /<MemoryReaderPane/, "reader pane is mounted in the full view");
 assert.ok(!/memory-suggestions/.test(source), "the standalone Suggested-for-cleanup section is removed");
-assert.match(source, /Stale \(\{suggestions\.length\}\)/, "a Stale (N) filter pill is present");
+assert.match(source, /<Popover[\s\S]*?ariaLabel="Memory filters"/, "source, grouping, sorting, and stale controls live in one filter popover");
+assert.match(source, /activeFilterSummary/, "the filter trigger summarizes active controls");
 assert.match(source, /Delete \{bulkDeletable\.length\} cleanable/, "bulk-delete action retained");
 assert.ok(!/memory-list-drawer/.test(source), "old grid drawer removed");
 assert.match(
@@ -58,6 +59,7 @@ assert.match(reader, /@min-\[1024px\]\/memview:hidden/, "Back button is hidden a
 assert.match(source, /value=\{groupMode\}/, "Group control is bound to groupMode");
 assert.match(source, /groupMemoryRows\(pagedRows, groupMode\)/, "grouped mode wraps the paged rows");
 assert.match(source, /groupMode === "none" \?/, "flat list renders only when group mode is none");
+assert.doesNotMatch(source, /data-testid="memory-masthead"/, "the expanded masthead is replaced by a compact scope/status row");
 
 // A selected familiar's list contains ONLY that familiar's memories — no
 // shared/global-pool rows, so no "Coven-wide memory" divider exists.

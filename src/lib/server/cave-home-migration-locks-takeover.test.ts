@@ -6,7 +6,7 @@ import path from "node:path";
 
 const roots: string[] = [];
 const { ensureCaveHomeReconciled, migrateCaveHome, withCaveHomeReconciledStore } = await import("./cave-home-migration.ts");
-const { reconcileCaveHome } = await import("./cave-home-reconciliation.ts");
+const { reconcileCaveHome, withCaveHomeReconciliationLock } = await import("./cave-home-reconciliation.ts");
 const { caveHomeMigrationStatus } = await import("./cave-home-migration-status.ts");
 const { createDefaultPreferences } = await import("../preferences-schema.ts");
 
@@ -170,6 +170,114 @@ try {
     assert.deepEqual(second.errors, []);
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // Same-process store requests wait their turn before starting the bounded
+  // cross-process acquisition deadline. A busy request must not make every
+  // local waiter time out together and cascade unrelated route failures.
+  {
+    await home("same-process-store-queue");
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let markFirstEntered!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+    const first = withCaveHomeReconciliationLock(async () => {
+      markFirstEntered();
+      await firstMayFinish;
+      return "first";
+    });
+    await firstEntered;
+
+    let secondSettled = false;
+    const second = withCaveHomeReconciliationLock(
+      async () => "second",
+      { lockTimeoutMs: 75 },
+    ).finally(() => { secondSettled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(secondSettled, false, "local queue time does not consume the filesystem-lock deadline");
+
+    releaseFirst();
+    assert.deepEqual(await Promise.all([first, second]), ["first", "second"]);
+  }
+
+  // A nested store helper cannot safely distinguish awaited work from a
+  // detached descendant that could outlive this lock generation. Reject it
+  // immediately instead of waiting behind itself or bypassing serialization.
+  {
+    await home("same-process-store-reentrant");
+    await assert.rejects(
+      withCaveHomeReconciliationLock(() => withCaveHomeReconciliationLock(async () => "nested")),
+      (error) => error?.code === "EDEADLK",
+    );
+  }
+
+  // A detached microtask that starts before its parent releases must not pass
+  // the ownership check once and then overlap the successor after handoff.
+  {
+    await home("same-process-store-detached-handoff");
+    let detached!: Promise<void>;
+    await withCaveHomeReconciliationLock(async () => {
+      detached = Promise.resolve().then(() => withCaveHomeReconciliationLock(async () => {
+        assert.fail("detached work must not bypass its active parent lock");
+      }));
+      await assert.rejects(detached, (error) => error?.code === "EDEADLK");
+    });
+    await detached.catch(() => {});
+    assert.equal(await withCaveHomeReconciliationLock(async () => "successor"), "successor");
+  }
+
+  // Async context propagates into detached descendants after their parent
+  // operation returns. Its expired lease must not let that later work bypass
+  // a successor that currently owns the queue and filesystem lock.
+  {
+    await home("same-process-store-detached-context");
+    let releaseDetached!: () => void;
+    const detachedMayRun = new Promise<void>((resolve) => { releaseDetached = resolve; });
+    let detachedEntered = false;
+    let detached!: Promise<void>;
+    await withCaveHomeReconciliationLock(async () => {
+      detached = detachedMayRun.then(() => withCaveHomeReconciliationLock(async () => {
+        detachedEntered = true;
+      }));
+    });
+
+    let releaseHolder!: () => void;
+    const holderMayFinish = new Promise<void>((resolve) => { releaseHolder = resolve; });
+    let markHolderEntered!: () => void;
+    const holderEntered = new Promise<void>((resolve) => { markHolderEntered = resolve; });
+    const holder = withCaveHomeReconciliationLock(async () => {
+      markHolderEntered();
+      await holderMayFinish;
+    });
+    await holderEntered;
+    releaseDetached();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(detachedEntered, false, "an expired async-context lease cannot bypass the current holder");
+    releaseHolder();
+    await Promise.all([holder, detached]);
+    assert.equal(detachedEntered, true);
+  }
+
+  // A genuinely stuck local owner remains bounded, and a timed-out waiter
+  // releases its queue turn so later requests are not poisoned.
+  {
+    await home("same-process-store-queue-timeout");
+    let releaseFirst!: () => void;
+    const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let markFirstEntered!: () => void;
+    const firstEntered = new Promise<void>((resolve) => { markFirstEntered = resolve; });
+    const first = withCaveHomeReconciliationLock(async () => {
+      markFirstEntered();
+      await firstMayFinish;
+    });
+    await firstEntered;
+    await assert.rejects(
+      withCaveHomeReconciliationLock(async () => undefined, { storeQueueTimeoutMs: 75 }),
+      (error) => error?.code === "ETIMEDOUT",
+    );
+    releaseFirst();
+    await first;
+    assert.equal(await withCaveHomeReconciliationLock(async () => "recovered"), "recovered");
   }
 
   // A process crash leaves a fresh lock directory behind. Its recorded dead

@@ -19,10 +19,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import {
   DocumentReader,
   type DocumentReaderApi,
 } from "@/components/document-reader";
+import { MarkdownBlock } from "@/components/message-bubble";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
@@ -108,6 +111,8 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const documentReaderApiRef = useRef<DocumentReaderApi | null>(null);
   const pbarRef = useRef<HTMLDivElement | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
+  const tableFocusReturnRef = useRef<HTMLButtonElement | null>(null);
+  const focusedTableRef = useRef<HTMLDivElement | null>(null);
 
   const doc = useMemo(
     () => parseFindingsDoc(markdown ?? "", mission.sources),
@@ -124,8 +129,12 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const [focusTable, setFocusTable] = useState<Extract<FindingsBlock, { kind: "table" }> | null>(null);
   const [tip, setTip] = useState<{ id: string; title: string; meta: string; label: string; tone: "ok" | "warn" | "muted"; left: number; top: number } | null>(null);
 
+  const closeTable = () => {
+    setFocusTable(null);
+    requestAnimationFrame(() => tableFocusReturnRef.current?.focus());
+  };
   const closeFocusOrReader = () => {
-    if (focusTable) setFocusTable(null);
+    if (focusTable) closeTable();
     else onClose();
   };
   useFocusTrap(true, readerRef, { onEscape: closeFocusOrReader });
@@ -142,6 +151,10 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
       tipRef.current.style.top = `${tip.top}px`;
     }
   }, [tip]);
+
+  useEffect(() => {
+    if (focusTable) focusedTableRef.current?.focus();
+  }, [focusTable]);
 
   // ── evidence rail model ──────────────────────────────────────────────────
   const { fullCards, miniSources, usedCount } = useMemo(() => {
@@ -232,6 +245,14 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const cite = async (source: ResearchSourceRef) => {
     const ok = await copyText(citationText(source));
     announce(ok ? "Citation copied." : "Citation could not be copied.");
+  };
+  const toggleContents = () => {
+    if (!expanded) {
+      setExpanded(true);
+      setTocOn(true);
+      return;
+    }
+    setTocOn((value) => !value);
   };
 
   const toggleCard = (id: string) =>
@@ -350,7 +371,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
   const renderTable = (table: Extract<FindingsBlock, { kind: "table" }>): ReactNode => (
     <table className="rr-table">
       <thead>
-        <tr>{table.header.map((cell, i) => <th key={i}>{renderSpans(cell, `th-${i}`)}</th>)}</tr>
+        <tr>{table.header.map((cell, i) => <th key={i} scope="col">{renderSpans(cell, `th-${i}`)}</th>)}</tr>
       </thead>
       <tbody>
         {table.rows.map((row, r) => (
@@ -369,12 +390,42 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
         </ul>
       );
     }
+    if (block.kind === "code") {
+      const longestBacktickRun = Math.max(
+        0,
+        ...(block.code.match(/`+/g)?.map((run) => run.length) ?? []),
+      );
+      const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
+      return (
+        <div className="rr-codeblock document-reader__wide-block" key={key}>
+          <MarkdownBlock
+            text={`${fence}${block.language}\n${block.code}\n${fence}`}
+            onOpenUrl={openUrl}
+          />
+        </div>
+      );
+    }
     return (
-      <div className="rr-krblock" key={key}>
-        <button className="rr-krfocus focus-ring" type="button" onClick={() => setFocusTable(block)} aria-label="Focus table">
+      <div className="rr-krblock document-reader__wide-block" key={key}>
+        <button
+          className="rr-krfocus focus-ring"
+          type="button"
+          onClick={(event) => {
+            tableFocusReturnRef.current = event.currentTarget;
+            setFocusTable(block);
+          }}
+          aria-label="Focus table"
+        >
           <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M15 3h6v6m0-6-7 7M9 21H3v-6m0 6 7-7" /></svg>
         </button>
-        <div className="rr-krframe">{renderTable(block)}</div>
+        <div
+          className="rr-krframe focus-ring"
+          role="region"
+          aria-label="Scrollable key results table"
+          tabIndex={0}
+        >
+          {renderTable(block)}
+        </div>
       </div>
     );
   };
@@ -479,37 +530,12 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
             </span>
             <span className="rr-meta">{metaLine}</span>
             <div className="rr-head__actions">
-              <button className="rr-btn focus-ring" type="button" onClick={copy} disabled={!markdown} aria-label="Copy findings as markdown">
-                {copied ? (
-                  <svg className="rr-ic-copied" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth={2}><path d="M20 6 9 17l-5-5" /></svg>
-                ) : (
-                  <svg className="rr-ic-clip" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
-                )}
-                <span>{copied ? "Copied" : "Copy"}</span>
-              </button>
-              <span className="rr-tb-extra">
-                <button className="rr-btn focus-ring" type="button" onClick={exportPdf}>
-                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M12 3v12m0 0 4-4m-4 4-4-4" /></svg>
-                  Export PDF
+              {showPublish ? (
+                <button className="rr-btn rr-btn--accent focus-ring" type="button" onClick={onPublish}>
+                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" /></svg>
+                  Publish
                 </button>
-                {showPublish ? (
-                  <button className="rr-btn rr-btn--accent focus-ring" type="button" onClick={onPublish}>
-                    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" /></svg>
-                    Publish
-                  </button>
-                ) : null}
-              </span>
-              <span className="rr-head__sep" aria-hidden />
-              <button
-                className="rr-iconbtn rr-tgl-toc focus-ring"
-                type="button"
-                aria-pressed={tocOn}
-                title="Toggle contents"
-                aria-label="Toggle contents"
-                onClick={() => setTocOn((v) => !v)}
-              >
-                <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>
-              </button>
+              ) : null}
               <button
                 className="rr-iconbtn focus-ring"
                 type="button"
@@ -520,19 +546,40 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
               >
                 <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></svg>
               </button>
-              <button
-                className="rr-iconbtn focus-ring"
-                type="button"
-                title={expanded ? "Collapse" : "Expand"}
-                aria-label={expanded ? "Collapse" : "Expand"}
-                onClick={() => setExpanded((v) => !v)}
-              >
-                {expanded ? (
-                  <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M9 9 4 4m0 0v4m0-4h4m6 5 5-5m0 0v4m0-4h-4M9 15l-5 5m0 0v-4m0 4h4m6-5 5 5m0 0v-4m0 4h-4" /></svg>
-                ) : (
-                  <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M15 3h6v6m0-6-7 7M9 21H3v-6m0 6 7-7" /></svg>
-                )}
-              </button>
+              {!showPublish ? (
+                <button
+                  className="rr-iconbtn focus-ring"
+                  type="button"
+                  title={expanded ? "Collapse" : "Expand"}
+                  aria-label={expanded ? "Collapse" : "Expand"}
+                  onClick={() => setExpanded((v) => !v)}
+                >
+                  {expanded ? (
+                    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M9 9 4 4m0 0v4m0-4h4m6 5 5-5m0 0v4m0-4h-4M9 15l-5 5m0 0v-4m0 4h4m6-5 5 5m0 0v-4m0 4h-4" /></svg>
+                  ) : (
+                    <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M15 3h6v6m0-6-7 7M9 21H3v-6m0 6 7-7" /></svg>
+                  )}
+                </button>
+              ) : null}
+              <OverflowMenu ariaLabel="More research reader actions">
+                <PopoverItem onSelect={() => void copy()} disabled={!markdown}>
+                  {copied ? "Copied findings" : "Copy findings"}
+                </PopoverItem>
+                <PopoverItem onSelect={exportPdf}>Export PDF</PopoverItem>
+                <PopoverSeparator />
+                <PopoverItem
+                  checked={expanded && tocOn}
+                  checkedRole="checkbox"
+                  onSelect={toggleContents}
+                >
+                  Contents
+                </PopoverItem>
+                {showPublish ? (
+                  <PopoverItem onSelect={() => setExpanded((value) => !value)}>
+                    {expanded ? "Collapse reader" : "Expand reader"}
+                  </PopoverItem>
+                ) : null}
+              </OverflowMenu>
               <button className="rr-iconbtn focus-ring" type="button" title="Close" aria-label="Close" onClick={onClose}>
                 <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}><path d="M6 6l12 12M18 6 6 18" /></svg>
               </button>
@@ -542,7 +589,7 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
           <div className="research-reader__grid">
             <DocumentReader
               document={doc}
-              navigation={expanded && tocOn ? "rail" : "none"}
+              navigation={expanded && tocOn ? "rail" : "compact"}
               kicker={titleCase(artifact.kind)}
               apiRef={documentReaderApiRef}
               onScrollProgress={(progress) => {
@@ -626,14 +673,14 @@ export function ResearchReader({ mission, artifact, markdown, onClose, onOpenUrl
       </div>
 
       {focusTable ? (
-        <div className="rr-kroverlay" role="presentation" onClick={() => setFocusTable(null)}>
-          <div className="rr-kroverlay-card" role="dialog" aria-modal="true" tabIndex={-1} aria-label="Key results" onClick={(event) => event.stopPropagation()}>
+        <div className="rr-kroverlay" role="presentation" onClick={closeTable}>
+          <div ref={focusedTableRef} className="rr-kroverlay-card" role="dialog" aria-modal="true" tabIndex={-1} aria-label="Key results" onClick={(event) => event.stopPropagation()}>
             <div className="rr-kroverlay__head">
               <div>
                 <div className="rr-kroverlay__title">Key results</div>
                 <div className="rr-kroverlay__sub">{focusTable.rows.length} findings · reference table</div>
               </div>
-              <button className="rr-iconbtn focus-ring" type="button" aria-label="Close" onClick={() => setFocusTable(null)}>
+              <button className="rr-iconbtn focus-ring" type="button" aria-label="Close" onClick={closeTable}>
                 <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}><path d="M6 6l12 12M18 6 6 18" /></svg>
               </button>
             </div>

@@ -2,6 +2,11 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FamiliarAnalyticsModel } from "@/components/familiar-analytics-data";
+import type {
+  FamiliarExecutionAnalytics,
+  FamiliarExecutionAnalyticsWindow,
+  FamiliarExecutionSlice,
+} from "@/lib/familiar-execution-analytics";
 import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -52,6 +57,7 @@ import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trac
 import { sessionDayKey, type PulseDay } from "@/lib/session-pulse";
 import { requestAgentsNewChat } from "@/lib/agents-new-chat";
 import { buildRehabilitationBrief } from "@/lib/familiar-rehabilitation";
+import { formatCost, formatTokens } from "@/lib/usage-format";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
@@ -69,6 +75,13 @@ const THREAD_METRIC_COPY: Record<ThreadMetricKey, string> = {
   toolReliability: "How reliably tools worked when the familiar reached for them.",
   memoryRecall: "How well earlier context and memory could be recalled mid-thread.",
   fileLocatability: "How easily the familiar found the files it needed.",
+};
+
+const THREAD_METRIC_IMPROVEMENT_COPY: Record<ThreadMetricKey, string> = {
+  confidence: "Close threads with a concise outcome, remaining uncertainty, and the next verified step.",
+  toolReliability: "Review failed tool paths and make the reliable fallback explicit in the familiar's loadout.",
+  memoryRecall: "Capture durable decisions and retrieval cues before context pressure rises.",
+  fileLocatability: "Pin canonical paths and search landmarks in the familiar's working memory.",
 };
 
 const CONTEXT_PRESSURES: ContextPressure[] = ["adequate", "tight", "excess", "critical"];
@@ -97,6 +110,7 @@ function ThreadMetricBar({
   trend?: MetricTrend;
 }) {
   const tip = `${desc} Weighted at ${Math.round(weight * 100)}% — adds up to ${Math.round(weight * 100)} points of the headline score's 100.`;
+  const contribution = value * weight;
   return (
     <div className="fa-thread-score">
       <div>
@@ -115,6 +129,9 @@ function ThreadMetricBar({
       <div className="fa-factor-bar" aria-label={`${label} ${value} of 100`}>
         <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
       </div>
+      <p className="fa-thread-score__meta">
+        Weight {Math.round(weight * 100)}% · contributes {contribution.toFixed(1)} points
+      </p>
     </div>
   );
 }
@@ -254,9 +271,46 @@ const ThreadAnalysisBody = memo(function ThreadAnalysisBody({
       />
     );
   }
+  const priorities = [...confidence.metrics]
+    .map((metric) => ({
+      ...metric,
+      gap: Math.max(0, 80 - metric.value),
+      trend: trendByKey.get(metric.key),
+    }))
+    .sort((a, b) => b.gap - a.gap || b.weight - a.weight)
+    .slice(0, 3);
+  const pressuredReports =
+    confidence.contextCounts.tight +
+    confidence.contextCounts.excess +
+    confidence.contextCounts.critical;
+  const pressurePercent =
+    confidence.reportCount > 0 ? Math.round((pressuredReports / confidence.reportCount) * 100) : 0;
   return (
     <div className="fa-thread-analysis">
-      <ThreadTrendBlock trends={trends} />
+      <div className="fa-thread-analysis__top">
+        <ThreadTrendBlock trends={trends} />
+        <aside className="fa-thread-priorities" aria-label="Prioritized areas for improvement">
+          <div className="fa-thread-priorities__head">
+            <span>Improve next</span>
+            <b>{priorities.filter((item) => item.gap > 0).length}</b>
+          </div>
+          <ol>
+            {priorities.map((metric, index) => (
+              <li key={metric.key}>
+                <span className="fa-thread-priorities__rank" aria-hidden>{index + 1}</span>
+                <div>
+                  <b>{metric.label}</b>
+                  <span>
+                    {metric.gap > 0 ? `${metric.gap} points to Trusted` : "Trusted threshold reached"}
+                    {metric.trend?.delta != null ? ` · ${formatDelta(metric.trend.delta)} trend` : ""}
+                  </span>
+                  <p>{THREAD_METRIC_IMPROVEMENT_COPY[metric.key]}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      </div>
       <div className="fa-thread-score-grid">
         {confidence.metrics.map((metric) => (
           <ThreadMetricBar
@@ -269,16 +323,26 @@ const ThreadAnalysisBody = memo(function ThreadAnalysisBody({
           />
         ))}
       </div>
-      <div className="fa-thread-contexts" aria-label="Context pressure distribution">
-        {CONTEXT_PRESSURES.map((pressure) => (
-          <span
-            key={pressure}
-            className={`fa-thread-pill fa-thread-pill--${pressure}`}
-            title={`${pressure} — ${CONTEXT_PRESSURE_HINT[pressure]}`}
-          >
-            {pressure} <b>{confidence.contextCounts[pressure]}</b>
-          </span>
-        ))}
+      <div className="fa-thread-context-card">
+        <div>
+          <span className="fa-thread-context-card__eyebrow">Context pressure</span>
+          <b>{pressurePercent}% constrained</b>
+          <p>
+            {pressuredReports} of {confidence.reportCount} thread report
+            {confidence.reportCount === 1 ? "" : "s"} ran tight, excess, or critical.
+          </p>
+        </div>
+        <div className="fa-thread-contexts" aria-label="Context pressure distribution">
+          {CONTEXT_PRESSURES.map((pressure) => (
+            <span
+              key={pressure}
+              className={`fa-thread-pill fa-thread-pill--${pressure}`}
+              title={`${pressure} — ${CONTEXT_PRESSURE_HINT[pressure]}`}
+            >
+              {pressure} <b>{confidence.contextCounts[pressure]}</b>
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -852,6 +916,210 @@ function ModelFeedbackSection({ rollup }: { rollup: MessageFeedbackRollup }) {
   );
 }
 
+const COVERAGE_LABELS: Record<string, string> = {
+  harnessVersion: "Harness version",
+  confirmedModel: "Confirmed model",
+  usage: "Token usage",
+  cost: "Reported cost",
+  duration: "Total duration",
+  firstOutput: "First output",
+  tools: "Tool activity",
+  quality: "Quality signal",
+};
+
+function formatRuntimePercent(value: number | null | undefined): string {
+  return typeof value === "number" ? `${Math.round(value * 100)}%` : "Unreported";
+}
+
+function formatRuntimeDuration(value: number | null | undefined): string {
+  if (typeof value !== "number") return "Unreported";
+  if (value < 1_000) return `${Math.round(value)} ms`;
+  if (value < 60_000) return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} s`;
+  return `${(value / 60_000).toFixed(1)} min`;
+}
+
+function RuntimeSliceList({ label, slices }: { label: string; slices: FamiliarExecutionSlice[] }) {
+  if (slices.length === 0) return null;
+  return (
+    <div className="fa-feedback-group">
+      <h3 className="fa-feedback-group__label">{label}</h3>
+      <ul className="fa-feedback-list">
+        {slices.map((slice) => {
+          const pct = typeof slice.successRate === "number" ? Math.round(slice.successRate * 100) : 0;
+          const name = slice.label ?? slice.key;
+          return (
+            <li key={slice.key} className="fa-feedback-row fa-runtime-row">
+              <span className="fa-feedback-row__name" title={slice.key}>{name}</span>
+              <span className="fa-feedback-row__bar" aria-hidden>
+                <i style={{ width: `${pct}%` }} />
+              </span>
+              <span className="fa-runtime-row__detail">
+                {slice.attempts} attempt{slice.attempts === 1 ? "" : "s"} ·{" "}
+                {formatRuntimePercent(slice.successRate)} success ·{" "}
+                {formatRuntimeDuration(slice.medianDurationMs)}
+              </span>
+              <span className="sr-only">
+                {`${name}: ${slice.attempts} attempts, ${formatRuntimePercent(slice.successRate)} success, median duration ${formatRuntimeDuration(slice.medianDurationMs)}`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function RuntimeCoverage({ window }: { window: FamiliarExecutionAnalyticsWindow }) {
+  const coverage = Object.entries(window.coverage)
+    .filter(([, value]) => value.total > 0)
+    .sort((left, right) => left[1].ratio - right[1].ratio);
+  if (coverage.length === 0) return null;
+  return (
+    <div className="fa-feedback-group">
+      <h3 className="fa-feedback-group__label">Telemetry coverage</h3>
+      <ul className="fa-runtime-coverage">
+        {coverage.map(([key, value]) => (
+          <li key={key}>
+            <span>{COVERAGE_LABELS[key] ?? key}</span>
+            <b>{Math.round(value.ratio * 100)}%</b>
+            <small>{value.known} of {value.total}</small>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function RuntimeAttempts({
+  attempts,
+  onTrace,
+}: {
+  attempts: FamiliarExecutionAnalytics["recentAttempts"];
+  onTrace: (target: TraceTarget) => void;
+}) {
+  if (attempts.length === 0) return null;
+  return (
+    <div className="fa-feedback-group">
+      <h3 className="fa-feedback-group__label">Recent execution evidence</h3>
+      <ul className="fa-runtime-attempts">
+        {attempts.slice(0, 8).map((attempt) => {
+          const model = attempt.confirmedModel ?? attempt.forwardedModel ?? attempt.requestedModel ?? "Model unreported";
+          const harness = attempt.harnessVersion
+            ? `${attempt.harnessId} ${attempt.harnessVersion}`
+            : `${attempt.harnessId} · version unreported`;
+          const sessionId = attempt.sessionId;
+          return (
+            <li key={attempt.id} className="fa-runtime-attempt">
+              <span>
+                <b>{attempt.executionKind}</b>
+                <small>{model} · {harness}</small>
+              </span>
+              <span>
+                <b>{attempt.status}</b>
+                <small>
+                  {formatRuntimeDuration(attempt.durationMs)}
+                  {typeof attempt.totalTokens === "number" ? ` · ${formatTokens(attempt.totalTokens) ?? attempt.totalTokens} tokens` : ""}
+                  {typeof attempt.costUsd === "number" ? ` · ${formatCost(attempt.costUsd) ?? "reported cost"}` : ""}
+                </small>
+              </span>
+              {sessionId ? (
+                <button
+                  type="button"
+                  className="fa-primary-btn focus-ring"
+                  onClick={() => onTrace({ id: sessionId, title: `${attempt.executionKind} execution` })}
+                >
+                  Open trace
+                  <Icon name="ph:arrow-up-right" width={11} aria-hidden />
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function RuntimePerformanceSection({
+  analytics,
+  rollup,
+  windowId,
+  now,
+  onTrace,
+}: {
+  analytics: FamiliarExecutionAnalytics | null;
+  rollup: MessageFeedbackRollup;
+  windowId: WindowId;
+  now: number;
+  onTrace: (target: TraceTarget) => void;
+}) {
+  if (!analytics) {
+    return (
+      <div className="fa-feedback">
+        <EmptyState
+          compact
+          icon="ph:chart-bar"
+          headline="Execution telemetry unavailable."
+          subtitle="Runtime evidence could not be loaded. Existing thumbs feedback is still shown below."
+        />
+        <ModelFeedbackSection rollup={rollup} />
+      </div>
+    );
+  }
+
+  const window = analytics.windows[windowId];
+  const recentAttempts = analytics.recentAttempts.filter((attempt) =>
+    withinWindow(attempt.occurredAt, windowId, now));
+  if (window.attempts === 0 && rollup.total === 0) {
+    return (
+      <EmptyState
+        compact
+        icon="ph:chart-bar"
+        headline="No runtime evidence yet."
+        subtitle="Run this familiar in Chat or Board; reported execution fields will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="fa-runtime-performance">
+      <div className="fa-foot-panel__stats">
+        <span className="fa-pulse-stat fa-pulse-stat--accent">
+          <b>{window.attempts}</b>
+          <span>Attempts</span>
+          <small>{window.completed} completed</small>
+        </span>
+        <span className="fa-pulse-stat fa-pulse-stat--good">
+          <b>{formatRuntimePercent(window.successRate)}</b>
+          <span>Success</span>
+          <small>{window.failed} failed · {window.cancelled} cancelled</small>
+        </span>
+        <span className="fa-pulse-stat fa-pulse-stat--accent">
+          <b>{formatRuntimeDuration(window.medianDurationMs)}</b>
+          <span>Median duration</span>
+          <small>p95 {formatRuntimeDuration(window.p95DurationMs)}</small>
+        </span>
+        <span className="fa-pulse-stat fa-pulse-stat--warn">
+          <b>{typeof window.totalTokens === "number" ? formatTokens(window.totalTokens) ?? window.totalTokens : "Unreported"}</b>
+          <span>Tokens</span>
+          <small>{typeof window.costUsd === "number" ? formatCost(window.costUsd) ?? "Reported" : "cost unreported"}</small>
+        </span>
+      </div>
+
+      <div className="fa-runtime-grid">
+        <RuntimeSliceList label="Models" slices={window.models} />
+        <RuntimeSliceList label="Harnesses and versions" slices={window.harnesses} />
+      </div>
+      <RuntimeCoverage window={window} />
+      <RuntimeAttempts attempts={recentAttempts} onTrace={onTrace} />
+      <div className="fa-feedback-group">
+        <h3 className="fa-feedback-group__label">Thumbs feedback</h3>
+        <ModelFeedbackSection rollup={rollup} />
+      </div>
+    </div>
+  );
+}
+
 // ─── Full-stage overlays ────────────────────────────────────────────────────
 
 /**
@@ -1147,63 +1415,80 @@ function HealBoardModal({
   }, [groupBy, requests, severityFilter, sortBy]);
 
   const shown = groups.reduce((sum, group) => sum + group.rows.length, 0);
+  const criticalCount = requests.filter((request) => request.severity === "crit").length;
+  const warningCount = requests.filter((request) => request.severity === "warn").length;
+  const traceableCount = requests.filter((request) => Boolean(request.traceSessionId)).length;
 
   return (
     <Modal open wide onClose={onClose} breadcrumb={["Self-heal", "Board"]}>
-      <div className="fa-board-tools">
-        <span className="fa-board-tools__count">
-          <b>{shown}</b>
-          <span>/ {requests.length}</span>
-        </span>
-        <span className="fa-ledger-tools__label">Group</span>
-        <div className="fa-segmented" role="group" aria-label="Group requests by">
-          {BOARD_GROUPS.map((group) => (
-            <button
-              key={group.id}
-              type="button"
-              className={`fa-segmented__btn${groupBy === group.id ? " is-active" : ""} focus-ring`}
-              aria-pressed={groupBy === group.id}
-              title={group.title}
-              onClick={() => setGroupBy(group.id)}
-            >
-              {group.label}
-            </button>
-          ))}
+      <div className="fa-board__summary">
+        <div className="fa-board__summary-copy">
+          <span>Intervention queue</span>
+          <b>{requests.length === 0 ? "No repairs waiting" : `${requests.length} open repair${requests.length === 1 ? "" : "s"}`}</b>
+          <p>Resolve the highest-impact issue first. Thread evidence appears only when the request came from a real session report.</p>
         </div>
-        <span className="fa-ledger-tools__label">Sort</span>
-        <div className="fa-segmented" role="group" aria-label="Sort requests by">
-          {BOARD_SORTS.map((sort) => (
-            <button
-              key={sort.id}
-              type="button"
-              className={`fa-segmented__btn${sortBy === sort.id ? " is-active" : ""} focus-ring`}
-              aria-pressed={sortBy === sort.id}
-              title={sort.title}
-              onClick={() => setSortBy(sort.id)}
-            >
-              {sort.label}
-            </button>
-          ))}
+        <div className="fa-board__summary-stats">
+          <span className="fa-board__summary-stat fa-board__summary-stat--crit"><b>{criticalCount}</b> critical</span>
+          <span className="fa-board__summary-stat fa-board__summary-stat--warn"><b>{warningCount}</b> warning</span>
+          <span className="fa-board__summary-stat"><b>{traceableCount}</b> traceable</span>
         </div>
       </div>
-      <div className="fa-board-filters">
-        {(["all", "crit", "warn", "info"] as const).map((filter) => {
-          const n = filter === "all"
-            ? requests.length
-            : requests.filter((request) => request.severity === filter).length;
-          return (
-            <button
-              key={filter}
-              type="button"
-              className={`fa-chip${severityFilter === filter ? " is-active" : ""} focus-ring`}
-              aria-pressed={severityFilter === filter}
-              onClick={() => setSeverityFilter(filter)}
-            >
-              {filter === "all" ? "All" : SEV_META[filter].label}
-              <b className="fa-chip__n">{n}</b>
-            </button>
-          );
-        })}
+      <div className="fa-board__toolbar">
+        <div className="fa-board-tools">
+          <span className="fa-board-tools__count">
+            <b>{shown}</b>
+            <span>/ {requests.length}</span>
+          </span>
+          <span className="fa-ledger-tools__label">Group</span>
+          <div className="fa-segmented" role="group" aria-label="Group requests by">
+            {BOARD_GROUPS.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                className={`fa-segmented__btn${groupBy === group.id ? " is-active" : ""} focus-ring`}
+                aria-pressed={groupBy === group.id}
+                title={group.title}
+                onClick={() => setGroupBy(group.id)}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+          <span className="fa-ledger-tools__label">Sort</span>
+          <div className="fa-segmented" role="group" aria-label="Sort requests by">
+            {BOARD_SORTS.map((sort) => (
+              <button
+                key={sort.id}
+                type="button"
+                className={`fa-segmented__btn${sortBy === sort.id ? " is-active" : ""} focus-ring`}
+                aria-pressed={sortBy === sort.id}
+                title={sort.title}
+                onClick={() => setSortBy(sort.id)}
+              >
+                {sort.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="fa-board-filters">
+          {(["all", "crit", "warn", "info"] as const).map((filter) => {
+            const n = filter === "all"
+              ? requests.length
+              : requests.filter((request) => request.severity === filter).length;
+            return (
+              <button
+                key={filter}
+                type="button"
+                className={`fa-chip${severityFilter === filter ? " is-active" : ""} focus-ring`}
+                aria-pressed={severityFilter === filter}
+                onClick={() => setSeverityFilter(filter)}
+              >
+                {filter === "all" ? "All" : SEV_META[filter].label}
+                <b className="fa-chip__n">{n}</b>
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="fa-board">
         {groups.map((group) => (
@@ -1232,24 +1517,36 @@ function HealBoardModal({
                       <span className="fa-heal-card__source">{request.source}</span>
                     </span>
                   </button>
-                  <p className="fa-heal-card__detail">{request.detail}</p>
+                  <div className="fa-heal-card__evidence">
+                    <span>Evidence</span>
+                    <p className="fa-heal-card__detail">{request.detail}</p>
+                  </div>
                   <div className="fa-heal-card__foot">
                     <button
                       type="button"
                       className="fa-heal-card__btn focus-ring"
                       onClick={() => onAction(request)}
                     >
-                      {request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind]}
+                      <span className="fa-heal-card__next-label">Next step</span>
+                      <span>{request.suggestedAction || HEAL_ACTION_LABEL[request.actionKind]}</span>
                     </button>
-                    <button
-                      type="button"
-                      className="fa-heal-card__trace focus-ring"
-                      title="Trace the thread behind this request"
-                      aria-label={`Trace ${request.title}`}
-                      onClick={() => onTrace(request)}
-                    >
-                      <Icon name="ph:tree-structure" width={11} aria-hidden />
-                    </button>
+                    {request.traceSessionId ? (
+                      <button
+                        type="button"
+                        className="fa-heal-card__trace focus-ring"
+                        title="Trace source thread"
+                        aria-label={`Trace ${request.title}`}
+                        onClick={() => onTrace(request)}
+                      >
+                        <Icon name="ph:tree-structure" width={12} aria-hidden />
+                        <span>Trace source thread</span>
+                      </button>
+                    ) : (
+                      <span className="fa-heal-card__trace-note">
+                        <Icon name="ph:info" width={12} aria-hidden />
+                        No source thread
+                      </span>
+                    )}
                   </div>
                 </article>
               ))}
@@ -1467,7 +1764,7 @@ function TrustModal({
   const current = confidence.hasData ? confidenceTier(confidence.label) : null;
   const trendByKey = new Map(trends.metrics.map((metric) => [metric.key, metric]));
   return (
-    <Modal open onClose={onClose} breadcrumb={["Trust", `How ${confidence.hasData ? confidence.score : "this"} is computed`]}>
+    <Modal open onClose={onClose} wide breadcrumb={["Trust", `How ${confidence.hasData ? confidence.score : "this"} is computed`]}>
       {confidence.hasData ? (
         <>
           <div className="fa-trust-modal">
@@ -1475,6 +1772,7 @@ function TrustModal({
             <div className="fa-trust-modal__rows">
               {confidence.metrics.map((metric) => {
                 const trend = trendByKey.get(metric.key);
+                const contribution = metric.value * metric.weight;
                 return (
                   <div key={metric.key} className="fa-trust-row">
                     <span className="fa-trust-row__label">{metric.label}</span>
@@ -1484,15 +1782,34 @@ function TrustModal({
                     <span className="fa-trust-row__value">
                       {metric.value} × {metric.weight.toFixed(2)}
                     </span>
+                    <span className="fa-trust-row__contribution">{contribution.toFixed(1)} pts</span>
                     {trend ? <TrendDeltaChip label={metric.label} trend={trend} /> : null}
                   </div>
                 );
               })}
-              <p className="fa-trust-modal__formula">
-                Headline = Σ metric × weight, averaged across {confidence.reportCount} thread self-report
-                {confidence.reportCount === 1 ? "" : "s"}.
-              </p>
+              <div className="fa-trust-modal__equation">
+                <span>Weighted equation</span>
+                <b>
+                  {confidence.metrics.map((metric) => `${metric.value} × ${metric.weight.toFixed(2)}`).join(" + ")}
+                  {" = "}{confidence.score}
+                </b>
+                <p>
+                  Averaged across {confidence.reportCount} thread self-report
+                  {confidence.reportCount === 1 ? "" : "s"}.
+                </p>
+              </div>
             </div>
+          </div>
+          <div className="fa-trust-context">
+            <div>
+              <span>Evidence coverage</span>
+              <b>{confidence.reportCount} thread report{confidence.reportCount === 1 ? "" : "s"}</b>
+            </div>
+            {CONTEXT_PRESSURES.map((pressure) => (
+              <span key={pressure} className={`fa-thread-pill fa-thread-pill--${pressure}`}>
+                {pressure} <b>{confidence.contextCounts[pressure]}</b>
+              </span>
+            ))}
           </div>
           <div className="fa-trust-bands">
             {TRUST_BANDS.map((band) => (
@@ -1646,9 +1963,14 @@ export function FamiliarAnalyticsContent({
   );
   const allHealRequests = useMemo(() => {
     if (!threadSignalsAggregate) return model.healRequests;
-    const escalated = escalateBlockers(model.familiarId, threadSignalsAggregate, model.healRequests);
+    const escalated = escalateBlockers(
+      model.familiarId,
+      threadSignalsAggregate,
+      model.healRequests,
+      windowReports,
+    );
     return [...escalated, ...model.healRequests];
-  }, [model.familiarId, model.healRequests, threadSignalsAggregate]);
+  }, [model.familiarId, model.healRequests, threadSignalsAggregate, windowReports]);
   const healRequests = useMemo(
     () => allHealRequests.filter((request) => matchesLens(request, lens)),
     [allHealRequests, lens],
@@ -1675,9 +1997,16 @@ export function FamiliarAnalyticsContent({
   }, []);
   const traceRequest = useCallback((request: SelfHealRequest) => {
     setBoardOpen(false);
-    setTraceTarget({ id: request.id, title: request.title });
+    if (!request.traceSessionId) {
+      announce("No source thread is available for this request.");
+      return;
+    }
+    setTraceTarget({
+      id: request.traceSessionId,
+      title: request.traceThreadTitle ?? request.title,
+    });
     setActionModal(null);
-  }, []);
+  }, [announce]);
   // Confirming an action launches a primed working thread with the familiar —
   // the cave's real self-heal path (shared with the thread-signals queue).
   const confirmAction = useCallback(() => {
@@ -1965,10 +2294,11 @@ export function FamiliarAnalyticsContent({
             aria-expanded={deepDive === "model"}
             onClick={() => setDeepDive((prev) => (prev === "model" ? null : "model"))}
           >
-            <Icon name="ph:thumbs-up" width={13} aria-hidden />
-            <b>Model performance</b>
+            <Icon name="ph:chart-bar" width={13} aria-hidden />
+            <b>Runtime performance</b>
             <span className="fa-band-count">
-              {model.modelFeedback.total} vote{model.modelFeedback.total === 1 ? "" : "s"}
+              {model.executionAnalytics?.windows[windowId].attempts ?? 0} attempt
+              {(model.executionAnalytics?.windows[windowId].attempts ?? 0) === 1 ? "" : "s"}
             </span>
             <Icon name="ph:caret-up" className="fa-foot__caret" width={11} aria-hidden />
           </button>
@@ -2044,10 +2374,10 @@ export function FamiliarAnalyticsContent({
         {deepDive === "model" ? (
           <div className="fa-foot-panel">
             <div className="fa-foot-panel__head">
-              <Icon name="ph:thumbs-up" width={14} aria-hidden />
-              <b>Model performance — summary</b>
+              <Icon name="ph:chart-bar" width={14} aria-hidden />
+              <b>Runtime performance — summary</b>
               <span className="fa-band-hint">
-                thumbs votes on chat replies, netted per message
+                measured execution metadata with explicit coverage
               </span>
               <button type="button" className="fa-primary-btn focus-ring" onClick={() => openOverlay("model")}>
                 Open full view
@@ -2062,7 +2392,13 @@ export function FamiliarAnalyticsContent({
                 <Icon name="ph:caret-down" width={12} aria-hidden />
               </button>
             </div>
-            <ModelFeedbackSection rollup={model.modelFeedback} />
+            <RuntimePerformanceSection
+              analytics={model.executionAnalytics}
+              rollup={model.modelFeedback}
+              windowId={windowId}
+              now={now}
+              onTrace={setTraceTarget}
+            />
           </div>
         ) : null}
 
@@ -2087,21 +2423,28 @@ export function FamiliarAnalyticsContent({
 
         {overlay === "model" ? (
           <StageOverlay
-            label="Model performance"
+            label="Runtime performance"
             onClose={() => setOverlay(null)}
             head={
               <>
-                <h2 className="fa-overlay__title">Model performance</h2>
+                <h2 className="fa-overlay__title">Runtime performance</h2>
                 <span className="fa-band-count">
-                  {model.modelFeedback.total} vote{model.modelFeedback.total === 1 ? "" : "s"}
+                  {model.executionAnalytics?.windows[windowId].attempts ?? 0} attempt
+                  {(model.executionAnalytics?.windows[windowId].attempts ?? 0) === 1 ? "" : "s"}
                 </span>
                 <span className="fa-band-hint">
-                  thumbs votes on chat replies, netted per message — last vote wins
+                  local metadata only — unreported fields stay absent
                 </span>
               </>
             }
           >
-            <ModelFeedbackSection rollup={model.modelFeedback} />
+            <RuntimePerformanceSection
+              analytics={model.executionAnalytics}
+              rollup={model.modelFeedback}
+              windowId={windowId}
+              now={now}
+              onTrace={setTraceTarget}
+            />
           </StageOverlay>
         ) : null}
 

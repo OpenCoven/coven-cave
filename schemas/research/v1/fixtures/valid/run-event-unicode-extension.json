@@ -1,0 +1,20 @@
+{
+  "schema": "opencoven.run-event/v1",
+  "runId": "run_01",
+  "sequence": 1,
+  "type": "run.status",
+  "at": "2026-08-17T19:30:00.000Z",
+  "data": {
+    "deletedObjectCount": 3,
+    "manifestStatus": "deleted",
+    "監査": {
+      "résumé": "préservé",
+      "аudit": {
+        "状態": "complete"
+      }
+    }
+  },
+  "futureExtension": {
+    "preserve": true
+  }
+}

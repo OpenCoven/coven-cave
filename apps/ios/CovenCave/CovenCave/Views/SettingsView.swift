@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(AppLock.self) private var appLock
     @Environment(\.chrome) private var chrome
+    @Environment(\.dismiss) private var dismiss
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @AppStorage(ChatNotifications.enabledKey) private var chatNotificationsEnabled = true
     @State private var exportArchive: ExportArchive?
@@ -14,6 +15,11 @@ struct SettingsView: View {
     /// Light/Dark used both to preview the theme swatches and as the mode pushed
     /// to the desktop. Seeded from the desktop's published mode on appear.
     @State private var pushMode: ColorScheme = .dark
+    private let presentedModally: Bool
+
+    init(presentedModally: Bool = false) {
+        self.presentedModally = presentedModally
+    }
 
     /// Marketing version + build, e.g. "1.2.0 (34)", read from the bundle.
     private var appVersion: String {
@@ -44,10 +50,18 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { app.navigationDrawerOpen = true } label: {
-                        Image(systemName: "line.3.horizontal")
+                    if presentedModally {
+                        Button("Close") { dismiss() }
+                            .accessibilityLabel("Close")
+                    } else {
+                        Button { app.navigationDrawerOpen = true } label: {
+                            Image(systemName: "line.3.horizontal")
+                        }
+                        .accessibilityLabel("Open navigation")
                     }
-                    .accessibilityLabel("Open navigation")
+                }
+                ToolbarItem(placement: .principal) {
+                    EditorialSurfaceTitle(title: "Settings")
                 }
             }
             .onAppear {
@@ -130,7 +144,7 @@ struct SettingsView: View {
     private var statusTint: Color {
         switch app.connectionState {
         case .connected: return .green
-        case .unreachable, .needsAuth: return .orange
+        case .degraded, .unreachable, .needsAuth, .projectContextRequired: return .orange
         case .checking, .unconfigured: return .secondary
         }
     }
@@ -139,6 +153,8 @@ struct SettingsView: View {
         switch app.connectionState {
         case .connected: return app.connection?.host ?? "Connected"
         case .checking: return "Checking…"
+        case .degraded: return "Recovering…"
+        case .projectContextRequired: return "Project access needed"
         case .unreachable: return "Unreachable"
         case .needsAuth: return "Needs pairing"
         case .unconfigured: return "Not set up"
@@ -149,6 +165,8 @@ struct SettingsView: View {
         switch app.connectionState {
         case .connected: return "connected to \(app.connection?.host ?? "your desktop")"
         case .checking: return "checking connection"
+        case .degraded: return "connection degraded, reconnecting"
+        case .projectContextRequired: return "project access needed"
         case .unreachable: return "desktop unreachable"
         case .needsAuth: return "needs pairing"
         case .unconfigured: return "not set up"
@@ -328,18 +346,38 @@ struct SettingsView: View {
 
     private var communitySection: some View {
         Section("Community") {
-            linkRow("Discord", value: "OpenCoven", url: "https://discord.gg/opencoven")
-            linkRow("X", value: "@OpenCvn", url: "https://x.com/OpenCvn")
-            linkRow("Docs", value: "docs.opencoven.ai", url: "https://docs.opencoven.ai")
-            linkRow("Podcast", value: "pod.opencoven.ai", url: "https://pod.opencoven.ai")
-            linkRow("Blog", value: "mind.opencoven.ai", url: "https://mind.opencoven.ai")
+            HStack(spacing: 0) {
+                iconShelfLink(
+                    "Discord",
+                    systemImage: "bubble.left.and.bubble.right.fill",
+                    url: "https://discord.gg/opencoven"
+                )
+                iconShelfLink("X", systemImage: "at", url: "https://x.com/OpenCvn")
+                iconShelfLink("Docs", systemImage: "book.closed.fill", url: "https://docs.opencoven.ai")
+                iconShelfLink("Podcast", systemImage: "waveform", url: "https://pod.opencoven.ai")
+                iconShelfLink("Blog", systemImage: "text.page.fill", url: "https://mind.opencoven.ai")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
         }
     }
 
     private var legalSection: some View {
         Section {
-            linkRow("Terms of Service", value: "opencoven.ai/terms", url: "https://opencoven.ai/terms")
-            linkRow("Privacy", value: "opencoven.ai/privacy", url: "https://opencoven.ai/privacy")
+            HStack(spacing: 0) {
+                iconShelfLink(
+                    "Terms of Service",
+                    systemImage: "doc.text.fill",
+                    url: "https://opencoven.ai/terms"
+                )
+                iconShelfLink(
+                    "Privacy",
+                    systemImage: "hand.raised.fill",
+                    url: "https://opencoven.ai/privacy"
+                )
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
         } header: {
             Text("Legal")
         } footer: {
@@ -352,16 +390,23 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func linkRow(_ label: String, value: String, url: String) -> some View {
+    private func iconShelfLink(_ label: String, systemImage: String, url: String) -> some View {
         if let destination = URL(string: url) {
             Link(destination: destination) {
-                LabeledContent(label) {
-                    Label(value, systemImage: "arrow.up.right")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                Image(systemName: systemImage)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(chrome.textPrimary)
+                    .frame(width: 42, height: 42)
+                    .background(
+                        chrome.bgElevated,
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
             }
-            .foregroundStyle(.primary)
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .accessibilityLabel(label)
+            .accessibilityHint("Opens \(label)")
         }
     }
 }
@@ -382,9 +427,19 @@ private struct ConnectionSettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Status") { statusBadge }
-                Button("Re-check connection") {
-                    Task { await app.refreshConnection() }
+                LabeledContent("Status") {
+                    HStack(spacing: 10) {
+                        statusBadge
+                        Button {
+                            Task { await app.refreshConnection() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .frame(width: 44, height: 44)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Re-check connection")
+                    }
                 }
             } footer: {
                 Text("Connected over your Tailscale network with a paired Cave access token.")
@@ -478,6 +533,10 @@ private struct ConnectionSettingsView: View {
                 Label("Connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             case .checking:
                 Label("Checking…", systemImage: "clock").foregroundStyle(.secondary)
+            case .degraded:
+                Label("Recovering…", systemImage: "arrow.trianglehead.2.clockwise.rotate.90").foregroundStyle(.orange)
+            case .projectContextRequired:
+                Label("Project access", systemImage: "folder.badge.questionmark").foregroundStyle(.orange)
             case .unreachable:
                 Label("Unreachable", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             case .needsAuth:

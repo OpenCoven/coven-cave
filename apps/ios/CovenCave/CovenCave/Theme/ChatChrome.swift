@@ -23,6 +23,36 @@ enum ChatChrome {
     static let iconWell: CGFloat = 34
 }
 
+/// Shared editorial title treatment for primary iOS destinations. Large mode
+/// belongs to the custom Chats header; compact mode fits a native toolbar.
+struct EditorialSurfaceTitle: View {
+    @Environment(\.chrome) private var chrome
+
+    let title: String
+    var detail: String?
+    var large = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: large ? 8 : 6) {
+            Text(title)
+                .font(.system(size: large ? 32 : 20, weight: .semibold, design: .serif))
+                .foregroundStyle(chrome.textPrimary)
+                .lineLimit(1)
+            if let detail {
+                Text(detail)
+                    .font((large ? Font.caption : Font.caption2).weight(.semibold))
+                    .foregroundStyle(chrome.textSecondary)
+                    .padding(.horizontal, large ? 8 : 6)
+                    .padding(.vertical, large ? 3 : 2)
+                    .background(chrome.bgElevated, in: Capsule())
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 // MARK: - GlassPressStyle
 
 /// The app's standard pressed state: a quick springy dip plus a slight dim, so

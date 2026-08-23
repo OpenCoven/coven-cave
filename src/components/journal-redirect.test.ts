@@ -105,15 +105,19 @@ const artifactViewer = read("./chat-artifact-viewer.tsx");
 // ── No surviving navigation into the retired Canvas page ─────────────────────
 assert.doesNotMatch(artifactViewer, /cave:journal/, "artifact viewer no longer deep-links the Canvas page");
 assert.match(artifactViewer, /Saved to Canvas/, "save-to-canvas confirms inline instead of navigating");
-// A persisted last-surface of "journal" now restores safely: setMode remaps
-// it to Grimoire's Journal tab, so the old skip-branch (which guarded against
-// a hard-navigate to Settings that no longer exists) was removed (cave-nwi8).
+// Fresh launches are Home-first; explicit journal deep links still flow through
+// setMode, which owns the Grimoire Journal remap (cave-nwi8).
 assert.match(
   ws,
-  /if \(last && \(isWorkspaceMode\(last\) \|\| isRoleSurfaceMode\(last\)\)\) setMode\(last as CaveMode\)/,
-  "journal restore relies on the setMode remap instead of a stale skip-branch",
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("home"\)/,
+  "fresh launches do not restore a familiar-owned journal surface",
 );
-assert.doesNotMatch(ws, /last === "journal"/, "no journal skip-branch remains in the restore path");
+assert.match(
+  ws,
+  /const target = readModeParam\(\);[\s\S]{0,500}?if \(isWorkspaceMode\(target\) \|\| isRoleSurfaceMode\(target\)\) setMode\(target\)/,
+  "explicit journal deep links still reach the setMode remap",
+);
+assert.doesNotMatch(ws, /last === "journal"/, "no journal-specific restore branch remains");
 assert.match(
   ws,
   /if \(next === "journal"\) \{/,

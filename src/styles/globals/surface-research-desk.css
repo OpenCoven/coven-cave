@@ -445,7 +445,7 @@
 
 /* ── Stepper card: six nodes on a connecting rail, each reporting what it
    found, over a wash that widens as phases settle. Bounds row sits under a
-   divider with the pass dots right-aligned. ── */
+   divider with the iteration dots right-aligned. ── */
 .research-desk-stepper {
   position: relative;
   overflow: hidden;
@@ -634,7 +634,7 @@
 .research-bound--over .research-bound-bar::before { background: var(--color-warning); }
 .research-bound--met .research-bound-bar::before { background: var(--color-success); }
 
-.research-desk-stepper__pass {
+.research-desk-stepper__iteration {
   flex: none;
   margin-left: auto;
   display: inline-flex;
@@ -643,33 +643,33 @@
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
-.research-desk-stepper__pass-label {
+.research-desk-stepper__iteration-label {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
-.research-desk-stepper__dots {
+.research-desk-stepper__iteration-dots {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
 }
-.research-desk-stepper__dots i {
+.research-desk-stepper__iteration-dots i {
   width: 5px;
   height: 5px;
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--text-primary) 15%, transparent);
 }
-.research-desk-stepper__dots i[data-state="done"] {
+.research-desk-stepper__iteration-dots i[data-state="done"] {
   background: color-mix(in oklch, var(--research-accent) 55%, transparent);
 }
-.research-desk-stepper__dots i[data-state="current"] {
+.research-desk-stepper__iteration-dots i[data-state="current"] {
   width: 7px;
   height: 7px;
   background: var(--research-accent);
 }
-.research-desk-stepper__pass-text {
+.research-desk-stepper__iteration-text {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-weight: 600;
   color: var(--text-secondary);
@@ -1026,7 +1026,7 @@
     padding-bottom: var(--space-1);
   }
   .research-desk-stepper__bounds .research-bound-meter { gap: var(--space-3); }
-  .research-desk-stepper__pass { margin-left: 0; }
+  .research-desk-stepper__iteration { margin-left: 0; }
   .research-desk-tiles { grid-template-columns: 1fr; }
 }
 

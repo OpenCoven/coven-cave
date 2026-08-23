@@ -1,0 +1,95 @@
+{
+  "format": "opencoven.research-protocol-scenarios/v1",
+  "family": "run-event-sequence",
+  "objects": {
+    "first-event": {
+      "fixture": "valid/run-event.json"
+    },
+    "gapped-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 3,
+        "type": "run.status",
+        "data": {
+          "status": "scoping"
+        }
+      }
+    },
+    "other-run-second-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "runId": "run_other_01",
+        "sequence": 2,
+        "type": "run.status",
+        "data": {
+          "status": "scoping"
+        }
+      }
+    },
+    "second-event": {
+      "fixture": "valid/run-event.json",
+      "mergePatch": {
+        "sequence": 2,
+        "type": "run.status",
+        "data": {
+          "status": "scoping"
+        }
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "run-events.valid-sequence",
+      "description": "A direct event-sequence validation accepts one run's contiguous ordered stream.",
+      "validator": "run-event-sequence",
+      "inputs": {
+        "events": ["first-event", "second-event"]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "run-events.empty-sequence",
+      "description": "A direct event-sequence validation rejects an empty stream.",
+      "validator": "run-event-sequence",
+      "inputs": {
+        "events": []
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$"
+      }
+    },
+    {
+      "id": "run-events.gapped-sequence",
+      "description": "A direct event-sequence validation rejects a gap in persisted sequence numbers.",
+      "validator": "run-event-sequence",
+      "inputs": {
+        "events": ["first-event", "gapped-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].sequence"
+      }
+    },
+    {
+      "id": "run-events.mixed-run-sequence",
+      "description": "A direct event-sequence validation rejects events from another run.",
+      "validator": "run-event-sequence",
+      "inputs": {
+        "events": ["first-event", "other-run-second-event"]
+      },
+      "expected": {
+        "ok": false,
+        "stage": "composition",
+        "code": "semantic_conflict",
+        "path": "$[1].runId"
+      }
+    }
+  ]
+}

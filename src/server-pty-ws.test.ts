@@ -53,25 +53,19 @@ assert.match(
   /const secret = accessToken\(\);\s*if \(!secret \|\| !value\) return false/,
   "PTY WebSocket access-token auth fails closed when no access token is configured, reading the token lazily so mid-session arming (cave-os73) reaches the gate",
 );
-// The 401 applies when a remote/mobile credential is configured. With neither
-// token (plain local development) the loopback host+origin gate is the
-// protection. Once either credential exists, even loopback callers must prove
-// they hold it before the server will spawn or adopt a shell.
+// Remote/mobile callers need a configured credential. Direct, unforwarded
+// loopback remains the prompt-free browser path even while mobile access is
+// armed.
 assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(accessToken\(\) \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
 assert.match(
   src,
-  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,/,
-  "PTY upgrade authentication closes the credential-less path whenever either token is configured",
+  /sidecarTokenConfigured: Boolean\(SIDECAR_TOKEN\),\s*accessTokenConfigured: Boolean\(accessToken\(\)\),\s*tokenAuthenticated,\s*directLoopback: isDirectLoopbackRequest\(req\),/,
+  "PTY upgrade authentication preserves direct-loopback access while keeping remote credentials required",
 );
-// ...and it decides that WITHOUT consulting loopback at all. The positive
-// assertion above would still pass if someone re-introduced a direct-loopback
-// escape hatch beside it, which is exactly the bypass cave-ruw4z removed: TCP
-// loopback proves the caller is on this machine, never which OS user it is, so
-// any local account could otherwise adopt a shell as the Cave process owner.
-assert.doesNotMatch(
+assert.match(
   src,
-  /shouldRejectUnauthenticatedPtyUpgrade\([\s\S]{0,400}?isDirectLoopbackRequest/,
-  "no direct-loopback term may re-enter the PTY rejection decision",
+  /if \(tokenAuthenticated \|\| directLoopback\) return false;/,
+  "a verified direct-loopback caller must never be redirected into pairing for PTY access",
 );
 // Direct-loopback classification (cave-vn2r): trusted only because ALL three
 // hold — the socket peer is loopback, no forwarding markers are present
@@ -473,15 +467,44 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
     /function loopbackHostname\([\s\S]*?return "127\.0\.0\.1";\n}/,
   );
   assert.ok(hostnameBlock, "server defines a testable loopback-only hostname selector");
-  const loopbackHostname = new Function(
-    `${hostnameBlock[0]}; return loopbackHostname;`,
-  )();
+  const endpointBlock = src.match(
+    /function loopbackHttpEndpoint\([\s\S]*?\n}/,
+  );
+  assert.ok(endpointBlock, "server defines a testable loopback endpoint formatter");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${hostnameBlock[0]}\n${endpointBlock[0]}\nexport { loopbackHostname, loopbackHttpEndpoint };`,
+    { loader: "ts", format: "esm", target: "node24" },
+  );
+  const loopbackModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`,
+  );
+  const loopbackHostname = loopbackModule.loopbackHostname as (raw?: string) => string;
+  const loopbackHttpEndpoint = loopbackModule.loopbackHttpEndpoint as (
+    hostname: string,
+    port: number,
+  ) => string;
   for (const hostname of ["127.0.0.1", "localhost", "::1"]) {
     assert.equal(loopbackHostname(hostname), hostname, `${hostname} remains a supported loopback bind`);
   }
   for (const hostname of ["0.0.0.0", "192.168.1.20", "cave-host", ""]) {
     assert.equal(loopbackHostname(hostname), "127.0.0.1", `${hostname || "empty"} cannot expose the server`);
   }
+  assert.equal(
+    loopbackHttpEndpoint("127.0.0.1", 3020),
+    "http://127.0.0.1:3020",
+    "IPv4 loopback discovery endpoints remain unchanged",
+  );
+  assert.equal(
+    loopbackHttpEndpoint("localhost", 3020),
+    "http://localhost:3020",
+    "localhost discovery endpoints remain unchanged",
+  );
+  assert.equal(
+    loopbackHttpEndpoint("::1", 3020),
+    "http://[::1]:3020",
+    "IPv6 loopback discovery endpoints use URL brackets",
+  );
 }
 
 {

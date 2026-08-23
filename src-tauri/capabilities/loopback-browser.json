@@ -29,6 +29,10 @@
     "allow-browser-reload",
     "allow-desktop-reachability-status",
     "allow-desktop-reachability-configure",
-    "allow-record-daemon-reliability-measurement"
+    "allow-record-daemon-reliability-measurement",
+    "allow-offline-cache-read",
+    "allow-offline-cache-write",
+    "allow-offline-cache-clear",
+    "allow-offline-cache-status"
   ]
 }

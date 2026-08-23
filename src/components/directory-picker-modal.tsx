@@ -17,13 +17,15 @@ import {
   type PinnedPlace,
 } from "@/lib/directory-picker-pins";
 
-type DirEntry = { name: string; path: string; workspace?: boolean };
+type DirEntry = { name: string; path: string; workspace?: boolean; hidden?: boolean };
 type BrowseResponse = {
   ok: boolean;
   home?: string;
   cwd?: string;
   parent?: string | null;
   entries?: DirEntry[];
+  /** Dot folders in `cwd`, counted whether or not this response returned them. */
+  hiddenCount?: number;
   code?: string;
   error?: string;
 };
@@ -52,6 +54,34 @@ function placeIcon(place: Place): IconName {
 
 /** Pseudo-location the fs-browse API uses to list volume roots (drives). */
 const DRIVES = "::drives";
+
+const SHOW_HIDDEN_KEY = "cave:directory-picker:show-hidden";
+
+/**
+ * "Show hidden folders" is session-scoped on purpose. Revealing dot folders is
+ * almost always a one-off — picking a `.config` repository, say — so it should
+ * not quietly persist into next week's project pick and leave every listing
+ * cluttered. It does have to survive navigating between folders and reopening
+ * the modal, which rules out plain component state.
+ *
+ * Storage can throw outright (private mode, storage disabled), so both sides
+ * fall back to the hiding default rather than breaking the picker.
+ */
+function readShowHidden(): boolean {
+  try {
+    return window.sessionStorage.getItem(SHOW_HIDDEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeShowHidden(value: boolean): void {
+  try {
+    window.sessionStorage.setItem(SHOW_HIDDEN_KEY, value ? "1" : "0");
+  } catch {
+    /* unavailable — the toggle still holds for the life of this modal */
+  }
+}
 
 /**
  * Path separator of the server's native paths ("\" only for a Windows host),
@@ -133,7 +163,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pathDraft, setPathDraft] = useState("");
+  const [pathError, setPathError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
+  const [hiddenCount, setHiddenCount] = useState(0);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [placeGroups, setPlaceGroups] = useState<PlaceGroup[]>([]);
   const [pins, setPins] = useState<PinnedPlace[]>([]);
@@ -147,8 +181,15 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const modalSessionRef = useRef(0);
   const loadGenerationRef = useRef(0);
+  // `load` reads the preference through a ref rather than closing over the
+  // state, so toggling it does not produce a new `load` identity — the open
+  // effect depends on `load`, and rebuilding it there would re-run the whole
+  // modal-open reset and bounce the user back to $HOME.
+  const showHiddenRef = useRef(false);
   const newFolderHintId = "directory-picker-new-folder-help";
   const newFolderErrorId = "directory-picker-new-folder-error";
+  const pathHintId = "directory-picker-path-help";
+  const pathErrorId = "directory-picker-path-error";
 
   const resetCreateFolderState = useCallback(({ preserveBusy = false }: { preserveBusy?: boolean } = {}) => {
     setCreatingFolder(false);
@@ -157,27 +198,42 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     if (!preserveBusy) setCreateBusy(false);
   }, []);
 
-  const load = useCallback(async (dir: string | null, sessionGeneration = modalSessionRef.current) => {
+  const load = useCallback(async (
+    dir: string | null,
+    sessionGeneration = modalSessionRef.current,
+    fromPathEntry = false,
+  ) => {
     if (sessionGeneration !== modalSessionRef.current) return;
     const loadGeneration = ++loadGenerationRef.current;
     setLoading(true);
     setError(null);
+    setPathError(null);
     try {
-      const url = dir ? `/api/fs-browse?dir=${encodeURIComponent(dir)}` : "/api/fs-browse";
+      const params = new URLSearchParams();
+      if (dir) params.set("dir", dir);
+      if (showHiddenRef.current) params.set("hidden", "1");
+      const query = params.toString();
+      const url = query ? `/api/fs-browse?${query}` : "/api/fs-browse";
       const res = await fetch(url, { cache: "no-store" });
       const body = (await res.json()) as BrowseResponse;
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
       if (!res.ok || !body.ok || !body.cwd) {
-        setError(browseErrorMessage(body, "Could not read that folder"));
+        const message = browseErrorMessage(body, "Could not read that folder");
+        setError(message);
+        if (fromPathEntry) setPathError(message);
         return;
       }
       setHome((h) => h ?? body.home ?? body.cwd!);
       setCwd(body.cwd);
       setParent(body.parent ?? null);
       setEntries(body.entries ?? []);
+      setHiddenCount(body.hiddenCount ?? 0);
+      setPathDraft(body.cwd === DRIVES ? "" : body.cwd);
     } catch {
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
-      setError("Could not reach the folder browser");
+      const message = "Could not reach the folder browser";
+      setError(message);
+      if (fromPathEntry) setPathError(message);
     } finally {
       if (sessionGeneration !== modalSessionRef.current || loadGeneration !== loadGenerationRef.current) return;
       setLoading(false);
@@ -201,20 +257,38 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
   // Navigation (up, crumbs, opening a row) clears the per-folder UI state —
   // filter, highlight, and any in-progress inline create — before loading.
   const navigateTo = useCallback(
-    (dir: string | null) => {
+    (dir: string | null, { fromPathEntry = false }: { fromPathEntry?: boolean } = {}) => {
       setFilter("");
       setSelectedPath(null);
       resetCreateFolderState();
-      void load(dir);
+      void load(dir, modalSessionRef.current, fromPathEntry);
     },
     [load, resetCreateFolderState],
   );
+
+  // Revealing or re-hiding dot folders is a server-side decision, so it costs
+  // a reload of the current folder. Any highlight is dropped first: re-hiding
+  // while a dot folder is selected would otherwise leave the footer offering
+  // to select a row nobody can see.
+  const toggleShowHidden = useCallback(() => {
+    const next = !showHiddenRef.current;
+    showHiddenRef.current = next;
+    setShowHidden(next);
+    writeShowHidden(next);
+    setSelectedPath(null);
+    void load(cwd);
+  }, [cwd, load]);
 
   // Load $HOME each time the modal opens; reset when it closes.
   useEffect(() => {
     modalSessionRef.current += 1;
     const sessionGeneration = modalSessionRef.current;
     if (open) {
+      // Read the session preference before the first load so reopening the
+      // picker restores the state the last pick left it in.
+      const restored = readShowHidden();
+      showHiddenRef.current = restored;
+      setShowHidden(restored);
       void load(null, sessionGeneration);
       void loadPlaces(sessionGeneration);
       setPins(readPins());
@@ -226,12 +300,21 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       setEntries([]);
       setLoading(false);
       setError(null);
+      setPathDraft("");
+      setPathError(null);
       setFilter("");
+      setHiddenCount(0);
       setSelectedPath(null);
       setPlaceGroups([]);
       resetCreateFolderState();
     }
   }, [open, load, loadPlaces, resetCreateFolderState]);
+
+  const submitPathDraft = () => {
+    const nextPath = pathDraft.trim();
+    if (!nextPath || loading || createBusy) return;
+    navigateTo(nextPath, { fromPathEntry: true });
+  };
 
   // This is a true modal (aria-modal, covers the page). Trap focus inside it,
   // close on Escape, and restore focus to the trigger on close — the hook does
@@ -253,6 +336,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
   const createFolder = useCallback(async () => {
     if (!cwd || createBusy) return;
+    const requestedName = newFolderName.trim();
     const sessionGeneration = modalSessionRef.current;
     let shouldRefocusInput = false;
     let shouldRefocusCloseButton = false;
@@ -279,6 +363,16 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       // "Select <name>" finishes the flow in one click (the old modal jumped
       // inside the empty folder instead).
       setFilter("");
+      // …but a dot-prefixed folder would land straight into the hidden set and
+      // never come back from the reload, and the footer resolves its pending
+      // selection out of the *visible* entries — so "Select .config" would
+      // silently become "Select <parent>" and register the wrong project root.
+      // Typing the name is as explicit a request to see it as the toggle is.
+      if (requestedName.startsWith(".") && !showHiddenRef.current) {
+        showHiddenRef.current = true;
+        setShowHidden(true);
+        writeShowHidden(true);
+      }
       await load(cwd, sessionGeneration);
       if (sessionGeneration === modalSessionRef.current) {
         setSelectedPath(body.path);
@@ -368,6 +462,11 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
 
   const query = filter.trim().toLowerCase();
   const visibleEntries = query ? entries.filter((e) => e.name.toLowerCase().includes(query)) : entries;
+  // Dot folders the listing is currently withholding. The empty state has to
+  // name them: "This folder is empty" would otherwise flatly contradict the
+  // count on the toggle directly above it, and filtering for ".config" would
+  // report no match for a folder that is really there.
+  const withheldHidden = showHidden ? 0 : hiddenCount;
   const selected = selectedPath ? entries.find((e) => e.path === selectedPath) ?? null : null;
 
   const atHomeRoot = cwd !== null && cwd === home;
@@ -480,7 +579,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 <Icon name="ph:arrow-up" width={15} aria-hidden />
               </Button>
               <nav
-                aria-label="Folder path"
+                aria-label="Folder breadcrumbs"
                 className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto whitespace-nowrap font-mono text-[length:var(--text-sm)] [scrollbar-width:none] [&::-webkit-scrollbar]:h-0"
               >
                 {crumbs.map((crumb, i) => {
@@ -523,7 +622,64 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             </div>
 
             <div className="px-5 pb-2">
-              <label className="flex h-[34px] items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-2.5 transition-colors focus-within:border-[color-mix(in_oklch,var(--accent-presence)_50%,transparent)]">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitPathDraft();
+                }}
+                className="flex h-9 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 transition-colors focus-within:border-[var(--ring-focus)]"
+              >
+                <label
+                  htmlFor="directory-picker-path"
+                  className="flex-none text-[length:var(--text-xs)] font-medium text-[var(--text-secondary)]"
+                >
+                  Folder path
+                </label>
+                <input
+                  id="directory-picker-path"
+                  className="focus-ring h-full min-w-0 flex-1 rounded-[var(--radius-control)] bg-transparent font-mono text-base text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-60"
+                  value={pathDraft}
+                  onChange={(event) => {
+                    setPathDraft(event.target.value);
+                    setError(null);
+                    setPathError(null);
+                  }}
+                  onFocus={(event) => event.currentTarget.select()}
+                  placeholder="Paste an absolute folder path"
+                  disabled={loading || createBusy}
+                  aria-invalid={Boolean(pathError)}
+                  aria-describedby={pathError ? `${pathHintId} ${pathErrorId}` : pathHintId}
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="xs"
+                  disabled={!pathDraft.trim() || loading || createBusy}
+                  className="h-7 flex-none rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                >
+                  Go
+                </Button>
+              </form>
+              <p id={pathHintId} className="mt-1.5 px-1 text-[length:var(--text-xs)] text-[var(--text-muted)]">
+                Paste an absolute path, then press Enter.
+              </p>
+              {pathError ? (
+                <p
+                  id={pathErrorId}
+                  role="alert"
+                  className="mt-1 px-1 text-[length:var(--text-xs)] text-[var(--color-danger)]"
+                >
+                  {pathError}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 px-5 pb-2">
+              <label className="flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-inset)] px-2.5 transition-colors focus-within:border-[color-mix(in_oklch,var(--accent-presence)_50%,transparent)]">
                 <Icon name="ph:magnifying-glass" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                 <input
                   className="h-full w-full min-w-0 bg-transparent text-base text-[var(--foreground)] outline-none placeholder:text-[var(--text-muted)]"
@@ -537,6 +693,37 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                   aria-label="Filter folders"
                 />
               </label>
+              {/*
+                The accessible name stays "Show hidden folders" in both states
+                and aria-pressed carries the state, rather than the name
+                flipping to "Hide…" — a toggle whose label changes under the
+                cursor is the classic way to make a pressed control ambiguous
+                to a screen reader. The count varies, the verb never does.
+
+                The visible label reads "Hidden folders" rather than "Hidden"
+                so that it stays a substring of that accessible name (WCAG
+                2.5.3): speech input activates a control by its visible words,
+                and "Hidden (3)" appears nowhere in "Show hidden folders (3)".
+              */}
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-pressed={showHidden}
+                aria-label={
+                  hiddenCount > 0 ? `Show hidden folders (${hiddenCount})` : "Show hidden folders"
+                }
+                title="Dot-prefixed folders are hidden by default"
+                disabled={createBusy}
+                onClick={toggleShowHidden}
+                leadingIcon={showHidden ? "ph:eye" : "ph:eye-slash"}
+                className={`h-[34px] flex-none rounded-[var(--radius-control)] px-2.5 text-[length:var(--text-sm)] disabled:opacity-40 ${
+                  showHidden
+                    ? "text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                Hidden folders{!showHidden && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
+              </Button>
             </div>
 
             <div className="h-px flex-none bg-[var(--border-hairline)]" />
@@ -597,17 +784,23 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
                 </div>
               ) : null}
 
-              {error ? (
+              {error && !pathError ? (
                 <p role="alert" className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--color-danger)]">{error}</p>
               ) : loading && entries.length === 0 ? (
                 <p className="px-2 py-4 text-[length:var(--text-sm)] text-[var(--text-muted)]">Loading…</p>
               ) : visibleEntries.length === 0 && !creatingFolder ? (
                 <div className="flex flex-col items-center gap-1.5 px-5 py-8 text-center">
                   <p className="text-[length:var(--text-base)] text-[var(--text-secondary)]">
-                    {query ? `No folders match \u201C${filter.trim()}\u201D` : "This folder is empty"}
+                    {query
+                      ? `No folders match \u201C${filter.trim()}\u201D`
+                      : withheldHidden > 0
+                        ? "Only hidden folders here"
+                        : "This folder is empty"}
                   </p>
                   <p className="text-[length:var(--text-sm)] text-[var(--text-muted)]">
-                    Try a different name, or create one above.
+                    {withheldHidden > 0
+                      ? `${withheldHidden} hidden folder${withheldHidden === 1 ? " is" : "s are"} not shown.`
+                      : "Try a different name, or create one above."}
                   </p>
                 </div>
               ) : (

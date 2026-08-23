@@ -6,7 +6,7 @@ import { chatProjectById } from "@/lib/chat-projects";
 import { archiveAction, sessionMenuSections, voiceAction, type SessionMenuItemId } from "@/lib/chat-session-menu-model";
 import { Icon } from "@/lib/icon";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { useThreadInstrumentsVisible } from "@/lib/thread-instruments-visibility";
+import { useActivityMapVisible } from "@/lib/thread-instruments-visibility";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { ProjectPickerPopover } from "@/components/project-picker";
@@ -58,7 +58,7 @@ export function SessionOverflowMenu({
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showThinking, setShowThinking] = useShowThinking();
-  const [instrumentsVisible, setInstrumentsVisible] = useThreadInstrumentsVisible();
+  const [activityMapVisible, setActivityMapVisible] = useActivityMapVisible();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const keyboardOpenRequested = useRef(false);
@@ -72,7 +72,7 @@ export function SessionOverflowMenu({
     projectRoot: activeProject?.root ?? null,
     hasTurns,
     showThinking,
-    instrumentsVisible,
+    activityMapVisible,
     reflectAvailable: Boolean(onReflect),
     reflecting,
   });
@@ -159,8 +159,8 @@ export function SessionOverflowMenu({
       setShowThinking(!showThinking);
       close();
     },
-    instruments: () => {
-      setInstrumentsVisible(!instrumentsVisible);
+    "activity-map": () => {
+      setActivityMapVisible(!activityMapVisible);
       close();
     },
     reflect: () => {
@@ -211,7 +211,7 @@ export function SessionOverflowMenu({
                     key={item.id}
                     icon={item.icon}
                     checked={item.checked}
-                    // Only `thinking` and `instruments` carry `checked` here and
+                    // Only `thinking` and `activity-map` carry `checked` here and
                     // both are independent on/off toggles, not one of a set.
                     checkedRole="checkbox"
                     disabled={item.disabled}

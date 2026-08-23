@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./dashboard/bento-dashboard.tsx", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/bento-dashboard.css", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -52,6 +53,21 @@ assert.match(
   source,
   /retryAfterSeconds[\s\S]{0,500}?githubRetryUntilRef\.current/,
   "top-level GitHub backpressure delays dashboard polling",
+);
+assert.match(
+  css,
+  /\.bd-heat-grid \{[\s\S]{0,180}?grid-auto-columns: 1fr;/,
+  "adaptive heatmap columns divide the available width evenly",
+);
+assert.match(
+  css,
+  /\.bd-heat-cell \{[\s\S]{0,100}?height: 9px;/,
+  "adaptive heatmap cells keep a compact fixed height",
+);
+assert.doesNotMatch(
+  css.match(/\.bd-heat-cell \{[^}]*\}/)?.[0] ?? "",
+  /aspect-ratio/,
+  "wider short-history cells do not make the activity section taller",
 );
 
 console.log("bento-dashboard.test.ts: ok");

@@ -14,6 +14,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
+import { isDirectRun } from "./direct-run.mjs";
+
 const require = createRequire(import.meta.url);
 
 export const ICON_TSX_URL = new URL("../src/lib/icon.tsx", import.meta.url);
@@ -148,7 +150,7 @@ export function generate() {
 }
 
 // CLI entry — write all generated collections (and hard-fail on unknown names).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isDirectRun(import.meta.url)) {
   const {
     subset,
     missing,

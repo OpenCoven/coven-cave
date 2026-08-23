@@ -13,6 +13,20 @@ export type ReflectTranscriptTurn = {
 
 const REFLECT_MAX_TURNS = 36;
 const REFLECT_MAX_CHARS_PER_TURN = 900;
+export const TERMINAL_THREAD_REVIEW_TURNS = 2;
+export const MATURE_THREAD_REVIEW_TURNS = 8;
+
+export function shouldAutoReviewThread(input: {
+  settledAssistantTurns: number;
+  terminal: boolean;
+  busy: boolean;
+}): boolean {
+  if (input.busy || !Number.isInteger(input.settledAssistantTurns)) return false;
+  if (input.settledAssistantTurns < 0) return false;
+  return input.terminal
+    ? input.settledAssistantTurns >= TERMINAL_THREAD_REVIEW_TURNS
+    : input.settledAssistantTurns >= MATURE_THREAD_REVIEW_TURNS;
+}
 
 /** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
 export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {
@@ -50,10 +64,12 @@ export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]):
  * persistence route. `transcript` (from {@link buildReflectTranscript}) grounds an
  * ephemeral run that does not resume/pollute the original thread.
  */
-export function buildThreadReflectPrompt(opts: { sessionId: string; transcript?: string }): string {
-  const context = opts.transcript?.trim()
-    ? `Here is the thread you just completed (session: ${opts.sessionId}), oldest to newest:\n\n${opts.transcript}\n\n`
-    : `No transcript was captured for the thread just completed (session: ${opts.sessionId}). Judge only what you can actually establish; do not treat the missing transcript as a finding about the thread.\n\n`;
+export function buildThreadReflectPrompt(opts: { sessionId: string; transcript: string }): string {
+  const transcript = opts.transcript.trim();
+  if (!transcript) {
+    throw new Error("Thread reflection requires transcript evidence.");
+  }
+  const context = `Here is the thread you just completed (session: ${opts.sessionId}), oldest to newest:\n\n${transcript}\n\n`;
   return `${context}Reflect honestly on how that thread went for you as the familiar.
 Return ONLY a valid JSON object matching this exact shape - no prose, no markdown fences:
 
@@ -82,11 +98,11 @@ Return ONLY a valid JSON object matching this exact shape - no prose, no markdow
 
 Scope rule for "contextPressure": rate the THREAD ABOVE, not this reflection run.
 This is a separate, deliberately minimal run whose transcript is condensed and
-may be clipped or missing entirely. That is normal and expected — it is a
-property of how reflection works, never evidence about the thread. So:
+may be clipped. That is normal and expected — it is a property of how reflection
+works, never evidence about the thread. So:
 - Do NOT rate pressure on how much of the transcript you can see here.
 - Do NOT cite this prompt's own size, injected reference material, or a
-  truncated/absent transcript as a cause of pressure.
+  truncated transcript as a cause of pressure.
 - Rate "critical" or "excess" only for pressure the thread itself actually hit:
   the thread compacted, state had to be re-derived, work was dropped, or the
   thread was given far more material than its task required.
@@ -314,6 +330,16 @@ export type ThreadSignalsAggregate = {
   averageMemoryRecall: number;
   averageFileLocatability: number;
   contextCounts: Record<ContextPressure, number>;
+  /** Current-state metrics from the newest report. Historical averages/counts
+   * remain available for trends, but the remediation queue uses this snapshot
+   * so a verified recovery clears stale context and score alerts. */
+  current?: {
+    contextPressure: ContextPressure;
+    confidence: number;
+    toolReliability: number;
+    memoryRecall: number;
+    fileLocatability: number;
+  };
   skillsUsedMost: { skillId: string; count: number }[];
   skillsNeedingClarity: ThreadSelfReport["skillsNeedingClarity"];
   skillsNeedingAccess: ThreadSelfReport["skillsNeedingAccess"];
@@ -761,6 +787,17 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     averageMemoryRecall: libAvg(usable.map((r) => r.memoryRecallScore)),
     averageFileLocatability: libAvg(usable.map((r) => r.fileLocatabilityScore)),
     contextCounts,
+    ...(newest
+      ? {
+          current: {
+            contextPressure: newest.contextPressure,
+            confidence: newest.overallConfidence,
+            toolReliability: newest.toolReliability.score,
+            memoryRecall: newest.memoryRecallScore,
+            fileLocatability: newest.fileLocatabilityScore,
+          },
+        }
+      : {}),
     skillsUsedMost: [...skillsUsed.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -809,14 +846,30 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     });
   }
 
-  if (aggregate.contextCounts.critical > 0 || aggregate.contextCounts.tight > 0 || aggregate.contextCounts.excess > 0) {
+  const currentContext = aggregate.current?.contextPressure;
+  const hasCurrentContextPressure = currentContext
+    ? currentContext !== "adequate"
+    : aggregate.contextCounts.critical > 0 ||
+      aggregate.contextCounts.tight > 0 ||
+      aggregate.contextCounts.excess > 0;
+  if (hasCurrentContextPressure) {
+    const historicalDetail =
+      `${aggregate.contextCounts.critical} critical, ${aggregate.contextCounts.tight} tight, ${aggregate.contextCounts.excess} excess`;
     items.push({
       kind: "context-pressure",
-      severity: aggregate.contextCounts.critical > 0 ? "critical" : "warning",
+      severity: currentContext === "critical" ||
+          (!currentContext && aggregate.contextCounts.critical > 0)
+        ? "critical"
+        : "warning",
       sourceId: "context-pressure",
       title: "Context pressure",
-      detail: `${aggregate.contextCounts.critical} critical, ${aggregate.contextCounts.tight} tight, ${aggregate.contextCounts.excess} excess`,
-      rank: aggregate.contextCounts.critical > 0 ? 75 : 55,
+      detail: currentContext
+        ? `Newest report: ${contextPressureLabel(currentContext).label}`
+        : historicalDetail,
+      rank: currentContext === "critical" ||
+          (!currentContext && aggregate.contextCounts.critical > 0)
+        ? 75
+        : 55,
     });
   }
 
@@ -831,20 +884,28 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     });
   }
 
-  const lowScores: [string, ThreadSignalReviewItem["title"], number][] = [
-    ["confidence", "Confidence", aggregate.averageConfidence],
-    ["tool-reliability", "Tool reliability", aggregate.averageToolReliability],
-    ["memory-recall", "Memory recall", aggregate.averageMemoryRecall],
-    ["file-locatability", "File locatability", aggregate.averageFileLocatability],
-  ];
+  const lowScores: [string, ThreadSignalReviewItem["title"], number][] = aggregate.current
+    ? [
+        ["confidence", "Confidence", aggregate.current.confidence],
+        ["tool-reliability", "Tool reliability", aggregate.current.toolReliability],
+        ["memory-recall", "Memory recall", aggregate.current.memoryRecall],
+        ["file-locatability", "File locatability", aggregate.current.fileLocatability],
+      ]
+    : [
+        ["confidence", "Confidence", aggregate.averageConfidence],
+        ["tool-reliability", "Tool reliability", aggregate.averageToolReliability],
+        ["memory-recall", "Memory recall", aggregate.averageMemoryRecall],
+        ["file-locatability", "File locatability", aggregate.averageFileLocatability],
+      ];
+  const scoresAreCurrent = aggregate.current !== undefined;
   for (const [sourceId, title, score] of lowScores) {
-    if (score > 0 && score < 60) {
+    if (score < 60 && (scoresAreCurrent || score > 0)) {
       items.push({
         kind: "low-score",
         severity: score < 40 ? "critical" : "warning",
         sourceId,
         title,
-        detail: `Average ${score}/100`,
+        detail: `${scoresAreCurrent ? "Newest report" : "Average"} ${score}/100`,
         rank: score < 40 ? 72 : 42,
       });
     }

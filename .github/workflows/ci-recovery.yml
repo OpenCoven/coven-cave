@@ -37,4 +37,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+        # A red run here no longer means "nothing was recovered". Every
+        # recoverable PR is dispatched first; the non-zero exit reports only the
+        # candidates dropped for a reason a human should fix — an ambiguous
+        # guard contract (`workflow_contract_partial`, usually an un-rebased
+        # branch carrying an older ci.yml shape) or a REST failure. Read the
+        # `#<pr> skipped <reason>` lines to see which. Recovery for every other
+        # open PR already happened in this same run.
         run: node scripts/ci-recovery.mjs --apply

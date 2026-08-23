@@ -90,6 +90,8 @@ type Props = {
   familiarsError?: string | null;
   /** Retry a failed roster load. */
   onRetryFamiliars?: () => void;
+  /** Delegate user-initiated blank-chat launches to the shell's actor gate. */
+  onRequestNewChat?: () => void;
   onSlashFromChat?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   pendingProjectRoot?: string | null;
@@ -168,6 +170,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     familiarsLoaded,
     familiarsError,
     onRetryFamiliars,
+    onRequestNewChat,
     onSlashFromChat,
     onOpenOnboarding,
     pendingProjectRoot,
@@ -882,6 +885,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           if (fq) setPendingFind({ query: fq, nonce: Date.now() });
         }}
         onNewChat={(projectRoot, familiarId) => {
+          if (onRequestNewChat) {
+            onRequestNewChat();
+            return;
+          }
           // No familiar supplied means the user has not chosen one. Leave it
           // null so NewChatLaunch renders and asks, rather than adopting
           // visibleFamiliars[0] and silently making it the active familiar.
@@ -899,6 +906,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiars={familiars}
         sessions={sessions}
         pendingProjectRoot={pendingProjectRoot}
+        onRequestActor={onRequestNewChat}
         onPick={(familiarId) => {
           const next = selectFamiliarForChat(familiarId);
           setView({
@@ -1090,17 +1098,19 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
         }}
         onOpenSessionInSplit={enableSplit ? handleOpenSessionInSplit : undefined}
-        onNewChat={(root) => {
-          const group = sidebarGroups.find((g) => g.projectRoot === root);
-          // The group's own latest familiar is a real signal. Absent it, ask
-          // rather than fall back to whichever familiar sorts first.
-          const nextFamiliarId = group?.defaultFamiliarId ?? familiar?.id ?? null;
+        onNewChat={() => {
+          if (onRequestNewChat) {
+            onRequestNewChat();
+            return;
+          }
+          const nextFamiliarId = familiar?.id ?? null;
+          if (!nextFamiliarId) return;
           const next = nextFamiliarId ? selectFamiliarForChat(nextFamiliarId) : null;
           advanceComposeInstance();
           setView({
             kind: "chat",
             sessionId: null,
-            projectRoot: root ?? undefined,
+            projectRoot: undefined,
             familiarId: next?.id ?? nextFamiliarId ?? null,
           });
         }}

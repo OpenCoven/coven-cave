@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { relativeTime } from "@/lib/relative-time";
 import { openExternalUrl } from "@/lib/open-external";
+import { pullRequestReviewWorkItem } from "@/lib/review-landing";
 import {
   PR_READER_TABS,
   prChecksHeadline,
@@ -208,6 +209,20 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
   const [openCommit, setOpenCommit] = useState<string | null>(null);
 
   const pull = detail.phase === "ready" ? detail.detail.pull : null;
+  const workItem = useMemo(
+    () =>
+      detail.phase === "ready" && pull
+        ? pullRequestReviewWorkItem({
+            title: detail.detail.title,
+            repo,
+            number,
+            baseRef: pull.baseRef,
+            headRef: pull.headRef,
+            headSha: pull.headSha,
+          })
+        : null,
+    [detail, number, pull, repo],
+  );
   const blocks = useMemo(
     () => prStatBlocks(pull?.additions ?? 0, pull?.deletions ?? 0),
     [pull?.additions, pull?.deletions],
@@ -261,7 +276,7 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
         <>
           <header className="pr-reader__hero">
             <h1 className="pr-reader__title">
-              {detail.detail.title}
+              {workItem?.title ?? detail.detail.title}
               <span className="pr-reader__title-number"> #{detail.detail.number}</span>
             </h1>
             <div className="pr-reader__facts">
@@ -275,8 +290,10 @@ export function GitHubPrReader({ repo, number, onBack }: GitHubPrReaderProps) {
                 <span className="pr-reader__lineage">
                   <strong>{detail.detail.author?.login ?? "someone"}</strong> wants to merge{" "}
                   {pull.commits} {pull.commits === 1 ? "commit" : "commits"} into{" "}
-                  <span className="pr-reader__ref">{pull.baseRef}</span> from{" "}
-                  <span className="pr-reader__ref pr-reader__ref--head">{pull.headRef}</span>
+                  <span className="pr-reader__ref">{workItem?.kind === "pull-request" ? workItem.baseRef : pull.baseRef}</span> from{" "}
+                  <span className="pr-reader__ref pr-reader__ref--head">
+                    {workItem?.kind === "pull-request" ? workItem.headRef : pull.headRef}
+                  </span>
                 </span>
               ) : null}
               {detail.detail.createdAt ? (

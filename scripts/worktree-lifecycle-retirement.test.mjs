@@ -392,7 +392,7 @@ test("parseMaxRetire defaults and enforces exact bounds", () => {
   }
 });
 
-test("retireLifecycleUnits uses default batch size of three and leaves cleanupReady remainder", () => {
+test("retireLifecycleUnits stops after the default three successful retirements", () => {
   const items = [
     makeItem({ branch: "fix/d", ref: "refs/heads/fix/d", updatedAtMs: 40 }),
     makeItem({ branch: "fix/a", ref: "refs/heads/fix/a", updatedAtMs: 10 }),
@@ -420,6 +420,99 @@ test("retireLifecycleUnits uses default batch size of three and leaves cleanupRe
     calls.filter(([name]) => name === "heartbeatGate").length,
     12,
     "three worktree candidates should heartbeat before every destructive phase and after retirement",
+  );
+});
+
+test("retireLifecycleUnits bypasses blocked candidates until it reaches the successful-retirement limit", () => {
+  const items = ["a", "b", "c", "d", "e", "f"].map((branch, index) =>
+    makeItem({
+      kind: "branch-only",
+      path: null,
+      branch: `fix/${branch}`,
+      ref: `refs/heads/fix/${branch}`,
+      updatedAtMs: index,
+    }),
+  );
+  const { operations } = makeOperations({
+    reprobe(item) {
+      return item.ref === "refs/heads/fix/a" || item.ref === "refs/heads/fix/b"
+        ? { ok: false, reason: `fixture blocked ${item.ref}` }
+        : { ok: true, item };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items,
+    gateHandle: { generation: 8, token: "gate" },
+    operations,
+  });
+
+  assert.deepEqual(
+    report.attempts.map((attempt) => [attempt.ref, attempt.outcome]),
+    [
+      ["refs/heads/fix/a", "blocked"],
+      ["refs/heads/fix/b", "blocked"],
+      ["refs/heads/fix/c", "retired"],
+      ["refs/heads/fix/d", "retired"],
+      ["refs/heads/fix/e", "retired"],
+    ],
+  );
+  assert.deepEqual(
+    report.retired.map((item) => item.ref),
+    ["refs/heads/fix/c", "refs/heads/fix/d", "refs/heads/fix/e"],
+  );
+  assert.deepEqual(
+    report.blocked.map((block) => block.ref),
+    ["refs/heads/fix/a", "refs/heads/fix/b"],
+  );
+  assert.deepEqual(
+    report.cleanupReady.map((item) => item.ref),
+    ["refs/heads/fix/f"],
+    "only the eligible candidate skipped after the successful-retirement limit is cleanup-ready",
+  );
+});
+
+test("retireLifecycleUnits leaves only unattempted candidates cleanup-ready when its attempt budget is exhausted", () => {
+  const items = ["a", "b", "c", "d", "e", "f", "g"].map((branch, index) =>
+    makeItem({
+      kind: "branch-only",
+      path: null,
+      branch: `fix/${branch}`,
+      ref: `refs/heads/fix/${branch}`,
+      updatedAtMs: index,
+    }),
+  );
+  const { operations } = makeOperations({
+    reprobe(item) {
+      return { ok: false, reason: `fixture blocked ${item.ref}` };
+    },
+  });
+
+  const report = retireLifecycleUnits({
+    items,
+    gateHandle: { generation: 8, token: "gate" },
+    operations,
+  });
+
+  assert.deepEqual(
+    report.attempts.map((attempt) => attempt.ref),
+    [
+      "refs/heads/fix/a",
+      "refs/heads/fix/b",
+      "refs/heads/fix/c",
+      "refs/heads/fix/d",
+      "refs/heads/fix/e",
+    ],
+  );
+  assert.deepEqual(
+    report.blocked.map((block) => block.ref),
+    report.attempts.map((attempt) => attempt.ref),
+    "each attempted failed candidate remains blocked",
+  );
+  assert.deepEqual(
+    report.cleanupReady.map((item) => item.ref),
+    ["refs/heads/fix/f", "refs/heads/fix/g"],
+    "the attempt budget leaves only untouched eligible candidates cleanup-ready",
   );
 });
 
@@ -539,10 +632,12 @@ test("branch-only retirement skips worktree removal", () => {
   ]);
 });
 
-test("initial gate heartbeat failure blocks the current and remaining selected candidates", () => {
+test("initial gate heartbeat failure blocks the current and every remaining eligible candidate", () => {
   const items = [
     makeItem({ branch: "fix/a", ref: "refs/heads/fix/a", path: null, kind: "branch-only" }),
     makeItem({ branch: "fix/b", ref: "refs/heads/fix/b", path: null, kind: "branch-only" }),
+    makeItem({ branch: "fix/c", ref: "refs/heads/fix/c", path: null, kind: "branch-only" }),
+    makeItem({ branch: "fix/d", ref: "refs/heads/fix/d", path: null, kind: "branch-only" }),
   ];
   const { operations } = makeOperations({
     heartbeatGate() {
@@ -554,7 +649,7 @@ test("initial gate heartbeat failure blocks the current and remaining selected c
     items,
     gateHandle: { generation: 2, token: "gate" },
     operations,
-    maxRetire: "10",
+    maxRetire: "1",
   });
 
   assert.equal(report.retired.length, 0);
@@ -576,8 +671,19 @@ test("initial gate heartbeat failure blocks the current and remaining selected c
         partial: false,
         reason: "maintenance gate unavailable after earlier retirement failure: maintenance gate heartbeat failed before retirement: expired",
       },
+      {
+        ref: "refs/heads/fix/c",
+        partial: false,
+        reason: "maintenance gate unavailable after earlier retirement failure: maintenance gate heartbeat failed before retirement: expired",
+      },
+      {
+        ref: "refs/heads/fix/d",
+        partial: false,
+        reason: "maintenance gate unavailable after earlier retirement failure: maintenance gate heartbeat failed before retirement: expired",
+      },
     ],
   );
+  assert.deepEqual(report.cleanupReady, []);
 });
 
 test("initial gate ownership drift blocks without mutating", () => {
@@ -1763,7 +1869,7 @@ test("real git adapter reads tag retention from the remote, peeling annotated ta
   }
 });
 
-test("createGitRetirementOperations rejects path traversal, absolute paths, and symlink cleanup", () => {
+test("createGitRetirementOperations rejects unsafe paths and unlinks terminal symlinks", () => {
   const fixture = createGitFixture();
   try {
     const gate = withPathPrefix(fixture.bin, () =>
@@ -1818,16 +1924,31 @@ test("createGitRetirementOperations rejects path traversal, absolute paths, and 
 
     assert.deepEqual(operations.removeDisposableIgnored({
       ...baseItem,
-      ignoredPaths: ["target/linked"],
+      ignoredPaths: ["target/linked/owned.txt"],
     }), {
       ok: false,
-      reason: "refused disposable ignored cleanup through a symbolic link: target/linked",
+      reason: "refused disposable ignored cleanup through a symbolic link: target/linked/owned.txt",
     });
 
+    assert.equal(existsSync(path.join(worktree, "target", "linked")), true);
+    assert.deepEqual(
+      withPathPrefix(fixture.bin, () =>
+        operations.removeDisposableIgnored({
+          ...baseItem,
+          ignoredPaths: ["target/linked"],
+        }),
+      ),
+      { ok: true },
+    );
+    assert.equal(
+      existsSync(path.join(worktree, "target", "linked")),
+      false,
+      "terminal symlink cleanup removes only the link",
+    );
     assert.equal(
       existsSync(path.join(fixture.fixtureRoot, "outside", "owned.txt")),
       true,
-      "cleanup rejection must not delete the symlink target",
+      "symlink cleanup must not delete the target",
     );
 
     const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));
@@ -1955,6 +2076,148 @@ process.stdout.write(JSON.stringify(output) + "\\n");
       fixture.repo,
     );
     assert.equal(remoteProbe.status, 0, "remote branch should remain untouched");
+
+    const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));
+    assert.equal(released.ok, true);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
+// Two files hold the same lock-reason prefix and neither imports the other: the
+// hook must stay import-free (its symlink test copies it alone into a temp
+// directory), so the retirement path duplicates the constant. Silent drift
+// between them would not fail anything visibly — retirement would simply stop
+// recognising its own locks and go back to blocking forever, which is the
+// deadlock this pair exists to end. Read the hook's value and compare.
+test("the retirement path's auto-lock prefix matches the hook that writes it", () => {
+  const hookSource = readFileSync(path.join(scriptDir, "worktree-autolock.mjs"), "utf8");
+  const hookPrefix = /const REASON_PREFIX = "([^"]+)"/.exec(hookSource);
+  assert.ok(hookPrefix, "worktree-autolock.mjs must declare REASON_PREFIX as a string literal");
+
+  const retirementPrefix = /const AUTOLOCK_REASON_PREFIX = "([^"]+)"/.exec(retirementSource);
+  assert.ok(
+    retirementPrefix,
+    "worktree-lifecycle-retirement.ts must declare AUTOLOCK_REASON_PREFIX as a string literal",
+  );
+
+  assert.equal(
+    retirementPrefix[1],
+    hookPrefix[1],
+    "the duplicated auto-lock reason prefix has drifted; retirement can no longer recognise its own locks",
+  );
+});
+
+// A locked worktree used to end the sweep with git's own message, which names
+// neither the lock nor `git worktree unlock`, and recommends `-f -f` — the one
+// action that destroys live work. These two pin the split: our own stale lock
+// is released and the removal retried, a foreign lock stands and is reported.
+function createLockedWorktreeFixture(branch, lockReason) {
+  const fixture = createGitFixture();
+  const worktreePath = path.join(fixture.repo, ".worktrees", branch.replace(/\//g, "-"));
+  run(realGit, ["worktree", "add", "-q", "-b", branch, worktreePath, "HEAD"], fixture.repo);
+  const head = run(realGit, ["rev-parse", "HEAD"], fixture.repo).stdout.trim();
+  const locked = run(
+    realGit,
+    ["worktree", "lock", "--reason", lockReason, worktreePath],
+    fixture.repo,
+  );
+  assert.equal(locked.status, 0, "fixture must start from a genuinely locked worktree");
+  // Prove the precondition rather than assume it: without a lock these tests
+  // would pass on a plain removal and assert nothing about lock handling.
+  const refused = run(realGit, ["worktree", "remove", worktreePath], fixture.repo);
+  assert.notEqual(refused.status, 0, "git must refuse to remove a locked worktree");
+  return { fixture, worktreePath, head };
+}
+
+test("removeWorktree releases a stale auto-lock and retires the unit", () => {
+  const branch = "fix/stale-autolock";
+  const { fixture, worktreePath, head } = createLockedWorktreeFixture(
+    branch,
+    "auto-locked 2026-08-14: 1 commit not on any remote — a removal would lose this. " +
+      "Unlock when you are done: git worktree unlock <path>",
+  );
+  try {
+    const gate = withPathPrefix(fixture.bin, () =>
+      acquireMaintenanceGate({
+        ownerId: "retirement-test",
+        purpose: "stale auto-lock",
+        repoDir: fixture.repo,
+      }),
+    );
+    assert.equal(gate.ok, true);
+    const operations = createGitRetirementOperations({
+      root: fixture.repo,
+      repo: "OpenCoven/coven-cave",
+      gateHandle: gate.handle,
+      nowMs: 1_754_000_000_000,
+    });
+
+    // By the time removeWorktree runs, this pass has already re-proven the tree
+    // clean and its head retained on the remote — strictly stronger evidence
+    // than the hook uses to release a lock on its own. So the lock's claim is
+    // disproven and the unit must retire, not block.
+    const removed = withPathPrefix(fixture.bin, () =>
+      operations.removeWorktree(
+        makeItem({ path: worktreePath, branch, ref: `refs/heads/${branch}`, head }),
+      ),
+    );
+    assert.deepEqual(removed, { ok: true });
+    assert.equal(existsSync(worktreePath), false, "the worktree must actually be gone");
+
+    const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));
+    assert.equal(released.ok, true);
+  } finally {
+    cleanupFixture(fixture.fixtureRoot);
+  }
+});
+
+test("removeWorktree leaves a foreign lock in place and reports it actionably", () => {
+  const branch = "fix/foreign-lock";
+  const lockReason = "active cave-1c8zf PR completion";
+  const { fixture, worktreePath, head } = createLockedWorktreeFixture(branch, lockReason);
+  try {
+    const gate = withPathPrefix(fixture.bin, () =>
+      acquireMaintenanceGate({
+        ownerId: "retirement-test",
+        purpose: "foreign lock",
+        repoDir: fixture.repo,
+      }),
+    );
+    assert.equal(gate.ok, true);
+    const operations = createGitRetirementOperations({
+      root: fixture.repo,
+      repo: "OpenCoven/coven-cave",
+      gateHandle: gate.handle,
+      nowMs: 1_754_000_000_000,
+    });
+
+    const removed = withPathPrefix(fixture.bin, () =>
+      operations.removeWorktree(
+        makeItem({ path: worktreePath, branch, ref: `refs/heads/${branch}`, head }),
+      ),
+    );
+    assert.equal(removed.ok, false);
+    // Someone else's claim is not ours to evaluate, so the tree must survive
+    // intact AND still be locked — a report that silently unlocked would be the
+    // destructive inversion.
+    assert.equal(existsSync(worktreePath), true, "a foreign lock must not lose the worktree");
+    assert.match(
+      run(realGit, ["worktree", "list", "--porcelain"], fixture.repo).stdout,
+      /\nlocked /,
+      "a foreign lock must still be held after the refusal",
+    );
+    assert.match(removed.reason, /cannot evaluate/);
+    assert.ok(
+      removed.reason.includes(lockReason),
+      `the refusal must quote the lock's own reason; got: ${removed.reason}`,
+    );
+    assert.ok(
+      removed.reason.includes(`git worktree unlock ${worktreePath}`),
+      `the refusal must name the remedy with the real path; got: ${removed.reason}`,
+    );
+    // The whole point: never repeat git's `-f -f` advice as our own.
+    assert.match(removed.reason, /do NOT use\s+"git worktree remove -f -f"/);
 
     const released = withPathPrefix(fixture.bin, () => releaseMaintenanceGate(gate.handle));
     assert.equal(released.ok, true);

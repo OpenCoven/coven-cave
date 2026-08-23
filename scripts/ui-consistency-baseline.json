@@ -64,7 +64,7 @@
     {
       "rule": "components/no-native-select",
       "path": "src/components/role-surfaces/research-studio-modals.tsx",
-      "excerpt": "<select id=\"research-studio-config-source\" className=\"research-studio__select\" value={selectedSourceId ?? \"\"} onChange={(event) => onSelectSource(event.target.value)} >"
+      "excerpt": "<select id=\"research-studio-config-source\" className=\"research-studio__select focus-ring\" value={selectedSourceId ?? \"\"} onChange={(event) => onSelectSource(event.target.value)} >"
     },
     {
       "rule": "components/no-native-select",
@@ -74,7 +74,7 @@
     {
       "rule": "components/no-native-select",
       "path": "src/components/role-surfaces/research-tab-studio.tsx",
-      "excerpt": "<select id=\"research-studio-source\" className=\"research-studio__select\" value={effectiveSourceId ?? \"\"} onChange={(event) => setSourceId(event.target.value)} >"
+      "excerpt": "<select id=\"research-studio-source\" className=\"research-studio__select focus-ring\" value={effectiveSourceId ?? \"\"} onChange={(event) => setSourceId(event.target.value)} >"
     },
     {
       "rule": "components/no-native-select",
@@ -173,18 +173,8 @@
     },
     {
       "rule": "copy/no-ascii-ellipsis",
-      "path": "src/components/familiars-memory-view.tsx",
-      "excerpt": "placeholder={ lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory…` : \"Search memory...\" }"
-    },
-    {
-      "rule": "copy/no-ascii-ellipsis",
       "path": "src/components/marketplace/craft-create-drawer.tsx",
       "excerpt": "Loading roles..."
-    },
-    {
-      "rule": "copy/no-ascii-ellipsis",
-      "path": "src/components/mobile-handoff-modal.tsx",
-      "excerpt": "{loading ? \"Starting...\" : \"No QR\"}"
     },
     {
       "rule": "copy/no-ascii-ellipsis",

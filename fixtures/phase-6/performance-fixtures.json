@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "label": "Smoke scale used by ad-hoc local runs",
+      "fileCount": 100,
+      "transcriptBytes": 262144,
+      "iterations": 20
+    },
+    "phase-6-list-10k": {
+      "label": "Phase 6 ten-thousand conversation list scan",
+      "fileCount": 10000,
+      "transcriptBytes": 4096,
+      "iterations": 5
+    }
+  }
+}

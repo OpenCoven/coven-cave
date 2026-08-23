@@ -1,0 +1,217 @@
+export type SchedulerHandle = number | ReturnType<typeof setTimeout>;
+
+export type StreamingPresentationBuffer = {
+  update(source: string, settled: boolean): void;
+  dispose(): void;
+};
+
+export type StreamingPresentationSourceMode =
+  /** Arbitrary projected snapshots; every pending change coalesces onto the next frame. */
+  | "replaceable"
+  /** Longer pending snapshots preserve the complete prior source prefix; equal or shrinking snapshots may replace it. */
+  | "append-only";
+
+const DEFAULT_IDLE_MS = 90;
+const DEFAULT_MAX_WAIT_MS = 180;
+const FRAME_FALLBACK_MS = 16;
+const BOUNDARY_LOOKBEHIND_LENGTH = 256;
+const APPEND_BOUNDARY_PATTERN =
+  /(?:^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]|(?:`{3}|~{3})))|(\n)|([.!?…])(?:[ \t\r]|(?=\n)|$)/gm;
+
+function defaultScheduleFrame(callback: () => void): SchedulerHandle {
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    return globalThis.requestAnimationFrame(() => callback());
+  }
+  return setTimeout(callback, FRAME_FALLBACK_MS);
+}
+
+function defaultCancelFrame(handle: SchedulerHandle): void {
+  if (typeof globalThis.cancelAnimationFrame === "function") {
+    globalThis.cancelAnimationFrame(handle as number);
+    return;
+  }
+  clearTimeout(handle as Parameters<typeof clearTimeout>[0]);
+}
+
+function defaultScheduleTimer(callback: () => void, delayMs: number): SchedulerHandle {
+  return setTimeout(callback, delayMs);
+}
+
+function defaultCancelTimer(handle: SchedulerHandle): void {
+  clearTimeout(handle as Parameters<typeof clearTimeout>[0]);
+}
+
+function isOrderedListPeriod(source: string, punctuationIndex: number, scanStart: number): boolean {
+  let cursor = punctuationIndex - 1;
+  if (cursor < scanStart || source.charCodeAt(cursor) < 48 || source.charCodeAt(cursor) > 57) {
+    return false;
+  }
+
+  while (cursor >= scanStart) {
+    const code = source.charCodeAt(cursor);
+    if (code < 48 || code > 57) break;
+    cursor -= 1;
+  }
+  while (cursor >= scanStart) {
+    const code = source.charCodeAt(cursor);
+    if (code !== 32 && code !== 9) break;
+    cursor -= 1;
+  }
+  return cursor < 0 || source.charCodeAt(cursor) === 10;
+}
+
+function hasAppendBoundary(source: string, previousLength: number): boolean {
+  const scanStart = Math.max(0, previousLength - BOUNDARY_LOOKBEHIND_LENGTH);
+  APPEND_BOUNDARY_PATTERN.lastIndex = scanStart;
+
+  let match: RegExpExecArray | null;
+  while ((match = APPEND_BOUNDARY_PATTERN.exec(source)) !== null) {
+    const completion = match.index + match[0].length;
+    if (completion <= previousLength) continue;
+
+    const punctuation = match[2];
+    if (punctuation === "." && isOrderedListPeriod(source, match.index, scanStart)) continue;
+    return true;
+  }
+  return false;
+}
+
+function hasAppendOnlyNaturalBoundary(previousSource: string, source: string): boolean {
+  if (source.length <= previousSource.length) return true;
+  return hasAppendBoundary(source, previousSource.length);
+}
+
+export function createStreamingPresentationBuffer(options: {
+  initialSource: string;
+  onFlush: (source: string) => void;
+  scheduleFrame?: (callback: () => void) => SchedulerHandle;
+  cancelFrame?: (handle: SchedulerHandle) => void;
+  scheduleTimer?: (callback: () => void, delayMs: number) => SchedulerHandle;
+  cancelTimer?: (handle: SchedulerHandle) => void;
+  idleMs?: number;
+  maxWaitMs?: number;
+  sourceMode?: StreamingPresentationSourceMode;
+}): StreamingPresentationBuffer {
+  const scheduleFrame = options.scheduleFrame ?? defaultScheduleFrame;
+  const cancelFrame = options.cancelFrame ?? defaultCancelFrame;
+  const scheduleTimer = options.scheduleTimer ?? defaultScheduleTimer;
+  const cancelTimer = options.cancelTimer ?? defaultCancelTimer;
+  const idleMs = options.idleMs ?? DEFAULT_IDLE_MS;
+  const maxWaitMs = options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS;
+  const sourceMode = options.sourceMode ?? "replaceable";
+
+  let latestSource = options.initialSource;
+  let hasPresentedContent = options.initialSource.length > 0;
+  let disposed = false;
+  let windowOpen = false;
+  let frameHandle: SchedulerHandle | null = null;
+  let idleHandle: SchedulerHandle | null = null;
+  let maxHandle: SchedulerHandle | null = null;
+
+  const clearFrameHandle = (handle: SchedulerHandle | null = frameHandle) => {
+    if (handle === null) return;
+    if (frameHandle !== handle) return;
+    frameHandle = null;
+    cancelFrame(handle);
+  };
+
+  const clearIdleHandle = (handle: SchedulerHandle | null = idleHandle) => {
+    if (handle === null) return;
+    if (idleHandle !== handle) return;
+    idleHandle = null;
+    cancelTimer(handle);
+  };
+
+  const clearMaxHandle = (handle: SchedulerHandle | null = maxHandle) => {
+    if (handle === null) return;
+    if (maxHandle !== handle) return;
+    maxHandle = null;
+    cancelTimer(handle);
+  };
+
+  const cancelWindow = () => {
+    clearFrameHandle();
+    clearIdleHandle();
+    clearMaxHandle();
+    windowOpen = false;
+  };
+
+  const flush = () => {
+    if (disposed || !windowOpen) return;
+    const source = latestSource;
+    hasPresentedContent = true;
+    cancelWindow();
+    options.onFlush(source);
+  };
+
+  const scheduleFrameFlush = () => {
+    if (disposed || frameHandle !== null) return;
+    const frame = scheduleFrame(() => {
+      if (disposed || frameHandle !== frame) return;
+      flush();
+    });
+    frameHandle = frame;
+  };
+
+  const scheduleIdleFlush = () => {
+    const idle = scheduleTimer(() => {
+      if (disposed || idleHandle !== idle) return;
+      flush();
+    }, idleMs);
+    idleHandle = idle;
+  };
+
+  const scheduleMaxFlush = () => {
+    const max = scheduleTimer(() => {
+      if (disposed || maxHandle !== max) return;
+      flush();
+    }, maxWaitMs);
+    maxHandle = max;
+  };
+
+  const openWindow = (queueFrame: boolean) => {
+    if (windowOpen || disposed) return;
+    windowOpen = true;
+    if (queueFrame) scheduleFrameFlush();
+    scheduleIdleFlush();
+    scheduleMaxFlush();
+  };
+
+  const rescheduleIdle = () => {
+    if (!windowOpen || disposed) return;
+    clearIdleHandle();
+    scheduleIdleFlush();
+  };
+
+  return {
+    update(source, settled) {
+      if (disposed) return;
+      if (!settled && source === latestSource) return;
+      const previousSource = latestSource;
+      latestSource = source;
+
+      if (settled) {
+        hasPresentedContent = true;
+        cancelWindow();
+        options.onFlush(source);
+        return;
+      }
+
+      const queueFrame =
+        sourceMode === "replaceable" ||
+        !hasPresentedContent ||
+        hasAppendOnlyNaturalBoundary(previousSource, source);
+      if (!windowOpen) {
+        openWindow(queueFrame);
+        return;
+      }
+      rescheduleIdle();
+      if (queueFrame) scheduleFrameFlush();
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      cancelWindow();
+    },
+  };
+}

@@ -15,6 +15,7 @@
 
 import assert from "node:assert/strict";
 import {
+  shouldBypassMobileAccessGate,
   isLoopbackHost,
   isTailscaleServeHost,
   isAllowedApiHost,
@@ -32,6 +33,18 @@ import {
   accessGatePage,
   ACCESS_TOKEN_QUERY_PARAM,
 } from "./proxy-helpers.ts";
+
+// ─── shouldBypassMobileAccessGate ─────────────────────────────────────────
+assert.equal(
+  shouldBypassMobileAccessGate(true, "GET", "/", "text/html"),
+  true,
+  "ordinary trusted local navigation should still load the app shell",
+);
+assert.equal(
+  shouldBypassMobileAccessGate(true, "GET", "/?coven_access_prompt=1", "text/html"),
+  true,
+  "a stale explicit-prompt URL must not re-arm the local credential gate",
+);
 
 // ─── isLoopbackHost ────────────────────────────────────────────────────────
 // Host header per RFC 7230 §5.4: IPv6 must use `[...]` brackets; bare `::1`
@@ -383,8 +396,13 @@ assert.equal(
 );
 assert.equal(
   shouldRequireMobileAccessCredential("localhost:3000", false, true),
-  true,
-  "a direct loopback peer still needs user-bound credentials on a shared machine",
+  false,
+  "a server-stamped direct loopback peer must not require a pairing credential",
+);
+assert.equal(
+  shouldRequireMobileAccessCredential("localhost:3000", true, true),
+  false,
+  "a stale local access cookie must not re-arm the pairing gate",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("localhost:3000", false, true, false, true),
@@ -484,10 +502,11 @@ assert.equal(isHtmlNavigationRequest("GET", "/", null), false, "no Accept header
 // ─── accessGatePage ────────────────────────────────────────────────────────
 {
   const page = accessGatePage();
-  assert.match(page, /Access token required/);
+  assert.match(page, /Pair this device/);
   // The form re-enters the audited query-token exchange — the input MUST be
   // named exactly ACCESS_TOKEN_QUERY_PARAM and submit via GET.
   assert.match(page, new RegExp(`name="${ACCESS_TOKEN_QUERY_PARAM}"`));
+  assert.doesNotMatch(page, /coven_access_prompt/, "the remote pairing form should not retain the retired prompt marker");
   assert.match(page, /method="get"/);
   assert.match(page, /type="password"/, "token input must not echo on screen");
   assert.doesNotMatch(page, /<script/i, "gate page must be script-free (CSP-immune, no new surface)");

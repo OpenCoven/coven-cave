@@ -1,8 +1,14 @@
 # User-bound authentication for loopback callers — design
 
-Status: design for review
+Status: superseded on 2026-08-22 by `cave-99eon`
 Bead: `cave-ruw4z`
 Source: final security review of the daemon-connectivity audit (`cave-58eoq`)
+
+> **Superseding product decision:** direct, server-stamped, unforwarded
+> loopback is again a first-class browser caller for REST and PTY. The owner
+> explicitly prioritized eliminating the recurring pairing-token interruption.
+> Forwarded, Tailscale, and non-loopback ingress remain credential-gated. The
+> shared-machine tradeoff documented below is accepted rather than accidental.
 
 ## The defect
 

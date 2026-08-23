@@ -166,6 +166,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
   let sessionOwner: Awaited<ReturnType<ResearchMissionRunnerDeps["loadSessionOwner"]>> = null;
   return {
     createWorkspace: async (mission) => mission,
+    removeWorkspace: async () => {},
     loadMission: async () => null,
     saveMission: async () => {},
     loadSessionOwner: async () => sessionOwner ? structuredClone(sessionOwner) : null,
@@ -184,6 +185,9 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     readSessionTranscript: async () => "",
     readMissionFile: async () => null,
     readSources: async () => [],
+    materializeSavedLink: async () => {
+      throw new Error("saved X Article not found");
+    },
     publishKnowledge: async (entry) => entry,
     killSession: async () => {},
     createAutomation: async (input) => ({
@@ -276,6 +280,112 @@ test("create/start persists before launch and records the real session", async (
   assert.equal(result.iterations[0].sessionId, "session-1");
   assert.equal(result.iterations[0].flowRunId, "run-1");
   assert.equal(result.status, "running");
+});
+
+test("create/start materializes selected saved links before the first launch", async () => {
+  const calls: string[] = [];
+  const savedMissionSources: string[][] = [];
+  const runner = makeResearchMissionRunner(deps({
+    createWorkspace: async (mission) => {
+      calls.push("create");
+      return mission;
+    },
+    materializeSavedLink: async (_mission, savedLinkId) => {
+      calls.push(`materialize:${savedLinkId}`);
+      return {
+        source: {
+          id: `saved-${savedLinkId}`,
+          title: `Saved ${savedLinkId}`,
+          url: `https://example.com/${savedLinkId}`,
+          sourceType: "web",
+          status: "candidate",
+        },
+        rollback: async () => {},
+      };
+    },
+    saveMission: async (mission) => {
+      calls.push("save");
+      savedMissionSources.push(mission.sources.map((source) => source.id));
+    },
+    startFlow: async () => {
+      calls.push("start");
+      assert.deepEqual(savedMissionSources.at(-1), ["saved-link-a", "saved-link-b"]);
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+
+  const result = await runner.createAndStart({
+    ...INPUT,
+    savedLinkIds: ["link-a", "link-b"],
+  });
+
+  assert.deepEqual(calls, [
+    "create",
+    "materialize:link-a",
+    "materialize:link-b",
+    "save",
+    "start",
+    "save",
+  ]);
+  assert.deepEqual(result.sources.map((source) => source.id), [
+    "saved-link-a",
+    "saved-link-b",
+  ]);
+});
+
+test("create/start rolls back initial resource files when pre-launch persistence fails", async () => {
+  const rollbackCalls: string[] = [];
+  let startCalls = 0;
+  const runner = makeResearchMissionRunner(deps({
+    removeWorkspace: async (id) => {
+      rollbackCalls.push(`workspace:${id}`);
+    },
+    materializeSavedLink: async () => ({
+      source: {
+        id: "saved-link-a",
+        title: "Saved link",
+        url: "https://example.com/link-a",
+        sourceType: "web",
+        status: "candidate",
+      },
+      rollback: async () => {
+          rollbackCalls.push("resource");
+      },
+    }),
+    saveMission: async () => {
+      throw new Error("disk full");
+    },
+    startFlow: async () => {
+      startCalls += 1;
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+
+  await assert.rejects(
+    runner.createAndStart({ ...INPUT, savedLinkIds: ["link-a"] }),
+    /disk full/,
+  );
+  assert.deepEqual(rollbackCalls, ["resource", "workspace:mission-1"]);
+  assert.equal(startCalls, 0);
+});
+
+test("create/start removes the new workspace when initial resource materialization fails", async () => {
+  const calls: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    removeWorkspace: async (id) => {
+      calls.push(`remove:${id}`);
+    },
+    materializeSavedLink: async () => {
+      calls.push("materialize");
+      throw new Error("saved link unavailable");
+    },
+  }));
+
+  await assert.rejects(
+    runner.createAndStart({ ...INPUT, savedLinkIds: ["link-a"] }),
+    /saved link unavailable/,
+  );
+  assert.deepEqual(calls, ["materialize", "remove:mission-1"]);
 });
 
 test("create/start records exact daemon authority outside public mission state", async () => {
@@ -904,6 +1014,38 @@ test("two Continue calls create exactly one next iteration", async () => {
   assert.equal(starts, 1);
 });
 
+test("Continue advances from the latest persisted iteration number", async () => {
+  let stored = checkpointMission({
+    bounds: {
+      ...checkpointMission().bounds,
+      maxIterations: 5,
+    },
+    iterations: [
+      { number: 1, status: "completed" },
+      { number: 3, status: "checkpoint" },
+    ],
+  });
+  let startedFlowId = "";
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async (flow) => {
+      startedFlowId = flow.id;
+      return {
+        ok: true,
+        executor: "session",
+        sessionId: "session-4",
+        run: { ...RUN, id: "run-4", flowId: flow.id, sessionId: "session-4" },
+      };
+    },
+  }));
+
+  const result = await runner.act(stored.id, { action: "continue" });
+
+  assert.equal(result.iterations.at(-1)?.number, 4);
+  assert.match(startedFlowId, /iteration-4$/);
+});
+
 test("cost-unavailable policy pauses before another iteration", async () => {
   let stored = checkpointMission({
     bounds: {
@@ -918,6 +1060,136 @@ test("cost-unavailable policy pauses before another iteration", async () => {
   const result = await runner.act(stored.id, { action: "continue" });
   assert.equal(result.status, "paused");
   assert.match(result.lastError ?? "", /Cost unavailable/);
+});
+
+test("one-pass cost approval starts the next iteration without weakening the policy", async () => {
+  let stored = checkpointMission({
+    bounds: {
+      ...checkpointMission().bounds,
+      stopWhenCostUnavailable: true,
+    },
+  });
+  let starts = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async (flow) => {
+      starts += 1;
+      return {
+        ok: true,
+        executor: "session",
+        sessionId: "session-2",
+        run: { ...RUN, id: "run-2", flowId: flow.id, sessionId: "session-2" },
+      };
+    },
+  }));
+  const result = await runner.act(stored.id, {
+    action: "continue",
+    approveCostUnavailable: true,
+  });
+  assert.equal(result.status, "running");
+  assert.equal(result.iterations.length, 2);
+  assert.equal(result.bounds.stopWhenCostUnavailable, true);
+  assert.equal(starts, 1);
+});
+
+test("one-pass cost approval cannot override the reported spend cap", async () => {
+  let stored = checkpointMission({
+    bounds: {
+      ...checkpointMission().bounds,
+      maxSpendUsd: 1,
+      stopWhenCostUnavailable: true,
+    },
+    iterations: [
+      {
+        ...checkpointMission().iterations[0],
+        costUsd: 1,
+      },
+      {
+        number: 2,
+        status: "checkpoint",
+        startedAt: NOW.toISOString(),
+        finishedAt: NOW.toISOString(),
+        decision: "checkpoint",
+        decisionReason: "Review before continuing",
+      },
+    ],
+  });
+  let starts = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async () => {
+      starts += 1;
+      return { ok: true, executor: "session", sessionId: "must-not-start" };
+    },
+  }));
+  const result = await runner.act(stored.id, {
+    action: "continue",
+    approveCostUnavailable: true,
+  });
+  assert.equal(result.status, "paused");
+  assert.match(result.lastError ?? "", /Reported spend limit reached/);
+  assert.equal(starts, 0);
+});
+
+test("a blocked Continue cannot downgrade a completed mission", async () => {
+  const finishedAt = NOW.toISOString();
+  let stored = checkpointMission({
+    status: "completed",
+    finishedAt,
+    bounds: {
+      ...checkpointMission().bounds,
+      stopWhenCostUnavailable: true,
+    },
+    iterations: [{
+      ...checkpointMission().iterations[0],
+      status: "completed",
+      decision: "complete",
+      decisionReason: "Enough evidence",
+    }],
+  });
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => {
+      saves += 1;
+      stored = structuredClone(mission);
+    },
+  }));
+  const result = await runner.act(stored.id, { action: "continue" });
+  assert.equal(result.status, "completed");
+  assert.equal(result.finishedAt, finishedAt);
+  assert.equal(result.lastError, undefined);
+  assert.equal(saves, 0);
+});
+
+test("Resume approves one unmetered pass for a legacy cost-paused mission", async () => {
+  let stored = checkpointMission({
+    status: "paused",
+    lastError: "Cost unavailable; review before another iteration",
+    bounds: {
+      ...checkpointMission().bounds,
+      stopWhenCostUnavailable: true,
+    },
+  });
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    startFlow: async (flow) => ({
+      ok: true,
+      executor: "session",
+      sessionId: "session-2",
+      run: { ...RUN, id: "run-2", flowId: flow.id, sessionId: "session-2" },
+    }),
+  }));
+  const result = await runner.act(stored.id, {
+    action: "resume",
+    approveCostUnavailable: true,
+  });
+  assert.equal(result.status, "running");
+  assert.equal(result.iterations.length, 2);
+  assert.equal(result.lastError, undefined);
 });
 
 test("cancel kills the active session and preserves artifacts", async () => {
@@ -1168,6 +1440,7 @@ test("an active private owner blocks lifecycle, artifact, and schedule mutations
 
   for (const action of [
     { action: "attach-source" as const, source: { id: "manual", title: "Manual" } },
+    { action: "attach-saved-link" as const, savedLinkId: "saved-link-1", familiarId: "sage" },
     { action: "update-source" as const, sourceId: "manual", patch: { note: "later" } },
     { action: "finish" as const },
     { action: "archive" as const },
@@ -1212,6 +1485,219 @@ test("manual sources normalize, dedupe, and remain revisable", async () => {
   assert.equal(result.sources.length, 1);
   assert.equal(result.sources[0].status, "conflicting");
   assert.equal(result.sources[0].note, "Different target cohort");
+});
+
+test("attach-saved-link materializes a matching familiar's Article and remains idempotent", async () => {
+  let stored = checkpointMission();
+  const materializedIds: string[] = [];
+  let rollbacks = 0;
+  const source = {
+    id: "saved-0123456789abcdef01234567",
+    title: "Durable research",
+    url: "https://x.com/opencoven/status/123",
+    localPath: "source-files/x-article-0123456789abcdef01234567.md",
+    publisher: "OpenCoven",
+    publishedAt: "2026-08-17T20:00:00.000Z",
+    sourceType: "x-article",
+    status: "candidate" as const,
+  };
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    materializeSavedLink: async (_mission, savedLinkId) => {
+      materializedIds.push(savedLinkId);
+      return { source, rollback: async () => { rollbacks += 1; } };
+    },
+  }));
+
+  const first = await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: " saved-link-1 ",
+    familiarId: "sage",
+  });
+  const repeated = await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: "saved-link-1",
+    familiarId: "sage",
+  });
+
+  assert.deepEqual(materializedIds, ["saved-link-1", "saved-link-1"]);
+  assert.equal(first.sources.length, 1);
+  assert.equal(repeated.sources.length, 1);
+  assert.deepEqual(repeated.sources[0], source);
+  assert.equal(rollbacks, 0);
+});
+
+test("reattaching a saved Article preserves reviewed fields and refreshes its materialized reference", async () => {
+  let stored = checkpointMission();
+  let materialization = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    materializeSavedLink: async () => {
+      materialization += 1;
+      return {
+        source: materialization === 1
+          ? {
+            id: "saved-0123456789abcdef01234567",
+            title: "Fetched article title",
+            url: "https://x.com/opencoven/status/123",
+            localPath: "source-files/x-article-original.md",
+            publisher: "Fetched publisher",
+            publishedAt: "2026-08-17T20:00:00.000Z",
+            sourceType: "x-article",
+            status: "candidate" as const,
+          }
+          : {
+            id: "saved-0123456789abcdef01234567",
+            title: "Refetched article title",
+            url: "https://twitter.com/opencoven/status/123",
+            localPath: "source-files/x-article-current.md",
+            publisher: "Refetched publisher",
+            publishedAt: "2026-08-18T20:00:00.000Z",
+            sourceType: "x-article",
+            status: "candidate" as const,
+          },
+        rollback: async () => {},
+      };
+    },
+  }));
+
+  await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: "saved-link-1",
+    familiarId: "sage",
+  });
+  await runner.act(stored.id, {
+    action: "update-source",
+    sourceId: "saved-0123456789abcdef01234567",
+    patch: {
+      title: "Reviewer title",
+      publisher: "Reviewer publisher",
+      publishedAt: "2020-01-01T00:00:00.000Z",
+      sourceType: "primary source",
+      claim: "Supports the primary claim",
+      note: "Reviewed against the source",
+      confidence: 0.9,
+      status: "used",
+    },
+  });
+  const repeated = await runner.act(stored.id, {
+    action: "attach-saved-link",
+    savedLinkId: "saved-link-1",
+    familiarId: "sage",
+  });
+
+  assert.equal(repeated.sources.length, 1);
+  assert.deepEqual(repeated.sources[0], {
+    id: "saved-0123456789abcdef01234567",
+    title: "Reviewer title",
+    url: "https://twitter.com/opencoven/status/123",
+    localPath: "source-files/x-article-current.md",
+    publisher: "Reviewer publisher",
+    publishedAt: "2020-01-01T00:00:00.000Z",
+    sourceType: "primary source",
+    claim: "Supports the primary claim",
+    note: "Reviewed against the source",
+    confidence: 0.9,
+    status: "used",
+  });
+});
+
+test("attach-saved-link rejects unauthorized inputs before reconciliation or any mutation", async () => {
+  const stored = checkpointMission();
+  let reconciliations = 0;
+  let sessionOwnerLoads = 0;
+  let materializations = 0;
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    loadSessionOwner: async () => {
+      sessionOwnerLoads += 1;
+      return null;
+    },
+    loadFlowRun: async () => {
+      reconciliations += 1;
+      return null;
+    },
+    saveMission: async () => { saves += 1; },
+    materializeSavedLink: async () => {
+      materializations += 1;
+      throw new Error("should not materialize");
+    },
+  }));
+
+  await assert.rejects(
+    () => runner.act(stored.id, {
+      action: "attach-saved-link",
+      savedLinkId: "saved-link-1",
+      familiarId: "other",
+    }),
+    { message: "research mission not found" },
+  );
+  for (const savedLinkId of ["   ", "x".repeat(129)]) {
+    await assert.rejects(
+      () => runner.act(stored.id, {
+        action: "attach-saved-link",
+        savedLinkId,
+        familiarId: "sage",
+      }),
+      { message: "saved link id is invalid" },
+    );
+  }
+  assert.equal(reconciliations, 0);
+  assert.equal(sessionOwnerLoads, 0);
+  assert.equal(materializations, 0);
+  assert.equal(saves, 0);
+});
+
+test("attach-saved-link compensates its materialized file if the mission save fails", async () => {
+  const stored = checkpointMission();
+  let rollbacks = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async () => { throw new Error("mission save failed"); },
+    materializeSavedLink: async () => ({
+      source: {
+        id: "saved-0123456789abcdef01234567",
+        title: "Durable research",
+        localPath: "source-files/x-article-0123456789abcdef01234567.md",
+        sourceType: "x-article",
+        status: "candidate",
+      },
+      rollback: async () => { rollbacks += 1; },
+    }),
+  }));
+
+  await assert.rejects(
+    () => runner.act(stored.id, {
+      action: "attach-saved-link",
+      savedLinkId: "saved-link-1",
+      familiarId: "sage",
+    }),
+    { message: "mission save failed" },
+  );
+  assert.equal(rollbacks, 1);
+});
+
+test("attach-saved-link does not save when materialization fails", async () => {
+  const stored = checkpointMission();
+  let saves = 0;
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async () => { saves += 1; },
+    materializeSavedLink: async () => { throw new Error("saved X Article not found"); },
+  }));
+
+  await assert.rejects(
+    () => runner.act(stored.id, {
+      action: "attach-saved-link",
+      savedLinkId: "saved-link-1",
+      familiarId: "sage",
+    }),
+    { message: "saved X Article not found" },
+  );
+  assert.equal(saves, 0);
 });
 
 test("artifact rejection preserves the file reference and refine starts once", async () => {

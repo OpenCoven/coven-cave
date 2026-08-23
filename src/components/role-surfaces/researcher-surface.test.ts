@@ -147,10 +147,9 @@ test("prompt tab composes the composer + quick saves and follows starts to the d
   assert.match(promptTab, /ResearchMissionComposer/);
   // Quick saves read the same links store as the Resources tab via the shared hook.
   assert.match(promptTab, /useResearchLinks/);
-  // Attached saves land on the new mission as candidate sources through the
-  // ledger's exact attach-source action.
-  assert.match(promptTab, /action: "attach-source"/);
-  assert.match(promptTab, /status: "candidate"/);
+  // Attached saves travel with mission creation so the first pass sees them.
+  assert.match(promptTab, /savedLinkIds: attached\.map\(\(link\) => link\.id\)/);
+  assert.doesNotMatch(promptTab, /action: "attach-source"/);
   assert.match(promptTab, /daemonRunning=\{context\.runtimeState\.daemonRunning\}/);
   assert.match(promptTab, /onNavigate\("desk", \{ missionId: result\.mission\.id \}\)/);
 });
@@ -326,9 +325,12 @@ test("the action bar reads decision-first with a consequence-labeled Continue", 
   assert.ok(bannerIndex !== -1 && actionsIndex !== -1 && bannerIndex < actionsIndex);
   // Continue says which iteration it starts (researchContinueLabel is
   // behaviorally tested in the lib suite) and demotes itself when any runner
-  // stop gate — iteration, wall-clock, cost policy, spend — already refuses.
+  // hard stop gate — iteration, wall-clock, spend — already refuses. Missing
+  // cost instead gets an explicit one-pass approval payload.
   assert.match(detail, /researchContinueLabel\(mission\)/);
-  assert.match(detail, /continueInfo\.gated \? "ghost" : "primary"/);
+  assert.match(detail, /continueInfo\.costApprovalRequired \? "secondary"/);
+  assert.match(detail, /continueInfo\.gated && !continueInfo\.costApprovalRequired/);
+  assert.match(detail, /approveCostUnavailable: true/);
   assert.match(detail, /"aria-label": continueInfo\.description, title: continueInfo\.description/);
   assert.match(detail, /continueInfo\.label/);
 });
@@ -341,7 +343,7 @@ test("retry adapts to project-root failures with a visible config", () => {
   // …the button label says what the retry will actually do…
   assert.match(detail, /Retry in workspace/);
   assert.match(detail, /Retry with new root/);
-  assert.match(detail, /runAction\(action === "retry" \? plannedRetry : \{ action \}\)/);
+  assert.match(detail, /action === "retry"[\s\S]{0,120}?\? plannedRetry/);
   // …and the root is editable with an honest workspace fallback.
   assert.match(detail, /id="research-retry-root"/);
   assert.match(detail, /Leave empty to run in the mission workspace/);

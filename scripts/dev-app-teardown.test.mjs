@@ -79,11 +79,23 @@ writeFileSync(path.join(fakeScripts, "whisper-runtime-dev-env.sh"), "# stub for 
 const fakePnpm = (port, pidFile) => `#!/usr/bin/env bash
 if [ "$1" = "dev" ]; then
 echo "server $$" >>"${pidFile}"
+echo "server_token $COVEN_CAVE_AUTH_TOKEN" >>"${pidFile}"
 node -e '
   const http = require("http");
   const fs = require("fs");
   const server = http.createServer((request, response) => {
-    response.writeHead(204);
+    // Mirror the readiness contract in src/proxy.ts: only an authenticated
+    // dev-shell probe earns the proof header. Answering it unconditionally
+    // would let this test pass against a launcher that never sends a token.
+    const url = new URL(request.url, "http://127.0.0.1");
+    const expected = process.env.COVEN_CAVE_DEV_PROBE_TOKEN || "";
+    const supplied = request.headers["x-coven-cave-readiness-token"] || "";
+    const ready = request.method === "GET"
+      && url.pathname === "/"
+      && url.searchParams.get("__devShellProbe") === "1"
+      && expected.length > 0
+      && supplied === expected;
+    response.writeHead(204, { "x-coven-cave-readiness": ready ? "1" : "0" });
     response.end();
   });
   server.listen(${port}, "127.0.0.1", () => {
@@ -95,6 +107,7 @@ child=$!
 wait "$child"
 else
 echo "tauri $$" >>"${pidFile}"
+echo "tauri_token $COVEN_CAVE_AUTH_TOKEN" >>"${pidFile}"
 node -e "setInterval(() => {}, 1000)" &
 child=$!
 wait "$child"
@@ -166,6 +179,16 @@ async function assertTeardown(signal) {
     });
     assert.ok(pids.tauri, "the launcher must actually start the Tauri child");
     assert.ok(pids.server, "the Tauri child must own the dev server process");
+    assert.match(
+      pids.server_token,
+      /^[0-9a-f]{64}$/,
+      "an absent dev sidecar token must be minted before the server starts",
+    );
+    assert.equal(
+      pids.tauri_token,
+      pids.server_token,
+      "the Tauri WebView and dev server must receive the same per-launch token",
+    );
 
     process.kill(wrapper.pid, signal);
 

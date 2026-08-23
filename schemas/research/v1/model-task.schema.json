@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "opencoven.model-task/v1",
+  "title": "OpenCoven Model Task v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema",
+    "id",
+    "runId",
+    "phase",
+    "attempt",
+    "inputDigest",
+    "input",
+    "modelBinding",
+    "policy",
+    "outputSchema",
+    "leaseExpiresAt"
+  ],
+  "properties": {
+    "schema": { "const": "opencoven.model-task/v1" },
+    "id": { "$ref": "#/$defs/modelTaskId" },
+    "runId": { "$ref": "#/$defs/runId" },
+    "phase": { "enum": ["scope", "challenge", "synthesize", "control"] },
+    "attempt": { "$ref": "#/$defs/positiveSafeInteger" },
+    "inputDigest": { "$ref": "#/$defs/sha256" },
+    "input": { "$ref": "#/$defs/input" },
+    "modelBinding": { "$ref": "#/$defs/modelBinding" },
+    "policy": { "$ref": "#/$defs/policy" },
+    "outputSchema": { "type": "string" },
+    "leaseExpiresAt": { "$ref": "#/$defs/utcTimestamp" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 20,
+      "maxLength": 30,
+      "pattern": "^(?:(?:\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d)|(?:1972-(?:06-30|12-31)|197[3-9]-12-31|198[1235]-06-30|198[79]-12-31|1990-12-31|199[2347]-06-30|199[58]-12-31|200[58]-12-31|201[25]-06-30|2016-12-31)T23:59:60)(?:\\.\\d{1,9})?Z$"
+    },
+    "modelTaskId": {
+      "type": "string",
+      "pattern": "^modeltask_[A-Za-z0-9_-]+$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run_[A-Za-z0-9_-]+$"
+    },
+    "contextPackId": {
+      "type": "string",
+      "pattern": "^ctx_[A-Za-z0-9_-]+$"
+    },
+    "topicProposalId": {
+      "type": "string",
+      "pattern": "^proposal_[A-Za-z0-9_-]+$"
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["contextPack", "publicEvidenceRefs"],
+      "properties": {
+        "topicProposalId": { "$ref": "#/$defs/topicProposalId" },
+        "contextPack": { "$ref": "#/$defs/contextPack" },
+        "publicEvidenceRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "contextPack": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "digest", "availability"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contextPackId" },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "availability": { "const": "device-local" }
+      }
+    },
+    "modelBinding": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["familiarId", "selection"],
+      "properties": {
+        "familiarId": { "type": "string" },
+        "selection": { "enum": ["resolve-at-run-start", "pinned"] },
+        "model": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "selection": { "const": "pinned" } },
+            "required": ["selection"]
+          },
+          "then": {
+            "required": ["model"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "selection": { "const": "resolve-at-run-start" } },
+            "required": ["selection"]
+          },
+          "then": {
+            "not": { "required": ["model"] }
+          }
+        }
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["permissionMode", "allowedOutputs", "allowRemoteQueries", "maxOutputTokens"],
+      "properties": {
+        "permissionMode": { "const": "read" },
+        "allowedOutputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true
+        },
+        "allowRemoteQueries": { "type": "boolean" },
+        "maxOutputTokens": { "$ref": "#/$defs/positiveSafeInteger" }
+      }
+    }
+  }
+}

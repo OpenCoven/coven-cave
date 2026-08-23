@@ -142,8 +142,13 @@ async function openReader(page: Page, turn: TurnSpec) {
   await expect(page.locator(".cave-artifact-content").last()).toContainText(marker.slice(0, 24), { timeout: 30_000 });
 
   await page.locator(".cave-artifact-content").last().hover();
-  await page.getByRole("button", { name: "More response actions" }).last().click({ force: true });
-  await page.getByRole("menuitem", { name: "Open reader" }).click();
+  const responseActions = page.getByRole("button", { name: "More response actions" }).last();
+  await expect(responseActions).toBeVisible();
+  await responseActions.click();
+  const menu = page.getByRole("menu", { name: "More response actions" });
+  const openReaderItem = menu.getByRole("menuitem", { name: "Open reader" });
+  await expect(openReaderItem).toBeVisible({ timeout: 30_000 });
+  await openReaderItem.click();
   // The reader is loaded through next/dynamic so its chunk (and stylesheet)
   // stay off the / route's first paint (#4255) — the FIRST open in a run pays
   // for `next dev` to compile that chunk on demand, which measured well past

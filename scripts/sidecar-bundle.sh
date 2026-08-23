@@ -472,6 +472,17 @@ bundle_piper_runtime
 bundle_kokoro_runtime
 
 echo "==> next build"
+# Raise the V8 heap for the release build. Node sizes its default old-space from
+# available RAM, so this build passes on the 16 GB ubuntu and Windows runners and
+# on developer machines, but OOMs on macos-15 — which caps the default near
+# 2 GB and dies in Next's TypeScript phase, after "Compiled successfully".
+# That failure skips the packaged-sidecar smoke and therefore the iOS TestFlight
+# upload downstream, so pin the ceiling here (where every caller inherits it)
+# rather than per-workflow. Respect an inherited NODE_OPTIONS if the caller
+# already set one.
+if [ -z "${NODE_OPTIONS:-}" ]; then
+  export NODE_OPTIONS="--max-old-space-size=4096"
+fi
 (cd "$ROOT" && pnpm build) >&2
 
 STANDALONE="$ROOT/.next/standalone"
@@ -479,6 +490,13 @@ if [ ! -f "$STANDALONE/server.js" ]; then
   echo "ERROR: $STANDALONE/server.js missing after build" >&2
   exit 1
 fi
+
+# The research paper viewer's pdf.js worker is a generated, gitignored asset in
+# public/. `prebuild` stages it; this asserts the result before the expensive
+# assembly, because a bundle missing it verifies as complete everywhere except
+# in front of a reader, who is told only "Couldn't render this paper" (cave-9hc).
+echo "==> verifying staged pdf.js worker"
+node "$ROOT/scripts/copy-pdf-worker.mjs" --verify >&2
 
 echo "==> staging Node runtime for bundled sidecar"
 if [ "$BUILD_PLATFORM" = "win32" ]; then

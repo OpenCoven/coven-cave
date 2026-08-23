@@ -1,4 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  catalogForRuntime,
+  runtimeModelInventoryAvailability,
+  runtimeModelInventoryFreshness,
+  runtimeModelInventoryRefreshState,
+  runtimeModelInventoryScope,
+} from "../src/lib/runtime-models";
 
 // Verifies the composer runtime picker (cave-yq5l / cave-v25g / cave-bfwk,
 // split-chip grammar since cave-g21f): the chat composer footer's model chip
@@ -46,6 +53,32 @@ async function seed(page: Page): Promise<Mutable> {
     state.familiarsServed += 1;
     return route.fulfill({
       json: { ok: true, familiars: [{ ...FAMILIAR_BASE, harness: state.harness }] },
+    });
+  });
+  // Runtime switching must not compile a live inventory route or probe an
+  // installed CLI inside this otherwise-hermetic picker test.
+  await page.route(/\/api\/runtime-models\/([^/?]+)(?:\?.*)?$/, (route) => {
+    expect(route.request().method()).toBe("GET");
+    const url = new URL(route.request().url());
+    const runtime = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+    const catalog = catalogForRuntime(runtime);
+    if (!catalog) {
+      return route.fulfill({ status: 404, json: { ok: false, error: "runtime not found" } });
+    }
+    const provenance = "fallback" as const;
+    return route.fulfill({
+      json: {
+        ok: true,
+        runtime,
+        models: catalog.models,
+        provenance,
+        freshness: runtimeModelInventoryFreshness(provenance),
+        refreshState: runtimeModelInventoryRefreshState(provenance),
+        availability: runtimeModelInventoryAvailability(provenance),
+        defaultOwner: catalog.defaultOwner,
+        allowCustom: catalog.allowCustom,
+        scope: runtimeModelInventoryScope(runtime, url.searchParams.get("familiarId")),
+      },
     });
   });
   await page.route("**/api/sessions/list**", (route) =>

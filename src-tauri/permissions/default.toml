@@ -17,6 +17,7 @@ permissions = [
   "allow-browser-reload",
   "allow-shell-open",
   "allow-open-x-oauth-url",
+  "allow-set-traffic-lights-visible",
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
@@ -27,4 +28,8 @@ permissions = [
   "allow-desktop-reachability-status",
   "allow-desktop-reachability-configure",
   "allow-record-daemon-reliability-measurement",
+  "allow-offline-cache-read",
+  "allow-offline-cache-write",
+  "allow-offline-cache-clear",
+  "allow-offline-cache-status",
 ]
