@@ -119,7 +119,7 @@
  * and `52px + var(--sai-top)` is the mobile `.top-bar` height from
  * shell-responsive.css.
  *
- * tests/mobile/inbox-toast-chrome-clearance.spec.ts is the geometric guard,
+ * tests/inbox-toast-chrome-clearance.spec.ts is the geometric guard,
  * and it asserts both directions: the toggle must win its own centre, and the
  * toast's own controls must stay clickable. */
 .inbox-toast-stack {
