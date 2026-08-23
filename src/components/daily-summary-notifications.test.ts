@@ -115,7 +115,17 @@ assert.match(toast, /const urgent = t\.kind === "response-needed"/, "reply reque
 assert.match(toast, /role=\{urgent \? "alert" : "status"\}/, "the live-region role follows urgency");
 assert.match(toast, /\.filter\(\(g\) => !g\.ids\.some\(\(id\) => pausedIds\.has\(id\)\)\)/, "hover/focus pauses the group's auto-hide (WCAG 2.2.1)");
 assert.match(toast, /setTimeout\(\(\) => g\.ids\.forEach\(\(id\) => expire\(id\)\), AUTO_DISMISS_MS\)/, "one timer per group — members expire together, not one re-arm at a time");
-assert.match(toast, /onMouseEnter=\{\(\) => setPaused\(g\.ids, true\)\}/, "hover pauses (the whole group — every member id)");
+// cave-lcxc6 moved this from onMouseEnter to a pointer-type-gated
+// onPointerEnter. Same contract — hover pauses the whole group, every member
+// id — with the touch case excluded, because a tap raises pointerenter but its
+// pointerleave only arrives when the user taps elsewhere, which pinned the
+// auto-hide open and made a transient toast permanent.
+assert.match(
+  toast,
+  /onPointerEnter=\{\(e\) => \{ if \(e\.pointerType !== "touch"\) setPaused\(g\.ids, true\); \}\}/,
+  "hover pauses (the whole group — every member id), for hovering pointers only",
+);
+assert.doesNotMatch(toast, /onMouseEnter=/, "the ungated mouseenter pause stays gone");
 assert.match(toast, /e\.currentTarget\.contains\(e\.relatedTarget as Node \| null\)/, "focus-within keeps the pause until focus leaves the toast");
 assert.match(toast, /aria-label=\{`Dismiss: \$\{title\}`\}/, "the dismiss control names its toast (normalized title)");
 assert.doesNotMatch(toast, />\s*Dismiss\s*<\/button>/, "the duplicate text Dismiss button stays gone");
