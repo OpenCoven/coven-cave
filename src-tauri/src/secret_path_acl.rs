@@ -1151,6 +1151,64 @@ mod tests {
         }
 
         #[test]
+        fn a_reparse_point_is_refused_rather_than_written_through() {
+            // `SetNamedSecurityInfoW` follows a reparse point, so the DACL this
+            // module verified would not be the DACL guarding the bytes a write
+            // lands in. That is the gap cave-8p0hn records against the
+            // JavaScript sibling; refusing is the only honest answer.
+            //
+            // A junction rather than a symlink on purpose: `mklink /J` needs no
+            // privilege, while `mklink` needs Developer Mode or elevation and
+            // is unavailable on this host and on most CI runners. Rust reports
+            // both as `is_symlink()`, and both are followed by the Win32 call.
+            let dir = scratch("junction");
+            let real = dir.join("real");
+            std::fs::create_dir_all(&real).expect("create junction target");
+            let link = dir.join("link");
+            let made = Command::new(
+                std::path::PathBuf::from(std::env::var_os("SystemRoot").expect("SystemRoot"))
+                    .join("System32")
+                    .join("cmd.exe"),
+            )
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&link)
+            .arg(&real)
+            .output()
+            .expect("run mklink /J");
+            assert!(
+                made.status.success() && link.exists(),
+                "the fixture must actually be a reparse point: {}{}",
+                String::from_utf8_lossy(&made.stdout),
+                String::from_utf8_lossy(&made.stderr)
+            );
+            assert!(
+                std::fs::symlink_metadata(&link)
+                    .expect("stat the junction")
+                    .file_type()
+                    .is_symlink(),
+                "a junction has to read as a reparse point for this guard to see it"
+            );
+
+            let error = win::restrict_to_current_user(&link)
+                .expect_err("a reparse point must not be written through");
+            assert!(
+                error.to_string().contains("symlink"),
+                "the refusal must name the reason: {error}"
+            );
+            assert!(
+                matches!(
+                    protect_secret_path(&link, "The mobile access token"),
+                    Protection::Refused { .. }
+                ),
+                "and it must reach the caller as a refusal, not a repair"
+            );
+
+            std::fs::remove_dir_all(&dir).expect("cleanup");
+        }
+
+        #[test]
         fn a_missing_path_is_an_error_rather_than_a_pass() {
             let dir = scratch("missing");
             let absent = dir.join("nothing-here");
