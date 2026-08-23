@@ -12,9 +12,11 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 // while Chat replaces it.
 
 // The shared component owns the whole footer.
-assert.match(footer, /export function SidebarFooter\(\{ onOpenSettings \}/, "SidebarFooter is a shared component taking onOpenSettings");
+assert.match(footer, /export function SidebarFooter\(\{[\s\S]*onOpenSettings,[\s\S]*activeDestination/, "SidebarFooter accepts the active standalone destination");
 assert.match(footer, /href="\/dashboard"/, "footer links to the Dashboard route");
 assert.match(footer, /onClick=\{onOpenSettings\}[\s\S]*?aria-label="Settings"/, "footer Settings button calls onOpenSettings");
+assert.match(footer, /aria-current=\{activeDestination === "dashboard" \? "page" : undefined\}/, "footer exposes the active Dashboard route");
+assert.match(footer, /aria-current=\{activeDestination === "settings" \? "page" : undefined\}/, "footer exposes the active Settings route");
 assert.match(
   footer,
   /aria-label="Dashboard"[\s\S]*?aria-label="Settings"/,

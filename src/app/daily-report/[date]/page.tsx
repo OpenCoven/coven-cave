@@ -53,7 +53,7 @@ export default async function DailyReportPage({ params }: Props) {
     const todaySlug = dateSlug(new Date());
     return (
       <AnalyticsPageShell>
-        {/* div, not main: the shell's aps-main is the page's main landmark. */}
+        {/* div, not main: the universal Shell owns the page's main landmark. */}
         <div className="dr-page">
           <div className="dr-topbar" data-tauri-drag-region="deep">
             <a className="dr-back" href="/dashboard">
@@ -152,7 +152,7 @@ export default async function DailyReportPage({ params }: Props) {
 
   return (
     <AnalyticsPageShell>
-      {/* div, not main: the shell's aps-main is the page's main landmark. */}
+      {/* div, not main: the universal Shell owns the page's main landmark. */}
       <div className="dr-page dr-page--day">
         <div className="dr-shell dr-shell--wide">
           <DailyReportDay
