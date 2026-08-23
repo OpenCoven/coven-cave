@@ -94,6 +94,7 @@ export const SUITES = {
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-lifecycle-filemode.test.mjs",
+    "scripts/worktree-lifecycle-windows-cwd.test.mjs",
     "scripts/worktree-status.test.mjs",
     "scripts/worktree-session-exit-retirement.test.mjs",
     "scripts/remote-hygiene.test.mjs",
@@ -166,6 +167,9 @@ export const SUITES = {
     "src/components/streaming-chat-wiring.test.ts",
     "src/components/streaming-turn-response.test.tsx",
     "src/lib/chat-composer-prefs.test.ts",
+    "src/lib/composer-markdown-decorations.test.ts",
+    "src/lib/composer-markdown-layer.test.ts",
+    "src/components/composer-markdown-layer.test.tsx",
     "src/lib/chat-assistant-output.test.ts",
     "src/lib/chat-result-markers.test.ts",
     "src/lib/chat-tool-verification.test.ts",
@@ -1883,6 +1887,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",
+  "scripts/worktree-lifecycle-windows-cwd.test.mjs",
 ]);
 
 // Tests whose import graph reaches the "@/..." path alias and therefore need
@@ -2221,6 +2226,7 @@ const VITEST_TESTS = new Set([
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/chat-preview-card.test.tsx",
+  "src/components/composer-markdown-layer.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",
   "src/components/role-surfaces/familiar-room-interactions.test.tsx",

@@ -1072,6 +1072,10 @@ type FenceRefusal = {
   holderHost?: string;
   phase?: string;
   expiresAt?: string;
+  covenBinary?: string;
+  covenVersion?: string;
+  covenVersionOutput?: string;
+  covenMinimumVersion?: string;
 };
 
 function heartbeatBoth(leases: MaintenanceFence[], stage: string): void {

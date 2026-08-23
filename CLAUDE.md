@@ -419,6 +419,32 @@ Failures that really are structural name the repository identity instead —
 `canonical repository identity mismatch`, `canonical repository identity
 changed between pages` — and a retry will not help those.
 
+**A version refusal is structural too, and it used to read like a flake.**
+
+```text
+worktree-lifecycle-create: maintenance fence acquisition failed:
+coven-acquire-failed: coven-version-unsupported
+```
+
+That refusal names a resolved-but-too-old Coven CLI, and it is **deterministic
+given PATH**, not intermittent — retrying it changes nothing. It now prints the
+binary it chose, the version that binary reported, its raw `--version` banner,
+the `0.2.5` floor (prereleases are refused whatever their numbers), and the
+`COVEN_BIN` override. Read those four lines before doing anything else; a
+supported install is often already present further along the same PATH.
+
+The reason it was ever filed as "not reproducible" (`cave-6bb4m`, issue #4897)
+is worth knowing, because the shape recurs: `covenBin()` composed its
+priority-ordered search path with `{ ...env, PATH: value }`, which on Windows
+**adds a second key** whenever the process inherited the variable spelled
+`Path` — PowerShell, cmd, Explorer, the Tauri shell — leaving the original
+ahead of it for every case-insensitive reader. So the same command picked the
+npm-global CLI from Git Bash and a stale `~/.cargo/bin` one from PowerShell, on
+one machine, one minute apart. Every environment Cave builds now goes through
+`withSearchPath()` in `src/lib/coven-bin.ts`, which collapses the spellings to
+one key. **CI cannot catch a regression here** — it is Linux, and the whole
+defect is a Windows environment-variable spelling.
+
 One more structural cause, and the one that reads most like someone else's
 problem: **a malformed worktree record on a bead that claims your branch or
 your path** — `Bead cave-… worktree metadata: disposition is invalid`, or any

@@ -37,6 +37,7 @@ import {
   writeCodeReadingPin,
 } from "@/lib/code-reading-pref";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
+import { ComposerMarkdownLayer } from "@/components/composer-markdown-layer";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { ChatEnvironmentPanel } from "@/components/chat-environment-panel";
 import { ChatSessionContextRow } from "@/components/chat-session-context-row";
@@ -4515,6 +4516,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Auto-grow the composer with its content (shared with the home composer).
   useAutogrowTextarea(inputRef, input, { fallbackMaxHeight: COMPOSER_MAX_HEIGHT });
+  // cave-7ncq: the markdown decoration layer reports when it is both showing
+  // something and measurably aligned with the textarea. Only then are the
+  // textarea's own glyphs hidden, so every path that leaves this false — a
+  // plain-prose draft, an unmeasured first paint, a platform whose text
+  // metrics we could not match — lands on an ordinary readable composer.
+  const [composerDecorated, setComposerDecorated] = useState(false);
 
   const appendSystem = (text: string) => {
     const newTurn = {
@@ -7589,6 +7596,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </div>
               ) : null}
               <div className="cave-composer-input-wrap">
+              <ComposerMarkdownLayer
+                value={input}
+                textareaRef={inputRef}
+                onDecoratedChange={setComposerDecorated}
+              />
               <textarea
                 ref={inputRef}
                 value={input}
@@ -7611,7 +7623,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 rows={1}
                 inputMode="text"
                 enterKeyHint="send"
-                className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
+                className={`cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm${composerDecorated ? " cave-composer-input--md" : ""}`}
                 aria-label="Message"
                 aria-autocomplete="list"
                 aria-haspopup="listbox"
