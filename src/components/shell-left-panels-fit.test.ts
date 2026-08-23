@@ -9,12 +9,12 @@ const foundations = await readFile(new URL("../styles/globals/foundations.css", 
 // The left panels are PIXEL-sized so they stop scaling with monitor width —
 // a 24%-wide nav is 826px on a 3440px ultrawide for a ~240px rail of labels.
 // The detail panel has no size props and absorbs everything the left releases.
-// Normal navigation hydrates as a 56px icon rail, then restores the shared
+// Normal navigation hydrates fully closed, then restores the shared
 // 240px expanded size before paint. Chat's contextual sidebar uses that width.
 assert.match(
   shell,
-  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_RAIL_PX\}px`/,
-  "normal nav hydrates as an icon rail before restoring its expanded size",
+  /const defaultNavSize =\s*chatContextual \|\| mounted \? `\$\{NAV_OPEN_PX\}px` : `\$\{NAV_COLLAPSED_PX\}px`/,
+  "normal nav hydrates fully closed before restoring its expanded size",
 );
 assert.match(
   shell,
@@ -44,8 +44,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const collapsedPct = nav \* \(NAV_RAIL_PX \/ preferredNavWidth\);[\s\S]{0,360}?nav: collapsedPct,[\s\S]{0,120}?detail: cur\.detail \+ \(nav - collapsedPct\)/,
-  "on settle, a fresh group is minimized by setting the whole layout (nav→rail, freed width→detail)",
+  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const collapsedPct = nav \* \(NAV_COLLAPSED_PX \/ preferredNavWidth\);[\s\S]{0,360}?nav: collapsedPct,[\s\S]{0,120}?detail: cur\.detail \+ \(nav - collapsedPct\)/,
+  "on settle, a fresh group is minimized by setting the whole layout (nav→zero, freed width→detail)",
 );
 assert.match(
   shell,
@@ -112,11 +112,11 @@ assert.match(
   "Chat contextual layouts keep their base groups and add a dedicated desktop right-chat suffix only when that fourth panel is mounted",
 );
 
-// Mobile closes fully while desktop preserves the destination rail.
+// Every shell policy closes the navigation fully.
 assert.match(
   shell,
-  /collapsedSize=\{isMobile \? 0 : NAV_RAIL_PX\}/,
-  "mobile nav closes fully while desktop collapses to the icon rail",
+  /collapsedSize=\{NAV_COLLAPSED_PX\}/,
+  "mobile and desktop navigation both collapse to zero",
 );
 assert.match(
   shell,
