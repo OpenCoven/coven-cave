@@ -113,6 +113,32 @@ function clientV1SuccessResponse(data: Record<string, unknown>): Response {
   });
 }
 
+function clientV1ErrorResponse(
+  code: string,
+  message: string,
+  status: number,
+  details?: Record<string, unknown>,
+): Response {
+  return jsonResponse({
+    apiVersion: "1.0",
+    requestId: "request-test",
+    capabilities: [],
+    error: {
+      code,
+      message,
+      ...(details ? { details } : {}),
+    },
+  }, status);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
 async function flush(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -293,9 +319,72 @@ describe("SettingsClientAccess", () => {
     expect(buttonByLabel(renderer, "Revoke access for OpenCoven Chat").props.disabled).toBe(true);
   });
 
-  test("calls Task 3 admin APIs and announces approve, deny, and revoke success", async () => {
-    let requests = [pendingRequest, { ...pendingRequest, id: "request-2", appName: "Task Client" }];
-    let credentials = [activeCredential];
+  test("adds installation ids to duplicate accessible action names", async () => {
+    const duplicateRequestA = {
+      ...pendingRequest,
+      id: "request-a",
+      installationId: "chat-install-a",
+    };
+    const duplicateRequestB = {
+      ...pendingRequest,
+      id: "request-b",
+      installationId: "chat-install-b",
+    };
+    const duplicateCredentialA = {
+      ...activeCredential,
+      id: "credential-a",
+      installationId: "chat-install-a",
+    };
+    const duplicateCredentialB = {
+      ...activeCredential,
+      id: "credential-b",
+      installationId: "chat-install-b",
+    };
+    const renderer = await render({
+      pendingRequests: [duplicateRequestA, duplicateRequestB],
+      credentials: [duplicateCredentialA, duplicateCredentialB],
+      onApprove: vi.fn(),
+      onDeny: vi.fn(),
+      onRevoke: vi.fn(),
+    });
+
+    expect(
+      buttonByLabel(
+        renderer,
+        "Approve access for OpenCoven Chat, installation chat-install-a",
+      ),
+    ).toBeDefined();
+    expect(
+      buttonByLabel(
+        renderer,
+        "Deny access for OpenCoven Chat, installation chat-install-b",
+      ),
+    ).toBeDefined();
+    expect(
+      buttonByLabel(
+        renderer,
+        "Revoke access for OpenCoven Chat, installation chat-install-a",
+      ),
+    ).toBeDefined();
+  });
+
+  test("calls Task 3 admin APIs and announces duplicate app mutations with installation ids", async () => {
+    let requests = [
+      pendingRequest,
+      {
+        ...pendingRequest,
+        id: "request-2",
+        installationId: "chat-install-778b",
+      },
+    ];
+    let credentials = [
+      activeCredential,
+      {
+        ...activeCredential,
+        id: "credential-2",
+        installationId: "chat-install-778b",
+      },
+    ];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
         return clientV1SuccessResponse({ pairingRequests: requests });
@@ -333,22 +422,40 @@ describe("SettingsClientAccess", () => {
     const renderer = await render();
 
     await act(async () => {
-      await buttonByLabel(renderer, "Approve access for OpenCoven Chat").props.onClick();
+      await buttonByLabel(
+        renderer,
+        "Approve access for OpenCoven Chat, installation chat-install-4f92",
+      ).props.onClick();
       await flush();
     });
-    expect(announce).toHaveBeenCalledWith("Approved access for OpenCoven Chat.", "polite");
+    expect(announce).toHaveBeenCalledWith(
+      "Approved access for OpenCoven Chat, installation chat-install-4f92.",
+      "polite",
+    );
 
     await act(async () => {
-      await buttonByLabel(renderer, "Deny access for Task Client").props.onClick();
+      await buttonByLabel(
+        renderer,
+        "Deny access for OpenCoven Chat, installation chat-install-778b",
+      ).props.onClick();
       await flush();
     });
-    expect(announce).toHaveBeenCalledWith("Denied access for Task Client.", "polite");
+    expect(announce).toHaveBeenCalledWith(
+      "Denied access for OpenCoven Chat, installation chat-install-778b.",
+      "polite",
+    );
 
     await act(async () => {
-      await buttonByLabel(renderer, "Revoke access for OpenCoven Chat").props.onClick();
+      await buttonByLabel(
+        renderer,
+        "Revoke access for OpenCoven Chat, installation chat-install-4f92",
+      ).props.onClick();
       await flush();
     });
-    expect(announce).toHaveBeenCalledWith("Revoked access for OpenCoven Chat.", "polite");
+    expect(announce).toHaveBeenCalledWith(
+      "Revoked access for OpenCoven Chat, installation chat-install-4f92.",
+      "polite",
+    );
 
     expect(
       fetchMock.mock.calls.some(
@@ -410,6 +517,235 @@ describe("SettingsClientAccess", () => {
     );
     expect(text(renderer)).toContain("Couldn’t approve access for OpenCoven Chat.");
     expect(text(renderer)).not.toContain("pairing-secret-must-never-render");
+  });
+
+  test("coalesces poll and focus refreshes while the initial ledger load is in flight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    const pairing = deferred<Response>();
+    const credentials = deferred<Response>();
+    const signals: AbortSignal[] = [];
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests") {
+        signals.push(init?.signal as AbortSignal);
+        return pairing.promise;
+      }
+      if (url === "/api/client/v1/admin/credentials") {
+        signals.push(init?.signal as AbortSignal);
+        return credentials.promise;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signals.every((signal) => signal.aborted === false)).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_POLL_MS * 2);
+      globalThis.window.dispatchEvent(new Event("focus"));
+      await flush();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(signals.every((signal) => signal.aborted === false)).toBe(true);
+
+    await act(async () => {
+      pairing.resolve(clientV1SuccessResponse({ pairingRequests: [pendingRequest] }));
+      credentials.resolve(clientV1SuccessResponse({ credentials: [activeCredential] }));
+      await flush();
+    });
+    expect(text(renderer)).toContain("OpenCoven Chat");
+  });
+
+  test("initial load failure shows retry without false empty guidance", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/client/v1/admin/pairing-requests") {
+        return clientV1SuccessResponse({ pairingRequests: [] });
+      }
+      if (url === "/api/client/v1/admin/credentials") {
+        return clientV1ErrorResponse("service_unavailable", "outage", 503);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+
+    expect(text(renderer)).toContain("Couldn’t load client access");
+    expect(text(renderer)).toContain("Retry");
+    expect(text(renderer)).not.toContain("No pending requests.");
+    expect(text(renderer)).not.toContain("No client credentials issued.");
+  });
+
+  test("keeps confirmed empty guidance visible when a later refresh fails", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    let phase: "initial" | "refresh" = "initial";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (phase === "initial") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return clientV1SuccessResponse({ pairingRequests: [] });
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return clientV1SuccessResponse({ credentials: [] });
+        }
+      }
+      if (phase === "refresh") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return clientV1SuccessResponse({ pairingRequests: [] });
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return clientV1ErrorResponse("service_unavailable", "outage", 503);
+        }
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+    expect(text(renderer)).toContain("No pending requests.");
+    expect(text(renderer)).toContain("No client credentials issued.");
+
+    phase = "refresh";
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_POLL_MS);
+      await flush();
+    });
+
+    expect(text(renderer)).toContain("Couldn’t refresh client access");
+    expect(text(renderer)).toContain("Showing the last confirmed snapshot.");
+    expect(text(renderer)).toContain("No pending requests.");
+    expect(text(renderer)).toContain("No client credentials issued.");
+  });
+
+  test("keeps the last confirmed snapshot atomic when only one ledger list fails", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CREATED_AT);
+    let phase: "initial" | "refresh" = "initial";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (phase === "initial") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return clientV1SuccessResponse({ pairingRequests: [pendingRequest] });
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return clientV1SuccessResponse({ credentials: [activeCredential] });
+        }
+      }
+      if (phase === "refresh") {
+        if (url === "/api/client/v1/admin/pairing-requests") {
+          return clientV1SuccessResponse({ pairingRequests: [] });
+        }
+        if (url === "/api/client/v1/admin/credentials") {
+          return clientV1ErrorResponse("service_unavailable", "outage", 503);
+        }
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render({ active: true });
+    expect(text(renderer)).toContain("OpenCoven Chat");
+
+    phase = "refresh";
+    await act(async () => {
+      vi.advanceTimersByTime(CLIENT_ACCESS_POLL_MS);
+      await flush();
+    });
+
+    expect(text(renderer)).toContain("Couldn’t refresh client access");
+    expect(text(renderer)).toContain("Showing the last confirmed snapshot.");
+    expect(buttonByLabel(renderer, "Approve access for OpenCoven Chat")).toBeDefined();
+    expect(text(renderer)).not.toContain("No pending requests.");
+  });
+
+  test.each([
+    [
+      "not found",
+      404,
+      clientV1ErrorResponse("not_found", "Pairing request not found.", 404),
+    ],
+    [
+      "already decided elsewhere",
+      409,
+      clientV1ErrorResponse("conflict", "Pairing request was already decided.", 409, {
+        reason: "pairing_already_decided",
+      }),
+    ],
+  ])(
+    "refreshes authoritative lists after terminal %s approve failures",
+    async (_label, _status, errorResponse) => {
+      let requests = [pendingRequest];
+      const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+          return clientV1SuccessResponse({ pairingRequests: requests });
+        }
+        if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+          return clientV1SuccessResponse({ credentials: [] });
+        }
+        if (url.endsWith("/request-pending/decision") && init?.method === "POST") {
+          requests = [];
+          return errorResponse;
+        }
+        throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+      });
+      globalThis.fetch = fetchMock;
+      const renderer = await render();
+
+      await act(async () => {
+        await buttonByLabel(renderer, "Approve access for OpenCoven Chat").props.onClick();
+        await flush();
+      });
+
+      expect(announce).toHaveBeenCalledWith(
+        "Couldn’t approve access for OpenCoven Chat. The request is no longer pending.",
+        "assertive",
+      );
+      expect(text(renderer)).toContain("The request is no longer pending.");
+      expect(text(renderer)).toContain("No pending requests.");
+      expect(
+        fetchMock.mock.calls.filter(
+          ([url, init]) => url === "/api/client/v1/admin/pairing-requests" && !init?.method,
+        ),
+      ).toHaveLength(2);
+      expect(
+        fetchMock.mock.calls.filter(
+          ([url, init]) => url === "/api/client/v1/admin/credentials" && !init?.method,
+        ),
+      ).toHaveLength(2);
+    },
+  );
+
+  test("does not treat generic decision failures as terminal authority", async () => {
+    let requests = [pendingRequest];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/client/v1/admin/pairing-requests" && !init?.method) {
+        return clientV1SuccessResponse({ pairingRequests: requests });
+      }
+      if (url === "/api/client/v1/admin/credentials" && !init?.method) {
+        return clientV1SuccessResponse({ credentials: [] });
+      }
+      if (url.endsWith("/request-pending/decision") && init?.method === "POST") {
+        return clientV1ErrorResponse("service_unavailable", "outage", 503);
+      }
+      throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    });
+    globalThis.fetch = fetchMock;
+    const renderer = await render();
+
+    await act(async () => {
+      await buttonByLabel(renderer, "Approve access for OpenCoven Chat").props.onClick();
+      await flush();
+    });
+
+    expect(text(renderer)).toContain("OpenCoven Chat");
+    expect(text(renderer)).not.toContain("The request is no longer pending.");
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url === "/api/client/v1/admin/pairing-requests" && !init?.method,
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url === "/api/client/v1/admin/credentials" && !init?.method,
+      ),
+    ).toHaveLength(1);
   });
 
   test("polls only while active and cleans up on section change and unmount", async () => {

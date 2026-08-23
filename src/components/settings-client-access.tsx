@@ -47,11 +47,19 @@ export type ClientAccessAction = {
   id: string;
 };
 
+type ClientAccessErrorState = {
+  source: "load" | "mutation";
+  headline: string;
+  subtitle?: string;
+};
+
 type ControlledClientAccessProps = {
   pendingRequests: ClientAccessPairingRequest[];
   credentials: ClientAccessCredential[];
   loading?: boolean;
   error?: string | null;
+  errorHeadline?: string | null;
+  hasConfirmedSnapshot?: boolean;
   action?: ClientAccessAction | null;
   onApprove: (id: string) => void | Promise<void>;
   onDeny: (id: string) => void | Promise<void>;
@@ -67,24 +75,42 @@ export type SettingsClientAccessProps =
   | ControlledClientAccessProps
   | ManagedClientAccessProps;
 
-type PairingListResponse = {
-  apiVersion?: string;
-  data?: {
-    pairingRequests?: ClientAccessPairingRequest[];
+type ClientAccessErrorEnvelope = {
+  error?: {
+    code?: string;
+    details?: {
+      reason?: string;
+    };
   };
 };
 
-type CredentialListResponse = {
-  apiVersion?: string;
-  data?: {
-    credentials?: ClientAccessCredential[];
-  };
+type ClientAccessResponseFailure = {
+  status: number;
+  code: string | null;
+  reason: string | null;
+};
+
+type ClientAccessLoadMode =
+  | "authoritative"
+  | "background"
+  | "initial"
+  | "manual";
+
+type ActiveLoad = {
+  controller: AbortController;
+  id: number;
+  mode: ClientAccessLoadMode;
+  promise: Promise<void>;
 };
 
 function isControlled(
   props: SettingsClientAccessProps,
 ): props is ControlledClientAccessProps {
   return "pendingRequests" in props && "credentials" in props;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function formatTime(value: number): { dateTime: string; label: string } | null {
@@ -134,14 +160,149 @@ function ScopeList({ scopes, label }: { scopes: string[]; label: string }) {
   );
 }
 
+function parsePairingRequests(payload: unknown): ClientAccessPairingRequest[] | null {
+  if (!isRecord(payload) || typeof payload.apiVersion !== "string") return null;
+  if (!isRecord(payload.data) || !Array.isArray(payload.data.pairingRequests)) {
+    return null;
+  }
+  return payload.data.pairingRequests as ClientAccessPairingRequest[];
+}
+
+function parseCredentials(payload: unknown): ClientAccessCredential[] | null {
+  if (!isRecord(payload) || typeof payload.apiVersion !== "string") return null;
+  if (!isRecord(payload.data) || !Array.isArray(payload.data.credentials)) {
+    return null;
+  }
+  return payload.data.credentials as ClientAccessCredential[];
+}
+
+function parsePairingRequest(payload: unknown): ClientAccessPairingRequest | null {
+  if (!isRecord(payload) || typeof payload.apiVersion !== "string") return null;
+  if (!isRecord(payload.data) || !isRecord(payload.data.pairingRequest)) {
+    return null;
+  }
+  return payload.data.pairingRequest as ClientAccessPairingRequest;
+}
+
+function parseCredential(payload: unknown): ClientAccessCredential | null {
+  if (!isRecord(payload) || typeof payload.apiVersion !== "string") return null;
+  if (!isRecord(payload.data) || !isRecord(payload.data.credential)) {
+    return null;
+  }
+  return payload.data.credential as ClientAccessCredential;
+}
+
+async function parseJson(response: Response): Promise<unknown | null> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function parseResponseFailure(
+  response: Response,
+  payload: unknown,
+): ClientAccessResponseFailure {
+  if (!isRecord(payload)) {
+    return { status: response.status, code: null, reason: null };
+  }
+  const envelope = payload as ClientAccessErrorEnvelope;
+  return {
+    status: response.status,
+    code: typeof envelope.error?.code === "string" ? envelope.error.code : null,
+    reason: typeof envelope.error?.details?.reason === "string"
+      ? envelope.error.details.reason
+      : null,
+  };
+}
+
+function duplicateAppNames(
+  records: Array<{ appName: string }>,
+): Set<string> {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    counts.set(record.appName, (counts.get(record.appName) ?? 0) + 1);
+  }
+  return new Set(
+    Array.from(counts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([appName]) => appName),
+  );
+}
+
+function describeAppIdentity(
+  appName: string,
+  installationId: string,
+  includeInstallationId: boolean,
+): string {
+  return includeInstallationId
+    ? `${appName}, installation ${installationId}`
+    : appName;
+}
+
+function describeActionIdentity(
+  record: { appName: string; installationId: string },
+  records: Array<{ appName: string }>,
+): string {
+  return describeAppIdentity(
+    record.appName,
+    record.installationId,
+    duplicateAppNames(records).has(record.appName),
+  );
+}
+
+function createLoadErrorState(
+  hasLocalMutationState: boolean,
+  hasSnapshot: boolean,
+): ClientAccessErrorState {
+  if (!hasSnapshot) {
+    return {
+      source: "load",
+      headline: "Couldn’t load client access",
+      subtitle: "Retry to fetch the latest client access state.",
+    };
+  }
+  return {
+    source: "load",
+    headline: "Couldn’t refresh client access",
+    subtitle: hasLocalMutationState
+      ? "Some client access details may still be stale. Retry to fetch the latest client access state."
+      : "Showing the last confirmed snapshot. Retry to fetch the latest client access state.",
+  };
+}
+
+function createMutationErrorState(
+  headline: string,
+  terminal = false,
+): ClientAccessErrorState {
+  return {
+    source: "mutation",
+    headline,
+    ...(terminal ? { subtitle: "The request is no longer pending." } : {}),
+  };
+}
+
+function errorAnnouncement(errorState: ClientAccessErrorState): string {
+  return errorState.subtitle
+    ? `${errorState.headline} ${errorState.subtitle}`
+    : errorState.headline;
+}
+
+function isTerminalDecisionStatus(status: number): boolean {
+  return status === 404 || status === 409;
+}
+
 function RequestCard({
   request,
   action,
+  actionIdentity,
   onApprove,
   onDeny,
 }: {
   request: ClientAccessPairingRequest;
   action: ClientAccessAction | null;
+  actionIdentity: string;
   onApprove: (id: string) => void | Promise<void>;
   onDeny: (id: string) => void | Promise<void>;
 }) {
@@ -179,7 +340,7 @@ function RequestCard({
             variant="primary"
             disabled={busy}
             loading={action?.kind === "approve" && action.id === request.id}
-            aria-label={`Approve access for ${request.appName}`}
+            aria-label={`Approve access for ${actionIdentity}`}
             onClick={() => onApprove(request.id)}
           >
             Approve
@@ -189,7 +350,7 @@ function RequestCard({
             variant="danger-ghost"
             disabled={busy}
             loading={action?.kind === "deny" && action.id === request.id}
-            aria-label={`Deny access for ${request.appName}`}
+            aria-label={`Deny access for ${actionIdentity}`}
             onClick={() => onDeny(request.id)}
           >
             Deny
@@ -203,10 +364,12 @@ function RequestCard({
 function CredentialCard({
   credential,
   action,
+  actionIdentity,
   onRevoke,
 }: {
   credential: ClientAccessCredential;
   action: ClientAccessAction | null;
+  actionIdentity: string;
   onRevoke: (id: string) => void | Promise<void>;
 }) {
   const revoked = credential.revokedAt !== null;
@@ -249,7 +412,7 @@ function CredentialCard({
             variant="danger-ghost"
             disabled={action !== null}
             loading={action?.kind === "revoke" && action.id === credential.id}
-            aria-label={`Revoke access for ${credential.appName}`}
+            aria-label={`Revoke access for ${actionIdentity}`}
             onClick={() => onRevoke(credential.id)}
           >
             Revoke
@@ -265,22 +428,32 @@ function SettingsClientAccessContent({
   credentials,
   loading = false,
   error = null,
+  errorHeadline = null,
+  hasConfirmedSnapshot,
   action = null,
   onApprove,
   onDeny,
   onRevoke,
   onRetry,
 }: ControlledClientAccessProps) {
-  const showInitialLoading =
-    loading && pendingRequests.length === 0 && credentials.length === 0;
+  const resolvedErrorHeadline = errorHeadline ?? "Couldn’t load client access";
+  const confirmedSnapshot = hasConfirmedSnapshot
+    ?? (
+      pendingRequests.length > 0
+      || credentials.length > 0
+      || (!loading && error === null && errorHeadline === null)
+    );
+  const showInitialLoading = loading && !confirmedSnapshot;
+  const duplicatePendingAppNames = duplicateAppNames(pendingRequests);
+  const duplicateCredentialAppNames = duplicateAppNames(credentials);
   return (
     <div className="settings-client-access">
       <SettingsOverview section="client-access" />
-      {error ? (
+      {error !== null || errorHeadline !== null ? (
         <ErrorState
           compact
-          headline="Couldn’t load client access"
-          subtitle={error}
+          headline={resolvedErrorHeadline}
+          subtitle={error ?? undefined}
           actions={onRetry ? (
             <Button size="xs" onClick={onRetry} leadingIcon="ph:arrows-clockwise">
               Retry
@@ -293,7 +466,7 @@ function SettingsClientAccessContent({
           <p>Loading client access…</p>
           <SkeletonRows count={4} />
         </div>
-      ) : (
+      ) : confirmedSnapshot ? (
         <>
           <SettingsGroup
             label="Pending requests"
@@ -309,6 +482,11 @@ function SettingsClientAccessContent({
                     key={request.id}
                     request={request}
                     action={action}
+                    actionIdentity={describeAppIdentity(
+                      request.appName,
+                      request.installationId,
+                      duplicatePendingAppNames.has(request.appName),
+                    )}
                     onApprove={onApprove}
                     onDeny={onDeny}
                   />
@@ -332,6 +510,11 @@ function SettingsClientAccessContent({
                     key={credential.id}
                     credential={credential}
                     action={action}
+                    actionIdentity={describeAppIdentity(
+                      credential.appName,
+                      credential.installationId,
+                      duplicateCredentialAppNames.has(credential.appName),
+                    )}
                     onRevoke={onRevoke}
                   />
                 ))}
@@ -341,7 +524,7 @@ function SettingsClientAccessContent({
             )}
           </SettingsGroup>
         </>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -358,11 +541,18 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
   const [pendingRequests, setPendingRequests] = useState<ClientAccessPairingRequest[]>([]);
   const [terminalRequests, setTerminalRequests] = useState<ClientAccessPairingRequest[]>([]);
   const [credentials, setCredentials] = useState<ClientAccessCredential[]>([]);
+  const [hasConfirmedSnapshot, setHasConfirmedSnapshot] = useState(false);
   const [loading, setLoading] = useState(active);
-  const [error, setError] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<ClientAccessErrorState | null>(null);
   const [action, setAction] = useState<ClientAccessAction | null>(null);
   const pendingRef = useRef<ClientAccessPairingRequest[]>([]);
-  const loadAbortRef = useRef<AbortController | null>(null);
+  const terminalRequestsRef = useRef<ClientAccessPairingRequest[]>([]);
+  const credentialsRef = useRef<ClientAccessCredential[]>([]);
+  const loadRef = useRef<ActiveLoad | null>(null);
+  const hasConfirmedSnapshotRef = useRef(false);
+  const loadIdRef = useRef(0);
+  const hasLocalMutationStateRef = useRef(false);
+  const suppressExpiredReconciliationRef = useRef<Set<string>>(new Set());
   const actionRef = useRef<ClientAccessAction | null>(null);
   const mountedRef = useRef(false);
 
@@ -370,17 +560,31 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      loadAbortRef.current?.abort();
+      loadRef.current?.controller.abort();
+      loadRef.current = null;
     };
   }, []);
 
-  const load = useCallback(async (showLoading = false) => {
+  const load = useCallback(async (
+    mode: ClientAccessLoadMode,
+    options: { showLoading?: boolean } = {},
+  ) => {
     if (!active) return;
-    loadAbortRef.current?.abort();
+    const currentLoad = loadRef.current;
+    if (currentLoad) {
+      if (mode === "background") return currentLoad.promise;
+      currentLoad.controller.abort();
+    }
     const controller = new AbortController();
-    loadAbortRef.current = controller;
-    if (showLoading) setLoading(true);
-    try {
+    const loadId = loadIdRef.current + 1;
+    loadIdRef.current = loadId;
+    if (options.showLoading) setLoading(true);
+    if (mode !== "background") {
+      setErrorState((currentError) =>
+        currentError?.source === "load" ? null : currentError);
+    }
+    const promise = (async () => {
+      try {
       const [pairingResponse, credentialResponse] = await Promise.all([
         fetch("/api/client/v1/admin/pairing-requests", {
           cache: "no-store",
@@ -391,58 +595,106 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
           signal: controller.signal,
         }),
       ]);
-      const pairingPayload = await pairingResponse.json().catch(() => null) as PairingListResponse | null;
-      const credentialPayload = await credentialResponse.json().catch(() => null) as CredentialListResponse | null;
+      const [pairingPayload, credentialPayload] = await Promise.all([
+        parseJson(pairingResponse),
+        parseJson(credentialResponse),
+      ]);
+      const nextPending = parsePairingRequests(pairingPayload);
+      const nextCredentials = parseCredentials(credentialPayload);
       if (
         !pairingResponse.ok
         || !credentialResponse.ok
-        || typeof pairingPayload?.apiVersion !== "string"
-        || typeof credentialPayload?.apiVersion !== "string"
-        || !Array.isArray(pairingPayload.data?.pairingRequests)
-        || !Array.isArray(credentialPayload.data?.credentials)
+        || nextPending === null
+        || nextCredentials === null
       ) {
         throw new Error("client access request failed");
       }
-      if (controller.signal.aborted || !mountedRef.current) return;
+      if (
+        controller.signal.aborted
+        || !mountedRef.current
+        || loadRef.current?.id !== loadId
+      ) {
+        return;
+      }
 
-      const nextPending = pairingPayload.data.pairingRequests;
       const nextIds = new Set(nextPending.map((request) => request.id));
       const expired = pendingRef.current
         .filter(
           (request) =>
             request.status === "pending"
             && !nextIds.has(request.id)
+            && !suppressExpiredReconciliationRef.current.has(request.id)
             && request.expiresAt <= Date.now(),
         )
         .map((request) => ({ ...request, status: "expired" as const }));
       if (expired.length > 0) {
-        setTerminalRequests((current) =>
-          expired.reduce(appendTerminalRequest, current),
-        );
+        setTerminalRequests((current) => {
+          const next = expired.reduce(appendTerminalRequest, current);
+          terminalRequestsRef.current = next;
+          return next;
+        });
       }
       pendingRef.current = nextPending;
+      credentialsRef.current = nextCredentials;
       setPendingRequests(nextPending);
-      setCredentials(credentialPayload.data.credentials);
-      setError(null);
-    } catch {
-      if (controller.signal.aborted || !mountedRef.current) return;
-      setError("Couldn’t load client access.");
-    } finally {
-      if (!controller.signal.aborted && mountedRef.current) setLoading(false);
-    }
+      setCredentials(nextCredentials);
+      hasConfirmedSnapshotRef.current = true;
+      setHasConfirmedSnapshot(true);
+      hasLocalMutationStateRef.current = false;
+      suppressExpiredReconciliationRef.current.clear();
+      setErrorState((currentError) =>
+        currentError?.source === "load" ? null : currentError);
+      } catch {
+        if (
+          controller.signal.aborted
+          || !mountedRef.current
+          || loadRef.current?.id !== loadId
+        ) {
+          return;
+        }
+        setErrorState(
+          createLoadErrorState(
+            hasLocalMutationStateRef.current,
+            hasConfirmedSnapshotRef.current,
+          ),
+        );
+      } finally {
+        if (loadRef.current?.id === loadId) loadRef.current = null;
+        if (
+          !controller.signal.aborted
+          && mountedRef.current
+          && loadIdRef.current === loadId
+        ) {
+          setLoading(false);
+        }
+      }
+    })();
+    loadRef.current = {
+      controller,
+      id: loadId,
+      mode,
+      promise,
+    };
+    return promise;
   }, [active]);
 
   useEffect(() => {
     if (!active) {
-      loadAbortRef.current?.abort();
+      loadRef.current?.controller.abort();
+      loadRef.current = null;
       setLoading(false);
       return;
     }
-    void load(true);
-    return () => loadAbortRef.current?.abort();
+    void load("initial", { showLoading: true });
+    return () => {
+      loadRef.current?.controller.abort();
+      loadRef.current = null;
+    };
   }, [active, load]);
 
-  usePausablePoll(() => load(false), CLIENT_ACCESS_POLL_MS, { enabled: active });
+  usePausablePoll(() => load("background"), CLIENT_ACCESS_POLL_MS, {
+    enabled: active,
+  });
 
   const decide = useCallback(async (
     request: ClientAccessPairingRequest,
@@ -451,9 +703,13 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
     const kind = decision === "approved" ? "approve" : "deny";
     if (actionRef.current) return;
     const nextAction: ClientAccessAction = { kind, id: request.id };
+    const actionIdentity = describeActionIdentity(request, [
+      ...terminalRequestsRef.current,
+      ...pendingRef.current,
+    ]);
     actionRef.current = nextAction;
     setAction(nextAction);
-    setError(null);
+    setErrorState(null);
     try {
       const response = await fetch(
         `/api/client/v1/admin/pairing-requests/${encodeURIComponent(request.id)}/decision`,
@@ -463,34 +719,43 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
           body: JSON.stringify({ decision }),
         },
       );
-      const payload = await response.json().catch(() => null) as {
-        apiVersion?: string;
-        data?: {
-          pairingRequest?: ClientAccessPairingRequest;
-        };
-      } | null;
-      if (
-        !response.ok
-        || typeof payload?.apiVersion !== "string"
-        || !payload.data?.pairingRequest
-      ) {
-        throw new Error("pairing decision failed");
+      const payload = await parseJson(response);
+      const pairingRequest = response.ok ? parsePairingRequest(payload) : null;
+      if (response.ok && pairingRequest) {
+        if (!mountedRef.current) return;
+        pendingRef.current = pendingRef.current.filter((entry) => entry.id !== request.id);
+        setPendingRequests(pendingRef.current);
+        setTerminalRequests((current) => {
+          const next = appendTerminalRequest(current, pairingRequest);
+          terminalRequestsRef.current = next;
+          return next;
+        });
+        hasLocalMutationStateRef.current = true;
+        await load("authoritative");
+        if (!mountedRef.current) return;
+        const verb = decision === "approved" ? "Approved" : "Denied";
+        announce(`${verb} access for ${actionIdentity}.`, "polite");
+        return;
       }
       if (!mountedRef.current) return;
-      pendingRef.current = pendingRef.current.filter((entry) => entry.id !== request.id);
-      setPendingRequests(pendingRef.current);
-      setTerminalRequests((current) =>
-        appendTerminalRequest(current, payload.data?.pairingRequest as ClientAccessPairingRequest),
+      const failure = parseResponseFailure(response, payload);
+      const error = createMutationErrorState(
+        `Couldn’t ${kind} access for ${actionIdentity}.`,
+        isTerminalDecisionStatus(failure.status),
       );
-      await load(false);
-      if (!mountedRef.current) return;
-      const verb = decision === "approved" ? "Approved" : "Denied";
-      announce(`${verb} access for ${request.appName}.`, "polite");
+      setErrorState(error);
+      announce(errorAnnouncement(error), "assertive");
+      if (isTerminalDecisionStatus(failure.status)) {
+        suppressExpiredReconciliationRef.current.add(request.id);
+        await load("authoritative");
+      }
     } catch {
       if (!mountedRef.current) return;
-      const message = `Couldn’t ${kind} access for ${request.appName}.`;
-      setError(message);
-      announce(message, "assertive");
+      const error = createMutationErrorState(
+        `Couldn’t ${kind} access for ${actionIdentity}.`,
+      );
+      setErrorState(error);
+      announce(error.headline, "assertive");
     } finally {
       actionRef.current = null;
       if (mountedRef.current) setAction(null);
@@ -500,9 +765,10 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
   const revoke = useCallback(async (credential: ClientAccessCredential) => {
     if (actionRef.current) return;
     const nextAction: ClientAccessAction = { kind: "revoke", id: credential.id };
+    const actionIdentity = describeActionIdentity(credential, credentialsRef.current);
     actionRef.current = nextAction;
     setAction(nextAction);
-    setError(null);
+    setErrorState(null);
     try {
       const response = await fetch(
         `/api/client/v1/admin/credentials/${encodeURIComponent(credential.id)}`,
@@ -512,35 +778,29 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
           body: JSON.stringify({ reason: CLIENT_ACCESS_REVOCATION_REASON }),
         },
       );
-      const payload = await response.json().catch(() => null) as {
-        apiVersion?: string;
-        data?: {
-          credential?: ClientAccessCredential;
-        };
-      } | null;
-      if (
-        !response.ok
-        || typeof payload?.apiVersion !== "string"
-        || !payload.data?.credential
-      ) {
+      const payload = await parseJson(response);
+      const nextCredential = response.ok ? parseCredential(payload) : null;
+      if (!response.ok || !nextCredential) {
         throw new Error("credential revocation failed");
       }
       if (!mountedRef.current) return;
-      setCredentials((current) =>
-        current.map((entry) =>
-          entry.id === credential.id
-            ? payload.data?.credential as ClientAccessCredential
-            : entry,
-        ),
+      credentialsRef.current = credentialsRef.current.map((entry) =>
+        entry.id === credential.id
+          ? nextCredential
+          : entry,
       );
-      await load(false);
+      setCredentials(credentialsRef.current);
+      hasLocalMutationStateRef.current = true;
+      await load("authoritative");
       if (!mountedRef.current) return;
-      announce(`Revoked access for ${credential.appName}.`, "polite");
+      announce(`Revoked access for ${actionIdentity}.`, "polite");
     } catch {
       if (!mountedRef.current) return;
-      const message = `Couldn’t revoke access for ${credential.appName}.`;
-      setError(message);
-      announce(message, "assertive");
+      const error = createMutationErrorState(
+        `Couldn’t revoke access for ${actionIdentity}.`,
+      );
+      setErrorState(error);
+      announce(error.headline, "assertive");
     } finally {
       actionRef.current = null;
       if (mountedRef.current) setAction(null);
@@ -553,7 +813,9 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
       pendingRequests={requests}
       credentials={credentials}
       loading={loading}
-      error={error}
+      error={errorState?.subtitle ?? null}
+      errorHeadline={errorState?.headline}
+      hasConfirmedSnapshot={hasConfirmedSnapshot}
       action={action}
       onApprove={(id) => {
         const request = pendingRef.current.find((entry) => entry.id === id);
@@ -564,10 +826,10 @@ function ManagedSettingsClientAccess({ active = true }: ManagedClientAccessProps
         return request ? decide(request, "denied") : undefined;
       }}
       onRevoke={(id) => {
-        const credential = credentials.find((entry) => entry.id === id);
+        const credential = credentialsRef.current.find((entry) => entry.id === id);
         return credential ? revoke(credential) : undefined;
       }}
-      onRetry={() => { void load(true); }}
+      onRetry={() => { void load("manual", { showLoading: true }); }}
     />
   );
 }
