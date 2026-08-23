@@ -24,7 +24,12 @@
 
 /* Full chat list rows use the same persisted drag intent as the thread rail,
    but keep their larger row surface as the open target. */
+.chat-list-sortable-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
 .chat-list-sortable-row[data-dragging="true"] {
+  content-visibility: visible;
   position: relative;
   z-index: 2;
   opacity: 0.94;

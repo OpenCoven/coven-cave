@@ -4,8 +4,8 @@
 // so every switch showed the history skeleton for a network round-trip. This
 // module keeps the last few successfully loaded payloads in memory so a
 // revisit (or a hover-prefetched row) paints instantly; chat-view still
-// refetches in the background as revalidation, so the cache only removes the
-// blank gap — it is never the source of truth.
+// revalidates in the background and joins a prefetch already in flight, so the
+// cache only removes the blank gap — it is never the source of truth.
 //
 // Invalidation: entries expire after a short TTL, are evicted LRU beyond a
 // small cap, and are explicitly dropped when a send starts or a conversation
@@ -24,6 +24,16 @@ const HOVER_DELAY_MS = 90;
 
 const cache = new Map<string, { payload: CachedConversationPayload; at: number }>();
 const inflight = new Map<string, Promise<CachedConversationPayload | null>>();
+
+export class ConversationLoadError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ConversationLoadError";
+    this.status = status;
+  }
+}
 
 /** Returns the cached payload for a session, or null when absent/expired. */
 export function readCachedConversation(
@@ -68,15 +78,11 @@ export function clearConversationCache(): void {
   cancelHoverPrefetch();
 }
 
-/**
- * Fetches a conversation into the cache. Deduped: a fresh cache entry resolves
- * immediately and a concurrent prefetch of the same session shares one request.
- * Never throws — prefetch failures are silent (the real load surfaces errors).
- */
-export function prefetchConversation(sessionId: string): Promise<CachedConversationPayload | null> {
+/** Fetches a conversation and shares an existing request for the same session. */
+export function loadConversation(
+  sessionId: string,
+): Promise<CachedConversationPayload | null> {
   if (!sessionId) return Promise.resolve(null);
-  const cached = readCachedConversation(sessionId);
-  if (cached) return Promise.resolve(cached);
   const pending = inflight.get(sessionId);
   if (pending) return pending;
   const request = (async () => {
@@ -84,12 +90,23 @@ export function prefetchConversation(sessionId: string): Promise<CachedConversat
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
         cache: "no-store",
       });
-      if (!res.ok) return null;
-      const json = (await res.json()) as CachedConversationPayload;
+      const json = (await res.json().catch(() => null)) as CachedConversationPayload & {
+        error?: string;
+      } | null;
+      if (!res.ok) {
+        throw new ConversationLoadError(
+          json?.error ?? `Request failed (${res.status})`,
+          res.status,
+        );
+      }
+      if (!json) {
+        throw new ConversationLoadError(
+          "Conversation response was not valid JSON",
+          res.status,
+        );
+      }
       storeConversation(sessionId, json);
-      return json.ok === true && json.conversation ? json : null;
-    } catch {
-      return null;
+      return json;
     } finally {
       inflight.delete(sessionId);
     }
@@ -98,13 +115,28 @@ export function prefetchConversation(sessionId: string): Promise<CachedConversat
   return request;
 }
 
+/**
+ * Fetches a conversation into the cache. Deduped: a fresh cache entry resolves
+ * immediately and a concurrent load of the same session shares one request.
+ * Never throws — prefetch failures are silent (the real load surfaces errors).
+ */
+export function prefetchConversation(sessionId: string): Promise<CachedConversationPayload | null> {
+  if (!sessionId) return Promise.resolve(null);
+  const cached = readCachedConversation(sessionId);
+  if (cached) return Promise.resolve(cached);
+  return loadConversation(sessionId).then(
+    (payload) => payload?.ok === true && payload.conversation ? payload : null,
+    () => null,
+  );
+}
+
 // Only one element is hovered at a time, so a module-level singleton timer is
 // enough for hover intent: enter arms it, leave (or hovering another row)
 // disarms/re-arms it.
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 let hoverSessionId: string | null = null;
 
-/** Arms a hover-intent prefetch for a session row (onMouseEnter/onFocus). */
+/** Arms a hover-intent prefetch for a session row. */
 export function hoverPrefetchConversation(sessionId: string): void {
   if (!sessionId) return;
   if (hoverSessionId === sessionId && hoverTimer !== null) return;
