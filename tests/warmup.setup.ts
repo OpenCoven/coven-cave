@@ -163,7 +163,7 @@ async function boot(page: Page) {
       },
     }),
   );
-  await page.route("**/api/board**", (route) =>
+  await page.route(/\/api\/board(?:\?.*)?$/, (route) =>
     route.request().method() === "GET"
       ? route.fulfill({ json: { ok: true, cards: [WARMUP_CARD] } })
       : route.continue(),
