@@ -1285,6 +1285,55 @@
   min-width: 0;
 }
 
+.ui-surface-toolbar {
+  container-name: view-header surface-toolbar-controls;
+}
+
+.ui-surface-toolbar__title-stack {
+  display: inline-grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-surface-toolbar__title,
+.ui-surface-toolbar__subtitle {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-surface-toolbar__subtitle {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.ui-surface-toolbar__controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ui-surface-toolbar__filters,
+.ui-surface-toolbar__visible-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ui-surface-toolbar__filters {
+  gap: var(--space-2);
+}
+
+.ui-surface-toolbar__visible-actions {
+  gap: var(--space-1);
+}
+
 @container view-header (max-width: 420px) {
   .ui-view-header {
     align-items: stretch;
@@ -1306,6 +1355,20 @@
   .ui-view-header-actions > * {
     width: 100%;
     justify-content: center;
+  }
+}
+
+@container surface-toolbar-controls (max-width: 520px) {
+  .ui-surface-toolbar__controls,
+  .ui-surface-toolbar__filters,
+  .ui-surface-toolbar__visible-actions {
+    width: 100%;
+  }
+
+  .ui-surface-toolbar__controls,
+  .ui-surface-toolbar__filters,
+  .ui-surface-toolbar__visible-actions {
+    justify-content: flex-start;
   }
 }
 
