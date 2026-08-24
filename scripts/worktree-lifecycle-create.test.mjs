@@ -270,22 +270,18 @@ case "$1 $2" in
     ;;
 esac
 case "$*" in
-  *"graphql"*"associatedPullRequests"*)
-    OID_ARG=
-    for arg in "$@"; do
-      case "$arg" in
-        oid=*) OID_ARG=\${arg#oid=} ;;
-      esac
-    done
-    if [ "$OID_ARG" = "${initialOid}" ]; then
-      printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":1,"nodes":[{"number":1,"url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"MERGED","isDraft":false,"mergedAt":"2026-07-31T12:00:00Z","headRefName":"fixture-main","headRefOid":"${initialOid}","headRepository":{"nameWithOwner":"OpenCoven/coven-cave"},"baseRefName":"main","baseRepository":{"nameWithOwner":"OpenCoven/coven-cave"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
-    else
-      printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
-    fi
-
+  *"commits/${initialOid}/pulls?per_page=100"*)
+    printf '%s\\n' '[[{"number":1,"html_url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"closed","draft":false,"merged_at":"2026-07-31T12:00:00Z","head":{"ref":"fixture-main","sha":"${initialOid}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+    ;;
+  *"/commits/"*"/pulls?per_page=100"*)
+    printf '%s\\n' '[[]]'
+    ;;
+  *"/pulls?state=all&per_page=100"*)
+    printf '%s\\n' '[[{"number":1,"html_url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"closed","draft":false,"merged_at":"2026-07-31T12:00:00Z","head":{"ref":"fixture-main","sha":"${initialOid}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
     ;;
   *"graphql"*)
-    printf '%s\\n' '[{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
+    printf '%s\\n' 'unexpected GraphQL call' >&2
+    exit 2
     ;;
   "api "*)
     printf '%s\\n' '[{"total_count":0,"workflow_runs":[]}]'

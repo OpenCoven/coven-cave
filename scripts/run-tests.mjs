@@ -95,6 +95,7 @@ export const SUITES = {
     "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
+    "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-lifecycle-filemode.test.mjs",
