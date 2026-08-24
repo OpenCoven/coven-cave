@@ -70,21 +70,32 @@ test("generates an icon and persists it under the normalized project root", asyn
     assert.equal(result.mime, "image/webp");
   }
 
-  // The request: the endpoint, and the inputs the SERVER derives the hue from.
+  // The request carries the project's root VERBATIM (whitespace aside). That
+  // is deliberate and load-bearing: the server derives the icon hue with
+  // projectRootHash(root), and ProjectAvatar tints the tile with
+  // projectTint(project.root) — the un-normalized string. Normalizing here
+  // would hash a different string than the tile does and the generated icon
+  // would land on a different colour from the tile it replaces.
   assert.equal(net.calls.length, 1);
   assert.equal(net.calls[0].url, "/api/projects/icon");
   assert.equal(net.calls[0].headers["content-type"], "application/json");
   assert.deepEqual(net.calls[0].body, {
     name: "coven-cave",
-    root: "C:\\Users\\dev\\coven-cave",
+    root: "C:\\Users\\dev\\coven-cave\\",
     variant: 7,
     model: "openai/gpt-5.5",
   });
 
-  // The write: keyed by the normalized root every other surface buckets by,
-  // so the icon actually resolves in the sidebar/picker/board.
+  // The write, by contrast, IS keyed by the normalized root — the identity
+  // every other surface buckets by — so the icon resolves in the sidebar,
+  // picker and board. The two differ here, which is the point.
   assert.equal(save.calls.length, 1);
   assert.equal(save.calls[0].root, "C:/Users/dev/coven-cave");
+  assert.notEqual(
+    save.calls[0].root,
+    net.calls[0].body.root,
+    "storage key is normalized; the hashed root is not",
+  );
   assert.equal(save.calls[0].dataUrl, WEBP_DATA_URL);
   assert.equal(save.calls[0].mime, "image/webp");
 });

@@ -141,17 +141,23 @@ test("an oversize payload is refused without being decoded or allocated", async 
   assert.equal(calls.length, 0, "an oversize payload must never reach the decoder");
 });
 
-test("a payload right at the ceiling is still admitted by the size gate", async () => {
-  // Proves the bound is a real threshold and not a blanket refusal: this one
-  // gets past the size check and is only stopped by the format sniffer.
-  const chars = Math.floor(MAX_ICON_IMAGE_BYTES / 3) * 4;
-  const result = await validateProviderIconImage("A".repeat(chars), recordingDecoder().decode);
+test("a payload of exactly the ceiling is admitted by the size gate", async () => {
+  // Exactly MAX_ICON_IMAGE_BYTES decoded, so the bound is pinned to the right
+  // side of the comparison: the cap is "more than", not "as much as". A
+  // payload one byte over is refused by the test above; this one must get
+  // past the size check and be stopped only by the format sniffer.
+  const encodedLength = ((MAX_ICON_IMAGE_BYTES + 2) / 3) * 4;
+  assert.equal(encodedLength % 4, 0, "fixture must be a whole number of base64 quanta");
+  const atCeiling = `${"A".repeat(encodedLength - 2)}==`;
+
+  const result = await validateProviderIconImage(atCeiling, recordingDecoder().decode);
+
   assert.equal(result.ok, false);
   if (!result.ok) {
     assert.equal(
       result.reason,
       "unsupported_image_format",
-      "at-ceiling payloads must reach the format gate, not be refused as too large",
+      "an exactly-at-ceiling payload must reach the format gate, not be refused as too large",
     );
   }
 });

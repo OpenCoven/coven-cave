@@ -287,6 +287,8 @@ export const SUITES = {
     "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
     "src/lib/project-icon-image-provider.test.ts",
+    "src/lib/project-icon-actions.test.ts",
+    "src/lib/server/project-icon-image.test.ts",
     "src/lib/permissions-console.test.ts",
     "src/lib/github-checks.test.ts",
     "src/lib/github-activity.test.ts",
@@ -1940,6 +1942,11 @@ const ALIAS_LOADER = new Set([
   // dynamically imports every pre-authorized route module — each of which
   // resolves "@/lib/server/..." as a runtime value.
   "src/app/api/client/v1/authenticated-route-refusal.test.ts",
+  // Drives the icon route's real POST handler, which resolves "@/lib/vault",
+  // "@/lib/server/api-security" and the icon libs as runtime values; the suite
+  // itself reads "@/lib/comux-projects" to compare the prompt hue with the
+  // colour projectTint actually paints.
+  "src/app/api/projects/icon/route.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",

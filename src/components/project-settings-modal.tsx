@@ -3,8 +3,15 @@
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/lib/icon";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
 import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { generateProjectIcon } from "@/lib/project-icon-actions";
+import {
+  clearProjectImage,
+  setProjectImage,
+  useProjectImages,
+} from "@/lib/cave-project-images";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 
@@ -40,6 +47,10 @@ export function ProjectSettingsModal({
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [generatingIcon, setGeneratingIcon] = useState(false);
+  const [iconError, setIconError] = useState<string | null>(null);
+
+  const projectImages = useProjectImages();
 
   // Re-seed the fields whenever a (different) project opens the sheet.
   const projectId = project?.id ?? null;
@@ -52,6 +63,8 @@ export function ProjectSettingsModal({
     setSaving(false);
     setConfirmingDelete(false);
     setDeleting(false);
+    setGeneratingIcon(false);
+    setIconError(null);
   }, [projectId, projectName, projectRepoUrl]);
 
   if (!project) return null;
@@ -95,6 +108,31 @@ export function ProjectSettingsModal({
     }
   };
 
+  const hasIcon = Boolean(projectImages[normalizeProjectRoot(project.root)]);
+
+  /**
+   * Ask the icon endpoint for an image and persist it. `variant` is seeded
+   * from the clock so each press yields a fresh composition; the project's hue
+   * comes from its root and therefore does not move between regenerations.
+   */
+  const generateIcon = async () => {
+    if (busy || generatingIcon) return;
+    setGeneratingIcon(true);
+    setIconError(null);
+    const result = await generateProjectIcon(
+      { name: project.name, root: project.root, variant: Date.now() },
+      { saveImage: setProjectImage },
+    );
+    setGeneratingIcon(false);
+    if (!result.ok) setIconError(result.message);
+  };
+
+  const removeIcon = async () => {
+    if (busy || generatingIcon) return;
+    setIconError(null);
+    await clearProjectImage(project.root);
+  };
+
   const remove = async () => {
     if (busy || !onDelete) return;
     if (!confirmingDelete) {
@@ -134,6 +172,47 @@ export function ProjectSettingsModal({
         <span className="truncate" title={project.root}>
           {project.root}
         </span>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <ProjectAvatar name={project.name} root={project.root} size="xl" />
+          <div className="min-w-0">
+            <div className="text-[length:var(--text-sm)] text-foreground">Project icon</div>
+            <p className="text-xs text-muted-foreground">
+              {hasIcon
+                ? "Generated for this project. Regenerate for a new composition."
+                : "Generate a distinct icon in this project’s own colour."}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {hasIcon ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void removeIcon()}
+              disabled={busy || generatingIcon}
+            >
+              Remove
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:sparkle"
+            loading={generatingIcon}
+            disabled={busy}
+            onClick={() => void generateIcon()}
+          >
+            {hasIcon ? "Regenerate" : "Generate"}
+          </Button>
+        </div>
+        {iconError ? (
+          <p className="w-full text-xs text-muted-foreground" role="alert">
+            {iconError}
+          </p>
+        ) : null}
       </div>
 
       {onRename ? (
