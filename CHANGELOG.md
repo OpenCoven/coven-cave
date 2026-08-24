@@ -7,6 +7,138 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-08-24
+
+> Modernizes native iOS chat and project controls, adds familiar avatar
+> editing and Auto mode, and turns the XCTest suite into a real release gate.
+
+Patch release on top of v0.3.9. The native app gains a full-width project
+selector, focused runtime and model controls, editable familiar avatars,
+stronger reconnection behavior, and repaired project-context tests. The shared
+experience also includes a calmer composer, unified response status, faster
+chat rendering, OpenCoven UI alignment, and GitHub-connected Canvas sketches.
+
+### Changes
+- Run iOS XCTests in CI instead of only compiling them
+- feat(canvas): connect sketches to GitHub projects (#4963)
+- feat(ui): align Cave with OpenCoven reference (#4960)
+- fix(chat): unify familiar response status (#4961)
+- Polish the chat composer (#4959)
+- fix(ios): repair 12 XCTest failures the suite's first run exposed (cave-vz17i) (#4958)
+- feat(desktop): make main-window identity multi-window-safe (#4956)
+- perf(chat): reduce list and transcript latency (#4957)
+- fix(desktop): stop a failed startup holding the port claim across its dialog (#4953)
+- test(research): pin the cache-expiry semantics X hydration depends on (cave-gbqwe) (#4954)
+- feat(chat): add mobile Auto mode control (#4955)
+- fix(cave-wh97u): gate the frozen-write / live-read test time-bomb class (#4943)
+- fix(settings): harden Client access reconciliation (#4889)
+- Add routing decision workflow schema (#4915)
+- Verify the Chat v1 Phase 2 canonical reads gate (cave-ma00l) (#4951)
+- fix(desktop): align offline cache validation with native limits (#4919)
+- Polish native iOS project and chat controls (#4930)
+- Verify the Chat v1 Phase 1 discovery and pairing gate (cave-ob9ue) (#4950)
+- fix(board): preserve the blocker pin through deletion repair (#4949)
+- Keep Thread Signal details out of transcript flow (#4884)
+- Stabilize cold E2E surface coverage (#4923)
+- Restore fully hidden desktop sidebar (#4936)
+- fix(desktop): repair background reachability updates (#4947)
+- feat(research): add durable ResearchRun surfaces (#4872)
+- fix(ci): synchronize code rail readiness (#4938)
+- feat(code): Work scheduler from the Cody Code Reading v2 handoff (cave-7c329) (#4940)
+- feat(ios): Familiar hub shell and dashboard refresh store (cave-9rwd.2) (#4946)
+- Give a research run one origin across chat and the Research Desk (cave-8o5s7) (#4916)
+- Render markdown live in the chat composer (cave-7ncq) (#4937)
+- Resolve Coven under the search-path key Windows actually uses (cave-6bb4m) (#4934)
+- fix(cave-6r4t4): give the worktree patrol a real process-cwd probe on Windows (#4922)
+- Surface in-flight /auto missions outside their own chat (cave-7gryo) (#4939)
+- feat(api): versioned Familiar dashboard read contract (cave-jsnfl) (#4944)
+- fix(research): anchor the X hydration test's cache seeding to the real clock (cave-p36ov) (#4942)
+- Force behavioural credential-refusal coverage for every authenticated client-v1 route (#4917)
+- fix(cave-3458e): give the unsupervised research fallback an actionable remedy (#4885)
+- fix(cave-apg39): fail on var(--token) references to tokens defined nowhere (#4927)
+- fix(desktop): claim the dedicated port before spawning the sidecar (#4925)
+- fix(design): rescale --radius-panel with the corner-radius setting, and close the codemod's radius blind spot (#4350) (#4881)
+- fix(beads): resolve bd natively on Windows instead of silently using WSL (#4924)
+- Stop a legacy conversation leaving the keyless tail mid-walk (cave-wbxcu) (#4888)
+- feat: page the Home Continue strip instead of truncating it (cave-9oi1s) (#4933)
+- fix(cave-eo0b0): stop the filemode override pinning every Windows worktree active (#4918)
+- fix(shell): stop a keyless keydown killing the shell handler at a third site (#4931)
+- Choose the Cave servers' heap ceiling instead of inheriting it (cave-7pksp) (#4932)
+- feat(research): make the podcast render's delivery directable (cave-sl7je) (#4926)
+- feat(client-v1): make capability discovery operationally truthful (#4882)
+- fix(projects): share one root hash between projectTint and the icon prompt (cave-72em) (#4935)
+- fix(cave-4x1ag): define --destructive and --shadow-popover on the base palette (#4929)
+- Hydrate attached X sources into a mission run and remove them afterward (cave-v3ajh) (#4867)
+- Unify dashboard and familiar page framing (#4921)
+- fix(cave-lcxc6): keep the toast stack off the shell's top-right chrome (#4887)
+- Protect the packaged desktop's plaintext mobile access token on Windows (cave-hdt3f) (#4886)
+- fix: serialize Cave store locks and shard E2E (#4890)
+- Show default title for new chat sessions
+- Update interactions.jsonl
+- fix(cave-2aahf): release provably-stale auto-locks in the unattended worktree sweep (#4883)
+- Update interactions.jsonl
+- Differentiate strict Git probe timeouts (#4880)
+- fix(worktrees): fail closed on hygiene mutations (#4877)
+- Manage Client v1 access in Settings (cave-9pifu.3) (#4875)
+- fix(sidebar): remove project scope disclaimer (#4876)
+- Tighten Client v1 capability plan gates (#4878)
+- Feat/cave 20wrn calm streaming chat (#4879)
+- Remove recurring local access pairing prompt (#4874)
+- Bump Next to 16.3.1 and update bead history
+- Add sidecar lock parser, digest, and tests
+- Page canonical conversations by an immutable key (cave-fhjlu) (#4863)
+- docs(client-v1): plan operational capability semantics (#4873)
+- Add guarded local worktree hygiene and scheduled reporting (#4871)
+- Bound Beads Dolt sync credential hangs (#4861)
+- Let a hardened Windows host boot, and restrict the raw mobile token (cave-37fxr, cave-fawvh) (#4864)
+- Fix explicit research title provenance (cave-d1p8s) (#4866)
+- Stop racing the drawer animation to reach the backdrop (cave-m1mgi) (#4865)
+- Preserve project picker expansion focus (#4868)
+- Polish project switcher and simplify chat rail (#4862)
+- fix(research): preserve explicit mission titles
+- fix: make iOS Cave reconnection self-healing
+- fix(research): polish prompt recommendations
+- Record real-authority client-v1 conformance (cave-2hjtv) (#4859)
+- Wire the four uncalled X cache/OAuth lifecycle paths (cave-1tu16) (#4858)
+- Persist a group message delete to every session it fans out to (cave-1osn7) (#4857)
+- Serve the client-v1 canonical read projections (cave-jfa9y) (#4856)
+- Bind the client-v1 ingress gate to every path it claims (cave-uuxga) (#4855)
+- Reference the eight shipped client-v1 routes (cave-2kyas) (#4850)
+- Derive the client-v1 public path list from the contract (cave-d1sjz) (#4851)
+- Enforce client-v1 filesystem ownership on Windows (cave-adcmu) (#4852)
+- Meter the pairing poll route against the exchange brute-force budget (cave-11w87) (#4849)
+- Stop pre-authorizing client-v1 paths with no handler (cave-4841) (#4847)
+- Give X publishing a surface in Comms Operations (cave-8i8q5) (#4828)
+- Allowlist local roots for the Coven CLI binary (cave-ckk.1) (#4825)
+- Land the Chat v1 Phase 1 pairing authority on current main (cave-9pifu) (#4840)
+- Persist a single-message delete from iOS (cave-ioswipe.6) (#4827)
+- Pin the release-notes guard-disclosure env expressions (cave-9dg) (#4826)
+- Persist single-message delete to the server (#4824)
+- Confirmed, non-retrying X publishing for familiar comms (#4823)
+- Hide dot folders by default in the project folder picker (#4822)
+- Report and attribute a red main after a direct-to-main push (#4792)
+- fix(scripts): repair the direct-run guard that made two CLIs inert on Windows (cave-zya, cave-wxq) (#4821)
+- Gate staged rollout on acceptance evidence and a bounded rollback drill (cave-udcn7) (#4789)
+- fix(release): pin release gates by consulting them, not by naming them (#4809)
+- Gate rollout on a verified rollback target (cave-ilh1h) (#4782)
+- test(e2e): count Enhance's own sends, not every POST to a shared endpoint (#4800)
+- Refuse off-machine daemon sockets on Windows (#4780) (#4787)
+- Pin exclusivity, not just existence, in the streaming-chat guards (#4784)
+- fix(scripts): resolve the Windows bd npm shim instead of spawning a bare name (#4807)
+- Fix main's last e2e failure (no duplicate send), and forbid duplicate suite wiring (#4790) (#4793)
+- Encrypted replaceable offline read cache (cave-f1k8n) (#4786)
+- fix(release): key the iOS provisioning profile off each target's bundle id (#4815)
+- feat(client-v1): serve release compatibility metadata on a health route (#4785)
+- feat(performance): enforce phase-6 production budgets (cave-o8gc4) (#4788)
+- Verify updater signatures before publishing the manifest (cave-gcb0i) (#4783)
+- fix(release): sign the iOS archive manually against the installed profiles (#4814)
+- Add agentic Research Improve and Mermaid draft rendering (#4811)
+- Fix use-undo-delete-deferred test: extract scheduleDeferredDelete from React module (#4805)
+- fix(release): let the iOS archive resolve provisioning headlessly (#4813)
+- Attach Research resources before the first pass
+- fix(dev): disable persistent Turbopack cache
+
+
 - Remove the recurring fresh-pairing-token interruption for trusted local browser REST and terminal access.
 - Refuse a second desktop copy cleanly instead of letting it race the first onto
   the dedicated port. Launching another CovenCave used to end on a raw
