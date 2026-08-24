@@ -11,7 +11,7 @@
  * running server-side; the transcript lives in Chat.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
@@ -47,6 +47,10 @@ export function CodeNewSession({
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const busy = phase.kind === "provisioning" || phase.kind === "starting";
+  const projectIdRef = useRef(projectId);
+  const familiarIdRef = useRef(familiarId);
+  projectIdRef.current = projectId;
+  familiarIdRef.current = familiarId;
 
   // Seed once per opening, not on every `initialPrompt` change: the caller
   // holds the seed in state for as long as the modal is mounted, and re-running
@@ -61,6 +65,8 @@ export function CodeNewSession({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    const previousProjectId = projectIdRef.current;
+    const previousFamiliarId = familiarIdRef.current;
     setPhase({ kind: "idle" });
     setProjects([]);
     setFamiliars([]);
@@ -87,14 +93,14 @@ export function CodeNewSession({
         const familiarRows = fam?.ok && Array.isArray(fam.familiars) ? fam.familiars : [];
         setProjects(projectRows);
         setFamiliars(familiarRows);
-        setProjectId((prev) =>
-          projectRows.some((project) => project.id === prev)
-            ? prev
+        setProjectId(
+          projectRows.some((project) => project.id === previousProjectId)
+            ? previousProjectId
             : (projectRows[0]?.id ?? ""),
         );
-        setFamiliarId((prev) =>
-          familiarRows.some((familiar) => familiar.id === prev)
-            ? prev
+        setFamiliarId(
+          familiarRows.some((familiar) => familiar.id === previousFamiliarId)
+            ? previousFamiliarId
             : (familiarRows[0]?.id ?? ""),
         );
         if (projectRows.length === 0) {
