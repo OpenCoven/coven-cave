@@ -794,6 +794,7 @@ struct FamiliarHubView: View {
             section: snapshot.analytics,
             displayName: displayName,
             retry: { Task { await refreshNow() } }
+        )
     }
 }
 
