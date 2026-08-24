@@ -189,6 +189,7 @@ import {
   dispatchOpenClawGatewayTurn,
   openClawGatewayPairedDeviceAuthStatus,
 } from "@/lib/openclaw-gateway";
+import type { OpenClawDeviceCredentialStore } from "@/lib/server/openclaw-device-credentials";
 import {
   OpenClawAgentResolutionError,
   extractOpenClawSessionId,
@@ -457,6 +458,10 @@ type OfflineChatQueuePayload = Pick<
   responseMetadata: ChatResponseMetadata;
 };
 
+type ChatSendDependencies = {
+  openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
+};
+
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
 // Examples:
@@ -723,6 +728,7 @@ function openClawChatResponse(args: {
   modelState: ChatModelState;
   initialModelIntent: string | null;
   ownsFirstExchangeTitle: boolean;
+  openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -837,7 +843,9 @@ function openClawChatResponse(args: {
           push({ kind: "tool_use", ...tool });
         }
       };
-      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus();
+      const gatewayAuth = openClawGatewayPairedDeviceAuthStatus(
+        args.openClawGatewayCredentialStore,
+      );
       const gatewayDispatch = gatewayAuth.available
         ? await dispatchOpenClawGatewayTurn({
         sessionKey: openClawSessionKey(conversationId),
@@ -847,6 +855,7 @@ function openClawChatResponse(args: {
         // stable request id. Reusing it as Gateway's idempotency key makes a
         // retry observable to the Gateway instead of creating another run.
         idempotencyKey: args.body.runId ?? "",
+        credentialStore: args.openClawGatewayCredentialStore,
         onEvent: (event) => {
           if (event.kind === "compatibility") {
             if (gatewayToolProjectionEnabled) {
@@ -1589,6 +1598,17 @@ function openClawChatResponse(args: {
 }
 
 export async function POST(req: Request) {
+  return postChat(req);
+}
+
+export async function postChatForTests(
+  req: Request,
+  dependencies: ChatSendDependencies,
+) {
+  return postChat(req, dependencies);
+}
+
+async function postChat(req: Request, dependencies: ChatSendDependencies = {}) {
   let body: SendBody;
   try {
     body = (await req.json()) as SendBody;
@@ -2782,6 +2802,7 @@ export async function POST(req: Request) {
       modelState,
       initialModelIntent: existingConversation?.modelIntent?.model ?? null,
       ownsFirstExchangeTitle,
+      openClawGatewayCredentialStore: dependencies.openClawGatewayCredentialStore,
     });
   }
 
