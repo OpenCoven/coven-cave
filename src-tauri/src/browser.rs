@@ -24,7 +24,7 @@
 //   browser:page-load { label, url, phase: "started" | "finished" }
 
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, MutexGuard,
@@ -66,8 +66,8 @@ use browser_state::{
     advance_scope_barrier, browser_owner, effective_browser_intent, record_bounds_intent,
     record_navigation_intent, record_reload_intent, record_scope_intent, record_visibility_intent,
     register_browser_owner, remove_browser_owner_resources, BrowserBoundsIntent,
-    BrowserLifecycleInner, BrowserOwner,
-    BrowserScopeAction, BrowserVisibility, BrowserWorkerSignal,
+    BrowserLifecycleInner, BrowserOwner, BrowserScopeAction, BrowserVisibility,
+    BrowserWorkerSignal,
 };
 
 pub(crate) fn retire_window_resources(app: &AppHandle, window_label: &str) {

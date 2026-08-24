@@ -5,21 +5,29 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 
 pub(super) const PRIMARY_MAIN_WINDOW_LABEL: &str = "main";
 const SECONDARY_MAIN_WINDOW_PREFIX: &str = "main-";
-const MAIN_WINDOW_CAPABILITY_TEMPLATES: [&str; 9] = [
-    include_str!("../capabilities/default.json"),
-    include_str!("../capabilities/loopback-browser.json"),
-    include_str!("../capabilities/loopback-main-events.json"),
-    include_str!("../capabilities/loopback-microphone.json"),
-    include_str!("../capabilities/loopback-speech.json"),
-    include_str!("../capabilities/loopback-updater.json"),
-    include_str!("../capabilities/loopback-window-controls.json"),
-    include_str!("../capabilities/loopback-window-drag.json"),
-    include_str!("../capabilities/loopback-x-oauth.json"),
+const SECONDARY_MAIN_WINDOW_PERMISSIONS: [&str; 16] = [
+    "allow-pty-start",
+    "allow-pty-write",
+    "allow-pty-resize",
+    "allow-pty-stop",
+    "allow-pty-list",
+    "allow-pty-diagnose",
+    "allow-browser-navigate",
+    "allow-browser-set-bounds",
+    "allow-browser-hide",
+    "allow-browser-hide-all-except",
+    "allow-browser-close",
+    "allow-browser-deactivate-all",
+    "allow-browser-close-all",
+    "allow-browser-reload",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
 ];
 
 #[derive(Default)]
 struct MainWindowRegistryInner {
     labels: BTreeSet<String>,
+    retired_labels: BTreeSet<String>,
     generations: BTreeMap<String, u64>,
     next_generation: u64,
     focused: Option<String>,
@@ -61,6 +69,11 @@ impl MainWindowRegistry {
             .0
             .lock()
             .map_err(|_| "main-window registry lock is poisoned".to_string())?;
+        if inner.retired_labels.contains(label) {
+            return Err(format!(
+                "main-window label '{label}' was retired and cannot be reused"
+            ));
+        }
         if inner.labels.insert(label.to_string()) {
             inner.next_generation = inner
                 .next_generation
@@ -98,6 +111,9 @@ impl MainWindowRegistry {
         if let Ok(mut inner) = self.0.lock() {
             inner.labels.remove(label);
             let generation = inner.generations.remove(label);
+            if generation.is_some() {
+                inner.retired_labels.insert(label.to_string());
+            }
             if inner.focused.as_deref() == Some(label) {
                 inner.focused = None;
             }
@@ -123,11 +139,16 @@ impl MainWindowRegistry {
 }
 
 pub(super) fn register_main_window(app: &AppHandle, label: &str) -> Result<(), String> {
-    if label != PRIMARY_MAIN_WINDOW_LABEL && !app.state::<MainWindowRegistry>().is_registered(label)
-    {
-        grant_secondary_main_window_capabilities(app, label)?;
+    let registry = app.state::<MainWindowRegistry>();
+    let was_registered = registry.is_registered(label);
+    registry.register(label)?;
+    if label != PRIMARY_MAIN_WINDOW_LABEL && !was_registered {
+        if let Err(error) = grant_secondary_main_window_capabilities(app, label) {
+            registry.remove(label);
+            return Err(error);
+        }
     }
-    app.state::<MainWindowRegistry>().register(label)
+    Ok(())
 }
 
 fn grant_secondary_main_window_capabilities(app: &AppHandle, label: &str) -> Result<(), String> {
@@ -144,18 +165,11 @@ fn secondary_main_window_capabilities(label: &str) -> Result<Vec<serde_json::Val
             "'{label}' is not a valid secondary main-window label"
         ));
     }
-    let mut capabilities = Vec::with_capacity(MAIN_WINDOW_CAPABILITY_TEMPLATES.len());
-    for template in MAIN_WINDOW_CAPABILITY_TEMPLATES {
-        let mut capability: serde_json::Value = serde_json::from_str(template)
-            .map_err(|error| format!("could not parse main-window capability: {error}"))?;
-        let identifier = capability["identifier"]
-            .as_str()
-            .ok_or_else(|| "main-window capability has no identifier".to_string())?;
-        capability["identifier"] = serde_json::json!(format!("{identifier}-{label}"));
-        capability["webviews"] = serde_json::json!([label]);
-        capabilities.push(capability);
-    }
-    Ok(capabilities)
+    Ok(vec![serde_json::json!({
+        "identifier": format!("secondary-main-runtime-{label}"),
+        "webviews": [label],
+        "permissions": SECONDARY_MAIN_WINDOW_PERMISSIONS,
+    })])
 }
 
 pub(super) fn is_registered_main_window(app: &AppHandle, label: &str) -> bool {
@@ -222,12 +236,28 @@ mod tests {
     fn secondary_capabilities_target_only_the_exact_registered_label() {
         let capabilities =
             secondary_main_window_capabilities("main-2").expect("secondary capabilities");
-        assert_eq!(capabilities.len(), MAIN_WINDOW_CAPABILITY_TEMPLATES.len());
+        assert_eq!(capabilities.len(), 1);
         for capability in capabilities {
             assert_eq!(capability["webviews"], serde_json::json!(["main-2"]));
             assert!(capability["identifier"]
                 .as_str()
-                .is_some_and(|identifier| identifier.ends_with("-main-2")));
+                .is_some_and(|identifier| identifier == "secondary-main-runtime-main-2"));
+            let permissions = capability["permissions"]
+                .as_array()
+                .expect("secondary permissions");
+            assert!(permissions
+                .iter()
+                .any(|permission| permission == "allow-pty-start"));
+            assert!(permissions
+                .iter()
+                .any(|permission| permission == "allow-browser-navigate"));
+            for forbidden in [
+                "updater:default",
+                "process:default",
+                "allow-open-x-oauth-url",
+            ] {
+                assert!(!permissions.iter().any(|permission| permission == forbidden));
+            }
         }
         assert!(secondary_main_window_capabilities("main--unmanaged").is_err());
         assert!(secondary_main_window_capabilities(PRIMARY_MAIN_WINDOW_LABEL).is_err());
@@ -256,9 +286,11 @@ mod tests {
 
         registry.remove("main-2");
         assert!(!registry.is_registered("main-2"));
-        registry.register("main-2").expect("re-register secondary");
-        assert!(registry
-            .generation("main-2")
-            .is_some_and(|generation| generation > first_generation));
+        let error = registry
+            .register("main-2")
+            .expect_err("retired native labels must never inherit permanent capabilities");
+        assert!(error.contains("cannot be reused"));
+        assert_eq!(registry.generation("main-2"), None);
+        assert!(first_generation > 0);
     }
 }

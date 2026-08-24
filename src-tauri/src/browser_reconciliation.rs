@@ -56,6 +56,9 @@ fn ensure_browser(
     url: &str,
     read_only_url: Option<&str>,
 ) -> Result<bool, EnsureBrowserError> {
+    if !is_registered_main_window(app, &owner.window_label) {
+        return Err(format!("owner window '{}' was retired", owner.window_label).into());
+    }
     if app.webviews().keys().any(|existing| existing == label) {
         return Ok(false);
     }
@@ -304,6 +307,10 @@ fn ensure_browser(
 
     if let Some(webview) = app.get_webview(label) {
         hide_webview(&webview)?;
+        if !is_registered_main_window(app, &owner.window_label) {
+            webview.close().map_err(|error| error.to_string())?;
+            return Err(format!("owner window '{}' was retired", owner.window_label).into());
+        }
     }
 
     Ok(true)
@@ -426,6 +433,9 @@ fn worker_lock_for_label(
     label: &str,
 ) -> Result<Arc<Mutex<()>>, String> {
     let mut inner = state.lock()?;
+    if !inner.owners.contains_key(label) {
+        return Err(format!("browser webview '{label}' has no registered owner"));
+    }
     Ok(Arc::clone(
         inner
             .worker_locks
@@ -439,6 +449,9 @@ fn worker_signal_for_label(
     label: &str,
 ) -> Result<Arc<BrowserWorkerSignal>, String> {
     let mut inner = state.lock()?;
+    if !inner.owners.contains_key(label) {
+        return Err(format!("browser webview '{label}' has no registered owner"));
+    }
     Ok(Arc::clone(
         inner
             .worker_signals
@@ -452,6 +465,9 @@ pub(super) fn event_tracker_for_label(
     label: &str,
 ) -> Result<Arc<Mutex<BrowserEventTracker>>, String> {
     let mut inner = state.lock()?;
+    if !inner.owners.contains_key(label) {
+        return Err(format!("browser webview '{label}' has no registered owner"));
+    }
     Ok(Arc::clone(
         inner
             .event_trackers
@@ -750,6 +766,7 @@ pub(super) fn schedule_browser_reconcile(
 pub(super) fn schedule_scope_reconcile(
     app: AppHandle,
     state: BrowserLifecycleState,
+    window_label: &str,
     prefix: String,
     sequence: u64,
     action: BrowserScopeAction,
@@ -764,6 +781,9 @@ pub(super) fn schedule_scope_reconcile(
         .collect::<Vec<_>>();
     {
         let inner = state.lock()?;
+        if inner.retired_window_labels.contains(window_label) {
+            return Err(format!("browser owner window '{window_label}' was retired"));
+        }
         labels.extend(
             inner
                 .labels
@@ -778,6 +798,9 @@ pub(super) fn schedule_scope_reconcile(
     labels.dedup();
     {
         let mut inner = state.lock()?;
+        if inner.retired_window_labels.contains(window_label) {
+            return Err(format!("browser owner window '{window_label}' was retired"));
+        }
         if !record_scope_intent(
             &mut inner,
             &prefix,

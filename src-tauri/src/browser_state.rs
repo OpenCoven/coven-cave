@@ -13,6 +13,9 @@ pub(super) fn register_browser_owner(
     window_label: &str,
     client_label: &str,
 ) -> Result<(), String> {
+    if inner.retired_window_labels.contains(window_label) {
+        return Err(format!("browser owner window '{window_label}' was retired"));
+    }
     let owner = BrowserOwner {
         window_label: window_label.to_string(),
         client_label: client_label.to_string(),
@@ -46,6 +49,7 @@ pub(super) fn remove_browser_owner_resources(
     inner: &mut BrowserLifecycleInner,
     window_label: &str,
 ) -> Vec<String> {
+    inner.retired_window_labels.insert(window_label.to_string());
     let owner_prefix = native_browser_owner_prefix(window_label);
     let mut native_labels = inner
         .owners
@@ -146,6 +150,7 @@ pub(super) struct BrowserLifecycleInner {
     pub(super) worker_signals: HashMap<String, Arc<BrowserWorkerSignal>>,
     pub(super) event_trackers: HashMap<String, Arc<Mutex<BrowserEventTracker>>>,
     pub(super) owners: HashMap<String, BrowserOwner>,
+    pub(super) retired_window_labels: HashSet<String>,
 }
 
 #[derive(Default)]

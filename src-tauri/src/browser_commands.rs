@@ -2,6 +2,19 @@ use super::*;
 
 struct BrowserIdentity {
     native_label: String,
+    owner_label: String,
+    client_label: String,
+}
+
+impl BrowserIdentity {
+    fn revalidate(&self, inner: &mut BrowserLifecycleInner) -> Result<(), String> {
+        register_browser_owner(
+            inner,
+            &self.native_label,
+            &self.owner_label,
+            &self.client_label,
+        )
+    }
 }
 
 fn browser_identity(
@@ -16,7 +29,11 @@ fn browser_identity(
         let mut inner = lifecycle.lock()?;
         register_browser_owner(&mut inner, &native_label, &owner_label, &client_label)?;
     }
-    Ok(BrowserIdentity { native_label })
+    Ok(BrowserIdentity {
+        native_label,
+        owner_label,
+        client_label,
+    })
 }
 
 #[tauri::command]
@@ -51,6 +68,7 @@ pub fn browser_navigate(
     };
     {
         let mut inner = lifecycle.lock()?;
+        identity.revalidate(&mut inner)?;
         if !record_navigation_intent(
             &mut inner,
             &identity.native_label,
@@ -92,6 +110,7 @@ pub fn browser_set_bounds(
     };
     {
         let mut inner = lifecycle.lock()?;
+        identity.revalidate(&mut inner)?;
         if !record_bounds_intent(&mut inner, &identity.native_label, bounds) {
             return Ok(());
         }
@@ -112,6 +131,7 @@ pub fn browser_hide(
     let identity = browser_identity(&lifecycle, &caller, label)?;
     {
         let mut inner = lifecycle.lock()?;
+        identity.revalidate(&mut inner)?;
         if !record_visibility_intent(
             &mut inner,
             &identity.native_label,
@@ -142,6 +162,7 @@ pub fn browser_hide_all_except(
     schedule_scope_reconcile(
         app,
         lifecycle,
+        &owner_label,
         native_browser_owner_prefix(&owner_label),
         sequence,
         BrowserScopeAction::Hide,
@@ -161,6 +182,7 @@ pub fn browser_close(
     let identity = browser_identity(&lifecycle, &caller, label)?;
     {
         let mut inner = lifecycle.lock()?;
+        identity.revalidate(&mut inner)?;
         if !record_visibility_intent(
             &mut inner,
             &identity.native_label,
@@ -199,6 +221,7 @@ pub fn browser_deactivate_all(
     schedule_scope_reconcile(
         app,
         lifecycle.inner().clone(),
+        &owner_label,
         prefix,
         sequence,
         BrowserScopeAction::Hide,
@@ -223,6 +246,7 @@ pub fn browser_close_all(
     schedule_scope_reconcile(
         app,
         lifecycle.inner().clone(),
+        &owner_label,
         prefix,
         sequence,
         BrowserScopeAction::Close,
@@ -242,6 +266,7 @@ pub fn browser_reload(
     let identity = browser_identity(&lifecycle, &caller, label)?;
     {
         let mut inner = lifecycle.lock()?;
+        identity.revalidate(&mut inner)?;
         if !record_reload_intent(&mut inner, &identity.native_label, sequence) {
             return Ok(());
         }

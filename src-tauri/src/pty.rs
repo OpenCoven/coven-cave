@@ -109,12 +109,14 @@ pub fn terminate_all_owned_processes() {
     }
 }
 
-pub fn retire_window_sessions(window_label: &str) {
+pub fn retire_window_sessions(window_label: &str, window_generation: u64) {
     let retired = PTY_WINDOW_LIFECYCLE.retire(|| {
         let mut sessions = SESSIONS.lock();
         let keys = sessions
             .keys()
-            .filter(|key| key.window_label == window_label)
+            .filter(|key| {
+                key.window_label == window_label && key.window_generation == window_generation
+            })
             .cloned()
             .collect::<Vec<_>>();
         keys.into_iter()

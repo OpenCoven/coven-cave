@@ -324,9 +324,26 @@ test("secondary main-window authority is granted only to exact native-registered
     assert.ok(!capability.webviews.includes("main-*"), `${capability.identifier} must not grant wildcard main authority`);
   }
   assert.ok(!loopbackWindowDragCapability.webviews.includes("main-*"));
-  assert.match(mainWindowRust, /grant_secondary_main_window_capabilities\(app, label\)\?/);
-  assert.match(mainWindowRust, /capability\["webviews"\] = serde_json::json!\(\[label\]\)/);
+  assert.match(
+    mainWindowRust,
+    /registry\.register\(label\)\?;[\s\S]{0,300}grant_secondary_main_window_capabilities\(app, label\)[\s\S]{0,200}registry\.remove\(label\)/,
+    "secondary labels must be registered before capability activation and retired if activation fails",
+  );
+  assert.match(mainWindowRust, /retired_labels\.contains\(label\)[\s\S]{0,200}cannot be reused/);
+  assert.match(mainWindowRust, /"webviews": \[label\]/);
+  assert.match(mainWindowRust, /"permissions": SECONDARY_MAIN_WINDOW_PERMISSIONS/);
   assert.match(mainWindowRust, /app\.add_capability\(serialized\)/);
+
+  const secondaryPermissions = mainWindowRust.slice(
+    mainWindowRust.indexOf("const SECONDARY_MAIN_WINDOW_PERMISSIONS"),
+    mainWindowRust.indexOf("];", mainWindowRust.indexOf("const SECONDARY_MAIN_WINDOW_PERMISSIONS")) + 2,
+  );
+  for (const permission of ["allow-pty-start", "allow-browser-navigate", "core:event:allow-listen"]) {
+    assert.match(secondaryPermissions, new RegExp(`"${permission}"`));
+  }
+  for (const permission of ["updater:default", "process:default", "allow-open-x-oauth-url", "allow-speech-stt-start"]) {
+    assert.doesNotMatch(secondaryPermissions, new RegExp(`"${permission}"`));
+  }
 });
 
 test("Windows sidecar startup status reaches every managed main window", () => {
@@ -342,12 +359,13 @@ test("Windows sidecar startup status reaches every managed main window", () => {
   );
 });
 
-test("destroyed managed-main windows retire their native resources before label reuse", () => {
+test("destroyed managed-main windows retire their exact native generation and forbid label reuse", () => {
   assert.match(
     tauriSetupRust,
-    /WindowEvent::Destroyed[\s\S]{0,900}pty::retire_window_sessions\(window\.label\(\)[\s\S]{0,500}browser::retire_window_resources\(window\.app_handle\(\), window\.label\(\)\)/,
-    "window destruction must invalidate pending PTY generations and retire browser ownership",
+    /WindowEvent::Destroyed[\s\S]{0,900}if let Some\(generation\) = retired_generation[\s\S]{0,300}pty::retire_window_sessions\(window\.label\(\), generation\)[\s\S]{0,500}browser::retire_window_resources\(window\.app_handle\(\), window\.label\(\)\)/,
+    "window destruction must retire only the removed PTY generation and its browser ownership",
   );
+  assert.match(mainWindowRust, /retired_labels\.insert\(label\.to_string\(\)\)/);
 });
 
 test("native browser children can report metadata but cannot control browser layers", () => {

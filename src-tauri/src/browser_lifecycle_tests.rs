@@ -3,11 +3,10 @@ use super::{
     native_browser_label, native_browser_owner_prefix, offscreen_browser_creation_bounds,
     offscreen_browser_position, record_bounds_intent, record_navigation_intent,
     record_scope_intent, record_visibility_intent, register_browser_owner,
-    remove_browser_owner_resources, BrowserBounds,
-    BrowserBoundsIntent, BrowserEventTracker, BrowserLifecycleInner, BrowserScopeAction,
-    BrowserVisibility, BrowserWorkerSignal, EnvironmentCallbackTimeoutAction,
-    EnvironmentCallbackTimeoutRetryState, Url, MAX_TRACKED_BROWSER_URLS,
-    USER_NAVIGATION_MARKER_TTL,
+    remove_browser_owner_resources, BrowserBounds, BrowserBoundsIntent, BrowserEventTracker,
+    BrowserLifecycleInner, BrowserScopeAction, BrowserVisibility, BrowserWorkerSignal,
+    EnvironmentCallbackTimeoutAction, EnvironmentCallbackTimeoutRetryState, Url,
+    MAX_TRACKED_BROWSER_URLS, USER_NAVIGATION_MARKER_TTL,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -57,8 +56,7 @@ fn removing_a_main_window_retires_only_its_browser_lifecycle_state() {
     let secondary = native_browser_label("main-2", LABEL);
     let secondary_orphan = format!("{}orphan", native_browser_owner_prefix("main-2"));
     register_browser_owner(&mut lifecycle, &primary, "main", LABEL).expect("primary owner");
-    register_browser_owner(&mut lifecycle, &secondary, "main-2", LABEL)
-        .expect("secondary owner");
+    register_browser_owner(&mut lifecycle, &secondary, "main-2", LABEL).expect("secondary owner");
     assert!(record_navigation_intent(
         &mut lifecycle,
         &primary,
@@ -85,10 +83,9 @@ fn removing_a_main_window_retires_only_its_browser_lifecycle_state() {
     lifecycle
         .worker_locks
         .insert(secondary.clone(), Arc::new(Mutex::new(())));
-    lifecycle.worker_signals.insert(
-        secondary.clone(),
-        Arc::new(BrowserWorkerSignal::default()),
-    );
+    lifecycle
+        .worker_signals
+        .insert(secondary.clone(), Arc::new(BrowserWorkerSignal::default()));
     lifecycle.event_trackers.insert(
         secondary_orphan.clone(),
         Arc::new(Mutex::new(BrowserEventTracker::default())),
@@ -115,6 +112,10 @@ fn removing_a_main_window_retires_only_its_browser_lifecycle_state() {
         .scope_barriers
         .keys()
         .all(|prefix| !prefix.starts_with(&native_browser_owner_prefix("main-2"))));
+
+    let error = register_browser_owner(&mut lifecycle, &secondary, "main-2", LABEL)
+        .expect_err("a late command cannot repopulate a retired browser owner");
+    assert!(error.contains("was retired"));
 }
 
 fn navigate(lifecycle: &mut BrowserLifecycleInner, sequence: u64, url: &str) -> bool {
