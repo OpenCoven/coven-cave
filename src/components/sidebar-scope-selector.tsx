@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { ProjectAvatar } from "@/components/project-avatar";
 import {
@@ -73,6 +73,10 @@ export function SidebarScopeSelector({
   const projectLabel = project?.name ?? "All projects";
   const scopeLabel = `${projectLabel} · ${familiarLabel}`;
   const disabled = projectLoading && projectCrewLoading;
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   const closeAnd = (action: () => void) => {
     action();

@@ -112,6 +112,11 @@ assert.match(
   /projectId \? projectCrew : allFamiliars/,
   "project scope fails closed to project crew instead of leaking the global familiar list",
 );
+assert.match(
+  sidebarScopeSelector,
+  /useEffect\(\(\) => \{\s*if \(disabled\) setOpen\(false\);\s*\}, \[disabled\]\);/,
+  "disabling the selector clears stored open state so it cannot reopen after loading",
+);
 for (const [name, sidebar] of [
   ["Home", homeSidebar],
   ["Chat", chatSidebar],
