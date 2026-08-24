@@ -98,7 +98,7 @@ export function ReviewWorkbenchHeader({
         <div className="rd-workbench-subject">
           <div className="rd-workbench-line">
             {state && bucket ? (
-              <span className="rd-state-pill" data-tone={state.tone}>
+              <span className="rd-state-pill" data-rd-tone={state.tone}>
                 <Icon name={STATE_ICON[bucket]} width={12} height={12} aria-hidden />
                 {state.label}
               </span>

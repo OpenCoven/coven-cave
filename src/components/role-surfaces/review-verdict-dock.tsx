@@ -251,7 +251,7 @@ export function ReviewVerdictDock({
         <button
           type="button"
           className="rd-verdict-primary focus-ring"
-          data-tone={primary.tone}
+          data-rd-tone={primary.tone}
           disabled={primary.disabled}
           title={primary.title}
           aria-haspopup={primary.disabled ? undefined : "dialog"}
@@ -308,7 +308,7 @@ export function ReviewVerdictDock({
             <button
               type="button"
               className="rd-verdict-primary rd-verdict-primary--inline focus-ring"
-              data-tone={reviewMode === "changes" ? "warning" : "accent"}
+              data-rd-tone={reviewMode === "changes" ? "warning" : "accent"}
               disabled={busy != null || (reviewMode === "changes" && !note.trim())}
               onClick={() => {
                 void (async () => {
@@ -352,7 +352,7 @@ export function ReviewVerdictDock({
                       key={item.key}
                       type="button"
                       className="rd-evidence-chip focus-ring"
-                      data-tone={item.tone}
+                      data-rd-tone={item.tone}
                       data-off={on ? undefined : "true"}
                       aria-pressed={on}
                       title={item.title}
@@ -455,7 +455,7 @@ export function ReviewVerdictDock({
             <button
               type="button"
               className="rd-verdict-primary rd-verdict-primary--inline focus-ring"
-              data-tone="success"
+              data-rd-tone="success"
               disabled={!ready || busy != null}
               onClick={() => {
                 void (async () => {

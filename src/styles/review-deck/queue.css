@@ -261,7 +261,7 @@
   background: var(--rd-tone);
 }
 
-.rd-row[data-tone="danger"] .rd-row-dot {
+.rd-row[data-rd-tone="danger"] .rd-row-dot {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--rd-tone) 18%, transparent);
 }
 

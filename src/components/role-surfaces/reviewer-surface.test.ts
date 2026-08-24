@@ -281,8 +281,13 @@ test("the inspector names unavailable truth instead of inferring it", () => {
 });
 
 test("panes are clamped against the live window, not just their own bounds", () => {
-  assert.match(panes, /clampPaneWidth\(queueWidth, QUEUE_PANE, viewport, QUEUE_SHARE\)/);
-  assert.match(panes, /window\.addEventListener\("resize", measure\)/);
+  assert.match(panes, /clampPaneWidth\(queueWidth, QUEUE_PANE, available, QUEUE_SHARE\)/);
+  // Measure the STAGE, not the window: the deck can render inside a workspace
+  // pane narrower than the window, and clamping to a share of the window there
+  // lets a rail take most of the pane.
+  assert.match(panes, /new ResizeObserver/);
+  assert.match(panes, /observer\.observe\(node\)/);
+  assert.doesNotMatch(panes, /window\.innerWidth/);
   assert.match(panes, /pointermove/);
   assert.match(panes, /pointercancel/);
   assert.match(surface, /--rd-queue-width/);
@@ -327,9 +332,15 @@ test("every rendered Review Deck class has a stylesheet rule", () => {
 
 test("tone is one custom property, never a second hue per state", () => {
   // Adding a state means adding a row to the tone table, not a colour rule.
-  assert.match(css, /\[data-tone="danger"\]\s*\{\s*--rd-tone: var\(--color-danger\);/);
-  assert.match(css, /\[data-tone="accent"\]\s*\{\s*--rd-tone: var\(--accent-presence\);/);
+  assert.match(css, /\[data-rd-tone="danger"\]\s*\{\s*--rd-tone: var\(--color-danger\);/);
+  assert.match(css, /\[data-rd-tone="accent"\]\s*\{\s*--rd-tone: var\(--accent-presence\);/);
   assert.match(css, /background: color-mix\(in oklch, var\(--rd-tone\) 14%, transparent\)/);
+  // The attribute is deck-specific. A bare `[data-tone]` mapping would reach
+  // the status bar and the coven tab, which carry that shared attribute; and
+  // scoping under `.rd-stage` would strip the tone from the composer and merge
+  // dialogs, which Modal portals outside it.
+  assert.doesNotMatch(css, /^\[data-tone=/m);
+  assert.doesNotMatch(css, /\.rd-stage \[data-rd-tone=/);
 });
 
 test("the narrow-width switcher is a sibling of the layout, never inside a pane", () => {

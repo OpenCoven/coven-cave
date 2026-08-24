@@ -2,7 +2,7 @@
  * Review Deck — the atoms every pane shares.
  *
  * Tone is one custom property, not five copies of a colour rule: an element
- * carries data-tone, `--rd-tone` resolves to the one solid token behind it,
+ * carries data-rd-tone, `--rd-tone` resolves to the one solid token behind it,
  * and every tint below is a color-mix of that. Adding a state means adding a
  * row to the tone table, never a second hue.
  */
@@ -56,23 +56,33 @@ body[data-rd-resizing="true"] {
   user-select: none;
 }
 
-[data-tone="danger"] {
+/*
+ * The attribute is deck-specific rather than the shared `data-tone`, which the
+ * status bar and the coven tab also carry — an unscoped `[data-tone]` mapping
+ * would set --rd-tone on every one of them and inherit it into their subtrees.
+ *
+ * Scoping under `.rd-stage` instead would have been wrong: Modal and Popover
+ * portal to document.body, so the composer's evidence chips, its submit button
+ * and the merge confirmation all render OUTSIDE the stage and would have lost
+ * their tone. A distinct attribute is both leak-proof and portal-proof.
+ */
+[data-rd-tone="danger"] {
   --rd-tone: var(--color-danger);
 }
 
-[data-tone="warning"] {
+[data-rd-tone="warning"] {
   --rd-tone: var(--color-warning);
 }
 
-[data-tone="success"] {
+[data-rd-tone="success"] {
   --rd-tone: var(--color-success);
 }
 
-[data-tone="accent"] {
+[data-rd-tone="accent"] {
   --rd-tone: var(--accent-presence);
 }
 
-[data-tone="muted"] {
+[data-rd-tone="muted"] {
   --rd-tone: var(--text-muted);
 }
 

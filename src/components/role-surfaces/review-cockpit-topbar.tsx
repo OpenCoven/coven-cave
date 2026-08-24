@@ -89,7 +89,7 @@ export function ReviewCockpitTopBar({
               key={bucket}
               type="button"
               className="rd-segment focus-ring"
-              data-tone={meta.tone}
+              data-rd-tone={meta.tone}
               data-active={active ? "true" : undefined}
               aria-pressed={active}
               title={`Show only ${meta.label.toLowerCase()} — ${meta.hint}`}

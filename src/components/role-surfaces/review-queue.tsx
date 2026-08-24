@@ -84,7 +84,7 @@ function QueueMixBar({
         {segments.map((segment) => (
           <i
             key={segment.bucket}
-            data-tone={segment.tone}
+            data-rd-tone={segment.tone}
             style={{ flexGrow: segment.count }}
           />
         ))}
@@ -92,7 +92,7 @@ function QueueMixBar({
       <span className="rd-mix-detail" aria-hidden>
         {segments.map((segment) => (
           <span key={segment.bucket}>
-            <i data-tone={segment.tone} />
+            <i data-rd-tone={segment.tone} />
             <span>{segment.label}</span>
             <b>{segment.count}</b>
           </span>
@@ -214,7 +214,7 @@ export function ReviewQueue({
                 <h3
                   id={`rd-group-${bucket}`}
                   className="rd-queue-group-head"
-                  data-tone={meta.tone}
+                  data-rd-tone={meta.tone}
                 >
                   <Icon name={BUCKET_ICON[bucket]} width={13} height={13} aria-hidden />
                   <span className="rd-queue-group-label">{meta.label}</span>
@@ -233,14 +233,14 @@ export function ReviewQueue({
                           <button
                             type="button"
                             className="rd-row focus-ring-inset"
-                            data-tone={meta.tone}
+                            data-rd-tone={meta.tone}
                             data-active={active ? "true" : undefined}
                             aria-current={active ? "true" : undefined}
                             title={`${item.title} — ${item.stateTitle}`}
                             onClick={() => onSelect(item.id)}
                           >
                             <span className="rd-row-line">
-                              <i className="rd-row-dot" data-tone={meta.tone} aria-hidden />
+                              <i className="rd-row-dot" data-rd-tone={meta.tone} aria-hidden />
                               <span className="rd-row-title">{item.title}</span>
                               <span className="rd-row-age">{item.age}</span>
                             </span>
@@ -252,7 +252,7 @@ export function ReviewQueue({
                                 {item.reference}
                               </span>
                               {item.reason ? (
-                                <span className="rd-row-reason" data-tone={meta.tone}>
+                                <span className="rd-row-reason" data-rd-tone={meta.tone}>
                                   {item.reason}
                                 </span>
                               ) : null}

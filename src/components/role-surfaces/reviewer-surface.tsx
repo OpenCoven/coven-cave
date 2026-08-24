@@ -591,6 +591,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
 
   return (
     <div
+      ref={panes.stageRef}
       className="rd-stage"
       data-mobile-view={mobileView}
       data-queue-open={panes.queueOpen ? "true" : undefined}

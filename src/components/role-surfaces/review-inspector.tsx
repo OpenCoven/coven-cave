@@ -73,7 +73,7 @@ function Disclosure({
         <Icon name={icon} width={11} height={11} aria-hidden />
         <span className="rd-eyebrow">{label}</span>
         <span className="rd-spacer" />
-        <span className="rd-disclosure-summary" data-tone={summaryTone}>
+        <span className="rd-disclosure-summary" data-rd-tone={summaryTone}>
           {summary}
         </span>
       </button>
@@ -160,7 +160,7 @@ export function ReviewInspector({
         <span className="rd-eyebrow">Inspector</span>
         <span className="rd-spacer" />
         {state && bucket ? (
-          <span className="rd-inspector-state" data-tone={state.tone}>
+          <span className="rd-inspector-state" data-rd-tone={state.tone}>
             <Icon name={STATE_ICON[bucket]} width={11} height={11} aria-hidden />
             {state.label}
           </span>
@@ -168,13 +168,13 @@ export function ReviewInspector({
       </div>
 
       <div className="rd-inspector-body rd-scroll">
-        <section className="rd-decision" data-tone={decision.tone} role="status">
+        <section className="rd-decision" data-rd-tone={decision.tone} role="status">
           <div className="rd-decision-head">
-            <i className="rd-decision-dot" data-tone={decision.tone} aria-hidden />
+            <i className="rd-decision-dot" data-rd-tone={decision.tone} aria-hidden />
             <strong>{decision.headline}</strong>
           </div>
           <p className="rd-decision-sub">{decision.sub}</p>
-          <div className="rd-decision-next" data-tone={decision.tone}>
+          <div className="rd-decision-next" data-rd-tone={decision.tone}>
             <Icon name="ph:caret-right" width={11} height={11} aria-hidden />
             <span className="rd-eyebrow">Next</span>
             <span>{decision.next}</span>
@@ -198,7 +198,7 @@ export function ReviewInspector({
                       ? `https://github.com/${facts.repo}/pull/${facts.number}`
                       : null;
               return (
-                <article key={blocker.id} className="rd-blocker" data-tone={blocker.tone}>
+                <article key={blocker.id} className="rd-blocker" data-rd-tone={blocker.tone}>
                   <div className="rd-blocker-head">
                     <Icon name={blocker.icon} width={13} height={13} aria-hidden />
                     <span className="rd-blocker-severity">{blocker.severity}</span>

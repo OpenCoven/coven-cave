@@ -4,13 +4,18 @@
  * use-review-panes — the cockpit's two draggable rails.
  *
  * Width lives in state rather than CSS so the same numbers can be clamped
- * against the live window (a rail dragged wide on a large display must not
- * swallow the diff when the window shrinks) and fed to the file rail, which
- * decides how many chips fit from the measured centre width.
+ * against the surface's own width and fed to the file rail, which decides how
+ * many chips fit from the measured centre width.
+ *
+ * It measures the STAGE, not the window. The deck's responsive contract is a
+ * container query, so it can render inside a workspace pane that is a fraction
+ * of the window — a half-width split. Clamping a rail to 26% of the *window*
+ * there lets it take most of a much narrower pane, and hands the file rail a
+ * centre width that does not exist, so it shows chips that cannot fit.
  *
  * Pointer events, not mouse: a trackpad drag and a touch drag both have to
- * work, and pointer capture keeps the drag alive when the cursor outruns the
- * 5px handle.
+ * work. The move/up listeners live on `window` rather than on the handle, so a
+ * cursor that outruns the 4px gutter keeps dragging.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,10 +27,20 @@ import {
 
 const QUEUE_SHARE = 0.26;
 const INSPECTOR_SHARE = 0.3;
-/** Fallback until the first measurement lands; SSR has no window. */
+/** Fallback until the first measurement lands; SSR has no layout. */
 const ASSUMED_WIDTH = 1440;
+/**
+ * One source of truth for the gutter. The grid track is
+ * `--rd-gutter: var(--space-1)`, so the centre-width arithmetic has to
+ * subtract the same 4px — it subtracted 5 while the handle was still the
+ * frame's 5px, which quietly shrank the measured centre and could drop a file
+ * chip that did fit.
+ */
+const GUTTER_PX = 4;
 
 export type ReviewPanes = {
+  /** Attach to the stage; its measured width is what the rails clamp against. */
+  stageRef: React.RefObject<HTMLDivElement | null>;
   queueWidth: number;
   inspectorWidth: number;
   /** What the diff column actually gets, once both rails are subtracted. */
@@ -45,23 +60,31 @@ export function useReviewPanes(): ReviewPanes {
   const [inspectorWidth, setInspectorWidth] = useState<number>(INSPECTOR_PANE.initial);
   const [queueOpen, setQueueOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [viewport, setViewport] = useState(ASSUMED_WIDTH);
+  const [available, setAvailable] = useState(ASSUMED_WIDTH);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const dragging = useRef<{ pane: "queue" | "inspector"; startX: number; startWidth: number } | null>(
     null,
   );
 
+  // Observe the stage itself. A window `resize` listener misses the case that
+  // matters most here — the window staying put while the surface's own pane is
+  // dragged narrower beside it.
   useEffect(() => {
-    const measure = () => setViewport(window.innerWidth);
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    const node = stageRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width && width > 0) setAvailable(width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
 
-  const clampedQueue = clampPaneWidth(queueWidth, QUEUE_PANE, viewport, QUEUE_SHARE);
+  const clampedQueue = clampPaneWidth(queueWidth, QUEUE_PANE, available, QUEUE_SHARE);
   const clampedInspector = clampPaneWidth(
     inspectorWidth,
     INSPECTOR_PANE,
-    viewport,
+    available,
     INSPECTOR_SHARE,
   );
 
@@ -96,8 +119,7 @@ export function useReviewPanes(): ReviewPanes {
         startX: event.clientX,
         startWidth: pane === "queue" ? clampedQueue : clampedInspector,
       };
-      // A cursor that outruns the handle must not leave the drag behind, and a
-      // text selection started mid-drag makes the whole surface flash blue.
+      // A text selection started mid-drag makes the whole surface flash blue.
       document.body.setAttribute("data-rd-resizing", "true");
       window.addEventListener("pointermove", onPointerMove);
       window.addEventListener("pointerup", endDrag);
@@ -107,13 +129,14 @@ export function useReviewPanes(): ReviewPanes {
   );
 
   return {
+    stageRef,
     queueWidth: clampedQueue,
     inspectorWidth: clampedInspector,
     centreWidth: Math.max(
       0,
-      viewport -
-        (queueOpen ? clampedQueue + 5 : 0) -
-        (inspectorOpen ? clampedInspector + 5 : 0),
+      available -
+        (queueOpen ? clampedQueue + GUTTER_PX : 0) -
+        (inspectorOpen ? clampedInspector + GUTTER_PX : 0),
     ),
     queueOpen,
     inspectorOpen,
