@@ -47,7 +47,12 @@ pub(super) fn show_fatal_dialog(msg: &str) {
 /// out as `\r\r\n`. A lone CR is a break Notepad also drops, so it converts
 /// too. osascript and zenity both take "\n", so this belongs to Windows alone.
 #[cfg(desktop)]
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+// `test` is excluded from the allow deliberately, matching
+// `shell_open_helpers::windows_system32_binary`. If the test below is ever
+// deleted, a Linux `cargo test --lib` then warns that this is unused — which
+// is the signal that lifting it out of the Windows-only block has stopped
+// buying anything.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
 pub(super) fn windows_dialog_file_text(title: &str, msg: &str) -> String {
     format!("{title}\n\n{msg}")
         .replace("\r\n", "\n")

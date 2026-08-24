@@ -1459,8 +1459,11 @@ fn the_gated_and_stranger_refusals_prescribe_different_actions() {
         gated.contains("Switch to it"),
         "Gated is most often another CovenCave, which the operator can switch to: {gated}"
     );
+    // The phrase, not the bare word: a Stranger instruction may legitimately
+    // say "switch to a free port", which is advice about us rather than about
+    // the occupant. What it must never do is offer switching TO the occupant.
     assert!(
-        !stranger.contains("Switch"),
+        !stranger.contains("Switch to it"),
         "a Stranger is not ours and never can be; its instruction must be to quit it: {stranger}"
     );
 }
@@ -1506,6 +1509,21 @@ fn the_windows_dialog_file_is_wholly_crlf_whatever_the_message_arrives_as() {
     assert!(
         !real.replace("\r\n", "").contains('\n'),
         "every line break must be CRLF: {real:?}"
+    );
+
+    // The case the lone-CR pass exists for, and it is reachable rather than
+    // theoretical: `SidecarStartError::failed` splices the bounded node output
+    // tail into the message verbatim, and node tooling emits \r-terminated
+    // progress lines. `already_running_message` above can never carry one, so
+    // it does not exercise this.
+    let tail = windows_dialog_file_text(
+        "CovenCave failed to start",
+        "Sidecar (node v22) failed on port 3020.\n\nBounded sidecar output tail:\nProgress: 12%\rProgress: 47%\rdone\n",
+    );
+    let stripped = tail.replace("\r\n", "");
+    assert!(
+        !stripped.contains('\n') && !stripped.contains('\r'),
+        "a spliced node tail must come out wholly CRLF, carrying no lone CR: {tail:?}"
     );
 }
 
