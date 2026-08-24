@@ -1,83 +1,96 @@
 // @ts-nocheck
 // Canonical names in the command palette + shortcut help (issue #3283, bead
 // cave-m4ih.6): the ⌘K launcher and the shortcuts sheet must speak the same
-// vocabulary as the shared workspace navigation registry. "Go to …" rows
-// already derive from WORKSPACE_NAV_ITEMS at runtime, so this pins the
-// derivation itself plus the two hand-written
-// spots that CAN drift: the "Tasks: …" board-view rows and the ⌘1–⌘5 help
-// entry, both cross-checked against the sidebar's labels so a future rename
-// fails here instead of shipping a stale name.
+// vocabulary as the shared workspace destination policy. The policy itself
+// now composes page-registry titles with the workspace navigation metadata, so
+// this pins the cross-check plus the two hand-written spots that CAN drift:
+// the "Tasks: …" board-view rows and the ⌘1–⌘5 help entry.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { SHORTCUT_GROUPS } from "../lib/keyboard-shortcuts.ts";
+import { paletteDestinations } from "../lib/workspace-destination-policy.ts";
+import { workspacePageDefinition } from "../lib/workspace-page-registry.ts";
+import { WORKSPACE_NAV_ITEMS } from "../lib/workspace-navigation.ts";
 
 const palette = readFileSync(new URL("./command-palette.tsx", import.meta.url), "utf8");
-const registry = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const sheet = readFileSync(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
 
-// Canonical id -> label (and id -> kbd) from WORKSPACE_NAV_ITEMS — the same
-// source of truth canonical-nav-names.test.ts pins all navigation hosts against.
-const navigationBlock = registry.match(/export const WORKSPACE_NAV_ITEMS[\s\S]*?\n\];/)?.[0];
-assert.ok(navigationBlock, "WORKSPACE_NAV_ITEMS block should be extractable");
-const labels = new Map();
-const kbds = new Map();
-for (const m of navigationBlock.matchAll(/\{ id: "([a-z-]+)", label: "([^"]+)"(?:[^\n]*?kbd: "([^"]+)")?/g)) {
-  labels.set(m[1], m[2]);
-  if (m[3]) kbds.set(m[1], m[3]);
-}
-assert.ok(labels.size > 0, "WORKSPACE_NAV_ITEMS should declare id/label rows");
+const labels = new Map(WORKSPACE_NAV_ITEMS.map((item) => [item.id, item.label]));
+const kbds = new Map(WORKSPACE_NAV_ITEMS.map((item) => [item.id, item.kbd]));
+const destinations = paletteDestinations();
+assert.ok(destinations.length > 0, "paletteDestinations() should stay populated");
 
-// ── "Go to <surface>" rows derive from WORKSPACE_NAV_ITEMS at runtime ────────
+for (const destination of destinations) {
+  const navLabel = labels.get(destination.id);
+  assert.ok(navLabel, `palette destination "${destination.id}" needs shared navigation metadata`);
+  assert.equal(
+    destination.title,
+    navLabel,
+    `palette destination "${destination.id}" must use the shared navigation label "${navLabel}"`,
+  );
+  const pageDefinition = workspacePageDefinition(destination.id);
+  assert.ok(pageDefinition, `palette destination "${destination.id}" needs a page definition`);
+  assert.equal(
+    destination.title,
+    pageDefinition.title,
+    `palette destination "${destination.id}" must keep the page registry title in sync with navigation`,
+  );
+}
+
+// ── "Go to <surface>" rows derive from the shared destination policy ─────────
 assert.match(
   palette,
-  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/workspace-navigation"/,
-  "the palette imports the shared workspace navigation registry rather than its own surface list",
+  /import \{ paletteDestinations \} from "@\/lib\/workspace-destination-policy"/,
+  "the palette imports the shared destination policy rather than its own surface list",
 );
 assert.match(
   palette,
-  /name: `Go to \$\{fm\.label\}`/,
-  "Go-to rows interpolate the canonical sidebar label (renames flow through automatically)",
+  /name: `Go to \$\{destination\.title\}`/,
+  "Go-to rows interpolate the canonical destination title (renames flow through automatically)",
 );
 
 // ── Board-view rows carry the canonical Tasks label as their prefix ──────────
-const boardLabel = labels.get("board");
-assert.ok(boardLabel, "the sidebar declares a board surface");
+const boardDestination = destinations.find(({ id }) => id === "board");
+assert.ok(boardDestination, "paletteDestinations() should include the board surface");
 const boardViewsBlock = palette.match(/const BOARD_VIEWS[\s\S]*?\n\s*\];/)?.[0];
 assert.ok(boardViewsBlock, "BOARD_VIEWS block should be extractable");
 const boardViewLabels = [...boardViewsBlock.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
 assert.ok(boardViewLabels.length >= 3, "the palette offers the board's views");
 for (const label of boardViewLabels) {
   assert.ok(
-    label.startsWith(`${boardLabel}: `),
-    `board-view row "${label}" must lead with the canonical "${boardLabel}" label`,
+    label.startsWith(`${boardDestination.title}: `),
+    `board-view row "${label}" must lead with the canonical "${boardDestination.title}" label`,
   );
 }
 
 // ── ⌘1–⌘5 help lists exactly the shortcut surfaces, in order, by canonical
-//    name — cross-checked against workspace.tsx's SURFACE_ORDER dispatch ──────
+//    name — cross-checked against workspace.tsx's SURFACE_ORDER dispatch and
+//    the shared destination metadata ──────────────────────────────────────────
 const surfaceOrderBlock = workspace.match(/const SURFACE_ORDER: WorkspaceMode\[\] = \[([\s\S]*?)\]/)?.[1];
 assert.ok(surfaceOrderBlock, "SURFACE_ORDER should be extractable from workspace.tsx");
 const surfaceOrder = [...surfaceOrderBlock.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
 assert.equal(surfaceOrder.length, 5, "⌘1–⌘5 dispatches five surfaces");
 
 const orderedLabels = surfaceOrder.map((id) => {
-  const label = labels.get(id);
-  assert.ok(label, `SURFACE_ORDER mode "${id}" must be a sidebar surface`);
-  return label;
+  const destination = destinations.find((candidate) => candidate.id === id);
+  assert.ok(destination, `SURFACE_ORDER mode "${id}" must stay palette-reachable`);
+  return destination.title;
 });
-assert.match(
-  shortcuts,
-  new RegExp(`keys: "⌘1–⌘5", description: "Jump to a surface \\(${orderedLabels.join(", ")}\\)"`),
+assert.equal(
+  SHORTCUT_GROUPS.find(
+    (group) => group.id === "panels",
+  )?.entries.find((entry) => entry.keys === "⌘1–⌘5")?.description,
+  `Jump to a surface (${orderedLabels.join(", ")})`,
   `the shortcut help must list the ⌘1–⌘5 surfaces as "${orderedLabels.join(", ")}" (canonical, dispatch order)`,
 );
 
-// The sidebar's per-row kbd hints agree with the same dispatch order.
+// The navigation registry's per-row kbd hints agree with the same dispatch order.
 surfaceOrder.forEach((id, i) => {
   assert.equal(
     kbds.get(id),
     `⌘${i + 1}`,
-    `sidebar surface "${id}" should advertise ⌘${i + 1} to match SURFACE_ORDER`,
+    `surface "${id}" should advertise ⌘${i + 1} to match SURFACE_ORDER`,
   );
 });
 

@@ -41,8 +41,8 @@ assert.doesNotMatch(sidebar, /<NavSectionTabs/, "the Home rail no longer hosts t
 assert.match(sidebar, /role="tabpanel"/, "the destination list is the switcher's panel");
 assert.match(
   sidebar,
-  /navItemsForSection\(section\)/,
-  "the destination rows are filtered to the open section",
+  /sidebarDestinations\(section\)/,
+  "the destination rows are derived from the shared policy for the open section",
 );
 assert.match(
   sidebar,
