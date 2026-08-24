@@ -346,7 +346,10 @@ test("conversation loading persists live history and falls back to a labelled re
   assert.match(chatView, /historyState === "offline" && sessionId/);
   assert.match(chatView, /const offlineReadOnly = historyState === "offline"/);
   assert.match(chatView, /if \(historyState === "offline"\) \{\s*announce\("Offline copies are read only/);
-  assert.match(chatView, /\(durableConversation \|\| cachedConversation\) && res\.status !== 404/);
+  assert.match(
+    chatView,
+    /\(durableConversation \|\| cachedConversation\)\s*&& !\(error instanceof ConversationLoadError && error\.status === 404\)/,
+  );
   assert.match(chatView, /readOnly=\{offlineReadOnly\}/);
   assert.match(chatView, /feedbackContext=\{readOnly \? undefined : feedbackContext\}/);
   assert.match(chatView, /taskSuggestion && sessionId && !offlineReadOnly/);
