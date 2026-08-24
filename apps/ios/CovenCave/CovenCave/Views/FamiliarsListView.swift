@@ -226,22 +226,20 @@ private struct FamiliarRosterRow: View {
     }
 }
 
-/// The Familiar hub's **Profile** tab body (`cave-9rwd.2` shell).
+/// The Familiar hub's comprehensive native Profile tab (`cave-9rwd.4`).
 ///
-/// This was the roster's standalone detail page until the hub landed. It kept
-/// its identity, defaults and access surfaces and lost the parts the hub now
-/// owns — the avatar hero, the navigation title, the scroll container and the
-/// primary Chat action — so nothing is drawn twice.
-///
-/// It is still driven by the paths that OWN these mutations (the chat model
-/// inventory, `FamiliarPermissionsSheet`) rather than by the dashboard read.
-/// `cave-9rwd.4` replaces it with the comprehensive dashboard-driven profile;
-/// rendering nothing here in the meantime would be a regression from what the
-/// roster used to open.
+/// Read-only facts come from the coherent dashboard snapshot. The two editable
+/// controls deliberately stay on the paths that own those mutations: the model
+/// inventory/mutation contract and `FamiliarPermissionsSheet`. The roster is
+/// used only for fields that `/api/familiars` already owns (voice, image and
+/// revisioned avatar state); no second configuration contract is invented.
 struct FamiliarDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     let familiar: Familiar
+    let identity: FamiliarDashboardIdentity
+    let profile: FamiliarDashboardProfile
+    let overview: FamiliarDashboardClientSection<FamiliarDashboardOverview>
 
     @State private var modelState: ChatModelState?
     @State private var modelOptions: [ChatModelOption] = []
@@ -258,14 +256,6 @@ struct FamiliarDetailView: View {
     @State private var showAvatarCamera = false
     @State private var avatarPhotoItem: PhotosPickerItem?
     @State private var changingAvatar = false
-
-    private var scopedContext: ProjectContext? {
-        app.projectContext
-    }
-
-    private var statsModel: FamiliarDetailStatsModel {
-        FamiliarDetailStatsModel.make(app: app, familiar: familiar, context: scopedContext)
-    }
 
     private var modelLoadTarget: ChatModelRequestTarget {
         let harness = (app.familiar(familiar.id)?.harness ?? familiar.harness)?
@@ -304,7 +294,9 @@ struct FamiliarDetailView: View {
     }
 
     private var modelLabel: String {
-        guard let state = presentedModelState else { return familiar.model ?? "Inherited" }
+        guard let state = presentedModelState else {
+            return FamiliarProfilePresentation.model(profile)
+        }
         if state.effectiveModel.isEmpty { return "Runtime default" }
         return presentedModelOptions.first(where: { $0.id == state.effectiveModel })?.label
             ?? state.effectiveModel.split(separator: "/").last.map(String.init)
@@ -313,14 +305,17 @@ struct FamiliarDetailView: View {
 
     private var runtimeLabel: String {
         if let runtime = presentedModelState?.runtime, !runtime.isEmpty { return runtime }
-        return presentedModelState?.harness ?? familiar.harness ?? "Inherited"
+        if let harness = presentedModelState?.harness, !harness.isEmpty { return harness }
+        return FamiliarProfilePresentation.runtime(profile)
     }
 
     var body: some View {
         VStack(spacing: 22) {
-            stats
             identitySection
+            purposeSection
             defaultsSection
+            memoryAndMediaSection
+            contractSection
             accessSection
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -383,33 +378,6 @@ struct FamiliarDetailView: View {
         app.familiar(familiar.id) ?? familiar
     }
 
-    private var stats: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            statCard("Chats", value: statsModel.chats, icon: "bubble.left")
-            statCard("Activity", value: statsModel.activity, icon: "clock")
-            statCard("Tasks", value: statsModel.tasks, icon: "checkmark.square")
-            statCard("Memory", value: statsModel.memory, icon: "brain")
-        }
-    }
-
-    private func statCard(_ title: String, value: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Image(systemName: icon)
-                .foregroundStyle(chrome.accent)
-            Text(value)
-                .font(.title3.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glass(.raised, cornerRadius: 14)
-        .accessibilityElement(children: .combine)
-    }
-
     private var identitySection: some View {
         detailGroup {
             Text("Identity")
@@ -445,17 +413,28 @@ struct FamiliarDetailView: View {
             .accessibilityLabel("Edit \(familiar.displayName)’s avatar")
             .accessibilityHint("Choose a photo, take a photo, or remove the current avatar.")
             Divider()
-            detailValue("Role", familiar.role ?? "Not set")
-            if let pronouns = familiar.pronouns, !pronouns.isEmpty {
-                detailValue("Pronouns", pronouns)
-            }
-            if let description = familiar.description, !description.isEmpty {
-                Divider()
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            detailValue("Name", FamiliarProfilePresentation.value(identity.displayName))
+            Divider()
+            detailValue("Role", FamiliarProfilePresentation.value(identity.role))
+            Divider()
+            detailValue("Pronouns", FamiliarProfilePresentation.value(identity.pronouns))
+            Divider()
+            detailValue("Familiar ID", identity.id)
+        }
+    }
+
+    private var purposeSection: some View {
+        detailGroup {
+            Text("Purpose and vocation")
+                .font(.headline)
+            detailValue("Purpose", FamiliarProfilePresentation.value(profile.description))
+            Divider()
+            detailValue("Vocation", FamiliarProfilePresentation.value(profile.familiarType))
+            Divider()
+            detailValue(
+                "Configuration note",
+                FamiliarProfilePresentation.value(profile.configuration.note)
+            )
         }
     }
 
@@ -479,7 +458,7 @@ struct FamiliarDetailView: View {
                             Text(modelLabel)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                            Text(ChatModelInventoryProvenancePresentation.compactLabel(for: presentedModelProvenance))
+                            Text(modelSourceLabel)
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
@@ -498,8 +477,76 @@ struct FamiliarDetailView: View {
                     || changingModel
             )
             .accessibilityLabel(
-                "Model: \(modelLabel). \(ChatModelInventoryProvenancePresentation.label(for: presentedModelProvenance))"
+                "Model: \(modelLabel). \(modelSourceLabel)"
             )
+            Divider()
+            detailValue(
+                "Self-reports",
+                profile.configuration.autoSelfReport ? "Enabled" : "Not enabled"
+            )
+        }
+    }
+
+    private var modelSourceLabel: String {
+        if presentedModelState != nil {
+            return ChatModelInventoryProvenancePresentation.label(for: presentedModelProvenance)
+        }
+        return FamiliarProfilePresentation.modelSource(profile)
+    }
+
+    private var memoryAndMediaSection: some View {
+        detailGroup {
+            Text("Memory and media")
+                .font(.headline)
+            detailValue("Memory", memoryLabel)
+            Divider()
+            detailValue("Voice", FamiliarProfilePresentation.voice(currentFamiliar))
+            Divider()
+            detailValue("Image defaults", FamiliarProfilePresentation.image(currentFamiliar))
+        }
+    }
+
+    private var memoryLabel: String {
+        FamiliarProfilePresentation.memory(overview)
+    }
+
+    private var contractSection: some View {
+        detailGroup {
+            Text("Capability contract")
+                .font(.headline)
+            detailValue("Status", FamiliarProfilePresentation.contract(profile.contract))
+            if let contract = profile.contract {
+                contractFindings("Needs attention", contract.violations)
+                contractFindings("Warnings", contract.warnings)
+            } else {
+                Text("No contract files were found for this familiar.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func contractFindings(
+        _ label: String,
+        _ findings: FamiliarDashboardBoundedList<String>
+    ) -> some View {
+        if !findings.items.isEmpty {
+            Divider()
+            Text(label)
+                .font(.subheadline.weight(.medium))
+            ForEach(Array(findings.items.enumerated()), id: \.offset) { _, finding in
+                Label(finding, systemImage: "exclamationmark.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if findings.hidden > 0 {
+                Text("+\(findings.hidden) more")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -511,8 +558,13 @@ struct FamiliarDetailView: View {
                 showPermissions = true
             } label: {
                 HStack {
-                    Label("Project and tool permissions", systemImage: "lock.shield")
-                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Project and tool access", systemImage: "lock.shield")
+                            .foregroundStyle(.primary)
+                        Text("Review the authoritative access controls")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
@@ -526,15 +578,25 @@ struct FamiliarDetailView: View {
     }
 
     private func detailValue(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                Spacer(minLength: 12)
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                Text(value)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .font(.subheadline)
-        .frame(minHeight: 34)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value)")
     }
 
     private func detailGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {

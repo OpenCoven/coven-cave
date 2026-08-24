@@ -387,20 +387,36 @@ struct FamiliarHubView: View {
         .accessibilityLabel("\(label): \(value)")
     }
 
-    /// The Profile tab keeps the identity, defaults and access surfaces that
-    /// already shipped, driven by the paths that own those mutations today
-    /// (the model inventory, `FamiliarPermissionsSheet`). `cave-9rwd.4`
-    /// replaces this with the dashboard-driven profile — showing nothing here
-    /// meanwhile would be a regression from what the roster used to open.
+    /// Profile intentionally renders a successfully-read EMPTY section instead
+    /// of replacing it with a generic empty note. Identity and configuration
+    /// rows still have truthful "Not set" answers, and model/access controls
+    /// remain useful even when no optional profile prose is configured.
     @ViewBuilder
     private func profileTab(_ snapshot: FamiliarDashboardSnapshot) -> some View {
-        if snapshot.profile.isStale {
-            FamiliarDashboardStaleBanner(
-                generatedAt: snapshot.profile.generatedAt,
-                issues: snapshot.profile.refreshIssues
+        let section = snapshot.profile
+        if let profile = section.data {
+            if section.isStale {
+                FamiliarDashboardStaleBanner(
+                    generatedAt: section.generatedAt,
+                    issues: section.refreshIssues
+                )
+            }
+            FamiliarDetailView(
+                familiar: familiar,
+                identity: snapshot.identity,
+                profile: profile,
+                overview: snapshot.overview
+            )
+            if !section.issues.isEmpty, !section.isStale {
+                FamiliarDashboardIssueNote(issues: section.issues)
+            }
+        } else {
+            FamiliarDashboardUnavailableView(
+                title: "Profile",
+                issues: section.visibleIssues,
+                retry: section.isRetryable ? { Task { await refreshNow() } } : nil
             )
         }
-        FamiliarDetailView(familiar: familiar)
     }
 
     private func analyticsTab(_ snapshot: FamiliarDashboardSnapshot) -> some View {
