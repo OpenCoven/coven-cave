@@ -24,14 +24,14 @@ assert.match(familiarStyles, /\.familiar-quickswitch \{/, "wrapper CSS remains f
 
 // ── Familiar selection stays in persistent title-bar context ─────────────────
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
-assert.match(sidebar, /<SidebarRailHeader[\s\S]*?showContext=\{false\}/, "the Chats list header suppresses duplicate scope controls");
+assert.match(sidebar, /<SidebarRailHeader[\s\S]*?contextMode="mobile"/, "the Chats list header keeps scope controls only in the mobile drawer");
 assert.match(railHeader, /<WorkspaceContextSwitcher/, "the shared header mounts the project-and-crew context switcher");
 assert.match(contextSwitcher, /<FamiliarSwitcher[\s\S]*?labeled/, "the context switcher mounts the crew switcher in its labeled form");
 const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 assert.match(
   sidenav,
-  /<SidebarRailHeader[\s\S]*?showContext=\{false\}/,
-  "the normal sidenav header also suppresses duplicate scope controls",
+  /<SidebarRailHeader[\s\S]*?contextMode="mobile"/,
+  "the normal sidenav header also keeps scope controls only in the mobile drawer",
 );
 assert.match(
   workspace,

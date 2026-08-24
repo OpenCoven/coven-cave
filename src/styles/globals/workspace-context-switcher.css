@@ -109,11 +109,20 @@
 }
 
 .workspace-context-switcher--titlebar :is(
-  .workspace-context-switcher__error,
   .workspace-context-switcher__empty,
   .workspace-context-switcher__notice
 ) {
   display: none;
+}
+
+.workspace-context-switcher--titlebar .workspace-context-switcher__error {
+  max-width: 200px;
+  white-space: nowrap;
+}
+
+.workspace-context-switcher--titlebar .workspace-context-switcher__error > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspace-context-switcher--titlebar .workspace-context-switcher__project .cave-project-picker__trigger,

@@ -28,6 +28,7 @@ export function NavSectionTabs({
             id={`nav-section-tab-${entry.id}`}
             aria-selected={active}
             aria-controls={`nav-section-panel-${entry.id}`}
+            aria-label={entry.label}
             tabIndex={active ? 0 : -1}
             title={`${entry.label} — ${entry.description} (${entry.kbd})`}
             className={`nav-sections__tab focus-ring${active ? " is-active" : ""}`}

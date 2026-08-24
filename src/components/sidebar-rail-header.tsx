@@ -73,7 +73,7 @@ export type SidebarRailHeaderProps = {
   projectCrewError?: string | null;
   reloadProjectCrew?: () => void;
   contextNotice?: string | null;
-  showContext?: boolean;
+  contextMode?: "all" | "mobile" | "hidden";
 };
 
 export function SidebarRailHeader({
@@ -101,7 +101,7 @@ export function SidebarRailHeader({
   projectCrewError,
   reloadProjectCrew,
   contextNotice,
-  showContext = true,
+  contextMode = "all",
 }: SidebarRailHeaderProps) {
   // Context is ready when every required Task6 prop has been supplied. A prop
   // that is null or false is supplied; undefined means the caller has not wired
@@ -122,7 +122,7 @@ export function SidebarRailHeader({
 
   return (
     <div className="rail-header">
-      {showContext ? <div className="rail-header__scope">
+      {contextMode !== "hidden" ? <div className={`rail-header__scope${contextMode === "mobile" ? " rail-header__scope--mobile" : ""}`}>
         <WorkspaceContextSwitcher
           projects={workspaceContextReady ? projects! : EMPTY_PROJECTS}
           projectId={workspaceContextReady ? projectId! : null}

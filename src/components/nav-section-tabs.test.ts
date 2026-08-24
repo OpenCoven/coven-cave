@@ -32,6 +32,7 @@ assert.match(
 assert.match(tabs, /role="tablist"/, "the switcher is a tablist, not a second row of destinations");
 assert.match(tabs, /role="tab"/, "each section renders as a tab");
 assert.match(tabs, /aria-selected=\{active\}/, "the open section is announced as selected");
+assert.match(tabs, /aria-label=\{entry\.label\}/, "icon-only title-bar tabs retain concise accessible names");
 assert.match(tabs, /tabIndex=\{active \? 0 : -1\}/, "the switcher is one tab stop with roving focus");
 assert.match(tabs, /ArrowLeft|ArrowRight/, "arrow keys move between sections");
 assert.match(tabs, /focus-ring/, "tabs carry the shared focus ring");
@@ -118,6 +119,8 @@ assert.match(
   /workspace-titlebar-context[\s\S]*?<WorkspaceContextSwitcher[\s\S]*?variant="titlebar"/,
   "project and familiar scope sit beside the title-bar section switcher",
 );
+assert.match(sidebar, /contextMode="mobile"/, "the Home drawer retains project and familiar scope on mobile");
+assert.match(chatSidebar, /contextMode="mobile"/, "the Chat drawer retains project and familiar scope on mobile");
 assert.match(
   workspace,
   /setMode\(next === "code" \? "chat" : "home"\)/,
