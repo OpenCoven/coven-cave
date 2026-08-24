@@ -7,6 +7,7 @@ import {
   isSafeConversationSessionId,
   deleteConversation,
   loadConversation,
+  loadConversationCached,
   saveConversation,
   withConversationLock,
   type ChatTurn,
@@ -486,7 +487,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   // Primary: cave-conversations JSON (written by chat/send for UI-originated chats)
-  const conv = await loadConversation(id);
+  //
+  // Cached read. This is the ONLY call site in this file that uses it: the
+  // read-modify-write handlers below deliberately keep `loadConversation`, so a
+  // mutation always re-reads the file it is about to replace rather than
+  // building its next state from a value that was handed to it.
+  //
+  // `context` stays uncached on purpose — it is board-derived and changes
+  // independently of the transcript, so it must not inherit the transcript's
+  // cache key. See loadConversationCached.
+  const conv = await loadConversationCached(id);
   if (conv) {
     const context = await linkedContextForSession(id);
     return NextResponse.json({

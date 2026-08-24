@@ -76,8 +76,12 @@ export type StoreReadCacheMetrics = {
   misses: number;
   /** Reads whose stat failed (ENOENT and friends); never cached. */
   statFailures: number;
+  /** Entries dropped to stay under a caller's `maxBytes`. */
+  evictions: number;
   /** Distinct store paths currently held. */
   entries: number;
+  /** Sum of the cached files' on-disk sizes, the quantity `maxBytes` bounds. */
+  cachedBytes: number;
 };
 
 /**
@@ -96,19 +100,63 @@ type Entry = {
   value: unknown;
 };
 
+/**
+ * Unbounded by default, which is right for the handful of fixed `~/.coven`
+ * store paths this started with: there are six of them and they all stay hot.
+ *
+ * A caller reading paths drawn from user data must pass `maxBytes`. The bound
+ * is BYTES rather than an entry count on purpose: conversation transcripts are
+ * the motivating caller, the set is the user's whole chat history, and a single
+ * transcript can exceed the 8 MiB `MAX_TURNS_PAYLOAD_BYTES` that bounds one
+ * write route — so "24 entries" could mean anything from a few KB to hundreds
+ * of MB against a sidecar running on a pinned heap. The file's `size` is
+ * already in hand from the stat this function must take anyway, so a byte bound
+ * costs nothing extra to maintain and actually describes the resource at risk.
+ *
+ * It is an approximation in one direction only: the parsed object is larger
+ * than its JSON text, so the real footprint exceeds the accounted bytes by a
+ * roughly constant factor. Sizing the budget accordingly is the caller's job.
+ *
+ * `Map` preserves insertion order, so eviction is `keys().next()` and a hit
+ * re-inserts to move the entry to the young end — a true LRU rather than
+ * first-in-first-out. That distinction matters here: the hot set is "the chats
+ * the reader is moving between", not "the chats opened earliest".
+ */
 const entries = new Map<string, Entry>();
 let hits = 0;
 let misses = 0;
 let statFailures = 0;
+let evictions = 0;
+let cachedBytes = 0;
+
+function dropEntry(filePath: string): void {
+  const existing = entries.get(filePath);
+  if (!existing) return;
+  cachedBytes -= Number(existing.size);
+  entries.delete(filePath);
+}
+
+function evictToBytes(maxBytes: number): void {
+  // `entries.size > 1` keeps a single over-budget transcript cached rather than
+  // evicting it immediately and re-reading it on every request — the worst of
+  // both worlds. One oversized entry is bounded; a re-read loop is not.
+  while (cachedBytes > maxBytes && entries.size > 1) {
+    const oldest = entries.keys().next();
+    if (oldest.done) return;
+    dropEntry(oldest.value);
+    evictions += 1;
+  }
+}
 
 export function getStoreReadCacheMetrics(): StoreReadCacheMetrics {
-  return { hits, misses, statFailures, entries: entries.size };
+  return { hits, misses, statFailures, evictions, entries: entries.size, cachedBytes };
 }
 
 export function resetStoreReadCacheMetrics(): void {
   hits = 0;
   misses = 0;
   statFailures = 0;
+  evictions = 0;
 }
 
 /**
@@ -117,12 +165,13 @@ export function resetStoreReadCacheMetrics(): void {
  * waiting for the stat to be observed.
  */
 export function invalidateCachedStore(filePath: string): void {
-  entries.delete(filePath);
+  dropEntry(filePath);
 }
 
 /** Drop everything. Tests that repoint `COVEN_HOME` must call this. */
 export function clearCaveStoreReadCache(): void {
   entries.clear();
+  cachedBytes = 0;
   resetStoreReadCacheMetrics();
 }
 
@@ -133,10 +182,11 @@ export function clearCaveStoreReadCache(): void {
 export async function readCachedStore<T>(
   filePath: string,
   load: () => Promise<T>,
-  options: { ttlMs?: number; now?: () => number } = {},
+  options: { ttlMs?: number; now?: () => number; maxBytes?: number } = {},
 ): Promise<T> {
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const now = options.now ?? Date.now;
+  const maxBytes = options.maxBytes;
 
   let stats: { mtimeNs: bigint; ctimeNs: bigint; size: bigint } | null = null;
   try {
@@ -155,7 +205,7 @@ export async function readCachedStore<T>(
     // A store with no file has no stat to key on, so it is never cached — the
     // moment it appears, the very next read must see it.
     statFailures += 1;
-    entries.delete(filePath);
+    dropEntry(filePath);
     return load();
   }
 
@@ -170,11 +220,17 @@ export async function readCachedStore<T>(
     const copy = cloneStoreValue(cached.value);
     if (copy.ok) {
       hits += 1;
+      // Re-insert so recency, not insertion order, decides what a bounded
+      // caller evicts. Skipped for the unbounded store paths, which never evict.
+      if (maxBytes !== undefined) {
+        entries.delete(filePath);
+        entries.set(filePath, cached);
+      }
       return copy.value as T;
     }
     // A store holding something structuredClone cannot copy would otherwise be
     // shared by reference. Drop it and take the honest path instead.
-    entries.delete(filePath);
+    dropEntry(filePath);
   }
 
   misses += 1;
@@ -185,7 +241,15 @@ export async function readCachedStore<T>(
   // the hit path clones to avoid, just one read earlier. A value that cannot
   // be copied is simply not cached.
   const stored = cloneStoreValue(value);
-  if (stored.ok) entries.set(filePath, { ...stats, readAt: now(), value: stored.value });
+  if (stored.ok) {
+    // Drop before set so a re-read of an existing key moves to the young end
+    // rather than staying at its original insertion position, and so its old
+    // size leaves the byte account before the new one joins.
+    dropEntry(filePath);
+    entries.set(filePath, { ...stats, readAt: now(), value: stored.value });
+    cachedBytes += Number(stats.size);
+    if (maxBytes !== undefined) evictToBytes(maxBytes);
+  }
   return value;
 }
 
