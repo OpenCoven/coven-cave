@@ -8,6 +8,7 @@ import {
   resolveIconImageProvider,
   type IconImageProvider,
 } from "@/lib/project-icon-image-provider";
+import { validateProviderIconImage } from "@/lib/server/project-icon-image";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,13 @@ const GEMINI_IMAGES_URL_BASE = "https://generativelanguage.googleapis.com/v1beta
 // under the 2MB avatar-store cap while staying crisp at tile size.
 const OPENAI_IMAGE_OPTIONS = { size: "1024x1024", quality: "low", output_format: "webp" } as const;
 
-type ProviderImage = { b64: string; mime: string };
+/**
+ * Only the base64 payload crosses this boundary. The providers also return a
+ * declared content type; it is deliberately dropped here rather than carried
+ * and ignored downstream, so no later edit can start trusting it. The format
+ * is decided from the bytes in `validateProviderIconImage`.
+ */
+type ProviderImage = { b64: string };
 type ProviderResult =
   | { ok: true; image: ProviderImage }
   | { ok: false; error: "provider_unreachable" | "provider_generation_failed" | "provider_empty_image"; providerMessage?: string };
@@ -62,7 +69,7 @@ async function generateWithOpenAI(
     /* fall through to the empty-image error */
   }
   if (!b64) return { ok: false, error: "provider_empty_image" };
-  return { ok: true, image: { b64, mime: "image/webp" } };
+  return { ok: true, image: { b64 } };
 }
 
 async function generateWithGemini(
@@ -100,18 +107,18 @@ async function generateWithGemini(
   }
 
   let b64: string | undefined;
-  let mime = "image/png";
   try {
+    // `mimeType` is present in this payload and is intentionally not read:
+    // Imagen's declared type must not decide what Cave stores or serves.
     const payload = (await res.json()) as {
-      predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>;
+      predictions?: Array<{ bytesBase64Encoded?: string }>;
     };
     b64 = payload.predictions?.[0]?.bytesBase64Encoded;
-    if (payload.predictions?.[0]?.mimeType) mime = payload.predictions[0].mimeType;
   } catch {
     /* fall through to the empty-image error */
   }
   if (!b64) return { ok: false, error: "provider_empty_image" };
-  return { ok: true, image: { b64, mime } };
+  return { ok: true, image: { b64 } };
 }
 
 const GENERATORS: Record<
@@ -191,11 +198,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const { b64, mime } = result.image;
+  // The provider's bytes are untrusted: sniffed by magic number, bounded, and
+  // re-encoded to one canonical format before they can reach the avatar store.
+  const validated = await validateProviderIconImage(result.image.b64);
+  if (!validated.ok) {
+    return NextResponse.json({ ok: false, error: validated.reason }, { status: 502 });
+  }
+
   return NextResponse.json({
     ok: true,
-    dataUrl: `data:${mime};base64,${b64}`,
-    mime,
+    dataUrl: validated.dataUrl,
+    mime: validated.mime,
     provider: resolved.provider,
   });
 }
