@@ -171,17 +171,17 @@ assert.match(
 );
 assert.match(
   compactCalendarStyles,
-  /\.rituals-overview\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*0;[^}]*flex-direction:\s*column;/,
+  /\.rituals-overview\s*\{(?=[^}]*display:\s*flex;)(?=[^}]*min-height:\s*0;)(?=[^}]*flex-direction:\s*column;)[^}]*\}/,
   "overview should expose its remaining height to the activity pane",
 );
 assert.match(
   compactCalendarStyles,
-  /\.rituals-overview__lower\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*180px;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;/,
+  /\.rituals-overview__lower\s*\{(?=[^}]*display:\s*flex;)(?=[^}]*min-height:\s*180px;)(?=[^}]*flex:\s*1;)(?=[^}]*flex-direction:\s*column;)[^}]*\}/,
   "the Log and Agenda region should consume the remaining overview height",
 );
 assert.match(
   compactCalendarStyles,
-  /\.rituals-overview__pane\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1;[^}]*overflow:\s*hidden;/,
+  /\.rituals-overview__pane\s*\{(?=[^}]*min-height:\s*0;)(?=[^}]*flex:\s*1;)(?=[^}]*overflow:\s*hidden;)[^}]*\}/,
   "the selected activity pane should shrink correctly and contain its own scroller",
 );
 assert.doesNotMatch(
@@ -191,12 +191,12 @@ assert.doesNotMatch(
 );
 assert.match(
   compactCalendarStyles,
-  /\.rituals-overview__log\s*\{[^}]*height:\s*100%;[^}]*overflow-y:\s*auto;/,
+  /\.rituals-overview__log\s*\{(?=[^}]*height:\s*100%;)(?=[^}]*overflow-y:\s*auto;)[^}]*\}/,
   "the Log list should fill and scroll within the available pane height",
 );
 assert.match(
   compactCalendarStyles,
-  /\.rituals-overview__thread\s*\{[^}]*height:\s*100%;[^}]*overflow-y:\s*auto;/,
+  /\.rituals-overview__thread\s*\{(?=[^}]*height:\s*100%;)(?=[^}]*overflow-y:\s*auto;)[^}]*\}/,
   "the Agenda thread should fill and scroll within the available pane height",
 );
 assert.match(automations, /function useRitualNow\(\): Date \| null[\s\S]{0,560}setNow\(new Date\(\)\);[\s\S]{0,80}scheduleMidnight/, "the hydration-stable week clock starts in the browser and refreshes at local midnight");
