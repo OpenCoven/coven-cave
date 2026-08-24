@@ -23,7 +23,7 @@ assert.match(
 // the target as path.join(root, relativePath).
 assert.match(
   source,
-  /const allowed = resolveAllowedProjectSubpath\(filePath\);[\s\S]*?if \(!allowed\)[\s\S]*?path not allowed[\s\S]*?const resolved = path\.join\(allowed\.root, allowed\.relativePath\);[\s\S]*?fs\.writeFileSync\(resolved/,
+  /const allowed = resolveAllowedProjectSubpath\(filePath\);[\s\S]*?if \(!allowed\)[\s\S]*?path not allowed[\s\S]*?withRepositoryMutation\(allowed\.root[\s\S]*?const resolved = path\.join\(allowed\.root, allowed\.relativePath\);[\s\S]*?fs\.writeFileSync\(resolved/,
   "writes must rebuild the path from validated root + relativePath, like reads",
 );
 

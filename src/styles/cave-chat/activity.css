@@ -613,15 +613,12 @@ details[open] > .cave-tool-summary::before {
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
-  /* Centered reading column (cave-xsq.1): the conversation + composer share one
-     comfortable measure and sit in a centered column — the ChatGPT reading
-     model — instead of spanning the full pane (reverses the 2026-06-18
-     full-width choice below). Chat-revamp 1b narrowed cave-973a's 64rem to
-     47.5rem; the 2026-07-21 wide-column pass widens it back to 64rem (1024px)
-     so long responses and diffs get room, with the suggestion row + composer
-     sharing the same measure. The header stays a full-bleed bar (its divider
-     spans the pane); only the reading/writing column is capped + centered. */
+  /* The transcript keeps a wide reading measure for code and long responses.
+     The composer is deliberately narrower: OpenCoven/ui treats intent entry as
+     a focused card rather than a window-wide command slab. Its cap uses the
+     spacing scale so accessibility text sizing does not widen the dock. */
   --cave-chat-measure: 64rem;
+  --cave-composer-measure: calc(var(--space-10) * 21);
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);

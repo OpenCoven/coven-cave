@@ -2,8 +2,18 @@ import assert from "node:assert/strict";
 import {
   inlineSlashCommandPrompt,
   inlineSlashInvocation,
+  splitSlashCommandPrompt,
   replaceInlineSlashRange,
 } from "./slash-commands.ts";
+
+assert.deepEqual(
+  splitSlashCommandPrompt("/skill code-review\n\n```ts\nconst value = 1;\n```"),
+  {
+    token: "/skill",
+    args: "code-review\n\n```ts\nconst value = 1;\n```",
+  },
+  "slash parsing preserves the raw multiline argument structure",
+);
 
 assert.deepEqual(
   inlineSlashInvocation("please /ima", 11),

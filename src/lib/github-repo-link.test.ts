@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "./github-repo-link.ts";
+import { gitHubRepoSlug, normalizeGitHubRepoUrl, parseGitHubFileUrl } from "./github-repo-link.ts";
 
 const CANONICAL = "https://github.com/OpenCoven/coven-cave";
 
@@ -73,4 +73,36 @@ test("gitHubRepoSlug renders owner/repo for stored links", () => {
   assert.equal(gitHubRepoSlug(CANONICAL), "OpenCoven/coven-cave");
   assert.equal(gitHubRepoSlug("not a link"), null);
   assert.equal(gitHubRepoSlug(null), null);
+});
+
+test("GitHub blob URLs resolve to a bounded Canvas source location", () => {
+  assert.deepEqual(
+    parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/main/src/components/App.tsx"),
+    {
+      owner: "OpenCoven",
+      repo: "coven-cave",
+      ref: "main",
+      filePath: "src/components/App.tsx",
+      repoUrl: CANONICAL,
+      sourceUrl: "https://github.com/OpenCoven/coven-cave/blob/main/src/components/App.tsx",
+    },
+  );
+  assert.equal(parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/tree/main/src"), null);
+  assert.equal(parseGitHubFileUrl("https://evil.example/OpenCoven/coven-cave/blob/main/App.tsx"), null);
+  assert.equal(parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/main/../secret.tsx"), null);
+});
+
+test("GitHub blob URLs reject separators reintroduced by percent decoding", () => {
+  assert.equal(
+    parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/feature%2Fcanvas/App.tsx"),
+    null,
+  );
+  assert.equal(
+    parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/main/src%2F..%2Fsecret.tsx"),
+    null,
+  );
+  assert.equal(
+    parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/main/src%5Csecret.tsx"),
+    null,
+  );
 });

@@ -134,9 +134,12 @@ assert.match(
 assert.match(main, /canContinue=\{false\}/, "Main Chat does not claim unsupported continuation");
 assert.match(
   main,
-  /pending && streamingModel\.committedText[\s\S]*copyText\(streamingModel\.committedText\)/,
-  "live copy is absent until committed text exists and copies only committed text",
+  /streamingModel\.committedText[\s\S]*copyText\(streamingModel\.committedText\)/,
+  "the unified status owns Copy once committed text exists",
 );
+assert.match(main, /hideCopyAction/, "Main Chat suppresses the duplicate MessageBubble Copy action");
+assert.match(main, /startedAt=\{turn\.createdAt\}/, "Main Chat supplies live elapsed timing");
+assert.match(main, /durationMs=\{turn\.durationMs\}/, "Main Chat supplies settled completion timing");
 assert.match(
   main,
   /content=\{visible \|\| \(turn\.pending \? "…" : ""\)\}/,

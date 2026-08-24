@@ -31,3 +31,6 @@ export const withCraftTransaction = createKeyedTransactionLock();
 
 /** Serializes read-modify-write updates to each canonical ROLE.md. */
 export const withRoleManifestTransaction = createKeyedTransactionLock();
+
+/** Serializes Cave-owned filesystem and Git mutations for each repository. */
+export const withRepositoryMutation = createKeyedTransactionLock();

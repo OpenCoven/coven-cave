@@ -107,18 +107,26 @@ function hasUnquotedGtAfter(s: string, from: number): boolean {
 }
 
 // buildSkillPrompt (src/lib/slash-skill.ts) shapes — anchored so ordinary
-// prose starting with "Use the" doesn't false-positive.
-const INVOCATION_RE = /^Use the "([^"\n]+)" skill(?:\.$|( with: )([\s\S]+)$)/;
+// prose starting with "Use the" doesn't false-positive. A blank line after the
+// directive carries the operator's own message, which the invocation composes
+// with rather than replaces.
+const INVOCATION_RE = /^Use the "([^"\n]+)" skill(?:\.|\s+with:\s+([^\n]+))(?:\n+([\s\S]+))?$/;
 
 /**
  * Deterministic `/skill` detection: recover the invocation the app itself
  * sent (buildSkillPrompt). Returns null for anything else.
  */
-export function parseSkillInvocation(text: string): { name: string; args?: string } | null {
+export function parseSkillInvocation(
+  text: string,
+): { name: string; args?: string; message?: string } | null {
   const m = INVOCATION_RE.exec(text.trim());
   if (!m) return null;
   const name = m[1].trim();
   if (!name) return null;
-  const args = m[3]?.trim();
-  return args ? { name, args } : { name };
+  const args = m[2]?.trim();
+  const message = m[3]?.trim();
+  const out: { name: string; args?: string; message?: string } = { name };
+  if (args) out.args = args;
+  if (message) out.message = message;
+  return out;
 }

@@ -1102,6 +1102,8 @@ export type MessageBubbleProps = {
   /** Shared assistant presentation. `content` remains the complete source for
    * copy, reader, feedback, reply, and settled actions. */
   assistantBody?: ReactNode;
+  /** The supplied assistant body owns its own primary Copy action. */
+  hideCopyAction?: boolean;
   /** The turn's tool events, forwarded to the reader's "How this was made"
    *  footer (batches, skills, error count). Assistant role only; absent turns
    *  simply have no footer — see message-reader.tsx. */
@@ -1130,7 +1132,7 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, assistantBody, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, assistantBody, hideCopyAction = false, readerTools, readerDurationMs, onAskAbout, readerPrompt, onRerunWith, readerFamiliarId, collapsible = true, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [readerOpen, setReaderOpen] = useState(false);
@@ -1315,7 +1317,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
           actions are reachable by keyboard (Tab), screen readers, and touch. */}
       {!pending && (content || isError) ? (
         <div className="cave-bubble-actions" role="group" aria-label="Response actions">
-          {content ? <CopyBubble text={content} response /> : null}
+          {content && !hideCopyAction ? <CopyBubble text={content} response /> : null}
           {onRegenerate ? (
             <button
               type="button"

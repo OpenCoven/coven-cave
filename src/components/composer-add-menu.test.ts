@@ -137,8 +137,8 @@ assert.doesNotMatch(
 );
 assert.match(
   home,
-  /onPickSkill: \(skill\) => \{\s*\n\s*setText\(`\/skill \$\{skill\.id\} `\);\s*\n\s*textareaRef\.current\?\.focus\(\);/,
-  "home inserts `/skill <id> ` and refocuses the textarea on skill pick",
+  /onPickSkill: \(skill\) => \{[\s\S]*?const ins = skillComposerInsertion\(text, skill\);\s*\n\s*setText\(ins\.text\);\s*\n\s*textareaRef\.current\?\.focus\(\);/,
+  "home inserts `/skill <id> ` AFTER the existing draft (never over it) and refocuses the textarea on skill pick",
 );
 assert.doesNotMatch(
   home,

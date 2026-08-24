@@ -130,6 +130,58 @@ assert.equal(
   "a missing title is derived from the prompt",
 );
 
+{
+  const [artifact] = sanitizeArtifacts([{
+    id: "github-source",
+    prompt: "",
+    code: "export default function App() { return <main />; }",
+    kind: "react",
+    source: {
+      kind: "github",
+      url: "https://github.com/OpenCoven/coven-cave/blob/main/src/App.tsx",
+      repoUrl: "https://example.invalid/wrong",
+      filePath: "../../wrong",
+      ref: "wrong",
+      projectFileHash: "A".repeat(64),
+      projectId: " project-1 ",
+    },
+  }]);
+  assert.deepEqual(
+    artifact.source,
+    {
+      kind: "github",
+      url: "https://github.com/OpenCoven/coven-cave/blob/main/src/App.tsx",
+      repoUrl: "https://github.com/OpenCoven/coven-cave",
+      filePath: "src/App.tsx",
+      ref: "main",
+      projectFileHash: "a".repeat(64),
+      projectId: "project-1",
+    },
+    "GitHub provenance is re-derived from its trusted blob URL",
+  );
+  assert.equal(
+    sanitizeArtifacts([{
+      id: "bad-source",
+      prompt: "",
+      source: { kind: "github", url: "https://evil.example/a/b/blob/main/App.tsx" },
+    }])[0].source,
+    undefined,
+    "untrusted source metadata is dropped",
+  );
+  assert.equal(
+    sanitizeArtifacts([{
+      id: "missing-baseline",
+      prompt: "",
+      source: {
+        kind: "github",
+        url: "https://github.com/OpenCoven/coven-cave/blob/main/src/App.tsx",
+      },
+    }])[0].source,
+    undefined,
+    "GitHub provenance without a content baseline is dropped",
+  );
+}
+
 // ── annotations: bounded component targets persisted with an artifact ──────
 
 {

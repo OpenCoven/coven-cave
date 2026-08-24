@@ -69,6 +69,8 @@ const contracts: RouteContract[] = [
   { route: "/board/restore", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/canvas", methods: ["GET", "PUT", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/canvas/github-source", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/canvas/project-file", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
   { route: "/cave-home-migration", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
