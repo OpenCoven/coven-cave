@@ -45,9 +45,8 @@
     exception cannot rescue this: the inventory throws before admission is ever
     assessed. **Almost every exit 1 is transient — retry before you conclude
     otherwise.** Two failures dominate, and both clear on their own:
-    - the GraphQL quota is exhausted (`API rate limit already exceeded`) — that
-      pool is separate from REST and refills hourly, so `gh api rate_limit --jq
-      .resources.graphql` tells you when to retry;
+    - GitHub's REST quota is exhausted (`API rate limit already exceeded`) —
+      `gh api rate_limit --jq .resources.core` tells you when to retry;
     - a commit's PR association comes back malformed or absent (`commit
       association connection is unavailable`, `pull request node returned
       malformed fields or a mismatched head OID`) — usually a degraded or

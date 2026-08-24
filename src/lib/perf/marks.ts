@@ -6,6 +6,8 @@
 // dev overlay listens for. All calls are no-ops when the User Timing API is
 // absent (SSR, old runtimes), so callers don't need to guard.
 
+import { recordPerfSample } from "./perf-store.ts";
+
 export type PerfMeasure = { name: string; duration: number; at: number };
 
 const RING_MAX = 50;
@@ -39,6 +41,9 @@ export function markEnd(name: string): number | null {
     const entry: PerfMeasure = { name, duration, at: Date.now() };
     ring.push(entry);
     if (ring.length > RING_MAX) ring.shift();
+    // The ring above is 50 entries of module state and dies with the page, so
+    // it can show what just happened but never a before/after. Persist too.
+    recordPerfSample({ kind: "mark", name, value: duration, at: entry.at });
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("cave:perf-measure", { detail: entry }));
     }

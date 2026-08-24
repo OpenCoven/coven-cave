@@ -195,10 +195,31 @@ assert.match(
 // either: the gap has to stay INSIDE one arm, because an unbounded gap lets
 // the `Cancelled` arm's reap satisfy the `Failed` arm's `fatal_exit`, so
 // dropping the reap from one arm alone would still pass. Anchoring each match
-// on its own `Err(SidecarStartError::…)` and closing it at the first
-// `fatal_exit` gives a window that cannot span two arms at any width.
+// on its own `Err(SidecarStartError::…)` is necessary but NOT sufficient, and
+// the previous form claimed it was: a lazy `[\s\S]*?` still runs on into the
+// NEXT arm whenever this one stops ending in the closing token. Two mutations
+// proved it. Renaming this arm's `fatal_exit` argument collapsed the two
+// matches into one — a false alarm on a refactor that left both properties
+// intact. Worse, inserting a third arm that neither reaps nor releases PASSED,
+// because its window closed on the `Failed` arm's reap: exactly the cross-arm
+// satisfaction the comment above says is impossible. The tempered token below
+// — "anything that is not the start of another arm" — is what makes the window
+// non-spanning; the count assertion is the backstop, not the anchor. Closing
+// on `fatal_exit(` rather than `fatal_exit(&error)` keeps the window
+// argument-agnostic and identical to the sibling contract in
+// scripts/port-contract.test.mjs, which pins the release on these same arms.
+//
+// What this still cannot see: both assertions read ORDER IN THE SOURCE TEXT,
+// so wrapping a call in `if claimed_the_port { … }` leaves the text ordered
+// while the call may never run. Verified — that mutation passes both files.
+// It is the ceiling of a source-text contract, not a gap this anchor
+// introduced; the old forms missed it identically. Unconditional execution is
+// what `sidecar_port_lock`'s own unit tests are for. Do not read either
+// contract as promising more than sequence.
 const startupFailureArms = [
-  ...setup.matchAll(/Err\(SidecarStartError::[\s\S]*?fatal_exit\(&error\)/g),
+  ...setup.matchAll(
+    /Err\(SidecarStartError::(?:(?!Err\(SidecarStartError::)[\s\S])*?fatal_exit\(/g,
+  ),
 ].map((match) => match[0]);
 assert.equal(
   startupFailureArms.length,
@@ -208,7 +229,7 @@ assert.equal(
 for (const arm of startupFailureArms) {
   assert.match(
     arm,
-    /stop_after_startup_error\([\s\S]*?\)[\s\S]*?fatal_exit\(&error\)/,
+    /stop_after_startup_error\([\s\S]*?\)[\s\S]*?fatal_exit\(/,
     "Non-Windows startup failure should reap the owned sidecar before fatal exit",
   );
 }

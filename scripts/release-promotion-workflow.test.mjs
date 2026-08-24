@@ -87,6 +87,7 @@ test("candidate validation requires signed tag provenance and calls every deferr
   assert.ok(full.on.workflow_call, "full validation is reusable only");
   assert.deepEqual(Object.keys(full.jobs).sort(), [
     "e2e",
+    "e2e-agentic",
     "frontend",
     "release-candidate-validated",
     "runtime",
@@ -122,17 +123,33 @@ test("candidate validation requires signed tag provenance and calls every deferr
     "candidate E2E installs both required browser engines",
   );
   assert.ok(
-    full.jobs.e2e.steps.some((step) => step.run === "pnpm exec playwright test"),
-    "candidate E2E retains the default Chromium and WebKit coverage",
+    full.jobs.e2e.steps.some(
+      (step) => step.run === "pnpm exec playwright test --shard=${{ matrix.shard }}/4",
+    ),
+    "candidate E2E shards the default Chromium and WebKit coverage",
   );
-  const agenticE2e = full.jobs.e2e.steps.find(
-    (step) =>
-      step.run ===
-      "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
-  );
-  assert.deepEqual(agenticE2e?.env, {
+  assert.equal(full.jobs.e2e.strategy["fail-fast"], false);
+  assert.deepEqual(full.jobs.e2e.strategy.matrix.shard, [1, 2, 3, 4]);
+  assert.equal(full.jobs.e2e["timeout-minutes"], 30);
+  const agenticE2e = full.jobs["e2e-agentic"];
+  assert.equal(agenticE2e.name, "Validate candidate E2E (agentic)");
+  assert.equal(agenticE2e["timeout-minutes"], 30);
+  assert.deepEqual(agenticE2e.env, {
     NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1",
   });
+  assert.ok(
+    agenticE2e.steps.some(
+      (step) =>
+        step.run ===
+        "pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps",
+    ),
+    "candidate E2E retains flag-enabled agentic coverage in an isolated job",
+  );
+  const agenticCheckout = agenticE2e.steps.find(
+    (step) =>
+      typeof step.uses === "string" && step.uses.startsWith("actions/checkout@"),
+  );
+  assert.equal(agenticCheckout?.with?.ref, "${{ inputs.ref }}");
   assert.deepEqual(full.jobs.runtime.strategy.matrix.os, [
     "ubuntu-24.04",
     "windows-latest",
@@ -151,10 +168,17 @@ test("candidate validation requires signed tag provenance and calls every deferr
   const rollup = full.jobs["release-candidate-validated"];
   assert.equal(rollup.name, "Release candidate validated");
   assert.equal(rollup.if, "always()");
-  assert.deepEqual(rollup.needs, ["frontend", "rust", "e2e", "runtime", "windows-native"]);
+  assert.deepEqual(rollup.needs, [
+    "frontend",
+    "rust",
+    "e2e",
+    "e2e-agentic",
+    "runtime",
+    "windows-native",
+  ]);
   assert.match(
     rollup.steps[0].run,
-    /test "\$FRONTEND_RESULT" = "success"[\s\S]*test "\$WINDOWS_NATIVE_RESULT" = "success"/,
+    /test "\$FRONTEND_RESULT" = "success"[\s\S]*test "\$E2E_AGENTIC_RESULT" = "success"[\s\S]*test "\$WINDOWS_NATIVE_RESULT" = "success"/,
     "the rollup must fail closed for failed, skipped, or cancelled dependencies",
   );
 });

@@ -3,16 +3,122 @@
    SidebarRailHeader, extracted from rail-header.css so each selector lives
    in exactly one file.
 
-   The two controls (ProjectPicker trigger, FamiliarSwitcher trigger) must be
-   the same box as .rail-header__new — full width, --rail-control tall, control
-   radius, --rail-lead before the glyph — so that all three align on the same
-   icon column as the nav rows below them. */
+   Desktop uses one compact segmented project/familiar control. Mobile keeps
+   the two full-size ProjectPicker and FamiliarSwitcher controls. All variants
+   share the rail control height and icon column with the navigation below. */
 
 .workspace-context-switcher {
   display: grid;
   gap: var(--space-1);
   width: 100%;
   min-width: 0;
+}
+
+/* ── Compact desktop sidebar scope selector ──────────────────────────────── */
+.sidebar-scope-selector {
+  width: 100%;
+  min-width: 0;
+}
+
+.sidebar-scope-selector__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--rail-control);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.sidebar-scope-selector__trigger:hover,
+.sidebar-scope-selector__trigger:focus-visible,
+.sidebar-scope-selector__trigger[aria-expanded="true"] {
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+}
+
+.sidebar-scope-selector__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.sidebar-scope-selector__project {
+  display: grid;
+  flex: none;
+  place-items: center;
+  align-self: stretch;
+  width: var(--rail-control);
+  border-right: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+}
+
+.sidebar-scope-selector__familiar {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  min-width: 0;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 40%, transparent);
+}
+
+.sidebar-scope-selector__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--text-secondary);
+}
+
+.sidebar-scope-selector__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-scope-selector__item-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.sidebar-scope-selector__item-meta {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-scope-selector__empty,
+.sidebar-scope-selector__notice {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sidebar-scope-selector__notice {
+  border-top: 1px solid var(--border-hairline);
 }
 
 .workspace-context-switcher__project,
@@ -166,6 +272,28 @@
 
 .shell-nav--rail .workspace-context-switcher {
   justify-items: center;
+}
+
+.shell-nav--rail .sidebar-scope-selector__trigger {
+  justify-content: center;
+  width: var(--rail-control);
+  min-width: var(--rail-control);
+  height: var(--rail-control);
+  min-height: var(--rail-control);
+  padding: 0;
+  margin-inline: auto;
+}
+
+.shell-nav--rail .sidebar-scope-selector__project,
+.shell-nav--rail .sidebar-scope-selector__label {
+  display: none;
+}
+
+.shell-nav--rail .sidebar-scope-selector__familiar {
+  justify-content: center;
+  width: 100%;
+  padding: 0;
+  box-shadow: none;
 }
 
 .shell-nav--rail .workspace-context-switcher__error,

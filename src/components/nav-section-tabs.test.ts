@@ -119,8 +119,16 @@ assert.match(
   /workspace-titlebar-context[\s\S]*?<WorkspaceContextSwitcher[\s\S]*?variant="titlebar"/,
   "project and familiar scope sit beside the title-bar section switcher",
 );
-assert.match(sidebar, /contextMode="mobile"/, "the Home drawer retains project and familiar scope on mobile");
-assert.match(chatSidebar, /contextMode="mobile"/, "the Chat drawer retains project and familiar scope on mobile");
+assert.match(
+  sidebar,
+  /contextMode="all"/,
+  "Home enables the compact desktop selector while retaining full mobile scope controls",
+);
+assert.match(
+  chatSidebar,
+  /contextMode="all"/,
+  "Chat enables the compact desktop selector while retaining full mobile scope controls",
+);
 assert.match(
   workspace,
   /setMode\(next === "code" \? "chat" : "home"\)/,
