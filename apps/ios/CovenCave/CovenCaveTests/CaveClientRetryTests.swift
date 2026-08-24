@@ -113,7 +113,7 @@ final class CaveClientRetryTests: XCTestCase {
         CaveClientRetryURLProtocol.handler = { [self] request in
             XCTAssertEqual(request.httpMethod, "PATCH")
             XCTAssertEqual(request.url?.path, "/api/board/task-42")
-            let data = try XCTUnwrap(request.httpBody)
+            let data = try request.bodyDataForTesting()
             body = try XCTUnwrap(
                 JSONSerialization.jsonObject(with: data) as? [String: String]
             )

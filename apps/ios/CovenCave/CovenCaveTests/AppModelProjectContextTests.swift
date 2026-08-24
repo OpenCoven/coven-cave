@@ -962,6 +962,31 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(toast.systemImage, systemImage, file: file, line: line)
     }
 
+    /// Reconnecting posts a success notice — `connectionState`'s `didSet`
+    /// announces "Reconnected to Cave" whenever the shell returns to
+    /// `.connected` after a drop, and that is deliberate, user-facing
+    /// behaviour.
+    ///
+    /// A test that reconnects mid-flight therefore cannot assert `toast == nil`
+    /// and mean "the pending navigation reported nothing". Asserting the toast
+    /// is EXACTLY this notice says the same thing without being wrong about the
+    /// reconnect: `showToast` replaces `app.toast` outright, so any navigation
+    /// failure raised afterwards would be sitting here instead.
+    private func assertOnlyReconnectNoticeToast(
+        _ app: AppModel,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        assertToast(
+            app,
+            text: "Reconnected to Cave",
+            systemImage: "antenna.radiowaves.left.and.right",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(app.toast?.style, .success, file: file, line: line)
+    }
+
     private func waitFor(
         _ condition: @escaping @MainActor () -> Bool,
         iterations: Int = 20,
@@ -1419,6 +1444,14 @@ final class AppModelProjectContextTests: XCTestCase {
         let alpha = project("alpha", "Alpha")
         let beta = project("beta", "Beta")
         let destination = thread("beta-thread", familiarIds: ["nova"], projectRoot: beta.root)
+        // `requestOpen` records an id-based `ProjectNavigationIntent` and
+        // re-resolves the thread from `threads` — deliberately, so an intent
+        // that has to wait for hydration is re-read from current state rather
+        // than pinned to a possibly-stale object. A thread the model has never
+        // seen is therefore "not available on this device", which is what
+        // every production caller avoids by inserting first (see
+        // `openServerSession`, `openChat(for:)`). Seed it the same way.
+        app.threads = [destination]
         app.projects = [alpha, beta]
         app.projectsLoaded = true
         app.projectContext = .project(alpha)
@@ -1436,6 +1469,7 @@ final class AppModelProjectContextTests: XCTestCase {
         let app = makeApp()
         let alpha = project("alpha", "Alpha")
         let destination = thread("legacy-thread", familiarIds: ["nova"], projectRoot: nil)
+        app.threads = [destination]
         app.projects = [alpha]
         app.projectsLoaded = true
         app.projectContext = .project(alpha)
@@ -1457,6 +1491,7 @@ final class AppModelProjectContextTests: XCTestCase {
             familiarIds: ["nova"],
             projectRoot: "/repos/cave/.worktrees/feature/.worktrees/fix"
         )
+        app.threads = [destination]
         app.projects = [parent, nested]
         app.projectsLoaded = true
         app.projectContext = .project(parent)
@@ -1479,6 +1514,7 @@ final class AppModelProjectContextTests: XCTestCase {
             app.toast = nil
             app.threadToOpen = nil
             let destination = thread(root, familiarIds: ["nova"], projectRoot: root)
+            app.threads = [destination]
 
             XCTAssertTrue(app.requestOpen(destination))
             XCTAssertEqual(app.projectContext, .unassigned)
@@ -2406,6 +2442,10 @@ final class AppModelProjectContextTests: XCTestCase {
             familiarIds: ["nova"],
             projectRoot: "/repos/alpha/.worktrees/feat-alpha/../../escape"
         )
+        // Registered, so the refusal under test is the one about unresolvable
+        // project metadata and not the generic "this chat isn't on this
+        // device" the lookup would otherwise produce first.
+        app.threads = [destination]
         app.projects = [alpha]
         app.projectsLoaded = true
         app.projectContext = .project(alpha)
@@ -2426,6 +2466,7 @@ final class AppModelProjectContextTests: XCTestCase {
         let alpha = project("alpha", "Alpha")
         let destination = thread("alpha-thread", familiarIds: ["nova"], projectRoot: alpha.root)
         let pendingCard = card("pending-card", familiarId: "nova", projectId: alpha.id)
+        app.threads = [destination]
         app.projects = [alpha]
         app.projectsLoaded = true
         app.projectContext = .project(alpha)
@@ -5490,7 +5531,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.pendingProjectNavigationIntent?.threadId, reopened.id)
         XCTAssertTrue(app.serverSessions.isEmpty)
         XCTAssertNil(app.threadToOpen)
-        XCTAssertNil(app.toast)
+        assertOnlyReconnectNoticeToast(app)
 
         await currentRelease.open()
         await waitFor { app.threadToOpen?.sessionIds == ["nova": reopened.id] }
@@ -5502,7 +5543,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.sessionsError)
-        XCTAssertNil(app.toast)
+        assertOnlyReconnectNoticeToast(app)
     }
 
     @MainActor
@@ -5566,7 +5607,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.pendingProjectNavigationIntent?.taskId, reopened.id)
         XCTAssertTrue(app.tasks.isEmpty)
         XCTAssertNil(app.cardToOpen)
-        XCTAssertNil(app.toast)
+        assertOnlyReconnectNoticeToast(app)
 
         await currentRelease.open()
         await waitFor { app.cardToOpen?.id == reopened.id }
@@ -5578,7 +5619,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.selectedTab, .tasks)
         XCTAssertNil(app.pendingProjectNavigationIntent)
         XCTAssertNil(app.tasksError)
-        XCTAssertNil(app.toast)
+        assertOnlyReconnectNoticeToast(app)
     }
 
     @MainActor
