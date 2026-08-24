@@ -157,6 +157,55 @@ export function queueMix(buckets: readonly CockpitBucket[]): QueueMixSegment[] {
   });
 }
 
+// ── Queue row reason ─────────────────────────────────────────────────────────
+
+/**
+ * The short "why is this here" a queue row carries under its title.
+ *
+ * Deliberately derived from the **one** pull-request read the queue can afford
+ * per row, never from the three-request readiness fan-out — so it can say
+ * "conflicts with main" (GitHub's own `mergeable_state`) but never "3 checks
+ * failing", which needs check runs the queue has not fetched. A row that named
+ * a count it had not read would be the strip claiming knowledge it lacks.
+ *
+ * Empty when the state pill already says everything known.
+ */
+export function queueRowReason(
+  facts:
+    | {
+        draft: boolean;
+        state: string;
+        merged: boolean;
+        mergeable: boolean | null;
+        mergeableState: string;
+        reviews: { approved: number; changesRequested: number };
+        baseRef: string;
+      }
+    | null
+    | undefined,
+  options: { hasPullRequest: boolean; hasLocalChanges: boolean },
+): string {
+  if (!facts) {
+    if (options.hasPullRequest) return "reading GitHub state";
+    return options.hasLocalChanges ? "uncommitted work" : "";
+  }
+  if (facts.draft) return "draft";
+  if (facts.state !== "open") return facts.merged ? "merged" : facts.state;
+  if (facts.reviews.changesRequested > 0) return "changes requested";
+  if (facts.mergeableState === "dirty") return `conflicts with ${facts.baseRef}`;
+  if (facts.mergeableState === "behind") return `behind ${facts.baseRef}`;
+  if (facts.mergeableState === "blocked") return "blocked by branch protection";
+  if (
+    facts.mergeable === true &&
+    facts.mergeableState === "clean" &&
+    facts.reviews.approved > 0
+  ) {
+    return "approved · clean";
+  }
+  if (facts.mergeable === null) return "mergeability computing";
+  return "";
+}
+
 // ── Blocker triage ───────────────────────────────────────────────────────────
 
 /**
@@ -400,6 +449,79 @@ export function fileChipCapacity(centreWidth: number): number {
   const reserved = 300;
   const chip = centreWidth < 620 ? 108 : 152;
   return Math.max(2, Math.min(9, Math.floor((centreWidth - reserved) / chip)));
+}
+
+// ── Review threads, in the diff ──────────────────────────────────────────────
+
+export type DiffThread = {
+  id: string;
+  where: string;
+  author: string;
+  excerpt: string;
+};
+
+export type ThreadRow = { kind: "thread"; key: string; thread: DiffThread };
+
+/**
+ * Which line of the open file a thread hangs on, or null when GitHub anchored
+ * it to the file rather than a line (`path` with no `:line`), or to a
+ * different file entirely.
+ */
+export function threadLine(where: string, path: string): number | null {
+  if (!where.startsWith(path)) return null;
+  const rest = where.slice(path.length);
+  if (rest === "") return null;
+  const match = /^:(\d+)$/.exec(rest);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Interleave a pull request's unresolved threads into the diff, each directly
+ * under the line it was left on.
+ *
+ * A thread whose line is not in the visible rows — folded away, or past a
+ * server-side patch truncation — is returned separately rather than dropped
+ * silently or pinned to the wrong line. Losing a reviewer's own open question
+ * because the diff was folded is exactly the failure this ordering exists to
+ * prevent.
+ */
+export function interleaveThreads<T extends { kind: string; key: string }>(
+  rows: readonly T[],
+  threads: readonly DiffThread[],
+  path: string,
+  lineOf: (row: T) => number | null,
+): { rows: Array<T | ThreadRow>; unplaced: DiffThread[] } {
+  const byLine = new Map<number, DiffThread[]>();
+  const unplaced: DiffThread[] = [];
+  for (const thread of threads) {
+    const line = threadLine(thread.where, path);
+    if (line == null) {
+      unplaced.push(thread);
+      continue;
+    }
+    const bucket = byLine.get(line);
+    if (bucket) bucket.push(thread);
+    else byLine.set(line, [thread]);
+  }
+
+  const out: Array<T | ThreadRow> = [];
+  const placed = new Set<string>();
+  for (const row of rows) {
+    out.push(row);
+    const line = lineOf(row);
+    if (line == null) continue;
+    for (const thread of byLine.get(line) ?? []) {
+      out.push({ kind: "thread", key: `thread-${thread.id}`, thread });
+      placed.add(thread.id);
+    }
+  }
+
+  for (const [, bucket] of byLine) {
+    for (const thread of bucket) {
+      if (!placed.has(thread.id)) unplaced.push(thread);
+    }
+  }
+  return { rows: out, unplaced };
 }
 
 // ── Pane sizing ──────────────────────────────────────────────────────────────

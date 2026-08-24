@@ -1,25 +1,40 @@
+/*
+ * Review Deck — narrowing.
+ *
+ * Three bands, each dropping the pane whose question is least urgent at that
+ * width. The diff survives every band: at every size the surface is still
+ * primarily a place to read a change.
+ *
+ * Container queries, not media queries — the deck renders inside a workspace
+ * pane that can be any fraction of the window, so the window's width is not
+ * the number that decides whether three columns fit.
+ */
+
 @container review-deck (max-width: 78rem) {
-  .rd-stage {
-    --rd-queue-width: calc(var(--space-12) * 4);
+  /* The inspector floats over the diff rather than taking a third of it. */
+  .rd-stage[data-inspector-open="true"] .rd-layout,
+  .rd-stage[data-queue-open="true"][data-inspector-open="true"] .rd-layout {
+    grid-template-columns: var(--rd-queue-width) var(--rd-gutter) minmax(0, 1fr);
   }
 
-  .rd-layout,
-  .rd-layout[data-queue-collapsed="true"] {
-    grid-template-columns: var(--rd-queue-width) minmax(0, 1fr);
+  .rd-stage[data-inspector-open="true"]:not([data-queue-open="true"]) .rd-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .rd-layout[data-queue-collapsed="true"] {
-    grid-template-columns: var(--space-10) minmax(0, 1fr);
-  }
-
-  .rd-evidence {
+  .rd-inspector {
     position: absolute;
     z-index: 4;
-    inset-block: calc(var(--space-12) * 2);
+    inset-block: calc(var(--space-12) + var(--space-4)) var(--space-3);
     inset-inline-end: var(--space-3);
-    width: min(var(--rd-evidence-width), calc(100% - var(--space-6)));
+    width: min(var(--rd-inspector-width), calc(100% - var(--space-6)));
+    border-radius: var(--radius-card);
     box-shadow: 0 var(--space-2) var(--space-8)
       color-mix(in oklch, var(--shadow-color) 38%, transparent);
+  }
+
+  /* Its gutter would resize a pane that is no longer in the grid. */
+  .rd-stage[data-inspector-open="true"] .rd-layout > .rd-gutter:last-of-type {
+    display: none;
   }
 
   .rd-diff-option {
@@ -28,166 +43,122 @@
 }
 
 @container review-deck (max-width: 58rem) {
-  .rd-stage {
-    padding: var(--space-2);
-  }
-
-  .rd-scopebar {
-    align-items: flex-start;
+  .rd-topbar {
+    height: auto;
     flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
   }
 
-  .rd-scopebar-title,
-  .rd-scopebar-meta {
+  .rd-topbar-scope {
     display: none;
   }
 
-  .rd-attention-filters {
-    width: 100%;
-    overflow-x: auto;
-  }
-
-  .rd-attention-filter {
-    min-height: var(--touch-target);
-  }
-
-  .rd-workbench-head {
-    flex-wrap: wrap;
-  }
-
-  .rd-workbench-stats {
+  .rd-segments {
     order: 3;
     width: 100%;
   }
 
-  .rd-workbench-actions {
-    margin-left: auto;
-  }
-
-  .rd-workbench-actions .rd-icon-btn {
-    width: var(--touch-target);
-    height: var(--touch-target);
+  .rd-segment {
+    min-height: var(--touch-target);
   }
 
   .rd-mobile-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-1);
     flex: none;
+    gap: var(--space-1);
+    padding: 0 var(--space-3) var(--space-2);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .rd-mobile-tab {
     min-height: var(--touch-target);
+    border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-control);
+    background: var(--bg-subtle);
     color: var(--text-secondary);
+    cursor: pointer;
+    font-size: var(--text-sm);
+    font-weight: 600;
   }
 
   .rd-mobile-tab[aria-selected="true"] {
     border-color: var(--accent-presence);
+    background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
     color: var(--accent-presence);
-    background: color-mix(
-      in oklch,
-      var(--accent-presence) 14%,
-      transparent
-    );
   }
 
-  .rd-layout,
-  .rd-layout[data-queue-collapsed="true"],
-  .rd-layout:not([data-evidence-open="true"]),
-  .rd-layout[data-queue-collapsed="true"]:not([data-evidence-open="true"]) {
+  /* One pane at a time, chosen by the tabs above. */
+  .rd-stage .rd-layout,
+  .rd-stage[data-queue-open="true"] .rd-layout,
+  .rd-stage[data-inspector-open="true"] .rd-layout,
+  .rd-stage[data-queue-open="true"][data-inspector-open="true"] .rd-layout {
     display: block;
     min-height: 0;
+  }
+
+  .rd-gutter {
+    display: none;
   }
 
   .rd-queue,
   .rd-queue-spine,
   .rd-main,
-  .rd-evidence {
+  .rd-inspector {
     display: none;
   }
 
   .rd-stage[data-mobile-view="queue"] .rd-queue,
   .rd-stage[data-mobile-view="queue"] .rd-queue-spine,
   .rd-stage[data-mobile-view="files"] .rd-main,
-  .rd-stage[data-mobile-view="evidence"] .rd-evidence {
+  .rd-stage[data-mobile-view="evidence"] .rd-inspector {
     display: flex;
     height: 100%;
+    border-radius: 0;
   }
 
-  .rd-stage[data-mobile-view="evidence"] .rd-evidence {
+  .rd-stage[data-mobile-view="evidence"] .rd-inspector {
     position: static;
     width: auto;
+    box-shadow: none;
   }
 
-  .rd-viewer-split {
-    grid-template-columns: var(--space-10) minmax(0, 1fr);
+  .rd-file-rail {
+    padding-inline: var(--space-3);
   }
 
-  .rd-nav {
-    display: none;
-  }
-
-  .rd-nav-spine {
-    display: flex;
-  }
-
-  .rd-proof-progress {
-    flex-wrap: wrap;
-  }
-
-  .rd-proof-progress-copy {
-    flex: 1;
-  }
-
-  .rd-proof-progress-track {
-    flex-basis: 40%;
-  }
-
-  .rd-verdict-dock {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .rd-verdict-dock > .rd-spacer {
-    display: none;
-  }
-
-  .rd-verdict-actions {
-    width: 100%;
-    overflow-x: auto;
-  }
-
-  .rd-verdict-actions .rd-btn {
+  .rd-mark-btn,
+  .rd-verdict-secondary .rd-btn {
     min-height: var(--touch-target);
-    flex: 1;
-    white-space: nowrap;
   }
 
-  .rd-checkpoints {
-    display: none;
+  .rd-workbench-head {
+    flex-wrap: wrap;
+    padding-inline: var(--space-3);
+  }
+
+  .rd-workbench-actions {
+    margin-inline-start: auto;
   }
 }
 
 @container review-deck (max-width: 40rem) {
-  .rd-workbench-lineage {
+  .rd-workbench-meta > span:not(.rd-diffstat) {
     display: none;
   }
 
-  .rd-diff-toolbar .rd-add,
-  .rd-diff-toolbar .rd-del,
-  .rd-diff-link {
+  .rd-diff-head .rd-add,
+  .rd-diff-head .rd-del,
+  .rd-diff-link,
+  .rd-diff-keys,
+  .rd-queue-group-hint {
     display: none;
   }
 
-  .rd-proof-progress-track {
+  .rd-file-progress-track {
     display: none;
-  }
-
-  .rd-btn--reviewed {
-    flex: 1;
   }
 
   .rd-shortcuts {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }

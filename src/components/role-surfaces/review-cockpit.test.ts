@@ -7,9 +7,12 @@ import {
   fileChipCapacity,
   fileChipState,
   fileChipWindow,
+  interleaveThreads,
   orderReviewQueue,
   queueMix,
+  queueRowReason,
   reviewDecision,
+  threadLine,
   triageBlocker,
   triageBlockers,
   type CockpitBucket,
@@ -96,6 +99,83 @@ test("the mix bar drops empty buckets rather than drawing an unreadable sliver",
     ],
   );
   assert.deepEqual(queueMix([]), []);
+});
+
+function bucketFacts(patch: Record<string, unknown> = {}) {
+  return {
+    draft: false,
+    state: "open",
+    merged: false,
+    mergeable: true,
+    mergeableState: "clean",
+    reviews: { approved: 0, changesRequested: 0 },
+    baseRef: "main",
+    ...patch,
+  } as Parameters<typeof queueRowReason>[0];
+}
+
+test("the row's reason names GitHub's own verdict, in mergeability's own words", () => {
+  const opts = { hasPullRequest: true, hasLocalChanges: false };
+  assert.equal(
+    queueRowReason(bucketFacts({ mergeableState: "dirty", mergeable: false }), opts),
+    "conflicts with main",
+  );
+  assert.equal(
+    queueRowReason(bucketFacts({ mergeableState: "behind" }), opts),
+    "behind main",
+  );
+  assert.equal(
+    queueRowReason(bucketFacts({ reviews: { approved: 1, changesRequested: 0 } }), opts),
+    "approved · clean",
+  );
+  assert.equal(
+    queueRowReason(bucketFacts({ reviews: { approved: 1, changesRequested: 1 } }), opts),
+    "changes requested",
+  );
+});
+
+test("a row never counts failing checks — the queue has not read them", () => {
+  const reason = queueRowReason(
+    bucketFacts({ mergeableState: "blocked", mergeable: false }),
+    { hasPullRequest: true, hasLocalChanges: false },
+  );
+  assert.equal(reason, "blocked by branch protection");
+  assert.doesNotMatch(reason, /check/);
+});
+
+test("an unread pull request says it is being read, not that it is fine", () => {
+  assert.equal(
+    queueRowReason(null, { hasPullRequest: true, hasLocalChanges: false }),
+    "reading GitHub state",
+  );
+  assert.equal(
+    queueRowReason(null, { hasPullRequest: false, hasLocalChanges: true }),
+    "uncommitted work",
+  );
+  assert.equal(
+    queueRowReason(null, { hasPullRequest: false, hasLocalChanges: false }),
+    "",
+  );
+});
+
+test("an unknown mergeability is reported as computing rather than left blank", () => {
+  assert.equal(
+    queueRowReason(bucketFacts({ mergeable: null, mergeableState: "unknown" }), {
+      hasPullRequest: true,
+      hasLocalChanges: false,
+    }),
+    "mergeability computing",
+  );
+});
+
+test("a clean unapproved pull request adds no reason — the pill already says it", () => {
+  assert.equal(
+    queueRowReason(bucketFacts(), {
+      hasPullRequest: true,
+      hasLocalChanges: false,
+    }),
+    "",
+  );
 });
 
 test("a failing check is the author's blocking problem; a thread you can resolve is yours", () => {
@@ -202,6 +282,84 @@ test("no selection asks for one instead of describing an item", () => {
   const decision = reviewDecision(decisionInput({ selected: false }));
   assert.equal(decision.headline, "Nothing selected");
   assert.equal(decision.next, "Pick an item from the queue.");
+});
+
+function thread(id: string, where: string) {
+  return { id, where, author: "val", excerpt: `note ${id}` };
+}
+
+const DIFF_PATH = "src/api/roster-route.ts";
+
+function lineRows(...lines: Array<number | null>) {
+  return lines.map((line, index) => ({
+    kind: "line",
+    key: `row-${index}`,
+    line,
+  }));
+}
+
+test("a thread lands directly under the line it was left on", () => {
+  const { rows, unplaced } = interleaveThreads(
+    lineRows(38, 39, 40),
+    [thread("t1", `${DIFF_PATH}:39`)],
+    DIFF_PATH,
+    (row) => row.line,
+  );
+  assert.deepEqual(
+    rows.map((row) => row.key),
+    ["row-0", "row-1", "thread-t1", "row-2"],
+  );
+  assert.deepEqual(unplaced, []);
+});
+
+test("two threads on one line both render, in the order GitHub returned them", () => {
+  const { rows } = interleaveThreads(
+    lineRows(10),
+    [thread("a", `${DIFF_PATH}:10`), thread("b", `${DIFF_PATH}:10`)],
+    DIFF_PATH,
+    (row) => row.line,
+  );
+  assert.deepEqual(
+    rows.map((row) => row.key),
+    ["row-0", "thread-a", "thread-b"],
+  );
+});
+
+test("a thread on a folded-away line is reported, never pinned to the wrong one", () => {
+  const { rows, unplaced } = interleaveThreads(
+    lineRows(38, 39),
+    [thread("t9", `${DIFF_PATH}:412`)],
+    DIFF_PATH,
+    (row) => row.line,
+  );
+  assert.deepEqual(
+    rows.map((row) => row.key),
+    ["row-0", "row-1"],
+  );
+  assert.deepEqual(
+    unplaced.map((item) => item.id),
+    ["t9"],
+  );
+});
+
+test("a file-level thread and another file's thread are both unplaced, not misplaced", () => {
+  const { rows, unplaced } = interleaveThreads(
+    lineRows(1),
+    [thread("file", DIFF_PATH), thread("other", "src/other.ts:1")],
+    DIFF_PATH,
+    (row) => row.line,
+  );
+  assert.equal(rows.length, 1);
+  assert.deepEqual(
+    unplaced.map((item) => item.id).sort(),
+    ["file", "other"],
+  );
+});
+
+test("threadLine reads a line anchor and refuses a same-prefix impostor path", () => {
+  assert.equal(threadLine("src/a.ts:42", "src/a.ts"), 42);
+  assert.equal(threadLine("src/a.ts", "src/a.ts"), null);
+  assert.equal(threadLine("src/a.ts.bak:42", "src/a.ts"), null);
 });
 
 test("the file rail keeps the open file in view and reports the rest as hidden", () => {

@@ -438,7 +438,6 @@ export const BANKED_UNDEFINED_NO_FALLBACK = new Map([
   ["--text-success", 1],
   ["--text-warning", 7],
   ["--danger", 2],
-  ["--color-warning-foreground", 1],
   ["--focus-ring", 2],
   // Scale steps that do not exist: the space scale is 1/2/3/4/5/6/8/10.
   ["--space-7", 8],

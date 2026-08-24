@@ -12,17 +12,19 @@ import {
   reviewQueue,
 } from "./review-deck.ts";
 
-const read = (path: string) =>
-  readFileSync(new URL(path, import.meta.url), "utf8");
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const surface = read("./reviewer-surface.tsx");
 const sourceHook = read("./use-review-source.ts");
+const panes = read("./use-review-panes.ts");
+const deckModel = read("./use-review-deck-model.ts");
+const topbar = read("./review-cockpit-topbar.tsx");
 const queue = read("./review-queue.tsx");
 const header = read("./review-workbench-header.tsx");
+const rail = read("./review-file-rail.tsx");
 const diff = read("./review-diff-workbench.tsx");
 const navigator = read("./review-file-navigator.tsx");
-const evidence = read("./review-evidence-dock.tsx");
+const inspector = read("./review-inspector.tsx");
 const verdict = read("./review-verdict-dock.tsx");
-const checkpoints = read("./review-checkpoints-drawer.tsx");
 const docs = read("../../../docs/role-surfaces.md");
 const cssFacade = read("../../styles/review-deck.css");
 const cssFiles = [
@@ -30,20 +32,21 @@ const cssFiles = [
   "../../styles/review-deck/layout.css",
   "../../styles/review-deck/queue.css",
   "../../styles/review-deck/diff.css",
-  "../../styles/review-deck/evidence.css",
+  "../../styles/review-deck/inspector.css",
   "../../styles/review-deck/verdict.css",
   "../../styles/review-deck/responsive.css",
 ];
 const css = cssFiles.map(read).join("\n");
 const renderSources = [
   surface,
+  topbar,
   queue,
   header,
+  rail,
   diff,
   navigator,
-  evidence,
+  inspector,
   verdict,
-  checkpoints,
 ];
 
 function session(overrides = {}) {
@@ -89,28 +92,15 @@ test("diff labels and pull-request links do not invent data", () => {
   assert.equal(diffStatLabel({ additions: 12, deletions: 3 }), "+12 −3");
   assert.equal(prLabel({ repo: "o/r" }), "o/r");
   assert.equal(prUrl({ repo: "o/r" }), null);
-  assert.equal(
-    prUrl({ repo: "o/r", number: 42 }),
-    "https://github.com/o/r/pull/42",
-  );
+  assert.equal(prUrl({ repo: "o/r", number: 42 }), "https://github.com/o/r/pull/42");
 });
 
 test("unified diff rows carry old and new line numbers", () => {
   const lines = parseDiffLines(
-    [
-      "@@ -8,3 +8,4 @@",
-      " context",
-      "-before",
-      "+after",
-      "+extra",
-    ].join("\n"),
+    ["@@ -8,3 +8,4 @@", " context", "-before", "+after", "+extra"].join("\n"),
   );
   assert.deepEqual(
-    lines.map(({ kind, oldLine, newLine }) => ({
-      kind,
-      oldLine,
-      newLine,
-    })),
+    lines.map(({ kind, oldLine, newLine }) => ({ kind, oldLine, newLine })),
     [
       { kind: "hunk", oldLine: null, newLine: null },
       { kind: "ctx", oldLine: 8, newLine: 8 },
@@ -144,9 +134,7 @@ test("whitespace hiding is conservative and context folds stay expandable", () =
   const rows = buildDiffRows(lines, 3, new Set());
   const fold = rows.find((row) => row.kind === "fold");
   assert.ok(fold);
-  assert.ok(
-    buildDiffRows(lines, 3, new Set([fold.key])).length > rows.length,
-  );
+  assert.ok(buildDiffRows(lines, 3, new Set([fold.key])).length > rows.length);
 });
 
 test("the selected session truthfully pins PR or local source", () => {
@@ -184,39 +172,80 @@ test("approval, change requests, and squash merge preserve existing APIs", () =>
 
 test("the reviewer surface is orchestration, not a monolithic renderer", () => {
   for (const component of [
+    "ReviewCockpitTopBar",
     "ReviewQueue",
     "ReviewWorkbenchHeader",
+    "ReviewFileRail",
     "ReviewDiffWorkbench",
-    "ReviewEvidenceDock",
+    "ReviewInspector",
     "ReviewVerdictDock",
-    "ReviewCheckpointsDrawer",
   ]) {
     assert.match(surface, new RegExp(`<${component}`));
   }
-  assert.ok(
-    surface.split("\n").length < 900,
-    "orchestrator should stay bounded",
-  );
+  assert.ok(surface.split("\n").length < 900, "orchestrator should stay bounded");
+});
+
+test("deck-scoped chrome lives in the top bar and item-scoped chrome does not", () => {
+  // A control's column is what tells a reader what it acts on. Filters and
+  // item navigation act on the deck; the workspace header acts on one item.
+  assert.match(topbar, /aria-label="Filter the queue by attention"/);
+  assert.match(topbar, /Next item \(\]\)/);
+  assert.doesNotMatch(header, /Filter the queue/);
+  assert.doesNotMatch(header, /onBucketFilter/);
+  // …and the reverse: the verdict is not duplicated into the top bar.
+  assert.doesNotMatch(topbar, /Squash & merge|Request changes/);
+});
+
+test("the queue names a reason it actually read, and never counts checks", () => {
+  // The queue affords one GitHub read per row; check runs are a second
+  // request it does not make, so no row may claim a failing-check count.
+  assert.match(deckModel, /queueRowReason\(facts, \{ hasPullRequest, hasLocalChanges \}\)/);
+  // …and from the single-read facts map, never from the readiness fan-out.
+  assert.doesNotMatch(deckModel, /usePrReadiness|prBlockers/);
+  assert.doesNotMatch(queue, /failing/);
+  assert.match(queue, /rd-row-reason/);
+});
+
+test("blockers name their severity, their owner, and the evidence behind them", () => {
+  assert.match(surface, /triageBlockers\(rawBlockers, \{/);
+  assert.match(surface, /canResolveThreads: facts\?\.threads\.canResolve \?\? false/);
+  assert.match(inspector, /blocker\.severity/);
+  assert.match(inspector, /blocker\.owner/);
+  assert.match(inspector, /Only the author can clear this/);
+  assert.match(inspector, /onRevealBlocker\(blocker\.reveal!\)/);
 });
 
 test("review progress is scoped to the canonical revision", () => {
   assert.match(surface, /useReviewProgress\(\{/);
   assert.match(surface, /sourceId: workItem\?\.id \?\? null/);
   assert.match(surface, /revision: workItem\?\.revision \?\? null/);
-  assert.match(diff, /readable files reviewed on this revision/);
-  assert.match(diff, /aria-pressed=\{currentReviewed\}/);
-  assert.match(diff, /Previous unread file/);
-  assert.match(diff, /Next unread file/);
+  assert.match(rail, /aria-pressed=\{currentReviewed\}/);
+  assert.match(rail, /readable files reviewed on this revision/);
+  assert.match(diff, /files read on/);
 });
 
-test("the always-visible note moved into the verdict flow", () => {
+test("review threads render at their line, and an unplaced one is still shown", () => {
+  assert.match(diff, /interleaveThreads<DiffRow>/);
+  assert.match(diff, /woven\.unplaced\.length > 0/);
+  assert.match(diff, /not on a visible line/);
+});
+
+test("the note is reachable without opening a dialog, and required for changes", () => {
   assert.doesNotMatch(surface, /<textarea/);
+  assert.match(inspector, /id="rd-inspector-note"/);
   assert.match(verdict, /open=\{reviewMode != null\}/);
-  assert.match(verdict, /Review note \{reviewMode === "approve" \? "· Optional" : ""\}/);
+  assert.match(verdict, /Review note · \{reviewMode === "changes" \? "Required" : "Optional"\}/);
   assert.match(verdict, /The draft stays with this session/);
   assert.match(verdict, /maxLength=\{GITHUB_REVIEW_BODY_MAX_LENGTH\}/);
   assert.match(verdict, /aria-describedby="rd-review-help rd-review-count"/);
-  assert.match(verdict, /noteError \? <span className="rd-error" role="alert"/);
+  assert.match(surface, /A note is required — GitHub sends it/);
+});
+
+test("an unavailable merge keeps its place and says why", () => {
+  // A control that disappears teaches nothing about why it is unavailable.
+  assert.match(verdict, /label: "Merge",\s*\n\s*tone: "muted",\s*\n\s*disabled: true/);
+  assert.match(verdict, /Blocked: \$\{blockers\.map\(\(blocker\) => blocker\.title\)\.join\(" · "\)\}/);
+  assert.match(verdict, /Merging needs a pull request/);
 });
 
 test("keyboard shortcuts ignore editable targets and expose help", () => {
@@ -234,18 +263,28 @@ test("retry, empty, checkpoint, and announcement states remain explicit", () => 
   assert.match(diff, /onRetry=\{source\.retry\}/);
   assert.match(diff, /Nothing was approved or merged/);
   assert.match(diff, /source\.open\(source\.openPath\)/);
-  assert.match(checkpoints, /parseCheckpointEnvelope/);
-  assert.match(checkpoints, /<SurfaceError/);
-  assert.match(checkpoints, /No checkpoints saved/);
+  assert.match(surface, /parseCheckpointEnvelope/);
+  assert.match(verdict, /No checkpoints saved for this project/);
+  assert.match(verdict, /the deck never applies a patch/);
   assert.match(surface, /useAnnouncer/);
 });
 
-test("evidence is adaptive and names unavailable truth", () => {
-  assert.match(evidence, /Review evidence/);
-  assert.match(evidence, /readinessPhase === "loading"/);
-  assert.match(evidence, /Nothing is inferred/);
-  assert.match(evidence, /No checks have reported on this head/);
-  assert.match(evidence, /Resolving threads needs a GitHub token/);
+test("the inspector names unavailable truth instead of inferring it", () => {
+  assert.match(inspector, /Review inspector/);
+  assert.match(inspector, /readinessPhase === "loading"/);
+  assert.match(inspector, /Nothing is inferred/);
+  assert.match(inspector, /No checks have reported on this head/);
+  assert.match(inspector, /Resolving threads needs a GitHub token/);
+  assert.match(inspector, /facts\.mergeable == null \? "computing"/);
+});
+
+test("panes are clamped against the live window, not just their own bounds", () => {
+  assert.match(panes, /clampPaneWidth\(queueWidth, QUEUE_PANE, viewport, QUEUE_SHARE\)/);
+  assert.match(panes, /window\.addEventListener\("resize", measure\)/);
+  assert.match(panes, /pointermove/);
+  assert.match(panes, /pointercancel/);
+  assert.match(surface, /--rd-queue-width/);
+  assert.match(surface, /--rd-inspector-width/);
 });
 
 test("the stylesheet is a responsibility-split facade", () => {
@@ -254,7 +293,7 @@ test("the stylesheet is a responsibility-split facade", () => {
     "layout",
     "queue",
     "diff",
-    "evidence",
+    "inspector",
     "verdict",
     "responsive",
   ]) {
@@ -276,14 +315,19 @@ test("every rendered Review Deck class has a stylesheet rule", () => {
       }
     }
   }
-  assert.ok(classes.size > 100, `expected a substantial surface, saw ${classes.size} classes`);
-  const styled = new Set(
-    [...css.matchAll(/\.(rd-[a-z0-9-]+)/g)].map((match) => match[1]),
+  assert.ok(
+    classes.size > 90,
+    `expected a substantial surface, saw ${classes.size} classes`,
   );
-  assert.deepEqual(
-    [...classes].filter((name) => !styled.has(name)).sort(),
-    [],
-  );
+  const styled = new Set([...css.matchAll(/\.(rd-[a-z0-9-]+)/g)].map((match) => match[1]));
+  assert.deepEqual([...classes].filter((name) => !styled.has(name)).sort(), []);
+});
+
+test("tone is one custom property, never a second hue per state", () => {
+  // Adding a state means adding a row to the tone table, not a colour rule.
+  assert.match(css, /\[data-tone="danger"\]\s*\{\s*--rd-tone: var\(--color-danger\);/);
+  assert.match(css, /\[data-tone="accent"\]\s*\{\s*--rd-tone: var\(--accent-presence\);/);
+  assert.match(css, /background: color-mix\(in oklch, var\(--rd-tone\) 14%, transparent\)/);
 });
 
 test("responsive and accessibility contracts are explicit", () => {
@@ -293,14 +337,14 @@ test("responsive and accessibility contracts are explicit", () => {
   assert.match(css, /min-height: var\(--touch-target\)/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   assert.match(css, /\.rd-stage\[data-mobile-view="queue"\] \.rd-queue/);
-  assert.match(diff, /<progress/);
-  assert.match(evidence, /tabIndex=\{-1\}/);
+  assert.match(css, /\.rd-stage\[data-mobile-view="evidence"\] \.rd-inspector/);
+  assert.match(inspector, /tabIndex=\{-1\}/);
   assert.match(queue, /aria-current=\{active \? "true" : undefined\}/);
+  assert.match(rail, /role="tablist" aria-label="Changed files"/);
+  // The mix bar is decoration for a sighted reader and a sentence for everyone else.
+  assert.match(queue, /aria-label=\{`Queue mix: \$\{summary\}`\}/);
 });
 
 test("the Review Deck documentation names the focused review run", () => {
-  assert.match(
-    docs,
-    /\*\*Review Deck\*\* \(`reviewer-review-deck`, role `reviewer`\)/,
-  );
+  assert.match(docs, /\*\*Review Deck\*\* \(`reviewer-review-deck`, role `reviewer`\)/);
 });
