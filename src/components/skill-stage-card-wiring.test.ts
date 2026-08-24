@@ -48,6 +48,11 @@ assert.match(chatView, /stage="invoked"/, "deterministic invocation card renders
 
 // Card contract.
 assert.match(card, /role="status"/, "card announces stage changes to assistive tech");
+assert.match(
+  card,
+  /<button[\s\S]*<\/button>\s*<span className="sr-only" role="status" aria-live="polite"/,
+  "selectable cards retain button semantics and announce streaming stage changes through a sibling live region",
+);
 assert.match(card, /data-skill-stage=\{stage\}/, "stage is machine-readable for styling/e2e");
 assert.match(
   card,
@@ -58,6 +63,11 @@ assert.match(
   card,
   /skills\.map\(\(skill\) => \{[\s\S]*data-selected=\{isSelected \|\| undefined\}/,
   "the modal shows every run skill and marks the card that opened it",
+);
+assert.match(
+  card,
+  /allDone[\s\S]*"ph:circle-notch-bold"[\s\S]*`\$\{completed\} of \$\{skills\.length\} done`/,
+  "the footer reports explicit progress instead of success while skills are still running",
 );
 
 console.log("skill stage card wiring: ok");

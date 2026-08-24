@@ -84,15 +84,20 @@ export function SkillStageCard({
     "cave-skill-card flex w-full items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5 text-left text-[length:var(--text-xs)]";
 
   return onSelect ? (
-    <button
-      type="button"
-      className={`${className} focus-ring transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]`}
-      data-skill-stage={stage}
-      aria-label={`Open details for skill ${name}: ${v.label}${note ? ` — ${note}` : ""}`}
-      onClick={onSelect}
-    >
-      {content}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`${className} focus-ring transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]`}
+        data-skill-stage={stage}
+        aria-label={`Open details for skill ${name}: ${v.label}${note ? ` — ${note}` : ""}`}
+        onClick={onSelect}
+      >
+        {content}
+      </button>
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        Skill {name}: {v.label}{note ? ` — ${note}` : ""}
+      </span>
+    </>
   ) : (
     <div
       className={className}
@@ -112,6 +117,7 @@ export function SkillRunSummary({ skills }: { skills: SkillStageUpdate[] }) {
     : null;
   const completed = skills.filter((skill) => skill.stage === "done").length;
   const errors = skills.filter((skill) => skill.stage === "error").length;
+  const allDone = completed === skills.length;
 
   return (
     <>
@@ -145,8 +151,20 @@ export function SkillRunSummary({ skills }: { skills: SkillStageUpdate[] }) {
               label={`${skills.length} ${skills.length === 1 ? "skill" : "skills"}`}
             />
             <PropertyPill
-              icon={errors ? "ph:warning-circle" : "ph:check-circle"}
-              label={errors ? `${errors} ${errors === 1 ? "issue" : "issues"}` : `${completed} done`}
+              icon={
+                errors
+                  ? "ph:warning-circle"
+                  : allDone
+                    ? "ph:check-circle"
+                    : "ph:circle-notch-bold"
+              }
+              label={
+                errors
+                  ? `${errors} ${errors === 1 ? "issue" : "issues"}`
+                  : allDone
+                    ? `${completed} done`
+                    : `${completed} of ${skills.length} done`
+              }
               filled
             />
           </>

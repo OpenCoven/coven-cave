@@ -73,6 +73,7 @@ describe("SkillRunSummary", () => {
   it("opens one run-wide modal from every skill card and highlights the selected skill", async () => {
     const renderer = await renderSummary();
     expect(renderer.root.findAllByProps({ "data-modal": true })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(3);
 
     const trigger = renderer.root.findByProps({
       "aria-label":
@@ -88,9 +89,35 @@ describe("SkillRunSummary", () => {
     expect(textContent(modal)).toContain("Applicability gate confirms direct implementation.");
     expect(textContent(modal)).toContain("Governance and CI contracts passed red-green.");
     expect(textContent(modal)).toContain("No significant issues found.");
+    expect(textContent(modal)).toContain("3 done");
     expect(modal.findAllByProps({ "data-selected": true })).toHaveLength(1);
     expect(textContent(modal.findByProps({ "data-selected": true }))).toContain(
       "test-driven-development",
+    );
+  });
+
+  it("reports explicit progress until every skill is complete", async () => {
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <SkillRunSummary
+          skills={[
+            { name: "brainstorming", stage: "done" },
+            { name: "verification-before-completion", stage: "running" },
+          ]}
+        />,
+      );
+    });
+
+    const trigger = renderer!.root.findByProps({
+      "aria-label": "Open details for skill verification-before-completion: running",
+    });
+    await act(async () => {
+      trigger.props.onClick();
+    });
+
+    expect(textContent(renderer!.root.findByProps({ "data-modal": true }))).toContain(
+      "1 of 2 done",
     );
   });
 });
