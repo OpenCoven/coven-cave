@@ -994,8 +994,8 @@ assert.doesNotMatch(
 // chat section spreads its handler bundle (whole-surface drop target).
 assert.match(
   source,
-  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.dropHandlers\}/,
-  "the whole chat section is the drop target (handlers spread from the shared hook)",
+  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.\(offlineReadOnly \? \{\} : dropHandlers\)\}/,
+  "the whole live chat section is the drop target while offline copies reject attachment mutation",
 );
 assert.match(
   attachStagingHook,

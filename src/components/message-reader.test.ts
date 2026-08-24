@@ -264,7 +264,11 @@ test("3a — Ask about this stages the SELECTION, not the whole turn", () => {
     /return replyFor\(turn\) \? \(quote: string\) => replyToTurn\(turn, quote\) : undefined;/,
     "asking is gated exactly like quoting — absent wherever Reply is",
   );
-  assert.match(chatView, /onAskAbout=\{handlers\(\)\.askAboutFor\(t\)\}/, "the rows supply it");
+  assert.match(
+    chatView,
+    /onAskAbout=\{readOnly \? undefined : handlers\(\)\.askAboutFor\(t\)\}/,
+    "writable rows supply it",
+  );
 });
 
 test("3a — Export PDF prints the reader, not the app behind it", () => {

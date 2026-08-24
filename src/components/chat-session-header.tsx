@@ -381,6 +381,7 @@ export function ChatTitleEditable({
   onSessionsChanged,
   headline = false,
   generateTitle,
+  readOnly = false,
 }: {
   session: SessionRow;
   /** When set, displayed in place of session.title (e.g. to hide a raw
@@ -397,6 +398,7 @@ export function ChatTitleEditable({
    *  not rendered, so title rows without a transcript in scope degrade to the
    *  manual pencil rather than shipping a control that can only no-op. */
   generateTitle?: () => string | null;
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -418,6 +420,10 @@ export function ChatTitleEditable({
   useEffect(() => {
     if (!editing) setValue(baseTitle);
   }, [baseTitle, editing]);
+
+  useEffect(() => {
+    if (readOnly) setEditing(false);
+  }, [readOnly]);
 
   useEffect(() => {
     if (!editing) return;
@@ -523,7 +529,7 @@ export function ChatTitleEditable({
     ? "min-w-0 flex-1 truncate text-left text-[length:var(--text-base)] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
     : "min-w-0 truncate text-left text-[length:var(--text-md)] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
 
-  if (editing) {
+  if (editing && !readOnly) {
     return (
       <input
         ref={inputRef}
@@ -558,7 +564,7 @@ export function ChatTitleEditable({
           instant it flips, dropping a keyboard user who pressed Enter back to
           the body. Re-entry is already blocked in the handler, so the native
           disable buys nothing and costs the focus ring. */}
-      {generateTitle ? (
+      {generateTitle && !readOnly ? (
         <button
           type="button"
           className="cave-chat-title-spark focus-ring"
@@ -575,33 +581,41 @@ export function ChatTitleEditable({
           <Icon name="ph:sparkle" width={11} aria-hidden />
         </button>
       ) : null}
-      <button
-        type="button"
-        className={buttonClassName}
-        data-generating={generating ? "true" : undefined}
-        title={`${display} — click to rename`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-      >
-        {display}
-      </button>
+      {readOnly ? (
+        <span className={buttonClassName} title={display}>
+          {display}
+        </span>
+      ) : (
+        <button
+          type="button"
+          className={buttonClassName}
+          data-generating={generating ? "true" : undefined}
+          title={`${display} — click to rename`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditing(true);
+          }}
+        >
+          {display}
+        </button>
+      )}
       {/* Explicit rename affordance — click-to-rename on the title alone is
           invisible; the pencil makes renaming discoverable without opening
           the overflow menu. */}
-      <button
-        type="button"
-        title="Rename chat"
-        aria-label="Rename chat"
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-        className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-60 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] hover:opacity-100"
-      >
-        <Icon name="ph:pencil-simple" width={11} aria-hidden />
-      </button>
+      {!readOnly ? (
+        <button
+          type="button"
+          title="Rename chat"
+          aria-label="Rename chat"
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditing(true);
+          }}
+          className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-60 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] hover:opacity-100"
+        >
+          <Icon name="ph:pencil-simple" width={11} aria-hidden />
+        </button>
+      ) : null}
     </span>
   );
 }

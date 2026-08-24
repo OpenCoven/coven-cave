@@ -74,8 +74,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /sessionId && \(\s*<SessionOverflowMenu[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
-  "The active-chat project selector shares the same draft used by send",
+  /sessionId && !offlineReadOnly && \(\s*<SessionOverflowMenu[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
+  "The writable active-chat project selector shares the same draft used by send",
 );
 // The empty state (the familiar's starting page) lives in chat-empty-state.tsx
 // since the task-aware extraction; its picker pins follow it there.

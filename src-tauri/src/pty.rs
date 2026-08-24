@@ -164,28 +164,44 @@ pub fn trust_main_origin(url: &Url) {
     }
 }
 
-fn ensure_trusted_pty_caller(webview: &Webview) -> Result<(String, u64), String> {
+pub(super) fn ensure_trusted_main_caller(
+    webview: &Webview,
+    capability: &str,
+) -> Result<(String, u64), String> {
     let Some(window_generation) = crate::main_window::registered_main_window_generation(
         webview.app_handle(),
         webview.label(),
     ) else {
-        warn!("denied PTY IPC from non-main webview: {}", webview.label());
-        return Err("PTY commands are only available to the main app webview".to_string());
+        warn!(
+            "denied {} IPC from non-main webview: {}",
+            capability,
+            webview.label()
+        );
+        return Err(format!(
+            "{capability} commands are only available to the main app webview"
+        ));
     };
 
     let url = webview
         .url()
         .map_err(|e| format!("could not resolve caller URL: {e}"))?;
-    let origin = url_origin(&url).ok_or_else(|| format!("untrusted PTY caller URL: {url}"))?;
+    let origin =
+        url_origin(&url).ok_or_else(|| format!("untrusted {capability} caller URL: {url}"))?;
     if TRUSTED_MAIN_ORIGINS.lock().contains(&origin) {
         Ok((webview.label().to_string(), window_generation))
     } else {
         warn!(
-            "denied PTY IPC from untrusted main webview origin: {}",
-            origin
+            "denied {} IPC from untrusted main webview origin: {}",
+            capability, origin
         );
-        Err("PTY commands are not available to this origin".to_string())
+        Err(format!(
+            "{capability} commands are not available to this origin"
+        ))
     }
+}
+
+fn ensure_trusted_pty_caller(webview: &Webview) -> Result<(String, u64), String> {
+    ensure_trusted_main_caller(webview, "PTY")
 }
 
 /// RAII guard: makes sure a thread_id we reserved in STARTING_SESSIONS

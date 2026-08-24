@@ -95,7 +95,7 @@ zstd = "0.13"
 # mobile access token a DACL, which Windows has no create-time equivalent of.
 # The feature is a cfg gate over already-vendored bindings, so it pulls in no
 # new crate and leaves Cargo.lock untouched.
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # OS-level glass for the quick-chat tray window: NSVisualEffectView vibrancy
 # behind the transparent webview on macOS (the only platform we apply it on;
