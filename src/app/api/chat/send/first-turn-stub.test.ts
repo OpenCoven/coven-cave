@@ -111,7 +111,7 @@ assert.equal(
 );
 assert.match(
   chatRoute,
-  /openClawChatResponse\(\{[\s\S]*?ownsFirstExchangeTitle,\s*\}\)/,
+  /openClawChatResponse\(\{[\s\S]*?ownsFirstExchangeTitle,[\s\S]*?openClawGatewayCredentialStore: dependencies\.openClawGatewayCredentialStore,\s*\}\)/,
   "OpenClaw consumes the same route-wide first-exchange ownership decision as generic harnesses",
 );
 assert.equal(
