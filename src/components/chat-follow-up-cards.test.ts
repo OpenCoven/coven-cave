@@ -23,6 +23,7 @@ assert.doesNotMatch(source, /\bsend\(path\.prompt\)/, "cards never send assistan
 assert.match(source, /<Popover[\s\S]*?placement="top-end"/, "rationale opens in the shared overlay above its suggestion");
 assert.match(source, /usePopoverInitialFocus/, "the rationale overlay moves keyboard focus into its close control");
 assert.match(source, /aria-label=\{`Why this suggestion: \$\{label\}`\}/, "each explanation trigger names its suggestion");
+assert.match(source, /aria-haspopup="dialog"/, "the rationale trigger exposes its dialog relationship without referencing unmounted content");
 assert.doesNotMatch(source, /<details|<summary/, "rationale no longer expands the composer document flow");
 assert.match(source, /Evidence/, "contextual follow-ups render typed evidence chips");
 assert.match(source, /path\.metadata/, "metadata remains optional for legacy next-path trailers");

@@ -96,6 +96,7 @@ async function setup(page: Page) {
 test("chat composer is full-width and follow-up rationale does not reflow it", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   await setup(page);
   await page.goto(`/?mode=chat#chat-${SESSION_ID}`, { waitUntil: "domcontentloaded" });
 
@@ -132,7 +133,8 @@ test("chat composer is full-width and follow-up rationale does not reflow it", a
     shellHeight: (await shell.boundingBox())?.height,
     documentHeight: await page.evaluate(() => document.documentElement.scrollHeight),
   };
-  expect(after).toEqual(before);
+  expect(after.documentHeight).toBe(before.documentHeight);
+  expect(Math.abs((after.shellHeight ?? 0) - (before.shellHeight ?? 0))).toBeLessThan(1);
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();

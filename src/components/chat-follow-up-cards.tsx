@@ -56,7 +56,7 @@ function FollowUpRationale({
         className="cave-followup-card__why-trigger focus-ring"
         aria-label={`Why this suggestion: ${label}`}
         aria-expanded={open}
-        aria-controls={panelId}
+        aria-haspopup="dialog"
         onClick={() => setOpen((current) => !current)}
       >
         <Icon name="ph:info" width={12} aria-hidden />
