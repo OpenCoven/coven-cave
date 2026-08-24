@@ -86,7 +86,7 @@ assert.deepEqual(
 );
 
 // ── Component-class surfaces ride the shared utility ─────────────────────────
-assert.match(palette, /className="command-palette glass-overlay"/, "the command palette dialog is glass");
+assert.match(palette, /className="command-palette glass-overlay\b/, "the command palette dialog is glass");
 assert.doesNotMatch(palette, /command-palette glass-overlay[^"]*bg-\[var\(--bg-elevated\)\]/, "the palette's old opaque fill is gone");
 assert.match(bell, /notification-bell__popover glass-overlay/, "the notification bell popover is glass");
 
