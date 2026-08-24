@@ -103,6 +103,11 @@ pub(super) enum PortOccupant {
     /// request, and `src/proxy.ts` lets a trusted local peer through ordinary
     /// app APIs without one (`trustedLocalBrowserApi`). Reading only the token
     /// check in that file suggests a 401; the request never reaches it.
+    ///
+    /// That last part is true only of a copy built since #4874 (2026-08-22).
+    /// v0.3.9 was stamped the day before, so every packaged copy in the field
+    /// today answers 401 and lands in `Gated` below — until the field rolls
+    /// forward, a dev server is the only thing that reaches this verdict.
     Cave,
     /// Answered, but refused the unauthenticated probe (401/403).
     ///

@@ -29,6 +29,32 @@ pub(super) fn show_fatal_dialog(msg: &str) {
     show_startup_dialog("CovenCave failed to start", msg);
 }
 
+/// The exact bytes the Windows arm writes for Notepad.
+///
+/// Lifted out of the `#[cfg(target_os = "windows")]` block below so it is
+/// compiled and tested on every platform. Routine PR CI runs `cargo check` and
+/// `cargo test --lib` on ubuntu-latest only (`.github/workflows/ci.yml`, job
+/// "Frontend build"); a Windows target is first compiled at release tag. So
+/// anything left inside that block is unverified for the whole window between
+/// merge and release, which is exactly the window this conversion shipped in.
+///
+/// Notepad older than Windows 10 1809 renders a lone LF as no break at all,
+/// and every message reaching here is composed with bare "\n" (see
+/// `already_running_message`), so the WHOLE file gets CRLF rather than only the
+/// two breaks that join the heading on — a half-converted file would show a
+/// heading and then one run-on paragraph. The collapse pass runs first so the
+/// conversion is idempotent: a message that already carries CRLF must not come
+/// out as `\r\r\n`. A lone CR is a break Notepad also drops, so it converts
+/// too. osascript and zenity both take "\n", so this belongs to Windows alone.
+#[cfg(desktop)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(super) fn windows_dialog_file_text(title: &str, msg: &str) -> String {
+    format!("{title}\n\n{msg}")
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\r\n")
+}
+
 /// The same surface, under a caller-chosen heading.
 ///
 /// Not every early exit is a failure. A second copy refused because the first
@@ -54,18 +80,10 @@ pub(super) fn show_startup_dialog(title: &str, msg: &str) {
         // doesn't require any additional dependencies (e.g. winapi crate).
         let temp = std::env::var("TEMP").unwrap_or_else(|_| "C:\\Temp".into());
         let path = format!("{}\\CovenCave-error.txt", temp);
-        // Notepad shows no heading of its own, so carry it into the file — and
-        // give the WHOLE file CRLF rather than only the two breaks that join
-        // the heading on. Every message reaching here is composed with bare
-        // "\n" (see `already_running_message`), and Notepad older than Windows
-        // 10 1809 renders a lone LF as no break at all, so a half-converted
-        // file would show a heading and then one run-on paragraph. The other
-        // two surfaces are left alone deliberately: osascript and zenity both
-        // take "\n", so the conversion belongs to this arm only.
-        let text = format!("{title}\n\n{msg}")
-            .replace("\r\n", "\n")
-            .replace('\n', "\r\n");
-        let _ = std::fs::write(&path, text);
+        // Notepad shows no heading of its own, so carry it into the file; see
+        // `windows_dialog_file_text` for why the whole file becomes CRLF and
+        // why the conversion lives outside this uncompiled block.
+        let _ = std::fs::write(&path, windows_dialog_file_text(title, msg));
         let _ = std::process::Command::new("notepad.exe").arg(&path).spawn();
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -151,8 +169,12 @@ pub(super) fn report_existing_gui_owner(pid: u32) -> ! {
     );
     show_startup_dialog(
         // The heading is the app name rather than a second copy of the first
-        // sentence below; see `report_existing_port_owner` for why the body is
-        // the side that keeps the summary.
+        // sentence below. Unlike `report_existing_port_owner`, this body is
+        // built here and rendered nowhere else, so it is free to give the
+        // summary up — it keeps it so the two refusals read alike, not because
+        // anything pins it. What DOES carry over from that sibling is the other
+        // half: a caller-chosen heading exists so an ordinary, working refusal
+        // is not headed `show_fatal_dialog`'s "CovenCave failed to start".
         "CovenCave",
         &format!(
             "CovenCave is already running (process {pid}).\n\nSwitch to the window that is already open, or quit it before starting another copy."

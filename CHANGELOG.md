@@ -7,6 +7,9 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Changes
+- Correct the port-claim occupant docs and harden the two contracts that pin them (cave-q1gb5)
+
 ## [0.3.10] - 2026-08-24
 
 > Modernizes native iOS chat and project controls, adds familiar avatar
