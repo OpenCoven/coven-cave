@@ -44,12 +44,30 @@ export function chatProjectById(
   return projects.find((project) => project.id === projectId) ?? null;
 }
 
+export type ChatProjectIndex = {
+  byId: ReadonlyMap<string, CaveProject>;
+  byRoot: ReadonlyMap<string, CaveProject>;
+};
+
+export function createChatProjectIndex(projects: CaveProject[]): ChatProjectIndex {
+  const byId = new Map<string, CaveProject>();
+  const byRoot = new Map<string, CaveProject>();
+  for (const project of projects) {
+    if (!byId.has(project.id)) byId.set(project.id, project);
+    const normalizedRoot = normalizeChatProjectRoot(project.root);
+    if (!byRoot.has(normalizedRoot)) byRoot.set(normalizedRoot, project);
+  }
+  return { byId, byRoot };
+}
+
 export function projectForRoot(
   projectRoot: string | null | undefined,
   projects: CaveProject[],
+  projectIndex?: ChatProjectIndex,
 ): CaveProject | null {
   const normalized = projectRoot?.trim() ? normalizeChatProjectRoot(projectRoot) : "";
   if (!normalized) return null;
+  if (projectIndex) return projectIndex.byRoot.get(normalized) ?? null;
   return projects.find((project) => normalizeChatProjectRoot(project.root) === normalized) ?? null;
 }
 
@@ -295,8 +313,9 @@ export function recentChatProjectRoot(
   projects: CaveProject[],
 ): string | null {
   if (projects.length === 0) return null;
+  const projectIndex = createChatProjectIndex(projects);
   for (const session of filterVisibleChatSessions(sessions, null)) {
-    const project = projectForRoot(session.project_root, projects);
+    const project = projectForRoot(session.project_root, projects, projectIndex);
     if (project) return project.root;
   }
   return null;
@@ -305,11 +324,13 @@ export function recentChatProjectRoot(
 export function deriveChatProjectGroups(
   sessions: SessionRow[],
   projects: CaveProject[],
+  projectIndex: ChatProjectIndex = createChatProjectIndex(projects),
+  options: { sessionsNewestFirst?: boolean } = {},
 ): ChatProjectGroup[] {
   const groups = new Map<string | null, SessionRow[]>();
 
   for (const session of sessions) {
-    const project = projectForRoot(session.project_root, projects);
+    const project = projectForRoot(session.project_root, projects, projectIndex);
     const projectRoot = project?.root
       ?? (session.project_root?.trim() ? normalizeChatProjectRoot(session.project_root) : null);
     const group = groups.get(projectRoot) ?? [];
@@ -326,11 +347,13 @@ export function deriveChatProjectGroups(
 
   return Array.from(groups.entries())
     .map(([projectRoot, rows]) => {
-      const sorted = [...rows].sort((a, b) =>
-        sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1,
-      );
+      const sorted = options.sessionsNewestFirst
+        ? rows
+        : [...rows].sort((a, b) =>
+          sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1,
+        );
       const latest = sorted[0] ?? null;
-      const project = projectForRoot(projectRoot, projects);
+      const project = projectForRoot(projectRoot, projects, projectIndex);
       const leaf = projectLeafName(projectRoot);
       const inferredProjectName =
         projectRoot && !project && leaf && (leafCounts.get(leaf) ?? 0) > 1
@@ -355,11 +378,11 @@ export function deriveChatProjectGroups(
       // the rail, so resuming the current conversation never needs scrolling.
       const byRecency = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
       if (byRecency !== 0) return byRecency;
-      const aProject = a.projectId ? projects.find((project) => project.id === a.projectId) : null;
-      const bProject = b.projectId ? projects.find((project) => project.id === b.projectId) : null;
+      const aProject = a.projectId ? projectIndex.byId.get(a.projectId) ?? null : null;
+      const bProject = b.projectId ? projectIndex.byId.get(b.projectId) ?? null : null;
       if (aProject && bProject) return compareProjectsAlphabetically(aProject, bProject);
-      const aLabel = a.projectName ?? chatProjectName(a.projectRoot, projects);
-      const bLabel = b.projectName ?? chatProjectName(b.projectRoot, projects);
+      const aLabel = a.projectName ?? chatProjectName(a.projectRoot, projects, projectIndex);
+      const bLabel = b.projectName ?? chatProjectName(b.projectRoot, projects, projectIndex);
       const byLabel = aLabel.localeCompare(bLabel, undefined, { sensitivity: "base", numeric: true });
       if (byLabel !== 0) return byLabel;
       return (a.projectRoot ?? "").localeCompare(b.projectRoot ?? "");
@@ -369,9 +392,10 @@ export function deriveChatProjectGroups(
 export function chatProjectName(
   projectRoot: string | null,
   projects: CaveProject[],
+  projectIndex?: ChatProjectIndex,
 ): string {
   if (!projectRoot) return "No project";
-  const project = projectForRoot(projectRoot, projects);
+  const project = projectForRoot(projectRoot, projects, projectIndex);
   if (project) return project.name;
   const parts = projectRoot.replace(/\\/g, "/").split("/").filter(Boolean);
   return parts[parts.length - 1] ?? projectRoot;

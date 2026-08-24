@@ -19,7 +19,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useUndoDelete } from "@/lib/use-undo-delete";
-import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
+import {
+  cancelHoverPrefetch,
+  hoverPrefetchConversation,
+  prefetchConversation,
+} from "@/lib/conversation-cache";
 import { successfulSessionIds } from "@/lib/session-list-deletes";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -27,6 +31,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
+  createChatProjectIndex,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
@@ -40,7 +45,6 @@ import {
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
 import {
-  isSessionPinned,
   sortPinnedFirst,
   toggleStoredPinnedSession,
 } from "@/lib/chat-session-prefs";
@@ -213,6 +217,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
   // surface through one subscribable store — the daemon never learns about
   // them, and no surface holds a private copy that could clobber another's.
   const pinnedIds = usePinnedSessions();
+  const pinnedIdSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   // Archived rows are excluded server-side by /api/sessions/list; the toggle
   // opts into them with its own includeArchived fetch (the workspace's list
@@ -314,16 +319,30 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
+  const projectIndex = useMemo(() => createChatProjectIndex(projects), [projects]);
   const grouped = useMemo(() => {
-    return deriveChatProjectGroups(applyProjectOverrides(filtered, projectOverrides), projects);
-  }, [filtered, projects, projectOverrides]);
+    return deriveChatProjectGroups(
+      applyProjectOverrides(filtered, projectOverrides),
+      projects,
+      projectIndex,
+      { sessionsNewestFirst: true },
+    );
+  }, [filtered, projects, projectOverrides, projectIndex]);
 
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
   // so it stays stable while typing. The view-local selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a project selection must not scope the list there —
   // no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(railSessions, projectOverrides), projects), [railSessions, projects, projectOverrides]);
+  const sidebarGroups = useMemo(
+    () => deriveChatProjectGroups(
+      applyProjectOverrides(railSessions, projectOverrides),
+      projects,
+      projectIndex,
+      { sessionsNewestFirst: true },
+    ),
+    [railSessions, projects, projectOverrides, projectIndex],
+  );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
@@ -495,7 +514,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
     const rows = displayGroups[0]?.sessions ?? [];
     // Pinned rows are partitioned to the top and keep their own collapsible
     // section — bands describe everything below that run.
-    const pinnedRun = rows.findIndex((row) => !isSessionPinned(pinnedIds, row.id));
+    const pinnedRun = rows.findIndex((row) => !pinnedIdSet.has(row.id));
     const offset = pinnedRun < 0 ? rows.length : pinnedRun;
     const rest = rows.slice(offset);
     if (rest.length === 0) return null;
@@ -514,7 +533,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
     return map;
     // minuteTick keeps a session that ages past midnight from staying under
     // yesterday's header until the next data refresh.
-  }, [activityBanded, groupBy, effectiveSelection, displayGroups, pinnedIds, sessionSort, minuteTick]);
+  }, [activityBanded, groupBy, effectiveSelection, displayGroups, pinnedIdSet, sessionSort, minuteTick]);
   const displayIds = useMemo(
     () => displayGroups.flatMap((group) => group.sessions.map((session) => session.id)),
     [displayGroups],
@@ -531,13 +550,13 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
     // hidden and displayIds is already the visible set.
     if (effectiveSelection !== "all" || groupBy !== "none" || collapsedSections.size === 0) return displayIds;
     return displayIds.filter((id) => {
-      const key = isSessionPinned(pinnedIds, id) ? "pinned" : "sessions";
+      const key = pinnedIdSet.has(id) ? "pinned" : "sessions";
       // Mirrors the per-row `rowCollapsed`: banded lists have no "Sessions"
       // header, so its collapsed flag can never hide anything.
       if (key === "sessions" && bandsByIndex) return true;
       return !collapsedSections.has(key);
     });
-  }, [displayIds, effectiveSelection, groupBy, collapsedSections, pinnedIds, bandsByIndex]);
+  }, [displayIds, effectiveSelection, groupBy, collapsedSections, pinnedIdSet, bandsByIndex]);
   const visibleRows = useMemo(
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
     [scopedGroups],
@@ -563,6 +582,17 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
 
   const fallbackOrderIds = useMemo(() => mine.map((s) => s.id), [mine]);
   const liveSessionIds = useMemo(() => new Set(mine.map((s) => s.id)), [mine]);
+  const displayTitles = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const group of displayGroups) {
+      for (const [sessionId, title] of disambiguateSessionTitles(group.sessions)) {
+        titles.set(sessionId, title);
+      }
+    }
+    return titles;
+    // Duplicate-title labels include relative time, so refresh them with the
+    // same minute clock that updates the row timestamps.
+  }, [displayGroups, minuteTick]);
 
   function handleDragEnd(event: DragEndEvent, displayIds: string[]) {
     const { active, over } = event;
@@ -1280,8 +1310,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
               // counted PINNED section and a counted SESSIONS section, mirroring
               // the desktop rail. firstPinnedIdx/firstRestIdx place each header
               // before its first member, so it reads right regardless of order.
-              const pinnedFlags = rows.map((r) => isSessionPinned(pinnedIds, r.id));
-              const sessionTitles = disambiguateSessionTitles(rows);
+              const pinnedFlags = rows.map((r) => pinnedIdSet.has(r.id));
               const pinnedCount = pinnedFlags.filter(Boolean).length;
               const restCount = rows.length - pinnedCount;
               const firstPinnedIdx = pinnedFlags.indexOf(true);
@@ -1308,7 +1337,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                     const isActive = activeId === s.id;
                     const rowFamiliar = s.familiarId ? resolvedById.get(s.familiarId) : null;
                     const rowFamiliarName = rowFamiliar?.display_name ?? familiar?.display_name ?? "Familiar";
-                    const pinned = isSessionPinned(pinnedIds, s.id);
+                    const pinned = pinnedIdSet.has(s.id);
                     // Pinned/Sessions sections only split the flat ungrouped
                     // list; project/date grouping owns its own headers.
                     const sectioned = projectRoot === null && groupBy === "none";
@@ -1384,7 +1413,16 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                           onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setActiveId(s.id); onOpen(s.id, s.familiarId); }}
                           onMouseEnter={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
                           onMouseLeave={cancelHoverPrefetch}
-                          onFocus={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
+                          onPointerDown={() => {
+                            if (selectMode) return;
+                            cancelHoverPrefetch();
+                            void prefetchConversation(s.id);
+                          }}
+                          onFocus={(event) => {
+                            if (event.target !== event.currentTarget || selectMode) return;
+                            cancelHoverPrefetch();
+                            void prefetchConversation(s.id);
+                          }}
                           onBlur={cancelHoverPrefetch}
                           onKeyDown={(e) => {
                             // Nested controls (drag handle, quick actions) own
@@ -1509,7 +1547,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                                     ? "text-white"
                                     : "text-[var(--text-primary)]",
                                 ].join(" ")}>
-                                  {stripLeadingTrailingEmoji((sessionTitles.get(s.id) ?? s.title) || "(untitled chat)")}
+                                  {stripLeadingTrailingEmoji((displayTitles.get(s.id) ?? s.title) || "(untitled chat)")}
                                 </span>
                               </span>
                               {workBranch ? (

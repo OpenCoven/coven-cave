@@ -23,7 +23,17 @@ extension CaveClient: FamiliarDashboardLoading {
         let urlRequest: URLRequest
         do {
             let encoded = try Self.encodedPathSegment(id)
-            urlRequest = try request(FamiliarDashboardEndpoint.path(encodedFamiliarId: encoded))
+            // `pathIsPercentEncoded` is what stops the escape being applied
+            // twice. Without it `request(_:)` reaches for
+            // `appendingPathComponent`, which escapes the `%` of the segment we
+            // just built — so a familiar id carrying a slash goes out as
+            // `nova%252Ffamiliar`, and the desktop reads that as the literal
+            // id `nova%2Ffamiliar` rather than `nova/familiar`. The avatar
+            // routes on this client already pass the flag; this one did not.
+            urlRequest = try request(
+                FamiliarDashboardEndpoint.path(encodedFamiliarId: encoded),
+                pathIsPercentEncoded: true
+            )
         } catch CaveError.notConfigured {
             throw FamiliarDashboardError.notConfigured
         } catch {
@@ -47,6 +57,25 @@ extension CaveClient: FamiliarDashboardLoading {
             throw FamiliarDashboardError.forRefusal(status: status, code: failure?.code)
         }
 
+        // A 200 whose envelope says `ok:false` is not a success, whatever the
+        // status line claims — and it is read BEFORE the success decode
+        // because a refusal body carries none of the success fields. Decoding
+        // it as a success reports a missing-key decode error and throws away
+        // the refusal the body is plainly stating, which is a worse answer in
+        // both directions: the caller cannot retry (`.decoding` is not
+        // retryable, `.unavailable` is) and the hub blames the client's parser
+        // for a desktop that said, in as many words, that it could not build
+        // the dashboard.
+        if let refusal = try? JSONDecoder().decode(
+            FamiliarDashboardFailurePayload.self, from: data
+        ), !refusal.ok {
+            let classified = FamiliarDashboardError.forRefusal(status: status, code: refusal.code)
+            // A 2xx carries no usable status fallback, so an unrecognised code
+            // still means the dashboard did not come back.
+            if case .refused = classified { throw FamiliarDashboardError.unavailable }
+            throw classified
+        }
+
         let payload: FamiliarDashboardPayload
         do {
             payload = try JSONDecoder().decode(FamiliarDashboardPayload.self, from: data)
@@ -54,8 +83,9 @@ extension CaveClient: FamiliarDashboardLoading {
             throw FamiliarDashboardError.decoding(String(describing: error))
         }
 
-        // A 200 whose envelope says `ok:false` is not a success, whatever the
-        // status line claims.
+        // Backstop for a body that decodes as the success shape but whose
+        // envelope still says `ok:false` — unreachable while the refusal
+        // decode above succeeds, and cheap enough to keep as the invariant.
         guard payload.ok else { throw FamiliarDashboardError.unavailable }
 
         // The request carried `?v=1`, so a well-behaved desktop either answers

@@ -359,7 +359,7 @@ unsafe extern "system" fn windows_main_close_subclass(
 #[cfg(all(desktop, target_os = "windows"))]
 pub(super) fn install_windows_main_close_fallback(app: &tauri::App) -> Result<(), String> {
     let main = app
-        .get_window("main")
+        .get_window(PRIMARY_MAIN_WINDOW_LABEL)
         .ok_or_else(|| "main window missing while installing close fallback".to_string())?;
     let hwnd = main.hwnd().map_err(|error| error.to_string())?.0 as HWND;
     let close_event = unsafe {

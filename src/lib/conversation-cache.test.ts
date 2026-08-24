@@ -5,8 +5,10 @@ import { readFile } from "node:fs/promises";
 import {
   cancelHoverPrefetch,
   clearConversationCache,
+  ConversationLoadError,
   hoverPrefetchConversation,
   invalidateConversation,
+  loadConversation,
   prefetchConversation,
   readCachedConversation,
   storeConversation,
@@ -90,6 +92,89 @@ test("prefetch fetches, caches, and dedupes concurrent requests", async () => {
   assert.ok(readCachedConversation("s1"));
 });
 
+test("foreground loading joins an in-flight prefetch instead of fetching twice", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const calls = stubFetch(async () => {
+    await gate;
+    return { ok: true, json: async () => payload("shared") };
+  });
+
+  const prefetched = prefetchConversation("s1");
+  const opened = loadConversation("s1");
+  release();
+
+  const [prefetchResult, openResult] = await Promise.all([prefetched, opened]);
+  assert.equal(calls.length, 1);
+  assert.equal(openResult, prefetchResult);
+  assert.equal(openResult?.conversation.turns[0].text, "shared");
+});
+
+test("invalidation prevents an older in-flight load from repopulating the cache", async () => {
+  const releases = [];
+  stubFetch(async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    releases.push(release);
+    await gate;
+    return { ok: true, json: async () => payload(`response-${releases.indexOf(release) + 1}`) };
+  });
+
+  const staleLoad = loadConversation("s1");
+  await Promise.resolve();
+  invalidateConversation("s1");
+  const freshLoad = loadConversation("s1");
+  await Promise.resolve();
+
+  assert.equal(releases.length, 2, "a post-invalidation load must not join the stale request");
+  releases[0]();
+  await staleLoad;
+  assert.equal(readCachedConversation("s1"), null, "the invalidated response must not be cached");
+
+  releases[1]();
+  await freshLoad;
+  assert.equal(readCachedConversation("s1")?.conversation.turns[0].text, "response-2");
+});
+
+test("foreground loading preserves a context-only successful payload", async () => {
+  const contextOnly = { ok: true, context: { task: { id: "task-1" } } };
+  stubFetch(async () => ({ ok: true, json: async () => contextOnly }));
+  assert.deepEqual(await loadConversation("s1"), contextOnly);
+  assert.equal(readCachedConversation("s1"), null);
+});
+
+test("foreground loading preserves the response status for error handling", async () => {
+  stubFetch(async () => ({
+    ok: false,
+    status: 404,
+    json: async () => ({ ok: false, error: "Conversation not found" }),
+  }));
+  await assert.rejects(
+    loadConversation("missing"),
+    (error) => (
+      error instanceof ConversationLoadError
+      && error.status === 404
+      && error.message === "Conversation not found"
+    ),
+  );
+});
+
+test("foreground loading rejects malformed successful responses", async () => {
+  stubFetch(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => { throw new SyntaxError("invalid JSON"); },
+  }));
+  await assert.rejects(
+    loadConversation("malformed"),
+    (error) => (
+      error instanceof ConversationLoadError
+      && error.status === 200
+      && error.message === "Conversation response was not valid JSON"
+    ),
+  );
+});
+
 test("prefetch resolves from a fresh cache entry without a network request", async () => {
   storeConversation("s1", payload("cached"));
   const calls = stubFetch(async () => { throw new Error("should not fetch"); });
@@ -132,31 +217,35 @@ test("hovering another row re-arms the singleton timer onto the new session", as
 });
 
 // ── Wiring pins ─────────────────────────────────────────────────────────────
-// The cache only helps if the surfaces stay wired: rows arm hover prefetch,
-// and chat-view paints/stores/invalidates through this module.
+// The cache only helps if the surfaces stay wired: rows arm hover and immediate
+// intent prefetch, and chat-view paints/loads/invalidates through this module.
 
 const chatList = await readFile(new URL("../components/chat-list.tsx", import.meta.url), "utf8");
 const chatRail = await readFile(new URL("../components/chat-project-sidebar.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
 
-test("chat-list rows arm hover prefetch and report confirmed deletes", () => {
+test("chat-list rows prefetch on hover, pointer down, and keyboard focus", () => {
   assert.match(chatList, /onMouseEnter=\{\(\) => \{ if \(!selectMode\) hoverPrefetchConversation\(s\.id\); \}\}/);
   assert.match(chatList, /onMouseLeave=\{cancelHoverPrefetch\}/);
+  assert.match(chatList, /onPointerDown=\{\(\) => \{[\s\S]{0,140}?prefetchConversation\(s\.id\)/);
+  assert.match(chatList, /onFocus=\{\(event\) => \{[\s\S]{0,180}?event\.target !== event\.currentTarget[\s\S]{0,180}?prefetchConversation\(s\.id\)/);
   assert.match(chatList, /onSessionsDeleted\(\[sessionId\]\)/);
 });
 
-test("thread-rail rows arm hover prefetch", () => {
+test("thread-rail rows prefetch on hover, pointer down, and keyboard focus", () => {
   assert.match(chatRail, /onMouseEnter=\{\(\) => hoverPrefetchConversation\(session\.id\)\}/);
   assert.match(chatRail, /onMouseLeave=\{cancelHoverPrefetch\}/);
+  assert.match(chatRail, /onPointerDown=\{\(\) => \{[\s\S]{0,120}?prefetchConversation\(session\.id\)/);
+  assert.match(chatRail, /onFocus=\{\(event\) => \{[\s\S]{0,160}?event\.target !== event\.currentTarget[\s\S]{0,160}?prefetchConversation\(session\.id\)/);
 });
 
-test("chat-view paints cached payloads and mutations invalidate at their shared owner", () => {
+test("chat-view paints cached payloads and shares revalidation with prefetch", () => {
   // Cached paint goes through the same apply path as a fresh fetch…
   assert.match(chatView, /readCachedConversation\(sessionId\)/);
   assert.match(chatView, /applyConversationPayload\(cachedConversation\)/);
-  // …the network fetch still runs as revalidation and refreshes the cache…
-  assert.match(chatView, /storeConversation\(sessionId, json\)/);
+  // …the network revalidation joins any row prefetch already in progress.
+  assert.match(chatView, /loadConversation\(sessionId\)/);
   // …and mutations drop the entry so stale history can't be painted.
   assert.match(chatView, /invalidateConversation\(liveGeneration\.sessionId\)/);
   assert.match(chatView, /invalidateConversation\(sessionId\)/);

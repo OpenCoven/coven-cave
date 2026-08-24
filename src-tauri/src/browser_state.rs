@@ -7,6 +7,84 @@ pub(super) struct BrowserNavigationIntent {
     pub(super) read_only_url: Option<String>,
 }
 
+pub(super) fn register_browser_owner(
+    inner: &mut BrowserLifecycleInner,
+    native_label: &str,
+    window_label: &str,
+    client_label: &str,
+) -> Result<(), String> {
+    if inner.retired_window_labels.contains(window_label) {
+        return Err(format!("browser owner window '{window_label}' was retired"));
+    }
+    let owner = BrowserOwner {
+        window_label: window_label.to_string(),
+        client_label: client_label.to_string(),
+    };
+    if inner
+        .owners
+        .get(native_label)
+        .is_some_and(|existing| existing != &owner)
+    {
+        return Err(format!(
+            "browser webview '{native_label}' is already owned by another main window"
+        ));
+    }
+    inner.owners.insert(native_label.to_string(), owner);
+    Ok(())
+}
+
+pub(super) fn browser_owner(
+    state: &BrowserLifecycleState,
+    native_label: &str,
+) -> Result<BrowserOwner, String> {
+    state
+        .lock()?
+        .owners
+        .get(native_label)
+        .cloned()
+        .ok_or_else(|| format!("browser webview '{native_label}' has no registered owner"))
+}
+
+pub(super) fn remove_browser_owner_resources(
+    inner: &mut BrowserLifecycleInner,
+    window_label: &str,
+) -> Vec<String> {
+    inner.retired_window_labels.insert(window_label.to_string());
+    let owner_prefix = native_browser_owner_prefix(window_label);
+    let mut native_labels = inner
+        .owners
+        .iter()
+        .filter_map(|(native_label, owner)| {
+            (owner.window_label == window_label).then(|| native_label.clone())
+        })
+        .chain(
+            inner
+                .labels
+                .keys()
+                .chain(inner.worker_locks.keys())
+                .chain(inner.worker_signals.keys())
+                .chain(inner.event_trackers.keys())
+                .filter(|native_label| native_label.starts_with(&owner_prefix))
+                .cloned(),
+        )
+        .collect::<Vec<_>>();
+    native_labels.sort();
+    native_labels.dedup();
+
+    for native_label in &native_labels {
+        inner.labels.remove(native_label);
+        inner.worker_locks.remove(native_label);
+        inner.worker_signals.remove(native_label);
+        inner.event_trackers.remove(native_label);
+        inner.owners.remove(native_label);
+    }
+    inner
+        .scope_barriers
+        .retain(|prefix, _| !prefix.starts_with(&owner_prefix));
+
+    native_labels
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct BrowserBoundsIntent {
     pub(super) sequence: u64,
@@ -71,12 +149,20 @@ pub(super) struct BrowserLifecycleInner {
     pub(super) worker_locks: HashMap<String, Arc<Mutex<()>>>,
     pub(super) worker_signals: HashMap<String, Arc<BrowserWorkerSignal>>,
     pub(super) event_trackers: HashMap<String, Arc<Mutex<BrowserEventTracker>>>,
+    pub(super) owners: HashMap<String, BrowserOwner>,
+    pub(super) retired_window_labels: HashSet<String>,
 }
 
 #[derive(Default)]
 pub(super) struct BrowserWorkerSignal {
     pub(super) running: AtomicBool,
     pub(super) dirty: AtomicBool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct BrowserOwner {
+    pub(super) window_label: String,
+    pub(super) client_label: String,
 }
 
 /// Orders native WebView lifecycle intents and rejects commands from an older

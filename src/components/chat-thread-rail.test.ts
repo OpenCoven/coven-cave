@@ -150,8 +150,8 @@ assert.match(
 );
 assert.match(
   chatRouter,
-  /const sidebarSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, familiar\?\.id \?\? null\),[\s\S]*const sidebarGroups = useMemo\([\s\S]*const migrationSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, null\),[\s\S]*const migrationGroups = useMemo\(/,
-  "ChatRouter keeps visible rail groups familiar-filtered while deriving migration groups from every visible familiar",
+  /const sidebarSessions = useMemo\(\s*\(\) => filterVisibleChatSessions\(sessions, familiar\?\.id \?\? null\),[\s\S]*const sidebarGroups = useMemo\([\s\S]*const migrationGroups = useMemo\(\s*\(\) => \{[\s\S]*if \(!sidebarHydrated \|\| !sidebarOrganizationMigrationPendingRef\.current\) return \[\];[\s\S]*filterVisibleChatSessions\(sessions, null\)/,
+  "ChatRouter keeps visible rail groups familiar-filtered and only derives all-familiar migration groups while a migration is pending",
 );
 assert.match(
   chatRouter,

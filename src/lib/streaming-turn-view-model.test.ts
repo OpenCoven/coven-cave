@@ -207,14 +207,14 @@ test("interruption settles prose and downgrades unproved running rows while pres
   assert.equal(model.results.find((row) => row.id === "tests")?.state, "passed");
 });
 
-test("unknown tools fall back to Working…", () => {
+test("unknown tools use a specific neutral activity phrase", () => {
   const model = createStreamingTurnViewModel(
     input({
       tools: [{ id: "read-1", name: "Read", input: '{"path":"README.md"}', status: "running" }],
     }),
   );
 
-  assert.equal(model.currentActivity?.label, "Working…");
+  assert.equal(model.currentActivity?.label, "Inspecting project context…");
 });
 
 test("unknown tools stay neutral even when inputs and outputs contain activity keywords", () => {
@@ -232,7 +232,7 @@ test("unknown tools stay neutral even when inputs and outputs contain activity k
     }),
   );
 
-  assert.equal(model.currentActivity?.label, "Working…");
+  assert.equal(model.currentActivity?.label, "Inspecting project context…");
   assert.equal(model.currentActivity?.detail, undefined);
   assert.doesNotMatch(model.currentActivity?.label ?? "", /search|test|build|review|docs\/review\.md/i);
 });

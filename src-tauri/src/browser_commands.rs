@@ -1,5 +1,41 @@
 use super::*;
 
+struct BrowserIdentity {
+    native_label: String,
+    owner_label: String,
+    client_label: String,
+}
+
+impl BrowserIdentity {
+    fn revalidate(&self, inner: &mut BrowserLifecycleInner) -> Result<(), String> {
+        register_browser_owner(
+            inner,
+            &self.native_label,
+            &self.owner_label,
+            &self.client_label,
+        )
+    }
+}
+
+fn browser_identity(
+    lifecycle: &BrowserLifecycleState,
+    caller: &tauri::Webview,
+    label: Option<String>,
+) -> Result<BrowserIdentity, String> {
+    let owner_label = ensure_browser_controller(caller)?;
+    let client_label = safe_browser_label(label);
+    let native_label = native_browser_label(&owner_label, &client_label);
+    {
+        let mut inner = lifecycle.lock()?;
+        register_browser_owner(&mut inner, &native_label, &owner_label, &client_label)?;
+    }
+    Ok(BrowserIdentity {
+        native_label,
+        owner_label,
+        client_label,
+    })
+}
+
 #[tauri::command]
 pub fn browser_navigate(
     app: AppHandle,
@@ -14,8 +50,8 @@ pub fn browser_navigate(
     read_only_url: Option<String>,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
-    let label = safe_browser_label(label);
+    let lifecycle = lifecycle.inner().clone();
+    let identity = browser_identity(&lifecycle, &caller, label)?;
     Url::parse(&url).map_err(|e| e.to_string())?;
     if let Some(read_only_url) = read_only_url.as_deref() {
         Url::parse(read_only_url).map_err(|e| e.to_string())?;
@@ -23,7 +59,6 @@ pub fn browser_navigate(
     if !x.is_finite() || !y.is_finite() || !w.is_finite() || !h.is_finite() {
         return Err("browser bounds must be finite".to_string());
     }
-    let lifecycle = lifecycle.inner().clone();
     let bounds = BrowserBoundsIntent {
         sequence,
         x,
@@ -33,11 +68,19 @@ pub fn browser_navigate(
     };
     {
         let mut inner = lifecycle.lock()?;
-        if !record_navigation_intent(&mut inner, &label, sequence, url, read_only_url, bounds) {
+        identity.revalidate(&mut inner)?;
+        if !record_navigation_intent(
+            &mut inner,
+            &identity.native_label,
+            sequence,
+            url,
+            read_only_url,
+            bounds,
+        ) {
             return Ok(());
         }
     }
-    schedule_browser_reconcile(app, lifecycle, label);
+    schedule_browser_reconcile(app, lifecycle, identity.native_label);
     Ok(())
 }
 
@@ -53,12 +96,11 @@ pub fn browser_set_bounds(
     h: f64,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
+    let lifecycle = lifecycle.inner().clone();
+    let identity = browser_identity(&lifecycle, &caller, label)?;
     if !x.is_finite() || !y.is_finite() || !w.is_finite() || !h.is_finite() {
         return Err("browser bounds must be finite".to_string());
     }
-    let label = safe_browser_label(label);
-    let lifecycle = lifecycle.inner().clone();
     let bounds = BrowserBoundsIntent {
         sequence,
         x,
@@ -68,11 +110,12 @@ pub fn browser_set_bounds(
     };
     {
         let mut inner = lifecycle.lock()?;
-        if !record_bounds_intent(&mut inner, &label, bounds) {
+        identity.revalidate(&mut inner)?;
+        if !record_bounds_intent(&mut inner, &identity.native_label, bounds) {
             return Ok(());
         }
     }
-    schedule_browser_reconcile(app, lifecycle, label);
+    schedule_browser_reconcile(app, lifecycle, identity.native_label);
     Ok(())
 }
 
@@ -84,16 +127,21 @@ pub fn browser_hide(
     label: Option<String>,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
-    let label = safe_browser_label(label);
     let lifecycle = lifecycle.inner().clone();
+    let identity = browser_identity(&lifecycle, &caller, label)?;
     {
         let mut inner = lifecycle.lock()?;
-        if !record_visibility_intent(&mut inner, &label, sequence, BrowserVisibility::Hidden) {
+        identity.revalidate(&mut inner)?;
+        if !record_visibility_intent(
+            &mut inner,
+            &identity.native_label,
+            sequence,
+            BrowserVisibility::Hidden,
+        ) {
             return Ok(());
         }
     }
-    schedule_browser_reconcile(app, lifecycle, label);
+    schedule_browser_reconcile(app, lifecycle, identity.native_label);
     Ok(())
 }
 
@@ -105,12 +153,17 @@ pub fn browser_hide_all_except(
     label: Option<String>,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
-    let keep = label.map(|raw| safe_browser_label(Some(raw)));
+    let owner_label = ensure_browser_controller(&caller)?;
+    let lifecycle = lifecycle.inner().clone();
+    let keep = match label {
+        Some(raw) => Some(browser_identity(&lifecycle, &caller, Some(raw))?.native_label),
+        None => None,
+    };
     schedule_scope_reconcile(
         app,
-        lifecycle.inner().clone(),
-        BROWSER_LABEL_PREFIX.to_string(),
+        lifecycle,
+        &owner_label,
+        native_browser_owner_prefix(&owner_label),
         sequence,
         BrowserScopeAction::Hide,
         keep,
@@ -125,24 +178,30 @@ pub fn browser_close(
     label: Option<String>,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
-    let label = safe_browser_label(label);
     let lifecycle = lifecycle.inner().clone();
+    let identity = browser_identity(&lifecycle, &caller, label)?;
     {
         let mut inner = lifecycle.lock()?;
-        if !record_visibility_intent(&mut inner, &label, sequence, BrowserVisibility::Closed) {
+        identity.revalidate(&mut inner)?;
+        if !record_visibility_intent(
+            &mut inner,
+            &identity.native_label,
+            sequence,
+            BrowserVisibility::Closed,
+        ) {
             return Ok(());
         }
     }
-    schedule_browser_reconcile(app, lifecycle, label);
+    schedule_browser_reconcile(app, lifecycle, identity.native_label);
     Ok(())
 }
 
-fn pane_prefix(label: Option<String>) -> String {
-    match label {
+fn pane_prefix(window_label: &str, label: Option<String>) -> String {
+    let client_prefix = match label {
         Some(raw) => format!("{}-tab-", safe_browser_label(Some(raw))),
         None => BROWSER_LABEL_PREFIX.to_string(),
-    }
+    };
+    native_browser_scope_prefix(window_label, &client_prefix)
 }
 
 /// Hide every native browser WebView belonging to a pane without destroying
@@ -157,11 +216,12 @@ pub fn browser_deactivate_all(
     label: Option<String>,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
-    let prefix = pane_prefix(label);
+    let owner_label = ensure_browser_controller(&caller)?;
+    let prefix = pane_prefix(&owner_label, label);
     schedule_scope_reconcile(
         app,
         lifecycle.inner().clone(),
+        &owner_label,
         prefix,
         sequence,
         BrowserScopeAction::Hide,
@@ -181,11 +241,12 @@ pub fn browser_close_all(
     label: Option<String>,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
-    let prefix = pane_prefix(label);
+    let owner_label = ensure_browser_controller(&caller)?;
+    let prefix = pane_prefix(&owner_label, label);
     schedule_scope_reconcile(
         app,
         lifecycle.inner().clone(),
+        &owner_label,
         prefix,
         sequence,
         BrowserScopeAction::Close,
@@ -201,16 +262,16 @@ pub fn browser_reload(
     label: Option<String>,
     sequence: u64,
 ) -> Result<(), String> {
-    ensure_browser_controller(&caller)?;
-    let label = safe_browser_label(label);
     let lifecycle = lifecycle.inner().clone();
+    let identity = browser_identity(&lifecycle, &caller, label)?;
     {
         let mut inner = lifecycle.lock()?;
-        if !record_reload_intent(&mut inner, &label, sequence) {
+        identity.revalidate(&mut inner)?;
+        if !record_reload_intent(&mut inner, &identity.native_label, sequence) {
             return Ok(());
         }
     }
-    schedule_browser_reconcile(app, lifecycle, label);
+    schedule_browser_reconcile(app, lifecycle, identity.native_label);
     Ok(())
 }
 
@@ -224,8 +285,8 @@ pub fn browser_report_user_navigation(
     target_url: String,
     allow_query_change: bool,
 ) -> Result<u64, String> {
-    let label = caller.label().to_string();
-    if !label.starts_with(BROWSER_LABEL_PREFIX) {
+    let native_label = caller.label().to_string();
+    if !native_label.starts_with(BROWSER_LABEL_PREFIX) {
         return Err("browser navigation reports require a browser child webview".to_string());
     }
     if target_url.len() > 4096 {
@@ -235,7 +296,8 @@ pub fn browser_report_user_navigation(
     if !matches!(target.scheme(), "http" | "https") {
         return Err("browser navigation target must use http or https".to_string());
     }
-    let tracker = event_tracker_for_label(lifecycle.inner(), &label)?;
+    browser_owner(lifecycle.inner(), &native_label)?;
+    let tracker = event_tracker_for_label(lifecycle.inner(), &native_label)?;
     let mut tracker = tracker
         .lock()
         .map_err(|_| "browser event tracker lock poisoned".to_string())?;
@@ -253,18 +315,22 @@ pub fn browser_report_title(
     caller: tauri::Webview,
     title: String,
 ) -> Result<(), String> {
-    let label = caller.label().to_string();
-    if !label.starts_with(BROWSER_LABEL_PREFIX) {
+    let native_label = caller.label().to_string();
+    if !native_label.starts_with(BROWSER_LABEL_PREFIX) {
         return Err("browser title reports require a browser child webview".to_string());
     }
     let url = caller.url().map_err(|error| error.to_string())?;
-    let sequence = event_sequence_for_label_url(lifecycle.inner(), &label, &url);
+    let owner = browser_owner(lifecycle.inner(), &native_label)?;
+    let sequence = event_sequence_for_label_url(lifecycle.inner(), &native_label, &url);
     let url = url.to_string();
     let title = title.chars().take(512).collect::<String>();
-    let _ = app.emit(
+    let owner_window = app
+        .get_webview_window(&owner.window_label)
+        .ok_or_else(|| format!("owner window '{}' is unavailable", owner.window_label))?;
+    let _ = owner_window.emit(
         "browser:title",
         BrowserTitleEvent {
-            label,
+            label: owner.client_label,
             title,
             url,
             sequence,
@@ -276,20 +342,25 @@ pub fn browser_report_title(
 #[tauri::command]
 pub fn browser_report_scroll(
     app: AppHandle,
+    lifecycle: State<'_, BrowserLifecycleState>,
     caller: tauri::Webview,
     scroll_y: f64,
 ) -> Result<(), String> {
-    let label = caller.label().to_string();
-    if !label.starts_with(BROWSER_LABEL_PREFIX) {
+    let native_label = caller.label().to_string();
+    if !native_label.starts_with(BROWSER_LABEL_PREFIX) {
         return Err("browser scroll reports require a browser child webview".to_string());
     }
     if !scroll_y.is_finite() {
         return Err("browser scroll position must be finite".to_string());
     }
-    let _ = app.emit(
+    let owner = browser_owner(lifecycle.inner(), &native_label)?;
+    let owner_window = app
+        .get_webview_window(&owner.window_label)
+        .ok_or_else(|| format!("owner window '{}' is unavailable", owner.window_label))?;
+    let _ = owner_window.emit(
         "browser:scroll",
         BrowserScrollEvent {
-            label,
+            label: owner.client_label,
             scroll_y: scroll_y.clamp(0.0, 1_000_000_000.0),
         },
     );

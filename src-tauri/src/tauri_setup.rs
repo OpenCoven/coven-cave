@@ -126,8 +126,7 @@ fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
                 let ns_window = ns_ptr as *mut AnyObject;
                 // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
                 for kind in 0u64..=2u64 {
-                    let button: *mut AnyObject =
-                        msg_send![&*ns_window, standardWindowButton: kind];
+                    let button: *mut AnyObject = msg_send![&*ns_window, standardWindowButton: kind];
                     if !button.is_null() {
                         let _: () = msg_send![&*button, setHidden: !visible];
                     }
@@ -327,6 +326,7 @@ pub fn run() {
         .manage(Arc::clone(&reachability_runtime))
         .manage(Arc::clone(&reliability_recorder))
         .manage(Arc::clone(&offline_cache))
+        .manage(MainWindowRegistry::default())
         .manage(browser::BrowserLifecycleState::default());
     // Registered on every desktop platform even though the watcher thread is
     // non-Windows: the teardown path reads this flag unconditionally, and a
@@ -509,13 +509,18 @@ pub fn run() {
             } else {
                 #[cfg(target_os = "windows")]
                 {
-                    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("startup.html".into()))
+                    WebviewWindowBuilder::new(
+                        app,
+                        PRIMARY_MAIN_WINDOW_LABEL,
+                        WebviewUrl::App("startup.html".into()),
+                    )
                         .title("CovenCave")
                         .inner_size(1320.0, 820.0)
                         .min_inner_size(960.0, 600.0)
                         .resizable(true)
                         .disable_drag_drop_handler()
                         .build()?;
+                    register_main_window(app.handle(), PRIMARY_MAIN_WINDOW_LABEL)?;
 
                     let startup_control =
                         Arc::clone(app.state::<Arc<SidecarStartupControl>>().inner());
@@ -595,7 +600,11 @@ pub fn run() {
                 pty::trust_main_origin(&main_url);
                 remember_main_startup_url(&main_url);
                 let mut main_window =
-                    WebviewWindowBuilder::new(app, "main", WebviewUrl::External(main_url))
+                    WebviewWindowBuilder::new(
+                        app,
+                        PRIMARY_MAIN_WINDOW_LABEL,
+                        WebviewUrl::External(main_url),
+                    )
                         .title("CovenCave")
                         .inner_size(1320.0, 820.0)
                         .min_inner_size(960.0, 600.0)
@@ -633,7 +642,8 @@ pub fn run() {
                     }
                 }
                 match main_window.build() {
-                    Ok(_) => {
+                    Ok(window) => {
+                        register_main_window(app.handle(), window.label())?;
                         #[cfg(not(target_os = "windows"))]
                         if let Some((started, success_evidence)) =
                             pending_native_startup_terminal.take()
@@ -716,11 +726,15 @@ pub fn run() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open_inbox" => {
                         focus_main_window(app);
-                        let _ = app.emit("tray:open-inbox", ());
+                        if let Some(window) = preferred_main_window(app) {
+                            let _ = window.emit("tray:open-inbox", ());
+                        }
                     }
                     "new_reminder" => {
                         focus_main_window(app);
-                        let _ = app.emit("tray:new-reminder", ());
+                        if let Some(window) = preferred_main_window(app) {
+                            let _ = window.emit("tray:new-reminder", ());
+                        }
                     }
                     "quick_chat" => show_quick_chat_from_main(app),
                     // "Move" the menu-bar icon into the centered notch: the
@@ -728,8 +742,7 @@ pub fn run() {
                     // and the choice persists across restarts. The notch's
                     // own dock button (notch:dock-to-tray) is the way back.
                     "notch_mode" => {
-                        let Some(url) = app
-                            .get_webview_window("main")
+                        let Some(url) = preferred_main_window(app)
                             .and_then(|window| window.url().ok())
                             .and_then(notch_url_from_main)
                         else {
@@ -857,6 +870,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                window
+                    .app_handle()
+                    .state::<MainWindowRegistry>()
+                    .note_focused(window.label());
+            }
             // Tauri automatically prevents a native close when any JS
             // `tauri://close-requested` listener is registered. If WebView2's
             // JS thread is wedged (the same failure that makes the UI ignore
@@ -868,7 +887,7 @@ pub fn run() {
             // sidecar process tree.
             #[cfg(target_os = "windows")]
             if matches!(event, tauri::WindowEvent::CloseRequested { .. })
-                && window.label() == "main"
+                && window.label() == PRIMARY_MAIN_WINDOW_LABEL
             {
                 shutdown_owned_processes(window.app_handle());
                 window.app_handle().exit(0);
@@ -876,7 +895,15 @@ pub fn run() {
             }
 
             if let tauri::WindowEvent::Destroyed = event {
-                if window.label() == "main" {
+                let retired_generation = window
+                    .app_handle()
+                    .state::<MainWindowRegistry>()
+                    .remove(window.label());
+                if let Some(generation) = retired_generation {
+                    pty::retire_window_sessions(window.label(), generation);
+                    browser::retire_window_resources(window.app_handle(), window.label());
+                }
+                if window.label() == PRIMARY_MAIN_WINDOW_LABEL {
                     // Before the stop, never after: the supervisor polls every
                     // couple of seconds, and a flag set afterwards races it
                     // into respawning the sidecar we are deliberately killing.

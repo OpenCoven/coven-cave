@@ -24,7 +24,7 @@
 //   browser:page-load { label, url, phase: "started" | "finished" }
 
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, MutexGuard,
@@ -32,6 +32,8 @@ use std::sync::{
 use std::time::{Duration, Instant};
 use tauri::webview::{PageLoadEvent, WebviewBuilder};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, Url, WebviewUrl};
+
+use crate::main_window::is_registered_main_window;
 
 const BROWSER_LABEL_PREFIX: &str = "cave-browser-";
 const OFFSCREEN_X: f64 = -10000.0;
@@ -61,11 +63,39 @@ use browser_events::BrowserEventTracker;
 use browser_native::{hide_webview, show_webview_at};
 pub use browser_state::BrowserLifecycleState;
 use browser_state::{
-    advance_scope_barrier, effective_browser_intent, record_bounds_intent,
+    advance_scope_barrier, browser_owner, effective_browser_intent, record_bounds_intent,
     record_navigation_intent, record_reload_intent, record_scope_intent, record_visibility_intent,
-    BrowserBoundsIntent, BrowserLifecycleInner, BrowserScopeAction, BrowserVisibility,
+    register_browser_owner, remove_browser_owner_resources, BrowserBoundsIntent,
+    BrowserLifecycleInner, BrowserOwner, BrowserScopeAction, BrowserVisibility,
     BrowserWorkerSignal,
 };
+
+pub(crate) fn retire_window_resources(app: &AppHandle, window_label: &str) {
+    let native_labels = match app.state::<BrowserLifecycleState>().lock() {
+        Ok(mut lifecycle) => remove_browser_owner_resources(&mut lifecycle, window_label),
+        Err(error) => {
+            log::warn!(
+                "[cave] could not retire browser resources for destroyed window '{window_label}': {error}"
+            );
+            return;
+        }
+    };
+
+    for native_label in native_labels {
+        if let Some(webview) = app.get_webview(&native_label) {
+            if let Err(error) = hide_webview(&webview) {
+                log::warn!(
+                    "[cave] could not hide browser webview '{native_label}' during window teardown: {error}"
+                );
+            }
+            if let Err(error) = webview.close() {
+                log::warn!(
+                    "[cave] could not close browser webview '{native_label}' during window teardown: {error}"
+                );
+            }
+        }
+    }
+}
 
 use browser_reconciliation::{
     ensure_browser_controller, event_sequence_for_label_url, event_tracker_for_label,
@@ -84,6 +114,27 @@ fn safe_browser_label(label: Option<String>) -> String {
         "{}{}",
         BROWSER_LABEL_PREFIX,
         if safe.is_empty() { "default" } else { &safe }
+    )
+}
+
+fn native_browser_owner_prefix(window_label: &str) -> String {
+    format!("{BROWSER_LABEL_PREFIX}window-{window_label}--")
+}
+
+fn native_browser_label(window_label: &str, client_label: &str) -> String {
+    let resource = client_label
+        .strip_prefix(BROWSER_LABEL_PREFIX)
+        .unwrap_or("default");
+    format!("{}{resource}", native_browser_owner_prefix(window_label))
+}
+
+fn native_browser_scope_prefix(window_label: &str, client_prefix: &str) -> String {
+    let resource_prefix = client_prefix
+        .strip_prefix(BROWSER_LABEL_PREFIX)
+        .unwrap_or_default();
+    format!(
+        "{}{resource_prefix}",
+        native_browser_owner_prefix(window_label)
     )
 }
 

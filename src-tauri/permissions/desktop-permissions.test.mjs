@@ -39,7 +39,9 @@ const reliabilityPermissions = readFileSync(new URL("./reliability.toml", import
 const offlineCachePermissions = readFileSync(new URL("./offline-cache.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserCommandsRust = readFileSync(new URL("../src/browser_commands.rs", import.meta.url), "utf8");
+const mainWindowRust = readFileSync(new URL("../src/main_window.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
+const sidecarStartupRust = readFileSync(new URL("../src/sidecar_startup.rs", import.meta.url), "utf8");
 const tauriSetupRust = readFileSync(new URL("../src/tauri_setup.rs", import.meta.url), "utf8");
 const microphoneRust = readFileSync(new URL("../src/microphone.rs", import.meta.url), "utf8");
 const nativeSttTs = readFileSync(new URL("../../src/lib/voice/native-stt.ts", import.meta.url), "utf8");
@@ -49,6 +51,7 @@ const bottomTerminal = readFileSync(new URL("../../src/components/bottom-termina
 const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
 const trayQuickChat = readFileSync(new URL("../../src/components/tray-quick-chat.tsx", import.meta.url), "utf8");
 const updateAvailable = readFileSync(new URL("../../src/components/update-available.tsx", import.meta.url), "utf8");
+const managedMainWebviews = ["main"];
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -153,7 +156,7 @@ function assertCapabilityDoesNotGrant(capability, deniedPermissions) {
 
 test("packaged desktop app can use native browser and terminal commands", () => {
   assert.equal(defaultCapability.local, true, "packaged local app origin must receive the default capability");
-  assert.deepEqual(defaultCapability.webviews, ["main"], "default authority must be limited to the main webview");
+  assert.deepEqual(defaultCapability.webviews, managedMainWebviews, "default authority must cover only managed main webviews");
   assert.equal(defaultCapability.windows, undefined, "default authority must not cover every child in the main window");
   assert.deepEqual(
     defaultCapability.platforms,
@@ -191,8 +194,8 @@ test("packaged desktop app can use native browser and terminal commands", () => 
 test("packaged sidecar loopback origins can use browser commands and main-webview PTY", () => {
   assert.deepEqual(
     loopbackBrowserCapability.webviews,
-    ["main"],
-    "loopback browser and PTY controls must be limited to the trusted main webview",
+    managedMainWebviews,
+    "loopback browser and PTY controls must be limited to trusted managed-main webviews",
   );
   assert.equal(
     loopbackBrowserCapability.windows,
@@ -249,8 +252,8 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
 
   assert.deepEqual(
     loopbackMainEventsCapability.webviews,
-    ["main"],
-    "loopback event permissions must be restricted to the trusted main webview",
+    managedMainWebviews,
+    "loopback event permissions must be restricted to trusted managed-main webviews",
   );
   for (const permission of ["core:event:allow-listen", "core:event:allow-unlisten"]) {
     assert.ok(
@@ -307,6 +310,64 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
   ]);
 });
 
+test("secondary main-window authority is granted only to exact native-registered labels", () => {
+  for (const capability of [
+    defaultCapability,
+    loopbackBrowserCapability,
+    loopbackMainEventsCapability,
+    loopbackWindowControlsCapability,
+    loopbackUpdaterCapability,
+    loopbackSpeechCapability,
+    loopbackMicrophoneCapability,
+    loopbackXOAuthCapability,
+  ]) {
+    assert.ok(!capability.webviews.includes("main-*"), `${capability.identifier} must not grant wildcard main authority`);
+  }
+  assert.ok(!loopbackWindowDragCapability.webviews.includes("main-*"));
+  assert.match(
+    mainWindowRust,
+    /registry\.register\(label\)\?;[\s\S]{0,300}grant_secondary_main_window_capabilities\(app, label\)[\s\S]{0,200}registry\.remove\(label\)/,
+    "secondary labels must be registered before capability activation and retired if activation fails",
+  );
+  assert.match(mainWindowRust, /retired_labels\.contains\(label\)[\s\S]{0,200}cannot be reused/);
+  assert.match(mainWindowRust, /"webviews": \[label\]/);
+  assert.match(mainWindowRust, /"permissions": SECONDARY_MAIN_WINDOW_PERMISSIONS/);
+  assert.match(mainWindowRust, /app\.add_capability\(serialized\)/);
+
+  const secondaryPermissions = mainWindowRust.slice(
+    mainWindowRust.indexOf("const SECONDARY_MAIN_WINDOW_PERMISSIONS"),
+    mainWindowRust.indexOf("];", mainWindowRust.indexOf("const SECONDARY_MAIN_WINDOW_PERMISSIONS")) + 2,
+  );
+  for (const permission of ["allow-pty-start", "allow-browser-navigate", "core:event:allow-listen"]) {
+    assert.match(secondaryPermissions, new RegExp(`"${permission}"`));
+  }
+  for (const permission of ["updater:default", "process:default", "allow-open-x-oauth-url", "allow-speech-stt-start"]) {
+    assert.doesNotMatch(secondaryPermissions, new RegExp(`"${permission}"`));
+  }
+});
+
+test("Windows sidecar startup status reaches every managed main window", () => {
+  assert.match(
+    sidecarStartupRust,
+    /publish_sidecar_startup_status[\s\S]{0,700}main_webview_windows\(app\)[\s\S]{0,500}window\.emit\(SIDECAR_STARTUP_EVENT, status\.clone\(\)\)/,
+    "startup and retry progress must be published to every registered managed-main window",
+  );
+  assert.doesNotMatch(
+    sidecarStartupRust,
+    /publish_sidecar_startup_status[\s\S]{0,700}emit_to\("main", SIDECAR_STARTUP_EVENT/,
+    "managed-main startup routing must not retain a literal primary-window target",
+  );
+});
+
+test("destroyed managed-main windows retire their exact native generation and forbid label reuse", () => {
+  assert.match(
+    tauriSetupRust,
+    /WindowEvent::Destroyed[\s\S]{0,900}if let Some\(generation\) = retired_generation[\s\S]{0,300}pty::retire_window_sessions\(window\.label\(\), generation\)[\s\S]{0,500}browser::retire_window_resources\(window\.app_handle\(\), window\.label\(\)\)/,
+    "window destruction must retire only the removed PTY generation and its browser ownership",
+  );
+  assert.match(mainWindowRust, /retired_labels\.insert\(label\.to_string\(\)\)/);
+});
+
 test("native browser children can report metadata but cannot control browser layers", () => {
   assert.deepEqual(browserChildReportingCapability.webviews, ["cave-browser-*"]);
   assert.equal(browserChildReportingCapability.windows, undefined);
@@ -350,6 +411,11 @@ test("native browser children can report metadata but cannot control browser lay
     "allow-desktop-reachability-status",
     "allow-desktop-reachability-configure",
   ]);
+  assert.match(
+    browserCommandsRust,
+    /fn browser_identity\([\s\S]{0,260}caller: &tauri::Webview[\s\S]{0,300}ensure_browser_controller\(caller\)\?;/,
+    "the shared browser identity helper must authorize the caller before assigning ownership",
+  );
 
   for (const command of [
     "browser_navigate",
@@ -363,7 +429,7 @@ test("native browser children can report metadata but cannot control browser lay
   ]) {
     assert.match(
       browserCommandsRust,
-      new RegExp(String.raw`pub (?:async )?fn ${command}\([\s\S]{0,260}caller: tauri::Webview[\s\S]{0,500}ensure_browser_controller\(&caller\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${command}\([\s\S]{0,260}caller: tauri::Webview[\s\S]{0,500}(?:browser_identity|ensure_browser_controller)\([^;]*&caller[^;]*\)\?;`),
       `${command} must reject browser-child callers even if a capability is misconfigured`,
     );
   }
@@ -372,7 +438,7 @@ test("native browser children can report metadata but cannot control browser lay
   assert.match(browserCommandsRust, /pub fn browser_report_scroll\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}scroll_y\.is_finite\(\)/);
   assert.match(
     browserCommandsRust,
-    /pub fn browser_report_user_navigation\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)[\s\S]{0,500}event_tracker_for_label\(lifecycle\.inner\(\), &label\)/,
+    /pub fn browser_report_user_navigation\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)[\s\S]{0,1000}event_tracker_for_label\(lifecycle\.inner\(\), &native_label\)/,
     "navigation attribution must validate and use the actual child caller label",
   );
   assert.match(
@@ -386,43 +452,10 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
   assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
   assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
   assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
-  assert.match(ptyRust, /if webview\.label\(\) != "main"/);
-  assert.match(ptyRust, /trusted\.clear\(\);/);
-  assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
-
-  for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
-    const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    assert.match(
-      ptyRust,
-      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
-      `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
-    );
-  }
-});
-
-test("privileged PTY commands require the trusted main webview at runtime", () => {
-  assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
-  assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
-  assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
-  assert.match(ptyRust, /if webview\.label\(\) != "main"/);
-  assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
-
-  for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
-    const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    assert.match(
-      ptyRust,
-      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
-      `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
-    );
-  }
-});
-
-test("privileged PTY commands require the trusted main webview at runtime", () => {
-  assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
-  assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
-  assert.match(tauriSetupRust, /pty::trust_main_origin\(&main_url\);/);
-  assert.match(ptyRust, /if webview\.label\(\) != "main"/);
-  assert.match(ptyRust, /trusted\.clear\(\);/);
+  assert.match(ptyRust, /registered_main_window_generation\([\s\S]{0,150}webview\.app_handle\(\),[\s\S]{0,100}webview\.label\(\)/);
+  assert.match(mainWindowRust, /pub\(super\) fn registered_main_window_generation/);
+  assert.match(mainWindowRust, /inner\.labels\.contains\(label\)/);
+  assert.match(ptyRust, /let mut trusted = TRUSTED_MAIN_ORIGINS\.lock\(\);\s*trusted\.clear\(\);/);
   assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
 
   for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
@@ -445,8 +478,8 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
 test("loopback app webviews can drive native window drag for the seamless titlebar", () => {
   assert.deepEqual(
     loopbackWindowDragCapability.webviews,
-    ["main", "quick-chat"],
-    "drag permissions cover only the main and decoration-less quick-chat webviews, never browser children",
+    [...managedMainWebviews, "quick-chat"],
+    "drag permissions cover only managed main and decoration-less quick-chat webviews, never browser children",
   );
   assert.equal(loopbackWindowDragCapability.windows, undefined);
   assert.deepEqual(
@@ -498,8 +531,8 @@ test("loopback app webviews can drive native window drag for the seamless titleb
 test("macOS main loopback chrome can synchronize native traffic-light visibility", () => {
   assert.deepEqual(
     loopbackWindowControlsCapability.webviews,
-    ["main"],
-    "traffic-light authority must stay on the main app webview",
+    managedMainWebviews,
+    "traffic-light authority must stay on managed main app webviews",
   );
   assert.deepEqual(
     loopbackWindowControlsCapability.platforms,
@@ -534,14 +567,14 @@ test("macOS main loopback chrome can synchronize native traffic-light visibility
 // grants (updater:default / process:default) never apply. Without this
 // remote-scoped capability every plugin-updater check() throws an ACL denial
 // and update-available.tsx falls back to "Open installer in Browser", which
-// defeats the whole in-app update experience. Scoped to webviews:["main"]
+// defeats the whole in-app update experience. Scoped to managed main webviews
 // (not windows) so in-app browser child webviews that a user navigates to a
 // localhost page can never invoke install/relaunch IPC.
 test("the trusted main loopback webview can run the native in-app updater", () => {
   assert.deepEqual(
     loopbackUpdaterCapability.webviews,
-    ["main"],
-    "updater/relaunch IPC must be limited to the trusted main webview — never in-app browser child webviews on loopback origins",
+    managedMainWebviews,
+    "updater/relaunch IPC must be limited to trusted managed-main webviews — never in-app browser children",
   );
   assert.equal(
     loopbackUpdaterCapability.windows,
@@ -600,7 +633,7 @@ test("the trusted main loopback webview can run the native in-app updater", () =
 });
 
 test("X OAuth grants only system-browser opening to the trusted main loopback webview", () => {
-  assert.deepEqual(loopbackXOAuthCapability.webviews, ["main"]);
+  assert.deepEqual(loopbackXOAuthCapability.webviews, managedMainWebviews);
   assert.equal(loopbackXOAuthCapability.windows, undefined);
   assert.deepEqual(loopbackXOAuthCapability.remote?.urls, [
     "http://localhost:*/*",
@@ -718,7 +751,7 @@ test("native speech recognition is scoped to the trusted main webview", () => {
 
   // Dev + packaged sidecar loopback origins get speech through their own
   // capability, main webview only — never native browser children.
-  assert.deepEqual(loopbackSpeechCapability.webviews, ["main"]);
+  assert.deepEqual(loopbackSpeechCapability.webviews, managedMainWebviews);
   assert.equal(loopbackSpeechCapability.windows, undefined);
   for (const [permission] of speechPermissionIds) {
     assert.ok(
@@ -794,7 +827,7 @@ test("desktop calls can request and recover macOS microphone permission", () => 
     );
   }
 
-  assert.deepEqual(loopbackMicrophoneCapability.webviews, ["main"]);
+  assert.deepEqual(loopbackMicrophoneCapability.webviews, managedMainWebviews);
   assert.deepEqual(loopbackMicrophoneCapability.platforms, ["macOS"]);
   assert.ok(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://127.0.0.1:3000/"));
   assert.ok(capabilityAllowsOrigin(loopbackMicrophoneCapability, "http://localhost:64203/"));

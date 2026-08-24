@@ -81,7 +81,7 @@ function normalizeProgressEvent(progress: ProgressEvent): ActivityEvent {
 }
 
 function toolActivityLabel(tool: ToolEvent): string {
-  return TOOL_ACTIVITY.find(([pattern]) => pattern.test(tool.name))?.[1] ?? "Working…";
+  return TOOL_ACTIVITY.find(([pattern]) => pattern.test(tool.name))?.[1] ?? "Inspecting project context…";
 }
 
 function normalizeToolEvent(tool: ToolEvent): ActivityEvent {

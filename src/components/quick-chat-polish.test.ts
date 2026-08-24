@@ -65,8 +65,8 @@ assert.doesNotMatch(
 );
 assert.match(
   response,
-  /role=\{announceLifecycle \? "status" : undefined\}[\s\S]{0,300}<span>Response stopped<\/span>/,
-  "The latest rendered interrupted state can own the explicit accessible Stop announcement",
+  /role=\{announceLifecycle && \(live \|\| model\.status === "interrupted"\) \? "status" : undefined\}/,
+  "The unified status row announces the latest interrupted state without a duplicate Stop region",
 );
 assert.doesNotMatch(
   controls,
