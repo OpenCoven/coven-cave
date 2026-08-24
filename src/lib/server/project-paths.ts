@@ -53,6 +53,33 @@ export function validateCaveProjectRoot(value: string): { ok: true; root: string
   return { ok: true, root: realpathOrResolve(root) };
 }
 
+/**
+ * Async counterpart for list endpoints that validate multiple saved roots.
+ * Running these probes concurrently avoids blocking the server event loop and
+ * prevents one unavailable project from serially delaying every other result.
+ */
+export async function validateCaveProjectRootAsync(
+  value: string,
+): Promise<{ ok: true; root: string } | { ok: false; error: string }> {
+  const root = expandHomeShortcut(value).trim();
+  if (!root) return { ok: false, error: "root is required" };
+  if (!path.isAbsolute(root)) return { ok: false, error: "root must be an absolute path" };
+
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(/* turbopackIgnore: true */ root);
+  } catch {
+    return { ok: false, error: "root does not exist" };
+  }
+  if (!stat.isDirectory()) return { ok: false, error: "root must be a directory" };
+
+  try {
+    return { ok: true, root: await fs.promises.realpath(/* turbopackIgnore: true */ root) };
+  } catch {
+    return { ok: false, error: "root does not exist" };
+  }
+}
+
 function savedCaveProjectRoots(): string[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(/* turbopackIgnore: true */ caveProjectsFilePath(), "utf8")) as {

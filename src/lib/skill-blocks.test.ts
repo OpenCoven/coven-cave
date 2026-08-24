@@ -61,10 +61,22 @@ test("invocation: bare and with-args buildSkillPrompt forms parse", () => {
   });
 });
 
+test("invocation: a carried operator message parses alongside the directive", () => {
+  assert.deepEqual(
+    parseSkillInvocation('Use the "code-review" skill.\n\nlook at the token refresh path'),
+    { name: "code-review", message: "look at the token refresh path" },
+  );
+  assert.deepEqual(
+    parseSkillInvocation('Use the "code-review" skill with: src/foo.ts\n\nfocus on the auth layer'),
+    { name: "code-review", args: "src/foo.ts", message: "focus on the auth layer" },
+  );
+});
+
 test("invocation: ordinary prose does not false-positive", () => {
   assert.equal(parseSkillInvocation('Use the hammer.'), null);
   assert.equal(parseSkillInvocation('Use the "quoted phrase" skillfully today'), null);
   assert.equal(parseSkillInvocation("Tell me about skills."), null);
+  assert.equal(parseSkillInvocation('Use the "x" skill. And then tell me about it.'), null);
   assert.equal(parseSkillInvocation(""), null);
 });
 
