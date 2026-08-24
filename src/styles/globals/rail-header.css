@@ -105,6 +105,10 @@
 }
 
 @media (max-width: 1023px) {
+  .rail-header__scope--desktop {
+    display: none;
+  }
+
   .rail-header__scope--mobile {
     display: flex;
   }

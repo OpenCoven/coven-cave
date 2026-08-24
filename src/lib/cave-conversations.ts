@@ -4,6 +4,7 @@ import { performance } from "node:perf_hooks";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
+import { readCachedStore } from "./server/store-read-cache.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { ModelControlValues } from "./model-control-capabilities.ts";
@@ -538,6 +539,54 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
   } catch {
     return null;
   }
+}
+
+/**
+ * Total on-disk bytes of transcripts held by the read cache.
+ *
+ * Chosen against the one hard number nearby: `MAX_TURNS_PAYLOAD_BYTES` in
+ * `server/conversation-write-guards.ts` caps a single client write at 8 MiB, so
+ * this holds roughly the working set a reader moves between rather than a fixed
+ * count that could mean 8 MiB or 800. The parsed object is larger than its JSON
+ * text, so the real footprint is a multiple of this — deliberately modest for
+ * that reason, and because the packaged sidecar runs on a heap pinned by
+ * `scripts/heap-limits.mjs`.
+ */
+const CONVERSATION_READ_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+
+/**
+ * {@link loadConversation} with the transcript held across requests.
+ *
+ * `GET /api/chat/conversation/[id]` is not a once-per-open path: `chat-list.tsx`
+ * wires `hoverPrefetchConversation` to every row's `onMouseEnter` and
+ * `prefetchConversation` to `onPointerDown`/`onFocus`, so running a pointer down
+ * the list asks for whole transcripts in sequence. Each one was a full
+ * `readFile` + `JSON.parse` plus the lazy branching migration above.
+ *
+ * Only the transcript is cached. The route's `context` half comes from
+ * `linkedContextForSession` -> `loadBoard`, which changes independently of the
+ * transcript, so caching the assembled payload on the transcript's stat would
+ * let a chat show board links that no longer exist. Keeping the two apart is
+ * what makes this safe; `loadBoard` is separately cheap now that `loadProjects`
+ * is itself cached.
+ *
+ * Invalidation needs no call site: `saveConversation` writes through
+ * `writeJsonAtomic`, and `writeFileAtomic` drops the cached entry for whatever
+ * path it replaced.
+ */
+export async function loadConversationCached(sessionId: string): Promise<ConversationFile | null> {
+  let filePath: string;
+  try {
+    filePath = pathFor(sessionId);
+  } catch {
+    // pathFor rejects an unsafe session id by throwing. loadConversation folds
+    // that into `null` via its own catch, and this must behave identically —
+    // a caching wrapper is not the place to start surfacing a new exception.
+    return null;
+  }
+  return readCachedStore(filePath, () => loadConversation(sessionId), {
+    maxBytes: CONVERSATION_READ_CACHE_MAX_BYTES,
+  });
 }
 
 /** Serialize read-modify-write operations for one conversation. Atomic file

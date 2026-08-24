@@ -103,15 +103,22 @@ pub(super) enum PortOccupant {
     /// request, and `src/proxy.ts` lets a trusted local peer through ordinary
     /// app APIs without one (`trustedLocalBrowserApi`). Reading only the token
     /// check in that file suggests a 401; the request never reaches it.
+    ///
+    /// That last part is true only of a copy built since #4874, which shipped
+    /// in v0.3.10. Any build at v0.3.9 or earlier answers 401 and lands in
+    /// `Gated` below, so for as long as the field still runs one, a dev server
+    /// is the only thing that reaches this verdict. Stated against a version
+    /// rather than against "today" on purpose: the clock-relative form this
+    /// replaces was already false the moment v0.3.10 tagged.
     Cave,
     /// Answered, but refused the unauthenticated probe (401/403).
     ///
     /// Most often ANOTHER PACKAGED COVENCAVE — specifically one built before
-    /// `trustedLocalBrowserApi` landed (#4874, 2026-08-22). v0.3.9 was stamped
-    /// 2026-08-21, so no build in the field carries that bypass: every shipped
-    /// copy answers 401 here rather than 200. Those builds also predate the
-    /// port claim, so they take no lock and this is the verdict a second copy
-    /// actually reaches during the whole upgrade window.
+    /// `trustedLocalBrowserApi` landed (#4874), which shipped in v0.3.10. Any
+    /// build at v0.3.9 or earlier answers 401 here rather than 200, and those
+    /// builds also predate the port claim, so they take no lock: this is the
+    /// verdict a second copy actually reaches for as long as the field still
+    /// runs one.
     ///
     /// Once the field has rolled forward it becomes the residual case instead:
     /// a Cave reached without `server.ts` in front of it, or something else

@@ -11,11 +11,23 @@
 // small cap, and are explicitly dropped when a send starts or a conversation
 // is deleted (see invalidateConversation call sites).
 
+import { markEnd, markStart } from "./perf/marks.ts";
+
 /** Shape callers care about; the payload is stored as parsed JSON verbatim. */
 export type CachedConversationPayload = {
   ok?: boolean;
   conversation?: unknown;
 };
+
+/**
+ * Span name for a real transcript request.
+ *
+ * Read it back with `summarizePerfSamples("chat:transcript-fetch")`, or off the
+ * perf overlay at `?perf=1`. This is the first instrumentation on the chat load
+ * path at all — before it, nothing in chat-list, chat-view, chat-router or this
+ * file recorded a duration, so no client-side before/after could be stated.
+ */
+const TRANSCRIPT_FETCH_SPAN = "chat:transcript-fetch";
 
 const TTL_MS = 45_000;
 const MAX_ENTRIES = 24;
@@ -115,6 +127,10 @@ export function loadConversation(
   ) return pending.promise;
   const entry = { epoch, promise: null as unknown as Promise<CachedConversationPayload | null> };
   entry.promise = (async () => {
+    // Only a real request is timed. The cache-hit and in-flight-dedupe paths
+    // above return before reaching here, deliberately: counting them would add
+    // zero-cost samples and flatter the percentile this span exists to report.
+    markStart(TRANSCRIPT_FETCH_SPAN);
     try {
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
         cache: "no-store",
@@ -137,6 +153,11 @@ export function loadConversation(
       if (requestEpochIsCurrent(sessionId, epoch)) storeConversation(sessionId, json);
       return json;
     } finally {
+      // In the `finally`, so a thrown ConversationLoadError still closes the
+      // span. A markStart left dangling would not merely lose one sample — the
+      // next markEnd for this name would measure from the ABANDONED start and
+      // report a wildly inflated duration, quietly corrupting the percentile.
+      markEnd(TRANSCRIPT_FETCH_SPAN);
       if (inflight.get(sessionId) === entry) inflight.delete(sessionId);
     }
   })();

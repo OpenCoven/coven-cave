@@ -48,17 +48,27 @@
   scrollbar-color: color-mix(in oklch, var(--accent-presence) 22%, transparent) transparent;
 }
 
+/* The textarea's 44px floor is exactly one line — 24px line-height plus its
+   12/8 padding — and that padding is mirrored into the markdown decoration
+   layer from computed style at runtime, so shaving it slides the decoration
+   off the glyphs it belongs to (see the metrics warning above
+   .cave-composer-md-layer). Height therefore comes out of chrome only. */
 .cave-composer-controls {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0 var(--space-3) var(--space-3);
+  padding: 0 var(--space-3) var(--space-2);
 }
 
+/* No min-height here on purpose (cave-9v4qt). This rule is one class deep, and
+   `.cave-chat-linear .cave-composer-control-row` in cave-chat/transcript.css is
+   two, so anything set here loses on specificity everywhere the chat surface
+   renders. A `min-height: 28px` sat here doing nothing until a production
+   build was measured and getComputedStyle reported 36px. The governing value
+   lives in transcript.css; change it there. */
 .cave-composer-control-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  min-height: 34px;
   align-items: center;
   gap: var(--space-2);
   color: var(--text-muted);

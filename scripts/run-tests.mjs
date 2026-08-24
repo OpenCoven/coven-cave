@@ -95,6 +95,7 @@ export const SUITES = {
     "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
+    "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-lifecycle-filemode.test.mjs",
@@ -193,6 +194,7 @@ export const SUITES = {
     "src/components/home/use-home-model-state.test.ts",
     "src/lib/model-selection-mutation-queue.test.ts",
     "src/lib/perf/web-vitals-format.test.ts",
+    "src/lib/perf/perf-store.test.ts",
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",
     "src/lib/x-api.test.ts",
@@ -1908,6 +1910,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
+  "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",

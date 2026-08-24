@@ -199,14 +199,18 @@ assert.doesNotMatch(
   "Familiars subpage should not appear as a workspace navigation row",
 );
 
-// The horizontal dock is gone, and the profile switcher no longer lives in the
-// left panel either: familiar scope selection moved to the desktop top menu bar
-// (FamiliarMenuBar) and the mobile top bar, leaving the sidebar as pure nav.
+// The horizontal dock remains retired. Familiar scope returns only through the
+// shared compact sidebar selector, never as a direct FamiliarSwitcher fork.
 assert.doesNotMatch(source, /<FamiliarDock/, "the old horizontal familiar dock is gone");
 assert.doesNotMatch(
   source,
   /<FamiliarSwitcher/,
-  "the familiar switcher is no longer mounted in the left sidebar (it lives in the top bars)",
+  "the Home sidebar does not mount a standalone FamiliarSwitcher",
+);
+assert.match(
+  railHeaderSource,
+  /<SidebarScopeSelector/,
+  "the shared rail header owns the compact project/familiar scope selector",
 );
 assert.match(
   source,
