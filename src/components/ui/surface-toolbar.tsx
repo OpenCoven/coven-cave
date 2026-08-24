@@ -72,6 +72,7 @@ export function SurfaceToolbar({
               disabled={action.disabled}
               title={action.title}
               aria-label={action.label}
+              aria-pressed={action.active}
               onClick={action.onSelect}
             >
               {action.label}
