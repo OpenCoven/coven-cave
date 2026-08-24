@@ -64,7 +64,7 @@ type Props = {
 
 const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
-const SEARCH_LABEL = "Search";
+const SEARCH_LABEL = "Search anything or ask Salem, the docs familiar";
 const NEW_CHAT_LABEL = "New chat";
 const TASKS_LABEL = workspacePageDefinition("board")?.title ?? "Tasks";
 const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";

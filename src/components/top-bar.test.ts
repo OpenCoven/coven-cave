@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
+
+assert.match(
+  source,
+  /const SEARCH_LABEL = "Search anything or ask Salem, the docs familiar"/,
+  "mobile search keeps its scoped accessible name",
+);
+assert.match(source, /aria-label=\{SEARCH_LABEL\}/, "mobile search uses the scoped label constant");
 const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
 
 assert.match(

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { NAV_SECTIONS } from "./nav-section.ts";
@@ -9,6 +10,15 @@ import {
 } from "./workspace-destination-policy.ts";
 import { WORKSPACE_NAV_ITEMS } from "./workspace-navigation.ts";
 import { WORKSPACE_CANONICAL_PAGE_DEFINITIONS } from "./workspace-page-registry.ts";
+
+const policySource = readFileSync(new URL("./workspace-destination-policy.ts", import.meta.url), "utf8");
+
+test("destination metadata lookup is indexed and policy validation stays test-owned", () => {
+  assert.match(policySource, /const WORKSPACE_NAV_ITEMS_BY_ID = new Map/);
+  assert.match(policySource, /WORKSPACE_NAV_ITEMS_BY_ID\.get\(definition\.id\)/);
+  assert.doesNotMatch(policySource, /NAV_SECTIONS\.some/);
+  assert.doesNotMatch(policySource, /Sidebar destination policy must keep every navigation section populated/);
+});
 
 test("palette destinations expose only visible canonical destinations", () => {
   const destinations = paletteDestinations();

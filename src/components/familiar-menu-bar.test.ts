@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
+
+assert.match(source, /const SEARCH_LABEL = "Search Cave"/, "desktop search keeps a scoped accessible name");
+assert.match(source, /aria-label=\{SEARCH_LABEL\}/, "desktop search uses the scoped label constant");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const desktopChrome = readFileSync(
   new URL("../styles/globals/desktop-chrome.css", import.meta.url),

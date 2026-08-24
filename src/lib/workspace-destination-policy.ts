@@ -1,4 +1,4 @@
-import { NAV_SECTIONS, navSectionForMode, type NavSection } from "./nav-section.ts";
+import { navSectionForMode, type NavSection } from "./nav-section.ts";
 import {
   WORKSPACE_NAV_ITEMS,
   type WorkspaceNavItem,
@@ -18,6 +18,10 @@ const PALETTE_RANK = {
   hidden: 2,
 } as const;
 
+const WORKSPACE_NAV_ITEMS_BY_ID = new Map<string, WorkspaceNavItem>(
+  WORKSPACE_NAV_ITEMS.map((item) => [item.id, item] as const),
+);
+
 export type WorkspaceDestinationDefinition = Omit<WorkspacePageDefinition, "id" | "canonicalId"> & {
   readonly id: WorkspaceNavMode;
   readonly canonicalId: WorkspaceNavMode;
@@ -29,7 +33,7 @@ export type WorkspaceDestinationDefinition = Omit<WorkspacePageDefinition, "id" 
 function attachDestinationMetadata(
   definition: WorkspacePageDefinition,
 ): WorkspaceDestinationDefinition {
-  const navItem = WORKSPACE_NAV_ITEMS.find((item) => item.id === definition.id);
+  const navItem = WORKSPACE_NAV_ITEMS_BY_ID.get(definition.id);
   if (!navItem) {
     throw new Error(`Missing workspace destination metadata for ${definition.id}`);
   }
@@ -76,8 +80,4 @@ export function sidebarDestinations(section: NavSection): readonly WorkspaceDest
 
 export function statusContextPolicy(pageId: string): WorkspaceStatusContext {
   return workspacePageDefinition(pageId)?.statusContext ?? "hidden";
-}
-
-if (NAV_SECTIONS.some(({ id }) => SIDEBAR_DESTINATIONS[id].length === 0)) {
-  throw new Error("Sidebar destination policy must keep every navigation section populated");
 }
