@@ -162,6 +162,7 @@ export const SUITES = {
     "src/components/role-surfaces/review-progress.test.ts",
     "src/components/role-surfaces/review-preferences.test.ts",
     "src/components/role-surfaces/review-workbench-model.test.ts",
+    "src/components/role-surfaces/review-cockpit.test.ts",
     "src/components/role-surfaces/review-readiness.test.ts",
     "src/components/role-surfaces/review-file-tree.test.ts",
     "src/lib/review-landing.test.ts",
@@ -2016,6 +2017,8 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/researcher-status.test.ts",
   // review-readiness resolves "@/lib/github-checks" for its check rollups.
   "src/components/role-surfaces/review-readiness.test.ts",
+  // review-cockpit imports review-readiness types, which reach "@/lib/icon".
+  "src/components/role-surfaces/review-cockpit.test.ts",
   // the diff route resolves "@/lib/github-token".
   "src/app/api/github/diff/route.test.ts",
   // imports the store, which resolves "@/lib/coven-paths" and "@/lib/server/…".
