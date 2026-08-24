@@ -425,7 +425,10 @@ export const BANKED_UNDEFINED_NO_FALLBACK = new Map([
   // foundations sheet spells these --text-primary / --text-secondary /
   // --bg-panel / --border-hairline; these are the ones that got typed anyway.
   ["--bg-inset", 2],
-  ["--bg-surface", 12],
+  // --bg-surface is gone: defined in foundations.css as an alias of --bg-base
+  // (cave-w387r). It was the worst entry in this bank — the Thread Signal card
+  // asked for a mix with NO transparent component and still rendered
+  // see-through.
   ["--border-muted", 1],
   ["--border-panel", 11],
   ["--border-subtle", 3],
@@ -461,7 +464,9 @@ export const BANKED_UNDEFINED_NO_FALLBACK = new Map([
  */
 export const BANKED_UNDEFINED_WITH_FALLBACK = new Map([
   ["--accent-fg", 1],
-  ["--bg-surface", 1],
+  // --bg-surface is defined now (cave-w387r). This entry was the sole usage
+  // that carried a fallback, and its `var(--bg-surface, var(--background))` is
+  // what told us the token's intended value.
   ["--citation-card-w", 2],
   ["--composer-pill-gold", 11],
   ["--gh-diff-gutter", 2],

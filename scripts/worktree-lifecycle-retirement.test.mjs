@@ -248,11 +248,15 @@ function createGitFixture() {
     path.join(bin, "gh"),
     `#!/bin/sh
 case "$*" in
-  *"associatedPullRequests"*)
-    printf '%s\\n' '[{"data":{"repository":{"nameWithOwner":"OpenCoven/coven-cave","object":{"associatedPullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}]'
+  *"repos/OpenCoven/coven-cave/commits/"*"/pulls?per_page=100"*)
+    printf '%s\\n' '[[]]'
     ;;
-  *"search(query:"*|*"searchQuery="*)
-    printf '%s\\n' '[{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}]'
+  *"repos/OpenCoven/coven-cave/pulls?state=all&per_page=100"*)
+    :
+    ;;
+  *"graphql"*)
+    printf '%s\\n' 'retirement fixture must not invoke GraphQL' >&2
+    exit 2
     ;;
   *"repos/OpenCoven/coven-cave/actions/runs"*)
     printf '%s\\n' '[{"total_count":0,"workflow_runs":[]}]'
@@ -1577,9 +1581,10 @@ process.stdout.write(JSON.stringify(output) + "\\n");
 
 test("a scoped inventory keeps the focused unit's verdict and fails every other unit closed", () => {
   // reprobe asks about ONE candidate but used to probe every unit's pull
-  // request association: ~2 GraphQL round trips per unit, ~104 calls and ~95s
-  // of a ~134s inventory on a 47-unit checkout, all but one result discarded.
-  // focusRefs narrows that probing (cave-imhf0).
+  // request association: one REST round trip per distinct head OID, all but
+  // one result discarded during a focused reprobe. focusRefs narrows that work
+  // while the repository-wide branch inventory remains a single REST sweep
+  // (cave-imhf0).
   //
   // The danger is not the saving, it is the direction of the error. A unit with
   // no pull request association looks landed, and landed is what makes a unit

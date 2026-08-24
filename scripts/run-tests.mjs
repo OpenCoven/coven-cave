@@ -95,6 +95,7 @@ export const SUITES = {
     "scripts/beads-surface-audit.test.mjs",
     "scripts/install-git-hooks.test.mjs",
     "scripts/worktree-lifecycle-retirement.test.mjs",
+    "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
     "scripts/worktree-lifecycle-patrol.test.mjs",
     "scripts/worktree-lifecycle-fence-renewal.test.mjs",
     "scripts/worktree-lifecycle-filemode.test.mjs",
@@ -1013,6 +1014,7 @@ export const SUITES = {
     "src/lib/file-ref-open.test.ts",
     "src/lib/gh-card-commands.test.ts",
     "src/lib/gh-review-draft.test.ts",
+    "src/components/skill-stage-card.test.tsx",
     "src/components/skill-stage-card-wiring.test.ts",
     "src/lib/github-stage.test.ts",
     "src/components/familiar-no-silent-default.test.ts",
@@ -1907,6 +1909,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
+  "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",
@@ -2256,6 +2259,7 @@ const VITEST_TESTS = new Set([
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/chat-preview-card.test.tsx",
+  "src/components/skill-stage-card.test.tsx",
   "src/components/composer-markdown-layer.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",

@@ -51,6 +51,12 @@ function visibleTitle(renderer: ReactTestRenderer): string {
   return title.children.join("");
 }
 
+function titleButton(renderer: ReactTestRenderer) {
+  return renderer.root.find(
+    (node) => node.type === "button" && node.props.title?.endsWith(" — click to rename"),
+  );
+}
+
 async function renderTitle(onSessionsChanged: () => void | Promise<void>) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
@@ -178,4 +184,55 @@ test("a late conflict after unmount does not invoke a stale refresh callback", a
   });
 
   expect(refresh).not.toHaveBeenCalled();
+});
+
+test("becoming read-only cancels an in-progress edit before blur can submit it", async () => {
+  const refresh = vi.fn();
+  const patch = vi.fn(async () => response({ ok: true }));
+  vi.stubGlobal("fetch", patch);
+  const renderer = await renderTitle(refresh);
+
+  await act(async () => {
+    titleButton(renderer).props.onClick({ stopPropagation: vi.fn() });
+  });
+  const input = renderer.root.findByType("input");
+  await act(async () => {
+    input.props.onChange({ target: { value: "Partial edit" } });
+  });
+  const blur = input.props.onBlur;
+
+  await act(async () => {
+    renderer.update(
+      <ChatTitleEditable
+        session={session}
+        generateTitle={() => "Proposed title"}
+        onSessionsChanged={refresh}
+        readOnly
+      />,
+    );
+  });
+  await act(async () => {
+    await blur();
+  });
+
+  expect(patch).not.toHaveBeenCalled();
+});
+
+test("a read-only title does not advertise clickable hover styling", async () => {
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(
+      <ChatTitleEditable
+        session={session}
+        onSessionsChanged={vi.fn()}
+        readOnly
+      />,
+    );
+  });
+
+  const title = renderer.root.find(
+    (node) => node.type === "span" && node.props.title === "Observed title",
+  );
+  expect(title.props.className).not.toContain("hover:");
+  expect(title.props.className).not.toContain("transition-colors");
 });

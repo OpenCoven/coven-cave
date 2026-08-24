@@ -2,7 +2,7 @@
 // worktree-status.mjs — fast, local, network-free worktree dashboard.
 //
 // This is the "at a glance" companion to `beads:worktrees` (the lifecycle
-// patrol). The patrol is authoritative: it does live GitHub GraphQL sweeps, a
+// patrol). The patrol is authoritative: it does live GitHub REST sweeps, a
 // maintenance gate, and drift detection before it will retire anything. That
 // makes it slow and network-bound. This script does none of that — it reads
 // only local git state (merge base, dirty tree, ahead/behind, lock reason) and

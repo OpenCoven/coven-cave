@@ -59,11 +59,13 @@ export interface WorktreeLifecycleInventoryOptions {
   /**
    * Restrict the per-unit GitHub probing to these full local refs.
    *
-   * The pull-request probe costs one GraphQL round trip per head oid and
-   * another per branch — measured at ~2 calls and ~2s per unit, so ~104 calls
-   * and ~95s of a ~134s inventory on a 47-unit checkout. Retirement's reprobe
-   * pays all of it to re-verify ONE candidate and then discards every other
-   * unit, twice per retirement (cave-imhf0).
+   * The pull-request probe costs one REST round trip per distinct head oid and
+   * one paginated repository pull-list request for all branches in scope.
+   * Before cave-zxgjs the second half was another GraphQL request per branch,
+   * measured at ~2 calls and ~2s per unit, so ~104 calls and ~95s of a ~134s
+   * inventory on a 47-unit checkout. Retirement's reprobe paid all of it to
+   * re-verify ONE candidate and then discarded every other unit, twice per
+   * retirement (cave-imhf0).
    *
    * Scoping narrows ONLY that GitHub probing. Every unit is still enumerated
    * locally, so cross-unit checks that do not need the network — conflicting
@@ -907,55 +909,6 @@ function updatedAt(
   return { value: Math.max(...epochs), error: null };
 }
 
-const ASSOCIATED_PULL_REQUESTS_QUERY = `
-query($owner: String!, $name: String!, $oid: GitObjectID!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    nameWithOwner
-    object(oid: $oid) {
-      ... on Commit {
-        associatedPullRequests(first: 100, after: $endCursor) {
-          totalCount
-          nodes {
-            number
-            url
-            state
-            isDraft
-            mergedAt
-            headRefName
-            headRefOid
-            headRepository { nameWithOwner }
-            baseRefName
-            baseRepository { nameWithOwner }
-          }
-          pageInfo { hasNextPage endCursor }
-        }
-      }
-    }
-  }
-}`;
-
-const EXACT_HEAD_PULL_REQUESTS_QUERY = `
-query($searchQuery: String!, $endCursor: String) {
-  search(query: $searchQuery, type: ISSUE, first: 100, after: $endCursor) {
-    issueCount
-    nodes {
-      ... on PullRequest {
-        number
-        url
-        state
-        isDraft
-        mergedAt
-        headRefName
-        headRefOid
-        headRepository { nameWithOwner }
-        baseRefName
-        baseRepository { nameWithOwner }
-      }
-    }
-    pageInfo { hasNextPage endCursor }
-  }
-}`;
-
 function repositoryName(value: unknown): string | null {
   if (!isRecord(value) || typeof value.nameWithOwner !== "string") return null;
   return GITHUB_REPOSITORY.test(value.nameWithOwner) ? value.nameWithOwner : null;
@@ -1040,35 +993,6 @@ function parsePullRequestNode(value: unknown, expectedOid: string | null): PullR
   };
 }
 
-function validatePageInfo(
-  value: unknown,
-  pageIndex: number,
-  pageCount: number,
-  cursors: Set<string>,
-): void {
-  if (
-    !isRecord(value) ||
-    typeof value.hasNextPage !== "boolean" ||
-    !(
-      value.endCursor === null ||
-      (typeof value.endCursor === "string" && value.endCursor.length > 0)
-    )
-  ) {
-    throw new Error("pagination returned malformed pageInfo");
-  }
-  const finalPage = pageIndex === pageCount - 1;
-  if (finalPage ? value.hasNextPage : !value.hasNextPage) {
-    throw new Error("pagination is incomplete");
-  }
-  if (!finalPage && typeof value.endCursor !== "string") {
-    throw new Error("pagination omitted an intermediate cursor");
-  }
-  if (typeof value.endCursor === "string") {
-    if (cursors.has(value.endCursor)) throw new Error("pagination repeated a cursor");
-    cursors.add(value.endCursor);
-  }
-}
-
 function samePullRequest(left: PullRequest, right: PullRequest): boolean {
   return (
     left.number === right.number &&
@@ -1097,139 +1021,83 @@ function dedupePullRequests(pullRequests: PullRequest[]): PullRequest[] {
   return [...deduped.values()];
 }
 
-function assertUniqueConnectionPullRequest(
-  pullRequest: PullRequest,
-  identities: Set<string>,
-  urls: Set<string>,
-): void {
-  const identity = `${pullRequest.baseRepository.toLowerCase()}#${pullRequest.number}`;
-  if (identities.has(identity) || urls.has(pullRequest.url)) {
-    throw new Error(`duplicate pull request ${identity}`);
+function restRepository(value: unknown): { nameWithOwner: string } | null {
+  if (!isRecord(value) || typeof value.full_name !== "string" || value.full_name.length === 0) {
+    return null;
   }
-  identities.add(identity);
-  urls.add(pullRequest.url);
+  return { nameWithOwner: value.full_name };
 }
 
-function parseAssociatedPullRequestPages(
-  raw: string,
+function parseRestPullRequest(
+  value: unknown,
   expectedRepo: string,
-  oid: string,
-): { canonicalRepo: string; pullRequests: PullRequest[] } {
-  const pages = parseJson<unknown>(raw, "associated PR inventory");
-  if (!Array.isArray(pages) || pages.length === 0) {
-    throw new Error("pagination returned no pages");
+  expectedOid: string | null,
+): PullRequest {
+  if (!isRecord(value) || !isRecord(value.head) || !isRecord(value.base)) {
+    throw new Error("REST pull request is not an object");
   }
-  const cursors = new Set<string>();
-  let canonicalRepo: string | null = null;
-  let totalCount: number | null = null;
-  const identities = new Set<string>();
-  const urls = new Set<string>();
-  const pullRequests: PullRequest[] = [];
-  pages.forEach((page, pageIndex) => {
-    if (!isRecord(page) || "errors" in page || !isRecord(page.data)) {
-      throw new Error("page returned malformed GraphQL data");
-    }
-    const repository = page.data.repository;
-    const pageRepo = repositoryName(repository);
-    if (
-      !isRecord(repository) ||
-      pageRepo === null ||
-      pageRepo.toLowerCase() !== expectedRepo.toLowerCase()
-    ) {
-      throw new Error("canonical repository identity mismatch");
-    }
-    if (canonicalRepo !== null && pageRepo !== canonicalRepo) {
-      throw new Error("canonical repository identity changed between pages");
-    }
-    canonicalRepo = pageRepo;
-    if (!isRecord(repository.object) || !isRecord(repository.object.associatedPullRequests)) {
-      throw new Error("commit association connection is unavailable");
-    }
-    const connection = repository.object.associatedPullRequests;
-    if (
-      !Number.isSafeInteger(connection.totalCount) ||
-      (connection.totalCount as number) < 0 ||
-      !Array.isArray(connection.nodes)
-    ) {
-      throw new Error("association nodes are malformed");
-    }
-    if (totalCount !== null && totalCount !== connection.totalCount) {
-      throw new Error("association page totals are inconsistent");
-    }
-    totalCount = connection.totalCount as number;
-    validatePageInfo(connection.pageInfo, pageIndex, pages.length, cursors);
-    if (
-      pageIndex < pages.length - 1 &&
-      connection.nodes.length === 0
-    ) {
-      throw new Error("pagination returned an empty intermediate page");
-    }
-    for (const node of connection.nodes) {
-      const pullRequest = parsePullRequestNode(node, oid);
-      assertUniqueConnectionPullRequest(pullRequest, identities, urls);
-      pullRequests.push(pullRequest);
-    }
-  });
-  if (canonicalRepo === null) throw new Error("canonical repository identity is unavailable");
-  if (totalCount === null || pullRequests.length !== totalCount) {
-    throw new Error("association pagination is incomplete relative to totalCount");
+  const baseRepository = restRepository(value.base.repo);
+  const headRepository = value.head.repo === null ? null : restRepository(value.head.repo);
+  // Commit associations can legitimately include outbound PRs whose base is a
+  // different repository. Only the repository-wide branch inventory is
+  // required to be canonical; exact-OID outbound PRs still own the commit.
+  if (
+    baseRepository === null ||
+    (expectedOid === null &&
+      baseRepository.nameWithOwner.toLowerCase() !== expectedRepo.toLowerCase())
+  ) {
+    throw new Error("canonical repository identity mismatch");
   }
-  return { canonicalRepo, pullRequests };
-}
-
-function parseExactHeadPullRequestPages(
-  raw: string,
-  canonicalRepo: string,
-  branch: string,
-): PullRequest[] {
-  const pages = parseJson<unknown>(raw, "exact-head PR search");
-  if (!Array.isArray(pages) || pages.length === 0) {
-    throw new Error("pagination returned no pages");
+  if (value.state !== "open" && value.state !== "closed") {
+    throw new Error("REST pull request returned malformed state");
   }
-  const cursors = new Set<string>();
-  let issueCount: number | null = null;
-  const identities = new Set<string>();
-  const urls = new Set<string>();
-  const pullRequests: PullRequest[] = [];
-  pages.forEach((page, pageIndex) => {
-    if (!isRecord(page) || "errors" in page || !isRecord(page.data)) {
-      throw new Error("page returned malformed GraphQL data");
-    }
-    const search = page.data.search;
-    if (
-      !isRecord(search) ||
-      !Number.isSafeInteger(search.issueCount) ||
-      (search.issueCount as number) < 0 ||
-      !Array.isArray(search.nodes)
-    ) {
-      throw new Error("search page returned malformed data");
-    }
-    if ((search.issueCount as number) > 1_000) {
-      throw new Error("reached GitHub's 1000-result cap");
-    }
-    if (issueCount !== null && issueCount !== search.issueCount) {
-      throw new Error("search page totals are inconsistent");
-    }
-    issueCount = search.issueCount as number;
-    validatePageInfo(search.pageInfo, pageIndex, pages.length, cursors);
-    if (pageIndex < pages.length - 1 && search.nodes.length === 0) {
-      throw new Error("pagination returned an empty intermediate page");
-    }
-    for (const node of search.nodes) {
-      const pullRequest = parsePullRequestNode(node, null);
-      assertUniqueConnectionPullRequest(pullRequest, identities, urls);
-      pullRequests.push(pullRequest);
-    }
-  });
-  if (issueCount === null || pullRequests.length !== issueCount) {
-    throw new Error("search pagination is incomplete");
-  }
-  return pullRequests.filter(
-    (pullRequest) =>
-      pullRequest.headRepository?.toLowerCase() === canonicalRepo.toLowerCase() &&
-      pullRequest.headRefName === branch,
+  const state = value.merged_at === null
+    ? value.state === "open" ? "OPEN" : "CLOSED"
+    : "MERGED";
+  return parsePullRequestNode(
+    {
+      number: value.number,
+      url: value.html_url,
+      state,
+      isDraft: value.draft,
+      mergedAt: value.merged_at,
+      headRefName: value.head.ref,
+      headRefOid: value.head.sha,
+      headRepository,
+      baseRefName: value.base.ref,
+      baseRepository,
+    },
+    expectedOid,
   );
 }
+
+export function parseRestPullRequestPages(
+  raw: string,
+  expectedRepo: string,
+  expectedOid: string | null = null,
+): PullRequest[] {
+  const pages = parseJson<unknown>(raw, "REST pull request inventory");
+  if (!Array.isArray(pages) || pages.length === 0 || pages.some((page) => !Array.isArray(page))) {
+    throw new Error("REST pagination returned malformed pages");
+  }
+  const pullRequests = pages.flatMap((page) =>
+    (page as unknown[]).map((value) => parseRestPullRequest(value, expectedRepo, expectedOid)),
+  );
+  return dedupePullRequests(pullRequests);
+}
+
+export function parseRestPullRequestLines(raw: string, expectedRepo: string): PullRequest[] {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return [];
+  return dedupePullRequests(
+    trimmed
+      .split("\n")
+      .map((line) => parseRestPullRequest(parseJson<unknown>(line, "REST pull request"), expectedRepo, null)),
+  );
+}
+
+const REST_PULL_REQUEST_PROJECTION =
+  '.[] | {number,html_url,state,draft,merged_at,head:{ref:.head.ref,sha:.head.sha,repo:(if .head.repo == null then null else {full_name:.head.repo.full_name} end)},base:{ref:.base.ref,repo:{full_name:.base.repo.full_name}}}';
 
 function fetchPullRequests(
   repo: string,
@@ -1263,17 +1131,9 @@ function fetchPullRequests(
         "api",
         "--hostname",
         "github.com",
-        "graphql",
         "--paginate",
         "--slurp",
-        "-F",
-        `owner=${owner}`,
-        "-F",
-        `name=${name}`,
-        "-F",
-        `oid=${oid}`,
-        "-f",
-        `query=${ASSOCIATED_PULL_REQUESTS_QUERY}`,
+        `repos/${owner}/${name}/commits/${encodeURIComponent(oid)}/pulls?per_page=100`,
       ],
       root,
       120_000,
@@ -1288,13 +1148,8 @@ function fetchPullRequests(
       continue;
     }
     try {
-      const parsed = parseAssociatedPullRequestPages(result.stdout, repo, oid);
-      if (canonicalRepo !== null && parsed.canonicalRepo !== canonicalRepo) {
-        globalErrors.push("pull request inventory canonical repository identity changed");
-      } else if (canonicalRepo === null) {
-        canonicalRepo = parsed.canonicalRepo;
-      }
-      byOid.set(oid, parsed.pullRequests);
+      byOid.set(oid, parseRestPullRequestPages(result.stdout, repo, oid));
+      canonicalRepo = repo;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "malformed response";
       const message = `associated PR inventory returned malformed data for ${oid}: ${detail}`;
@@ -1308,10 +1163,8 @@ function fetchPullRequests(
     // Distinguish "GitHub did not answer" from "GitHub answered and the
     // repository identity was wrong". Both used to surface as the latter, which
     // sent the reader looking at repository configuration when the real cause
-    // was an exhausted GraphQL budget (its 5000/hr pool is separate from REST,
-    // so `gh api rate_limit` can look healthy while every graphql call fails).
-    // The per-OID errors already carry the true reason; this promotes it
-    // instead of overwriting it (cave-v59dk).
+    // was an exhausted API budget. The per-OID errors already carry the true
+    // reason; this promotes it instead of overwriting it (cave-v59dk).
     const attempted = new Set(heads).size;
     const firstFailure = [...errorsByOid.values()][0] ?? null;
     globalErrors.push(
@@ -1323,53 +1176,56 @@ function fetchPullRequests(
     );
   }
 
-  if (
-    canonicalRepo !== null &&
-    !globalErrors.some((error) => /canonical repository/i.test(error))
-  ) {
-    for (const branch of [...new Set(branches)].filter(
-      (candidate) =>
-        !PROTECTED_BRANCHES.has(candidate) && candidate !== defaultBranch,
-    )) {
-      const searchQuery = `is:pr head:${branch}`;
-      const result = command(
-        "gh",
-        [
-          "api",
-          "--hostname",
-          "github.com",
-          "graphql",
-          "--paginate",
-          "--slurp",
-          "-F",
-          `searchQuery=${searchQuery}`,
-          "-f",
-          `query=${EXACT_HEAD_PULL_REQUESTS_QUERY}`,
-        ],
-        root,
-        120_000,
-      );
-      if (!result.ok || result.stderr) {
+  const probedBranches = [...new Set(branches)].filter(
+    (candidate) => !PROTECTED_BRANCHES.has(candidate) && candidate !== defaultBranch,
+  );
+  if (probedBranches.length > 0) {
+    const result = command(
+      "gh",
+      [
+        "api",
+        "--hostname",
+        "github.com",
+        "--paginate",
+        `repos/${owner}/${name}/pulls?state=all&per_page=100`,
+        "--jq",
+        REST_PULL_REQUEST_PROJECTION,
+      ],
+      root,
+      120_000,
+    );
+    if (!result.ok || result.stderr) {
+      for (const branch of probedBranches) {
         errorsByBranch.set(
           branch,
-          `exact-head PR search failed for ${branch}: ${
+          `exact-head PR inventory failed for ${branch}: ${
             result.stderr || `status ${result.status ?? "unknown"}`
           }`,
         );
-        continue;
       }
+    } else {
       try {
-        byBranch.set(
-          branch,
-          parseExactHeadPullRequestPages(result.stdout, canonicalRepo, branch),
-        );
+        const pullRequests = parseRestPullRequestLines(result.stdout, repo);
+        canonicalRepo = repo;
+        for (const branch of probedBranches) {
+          byBranch.set(
+            branch,
+            pullRequests.filter(
+              (pullRequest) =>
+                pullRequest.headRepository?.toLowerCase() === repo.toLowerCase() &&
+                pullRequest.headRefName === branch,
+            ),
+          );
+        }
       } catch (error) {
-        errorsByBranch.set(
-          branch,
-          `exact-head PR search returned malformed or incomplete data for ${branch}: ${
-            error instanceof Error ? error.message : "malformed response"
-          }`,
-        );
+        for (const branch of probedBranches) {
+          errorsByBranch.set(
+            branch,
+            `exact-head PR inventory returned malformed or incomplete data for ${branch}: ${
+              error instanceof Error ? error.message : "malformed response"
+            }`,
+          );
+        }
       }
     }
   }

@@ -937,6 +937,11 @@ assert.match(
 );
 assert.match(
   source,
+  /\{inlineComposer \? null : following \? composerNode : null\}/,
+  "The active-chat composer disappears while the reader is away from latest and returns when following resumes",
+);
+assert.match(
+  source,
   /useEffect\(\(\) => \{\s*updateFollowing\(true\);[\s\S]*?\}, \[sessionId, updateFollowing\]\)/,
   "A freshly opened chat / session switch must re-engage following by default",
 );
@@ -994,8 +999,8 @@ assert.doesNotMatch(
 // chat section spreads its handler bundle (whole-surface drop target).
 assert.match(
   source,
-  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.dropHandlers\}/,
-  "the whole chat section is the drop target (handlers spread from the shared hook)",
+  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.\(offlineReadOnly \? \{\} : dropHandlers\)\}/,
+  "the whole live chat section is the drop target while offline copies reject attachment mutation",
 );
 assert.match(
   attachStagingHook,

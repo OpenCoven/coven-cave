@@ -22,16 +22,17 @@ assert.doesNotMatch(source, /computeQuickSwitch/, "the strip's pin/recency selec
 assert.doesNotMatch(familiarStyles, /\.familiar-quickswitch__strip \{/, "strip CSS removed");
 assert.match(familiarStyles, /\.familiar-quickswitch \{/, "wrapper CSS remains for the top-bar call site");
 
-// ── Familiar selection stays in persistent title-bar context ─────────────────
+// ── Familiar selection stays in shared workspace context ────────────────────
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
-assert.match(sidebar, /<SidebarRailHeader[\s\S]*?contextMode="mobile"/, "the Chats list header keeps scope controls only in the mobile drawer");
+assert.match(sidebar, /<SidebarRailHeader[\s\S]*?contextMode="all"/, "the Chats list header enables desktop and mobile scope controls");
+assert.match(railHeader, /<SidebarScopeSelector/, "the shared header mounts the compact desktop selector");
 assert.match(railHeader, /<WorkspaceContextSwitcher/, "the shared header mounts the project-and-crew context switcher");
 assert.match(contextSwitcher, /<FamiliarSwitcher[\s\S]*?labeled/, "the context switcher mounts the crew switcher in its labeled form");
 const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 assert.match(
   sidenav,
-  /<SidebarRailHeader[\s\S]*?contextMode="mobile"/,
-  "the normal sidenav header also keeps scope controls only in the mobile drawer",
+  /<SidebarRailHeader[\s\S]*?contextMode="all"/,
+  "the normal sidenav header also enables desktop and mobile scope controls",
 );
 assert.match(
   workspace,
