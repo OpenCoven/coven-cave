@@ -77,15 +77,30 @@ assert.match(
 );
 assert.match(
   source,
-  /nextWithMobileAccessMarker\(req, remoteIngress\)/,
+  /nextWithInternalAuthMarkers\(req, remoteIngress\)/,
   "proxy should forward the verified remote-ingress state into downstream request headers",
 );
 // A tailnet device is remote by construction, so it must carry the mobile
 // marker — otherwise desktop-only routes would treat a phone as local.
 assert.doesNotMatch(
   source,
-  /nextWithMobileAccessMarker\(req, mobileAccessAuthenticated\)/,
+  /nextWithInternalAuthMarkers\(req, mobileAccessAuthenticated\)/,
   "tailnet ingress must not be excluded from the mobile marker (desktop-only routes rely on it)",
+);
+assert.match(
+  source,
+  /requestHeaders\.delete\(CLIENT_V1_ADMIN_HEADER\)/,
+  "proxy must strip caller-supplied Client v1 admin markers",
+);
+assert.match(
+  source,
+  /const localPeerSecret = process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET\?\.trim\(\)/,
+  "proxy should normalize the per-boot secret once before validating or forwarding it",
+);
+assert.match(
+  source,
+  /isClientV1AdminPath\(req\.nextUrl\.pathname\)\s*\?\s*localPeerSecret/,
+  "tokenless local Client v1 admin requests must receive only the proxy's verified per-boot secret",
 );
 assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "API origin gate should read the source origin header once");
 assert.match(source, /const referer = req\.headers\.get\("referer"\)/, "API referer gate should read the source referer header once");
@@ -221,7 +236,7 @@ assert.match(
 // needs the mobile or sidecar credential.
 assert.match(
   source,
-  /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
+  /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*localPeerSecret,?\s*\)/,
   "local-peer classification must verify the server-stamped per-boot secret",
 );
 assert.doesNotMatch(

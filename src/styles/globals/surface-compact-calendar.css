@@ -46,6 +46,9 @@
 /* Rituals overview — option 3a from the minimalist design handoff. The week
    ribbon stays quiet; the Needs-you queue is the only raised, glowing surface. */
 .rituals-overview {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   padding: var(--space-3) clamp(var(--space-3), 4vw, var(--space-6)) var(--space-6);
   color: var(--text-primary);
   background:
@@ -66,6 +69,18 @@
 .rituals-overview__lower {
   width: 100%;
   max-width: 100%;
+}
+
+.rituals-overview__events,
+.rituals-overview__needs {
+  flex: none;
+}
+
+.rituals-overview__lower {
+  display: flex;
+  min-height: 180px;
+  flex: 1;
+  flex-direction: column;
 }
 
 .rituals-overview__section-toggle {
@@ -310,19 +325,21 @@
 }
 
 .rituals-overview__pane {
-  min-height: 180px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
   touch-action: pan-y;
 }
 
 .rituals-overview__log {
-  max-height: min(42vh, 360px);
+  height: 100%;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
 .rituals-overview__thread {
   display: flex;
-  max-height: min(42vh, 360px);
+  height: 100%;
   flex-direction: column;
   gap: var(--space-1);
   overflow-y: auto;

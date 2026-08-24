@@ -41,6 +41,7 @@ test("closing navigation removes the rail and opening pushes the main panel", as
   const detail = page.locator(".shell-detail");
   const toggle = page.locator(".shell-top-toggle--nav");
 
+  await expect(page.locator(".shell-frame")).toHaveAttribute("data-settled", "");
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".shell-nav--rail, .shell-nav--peek")).toHaveCount(0);
   await expect(page.locator(".shell-nav")).toHaveAttribute("aria-hidden", "true");

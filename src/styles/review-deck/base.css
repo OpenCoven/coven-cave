@@ -1,13 +1,33 @@
+/*
+ * Review Deck — the atoms every pane shares.
+ *
+ * Tone is one custom property, not five copies of a colour rule: an element
+ * carries data-rd-tone, `--rd-tone` resolves to the one solid token behind it,
+ * and every tint below is a color-mix of that. Adding a state means adding a
+ * row to the tone table, never a second hue.
+ */
+
 .rd-stage {
-  --rd-queue-width: calc(var(--space-12) * 5);
-  --rd-evidence-width: calc(var(--space-12) * 6);
+  --rd-tone: var(--text-muted);
+  --rd-queue-width: calc(var(--space-12) * 6);
+  --rd-inspector-width: calc(var(--space-12) * 6.5);
+  --rd-gutter: var(--space-1);
+  /*
+   * Sub-grid marks. The 4px grid governs space between *things*; these two
+   * name the only two places a dense review surface needs less than that, so
+   * the value is editable in one spot rather than copied as a literal:
+   * the hairline that makes an inset well read as inset rather than as a
+   * bordered box, and the tight cluster that keeps `3 / 12` — or a queue
+   * row's three lines — reading as ONE unit instead of three.
+   */
+  --rd-hairline: 1px;
+  --rd-tight: 2px;
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: var(--space-2);
   overflow: hidden;
-  padding: var(--space-3);
+  background: var(--bg-panel);
   container: review-deck / inline-size;
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -30,14 +50,40 @@
   color: inherit;
 }
 
-.rd-panel {
-  min-width: 0;
-  min-height: 0;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-panel);
-  background: var(--bg-raised);
-  box-shadow: 0 var(--space-1) var(--space-3)
-    color-mix(in oklch, var(--shadow-color) 18%, transparent);
+/* A drag must not paint the whole surface with a text selection. */
+body[data-rd-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/*
+ * The attribute is deck-specific rather than the shared `data-tone`, which the
+ * status bar and the coven tab also carry — an unscoped `[data-tone]` mapping
+ * would set --rd-tone on every one of them and inherit it into their subtrees.
+ *
+ * Scoping under `.rd-stage` instead would have been wrong: Modal and Popover
+ * portal to document.body, so the composer's evidence chips, its submit button
+ * and the merge confirmation all render OUTSIDE the stage and would have lost
+ * their tone. A distinct attribute is both leak-proof and portal-proof.
+ */
+[data-rd-tone="danger"] {
+  --rd-tone: var(--color-danger);
+}
+
+[data-rd-tone="warning"] {
+  --rd-tone: var(--color-warning);
+}
+
+[data-rd-tone="success"] {
+  --rd-tone: var(--color-success);
+}
+
+[data-rd-tone="accent"] {
+  --rd-tone: var(--accent-presence);
+}
+
+[data-rd-tone="muted"] {
+  --rd-tone: var(--text-muted);
 }
 
 .rd-scroll {
@@ -50,6 +96,15 @@
   min-width: 0;
 }
 
+.rd-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .rd-eyebrow {
   color: var(--text-muted);
   font-family: var(--font-mono);
@@ -58,13 +113,14 @@
   letter-spacing: var(--tracking-eyebrow);
   line-height: var(--leading-tight);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .rd-add,
 .rd-del,
-.rd-count,
+.rd-queue-count,
 .rd-character-count,
-.rd-progress-label {
+.rd-file-progress-label {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
@@ -74,137 +130,265 @@
   color: var(--color-success);
 }
 
-.rd-del,
-.rd-error {
+.rd-del {
   color: var(--danger-text);
 }
 
-.rd-hint {
-  margin: 0;
-  color: var(--text-secondary);
+.rd-error {
+  color: var(--danger-text);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
 }
 
+.rd-hint {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
 .rd-btn,
-.rd-icon-btn,
-.rd-nav-toggle,
-.rd-attention-filter,
-.rd-mobile-tab,
-.rd-evidence-tab,
-.rd-blocker-chip,
-.rd-draft-btn,
-.rd-composer-more {
-  border: 1px solid var(--border-hairline);
+.rd-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
-  background: var(--bg-subtle);
+  background: var(--bg-raised);
+  color: var(--text-primary);
   cursor: pointer;
+  white-space: nowrap;
   transition:
     background-color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
 
-.rd-btn:hover:not(:disabled),
-.rd-icon-btn:hover:not(:disabled),
-.rd-nav-toggle:hover:not(:disabled),
-.rd-attention-filter:hover:not(:disabled),
-.rd-mobile-tab:hover:not(:disabled),
-.rd-evidence-tab:hover:not(:disabled),
-.rd-blocker-chip:hover:not(:disabled),
-.rd-draft-btn:hover:not(:disabled),
-.rd-composer-more:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--bg-hover);
-}
-
-.rd-btn:disabled,
-.rd-icon-btn:disabled,
-.rd-nav-toggle:disabled,
-.rd-attention-filter:disabled,
-.rd-mobile-tab:disabled,
-.rd-evidence-tab:disabled,
-.rd-blocker-chip:disabled,
-.rd-draft-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
 .rd-btn {
-  display: inline-flex;
   min-height: var(--space-8);
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  padding: 0 var(--space-3);
   font-size: var(--text-sm);
   font-weight: 650;
 }
 
-.rd-icon-btn,
-.rd-nav-toggle {
-  display: inline-grid;
-  width: var(--space-8);
-  height: var(--space-8);
-  flex: none;
-  place-items: center;
-  padding: 0;
+.rd-btn--xs {
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
 }
 
-.rd-pill,
-.rd-blocker-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
+.rd-chip-btn {
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
-.rd-pill {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-hairline);
-  color: var(--text-secondary);
-  background: var(--bg-subtle);
+.rd-btn:hover:not(:disabled),
+.rd-chip-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.rd-btn:disabled,
+.rd-chip-btn:disabled {
+  border-color: var(--border-hairline);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.rd-btn kbd,
+.rd-mark-btn kbd {
+  border: 0;
+  background: none;
+  color: inherit;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-weight: 700;
+  opacity: 0.6;
 }
 
-.rd-pill[data-tone="accent"] {
-  border-color: color-mix(
-    in oklch,
-    var(--accent-presence) 38%,
-    transparent
-  );
-  color: var(--accent-presence);
-  background: color-mix(
-    in oklch,
-    var(--accent-presence) 14%,
-    transparent
-  );
+/* An inset well groups controls that are alternatives to one another. */
+.rd-well {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rd-hairline);
+  flex: none;
+  padding: var(--rd-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  box-shadow: 0 1px 1px
+    color-mix(in oklch, var(--shadow-color) 28%, transparent) inset;
 }
 
-.rd-pill[data-tone="success"] {
-  border-color: color-mix(in oklch, var(--color-success) 38%, transparent);
-  color: var(--color-success);
-  background: color-mix(in oklch, var(--color-success) 14%, transparent);
+.rd-well--pill {
+  border-radius: var(--radius-pill);
 }
 
-.rd-pill[data-tone="warning"] {
-  border-color: color-mix(in oklch, var(--color-warning) 38%, transparent);
-  color: var(--color-warning);
-  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+.rd-well-btn,
+.rd-well-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
 }
 
-.rd-pill[data-tone="danger"] {
-  border-color: var(--danger-border);
-  color: var(--danger-text);
-  background: var(--danger-bg);
+.rd-well-btn {
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
 }
 
-.rd-error {
+.rd-well-btn--solo {
+  flex: none;
+  box-shadow: 0 1px 2px
+    color-mix(in oklch, var(--shadow-color) 30%, transparent);
+}
+
+.rd-topbar-help {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.rd-well-seg {
+  min-height: var(--space-4);
+  padding: 0 var(--space-2);
+  border-radius: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+}
+
+.rd-well-btn:hover:not(:disabled),
+.rd-well-seg:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.rd-well-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.rd-well-seg[data-active="true"] {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--border-strong) inset;
+}
+
+/* The pane collapse/expand affordance, shared by both rails. */
+.rd-pane-toggle {
+  display: inline-grid;
+  width: var(--space-6);
+  height: var(--space-6);
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.rd-pane-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Mirrored so the glyph's filled edge always points at the pane it moves. */
+.rd-pane-toggle--flip {
+  transform: scaleX(-1);
+}
+
+.rd-pane-toggle--bordered {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+}
+
+.rd-icon-btn {
+  display: inline-grid;
+  width: var(--space-6);
+  height: var(--space-6);
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.rd-icon-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Tone-carrying chips ─────────────────────────────────────────────────── */
+
+.rd-state-pill,
+.rd-inspector-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  color: var(--rd-tone);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  white-space: nowrap;
+}
+
+.rd-state-pill {
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--rd-tone) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--rd-tone) 40%, transparent) inset;
+  font-size: var(--text-xs);
+}
+
+.rd-inspector-state {
+  font-size: var(--text-2xs);
+}
+
+.rd-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  min-height: var(--space-5);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
-  line-height: var(--leading-normal);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

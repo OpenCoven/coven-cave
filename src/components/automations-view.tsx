@@ -144,6 +144,14 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
+  const openInboxItem = useCallback((item: InboxItem) => {
+    if (item.kind === "daily-summary" && item.link && onOpenLink) {
+      onOpenLink(item.link);
+      return;
+    }
+    setSelectedItem(item);
+    setSelectedCodex(null);
+  }, [onOpenLink]);
   const [createOpen, setCreateOpen] = useState(false);
   // GitHub subscriptions manager, reachable from the Inbox tab (cave-hlxn).
   const [subsOpen, setSubsOpen] = useState(false);
@@ -1028,7 +1036,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                       onToggleGroup={(group) => inboxSelect.toggleSelectAll(group.items)}
                       onToggle={inboxSelect.toggle}
                       familiarLabel={familiarLabel}
-                      onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                      onSelect={openInboxItem}
                       onDone={(item) => void completeInboxItem(item)}
                       onSnooze={(item) => void snoozeInboxItem(item)}
                       onDismiss={(item) => void dismissInboxItem(item)}
@@ -1078,7 +1086,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                               key={item.id}
                               item={item}
                               familiarLabel={familiarLabel}
-                              onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }}
+                              onSelect={openInboxItem}
                               onDone={(next) => void completeInboxItem(next)}
                               onSnooze={(next) => void snoozeInboxItem(next)}
                               onDismiss={(next) => void dismissInboxItem(next)}
@@ -1119,12 +1127,12 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                           <div className="rituals-overview__log">
                             {ritualLog.length > 0 ? ritualLog.map((item) => (
                               <RitualItemRow key={item.id} item={item} familiarLabel={familiarLabel} timeMode="log"
-                                onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
+                                onSelect={openInboxItem} />
                             )) : <p className="rituals-overview__empty">No quiet activity yet.</p>}
                           </div>
                         ) : (
                           <RitualAgendaThread items={ritualAgenda} familiarLabel={familiarLabel}
-                            onSelect={(next) => { setSelectedItem(next); setSelectedCodex(null); }} />
+                            onSelect={openInboxItem} />
                         )}
                       </div>
                     </section>

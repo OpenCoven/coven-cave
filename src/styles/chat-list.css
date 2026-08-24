@@ -124,22 +124,9 @@
 /* ── Status filter chips ───────────────────────────────────────────────── */
 
 .chat-status-chip {
-  display: inline-flex;
-  align-items: center;
   gap: var(--space-1);
-  height: 26px;
-  padding: 0 var(--space-2);
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-secondary);
+  border-color: transparent;
   font-size: var(--text-sm);
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
 }
 .chat-status-chip:hover:not(:disabled) {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
@@ -149,10 +136,6 @@
   border-color: var(--border-strong);
   background: color-mix(in oklch, var(--foreground) 8%, transparent);
   color: var(--text-primary);
-}
-.chat-status-chip:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: default;
 }
 .chat-status-chip__dot {
   width: 5px;
@@ -174,26 +157,11 @@
 /* ── Sort control ──────────────────────────────────────────────────────── */
 
 .chat-sessions-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: 28px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
+  flex-shrink: 0;
 }
-.chat-sessions-sort:hover,
 .chat-sessions-sort[aria-expanded="true"] {
   border-color: var(--border-strong);
-  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  background: var(--bg-elevated);
 }
 .chat-sessions-sort__label {
   font-family: var(--font-mono, ui-monospace, monospace);

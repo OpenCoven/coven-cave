@@ -862,6 +862,22 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.ui-icon-btn--secondary {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+.ui-icon-btn--secondary:hover {
+  background: var(--bg-elevated);
+}
+.ui-icon-btn--primary {
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+}
+.ui-icon-btn--primary:hover {
+  background: var(--accent-presence-hover);
+  color: var(--accent-presence-foreground);
+}
 .ui-icon-btn:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
