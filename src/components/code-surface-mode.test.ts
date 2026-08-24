@@ -565,6 +565,21 @@ assert.match(
 );
 assert.match(
   newSession,
+  /fetch\("\/api\/projects\?launchable=1", \{ cache: "no-store" \}\)/,
+  "new sessions request only projects whose folders are currently available",
+);
+assert.match(
+  newSession,
+  /setProjects\(\[\]\);[\s\S]*setProjectId\(""\);/,
+  "opening the modal clears stale project choices until fresh folder validation completes",
+);
+assert.match(
+  newSession,
+  /No available project folders\. Update a project folder before starting a session\./,
+  "new sessions explain when every registered project folder is unavailable",
+);
+assert.match(
+  newSession,
   /action: "create-worktree", branch: branch\.trim\(\)/,
   "fresh-worktree option provisions through the existing /api/changes action",
 );

@@ -48,7 +48,7 @@ assert.match(
 // no inbox tab and inbox items live in the notification bell instead.
 assert.match(
   menuBar,
-  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Rituals<\/span>/,
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">\{RITUALS_LABEL\}<\/span>/,
   "Desktop menu bar names the surface Rituals with the calendar-check icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
 );
 assert.doesNotMatch(
@@ -168,6 +168,36 @@ assert.match(
   compactCalendarStyles,
   /\.rituals-overview__selection\s*\{[^}]*width:\s*100%/,
   "selection should expand to full width",
+);
+assert.match(
+  compactCalendarStyles,
+  /\.rituals-overview\s*\{(?=[^}]*display:\s*flex;)(?=[^}]*min-height:\s*0;)(?=[^}]*flex-direction:\s*column;)[^}]*\}/,
+  "overview should expose its remaining height to the activity pane",
+);
+assert.match(
+  compactCalendarStyles,
+  /\.rituals-overview__lower\s*\{(?=[^}]*display:\s*flex;)(?=[^}]*min-height:\s*180px;)(?=[^}]*flex:\s*1;)(?=[^}]*flex-direction:\s*column;)[^}]*\}/,
+  "the Log and Agenda region should consume the remaining overview height",
+);
+assert.match(
+  compactCalendarStyles,
+  /\.rituals-overview__pane\s*\{(?=[^}]*min-height:\s*0;)(?=[^}]*flex:\s*1;)(?=[^}]*overflow:\s*hidden;)[^}]*\}/,
+  "the selected activity pane should shrink correctly and contain its own scroller",
+);
+assert.doesNotMatch(
+  compactCalendarStyles,
+  /max-height:\s*min\(42vh,\s*360px\)/,
+  "Log and Agenda should not stop at the old half-height cap",
+);
+assert.match(
+  compactCalendarStyles,
+  /\.rituals-overview__log\s*\{(?=[^}]*height:\s*100%;)(?=[^}]*overflow-y:\s*auto;)[^}]*\}/,
+  "the Log list should fill and scroll within the available pane height",
+);
+assert.match(
+  compactCalendarStyles,
+  /\.rituals-overview__thread\s*\{(?=[^}]*height:\s*100%;)(?=[^}]*overflow-y:\s*auto;)[^}]*\}/,
+  "the Agenda thread should fill and scroll within the available pane height",
 );
 assert.match(automations, /function useRitualNow\(\): Date \| null[\s\S]{0,560}setNow\(new Date\(\)\);[\s\S]{0,80}scheduleMidnight/, "the hydration-stable week clock starts in the browser and refreshes at local midnight");
 assert.match(automations, /ritualNow \? buildRitualWeek\(inboxVisible, ritualNow\) : \[\]/, "the week ribbon waits for the browser-local date before derivation");

@@ -129,8 +129,18 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /type WorkspaceNavMode,[\s\S]*from "@\/lib\/workspace-navigation"/,
-  "the sidebar consumes the registry's mode type instead of declaring a component-local alias",
+  /import \{\s*type WorkspaceNavMode\s*\} from "@\/lib\/workspace-navigation";/,
+  "the sidebar type-imports the registry's navigation mode instead of declaring a component-local alias",
+);
+assert.match(
+  sidebar,
+  /const MODE_BADGES: Partial<Record<WorkspaceNavMode, \(/,
+  "the sidebar uses the shared navigation mode type in its badge registry",
+);
+assert.match(
+  sidebar,
+  /const handleModeSelect = \(id: WorkspaceNavMode\) =>/,
+  "the sidebar uses the shared navigation mode type in its selection handler",
 );
 
 console.log("workspace-alias-modes: ok");

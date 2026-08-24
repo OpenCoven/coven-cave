@@ -22,6 +22,10 @@ const workspaceContextSwitcherCss = readFileSync(
   "utf8",
 );
 const navigation = readFileSync(new URL("../lib/workspace-navigation.ts", import.meta.url), "utf8");
+const destinationPolicy = readFileSync(
+  new URL("../lib/workspace-destination-policy.ts", import.meta.url),
+  "utf8",
+);
 // The Home/Code split itself — the sidebar reaches the registry only through
 // this module, so a committed artifact here breaks the rail just as badly.
 const navSection = readFileSync(new URL("../lib/nav-section.ts", import.meta.url), "utf8");
@@ -93,8 +97,8 @@ assert.match(
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
-assert.match(source, /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}/, "sidebar destinations use the shared Home and Code tabs");
-assert.match(source, /navItemsForSection\(section\)\.map/, "the active tab filters destination rows through the shared registry");
+assert.doesNotMatch(source, /<NavSectionTabs/, "sidebar destinations no longer duplicate the title-bar section switcher");
+assert.match(source, /sidebarDestinations\(section\)\.map/, "the active tab filters destination rows through the shared destination policy");
 assert.match(source, /sectionRooms\.map\(\(room\) =>/, "dynamic role-surface rooms follow the active section");
 assert.match(source, /itemSelector: "\.sidebar-folder-row"/, "visible destinations share one roving keyboard sequence");
 assert.match(source, /role="tabpanel"[\s\S]*?aria-labelledby=\{`nav-section-tab-\$\{section\}`\}/, "the destination list is labeled by its active tab");
@@ -140,8 +144,38 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{[\s\S]*navItemsForSection,[\s\S]*\} from "@\/lib\/nav-section"/,
-  "the sidebar consumes the shared registry's visible rows through the section split",
+  /import \{ sidebarDestinations \} from "@\/lib\/workspace-destination-policy"/,
+  "the sidebar consumes the shared destination selector through the section split",
+);
+assert.doesNotMatch(
+  source,
+  /navItemsForSection/,
+  "sidebar no longer keeps a private visible-destination selector",
+);
+assert.match(
+  source,
+  /iconName=\{destination\.iconName\}/,
+  "sidebar renders each destination's shared icon metadata directly from the policy row",
+);
+assert.match(
+  source,
+  /description=\{destination\.description\}/,
+  "sidebar renders each destination's shared description metadata directly from the policy row",
+);
+assert.match(
+  source,
+  /kbd=\{destination\.kbd\}/,
+  "sidebar renders each destination's shared shortcut metadata directly from the policy row",
+);
+assert.doesNotMatch(
+  source,
+  /WORKSPACE_NAV_ITEMS\.map\(\(\{ id, iconName, description, kbd \}\) => \[/,
+  "sidebar does not rebuild a private metadata table from the nav registry",
+);
+assert.doesNotMatch(
+  source,
+  /if \(!metadata\) return null;/,
+  "sidebar does not silently drop destinations when metadata is missing",
 );
 
 assert.match(
@@ -553,7 +587,7 @@ assert.match(
 );
 assert.match(
   source,
-  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
+  /state=\{sidebarRowState\(destination\.id, mode, props\.splitPageModes\)\}/,
   "each row derives active/split/idle from mode + open split pages",
 );
 assert.match(
@@ -650,16 +684,16 @@ for (const [name, text] of [
 // list is the whole registry, unsplit — mapping it here would render every Home
 // destination under Code and every Code destination under Home, while each
 // individual row assertion above kept passing, because the rows themselves are
-// unchanged. Only the section split is allowed to reach the registry.
+// unchanged. Only the shared destination policy is allowed to reach the registry.
 assert.doesNotMatch(
   source,
   /VISIBLE_WORKSPACE_NAV_ITEMS/,
-  "the sidebar must reach nav rows through navItemsForSection(section), never the unsplit VISIBLE_WORKSPACE_NAV_ITEMS list",
+  "the sidebar must not reach the unsplit visible navigation list directly",
 );
 assert.match(
-  navSection,
-  /export function navItemsForSection\(section: NavSection\)[\s\S]{0,160}navSectionForMode\(item\.id\) === section/,
-  "navItemsForSection must keep filtering by section — a passthrough would un-split the rail without failing a row assertion",
+  destinationPolicy,
+  /home:\s*Object\.freeze\([\s\S]{0,240}navSectionForMode\(definition\.id\) === "home"[\s\S]{0,240}code:\s*Object\.freeze\([\s\S]{0,240}navSectionForMode\(definition\.id\) === "code"/,
+  "sidebarDestinations must keep filtering canonical destinations by section — a passthrough would un-split the rail without failing a row assertion",
 );
 
 // Recent Activity is Code-only (cave-24d2r): Home is destinations, Code is live

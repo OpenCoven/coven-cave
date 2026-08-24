@@ -11,7 +11,8 @@ import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { WORKSPACE_NAV_ITEMS, type WorkspaceNavMode } from "@/lib/workspace-navigation";
+import { type WorkspaceNavMode } from "@/lib/workspace-navigation";
+import { paletteDestinations } from "@/lib/workspace-destination-policy";
 import { useProjects } from "@/lib/use-projects";
 import {
   PALETTE_CATEGORIES,
@@ -539,18 +540,27 @@ export function CommandPalette({
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
       : [
-          ...rank(WORKSPACE_NAV_ITEMS
-          // Fuzzy on the short label/id; substring-only on the long description
-          // (subsequence-matching prose surfaces irrelevant items).
-          .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),
-          (fm) => [fm.label, fm.id])
-          .map((fm) => ({
-            id: `surface:${fm.id}`,
-            kind: "command" as const,
-            name: `Go to ${fm.label}`,
-            hint: fm.kbd ? `${fm.description} · ${fm.kbd}` : fm.description,
-            intent: { kind: "go-to-surface", mode: fm.id } as PaletteIntent,
-          })),
+          ...rank(
+            paletteDestinations().filter((destination) => {
+              // Fuzzy on the short title/id; substring-only on the long
+              // description (subsequence-matching prose surfaces irrelevant items).
+              return (
+                !q ||
+                fz(destination.title) ||
+                fz(destination.id) ||
+                destination.description.toLowerCase().includes(q)
+              );
+            }),
+            (destination) => [destination.title, destination.id, destination.description, destination.kbd],
+          ).map((destination) => {
+            return {
+              id: `surface:${destination.id}`,
+              kind: "command" as const,
+              name: `Go to ${destination.title}`,
+              hint: destination.kbd ? `${destination.description} · ${destination.kbd}` : destination.description,
+              intent: { kind: "go-to-surface", mode: destination.id } as PaletteIntent,
+            };
+          }),
           ...rank(
             (roleSurfaces ?? []).filter(
               (room) => !q || fz(room.label) || room.description.toLowerCase().includes(q),

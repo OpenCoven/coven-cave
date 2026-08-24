@@ -14,7 +14,18 @@ test("workspace stores normalized split pane requests", () => {
 
 test("workspace titles and split state derive from the page registry", () => {
   assert.match(source, /workspacePageDefinition\(request\.requestedPageId\)/);
-  assert.match(source, /workspacePageDefinition\(primaryPaneRequest\?\.requestedPageId \?\? mode\)/);
+  assert.match(source, /import \{ statusContextPolicy \} from "@\/lib\/workspace-destination-policy";/);
+  assert.match(source, /const primaryStatusPageId = primaryPaneRequest\?\.requestedPageId \?\? mode;/);
+  assert.match(source, /const statusBarVisibility = statusContextPolicy\(primaryStatusPageId\);/);
+  assert.match(source, /const primaryDefinition = workspacePageDefinition\(primaryStatusPageId\);/);
+  assert.match(
+    source,
+    /<WorkspacePanePage[\s\S]*instanceId="workspace-primary"[\s\S]*landmark=\{primaryDefinition\?\.landmark \?\? "Workspace"\}/,
+  );
+  assert.match(
+    source,
+    /<div className="min-h-0 min-w-0 flex-1">\{primaryDetail\}<\/div>\s*\{firstProjectGateOpen \? null : statusBar\}/,
+  );
   assert.match(source, /renderSurface\(request\.pageId, \{ variant: request\.variant, instanceId: request\.instanceId \}\)/);
   assert.doesNotMatch(source, /const WORKSPACE_MODE_TITLES: Record/);
 });

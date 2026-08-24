@@ -1,121 +1,170 @@
-.rd-scopebar,
-.rd-workbench-head {
+/*
+ * Review Deck — the top bar, the three-column body, and the workspace header.
+ *
+ * The body is a grid whose track widths come from state (`--rd-queue-width`,
+ * `--rd-inspector-width`), because the same numbers have to be clamped against
+ * the live window and handed to the file rail, which sizes its chips from the
+ * measured centre width. A pane that is closed contributes no track at all
+ * rather than a zero-width one, so its gutter cannot be dragged out of nothing.
+ */
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+
+.rd-topbar {
   display: flex;
   min-width: 0;
-  align-items: center;
-  gap: var(--space-3);
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
-}
-
-.rd-scopebar {
-  min-height: var(--space-10);
+  height: calc(var(--space-10) + var(--space-1));
   flex: none;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-card);
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-3);
+  background: var(--bg-panel);
 }
 
-.rd-scopebar-title,
-.rd-workbench-subject,
-.rd-verdict-state {
-  display: flex;
+.rd-topbar-brand {
+  display: inline-flex;
   min-width: 0;
-  flex-direction: column;
-  gap: var(--space-1);
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--accent-presence);
 }
 
-.rd-scopebar-title strong,
-.rd-workbench-subject > strong {
-  overflow: hidden;
-  margin: 0;
-  line-height: var(--leading-tight);
-  text-overflow: ellipsis;
+.rd-topbar-brand strong {
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 650;
+  letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
 
-.rd-scopebar-title strong {
-  font-size: var(--text-md);
-}
-
-.rd-workbench-subject > strong {
-  font-family: var(--font-serif);
-  font-size: var(--text-lg);
-  font-weight: 650;
-}
-
-.rd-scopebar-meta {
+.rd-topbar-scope {
   overflow: hidden;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rd-workbench-head {
-  min-height: var(--space-12);
-  flex: none;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-panel);
-}
-
-.rd-workbench-subject {
-  flex: 1;
-}
-
-.rd-workbench-lineage {
-  display: flex;
-  min-width: 0;
-  gap: var(--space-2);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
   font-size: var(--text-xs);
-}
-
-.rd-workbench-lineage span {
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rd-workbench-stats,
-.rd-workbench-actions {
-  display: flex;
+.rd-segments {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rd-hairline);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  padding: var(--rd-tight);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  box-shadow: 0 1px 1px
+    color-mix(in oklch, var(--shadow-color) 28%, transparent) inset;
+}
+
+.rd-segment {
+  display: inline-flex;
+  min-height: var(--space-6);
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.rd-segment:hover {
+  color: var(--text-primary);
+}
+
+.rd-segment[data-active="true"] {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow:
+    0 0 0 1px var(--border-strong) inset,
+    0 1px 2px color-mix(in oklch, var(--shadow-color) 30%, transparent);
+}
+
+.rd-segment b {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.rd-segment-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--rd-tone);
+}
+
+.rd-topbar-nav {
+  display: inline-flex;
   flex: none;
   align-items: center;
   gap: var(--space-2);
 }
 
-.rd-progress-label {
-  color: var(--text-secondary);
+.rd-topbar-position {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--rd-tight);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
+
+.rd-topbar-position b {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
 
 .rd-layout {
   display: grid;
   flex: 1;
   min-height: 0;
+  background: var(--bg-panel);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rd-stage[data-queue-open="true"] .rd-layout {
+  grid-template-columns: var(--rd-queue-width) var(--rd-gutter) minmax(0, 1fr);
+}
+
+.rd-stage[data-inspector-open="true"] .rd-layout {
+  grid-template-columns: minmax(0, 1fr) var(--rd-gutter) var(--rd-inspector-width);
+}
+
+.rd-stage[data-queue-open="true"][data-inspector-open="true"] .rd-layout {
   grid-template-columns:
-    var(--rd-queue-width)
-    minmax(0, 1fr)
-    var(--rd-evidence-width);
-  gap: var(--space-2);
-  transition: grid-template-columns var(--duration-slow)
-    var(--ease-emphasized);
+    var(--rd-queue-width) var(--rd-gutter) minmax(0, 1fr)
+    var(--rd-gutter) var(--rd-inspector-width);
 }
 
-.rd-layout[data-queue-collapsed="true"] {
-  grid-template-columns:
-    var(--space-10)
-    minmax(0, 1fr)
-    var(--rd-evidence-width);
+/* The drag handle is the gap itself — a separate hit area would either
+   overlap a pane's own scrollbar or leave a dead 5px stripe. */
+.rd-gutter {
+  background: var(--bg-panel);
+  cursor: col-resize;
+  touch-action: none;
 }
 
-.rd-layout:not([data-evidence-open="true"]) {
-  grid-template-columns: var(--rd-queue-width) minmax(0, 1fr);
-}
-
-.rd-layout[data-queue-collapsed="true"]:not([data-evidence-open="true"]) {
-  grid-template-columns: var(--space-10) minmax(0, 1fr);
+.rd-gutter:hover,
+body[data-rd-resizing="true"] .rd-gutter {
+  background: color-mix(in oklch, var(--accent-presence) 40%, transparent);
 }
 
 .rd-main {
@@ -123,81 +172,145 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* ── Workspace header ────────────────────────────────────────────────────── */
+
+.rd-workbench-head {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+
+.rd-workbench-subject {
+  min-width: 0;
+  flex: 1;
+}
+
+.rd-workbench-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.rd-workbench-line h1 {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-workbench-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  overflow: hidden;
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.rd-workbench-meta > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rd-workbench-meta > span:first-child {
+  font-family: var(--font-mono);
+}
+
+.rd-workbench-meta svg {
+  flex: none;
+  opacity: 0.75;
+}
+
+.rd-diffstat {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rd-diffstat-bar {
+  display: inline-flex;
+  width: calc(var(--space-8) + var(--space-1));
+  height: 3px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+}
+
+.rd-add-bar {
+  background: var(--color-success);
+}
+
+.rd-del-bar {
+  background: var(--color-danger);
+}
+
+.rd-workbench-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
   gap: var(--space-2);
 }
 
-.rd-mobile-tabs {
-  display: none;
-}
+/* ── Shortcuts overlay ───────────────────────────────────────────────────── */
 
 .rd-shortcuts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2) var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--space-2) var(--space-5);
+  margin-bottom: var(--space-3);
 }
 
 .rd-shortcut-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-3);
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }
 
 .rd-shortcut-row kbd {
+  display: inline-flex;
+  min-width: calc(var(--space-10) + var(--space-1));
+  min-height: var(--space-5);
+  align-items: center;
+  justify-content: center;
+  flex: none;
   border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
   border-radius: var(--radius-sm);
   background: var(--bg-sunken);
-  padding: var(--space-1) var(--space-2);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.rd-checkpoints {
-  flex: none;
-  padding: var(--space-2) var(--space-3);
-}
-
-.rd-cp-toggle {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: var(--space-2);
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.rd-cp-list {
-  display: flex;
-  max-height: calc(var(--space-12) * 2);
-  gap: var(--space-2);
-  overflow: auto;
-  padding-top: var(--space-2);
-}
-
-.rd-cp-pill {
-  display: flex;
-  min-width: calc(var(--space-12) * 3);
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-subtle);
-}
-
-.rd-cp-name {
-  font-size: var(--text-sm);
-  font-weight: 650;
-}
-
-.rd-cp-date,
-.rd-cp-summary {
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
+.rd-mobile-tabs {
+  display: none;
 }

@@ -11,7 +11,7 @@
  * running server-side; the transcript lives in Chat.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
@@ -47,6 +47,10 @@ export function CodeNewSession({
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const busy = phase.kind === "provisioning" || phase.kind === "starting";
+  const projectIdRef = useRef(projectId);
+  const familiarIdRef = useRef(familiarId);
+  projectIdRef.current = projectId;
+  familiarIdRef.current = familiarId;
 
   // Seed once per opening, not on every `initialPrompt` change: the caller
   // holds the seed in state for as long as the modal is mounted, and re-running
@@ -61,23 +65,52 @@ export function CodeNewSession({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    const previousProjectId = projectIdRef.current;
+    const previousFamiliarId = familiarIdRef.current;
+    setPhase({ kind: "idle" });
+    setProjects([]);
+    setFamiliars([]);
+    setProjectId("");
+    setFamiliarId("");
     (async () => {
       try {
         const [projRes, famRes] = await Promise.all([
-          fetch("/api/projects", { cache: "no-store" }),
+          fetch("/api/projects?launchable=1", { cache: "no-store" }),
           fetch("/api/familiars", { cache: "no-store" }),
         ]);
         const proj = (await projRes.json().catch(() => null)) as { ok?: boolean; projects?: CaveProject[] } | null;
         const fam = (await famRes.json().catch(() => null)) as { ok?: boolean; familiars?: Familiar[] } | null;
         if (cancelled) return;
+        if (!projRes.ok || proj?.ok !== true) {
+          setPhase({ kind: "error", message: "Couldn’t check project folders." });
+          return;
+        }
+        if (!famRes.ok || fam?.ok !== true) {
+          setPhase({ kind: "error", message: "Couldn’t load familiars." });
+          return;
+        }
         const projectRows = proj?.ok && Array.isArray(proj.projects) ? proj.projects : [];
         const familiarRows = fam?.ok && Array.isArray(fam.familiars) ? fam.familiars : [];
         setProjects(projectRows);
         setFamiliars(familiarRows);
-        setProjectId((prev) => prev || (projectRows[0]?.id ?? ""));
-        setFamiliarId((prev) => prev || (familiarRows[0]?.id ?? ""));
+        setProjectId(
+          projectRows.some((project) => project.id === previousProjectId)
+            ? previousProjectId
+            : (projectRows[0]?.id ?? ""),
+        );
+        setFamiliarId(
+          familiarRows.some((familiar) => familiar.id === previousFamiliarId)
+            ? previousFamiliarId
+            : (familiarRows[0]?.id ?? ""),
+        );
+        if (projectRows.length === 0) {
+          setPhase({
+            kind: "error",
+            message: "No available project folders. Update a project folder before starting a session.",
+          });
+        }
       } catch {
-        if (!cancelled) setPhase({ kind: "error", message: "Couldn’t load projects/familiars." });
+        if (!cancelled) setPhase({ kind: "error", message: "Couldn’t check project folders or load familiars." });
       }
     })();
     return () => {

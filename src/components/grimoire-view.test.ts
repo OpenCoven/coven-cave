@@ -31,7 +31,11 @@ assert.match(
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*commitMode\("grimoire", "journal"\);/, "the journal mode routes into the Grimoire Journal tab and preserves that destination in history");
 assert.match(navigation, /export type WorkspaceNavMode = WorkspaceMode/, "the shared registry uses the WorkspaceMode union (no drifting copy)");
 assert.match(navigation, /id: "grimoire", label: "Memories"/, "grimoire has a navigation row labeled Memories (and a ⌘K palette entry)");
-assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar renders rows from the section-filtered visible registry");
+assert.match(
+  sidebar,
+  /sidebarDestinations\(section\)/,
+  "the sidebar renders rows from the section-filtered shared destination policy",
+);
 assert.match(
   view,
   /<Link\s+href="\/weaves"\s+role="menuitem"/,

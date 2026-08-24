@@ -13,8 +13,12 @@
    segment/icon control height so the reused classes (gantt, inspector) stay in
    step. The mobile container query below re-inflates to touch targets. */
 .board-header { display:flex; align-items:center; gap:14px; padding:13px 22px; min-height:63px; --board-control-h:34px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; flex-wrap:nowrap; }
-.board-header-title { flex:0 0 auto; font-size:16px; font-weight:600; letter-spacing:-0.01em; color:var(--text-primary); }
-.board-header-controls { display:flex; align-items:center; gap:10px; flex:0 0 auto; flex-wrap:nowrap; }
+/* SurfaceToolbar routes the tokenized search through ViewHeader's capped,
+   centered search slot. Tasks intentionally fills the remaining command-bar
+   space and aligns its shared actions with the existing segment controls. */
+.board-header .ui-view-header-search { max-width:none; justify-content:flex-start; }
+.board-header .ui-btn--sm { height:var(--board-control-h,34px); }
+.board-header .ui-icon-btn--sm { width:var(--board-control-h,34px); height:var(--board-control-h,34px); }
 
 /* ── Tokenized search ────────────────────────────────────────────────────────
    The field grows to fill the bar; committed key:value filters render as mono
@@ -127,12 +131,6 @@
     padding: 18px var(--space-4) var(--space-4);
   }
 
-  .board-header-title {
-    flex: 1 0 100%;
-    font-size: 22px;
-    line-height: 1.15;
-  }
-
   .board-token-search {
     flex: 1 0 100%;
     min-width: 0;
@@ -142,19 +140,13 @@
     min-height: 44px;
   }
 
-  .board-header-controls {
-    width: 100%;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-
   .board-view-toggle {
     display: none;
   }
 
   .board-toolbar-btn,
-  .board-new-card-btn {
+  .board-header .ui-btn,
+  .board-header .ui-icon-btn {
     min-height: var(--touch-target);
     border-radius: var(--radius-control);
     padding-inline: 14px;
@@ -163,7 +155,7 @@
 
   /* The overflow '⋯' trigger is a tap-only control on phones — grow it to
      the minimum touch target (WCAG 2.5.5). */
-  .board-header-controls .ui-icon-btn {
+  .board-header .ui-icon-btn {
     min-width: var(--touch-target);
     min-height: var(--touch-target);
   }
@@ -173,9 +165,6 @@
     justify-content: center;
   }
 
-  .board-new-card-btn {
-    flex: 0 0 auto;
-  }
 }
 
 @media (max-width: 767px) {

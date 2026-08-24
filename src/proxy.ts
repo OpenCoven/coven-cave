@@ -7,6 +7,7 @@ import {
   TOKEN_PARAM,
   TOKEN_HEADER,
   MOBILE_ACCESS_HEADER,
+  CLIENT_V1_ADMIN_HEADER,
   LOCAL_PEER_HEADER,
   SAFE_CONTENT_TYPES,
   timingSafeEqualString,
@@ -290,10 +291,18 @@ function isProductionWebhookGet(pathname: string, method: string) {
   );
 }
 
-function nextWithMobileAccessMarker(req: NextRequest, mobileAccessAuthenticated: boolean) {
+function nextWithInternalAuthMarkers(
+  req: NextRequest,
+  mobileAccessAuthenticated: boolean,
+  clientV1AdminSecret?: string,
+) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.delete(MOBILE_ACCESS_HEADER);
+  requestHeaders.delete(CLIENT_V1_ADMIN_HEADER);
   if (mobileAccessAuthenticated) requestHeaders.set(MOBILE_ACCESS_HEADER, "1");
+  if (clientV1AdminSecret) {
+    requestHeaders.set(CLIENT_V1_ADMIN_HEADER, clientV1AdminSecret);
+  }
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
@@ -311,9 +320,10 @@ export async function proxy(req: NextRequest) {
   // The local-peer stamp distinguishes direct from forwarded traffic. Direct,
   // unforwarded loopback is the browser's no-prompt path; remote traffic still
   // requires a mobile or sidecar credential.
+  const localPeerSecret = process.env.COVEN_CAVE_LOCAL_PEER_SECRET?.trim();
   const trustedLocalPeer = isTrustedLocalPeer(
     req.headers.get(LOCAL_PEER_HEADER),
-    process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
+    localPeerSecret,
   );
   if (isAuthenticatedDevReadinessProbe(req, trustedLocalPeer)) {
     const response = NextResponse.next();
@@ -516,7 +526,7 @@ export async function proxy(req: NextRequest) {
     if (!trustedLocalPeer || remoteIngress) {
       return jsonError(403, "forbidden peer: client v1 requires direct loopback");
     }
-    return nextWithMobileAccessMarker(req, false);
+    return nextWithInternalAuthMarkers(req, false);
   }
 
   const suppliedToken =
@@ -532,7 +542,13 @@ export async function proxy(req: NextRequest) {
     if (!isTokenlessApiPeerAllowed(trustedLocalPeer, remoteIngress)) {
       return jsonError(403, "forbidden peer: missing trusted local peer or verified remote ingress");
     }
-    return nextWithMobileAccessMarker(req, remoteIngress);
+    return nextWithInternalAuthMarkers(
+      req,
+      remoteIngress,
+      isClientV1AdminPath(req.nextUrl.pathname)
+        ? localPeerSecret
+        : undefined,
+    );
   }
 
   // Direct loopback is the prompt-free browser path for ordinary app APIs.
@@ -543,7 +559,7 @@ export async function proxy(req: NextRequest) {
     trustedLocalPeer && !isClientV1Path(req.nextUrl.pathname);
   if (!sidecarAuthenticated && !mobileAccessVerified && !trustedLocalBrowserApi) {
     if (mediaTicketAuthenticated) {
-      return nextWithMobileAccessMarker(req, remoteIngress);
+      return nextWithInternalAuthMarkers(req, remoteIngress);
     }
     // A verified signed mobile invite is the paired phone's credential: the
     // token is minted by this desktop from its access secret and already
@@ -555,7 +571,7 @@ export async function proxy(req: NextRequest) {
     return jsonError(401, "unauthorized");
   }
 
-  return nextWithMobileAccessMarker(req, remoteIngress);
+  return nextWithInternalAuthMarkers(req, remoteIngress);
 }
 
 export const config = {

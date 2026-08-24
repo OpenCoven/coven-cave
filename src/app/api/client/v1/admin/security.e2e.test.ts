@@ -12,6 +12,7 @@ import {
 import { createClientV1Runtime } from "@/lib/server/client-v1/runtime.ts";
 import {
   ACCESS_TOKEN_COOKIE,
+  CLIENT_V1_ADMIN_HEADER,
   LOCAL_PEER_HEADER,
   MOBILE_ACCESS_HEADER,
   TAILNET_PEER_HEADER,
@@ -106,10 +107,21 @@ async function throughProxy(
   route: (request: Request) => Promise<Response>,
 ): Promise<Response> {
   const gate = await proxy(req);
-  return passedThrough(gate) ? route(req) : gate;
+  if (!passedThrough(gate)) return gate;
+  const forwardedHeaders = new Headers();
+  const overridden = gate.headers
+    .get("x-middleware-override-headers")
+    ?.split(",")
+    .filter(Boolean) ?? [];
+  for (const name of overridden) {
+    const value = gate.headers.get(`x-middleware-request-${name}`);
+    if (value === null) forwardedHeaders.delete(name);
+    else forwardedHeaders.set(name, value);
+  }
+  return route(new Request(req, { headers: forwardedHeaders }));
 }
 
-test("tokenless loopback cannot list, decide, or revoke client-v1 authority", async () => {
+test("tokenless direct loopback can administer client-v1 in non-bundled development", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
     setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: loopbackSecret });
@@ -192,19 +204,13 @@ test("tokenless loopback cannot list, decide, or revoke client-v1 authority", as
     );
 
     for (const response of [pairingList, credentialList, approve, deny, revoke]) {
-      assert.equal(response.status, 503);
-      const payload = await response.json() as {
-        error: { code: string; message: string };
-      };
-      assert.equal(payload.error.code, "service_unavailable");
-      assert.match(payload.error.message, /desktop app/i);
-      assert.equal(JSON.stringify(payload).includes(loopbackSecret), false);
+      assert.equal(response.status, 200);
     }
-    assert.equal(runtime.pairingStore.get(approved.id)?.status, "pending");
-    assert.equal(runtime.pairingStore.get(denied.id)?.status, "pending");
+    assert.equal(runtime.pairingStore.get(approved.id)?.status, "approved");
+    assert.equal(runtime.pairingStore.get(denied.id)?.status, "denied");
     assert.equal(
       (await runtime.credentialStore.reload()).get(credential.credential.id)?.revokedAt,
-      null,
+      10_000,
     );
   } finally {
     restoreEnv();
@@ -213,7 +219,7 @@ test("tokenless loopback cannot list, decide, or revoke client-v1 authority", as
   }
 });
 
-test("tokenless create cannot become a bearer through unauthenticated approval", async () => {
+test("tokenless direct-loopback approval can complete local development pairing", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
     setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: loopbackSecret });
@@ -278,15 +284,102 @@ test("tokenless create cannot become a bearer through unauthenticated approval",
       ),
     );
 
-    assert.equal(approval.status, 503);
-    assert.equal(exchange.status, 409);
+    assert.equal(approval.status, 200);
+    assert.equal(exchange.status, 200);
     const exchangePayload = await exchange.json() as {
-      error: { code: string };
       data?: { bearer?: string };
     };
-    assert.equal(exchangePayload.error.code, "pairing_pending");
-    assert.equal(exchangePayload.data?.bearer, undefined);
-    assert.equal((await runtime.credentialStore.reload()).size, 0);
+    assert.equal(typeof exchangePayload.data?.bearer, "string");
+    assert.equal((await runtime.credentialStore.reload()).size, 1);
+  } finally {
+    restoreEnv();
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("missing packaged admin token and caller-spoofed development marker fail closed", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    setEnv({
+      COVEN_CAVE_BUNDLE: "1",
+      COVEN_CAVE_LOCAL_PEER_SECRET: loopbackSecret,
+    });
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret,
+      now: () => 25_000,
+    });
+    const bundled = await throughProxy(
+      request("GET", "/api/client/v1/admin/credentials"),
+      createAdminCredentialsGetHandler(runtime),
+    );
+    assert.equal(bundled.status, 500);
+
+    setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: loopbackSecret });
+    const spoofed = await throughProxy(
+      request("GET", "/api/client/v1/admin/credentials", {
+        headers: {
+          [CLIENT_V1_ADMIN_HEADER]: loopbackSecret,
+          [LOCAL_PEER_HEADER]: "forged-loopback-secret",
+        },
+      }),
+      createAdminCredentialsGetHandler(runtime),
+    );
+    assert.equal(spoofed.status, 403);
+
+    const direct = await createAdminCredentialsGetHandler(runtime)(
+      request("GET", "/api/client/v1/admin/credentials", {
+        headers: {
+          [CLIENT_V1_ADMIN_HEADER]: "1",
+        },
+      }),
+    );
+    assert.equal(direct.status, 503);
+  } finally {
+    restoreEnv();
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("proxy replaces caller-supplied development admin markers", async () => {
+  try {
+    setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: loopbackSecret });
+    const response = await throughProxy(
+      request("GET", "/api/client/v1/admin/credentials", {
+        headers: {
+          [CLIENT_V1_ADMIN_HEADER]: "caller-spoof",
+        },
+      }),
+      async (forwarded) => Response.json({
+        marker: forwarded.headers.get(CLIENT_V1_ADMIN_HEADER),
+      }),
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { marker: loopbackSecret });
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("tokenless development normalizes the local peer secret before stamping admin authority", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const paddedSecret = `  ${loopbackSecret}  `;
+    setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: paddedSecret });
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret,
+      now: () => 27_000,
+    });
+    const response = await throughProxy(
+      request("GET", "/api/client/v1/admin/credentials", {
+        headers: { [LOCAL_PEER_HEADER]: paddedSecret },
+      }),
+      createAdminCredentialsGetHandler(runtime),
+    );
+    assert.equal(response.status, 200);
   } finally {
     restoreEnv();
     assert.equal(resolve(root).startsWith(scratchPrefix), true);

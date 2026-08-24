@@ -84,7 +84,7 @@ assert.match(
 // reach route handlers carrying remote-ingress authority.
 assert.ok(
   proxySource.indexOf("passkey presence required") <
-    proxySource.lastIndexOf("return nextWithMobileAccessMarker"),
+    proxySource.lastIndexOf("return nextWithInternalAuthMarkers"),
   "the gate precedes the pass-through",
 );
 

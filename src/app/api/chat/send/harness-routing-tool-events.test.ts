@@ -48,7 +48,7 @@ assert.match(
 );
 assert.match(
   chatRoute,
-  /openClawGatewayPairedDeviceAuthStatus\(\)[\s\S]*?gatewayAuth\.available[\s\S]*?dispatchOpenClawGatewayTurn/,
+  /openClawGatewayPairedDeviceAuthStatus\(\s*args\.openClawGatewayCredentialStore,\s*\)[\s\S]*?gatewayAuth\.available[\s\S]*?dispatchOpenClawGatewayTurn/,
   "the route must retain the CLI fallback until an OS-backed paired-device credential store can activate Gateway dispatch",
 );
 assert.match(
