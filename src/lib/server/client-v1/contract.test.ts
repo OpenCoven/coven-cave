@@ -5,6 +5,10 @@ import test from "node:test";
 const packageVersion: string = JSON.parse(
   readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),
 ).version;
+const contractSource = readFileSync(
+  new URL("./contract.ts", import.meta.url),
+  "utf8",
+);
 
 import {
   CLIENT_V1_API_VERSION,
@@ -43,6 +47,7 @@ import {
   type ClientV1StatusRecord,
   type ClientV1SuccessEnvelope,
 } from "./contract.ts";
+import { encodeClientV1Cursor } from "./cursor-token.ts";
 import { clientV1OperationRecords } from "./operations.ts";
 import {
   clientV1Error,
@@ -79,6 +84,15 @@ export type ClientV1ErrorEnvelopeExcludesDataIsExact = Assert<
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
 }
+
+test("contract module keeps its edge-safe data-only runtime import boundary", () => {
+  const runtimeImports = [...contractSource.matchAll(
+    /^import (?!type\b)[\s\S]*? from "([^"]+)";$/gmu,
+  )].map((match) => match[1]);
+
+  assert.deepEqual(runtimeImports, ["./operations.ts"]);
+  assert.doesNotMatch(contractSource, /\bBuffer\b/u);
+});
 
 test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");
@@ -868,8 +882,14 @@ test("builds a deterministic additive Phase 1 contract fixture", () => {
     updatedAt: "2026-08-15T00:00:01.000Z",
   });
   assert.deepEqual(fixture.examples.cursor, {
-    current: "conversation-list:cursor:0",
-    next: "conversation-list:cursor:1",
+    current: encodeClientV1Cursor({
+      sort: "2026-08-15T00:00:01.000Z",
+      id: "conversation-example",
+    }),
+    next: encodeClientV1Cursor({
+      sort: "2026-08-14T00:00:00.000Z",
+      id: "conversation-example-next",
+    }),
     hasMore: true,
   });
   assert.equal(fixture.examples.successEnvelope.minimumClientVersion, "0.1.0");
