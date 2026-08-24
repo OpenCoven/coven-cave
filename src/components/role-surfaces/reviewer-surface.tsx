@@ -55,6 +55,7 @@ import {
   type InspectorDisclosure,
 } from "./review-inspector";
 import { ReviewQueue, type ReviewSourceFilter } from "./review-queue";
+import { ReviewToast } from "./review-toast";
 import { ReviewVerdictDock } from "./review-verdict-dock";
 import {
   ReviewMobileTabs,
@@ -76,6 +77,7 @@ import { useReviewPanes } from "./use-review-panes";
 import { useReviewPreferences } from "./use-review-preferences";
 import { useReviewProgress } from "./use-review-progress";
 import { useReviewSource } from "./use-review-source";
+import { useReviewToast } from "./use-review-toast";
 import { REVIEWER_SURFACE_ID } from "./ids";
 
 export type { ReviewDeckCounts };
@@ -110,6 +112,19 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     REVIEWER_INITIAL_STATE,
   );
   const { announce } = useAnnouncer();
+  const toast = useReviewToast();
+  /**
+   * Confirm an action on both channels. `announce` alone writes into an
+   * `sr-only` live region, so a sighted reviewer saw nothing after approving or
+   * merging — the frame raises a visible toast at exactly these moments.
+   */
+  const confirm = useCallback(
+    (message: string) => {
+      announce(message);
+      toast.show(message);
+    },
+    [announce, toast],
+  );
 
   const [sourceFilter, setSourceFilter] = useState<ReviewSourceFilter>("all");
   const [bucketFilter, setBucketFilter] = useState<keyof DeckSummary | null>(null);
@@ -317,6 +332,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     setNoteError(null);
     setActionError(null);
     setMobileView("files");
+    toast.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clear on selection change only
   }, [state.selectedSessionId]);
 
   // Checkpoints are read only when the drawer is opened — the list is a
@@ -363,7 +380,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         error?: string;
       } | null;
       if (!json?.ok) throw new Error(json?.error || "review failed");
-      announce(`Approved ${prLabel(selectedPullRequest)}. Re-reading GitHub state.`);
+      confirm(`Approved ${prLabel(selectedPullRequest)}. Re-reading GitHub state.`);
       readiness.refresh();
       return true;
     } catch (error) {
@@ -374,7 +391,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, canAct, note, readiness, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, note, readiness, selectedPullRequest]);
 
   const requestChanges = useCallback(async () => {
     if (!canAct || !selectedPullRequest || busy) return false;
@@ -405,7 +422,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         error?: string;
       } | null;
       if (!json?.ok) throw new Error(json?.error || "review failed");
-      announce(
+      confirm(
         `Requested changes on ${prLabel(selectedPullRequest)}. Re-reading GitHub state.`,
       );
       readiness.refresh();
@@ -418,7 +435,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, canAct, note, readiness, selectedPullRequest]);
+  }, [announce, busy, canAct, confirm, note, readiness, selectedPullRequest]);
 
   const merge = useCallback(async () => {
     if (!ready || !selectedPullRequest || busy) return false;
@@ -439,7 +456,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         error?: string;
       } | null;
       if (!json?.ok) throw new Error(json?.error || "merge failed");
-      announce(
+      confirm(
         `Merged ${prLabel(selectedPullRequest)} (squash). It leaves the review queue on the next read.`,
       );
       readiness.refresh();
@@ -452,7 +469,7 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     } finally {
       setBusy(null);
     }
-  }, [announce, busy, readiness, ready, selectedPullRequest]);
+  }, [announce, busy, confirm, readiness, ready, selectedPullRequest]);
 
   const toggleDisclosure = useCallback((id: InspectorDisclosure) => {
     setDisclosures((current) => {
@@ -493,14 +510,14 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
     const path = source.openPath;
     if (!path || !workItem) return;
     const result = progress.toggle(path);
-    announce(
+    confirm(
       result.completed
         ? `Reviewed ${path}. Every readable file on head ${workItem.revision.slice(0, 7)} is reviewed.`
         : result.reviewed
           ? `Marked ${path} reviewed.`
           : `Marked ${path} unread.`,
     );
-  }, [announce, progress, source.openPath, workItem]);
+  }, [confirm, progress, source.openPath, workItem]);
 
   const openUnread = useCallback(
     (direction: 1 | -1) => {
@@ -828,6 +845,8 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
           </>
         ) : null}
       </div>
+
+      <ReviewToast message={toast.message} />
     </div>
   );
 }
