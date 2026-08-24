@@ -646,8 +646,8 @@ describe("StreamingTurnResponse", () => {
       }),
     );
     let disclosure = renderer.root.findByProps({ "data-turn-activity": true });
-    expect(disclosure.props.open).toBe(true);
-    expect(disclosure.findByType("summary").children.join("")).toBe("View activity · 1 update");
+    expect(disclosure.props.open).toBeUndefined();
+    expect(textContent(disclosure.findByType("summary"))).toBe("1 activity update");
 
     await act(async () => {
       disclosure.findByType("summary").props.onClick();
@@ -677,7 +677,7 @@ describe("StreamingTurnResponse", () => {
 
     disclosure = renderer.root.findByProps({ "data-turn-activity": true });
     expect(disclosure.props.open).toBeUndefined();
-    expect(disclosure.findByType("summary").children.join("")).toBe("View activity · 2 updates");
+    expect(textContent(disclosure.findByType("summary"))).toBe("2 activity updates");
   });
 
   it("closes on the first completion transition when the disclosure was untouched", async () => {
@@ -687,7 +687,7 @@ describe("StreamingTurnResponse", () => {
         activityDetails: <div>Activity detail</div>,
       }),
     );
-    expect(renderer.root.findByProps({ "data-turn-activity": true }).props.open).toBe(true);
+    expect(renderer.root.findByProps({ "data-turn-activity": true }).props.open).toBeUndefined();
 
     await act(async () => {
       renderer.update(
@@ -738,7 +738,8 @@ describe("StreamingTurnResponse", () => {
         onRetry: vi.fn(),
       }),
     );
-    expect(buttons(completed)).toHaveLength(0);
+    expect(buttons(completed, "Copy completed text")).toHaveLength(1);
+    expect(buttons(completed, "Stop response")).toHaveLength(0);
 
     const interruptedWithoutCapability = await render(
       response({
@@ -780,18 +781,42 @@ describe("StreamingTurnResponse", () => {
     }
   });
 
+  it("confirms a successful unified Copy action and resets its label", async () => {
+    vi.useFakeTimers();
+    const onCopyCompleted = vi.fn().mockResolvedValue(true);
+    const renderer = await render(response({ onCopyCompleted }));
+
+    await act(async () => {
+      buttons(renderer, "Copy completed text")[0]!.props.onClick();
+      await Promise.resolve();
+    });
+    expect(onCopyCompleted).toHaveBeenCalledTimes(1);
+    expect(buttons(renderer, "Copied")).toHaveLength(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_500);
+    });
+    expect(buttons(renderer, "Copy completed text")).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
   it("distinguishes failed and interrupted state copy from completed responses", async () => {
     const failed = await render(
       response({ model: model({ status: "failed", activeBlock: null }) }),
     );
-    expect(JSON.stringify(failed.toJSON())).toContain("Response failed");
-    expect(JSON.stringify(failed.toJSON())).not.toContain("Response stopped");
+    expect(textContent(failed.root)).toContain("Nova · Failed");
+    expect(textContent(failed.root)).not.toContain("Nova · Stopped");
 
     const interrupted = await render(
       response({ model: model({ status: "interrupted", activeBlock: null }) }),
     );
-    expect(JSON.stringify(interrupted.toJSON())).toContain("Response stopped");
-    expect(JSON.stringify(interrupted.toJSON())).not.toContain("Response failed");
+    expect(textContent(interrupted.root)).toContain("Nova · Stopped");
+    expect(textContent(interrupted.root)).not.toContain("Nova · Failed");
+    const interruptedRegions = interrupted.root.findAll(
+      (node) => node.props.role === "status" || node.props["aria-live"] !== undefined,
+    );
+    expect(interruptedRegions).toHaveLength(1);
+    expect(interruptedRegions[0].props.className).toBe("streaming-turn-current");
 
     const completed = await render(
       response({ model: model({ status: "complete", activeBlock: null }) }),
@@ -805,7 +830,7 @@ describe("StreamingTurnResponse", () => {
     const working = await render(
       response({ familiarName: "Sage", model: model({ status: "working" }) }),
     );
-    expect(JSON.stringify(working.toJSON())).toContain("Sage is working");
+    expect(textContent(working.root)).toContain("Sage · Using tools");
     expect(working.root.findAllByProps({ role: "status" })).toHaveLength(1);
     expect(working.root.findByProps({ role: "status" }).props.className).toBe(
       "streaming-turn-current",
@@ -814,8 +839,57 @@ describe("StreamingTurnResponse", () => {
     const answering = await render(
       response({ familiarName: "Echo", model: model({ status: "answering" }) }),
     );
-    expect(JSON.stringify(answering.toJSON())).toContain("Echo is responding");
+    expect(textContent(answering.root)).toContain("Echo · Responding");
     expect(answering.root.findAllByProps({ role: "status" })).toHaveLength(1);
+  });
+
+  it("shows elapsed and completed timing in the same status row", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-23T12:00:18Z"));
+    const renderer = await render(response({
+      startedAt: "2026-08-23T12:00:00Z",
+      model: model({ status: "working" }),
+    }));
+    expect(textContent(renderer.root)).toContain("Nova · Using tools0:18");
+
+    await act(async () => {
+      renderer.update(response({
+        startedAt: "2026-08-23T12:00:00Z",
+        durationMs: 24_000,
+        model: model({ status: "complete", activeBlock: null, currentActivity: null }),
+      }));
+    });
+    expect(textContent(renderer.root)).toContain("Nova · Completed in 0:24");
+    vi.useRealTimers();
+  });
+
+  it("moves a short process preamble into the live detail and restores it when settled", async () => {
+    const preamble = "Let me look at the attached reference first.";
+    const renderer = await render(response({
+      model: model({
+        status: "answering",
+        committedText: preamble,
+        currentActivity: null,
+        activity: [],
+      }),
+      proseContent: <p data-prose={true}>{preamble}</p>,
+    }));
+    expect(renderer.root.findByProps({ "data-turn-current-activity": true }).children.join("")).toBe(preamble);
+    expect(renderer.root.findAllByProps({ "data-prose": true })).toHaveLength(0);
+
+    await act(async () => {
+      renderer.update(response({
+        model: model({
+          status: "complete",
+          committedText: preamble,
+          activeBlock: null,
+          currentActivity: null,
+          activity: [],
+        }),
+        proseContent: <p data-prose={true}>{preamble}</p>,
+      }));
+    });
+    expect(renderer.root.findAllByProps({ "data-prose": true })).toHaveLength(1);
   });
 
   it("renders one current activity line before prose, results, state, supplementary content, and disclosure", async () => {
@@ -1037,8 +1111,8 @@ describe("StreamingTurnResponse", () => {
     );
     expect(liveRegions).toHaveLength(1);
     expect(liveRegions[0].props.className).toBe("streaming-turn-current");
-    expect(textContent(renderer.root)).toContain("Response stopped");
-    expect(textContent(renderer.root)).toContain("Response failed");
+    expect(textContent(renderer.root)).toContain("Unknown familiar · Stopped");
+    expect(textContent(renderer.root)).toContain("Unknown familiar · Failed");
     expect(textContent(renderer.root)).toContain("No response.");
     expect(
       renderer.root.findAll(

@@ -59,6 +59,8 @@ export type QuickChatMessage = {
   /** Assistant turn still streaming in. */
   pending?: boolean;
   lifecycle?: ChatTurnLifecycle;
+  startedAt?: string;
+  durationMs?: number;
   /** Per-turn error (the familiar failed / reported an error). */
   error?: string | null;
   /** Local note (slash-command output like /help) — rendered as an assistant
@@ -393,6 +395,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
               pending: false,
               lifecycle: "cancelled",
               error: null,
+              durationMs: message.startedAt ? Date.now() - Date.parse(message.startedAt) : undefined,
             }
           : message,
       ),
@@ -698,6 +701,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         return "stopped";
       }
       const assistantId = nextId("a");
+      const startedAt = new Date().toISOString();
       const controller = new AbortController();
       const runId = crypto.randomUUID();
       const activeSend: ActiveQuickChatSend = {
@@ -717,6 +721,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           text: "",
           pending: true,
           lifecycle: "streaming",
+          startedAt,
           error: null,
         },
       ]);
@@ -786,6 +791,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
                   ...m,
                   pending: false,
                   lifecycle: aborted ? "cancelled" : "failed",
+                  durationMs: m.startedAt ? Date.now() - Date.parse(m.startedAt) : undefined,
                   error: aborted ? null : (err as Error)?.message ?? "Generation failed.",
                 }
               : m,
@@ -826,7 +832,13 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? { ...m, pending: false, lifecycle: "cancelled", error: null }
+              ? {
+                  ...m,
+                  pending: false,
+                  lifecycle: "cancelled",
+                  durationMs: m.startedAt ? Date.now() - Date.parse(m.startedAt) : undefined,
+                  error: null,
+                }
               : m,
           ),
         );
@@ -842,6 +854,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
                 error: result.error,
                 pending: false,
                 lifecycle: result.error ? "failed" : "complete",
+                durationMs: m.startedAt ? Date.now() - Date.parse(m.startedAt) : undefined,
               }
             : m,
         ),

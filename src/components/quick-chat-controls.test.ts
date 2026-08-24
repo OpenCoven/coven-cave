@@ -56,7 +56,11 @@ assert.doesNotMatch(
   /GitHubCard|GitHubActionCard/,
   "ordered GitHub pieces are not duplicated in supplementary content",
 );
-assert.match(thread, /copyText\(visible\)/, "each familiar reply can be copied to the clipboard — the visible text, not the raw next-paths trailer");
+assert.match(
+  thread,
+  /onCopyCompleted=\{[\s\S]*streamingModel\.committedText[\s\S]*\(\) => copyText\(streamingModel\.committedText\)/,
+  "the unified status copies only the marker-safe committed projection, never the raw next-paths trailer",
+);
 assert.match(
   thread,
   /formatQuickChatAssistantMessage\([\s\S]*useStreamingPresentationSource\([\s\S]*formatted\.visibleProse/,
@@ -92,13 +96,13 @@ assert.match(
 );
 assert.match(
   streamingResponse,
-  /role=\{announceLifecycle \? "status" : undefined\}/,
-  "status announcements can be removed without hiding visible lifecycle copy",
+  /role=\{announceLifecycle && \(live \|\| model\.status === "interrupted"\) \? "status" : undefined\}/,
+  "only the current live or interrupted response announces replace-in-place status",
 );
 assert.match(
   streamingResponse,
-  /role=\{announceLifecycle \? "alert" : undefined\}/,
-  "alert announcements can be removed from historical failed turns",
+  /announceLifecycle && model\.status === "complete"[\s\S]*role="status"[\s\S]*aria-live="polite"/,
+  "the latest response announces completion without making historical status rows live",
 );
 assert.match(
   quickHook,
@@ -378,8 +382,8 @@ assert.match(
 
 // ── Copy affordance resets ────────────────────────────────────────────────────
 assert.match(
-  thread,
-  /setTimeout\(\(\) => setCopied\(false\), 1500\)/,
+  streamingResponse,
+  /setTimeout\(\(\) => setCopied\(false\), 1_500\)/,
   "the copied ✓ hands the button back to copy after a beat (it used to stick forever)",
 );
 
