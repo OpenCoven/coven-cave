@@ -45,19 +45,17 @@ assert.match(view, /<StandardSelect<CardPriority \| "">[\s\S]*?onChange=\{\(next
 assert.match(view, /list="board-bulk-label-options"/, "label input is backed by a datalist of existing labels");
 assert.match(view, /void bulkAddLabel\(labelDraft\)/, "label form submits bulkAddLabel");
 
-// Redesign: Select-multiple and the trash are first-class toolbar verbs
-// (visible icon buttons). The trash owns BOTH destructive flows — delete the
-// selection in select mode, clear done otherwise — so the tasks header no
-// longer carries an overflow menu.
-assert.doesNotMatch(
+// The shared surface-toolbar budget keeps selection visible while routing the
+// lower-frequency destructive verb through its explicit overflow placement.
+assert.match(
   view,
-  /<OverflowMenu/,
-  "the tasks header overflow menu is gone — the trash button owns clear-done",
+  /id: "select-tasks",[\s\S]*?placement: "visible"[\s\S]*?onSelect: \(\) => cardSelect\.setSelectMode\(!cardSelect\.selectMode\)/,
+  "Select multiple remains a visible shared-toolbar action",
 );
 assert.match(
   view,
-  /className=\{`board-icon-btn\$\{cardSelect\.selectMode \? " board-icon-btn--active" : ""\}`\}/,
-  "Select multiple is a visible toolbar icon button",
+  /id: "clear-or-delete-tasks",[\s\S]*?placement: "overflow"/,
+  "delete-selected and clear-done share the bounded toolbar overflow action",
 );
 assert.match(
   view,
