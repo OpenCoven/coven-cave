@@ -364,7 +364,7 @@ jobs:
             --require-final-changelog
 
   release-web-validation:
-    name: Validate release web and E2E
+    name: Validate release web
     needs:
       - daemon-package
       - source-version
@@ -403,8 +403,80 @@ jobs:
             rm -rf .next
           done
           exit 1
+
+  release-e2e:
+    name: Validate release E2E (${{ matrix.shard }}/8)
+    needs:
+      - daemon-package
+      - source-version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1
+
+  release-e2e-agentic:
+    name: Validate release E2E (agentic)
+    needs:
+      - daemon-package
+      - source-version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.source-version.outputs.release-commit }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+
+  release-web-validated:
+    name: Release web validated
+    if: always()
+    needs:
+      - release-web-validation
+      - release-e2e
+      - release-e2e-agentic
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every web validation job
+        env:
+          WEB_RESULT: ${{ needs.release-web-validation.result }}
+          E2E_RESULT: ${{ needs.release-e2e.result }}
+          E2E_AGENTIC_RESULT: ${{ needs.release-e2e-agentic.result }}
+        run: |
+          set -euo pipefail
+          test "$WEB_RESULT" = "success"
+          test "$E2E_RESULT" = "success"
+          test "$E2E_AGENTIC_RESULT" = "success"
 
   release-platform-validation:
     name: Validate release runtime (${{ matrix.os }})
@@ -600,7 +672,7 @@ jobs:
     needs:
       - daemon-package
       - source-version
-      - release-web-validation
+      - release-web-validated
       - release-platform-validation
     runs-on: macos-15
     timeout-minutes: 90
@@ -942,7 +1014,7 @@ jobs:
     needs:
       - daemon-package
       - source-version
-      - release-web-validation
+      - release-web-validated
       - release-platform-validation
       - release-windows-native
     env:
