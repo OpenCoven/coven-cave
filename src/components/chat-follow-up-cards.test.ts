@@ -20,7 +20,10 @@ assert.match(source, /Opens Tasks/, "action cards explain their destination");
 assert.match(source, /Recommended/, "the top recommendation carries a visible text marker");
 assert.match(source, /onActivate\(path\)/, "activation is delegated to the owning chat surface");
 assert.doesNotMatch(source, /\bsend\(path\.prompt\)/, "cards never send assistant text directly");
-assert.match(source, /Why this\?/, "contextual follow-ups disclose their rationale");
+assert.match(source, /<Popover[\s\S]*?placement="top-end"/, "rationale opens in the shared overlay above its suggestion");
+assert.match(source, /usePopoverInitialFocus/, "the rationale overlay moves keyboard focus into its close control");
+assert.match(source, /aria-label=\{`Why this suggestion: \$\{label\}`\}/, "each explanation trigger names its suggestion");
+assert.doesNotMatch(source, /<details|<summary/, "rationale no longer expands the composer document flow");
 assert.match(source, /Evidence/, "contextual follow-ups render typed evidence chips");
 assert.match(source, /path\.metadata/, "metadata remains optional for legacy next-path trailers");
 
