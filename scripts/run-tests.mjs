@@ -1776,6 +1776,8 @@ export const SUITES = {
     "src/lib/desktop-reachability.test.ts",
     "src/lib/server/mobile-paired.test.ts",
     "scripts/ios-build-ci.test.mjs",
+    "scripts/ios-xctest-summary.test.mjs",
+    "scripts/ios-select-simulator.test.mjs",
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
     "scripts/ios-chat-familiars-home.test.mjs",
