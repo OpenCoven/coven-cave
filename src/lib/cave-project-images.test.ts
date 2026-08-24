@@ -13,6 +13,7 @@ globalThis.window = {
 // familiar store (shared size-cap constant).
 const idb = { projectAvatars: new Map(), familiarImages: new Map() };
 let denyWrites = false;
+let denyDeletes = false;
 const fakeDriver = {
   async getAll(store) {
     return Object.fromEntries(idb[store]);
@@ -22,6 +23,7 @@ const fakeDriver = {
     idb[store].set(key, value);
   },
   async delete(store, key) {
+    if (denyDeletes) throw new DOMException("The database is unavailable.", "UnknownError");
     idb[store].delete(key);
   },
 };
@@ -85,7 +87,15 @@ const png = (fill) => "data:image/png;base64," + fill.repeat(1000);
 
 // Clear
 {
-  await mod.clearProjectImage("/Users/x/renamed");
+  denyDeletes = true;
+  const refused = await mod.clearProjectImage("/Users/x/renamed");
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason, /couldn’t remove/i);
+  assert.ok(mod.readProjectImagesSnapshot()["/Users/x/renamed"], "a refused delete stays visible");
+  denyDeletes = false;
+
+  const cleared = await mod.clearProjectImage("/Users/x/renamed");
+  assert.equal(cleared.ok, true);
   assert.equal(mod.readProjectImagesSnapshot()["/Users/x/renamed"], undefined);
   assert.equal(idb.projectAvatars.has("/Users/x/renamed"), false);
 }

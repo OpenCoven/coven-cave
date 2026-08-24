@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { CLIENT_V1_LIMITS, parseClientV1Cursor } from "./contract.ts";
@@ -50,6 +51,37 @@ test("cursor tokens round-trip and stay inside the contract's cursor budget", ()
   // Opaque means opaque: the sort key and id must not be readable without
   // decoding, or a client will start composing cursors by hand.
   assert.equal(encoded.includes("conversation-1"), false);
+});
+
+test("every cursor token in the generated contract fixture is canonical", () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL("./contract-fixture.json", import.meta.url), "utf8"),
+  ) as { examples: unknown };
+  const cursorTokens: Array<{ path: string; token: unknown }> = [];
+
+  function collectCursorTokens(value: unknown, path: string): void {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return;
+    const record = value as Record<string, unknown>;
+    if (typeof record.cursor === "object" && record.cursor !== null) {
+      const cursor = record.cursor as Record<string, unknown>;
+      for (const field of ["current", "next", "previous"]) {
+        if (field in cursor) {
+          cursorTokens.push({ path: `${path}.cursor.${field}`, token: cursor[field] });
+        }
+      }
+    }
+    for (const [key, child] of Object.entries(record)) {
+      collectCursorTokens(child, `${path}.${key}`);
+    }
+  }
+
+  collectCursorTokens(fixture.examples, "examples");
+  assert.ok(cursorTokens.length > 0, "fixture examples must publish at least one cursor token");
+  for (const { path, token } of cursorTokens) {
+    assert.equal(typeof token, "string", `${path} must be a string`);
+    const decoded = decodeClientV1Cursor(token);
+    assert.equal(encodeClientV1Cursor(decoded), token, `${path} must be canonical`);
+  }
 });
 
 const BASE64URL_ALPHABET =
@@ -373,6 +405,10 @@ test("the encoder never mints a token this module's own decoder refuses", () => 
   assert.throws(
     () => encodeClientV1Cursor({ sort: "s", id: "" }),
     /page key must be two strings/,
+  );
+  assert.throws(
+    () => encodeClientV1Cursor({ sort: "s".repeat(300), id: "i".repeat(300) }),
+    new RegExp(`cursor cannot exceed ${CLIENT_V1_LIMITS.cursorCharacters} characters`),
   );
   // The property the pair owes each other, stated once: anything minted decodes
   // back to the key it was minted from.
