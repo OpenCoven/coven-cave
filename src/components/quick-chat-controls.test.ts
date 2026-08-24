@@ -36,7 +36,7 @@ assert.match(
   /const formatted = formatQuickChatAssistantMessage\([\s\S]*message\.text[\s\S]*streaming/,
   "quick chat uses the shared marker-safe formatter for human-readable reply details",
 );
-assert.match(thread, /<SkillStageCard/, "quick chat renders live skill details as readable status cards");
+assert.match(thread, /<SkillRunSummary/, "quick chat renders selectable run-wide skill details");
 assert.match(thread, /<GitHubCard/, "quick chat renders settled GitHub details as preview cards");
 assert.match(thread, /<GitHubActionCard/, "quick chat renders GitHub write proposals as explicit action cards");
 assert.match(

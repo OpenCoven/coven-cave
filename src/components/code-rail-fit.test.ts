@@ -36,8 +36,8 @@ assert.match(
 // (id="code-rail"), drag-resizable behind an outer separator.
 assert.match(
   chatSurface,
-  /Panel[\s\S]*id="code-rail"[\s\S]*defaultSize="320px"[\s\S]*minSize="240px"[\s\S]*maxSize="560px"/,
-  "ChatSurface code rail should default to 320px, drag-resizable within a 240–560px band",
+  /Panel[\s\S]*id="code-rail"[\s\S]*defaultSize="280px"[\s\S]*minSize="220px"[\s\S]*maxSize="480px"/,
+  "ChatSurface code rail should default to 280px, drag-resizable within a compact 220–480px band",
 );
 assert.doesNotMatch(
   chatSurface,
@@ -72,8 +72,8 @@ assert.match(
 // it must NOT be absolutely positioned, and it reserves its own width.
 assert.match(
   caveChat,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 44px;/,
-  "the reopen rail reserves in-flow layout width",
+  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 32px;/,
+  "the reopen rail reserves an ultra-minimal in-flow layout width",
 );
 assert.doesNotMatch(
   caveChat,
