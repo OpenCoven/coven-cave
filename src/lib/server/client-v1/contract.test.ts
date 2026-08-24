@@ -5,6 +5,10 @@ import test from "node:test";
 const packageVersion: string = JSON.parse(
   readFileSync(new URL("../../../../package.json", import.meta.url), "utf8"),
 ).version;
+const contractSource = readFileSync(
+  new URL("./contract.ts", import.meta.url),
+  "utf8",
+);
 
 import {
   CLIENT_V1_API_VERSION,
@@ -80,6 +84,15 @@ export type ClientV1ErrorEnvelopeExcludesDataIsExact = Assert<
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
 }
+
+test("contract module keeps its edge-safe data-only runtime import boundary", () => {
+  const runtimeImports = [...contractSource.matchAll(
+    /^import (?!type\b)[\s\S]*? from "([^"]+)";$/gmu,
+  )].map((match) => match[1]);
+
+  assert.deepEqual(runtimeImports, ["./operations.ts"]);
+  assert.doesNotMatch(contractSource, /\bBuffer\b/u);
+});
 
 test("publishes the locked v1 metadata, capabilities, scopes, error codes, and identity kinds", () => {
   assert.equal(CLIENT_V1_API_VERSION, "1.0");

@@ -3,7 +3,6 @@
 // so contract.ts keeps the property proxy-helpers.ts depends on — pulling it in
 // costs the proxy no runtime dependency.
 import { clientV1OperationRecords } from "./operations.ts";
-import { encodeClientV1Cursor } from "./cursor-token.ts";
 
 export const CLIENT_V1_API_VERSION = "1.0";
 export const CLIENT_V1_MIN_CLIENT_VERSION = "0.1.0";
@@ -808,14 +807,10 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
     updatedAt: "2026-08-15T00:00:01.000Z",
   };
   const cursor: ClientV1Cursor = {
-    current: encodeClientV1Cursor({
-      sort: "2026-08-15T00:00:01.000Z",
-      id: "conversation-example",
-    }),
-    next: encodeClientV1Cursor({
-      sort: "2026-08-14T00:00:00.000Z",
-      id: "conversation-example-next",
-    }),
+    // Keep contract.ts data-only for the proxy import graph. contract.test.ts
+    // verifies these reviewed literals against the runtime cursor encoder.
+    current: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
+    next: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ",
     hasMore: true,
   };
 
