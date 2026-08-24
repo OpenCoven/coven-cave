@@ -563,7 +563,51 @@ struct FamiliarHubView: View {
             taskRow(task)
         } else if let reminder = overview.reminders.items.first(where: { $0.id == item.targetId }) {
             reminderRow(reminder)
+        } else if item.source == "task" {
+            Button { app.requestOpenTask(id: item.targetId, projectId: nil) } label: {
+                attentionFallbackLabel(item, systemImage: "exclamationmark.octagon")
+            }
+            .buttonStyle(.plain)
+        } else {
+            HStack(spacing: 12) {
+                attentionFallbackLabel(item, systemImage: "bell.badge")
+                Menu {
+                    Button("Done", systemImage: "checkmark") {
+                        Task { await actOnReminder(id: item.targetId, action: "done") }
+                    }
+                    Button("Snooze 1 hour", systemImage: "clock.arrow.circlepath") {
+                        Task { await actOnReminder(id: item.targetId, action: "snooze", minutes: 60) }
+                    }
+                    Button("Dismiss", systemImage: "xmark") {
+                        Task { await actOnReminder(id: item.targetId, action: "dismiss") }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Actions for \(item.title)")
+            }
         }
+    }
+
+    private func attentionFallbackLabel(
+        _ item: FamiliarDashboardAttention, systemImage: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .foregroundStyle(chrome.accent)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title).font(.body.weight(.medium)).foregroundStyle(chrome.textPrimary)
+                Text(item.kind == "fired_reminder" ? "Reminder needs attention" : "Task needs attention")
+                    .font(.caption).foregroundStyle(chrome.textSecondary)
+            }
+            Spacer(minLength: 4)
+            if item.source == "task" {
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(chrome.textSecondary)
+            }
+        }
+        .padding(12).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     private func reminderRow(_ reminder: FamiliarDashboardReminder) -> some View {
@@ -662,10 +706,15 @@ struct FamiliarHubView: View {
     private func actOnReminder(
         _ reminder: FamiliarDashboardReminder, action: String, minutes: Int? = nil
     ) async {
+        await actOnReminder(id: reminder.id, action: action, minutes: minutes)
+    }
+
+    @MainActor
+    private func actOnReminder(id: String, action: String, minutes: Int? = nil) async {
         guard let client = app.client else { return }
         do {
             _ = try await client.actOnFamiliarReminder(
-                familiarId: familiar.id, reminderId: reminder.id,
+                familiarId: familiar.id, reminderId: id,
                 action: action, minutes: minutes)
             reminderMutationError = nil
             await refreshNow()

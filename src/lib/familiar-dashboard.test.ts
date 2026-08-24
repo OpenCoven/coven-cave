@@ -219,6 +219,35 @@ test("Overview scopes and caps work and reminders without hiding blocker context
   assert.ok(overview.attention.items.some((item) => item.kind === "fired_reminder"));
 });
 
+test("attention retains overflow targets for the native fallback rows", () => {
+  const tasks = Array.from({ length: 7 }, (_, index) => ({
+    id: `task-${index}`,
+    familiarId: "nova",
+    title: `Task ${index}`,
+    status: index === 6 ? "blocked" : "running",
+    priority: "high",
+    updatedAt: `2026-08-23T1${index}:00:00.000Z`,
+  }));
+  const reminders = Array.from({ length: 6 }, (_, index) => ({
+    id: `reminder-${index}`,
+    kind: "reminder",
+    familiarId: "nova",
+    title: `Reminder ${index}`,
+    status: index === 5 ? "fired" : "pending",
+    fireAt: `2026-08-24T${10 + index}:00:00.000Z`,
+    updatedAt: "2026-08-23T12:00:00.000Z",
+  }));
+
+  const overview = buildFamiliarOverview({
+    sessions: [], memory: [], tasks, reminders, familiarId: "nova", presence: "active",
+  });
+
+  assert.ok(!overview.tasks.items.some((task) => task.id === "task-6"));
+  assert.ok(!overview.reminders.items.some((reminder) => reminder.id === "reminder-5"));
+  assert.ok(overview.attention.items.some((item) => item.targetId === "task-6"));
+  assert.ok(overview.attention.items.some((item) => item.targetId === "reminder-5"));
+});
+
 test("generated sessions never enter the recent human-conversation list", () => {
   const overview = buildFamiliarOverview({
     sessions: [
