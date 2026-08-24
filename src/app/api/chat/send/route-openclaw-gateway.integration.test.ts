@@ -264,7 +264,7 @@ try {
   const { loadConversation } = await import("@/lib/cave-conversations");
   const { createProject } = await import("@/lib/cave-projects");
   const { grantProjectToFamiliar } = await import("@/lib/project-permissions");
-  const { postChatForTests } = await import("./route.ts");
+  const { __postChatForTests } = await import("./route.ts");
 
   await saveConfig({ familiars: { wren: { harness: "openclaw", model: "" } } });
   const project = await createProject({ name: "OpenClaw Gateway route fixture", root: workspace });
@@ -276,7 +276,7 @@ try {
   });
 
   const sessionId = "openclaw-gateway-route-session";
-  const response = await postChatForTests(
+  const response = await __postChatForTests(
     new Request("http://localhost/api/chat/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
