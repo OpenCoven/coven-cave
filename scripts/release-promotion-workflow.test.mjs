@@ -192,6 +192,7 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
   const releaseWeb = release.jobs["release-web-validation"];
 
   assert.deepEqual(release.on.push.tags, ["v*.*.*", "!v*.*.*-*"]);
+  assert.ok(releaseWeb, "release workflow keeps the web validation gate");
   assert.equal(authorization.name, "Authorize release promotion");
   assert.deepEqual(authorization.permissions, { actions: "read", contents: "read" });
   const authorizationCheckout = authorization.steps.find((step) =>
