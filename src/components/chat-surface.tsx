@@ -547,9 +547,9 @@ export function ChatSurface({
                 <Panel
                   id="code-rail"
                   className="hidden min-h-0 min-w-0 lg:flex"
-                  defaultSize="320px"
-                  minSize="240px"
-                  maxSize="560px"
+                  defaultSize="280px"
+                  minSize="220px"
+                  maxSize="480px"
                 >
                   <WorkspaceRail
                     changeCount={changeCount ?? 0}
