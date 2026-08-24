@@ -100,6 +100,12 @@ assert.match(
   /<Tabs[\s\S]{0,220}items=\{VIEW_MODES\}[\s\S]{0,160}value=\{viewMode\}[\s\S]{0,180}ariaLabel="Calendar view"/,
   "view-mode toggle uses the shared labelled Tabs primitive",
 );
+assert.match(view, /idPrefix="calendar-view"/, "calendar tabs expose stable ids for panel wiring");
+assert.match(
+  view,
+  /role="tabpanel"[\s\S]{0,160}id="calendar-view-panel"[\s\S]{0,160}aria-labelledby=\{`calendar-view-tab-\$\{viewMode\}`\}/,
+  "the active calendar body is labelled by the selected view tab",
+);
 
 // ───────── Shortcut guard ignores contenteditable ─────────
 assert.match(view, /target\.isContentEditable/, "Single-key shortcuts must not fire inside contenteditable");

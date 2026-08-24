@@ -111,6 +111,11 @@ assert.match(
   /bordered=\{false\}[\s\S]{0,120}className="rituals-command-tabs"/,
   "Inline Rituals tabs reuse the header divider for a flush active indicator",
 );
+assert.match(
+  compactCalendarStyles,
+  /\.rituals-command-tabs\s*\{[^}]*margin-bottom:\s*-5px;/,
+  "Inline Rituals tabs offset the compact header inset so their indicator meets the divider",
+);
 assert.doesNotMatch(
   automations,
   /activeTab === "calendar" \? <p className="surface-compact-summary">Calendar<\/p>/,

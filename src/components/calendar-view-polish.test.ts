@@ -178,6 +178,11 @@ assert.doesNotMatch(
   /calendar-toolbar[^"]*md:flex-nowrap/,
   "The calendar rail can wrap inside narrow desktop split panes",
 );
+assert.match(
+  source,
+  /className="calendar-view-switcher hidden max-w-full shrink-0 lg:flex"/,
+  "View tabs appear only where non-Agenda modes remain selectable",
+);
 assert.doesNotMatch(
   source,
   /VIEW_MODES\.map\([\s\S]{0,800}aria-pressed=\{viewMode === id\}/,

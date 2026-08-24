@@ -67,6 +67,7 @@
 
 .rituals-command-tabs {
   align-self: stretch;
+  margin-bottom: -5px;
 }
 
 .rituals-command-tabs [role="tab"] {

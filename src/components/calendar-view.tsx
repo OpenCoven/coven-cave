@@ -1647,10 +1647,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   }
 
   const VIEW_MODES = [
-    { id: "agenda", label: "Agenda" },
-    { id: "day", label: "Day" },
-    { id: "week", label: "Week" },
-    { id: "month", label: "Month" },
+    { id: "agenda", label: "Agenda", controlsId: "calendar-view-panel" },
+    { id: "day", label: "Day", controlsId: "calendar-view-panel" },
+    { id: "week", label: "Week", controlsId: "calendar-view-panel" },
+    { id: "month", label: "Month", controlsId: "calendar-view-panel" },
   ] satisfies ReadonlyArray<TabItem<ViewMode>>;
 
   // Announce view + period changes to screen readers — the grids convey the
@@ -1727,10 +1727,11 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           value={viewMode}
           onChange={setViewMode}
           ariaLabel="Calendar view"
+          idPrefix="calendar-view"
           size="sm"
           variant="segment"
           bordered={false}
-          className="calendar-view-switcher hidden max-w-full shrink-0 md:flex"
+          className="calendar-view-switcher hidden max-w-full shrink-0 lg:flex"
         />
 
         {onAddEntry ? (
@@ -1763,7 +1764,12 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       )}
 
       {/* View body */}
-      <div className="flex-1 overflow-hidden flex flex-col">
+      <div
+        role="tabpanel"
+        id="calendar-view-panel"
+        aria-labelledby={`calendar-view-tab-${viewMode}`}
+        className="flex flex-1 flex-col overflow-hidden"
+      >
         {effectiveView === "agenda" && (
           <AgendaView
             items={scopedItems}
