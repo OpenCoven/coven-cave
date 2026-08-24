@@ -6,6 +6,7 @@ import {
   parseRestPullRequestLines,
   parseRestPullRequestPages,
 } from "./worktree-lifecycle-inventory.ts";
+import { nodeArgsFor } from "./run-tests.mjs";
 
 const inventorySource = readFileSync(
   new URL("./worktree-lifecycle-inventory.ts", import.meta.url),
@@ -59,6 +60,14 @@ test("the lifecycle PR inventory uses REST endpoints and never invokes GraphQL",
   assert.match(source, /commits\/\$\{encodeURIComponent\(oid\)\}\/pulls\?per_page=100/);
   assert.match(source, /pulls\?state=all&per_page=100/);
   assert.match(source, /"--jq"/);
+});
+
+test("the normal test runner enables TypeScript stripping for this suite", () => {
+  assert.ok(
+    nodeArgsFor("scripts/worktree-lifecycle-rest-pr-inventory.test.mjs").includes(
+      "--experimental-strip-types",
+    ),
+  );
 });
 
 test("projected REST JSONL stays bounded without losing branch inventory fields", () => {

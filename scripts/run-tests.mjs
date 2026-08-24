@@ -1908,6 +1908,7 @@ const STRIP_TYPES_MJS = new Set([
   "scripts/tweet-thread-protocol-drift.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts
   "scripts/worktree-lifecycle-retirement.test.mjs",
+  "scripts/worktree-lifecycle-rest-pr-inventory.test.mjs",
   "scripts/worktree-lifecycle-fence-renewal.test.mjs",
   // imports ./worktree-lifecycle-inventory.ts and ../src/lib/worktree-lifecycle.ts
   "scripts/worktree-lifecycle-filemode.test.mjs",

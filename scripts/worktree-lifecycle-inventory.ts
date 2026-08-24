@@ -1038,6 +1038,9 @@ function parseRestPullRequest(
   }
   const baseRepository = restRepository(value.base.repo);
   const headRepository = value.head.repo === null ? null : restRepository(value.head.repo);
+  // Commit associations can legitimately include outbound PRs whose base is a
+  // different repository. Only the repository-wide branch inventory is
+  // required to be canonical; exact-OID outbound PRs still own the commit.
   if (
     baseRepository === null ||
     (expectedOid === null &&
