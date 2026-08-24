@@ -9,8 +9,13 @@ const RUST_PATH = /^(?:src-tauri\/|Cargo\.(?:toml|lock)$|rust-toolchain)/;
 const ROOT_RUNTIME_PATH = /^[^/]+\.(?:[cm]?[jt]s|tsx?)$/;
 const E2E_PATH =
   /^(?:src\/(?:app|components|lib|styles)\/|tests\/|server\.(?:mjs|ts)$|playwright\.config|package\.json$|pnpm-lock\.yaml$)/;
+// `ios-select-simulator.mjs` and `ios-xctest-summary.mjs` are listed because
+// they ARE the iOS gate: one chooses the destination the suite runs against,
+// the other is the sole verdict on whether it ran (cave-ac372). Without them
+// here, editing the gate's own machinery ran everything except the job that
+// would have exercised it.
 const IOS_PATH =
-  /^(?:apps\/ios\/|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
+  /^(?:apps\/ios\/|scripts\/(?:ios-xcodegen\.sh|build-ios-(?:markdown|terminal)\.mjs|ios-(?:select-simulator|xctest-summary)(?:\.test)?\.mjs|ios-build-ci\.test\.mjs|ci-paths(?:\.test)?\.mjs)$|package\.json$|pnpm-lock\.yaml$|\.github\/workflows\/ci\.yml$)/;
 const CLIENT_V1_PATH =
   /^(?:src\/lib\/server\/client-v1\/|src\/app\/api\/client\/v1\/|src\/app\/api\/api-contracts\.test\.ts$|scripts\/(?:export-client-v1-contract|client-v1-release-smoke|client-v1-conformance)(?:\.test)?\.mjs$|docs\/api\/client-v1(?:[./-]|$)|docs\/client-v1(?:[./-]|$)|docs\/workflows\/client-v1-conformance\.md$|\.gitattributes$)/;
 // docs/ is deliberately absent from FRONTEND_PATH — a documentation change

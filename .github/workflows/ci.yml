@@ -223,7 +223,21 @@ jobs:
       # test costs 60 seconds and still yields a full report. The measured suite
       # is fast — 140 cases executed in about 3 seconds — so 60s per test is
       # orders of magnitude of headroom, not a tight budget.
+      #
+      # ⚠️ `continue-on-error` is deliberate and is NOT a way to go green over a
+      # failing suite. xcodebuild's exit status cannot distinguish "a test this
+      # repository has explicitly deferred by name failed" from "a new test
+      # failed", and it never notices a suite that executed nothing. The verify
+      # step below is therefore the sole verdict — it reads the result bundle,
+      # applies the source-derived floor, refuses skips and expected failures,
+      # and fails on any failure not enumerated in QUARANTINED_FAILURES. The
+      # outcome recorded here is handed to it and cross-checked, so a step that
+      # died without leaving a bad bundle (a build error, a lost simulator, a
+      # cancelled step) still fails the job. All three couplings are pinned by
+      # scripts/ios-build-ci.test.mjs.
       - name: Run the iOS XCTest suite
+        id: xctest
+        continue-on-error: true
         working-directory: apps/ios/CovenCave
         run: |
           set -euo pipefail
@@ -244,12 +258,21 @@ jobs:
       # layer up. So the result bundle is read and the executed count is
       # compared against the number of XCTest methods in the source tree.
       # `always()` so a failing run still prints its counts and failures.
+      #
+      # It is also the ONLY verdict this job has (see the note on the step
+      # above), and it gates more than the executed count: a skipped case and an
+      # XCTExpectFailure are both rejected outright, because either would keep
+      # the executed count at the floor while asserting nothing — the cheapest
+      # and most invisible way to switch this gate off. A known failure is
+      # deferred only by name, through QUARANTINED_FAILURES, where it expires
+      # and where a listed test that starts passing fails the job.
       - name: Verify the iOS XCTest suite executed
         if: always()
         run: |
           node scripts/ios-xctest-summary.mjs \
             --result-bundle "$IOS_RESULT_BUNDLE" \
-            --tests-dir apps/ios/CovenCave/CovenCaveTests
+            --tests-dir apps/ios/CovenCave/CovenCaveTests \
+            --xcodebuild-outcome "${{ steps.xctest.outcome }}"
 
   frontend-validation:
     name: Frontend validation (${{ matrix.validation.name }})
