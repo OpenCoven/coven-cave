@@ -13,6 +13,7 @@
 // native compilation and TestFlight processing gate.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { parse } from "yaml";
 
 const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
 const project = readFileSync(
@@ -219,5 +220,196 @@ for (const bundleId of ["ai.opencoven.cave", "ai.opencoven.cave.widgets"]) {
     `the export options must map ${bundleId} to its provisioning profile`,
   );
 }
+
+// ── Routine PR CI must EXECUTE the XCTests, not merely compile them ─────────
+//
+// cave-ac372. `xcodebuild build-for-testing` needs no booted simulator, which
+// is what made it cheap enough to add to per-PR CI — and exactly why it cannot
+// run an assertion. For a while the `iOS build` check therefore certified that
+// 684 XCTest methods PARSE. Nothing had ever asked whether they pass, including
+// the ~1,900 lines of Familiar-hub store behaviour #4946 shipped with tests.
+//
+// These assertions are structural rather than textual wherever YAML allows it:
+// the `test` action, its destination and the verification step are read off the
+// parsed job. The property the gate actually depends on — that a run executing
+// zero or too few cases is rejected — is NOT asserted by grepping this file;
+// it is unit-tested against the decision procedure in
+// scripts/ios-xctest-summary.test.mjs, which can mutate a summary and watch the
+// verdict flip. A workflow assertion can only prove the wiring exists.
+const ci = parse(readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"));
+const ciIosJob = ci.jobs?.ios;
+assert.ok(ciIosJob, "ci.yml defines an `ios` job");
+assert.equal(ciIosJob["runs-on"], "macos-15", "the iOS job needs a macOS runner — xcodebuild runs nowhere else");
+
+const iosSteps = ciIosJob.steps ?? [];
+const runScripts = iosSteps.map((step) => String(step.run ?? ""));
+const stepRunning = (predicate) => iosSteps.find((step) => predicate(String(step.run ?? "")));
+
+// Matched on the xcodebuild ACTION, not on a substring: `build-for-testing`
+// contains "testing", and prose in a comment contains anything at all. The
+// action is the last word of the invocation, so it is anchored as a bare
+// token in a run script that actually calls xcodebuild.
+const invokesXcodebuildAction = (run, action) =>
+  run.includes("xcodebuild") && new RegExp(String.raw`(?:^|\s)${action}(?:\s|$)`, "m").test(run);
+
+const compileStep = stepRunning((run) => invokesXcodebuildAction(run, "build-for-testing"));
+assert.ok(compileStep, "the iOS job still compiles the test bundles");
+
+const testStep = stepRunning(
+  (run) => invokesXcodebuildAction(run, "test-without-building") || invokesXcodebuildAction(run, "test"),
+);
+assert.ok(
+  testStep,
+  "the iOS job must RUN the XCTests — `build-for-testing` alone certifies that they compile, not that they pass (cave-ac372)",
+);
+assert.notEqual(
+  testStep,
+  compileStep,
+  "compiling and running are separate steps so a compile failure is distinguishable from a test failure",
+);
+
+// A test action needs a concrete, booted simulator. `generic/platform=iOS
+// Simulator` is a build-only destination: pointing the test action at it is the
+// cosmetic version of this fix, and it would fail rather than silently pass —
+// but pinning it here means nobody has to discover that on a red CI run.
+const testRun = String(testStep.run ?? "");
+assert.doesNotMatch(
+  testRun,
+  /-destination\s+["']?generic\//,
+  "a generic destination cannot run tests; the test action needs a concrete simulator",
+);
+assert.match(
+  testRun,
+  /-destination\s+"id=\$IOS_SIMULATOR_UDID"/,
+  "the test action targets the simulator the job resolved and booted",
+);
+assert.ok(
+  stepRunning((run) => run.includes("simctl bootstatus")),
+  "the iOS job boots a simulator and waits for it before running tests",
+);
+// The runner image's device names and iOS versions change without notice, so
+// the simulator is discovered, not spelled. A hardcoded name turns an image
+// bump into a red iOS job that reads like a product failure.
+assert.ok(
+  runScripts.some((run) => run.includes("simctl list devices available")),
+  "the simulator is resolved from the runner's available devices rather than hardcoded",
+);
+assert.ok(
+  runScripts.some((run) => run.includes("scripts/ios-select-simulator.mjs")),
+  "selection goes through the tested selector — a lexicographic sort would pick iOS-9 over iOS-26",
+);
+
+// UI tests keep their compile gate but stay out of the blocking path: they
+// drive XCUIApplication, which is minutes per case and the most flake-prone
+// thing this pipeline could own.
+assert.match(
+  testRun,
+  /-only-testing:CovenCaveTests\b/,
+  "routine PR CI runs the unit bundle; CovenCaveUITests stays compile-only for cost and flake reasons",
+);
+
+// A hang must cost one test, not the whole job. Run 32666989516 — the first
+// run that ever executed these tests — wedged for 36 minutes inside a single
+// case and died on the job timeout, leaving an unfinalized result bundle and
+// therefore no counts and no failure names at all. Without timeouts enabled
+// XCTest does not enforce its per-test allowance, so the flags below are the
+// difference between "one test is named and failed" and "the gate reports
+// nothing distinguishable from an infrastructure blip".
+assert.match(
+  testRun,
+  /-test-timeouts-enabled\s+YES/,
+  "per-test timeouts must be enabled — a hung test otherwise wedges the job until it times out with no report",
+);
+assert.match(
+  testRun,
+  /-default-test-execution-time-allowance\s+\d+/,
+  "a default per-test allowance bounds a hang to one test instead of the whole run",
+);
+
+const verifyStep = iosSteps.find((step) => String(step.run ?? "").includes("scripts/ios-xctest-summary.mjs"));
+assert.ok(
+  verifyStep,
+  "the iOS job verifies the result bundle — xcodebuild exits 0 when its selector matches no tests, which is the original defect one layer up",
+);
+assert.match(
+  testRun,
+  /-resultBundlePath\s+"\$IOS_RESULT_BUNDLE"/,
+  "the test action writes the result bundle the verification step reads",
+);
+assert.equal(
+  verifyStep.if,
+  "always()",
+  "the verification step reports counts and failures even when the test action already failed",
+);
+assert.match(
+  String(verifyStep.run),
+  /--tests-dir\s+apps\/ios\/CovenCave\/CovenCaveTests/,
+  "the executed-count floor is derived from the unit-test sources rather than hardcoded",
+);
+
+// ── The simulator guard must fail CLOSED ────────────────────────────────────
+//
+// "No simulator, so nothing ran" is the silent-green shape this whole change
+// exists to remove, and it is the one failure mode that looks like a runner
+// problem rather than a code problem — which is exactly how it would get
+// waved through. The step's existence was already pinned above; what was NOT
+// pinned is that it stops the job.
+const bootStep = stepRunning((run) => run.includes("simctl bootstatus"));
+const bootRun = String(bootStep.run ?? "");
+assert.match(
+  bootRun,
+  /^\s*exit 1$/m,
+  "the simulator step must exit non-zero when no iPhone simulator resolves — a suite that could not run must never read as a pass",
+);
+assert.match(
+  bootRun,
+  /set -euo pipefail/,
+  "the simulator step must abort on the first failing command, including a failed bootstatus",
+);
+assert.notEqual(
+  bootStep["continue-on-error"],
+  true,
+  "the simulator step is a hard prerequisite; it must not be allowed to fail softly",
+);
+
+// ── The verify step is the SOLE verdict, and knows it ───────────────────────
+//
+// The test step runs with `continue-on-error` so a run whose only failures are
+// enumerated in QUARANTINED_FAILURES can be green. That is safe only while all
+// three of the following hold, so all three are pinned: the test step records
+// an outcome, the verify step consumes that exact outcome, and the verify step
+// itself can still fail the job.
+assert.equal(
+  testStep["continue-on-error"],
+  true,
+  "the test step defers its verdict to the verify step, which alone can tell a deferred failure from a new one",
+);
+assert.ok(
+  typeof testStep.id === "string" && testStep.id.length > 0,
+  "the test step needs an id so its outcome can be handed to the verify step",
+);
+const verifyRun = String(verifyStep.run);
+assert.ok(
+  verifyRun.includes(`steps.${testStep.id}.outcome`),
+  `the verify step must receive steps.${testStep.id}.outcome — without it, a test step that died without ` +
+    "writing a bad bundle (a build error, a lost simulator, a cancelled step) would pass unnoticed",
+);
+assert.match(
+  verifyRun,
+  /--xcodebuild-outcome/,
+  "the verify step must cross-check the result bundle against xcodebuild's own exit status",
+);
+assert.notEqual(
+  verifyStep["continue-on-error"],
+  true,
+  "the verify step IS the gate — allowing it to fail softly would switch the whole check off",
+);
+
+// `Frontend build` is the one required context, so the execution gate only
+// blocks if that job keeps consuming the iOS job's result.
+assert.ok(
+  (ci.jobs?.build?.needs ?? []).includes("ios"),
+  "Frontend build — the required context — must keep depending on the iOS job",
+);
 
 console.log("ios-build-ci.test.mjs: ok");

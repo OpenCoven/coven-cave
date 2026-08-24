@@ -102,6 +102,14 @@ test("iOS sources and generators request the macOS build", () => {
     "scripts/ios-xcodegen.sh",
     "scripts/build-ios-markdown.mjs",
     "scripts/ci-paths.mjs",
+    // The XCTest gate's own machinery (cave-ac372). Editing the script that
+    // decides whether the suite ran must run the job that would catch a
+    // mistake in it; before this, it ran everything except that job.
+    "scripts/ios-select-simulator.mjs",
+    "scripts/ios-select-simulator.test.mjs",
+    "scripts/ios-xctest-summary.mjs",
+    "scripts/ios-xctest-summary.test.mjs",
+    "scripts/ios-build-ci.test.mjs",
   ]) {
     assert.equal(classifyCiPaths([path]).ios, true, path);
   }
