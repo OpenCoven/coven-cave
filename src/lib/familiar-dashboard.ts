@@ -348,6 +348,10 @@ export type FamiliarAnalyticsDigest = {
     }>;
   };
   memory: {
+    availability: "available" | "unavailable";
+    /** Canonical-memory records for this Familiar; null when the source failed. */
+    total: number | null;
+    freshestAt: string | null;
     state: "measured" | "insufficient";
     sampleCount: number;
     recall: number | null;
@@ -367,6 +371,12 @@ export type FamiliarAnalyticsDigest = {
       id: string;
       title: string;
       impact: string;
+    }>;
+    healRequests: BoundedList<{
+      id: string;
+      title: string;
+      severity: string;
+      actionKind: string;
     }>;
   };
 };
@@ -920,7 +930,15 @@ export function buildFamiliarAnalyticsDigest(input: {
   sessionsAvailable: boolean;
   metricSnapshots: readonly ThreadMetricSnapshot[];
   metricSnapshotsAvailable: boolean;
+  memory: readonly OverviewMemoryInput[];
+  memoryAvailable: boolean;
   contractGapCount: number | null;
+  healRequests: readonly {
+    id: string;
+    title: string;
+    severity: string;
+    actionKind: string;
+  }[];
   now: Date;
 }): FamiliarAnalyticsDigest {
   const sample = input.reports.slice(0, FAMILIAR_DASHBOARD_LIMITS.reports);
@@ -1012,6 +1030,16 @@ export function buildFamiliarAnalyticsDigest(input: {
     title: clampDashboardText(item.title),
     impact: item.impact,
   }));
+  const memoryFreshest = [...input.memory]
+    .map((entry) => entry.updatedAt ?? "")
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+  const safeHeals = input.healRequests.map((request) => ({
+    id: clampDashboardText(request.id),
+    title: clampDashboardText(request.title),
+    severity: clampDashboardText(request.severity),
+    actionKind: clampDashboardText(request.actionKind),
+  }));
 
   return {
     sampleSize: sample.length,
@@ -1059,6 +1087,9 @@ export function buildFamiliarAnalyticsDigest(input: {
         : [],
     },
     memory: {
+      availability: input.memoryAvailable ? "available" : "unavailable",
+      total: input.memoryAvailable ? input.memory.length : null,
+      freshestAt: input.memoryAvailable ? memoryFreshest : null,
       state: memorySampleCount > 0 ? "measured" : "insufficient",
       sampleCount: memorySampleCount,
       recall: averages.memoryRecall,
@@ -1075,6 +1106,7 @@ export function buildFamiliarAnalyticsDigest(input: {
       sampleCount: sample.length,
       contractGaps: input.contractGapCount,
       persistentBlockers: boundList(safeBlockers, FAMILIAR_DASHBOARD_LIMITS.analyticsItems),
+      healRequests: boundList(safeHeals, FAMILIAR_DASHBOARD_LIMITS.analyticsItems),
     },
   };
 }

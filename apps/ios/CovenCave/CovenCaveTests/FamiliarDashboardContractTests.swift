@@ -57,8 +57,11 @@ final class FamiliarDashboardContractTests: XCTestCase {
         XCTAssertEqual(analytics.confidence?.band, "high")
         XCTAssertEqual(analytics.signalTrends?.metrics.first?.direction, "improving")
         XCTAssertEqual(analytics.memory?.recall, 75)
+        XCTAssertEqual(analytics.memory?.total, 3)
+        XCTAssertEqual(analytics.memory?.freshestAt, "2026-08-22T13:00:00.000Z")
         XCTAssertEqual(analytics.capabilities?.used.items.first?.name, "shell")
         XCTAssertEqual(analytics.attention?.contractGaps, 2)
+        XCTAssertEqual(analytics.attention?.healRequests?.items.first?.actionKind, "fix-contract")
     }
 
     func testAdditiveAnalyticsFieldsMayBeMissingFromAnEarlierV1Snapshot() throws {

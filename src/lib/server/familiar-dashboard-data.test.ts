@@ -274,6 +274,30 @@ test("healthy sources with nothing in them produce `empty` and ZERO issues", asy
   assert.equal(analytics.data.sampleSize, 0);
 });
 
+test("analytics retains independent activity, canonical memory, and contract-heal evidence without reports", async () => {
+  const result = await load({
+    loadSessions: async () => ({
+      sessions: [{ id: "s1", title: "Human chat", status: "completed", updated_at: "2026-08-23T10:00:00.000Z" }],
+      degraded: false,
+    }),
+    loadMemory: async () => [{
+      id: "m1", familiarId: "sage", title: "Durable context", updatedAt: "2026-08-23T09:00:00.000Z",
+      relativeUpdatedAt: "now", excerpt: "", source: {}, privacy: {}, verification: { state: "unknown" },
+    }],
+    loadContract: async () => ({
+      properties: [],
+      violations: [{ file: "SOUL.md", field: "purpose", message: "missing" }],
+      warnings: [],
+    }),
+  });
+  const analytics = result.response.sections.analytics;
+  assert.equal(analytics.state, "fresh");
+  assert.equal(analytics.data.activity.totalSessions, 1);
+  assert.equal(analytics.data.memory.total, 1);
+  assert.equal(analytics.data.attention.healRequests.total, 1);
+  assert.equal(analytics.data.attention.healRequests.items[0]?.actionKind, "fix-contract");
+});
+
 // --- redaction --------------------------------------------------------------
 
 test("no raw error text, path, or secret from a failing source reaches the payload", async () => {

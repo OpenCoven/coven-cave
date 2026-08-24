@@ -604,6 +604,9 @@ struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
     }
 
     struct MemoryDigest: Decodable, Hashable, Sendable {
+        var availability: String?
+        var total: Int?
+        var freshestAt: String?
         var state: String
         var sampleCount: Int
         var recall: Double?
@@ -627,9 +630,16 @@ struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
             var title: String
             var impact: String
         }
+        struct HealRequest: Decodable, Hashable, Sendable {
+            var id: String
+            var title: String
+            var severity: String
+            var actionKind: String
+        }
         var sampleCount: Int
         var contractGaps: Int?
         var persistentBlockers: FamiliarDashboardBoundedList<Blocker>
+        var healRequests: FamiliarDashboardBoundedList<HealRequest>?
     }
 
     /// Every figure below is derived from `sampleSize` reports and no others.

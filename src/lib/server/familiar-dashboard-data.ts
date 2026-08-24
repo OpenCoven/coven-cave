@@ -62,12 +62,12 @@ import {
   type OverviewReminderInput,
   type OverviewSessionInput,
   type OverviewTaskInput,
-  type ProfileContractInput,
 } from "@/lib/familiar-dashboard";
 import { bindingFor, loadConfig, type CaveConfig } from "@/lib/cave-config";
 import type { CanonicalMemorySummary } from "@/lib/canonical-memory";
 import { canonicalMemoryList } from "@/lib/server/canonical-memory-gateway";
-import { evaluateFamiliarContract } from "@/lib/familiar-contract";
+import { evaluateFamiliarContract, type ContractReport } from "@/lib/familiar-contract";
+import { deriveHealRequests } from "@/lib/familiar-heal-requests";
 import { readFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import {
@@ -101,7 +101,7 @@ export type FamiliarDashboardDependencies = {
   loadTasks: () => Promise<Card[]>;
   loadReminders: () => Promise<InboxItem[]>;
   loadMemory: () => Promise<CanonicalMemorySummary[]>;
-  loadContract: (familiarId: string) => Promise<ProfileContractInput>;
+  loadContract: (familiarId: string) => Promise<ContractReport>;
   loadSelfReports: (
     familiarId: string,
   ) => Promise<{ reports: ThreadSelfReport[]; total: number }>;
@@ -135,11 +135,7 @@ export function familiarDashboardDependencies(): FamiliarDashboardDependencies {
     loadContract: async (familiarId: string) => {
       const { files } = await readFamiliarContractFiles(familiarId);
       const report = evaluateFamiliarContract(files);
-      return {
-        properties: report.properties,
-        violations: report.violations,
-        warnings: report.warnings,
-      };
+      return report;
     },
     loadSelfReports: (familiarId: string) =>
       listSelfReports(familiarId, { limit: FAMILIAR_DASHBOARD_LIMITS.reports }),
@@ -475,7 +471,12 @@ export async function loadFamiliarDashboard(input: {
     sessionsAvailable: sessions.ok,
     metricSnapshots: metricSnapshots.ok ? metricSnapshots.data.snapshots : [],
     metricSnapshotsAvailable: metricSnapshots.ok,
+    memory: memoryInputs,
+    memoryAvailable: memory.ok,
     contractGapCount: contract.ok ? contract.data.violations.length : null,
+    healRequests: contract.ok
+      ? deriveHealRequests({ familiarId, contractReport: contract.data, growthReport: null })
+      : [],
     now: input.now ?? new Date(),
   });
 
@@ -484,7 +485,11 @@ export async function loadFamiliarDashboard(input: {
     requiredFailure: analyticsRequiredFailure,
     issues: analyticsIssues,
     data: analyticsData,
-    hasContent: analyticsData.sampleSize > 0,
+    hasContent:
+      analyticsData.sampleSize > 0 ||
+      (analyticsData.activity.totalSessions ?? 0) > 0 ||
+      analyticsData.memory.total !== null && analyticsData.memory.total > 0 ||
+      analyticsData.attention.healRequests.total > 0,
   });
 
   const assembled: FamiliarDashboardSuccess = {

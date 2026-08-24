@@ -169,6 +169,9 @@ enum FamiliarDashboardFixtures {
         ]
       },
       "memory": {
+        "availability": "available",
+        "total": 3,
+        "freshestAt": "2026-08-22T13:00:00.000Z",
         "state": "measured",
         "sampleCount": 6,
         "recall": 75,
@@ -186,6 +189,10 @@ enum FamiliarDashboardFixtures {
         "contractGaps": 2,
         "persistentBlockers": {
           "items": [{ "id": "b1", "title": "Simulator unavailable", "impact": "Native visual pass blocked" }],
+          "total": 1
+        },
+        "healRequests": {
+          "items": [{ "id": "h1", "title": "Repair the contract", "severity": "crit", "actionKind": "fix-contract" }],
           "total": 1
         }
       }

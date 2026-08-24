@@ -61,7 +61,10 @@ function analyticsInput(overrides = {}) {
     sessionsAvailable: true,
     metricSnapshots: [],
     metricSnapshotsAvailable: true,
+    memory: [],
+    memoryAvailable: true,
     contractGapCount: 0,
+    healRequests: [],
     now: NOW,
     ...overrides,
   };
@@ -385,6 +388,20 @@ test("analytics activity excludes generated runs and never turns source failure 
   assert.equal(unavailable.activity.availability, "unavailable");
   assert.equal(unavailable.activity.totalSessions, null);
   assert.deepEqual(unavailable.activity.days, []);
+});
+
+test("analytics preserves canonical-memory and healing evidence separately from report scores", () => {
+  const digest = buildFamiliarAnalyticsDigest(analyticsInput({
+    memory: [{ id: "m1", title: "Brief", updatedAt: "2026-08-23T10:00:00.000Z" }],
+    healRequests: [{ id: "heal-1", title: "Restore the contract", severity: "crit", actionKind: "fix-contract" }],
+  }));
+  assert.deepEqual(digest.memory, {
+    availability: "available", total: 1, freshestAt: "2026-08-23T10:00:00.000Z",
+    state: "insufficient", sampleCount: 0, recall: null, fileLocatability: null, latestReportAt: null,
+  });
+  assert.equal(digest.attention.healRequests.total, 1);
+  assert.equal(digest.attention.healRequests.items[0]?.actionKind, "fix-contract");
+  assert.equal(buildFamiliarAnalyticsDigest(analyticsInput({ memoryAvailable: false })).memory.total, null);
 });
 
 test("analytics trends require two evidence buckets and expose no composite score", () => {

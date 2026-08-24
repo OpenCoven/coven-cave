@@ -128,9 +128,9 @@ struct FamiliarAnalyticsDigestView: View {
     private func memoryCard(_ analytics: FamiliarDashboardAnalytics) -> some View {
         let memory = analytics.memory
         let measured = [memory?.recall, memory?.fileLocatability].compactMap { $0 }.count
-        let value = memory?.state == "measured"
-            ? "\(measured) measured signals"
-            : "Insufficient evidence"
+        let value = memory?.availability == "unavailable"
+            ? "Unavailable"
+            : "\(memory?.total ?? 0) entries · \(measured) measured signals"
         return card(
             "Memory & recall", icon: "brain.head.profile", value: value,
             evidence: evidence(period: reportWindow(analytics), sample: memory?.sampleCount ?? 0),
@@ -141,8 +141,9 @@ struct FamiliarAnalyticsDigestView: View {
         let capabilities = analytics.capabilities
         let used = capabilities?.used.total ?? 0
         let gaps = capabilities?.lacking.total ?? 0
+        let vital = capabilities?.vital.total ?? 0
         return card(
-            "Capabilities", icon: "wrench.and.screwdriver", value: "\(used) used · \(gaps) gaps",
+            "Capabilities", icon: "wrench.and.screwdriver", value: "\(used) used · \(gaps) gaps · \(vital) vital",
             evidence: evidence(period: reportWindow(analytics), sample: capabilities?.sampleCount ?? 0),
             detail: .capabilities)
     }
@@ -150,9 +151,10 @@ struct FamiliarAnalyticsDigestView: View {
     private func attentionCard(_ analytics: FamiliarDashboardAnalytics) -> some View {
         let attention = analytics.attention
         let blockers = attention?.persistentBlockers.total ?? 0
+        let heals = attention?.healRequests?.total ?? 0
         let gaps = attention?.contractGaps.map(String.init) ?? "Unavailable"
         return card(
-            "Needs attention", icon: "exclamationmark.bubble", value: "\(blockers) blockers · \(gaps) contract gaps",
+            "Needs attention", icon: "exclamationmark.bubble", value: "\(heals) heals · \(blockers) blockers · \(gaps) contract gaps",
             evidence: evidence(period: reportWindow(analytics), sample: attention?.sampleCount ?? 0),
             detail: .attention)
     }
@@ -214,6 +216,11 @@ struct FamiliarAnalyticsDigestView: View {
                 if analytics.signalTrends?.availability != "available" { Text("Signal history is unavailable.") }
             }
         case .memory:
+            Section("Canonical memory") {
+                LabeledContent("Availability", value: analytics.memory?.availability == "unavailable" ? "Unavailable" : "Available")
+                LabeledContent("Entries", value: analytics.memory?.total.map(String.init) ?? "Not available")
+                LabeledContent("Freshest", value: analytics.memory?.freshestAt ?? "No canonical-memory timestamp")
+            }
             Section("Self-reported signals") {
                 metricRow("Recall", analytics.memory?.recall)
                 metricRow("File locatability", analytics.memory?.fileLocatability)
@@ -229,7 +236,18 @@ struct FamiliarAnalyticsDigestView: View {
                     LabeledContent(item.name, value: item.importance)
                 }
             }
+            Section("Vital") {
+                ForEach(analytics.capabilities?.vital.items ?? [], id: \.name) { item in
+                    LabeledContent(item.name, value: item.state)
+                }
+            }
         case .attention:
+            Section("Heal requests") {
+                ForEach(analytics.attention?.healRequests?.items ?? [], id: \.id) { request in
+                    LabeledContent(request.title, value: request.actionKind)
+                }
+                if analytics.attention?.healRequests?.total == 0 { Text("No heal requests reported.") }
+            }
             Section("Persistent blockers") {
                 ForEach(analytics.attention?.persistentBlockers.items ?? [], id: \.id) { blocker in
                     VStack(alignment: .leading) {
