@@ -23,14 +23,14 @@ assert.match(
 // The overflow-menu ROW keeps the exact count — a menu row has room for data.
 assert.match(
   topBar,
-  /View tasks — \$\{taskCount > 99 \? "99\+" : taskCount\} open/,
+  /`\$\{TASKS_LABEL\} — \$\{taskCount > 99 \? "99\+" : taskCount\} open`/,
   "The overflow-menu row keeps the exact open-task count",
 );
 
 // ── Counter buttons carry sighted tooltips, not just aria-labels ────────────
 assert.match(
   menuBar,
-  /aria-label=\{taskCount > 0 \? `View tasks — \$\{taskCount\} open` : "View tasks"\}\s*\n\s*title=\{taskCount > 0 \? `View tasks — \$\{taskCount\} open` : "View tasks"\}/,
+  /aria-label=\{taskCount > 0 \? `\$\{TASKS_LABEL\} — \$\{taskCount\} open` : TASKS_LABEL\}\s*\n\s*title=\{taskCount > 0 \? `\$\{TASKS_LABEL\} — \$\{taskCount\} open` : TASKS_LABEL\}/,
   "Tasks button exposes the exact count as a hover tooltip",
 );
 assert.match(

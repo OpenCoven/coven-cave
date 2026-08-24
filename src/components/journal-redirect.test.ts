@@ -82,7 +82,11 @@ assert.match(ws, /case "\/journal":\s*\n\s*setMode\("journal"\)/, "/journal rout
 // Memories now. ─────
 assert.match(navigation, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "the navigation registry keeps Journal reachable through the palette");
 assert.doesNotMatch(navigation, /generated sketches/, "the Journal description no longer promises the canvas");
-assert.match(sidebar, /navItemsForSection\(section\)/, "the sidebar consumes the section-filtered visible registry");
+assert.match(
+  sidebar,
+  /sidebarDestinations\(section\)/,
+  "the sidebar consumes the section-filtered shared destination policy",
+);
 
 // ── Journal is a registered Memories variant, so split requests preserve it ─
 assert.match(

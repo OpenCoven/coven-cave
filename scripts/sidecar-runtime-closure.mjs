@@ -277,6 +277,16 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // August 12, confirming gradual growth rather than a sudden subtree inclusion.
   // Restore the same one-week, 150-file headroom from the Windows maximum;
   // leave the expanded-byte ceiling unchanged.
+  //
+  // 2026-08-24 (cave-3t37b): v0.3.10-rc.1 measured 6,627 files on macOS,
+  // 6,631 on Ubuntu, and 6,635 on Windows. A clean v0.3.9 reconstruction
+  // measured 6,242 files on macOS. Exact path comparison accounted for the
+  // +385 net files: generated .next server/static output +315, Next 16.3.1
+  // runtime +52, SWC runtime +16, and two workflow files. The release added
+  // 18 API routes and upgraded Next 16.2.12 -> 16.3.1; no new file class,
+  // dependency subtree, source maps, tests, or duplicate package tree entered
+  // the closure. Keep the established 150-file headroom from the governing
+  // Windows measurement without relaxing the expanded-byte ceiling.
   fileCount: readSidecarFileCountBudget(),
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });

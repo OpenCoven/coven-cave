@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
+
+assert.match(
+  source,
+  /const SEARCH_LABEL = "Search anything or ask Salem, the docs familiar"/,
+  "mobile search keeps its scoped accessible name",
+);
+assert.match(source, /aria-label=\{SEARCH_LABEL\}/, "mobile search uses the scoped label constant");
 const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
 
 assert.match(
@@ -70,6 +77,11 @@ assert.match(
   /<input[\s\S]*type="search"[\s\S]*className="top-bar__search-input"/,
   "Top bar search should expose a real search input, not only a button",
 );
+assert.match(
+  source,
+  /const searchShortcut = platformizeHint\("⌘K", keys\);[\s\S]*title=\{`Search everything — or ask Salem, the familiar trained on the OpenCoven docs \(\$\{searchShortcut\}\)`\}/,
+  "Top bar platformizes the Search shortcut hint",
+);
 
 assert.match(
   source,
@@ -108,8 +120,13 @@ assert.match(
 
 assert.match(
   source,
-  /top-bar__mobile-toggle[\s\S]*onToggleNav/,
+  /const navShortcut = platformizeHint\("⌘B", keys\);[\s\S]*onToggleNav[\s\S]*aria-label=\{navDrawerOpen \? "Close navigation" : `Open navigation \(\$\{navShortcut\}\)`\}/,
   "Mobile nav drawer toggle is preserved",
+);
+assert.match(
+  source,
+  /const listShortcut = platformizeHint\("⌘\\\\", keys\);[\s\S]*onToggleList[\s\S]*aria-label=\{listDrawerOpen \? "Close list" : `Open list \(\$\{listShortcut\}\)`\}/,
+  "Mobile list drawer toggle platformizes its shortcut hint",
 );
 
 assert.match(
@@ -159,20 +176,14 @@ assert.match(
 );
 
 // Mobile quick actions: Tasks. New chat lives in WorkspaceSidebar, the
-// contextual primary nav in Chat; SidebarMinimal returns outside Chat. The top
-// bar therefore no longer renders a New chat button. The task quick actions moved
-// into the shared overflow menu (§8 chrome budget — occasional verbs don't
-// earn always-visible chrome), with the live open-task badge kept on the
-// trigger.
+// task quick actions moved into the shared overflow menu (§8 chrome budget —
+// occasional verbs don't earn always-visible chrome), with the live open-task
+// badge kept on the trigger. The chat launcher now uses the canonical "New chat"
+// name while preserving the shell-owned onOpenQuickChat handler.
 assert.match(
   source,
   /onViewTasks\?: \(\) => void/,
   "Top bar accepts a View tasks handler for the mobile quick action",
-);
-assert.doesNotMatch(
-  source,
-  /aria-label="New chat"/,
-  "New chat belongs to Chat's contextual WorkspaceSidebar; SidebarMinimal returns outside Chat",
 );
 assert.match(
   source,
@@ -194,17 +205,32 @@ assert.match(
 assert.match(
   source,
   /onOpenQuickChat\?: \(\) => void/,
-  "Top bar accepts an onOpenQuickChat handler to reveal the in-app quick chat",
+  "Top bar accepts an onOpenQuickChat handler to reveal the shell-owned chat launcher",
 );
 assert.match(
   source,
   /onClick=\{onOpenQuickChat\}/,
-  "Top bar wires the quick-chat button to the onOpenQuickChat handler",
+  "Top bar wires the New chat button to the onOpenQuickChat handler",
 );
 assert.match(
   source,
-  /aria-label="Quick chat"/,
-  "Quick-chat top-bar button is accessibly labeled",
+  /aria-label=\{NEW_CHAT_LABEL\}/,
+  "Top-bar New chat button is accessibly labeled",
+);
+assert.match(
+  source,
+  /const newChatShortcut = platformizeHint\("⌘J", keys\);[\s\S]*title=\{`\$\{NEW_CHAT_LABEL\} \(\$\{newChatShortcut\}\)`\}/,
+  "Top-bar New chat button platformizes its shortcut hint",
+);
+assert.match(
+  source,
+  /workspacePageDefinition\("settings"\)/,
+  "Top bar derives Settings naming from the shared page registry",
+);
+assert.match(
+  source,
+  /const settingsShortcut = platformizeHint\("⌘,", keys\);[\s\S]*onClick=\{onOpenSettings\}[\s\S]{0,180}title=\{`\$\{SETTINGS_LABEL\} \(\$\{settingsShortcut\}\)`\}/,
+  "Top bar platformizes the Settings shortcut hint",
 );
 
 console.log("top-bar.test.ts: ok");
