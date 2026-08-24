@@ -5,7 +5,8 @@ import { NotificationBell } from "@/components/notification-bell";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem } from "@/components/ui/popover";
-import { useKeySymbols } from "@/lib/platform-keys";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
+import { workspacePageDefinition } from "@/lib/workspace-page-registry";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -63,6 +64,10 @@ type Props = {
 
 const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
+const SEARCH_LABEL = "Search";
+const NEW_CHAT_LABEL = "New chat";
+const TASKS_LABEL = workspacePageDefinition("board")?.title ?? "Tasks";
+const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";
 
 export function TopBar(props: Props) {
   const keys = useKeySymbols();
@@ -101,6 +106,11 @@ export function TopBar(props: Props) {
   // handler is wired (the menu offers "All", so it's reachable even before a
   // familiar is the global-active one — e.g. the Home surface).
   const showFamiliarSwitcher = Boolean(onSelectFamiliar && (familiarOptions?.length ?? 0) > 0);
+  const searchShortcut = platformizeHint("⌘K", keys);
+  const navShortcut = platformizeHint("⌘B", keys);
+  const listShortcut = platformizeHint("⌘\\", keys);
+  const newChatShortcut = platformizeHint("⌘J", keys);
+  const settingsShortcut = platformizeHint("⌘,", keys);
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
@@ -117,10 +127,10 @@ export function TopBar(props: Props) {
             type="button"
             className="top-bar__mobile-toggle"
             onClick={onToggleNav}
-            aria-label={navDrawerOpen ? "Close navigation" : "Open navigation (⌘B)"}
+            aria-label={navDrawerOpen ? "Close navigation" : `Open navigation (${navShortcut})`}
             aria-expanded={Boolean(navDrawerOpen)}
             aria-controls="nav"
-            title={navDrawerOpen ? "Close navigation" : "Open navigation"}
+            title={navDrawerOpen ? "Close navigation" : `Open navigation (${navShortcut})`}
           >
             <Icon name="ph:sidebar-simple" width={CAVE_ICON_SIZE.headerToggle} height={CAVE_ICON_SIZE.headerToggle} />
           </button>
@@ -130,11 +140,11 @@ export function TopBar(props: Props) {
             type="button"
             className="top-bar__mobile-toggle"
             onClick={onToggleList}
-            aria-label={listDrawerOpen ? "Close list" : "Open list (⌘\\)"}
+            aria-label={listDrawerOpen ? "Close list" : `Open list (${listShortcut})`}
             aria-expanded={Boolean(listDrawerOpen)}
             aria-pressed={Boolean(listDrawerOpen)}
             aria-controls="list"
-            title={listDrawerOpen ? "Close list" : "Open list"}
+            title={listDrawerOpen ? "Close list" : `Open list (${listShortcut})`}
           >
             <Icon name="ph:list-checks-bold" width={CAVE_ICON_SIZE.headerToggle} height={CAVE_ICON_SIZE.headerToggle} />
           </button>
@@ -161,12 +171,12 @@ export function TopBar(props: Props) {
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search or ask Salem..."
-          aria-label="Search anything or ask Salem, the docs familiar"
-          title="Search everything — or ask Salem, the familiar trained on the OpenCoven docs"
+          aria-label={SEARCH_LABEL}
+          title={`Search everything — or ask Salem, the familiar trained on the OpenCoven docs (${searchShortcut})`}
           autoComplete="off"
           spellCheck={false}
         />
-        <kbd>{keys.mod}K</kbd>
+        <kbd>{searchShortcut}</kbd>
       </form>
 
       <div className="top-bar__actions">
@@ -187,8 +197,8 @@ export function TopBar(props: Props) {
             className="top-bar__icon-btn"
             data-quick-chat-trigger
             onClick={onOpenQuickChat}
-            aria-label="Quick chat"
-            title="Quick chat (⌘J)"
+            aria-label={NEW_CHAT_LABEL}
+            title={`${NEW_CHAT_LABEL} (${newChatShortcut})`}
           >
             <Icon name="ph:chat-circle-dots" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
           </button>
@@ -213,8 +223,8 @@ export function TopBar(props: Props) {
               {onViewTasks ? (
                 <PopoverItem icon="ph:kanban" onSelect={onViewTasks}>
                   {taskCount && taskCount > 0
-                    ? `View tasks — ${taskCount > 99 ? "99+" : taskCount} open`
-                    : "View tasks"}
+                    ? `${TASKS_LABEL} — ${taskCount > 99 ? "99+" : taskCount} open`
+                    : TASKS_LABEL}
                 </PopoverItem>
               ) : null}
             </OverflowMenu>
@@ -247,8 +257,8 @@ export function TopBar(props: Props) {
           type="button"
           className="top-bar__account"
           onClick={onOpenSettings}
-          aria-label="Account / settings"
-          title="Settings (⌘,)"
+          aria-label={SETTINGS_LABEL}
+          title={`${SETTINGS_LABEL} (${settingsShortcut})`}
         >
           <Icon name="ph:user" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
         </button>

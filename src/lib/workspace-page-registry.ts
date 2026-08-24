@@ -24,12 +24,17 @@ export type WorkspacePageVariant =
   | "code"
   | "activity";
 
+export type WorkspacePagePalette = "primary" | "secondary" | "hidden";
+export type WorkspaceStatusContext = "persistent" | "contextual" | "hidden";
+
 export type WorkspacePageDefinition = {
   readonly id: WorkspacePageId;
   readonly title: string;
   readonly canonicalId: WorkspacePageId;
   readonly variant: WorkspacePageVariant;
   readonly nav: "daily" | "quiet" | "hidden" | "footer" | "companion" | "dynamic";
+  readonly palette: WorkspacePagePalette;
+  readonly statusContext: WorkspaceStatusContext;
   readonly split: "always" | "contextual";
   readonly landmark: string;
 };
@@ -50,6 +55,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "agents",
     variant: "default",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Familiars",
   },
@@ -59,6 +66,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "home",
     variant: "default",
     nav: "daily",
+    palette: "primary",
+    statusContext: "persistent",
     split: "always",
     landmark: "Home",
   },
@@ -68,6 +77,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "chat",
     variant: "default",
     nav: "daily",
+    palette: "primary",
+    statusContext: "persistent",
     split: "contextual",
     landmark: "Chat",
   },
@@ -77,6 +88,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "chat",
     variant: "group",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Group chat",
   },
@@ -86,6 +99,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "board",
     variant: "default",
     nav: "daily",
+    palette: "primary",
+    statusContext: "persistent",
     split: "always",
     landmark: "Tasks",
   },
@@ -95,6 +110,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "inbox",
     variant: "calendar",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "always",
     landmark: "Rituals / Calendar",
   },
@@ -104,6 +121,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "inbox",
     variant: "default",
     nav: "daily",
+    palette: "primary",
+    statusContext: "persistent",
     split: "always",
     landmark: "Rituals",
   },
@@ -113,6 +132,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "browser",
     variant: "default",
     nav: "companion",
+    palette: "secondary",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Browser",
   },
@@ -122,6 +143,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: CODE_ROLE_SURFACE_MODE,
     variant: "activity",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Coding Desk / GitHub activity",
   },
@@ -131,6 +154,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: CODE_ROLE_SURFACE_MODE,
     variant: "code",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Coding Desk",
   },
@@ -140,6 +165,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "marketplace",
     variant: "roles",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "always",
     landmark: "Marketplace / Roles",
   },
@@ -149,6 +176,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "marketplace",
     variant: "default",
     nav: "quiet",
+    palette: "secondary",
+    statusContext: "contextual",
     split: "always",
     landmark: "Marketplace",
   },
@@ -158,6 +187,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "inbox",
     variant: "flow",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "always",
     landmark: "Rituals / Flow",
   },
@@ -167,6 +198,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "submissions",
     variant: "default",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Submissions",
   },
@@ -176,6 +209,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "marketplace",
     variant: "capabilities",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "always",
     landmark: "Marketplace / Capabilities",
   },
@@ -185,6 +220,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "board",
     variant: "queue",
     nav: "hidden",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Tasks / Work queue",
   },
@@ -194,6 +231,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "grimoire",
     variant: "journal",
     nav: "quiet",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Memories / Journal",
   },
@@ -203,6 +242,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "grimoire",
     variant: "default",
     nav: "quiet",
+    palette: "secondary",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Memories",
   },
@@ -212,6 +253,8 @@ const WORKSPACE_MODE_PAGES = freezePageMap({
     canonicalId: "salem",
     variant: "default",
     nav: "hidden",
+    palette: "secondary",
+    statusContext: "contextual",
     split: "contextual",
     landmark: "Ask Salem",
   },
@@ -224,6 +267,8 @@ const SUPPLEMENTAL_PAGES = freezePageMap({
     canonicalId: "settings",
     variant: "default",
     nav: "footer",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "always",
     landmark: "Settings",
   },
@@ -233,6 +278,8 @@ const SUPPLEMENTAL_PAGES = freezePageMap({
     canonicalId: "dashboard",
     variant: "default",
     nav: "footer",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "always",
     landmark: "Dashboard",
   },
@@ -242,6 +289,8 @@ const SUPPLEMENTAL_PAGES = freezePageMap({
     canonicalId: "memory",
     variant: "default",
     nav: "companion",
+    palette: "hidden",
+    statusContext: "hidden",
     split: "contextual",
     landmark: "Memory",
   },
@@ -251,6 +300,8 @@ const SUPPLEMENTAL_PAGES = freezePageMap({
     canonicalId: "terminal",
     variant: "default",
     nav: "companion",
+    palette: "hidden",
+    statusContext: "hidden",
     split: "contextual",
     landmark: "Terminal",
   },
@@ -272,26 +323,28 @@ const BUILT_IN_PAGE_DEFINITIONS = Object.freeze(
   BUILT_IN_WORKSPACE_PAGE_IDS.map((id) => STATIC_PAGE_DEFINITIONS[id]),
 );
 
+export const WORKSPACE_CANONICAL_PAGE_DEFINITIONS = Object.freeze(
+  BUILT_IN_PAGE_DEFINITIONS.filter(({ id, canonicalId }) => id === canonicalId),
+);
+
 export const WORKSPACE_DAILY_PAGE_DEFINITIONS = Object.freeze(
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily"),
+  WORKSPACE_CANONICAL_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily"),
 );
 
 export const WORKSPACE_NAVIGATION_PAGE_DEFINITIONS = Object.freeze(
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily" || nav === "quiet"),
+  WORKSPACE_CANONICAL_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily" || nav === "quiet"),
 );
 
 export const WORKSPACE_PALETTE_PAGE_DEFINITIONS = Object.freeze(
-  BUILT_IN_PAGE_DEFINITIONS.filter(
-    ({ nav }) => nav === "daily" || nav === "quiet" || nav === "hidden",
-  ),
+  WORKSPACE_CANONICAL_PAGE_DEFINITIONS.filter(({ palette }) => palette !== "hidden"),
 );
 
 export const WORKSPACE_FOOTER_PAGE_DEFINITIONS = Object.freeze(
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "footer"),
+  WORKSPACE_CANONICAL_PAGE_DEFINITIONS.filter(({ nav }) => nav === "footer"),
 );
 
 export const WORKSPACE_COMPANION_PAGE_DEFINITIONS = Object.freeze(
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "companion"),
+  WORKSPACE_CANONICAL_PAGE_DEFINITIONS.filter(({ nav }) => nav === "companion"),
 );
 
 function roleSurfaceTitle(id: RoleSurfaceMode): string {
@@ -316,6 +369,8 @@ export function workspacePageDefinition(id: string): WorkspacePageDefinition | n
     canonicalId: id,
     variant: "default",
     nav: "dynamic",
+    palette: "hidden",
+    statusContext: "contextual",
     split: "contextual",
     landmark: title,
   });

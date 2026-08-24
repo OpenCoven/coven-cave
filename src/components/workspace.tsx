@@ -17,6 +17,7 @@ import {
   type WorkspaceMode as WorkspaceModeFromDaemon,
 } from "@/lib/workspace-mode";
 import { workspacePageDefinition, type WorkspacePageVariant } from "@/lib/workspace-page-registry";
+import { statusContextPolicy } from "@/lib/workspace-destination-policy";
 import {
   normalizeWorkspacePaneRequest,
   workspacePaneRequestKey,
@@ -4457,9 +4458,10 @@ export function Workspace() {
   // Quiet context strip under the Home/Chat detail column. Chat feeds it the
   // ACTIVE session's metadata (registered-project name, model, per-session
   // workBranch — falling back to the poll-time checkout branch — cwd, and the
-  // attached PR via the shared sessionPrStatus derivation). Home has no session
-  // context, so it degrades to the active familiar's model + the Tasks count;
-  // other surfaces don't render the strip at all.
+  // attached PR via the shared sessionPrStatus derivation). Visibility is
+  // policy-driven: persistent destinations always keep the strip, while
+  // contextual destinations show it only when the shell already has real
+  // project/task/run context to publish.
   const statusSessionId = activeChatSessionId;
   const statusSession =
     mode === "chat" && statusSessionId
@@ -4471,11 +4473,29 @@ export function Workspace() {
       ) ?? null
     : null;
   const statusPr = sessionPrStatus(statusSession?.pullRequest);
+  const primaryStatusPageId = primaryPaneRequest?.requestedPageId ?? mode;
+  const statusBarVisibility = statusContextPolicy(primaryStatusPageId);
+  const statusModel =
+    mode === "home" || mode === "chat"
+      ? statusSession?.model ?? active?.model ?? null
+      : null;
+  const statusBarHasContext = Boolean(
+    statusProject?.name
+    || selectedWorkspaceProject?.name
+    || statusModel
+    || (statusSession ? statusSession.workBranch ?? statusSession.git?.branch ?? null : null)
+    || statusSession?.project_root
+    || statusPr
+    || covenRun
+    || boardTaskCount > 0,
+  );
   const statusBar =
-    mode === "home" || mode === "chat" ? (
+    statusBarVisibility === "hidden"
+      ? null
+      : statusBarVisibility === "persistent" || (statusBarVisibility === "contextual" && statusBarHasContext) ? (
       <StatusBar
-        projectName={statusProject?.name ?? null}
-        model={statusSession?.model ?? active?.model ?? null}
+        projectName={statusProject?.name ?? selectedWorkspaceProject?.name ?? null}
+        model={statusModel}
         branch={statusSession ? statusSession.workBranch ?? statusSession.git?.branch ?? null : null}
         cwd={statusSession?.project_root ?? null}
         pr={statusPr}
@@ -4494,9 +4514,9 @@ export function Workspace() {
           );
         }}
       />
-    ) : null;
+      ) : null;
 
-  const primaryDefinition = workspacePageDefinition(primaryPaneRequest?.requestedPageId ?? mode);
+  const primaryDefinition = workspacePageDefinition(primaryStatusPageId);
   const detailContent = renderSurface(mode);
   const defaultDetail = (
     <WorkspacePanePage
@@ -4525,7 +4545,6 @@ export function Workspace() {
         >
           {detailContent}
         </div>
-        {firstProjectGateOpen ? null : statusBar}
       </div>
     </WorkspacePanePage>
   );
@@ -4604,9 +4623,15 @@ export function Workspace() {
     );
   }
 
-  const detail = primaryPaneRequest
+  const primaryDetail = primaryPaneRequest
     ? renderPaneRequest(primaryPaneRequest, () => setPrimaryPaneRequest(null))
     : defaultDetail;
+  const detail = (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="min-h-0 min-w-0 flex-1">{primaryDetail}</div>
+      {firstProjectGateOpen ? null : statusBar}
+    </div>
+  );
 
   const splitTiles: DetailSplitTile[] = splitTargets
     .map((request) => ({
@@ -4770,6 +4795,7 @@ export function Workspace() {
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
               onViewSchedules={() => setMode("inbox")}
+              onOpenSettings={() => nextRouter.push("/settings")}
               onOpenQuickChat={startWorkspaceChat}
             />
             <TopBar

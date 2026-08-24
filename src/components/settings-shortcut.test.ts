@@ -1,15 +1,57 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { platformizeHint } from "../lib/platform-keys.ts";
 
-// The TopBar account button's tooltip advertises "Settings (⌘,)", but the
-// shortcut was never wired. workspace.tsx's global keydown handler must handle
-// ⌘/Ctrl+, and navigate to /settings.
+// The desktop shell promises cross-platform shortcuts. Pin both the shell
+// wiring and the Windows/Linux rendering so no host quietly falls back to
+// macOS-only glyphs.
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8");
+const familiarMenuBar = await readFile(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 
-// The tooltip that promises the shortcut (the contract this fix honors).
-assert.match(topBar, /Settings \(⌘,\)/, "TopBar advertises the ⌘, settings shortcut");
+// Source contracts: the shell chrome calls through the platformizer for each
+// hard-coded hint it owns.
+assert.match(
+  topBar,
+  /platformizeHint\("⌘K", keys\)/,
+  "TopBar platformizes the Search shortcut hint",
+);
+assert.match(
+  topBar,
+  /platformizeHint\("⌘B", keys\)/,
+  "TopBar platformizes the sidebar toggle shortcut hint",
+);
+assert.match(
+  topBar,
+  /platformizeHint\("⌘\\\\", keys\)/,
+  "TopBar platformizes the list-panel shortcut hint",
+);
+assert.match(
+  topBar,
+  /platformizeHint\("⌘J", keys\)/,
+  "TopBar platformizes the New chat shortcut hint",
+);
+assert.match(
+  topBar,
+  /platformizeHint\("⌘,", keys\)/,
+  "TopBar platformizes the Settings shortcut hint",
+);
+assert.match(
+  familiarMenuBar,
+  /platformizeHint\("⌘K", keys\)/,
+  "FamiliarMenuBar platformizes the Search shortcut hint",
+);
+assert.match(
+  familiarMenuBar,
+  /platformizeHint\("⌘J", keys\)/,
+  "FamiliarMenuBar platformizes the New chat shortcut hint",
+);
+assert.match(
+  familiarMenuBar,
+  /platformizeHint\("⌘,", keys\)/,
+  "FamiliarMenuBar platformizes the Settings shortcut hint",
+);
 
 // ⌘/Ctrl+, is handled in the global keydown handler and opens settings.
 assert.match(
@@ -22,6 +64,34 @@ assert.match(
   workspace,
   /meta && !alt && e\.key === ","/,
   "the ',' shortcut requires the meta/ctrl modifier",
+);
+
+const pcKeys = {
+  mod: "Ctrl",
+  alt: "Alt",
+  shift: "Shift",
+  ctrl: "Ctrl",
+  enter: "Enter",
+  up: "↑",
+  down: "↓",
+};
+
+assert.deepEqual(
+  {
+    search: platformizeHint("⌘K", pcKeys),
+    sidebar: platformizeHint("⌘B", pcKeys),
+    list: platformizeHint("⌘\\", pcKeys),
+    newChat: platformizeHint("⌘J", pcKeys),
+    settings: platformizeHint("⌘,", pcKeys),
+  },
+  {
+    search: "CtrlK",
+    sidebar: "CtrlB",
+    list: "Ctrl\\",
+    newChat: "CtrlJ",
+    settings: "Ctrl,",
+  },
+  "desktop shell shortcut hints should render Ctrl-based labels off macOS",
 );
 
 console.log("settings-shortcut.test.ts: ok");

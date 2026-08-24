@@ -2,7 +2,8 @@
 
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import { useKeySymbols } from "@/lib/platform-keys";
+import { workspacePageDefinition } from "@/lib/workspace-page-registry";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
   /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
@@ -33,12 +34,19 @@ type Props = {
   enrichProgress?: { done: number; total: number } | null;
   /** Jump to the Schedules surface (calendar + crons). */
   onViewSchedules: () => void;
+  /** Open Settings. */
+  onOpenSettings: () => void;
   /** Start a blank chat through the shell's acting-familiar gate. */
   onOpenQuickChat: () => void;
 };
 
 const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
+const SEARCH_LABEL = "Search";
+const NEW_CHAT_LABEL = "New chat";
+const TASKS_LABEL = workspacePageDefinition("board")?.title ?? "Tasks";
+const RITUALS_LABEL = workspacePageDefinition("inbox")?.title ?? "Rituals";
+const SETTINGS_LABEL = workspacePageDefinition("settings")?.title ?? "Settings";
 
 function fmtBadge(n: number): string {
   // Cap at 9+: two adjacent three-glyph "99+" pills read as duplicate noise
@@ -68,9 +76,13 @@ export function FamiliarMenuBar({
   enrichingTasks,
   enrichProgress,
   onViewSchedules,
+  onOpenSettings,
   onOpenQuickChat,
 }: Props) {
   const keys = useKeySymbols();
+  const searchShortcut = platformizeHint("⌘K", keys);
+  const newChatShortcut = platformizeHint("⌘J", keys);
+  const settingsShortcut = platformizeHint("⌘,", keys);
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
@@ -100,12 +112,12 @@ export function FamiliarMenuBar({
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search Cave..."
-          aria-label="Search Cave"
-          title="Search everything in your Cave (⌘K opens the command palette)"
+          aria-label={SEARCH_LABEL}
+          title={`Search everything in your Cave (${searchShortcut} opens the command palette)`}
           autoComplete="off"
           spellCheck={false}
         />
-        <kbd>{keys.mod}K</kbd>
+        <kbd>{searchShortcut}</kbd>
       </form>
 
       <div className="menu-bar__group menu-bar__group--tasks">
@@ -114,11 +126,11 @@ export function FamiliarMenuBar({
           data-quick-chat-trigger
           className="menu-bar__task focus-ring"
           onClick={onOpenQuickChat}
-          aria-label="Quick chat"
-          title="Quick chat"
+          aria-label={NEW_CHAT_LABEL}
+          title={`${NEW_CHAT_LABEL} (${newChatShortcut})`}
         >
           <Icon name="ph:note-pencil" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">Quick chat</span>
+          <span className="menu-bar__task-label">{NEW_CHAT_LABEL}</span>
         </button>
         {onEnrichTasks ? (
           <button
@@ -141,11 +153,11 @@ export function FamiliarMenuBar({
           type="button"
           className="menu-bar__task focus-ring"
           onClick={onViewTasks}
-          aria-label={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
-          title={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
+          aria-label={taskCount > 0 ? `${TASKS_LABEL} — ${taskCount} open` : TASKS_LABEL}
+          title={taskCount > 0 ? `${TASKS_LABEL} — ${taskCount} open` : TASKS_LABEL}
         >
           <Icon name="ph:kanban" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">Tasks</span>
+          <span className="menu-bar__task-label">{TASKS_LABEL}</span>
           {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
         </button>
         {/* This button lands on the Rituals surface (workspace mode "inbox"
@@ -160,10 +172,20 @@ export function FamiliarMenuBar({
           title={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
         >
           <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">Rituals</span>
+          <span className="menu-bar__task-label">{RITUALS_LABEL}</span>
           {scheduleNeedsCount > 0 ? (
             <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}
+        </button>
+        <button
+          type="button"
+          className="menu-bar__task focus-ring"
+          onClick={onOpenSettings}
+          aria-label={SETTINGS_LABEL}
+          title={`${SETTINGS_LABEL} (${settingsShortcut})`}
+        >
+          <Icon name="ph:user" width={22} height={22} aria-hidden />
+          <span className="menu-bar__task-label">{SETTINGS_LABEL}</span>
         </button>
       </div>
 
