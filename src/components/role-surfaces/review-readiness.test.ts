@@ -12,6 +12,7 @@ import {
   failingCheckNames,
   isReadyToMerge,
   mergeChecklist,
+  mergeChecklistScore,
   prBlockers,
   readinessBanner,
   reviewBucket,
@@ -74,9 +75,43 @@ test("blockers name who clears each one, most structural first", () => {
   for (const blocker of blockers) assert.ok(blocker.fix.length > 0, `${blocker.id} has no fix line`);
   const checks = blockers.find((blocker) => blocker.id === "checks");
   assert.match(checks!.title, /^1 required check is failing$/);
-  assert.match(checks!.fix, /Rust check/);
-  assert.doesNotMatch(checks!.fix, /Frontend build/);
+  // The evidence and the remedy are separate fields: `detail` names which
+  // check, `fix` says who pushes the fix. A reader scanning for the check
+  // should never have to read past a sentence about ownership to find it.
+  assert.match(checks!.detail, /Rust check/);
+  assert.doesNotMatch(checks!.detail, /Frontend build/);
+  assert.doesNotMatch(checks!.fix, /Rust check/);
   assert.equal(checks!.reveal, "checks");
+});
+
+test("a thread blocker's detail is the thread itself, not a count restated", () => {
+  const blockers = prBlockers(
+    facts({
+      threads: {
+        unresolved: 2,
+        total: 2,
+        canResolve: true,
+        items: [
+          {
+            id: "t1",
+            where: "src/api/roster-route.ts:42",
+            author: "val",
+            excerpt: "Who authorizes roster writes?",
+          },
+        ],
+      },
+    }),
+  );
+  const threads = blockers.find((blocker) => blocker.id === "threads");
+  assert.equal(
+    threads!.detail,
+    "src/api/roster-route.ts:42 — Who authorizes roster writes?",
+  );
+});
+
+test("a blocker with nothing more to say carries an empty detail, never a filler line", () => {
+  const blockers = prBlockers(facts({ mergeableState: "behind" }));
+  assert.equal(blockers.find((blocker) => blocker.id === "behind")!.detail, "");
 });
 
 test("a running check is not a failing one", () => {
@@ -314,6 +349,35 @@ test("the checklist marks the unmet gates and explains an unknown mergeability",
   assert.match(by.get("Review threads resolved")!.detail, /2 unresolved of 5/);
   assert.equal(by.get("Mergeable")!.ok, false);
   assert.match(by.get("Mergeable")!.detail, /still computing/);
+});
+
+test("the reviewer's own pass joins the checklist only when progress is known", () => {
+  assert.ok(mergeChecklist(facts()).every((row) => row.label !== "Your pass"));
+  const rows = mergeChecklist(facts(), { reviewed: 2, readable: 5 });
+  const pass = rows.find((row) => row.label === "Your pass");
+  assert.ok(pass);
+  assert.equal(pass.ok, false);
+  assert.match(pass.detail, /2 of 5 files read — yours to finish, not a merge blocker/);
+});
+
+test("an unfinished pass is soft, so it never counts against GitHub's own gates", () => {
+  const rows = mergeChecklist(facts(), { reviewed: 0, readable: 4 });
+  assert.equal(rows.find((row) => row.label === "Your pass")!.soft, true);
+  assert.ok(rows.filter((row) => row.label !== "Your pass").every((row) => !row.soft));
+  // Every gate passes on a clean pull request; the unread files do not reduce it.
+  assert.deepEqual(mergeChecklistScore(rows), { passed: 5, total: 5 });
+});
+
+test("a finished pass drops the not-a-blocker caveat rather than repeating it", () => {
+  const rows = mergeChecklist(facts(), { reviewed: 3, readable: 3 });
+  const pass = rows.find((row) => row.label === "Your pass")!;
+  assert.equal(pass.ok, true);
+  assert.equal(pass.detail, "3 of 3 files read");
+});
+
+test("a change with no readable files is not scored as a finished pass", () => {
+  const rows = mergeChecklist(facts(), { reviewed: 0, readable: 0 });
+  assert.equal(rows.find((row) => row.label === "Your pass")!.ok, false);
 });
 
 // ── Request-changes evidence ─────────────────────────────────────────────────
