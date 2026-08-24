@@ -544,6 +544,7 @@ export const LEGACY_ACCESS_PROMPT_QUERY_PARAM = "coven_access_prompt";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";
 export const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";
+export const CLIENT_V1_ADMIN_HEADER = "x-coven-cave-client-v1-admin";
 export const SAFE_CONTENT_TYPES = [
   "application/json",
   "application/x-www-form-urlencoded",
