@@ -193,7 +193,7 @@ final class VoiceSessionContractTests: XCTestCase {
             body: #"{"ok":true,"sessionId":"sess-voice"}"#,
             expectedPath: "/api/chat/conversation"
         ) { request in
-            let data = try XCTUnwrap(request.httpBody)
+            let data = try request.bodyDataForTesting()
             let json = try XCTUnwrap(
                 JSONSerialization.jsonObject(with: data) as? [String: String]
             )
