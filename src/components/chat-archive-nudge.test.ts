@@ -101,8 +101,8 @@ assert.match(
 );
 assert.match(
   chatViewSrc,
-  /\[archivingChat, setArchivingChat\] = useState\(false\)/,
-  "chat-view tracks an in-flight archive request",
+  /\[archiving, setArchiving\] = useState\(false\)/,
+  "chat-view tracks one shared in-flight archive request",
 );
 // Re-sync the dismiss flag when the active sessionId changes.
 assert.match(
@@ -110,12 +110,12 @@ assert.match(
   /setArchiveNudgeDismissed\(isChatArchiveNudgeDismissed\(sessionId \?\? "", window\.localStorage\)\)/,
   "chat-view re-reads the per-session dismiss flag whenever sessionId changes",
 );
-// archiveChat handler PATCHes /api/sessions/[id] with archived:true and
-// triggers the existing onSessionsChanged + onBack flow.
+// The shared reversible handler PATCHes /api/sessions/[id] and leaves after
+// archive while keeping an unarchived chat open.
 assert.match(
   chatViewSrc,
-  /const archiveChat = useCallback\(async \(\) => \{[\s\S]*\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}[\s\S]*archived: true[\s\S]*onSessionsChanged\?\.\(\)[\s\S]*onBack\?\.\(sessionId\)/,
-  "archiveChat PATCHes the session as archived and tells the host to refresh + leave",
+  /const setChatArchived = useCallback\(async \(archived: boolean\) => \{[\s\S]*\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}[\s\S]*JSON\.stringify\(\{ archived \}\)[\s\S]*onSessionsChanged\?\.\(\)[\s\S]*if \(archived\)[\s\S]*onBack\?\.\(sessionId\)/,
+  "the shared archive handler PATCHes the requested state and leaves only after archive",
 );
 assert.match(
   chatViewSrc,
@@ -126,8 +126,8 @@ assert.match(
 // turn appears below it visually.
 assert.match(
   chatViewSrc,
-  /shouldShowChatArchiveNudge\(\{\s*taskLifecycle: linkedContext\?\.task\?\.lifecycle \?\? null,\s*sessionArchived: Boolean\(session\?\.archived_at\),\s*dismissed: archiveNudgeDismissed,\s*\}\) \? \(\s*<ChatArchiveNudge[\s\S]*taskTitle=\{linkedContext\?\.task\?\.title \?\? ""\}[\s\S]*onArchive=\{\(\) => void archiveChat\(\)\}[\s\S]*onDismiss=\{dismissArchiveNudge\}[\s\S]*archiving=\{archivingChat\}/,
-  "chat-view renders ChatArchiveNudge gated on shouldShowChatArchiveNudge with the live task lifecycle, session.archived, and dismissed",
+  /shouldShowChatArchiveNudge\(\{\s*taskLifecycle: linkedContext\?\.task\?\.lifecycle \?\? null,\s*sessionArchived: Boolean\(session\?\.archived_at\),\s*dismissed: archiveNudgeDismissed,\s*\}\) \? \(\s*<ChatArchiveNudge[\s\S]*taskTitle=\{linkedContext\?\.task\?\.title \?\? ""\}[\s\S]*onArchive=\{\(\) => void setChatArchived\(true\)\}[\s\S]*onDismiss=\{dismissArchiveNudge\}[\s\S]*archiving=\{archiving\}/,
+  "the nudge and header button share the same archive mutation and busy state",
 );
 
 console.log("chat-archive-nudge.test.ts ok");

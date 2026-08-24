@@ -281,7 +281,7 @@ import { ChatFileReader, type ChatFileReaderTarget } from "@/components/chat-fil
 import { joinProjectPath } from "@/components/message-dom-wiring";
 import { ChatPreviewCard } from "@/components/chat-preview-card";
 import { GitHubActionCard } from "@/components/github-action-card";
-import { SkillStageCard } from "@/components/skill-stage-card";
+import { SkillRunSummary, SkillStageCard } from "@/components/skill-stage-card";
 import { AutoStatusCard } from "@/components/auto-status-card";
 import { AutoModeFeedbackModal } from "@/components/auto-mode-feedback-modal";
 import {
@@ -488,7 +488,7 @@ type Props = {
    *  below always pass their own (non-null) sessionId; the two "Back to
    *  sessions" render buttons pass whatever is currently shown. ChatRouter
    *  only actually navigates when it's still displaying that exact session
-   *  (cave-rl980 Task 4 final review): archiveChat/deleteChat/setChatArchived
+   *  (cave-rl980 Task 4 final review): setChatArchived/deleteChat
    *  are async, and by the time the request settles the user may have
    *  already switched to a different thread or familiar, whose view must
    *  never be clobbered by a now-irrelevant completion. */
@@ -2355,7 +2355,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ? false
       : isChatArchiveNudgeDismissed(sessionId ?? "", window.localStorage),
   );
-  const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const [modelCapabilities, setModelCapabilities] = useState<readonly ModelControlCapability[]>([]);
   const [modelControls, setModelControls] = useState<ModelControlValues>({});
@@ -7066,30 +7065,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setArchiveNudgeDismissed(true);
   }, [sessionId]);
 
-  const archiveChat = useCallback(async () => {
-    if (!sessionId || archivingChat) return;
-    setArchivingChat(true);
+  const setChatArchived = useCallback(async (archived: boolean) => {
+    if (!sessionId || archiving) return;
+    setArchiving(true);
     setError(null);
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ archived: true }),
+        body: JSON.stringify({ archived }),
       });
       const json = await res.json().catch(() => ({ ok: false }));
       if (!res.ok || !json.ok) {
-        setError(json.error ?? "archive failed");
+        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
         return;
       }
+      announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
       onSessionsChanged?.();
-      onSessionRemoved?.(sessionId, "archived");
-      onBack?.(sessionId);
+      // Leaving mirrors delete only for archive; unarchive keeps you in place.
+      if (archived) {
+        onSessionRemoved?.(sessionId, "archived");
+        onBack?.(sessionId);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "archive failed");
+      setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
     } finally {
-      setArchivingChat(false);
+      setArchiving(false);
     }
-  }, [sessionId, archivingChat, onSessionsChanged, onSessionRemoved, onBack]);
+  }, [announce, archiving, onBack, onSessionRemoved, onSessionsChanged, sessionId]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -7190,35 +7193,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     },
     [familiar.id, familiarDrag, promoteToCoven, promotableFamiliarIds],
   );
-
-  const setChatArchived = async (archived: boolean) => {
-    if (!sessionId || archiving) return;
-    setArchiving(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ archived }),
-      });
-      const json = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
-        return;
-      }
-      announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
-      onSessionsChanged?.();
-      // Leaving mirrors delete only for archive; unarchive keeps you in place.
-      if (archived) {
-        onSessionRemoved?.(sessionId, "archived");
-        onBack?.(sessionId);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
-    } finally {
-      setArchiving(false);
-    }
-  };
 
   useImperativeHandle(
     ref,
@@ -8319,9 +8293,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }) ? (
             <ChatArchiveNudge
               taskTitle={linkedContext?.task?.title ?? ""}
-              onArchive={() => void archiveChat()}
+              onArchive={() => void setChatArchived(true)}
               onDismiss={dismissArchiveNudge}
-              archiving={archivingChat}
+              archiving={archiving}
             />
           ) : null}
           <div ref={tailRef} />
@@ -8483,7 +8457,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       ) : null}
 
-      {inlineComposer ? null : composerNode}
+      {inlineComposer ? null : following ? composerNode : null}
       {taskSuggestion && sessionId && !offlineReadOnly ? (
         <FollowUpTaskReview
           open
@@ -9414,16 +9388,7 @@ function TurnRowImpl({
       {/* Skill stage cards (design §5): one per skill name per turn,
           updated in place by repeated <coven:skill> markers. */}
       {skillUpdates.length ? (
-        <div className="mt-2 space-y-1.5">
-          {skillUpdates.map((update) => (
-            <SkillStageCard
-              key={update.name}
-              name={update.name}
-              stage={update.stage}
-              note={update.note}
-            />
-          ))}
-        </div>
+        <SkillRunSummary skills={skillUpdates} />
       ) : null}
       {autoStatusUpdate ? (
         <div className="mt-2">
