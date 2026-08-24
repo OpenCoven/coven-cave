@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { parseRestPullRequestPages } from "./worktree-lifecycle-inventory.ts";
+import {
+  parseRestPullRequestLines,
+  parseRestPullRequestPages,
+} from "./worktree-lifecycle-inventory.ts";
 
 const inventorySource = readFileSync(
   new URL("./worktree-lifecycle-inventory.ts", import.meta.url),
@@ -55,4 +58,38 @@ test("the lifecycle PR inventory uses REST endpoints and never invokes GraphQL",
   assert.doesNotMatch(source, /["']graphql["']/, "inventory must not spend GraphQL quota");
   assert.match(source, /commits\/\$\{encodeURIComponent\(oid\)\}\/pulls\?per_page=100/);
   assert.match(source, /pulls\?state=all&per_page=100/);
+  assert.match(source, /"--jq"/);
+});
+
+test("projected REST JSONL stays bounded without losing branch inventory fields", () => {
+  const line = JSON.stringify({
+    number: 4989,
+    html_url: "https://github.com/OpenCoven/coven-cave/pull/4989",
+    state: "open",
+    draft: false,
+    merged_at: null,
+    head: {
+      ref: "fix/cave-zxgjs-rest-pr-inventory",
+      sha: "c".repeat(40),
+      repo: { full_name: "OpenCoven/coven-cave" },
+    },
+    base: { ref: "main", repo: { full_name: "OpenCoven/coven-cave" } },
+  });
+  assert.deepEqual(
+    parseRestPullRequestLines(`${line}\n${line}\n`, "OpenCoven/coven-cave"),
+    [
+      {
+        number: 4989,
+        url: "https://github.com/OpenCoven/coven-cave/pull/4989",
+        state: "OPEN",
+        isDraft: false,
+        mergedAt: null,
+        headRefName: "fix/cave-zxgjs-rest-pr-inventory",
+        headRefOid: "c".repeat(40),
+        headRepository: "OpenCoven/coven-cave",
+        baseRefName: "main",
+        baseRepository: "OpenCoven/coven-cave",
+      },
+    ],
+  );
 });

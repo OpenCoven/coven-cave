@@ -2170,11 +2170,12 @@ require_query() {
 if [ "$1" = "api" ] &&
    [ "$2" = "--hostname" ] &&
    [ "$3" = "github.com" ] &&
-   [ "$4" = "--paginate" ] &&
-   [ "$5" = "--slurp" ]; then
-  case "$6" in
+   [ "$4" = "--paginate" ]; then
+  REST_ENDPOINT=$5
+  if [ "$REST_ENDPOINT" = "--slurp" ]; then REST_ENDPOINT=$6; fi
+  case "$REST_ENDPOINT" in
     repos/OpenCoven/coven-cave/commits/*/pulls?per_page=100)
-      OID_ARG=\${6#*/commits/}
+      OID_ARG=\${REST_ENDPOINT#*/commits/}
       OID_ARG=\${OID_ARG%/pulls?per_page=100}
       ASSOCIATION_MARKER=${JSON.stringify(
         path.join(fixtureRoot, "associated-query-"),
@@ -2231,14 +2232,14 @@ if [ "$1" = "api" ] &&
       if [ "\${LIFECYCLE_MALFORMED_HEAD_SEARCH:-0}" = "1" ]; then
         printf '%s\\n' '{}'
       elif [ "\${LIFECYCLE_DUPLICATE_SEARCH_NODE:-0}" = "1" ]; then
-        printf '%s\\n' '[[{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}],[{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        printf '%s\\n' '{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}' '{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
       elif [ "\${LIFECYCLE_HEAD_ONLY_DRAFT:-0}" = "1" ]; then
-        printf '%s\\n' '[[{"number":78,"html_url":"https://github.com/OpenCoven/coven-cave/pull/78","state":"open","draft":true,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        printf '%s\\n' '{"number":78,"html_url":"https://github.com/OpenCoven/coven-cave/pull/78","state":"open","draft":true,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
       elif [ "\${LIFECYCLE_SAME_NAME_OPEN_SEARCH:-0}" = "1" ] ||
            [ "\${LIFECYCLE_DUPLICATE_PR:-0}" = "1" ]; then
-        printf '%s\\n' '[[{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+        printf '%s\\n' '{"number":77,"html_url":"https://github.com/OpenCoven/coven-cave/pull/77","state":"open","draft":false,"merged_at":null,"head":{"ref":"feat/old","sha":"${oldHead}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
       else
-        printf '%s\\n' '[[]]'
+        :
       fi
       exit 0
       ;;

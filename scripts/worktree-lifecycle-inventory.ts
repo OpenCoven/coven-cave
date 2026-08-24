@@ -1083,6 +1083,19 @@ export function parseRestPullRequestPages(
   return dedupePullRequests(pullRequests);
 }
 
+export function parseRestPullRequestLines(raw: string, expectedRepo: string): PullRequest[] {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return [];
+  return dedupePullRequests(
+    trimmed
+      .split("\n")
+      .map((line) => parseRestPullRequest(parseJson<unknown>(line, "REST pull request"), expectedRepo, null)),
+  );
+}
+
+const REST_PULL_REQUEST_PROJECTION =
+  '.[] | {number,html_url,state,draft,merged_at,head:{ref:.head.ref,sha:.head.sha,repo:(if .head.repo == null then null else {full_name:.head.repo.full_name} end)},base:{ref:.base.ref,repo:{full_name:.base.repo.full_name}}}';
+
 function fetchPullRequests(
   repo: string,
   root: string,
@@ -1171,8 +1184,9 @@ function fetchPullRequests(
         "--hostname",
         "github.com",
         "--paginate",
-        "--slurp",
         `repos/${owner}/${name}/pulls?state=all&per_page=100`,
+        "--jq",
+        REST_PULL_REQUEST_PROJECTION,
       ],
       root,
       120_000,
@@ -1188,7 +1202,7 @@ function fetchPullRequests(
       }
     } else {
       try {
-        const pullRequests = parseRestPullRequestPages(result.stdout, repo);
+        const pullRequests = parseRestPullRequestLines(result.stdout, repo);
         canonicalRepo = repo;
         for (const branch of probedBranches) {
           byBranch.set(
