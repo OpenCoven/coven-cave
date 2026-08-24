@@ -1441,6 +1441,7 @@ export const SUITES = {
     "src/app/api/x/research-routes.test.ts",
     "src/app/api/x/sources-route-behavior.test.ts",
     "src/app/api/research/recommendations/route.test.ts",
+    "src/app/api/research/recommendations-x-capability.test.ts",
     "src/app/api/hermes-profiles/route.test.ts",
     "src/lib/server/x-oauth.test.ts",
     "src/app/api/coven-memory/route.test.ts",
@@ -1998,6 +1999,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/board/[id]/enhance/route.test.ts",
   "src/lib/research-topic-recommendations.test.ts",
   "src/app/api/research/recommendations/route.test.ts",
+  "src/app/api/research/recommendations-x-capability.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
   "src/lib/use-auto-expand-new-groups.test.ts",

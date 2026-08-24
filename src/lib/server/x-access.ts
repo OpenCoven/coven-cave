@@ -25,6 +25,10 @@ export type XAccess = {
     familiarId: string,
     capability: XCapability,
   ): Promise<void>;
+  hasXCapability(
+    familiarId: string,
+    capability: XCapability,
+  ): Promise<boolean>;
   withXAuthenticatedRead<T>(
     familiarId: string,
     requiredScopes: XScope[],
@@ -68,6 +72,29 @@ export function createXAccess(dependencies: XAccessDependencies): XAccess {
       ? entry?.xResearchEnabled === true
       : entry?.xPublishEnabled === true;
     if (!granted) throw capabilityDisabled(capability);
+  }
+
+  /**
+   * Non-throwing companion to {@link requireXCapability}, for a surface that
+   * mixes X-derived data with data that is not X-scoped and so must suppress
+   * only the X portion instead of failing the whole read.
+   *
+   * It delegates to the gate above rather than re-deriving the grant, so there
+   * is still exactly one place that decides: the binding is resolved from
+   * persisted config and never from the request, and it still fails closed.
+   * An invalid familiar id, an unreadable or malformed config, and a missing or
+   * non-`true` grant all resolve to `false`.
+   */
+  async function hasXCapability(
+    familiarId: string,
+    capability: XCapability,
+  ): Promise<boolean> {
+    try {
+      await requireXCapability(familiarId, capability);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function withXAuthenticatedRead<T>(
@@ -123,6 +150,7 @@ export function createXAccess(dependencies: XAccessDependencies): XAccess {
 
   return {
     requireXCapability,
+    hasXCapability,
     withXAuthenticatedRead,
     withXWritePreflight,
     toXErrorResponse,
@@ -135,6 +163,7 @@ const xAccess = createXAccess({
 });
 
 export const requireXCapability = xAccess.requireXCapability;
+export const hasXCapability = xAccess.hasXCapability;
 export const withXAuthenticatedRead = xAccess.withXAuthenticatedRead;
 export const withXWritePreflight = xAccess.withXWritePreflight;
 export const toXErrorResponse = xAccess.toXErrorResponse;
