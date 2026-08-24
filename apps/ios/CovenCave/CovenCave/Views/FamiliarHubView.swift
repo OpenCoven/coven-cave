@@ -804,7 +804,7 @@ private struct FamiliarReminderEditor: View {
     let save: @MainActor (String, String?, Date) async -> Bool
 
     @State private var title: String
-    @State private var body: String
+    @State private var noteText: String
     @State private var fireAt: Date
     @State private var isSaving = false
 
@@ -817,7 +817,7 @@ private struct FamiliarReminderEditor: View {
         self.draft = draft
         self.save = save
         _title = State(initialValue: draft.title)
-        _body = State(initialValue: draft.body)
+        _noteText = State(initialValue: draft.body)
         _fireAt = State(initialValue: draft.fireAt)
     }
 
@@ -827,7 +827,7 @@ private struct FamiliarReminderEditor: View {
                 Section("Reminder") {
                     TextField("Title", text: $title)
                         .textInputAutocapitalization(.sentences)
-                    TextField("Note (optional)", text: $body, axis: .vertical)
+                    TextField("Note (optional)", text: $noteText, axis: .vertical)
                         .lineLimit(2...5)
                     DatePicker(
                         "Remind me", selection: $fireAt,
@@ -852,8 +852,8 @@ private struct FamiliarReminderEditor: View {
                             isSaving = true
                             let didSave = await save(
                                 title.trimmingCharacters(in: .whitespacesAndNewlines),
-                                body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    ? nil : body,
+                                noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? nil : noteText,
                                 fireAt
                             )
                             isSaving = false
