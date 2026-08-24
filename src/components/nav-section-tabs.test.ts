@@ -145,7 +145,7 @@ assert.match(
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project \.cave-project-picker__trigger,[\s\S]*?max-width:\s*144px;[\s\S]*?height:\s*28px;/,
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project \.cave-project-picker__trigger,\s*\.workspace-context-switcher--titlebar \.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?max-width:\s*144px;[\s\S]*?height:\s*28px;/,
   "title-bar project and familiar controls stay compact and align with adjacent chrome",
 );
 assert.match(
