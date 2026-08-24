@@ -458,7 +458,7 @@ type OfflineChatQueuePayload = Pick<
   responseMetadata: ChatResponseMetadata;
 };
 
-type ChatSendDependencies = {
+type ChatSendRouteDependencies = {
   openClawGatewayCredentialStore?: OpenClawDeviceCredentialStore;
 };
 
@@ -1601,14 +1601,14 @@ export async function POST(req: Request) {
   return postChat(req);
 }
 
-export async function postChatForTests(
+export async function __postChatForTests(
   req: Request,
-  dependencies: ChatSendDependencies,
+  dependencies: ChatSendRouteDependencies,
 ) {
   return postChat(req, dependencies);
 }
 
-async function postChat(req: Request, dependencies: ChatSendDependencies = {}) {
+async function postChat(req: Request, dependencies: ChatSendRouteDependencies = {}) {
   let body: SendBody;
   try {
     body = (await req.json()) as SendBody;
