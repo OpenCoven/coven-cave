@@ -915,6 +915,7 @@ export const SUITES = {
     "src/components/thread-signals-section.test.ts",
     "src/lib/thread-signal-dismissals.test.ts",
     "src/components/chat-view.test.ts",
+    "src/components/chat-history-state.test.ts",
     "src/components/chat-error-redaction.test.ts",
     "src/components/chat-composer-rec-autofill.test.ts",
     "src/components/familiars-view-stats.test.ts",

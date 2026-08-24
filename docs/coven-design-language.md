@@ -52,6 +52,26 @@ letting it drift.**
   `src/styles/globals/foundations.css`). Density is a feature; illegibility
   is a bug.
 
+### OpenCoven UI reference boundary
+
+[`OpenCoven/ui`](https://github.com/OpenCoven/ui#what-this-repository-is) is a
+self-contained, dependency-free component library and specimen lab used to
+explore agent-surface direction before it enters a production application. It
+is explicitly **not** a packaged npm library, production app, or canonical
+source for Coven Cave components. Cave's production authority remains this
+document plus `src/components/ui/` and
+`src/styles/globals/primitives.css`; reference ideas enter Cave only by being
+re-expressed through those contracts.
+
+| Decision | Boundary |
+|---|---|
+| **Adopt** | Semantic patterns that clarify the agent surface: composer control grammar; editorial message hierarchy; provenance-first context; direct-verb actions with visible consequences; run-rail/backstage hierarchy; responsive layout, visible focus, keyboard access, and reduced-motion behavior. |
+| **Adapt** | Rebuild an adopted pattern with Cave's existing `ui-*` primitives, Phosphor icon registry, interface-copy contract, and semantic tokens. Preserve the shipped 12-theme × 2-mode model (`data-theme` × `data-mode`), current behavior, and accessibility before changing presentation. |
+| **Reject** | Upstream raw colors, its `data-accent` / `data-density` theme model as a Cave replacement, direct HTML or package dependency, fixture copy, a parallel primitive system, or `bui-*` vocabulary on product surfaces. The Beautiful UI adapter remains confined to `src/components/ui/beautiful/`, `src/styles/beautiful-ui.css`, and its explicit `/aesthetic/beautiful` gallery. |
+
+This is convergence, not vendoring: OpenCoven UI supplies inspectable evidence
+and prompts; Cave owns production implementation and decides what ships.
+
 ## 2. Token contract (summary — authority is `src/styles/globals/foundations.css` + `/aesthetic`)
 
 ### Surfaces (dark defaults)
@@ -448,5 +468,6 @@ decisions; `docs/specs/` holds the frozen predecessors) ·
 `src/styles/globals/foundations.css` (the annotated token contract) ·
 `src/styles/globals/themes.css` (per-theme palettes) ·
 `src/styles/globals/primitives.css` (shared `.ui-*` classes) ·
-[ui.opencoven.ai](https://ui.opencoven.ai) (standalone chat-surface specimens —
-exploratory direction only, never authoritative over shipped code).*
+[ui.opencoven.ai](https://ui.opencoven.ai) (self-contained component library
+and specimen lab — reference direction only, never authoritative over shipped
+code).*
