@@ -31,8 +31,15 @@ function assertMintableKey(key: ClientV1PageKey): void {
 
 export function encodeClientV1Cursor(key: ClientV1PageKey): string {
   assertMintableKey(key);
-  return Buffer.from(
+  const encoded = Buffer.from(
     JSON.stringify({ v: CLIENT_V1_CURSOR_VERSION, s: key.sort, i: key.id }),
     "utf8",
   ).toString("base64url");
+  if (encoded.length > CLIENT_V1_LIMITS.cursorCharacters) {
+    throw new Error(
+      `Client v1 cursor cannot exceed ${CLIENT_V1_LIMITS.cursorCharacters} characters.`,
+    );
+  }
+  return encoded;
 }
+import { CLIENT_V1_LIMITS } from "./contract.ts";

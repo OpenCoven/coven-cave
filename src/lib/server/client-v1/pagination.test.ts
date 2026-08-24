@@ -406,6 +406,10 @@ test("the encoder never mints a token this module's own decoder refuses", () => 
     () => encodeClientV1Cursor({ sort: "s", id: "" }),
     /page key must be two strings/,
   );
+  assert.throws(
+    () => encodeClientV1Cursor({ sort: "s".repeat(300), id: "i".repeat(300) }),
+    new RegExp(`cursor cannot exceed ${CLIENT_V1_LIMITS.cursorCharacters} characters`),
+  );
   // The property the pair owes each other, stated once: anything minted decodes
   // back to the key it was minted from.
   for (const key of [
