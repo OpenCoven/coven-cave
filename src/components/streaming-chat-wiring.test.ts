@@ -92,7 +92,7 @@ assert.doesNotMatch(
 );
 assert.match(
   supplementary,
-  /<ResponseModelStatus[\s\S]*?<ResponseControlStatus[\s\S]*?<InlineImageAttachments[\s\S]*?<SkillStageCard[\s\S]*?<AutoStatusCard[\s\S]*?editCards\.map[\s\S]*?<ArtifactComments/,
+  /<ResponseModelStatus[\s\S]*?<ResponseControlStatus[\s\S]*?<InlineImageAttachments[\s\S]*?<SkillRunSummary[\s\S]*?<AutoStatusCard[\s\S]*?editCards\.map[\s\S]*?<ArtifactComments/,
   "supplementaryContent preserves metadata, attachments, skill status, edits, and comments",
 );
 assert.match(

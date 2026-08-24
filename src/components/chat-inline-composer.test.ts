@@ -24,8 +24,8 @@ test("one composer element, rendered in exactly one of two positions", () => {
   );
   assert.match(
     chatView,
-    /\{inlineComposer \? null : composerNode\}/,
-    "the docked position yields when the composer goes inline",
+    /\{inlineComposer \? null : following \? composerNode : null\}/,
+    "the docked position yields when the composer goes inline or the reader leaves the latest turn",
   );
   assert.match(chatView, /composer=\{composerNode\}/, "the same node is handed to the dashboard");
   // Exactly one <footer className="cave-composer-dock"> in the tree.

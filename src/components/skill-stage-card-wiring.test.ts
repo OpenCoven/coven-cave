@@ -36,8 +36,8 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /skillUpdates\.map\(\((\w+)\) => \(\s*<SkillStageCard\s+key=\{\1\.name\}\s+name=\{\1\.name\}\s+stage=\{\1\.stage\}\s+note=\{\1\.note\}/,
-  "assistant turns render one card per skill name",
+  /<SkillRunSummary skills=\{skillUpdates\} \/>/,
+  "assistant turns render the shared run-wide skill summary",
 );
 assert.match(
   chatView,
@@ -49,5 +49,15 @@ assert.match(chatView, /stage="invoked"/, "deterministic invocation card renders
 // Card contract.
 assert.match(card, /role="status"/, "card announces stage changes to assistive tech");
 assert.match(card, /data-skill-stage=\{stage\}/, "stage is machine-readable for styling/e2e");
+assert.match(
+  card,
+  /breadcrumb=\{\["Chat", "Run skills"\]\}/,
+  "selectable cards open the shared focus-trapped run skills modal",
+);
+assert.match(
+  card,
+  /skills\.map\(\(skill\) => \{[\s\S]*data-selected=\{isSelected \|\| undefined\}/,
+  "the modal shows every run skill and marks the card that opened it",
+);
 
 console.log("skill stage card wiring: ok");

@@ -937,6 +937,11 @@ assert.match(
 );
 assert.match(
   source,
+  /\{inlineComposer \? null : following \? composerNode : null\}/,
+  "The active-chat composer disappears while the reader is away from latest and returns when following resumes",
+);
+assert.match(
+  source,
   /useEffect\(\(\) => \{\s*updateFollowing\(true\);[\s\S]*?\}, \[sessionId, updateFollowing\]\)/,
   "A freshly opened chat / session switch must re-engage following by default",
 );
