@@ -178,7 +178,8 @@ assert.doesNotMatch(
 // tempered token below refuses to cross another `Err(SidecarStartError::`.
 // Both this contract and the sibling now use that identical window; they had
 // diverged on the closing token (`fatal_exit(` here, `fatal_exit(&error)`
-// there) while both comments claimed they matched.//
+// there) while both comments claimed they matched.
+//
 // What this still cannot see: both assertions read ORDER IN THE SOURCE TEXT,
 // so wrapping a call in `if claimed_the_port { … }` leaves the text ordered
 // while the call may never run. Verified — that mutation passes both files.

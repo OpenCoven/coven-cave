@@ -207,7 +207,8 @@ assert.match(
 // non-spanning; the count assertion is the backstop, not the anchor. Closing
 // on `fatal_exit(` rather than `fatal_exit(&error)` keeps the window
 // argument-agnostic and identical to the sibling contract in
-// scripts/port-contract.test.mjs, which pins the release on these same arms.//
+// scripts/port-contract.test.mjs, which pins the release on these same arms.
+//
 // What this still cannot see: both assertions read ORDER IN THE SOURCE TEXT,
 // so wrapping a call in `if claimed_the_port { … }` leaves the text ordered
 // while the call may never run. Verified — that mutation passes both files.
