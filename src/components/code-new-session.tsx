@@ -61,23 +61,50 @@ export function CodeNewSession({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setPhase({ kind: "idle" });
+    setProjects([]);
+    setFamiliars([]);
+    setProjectId("");
+    setFamiliarId("");
     (async () => {
       try {
         const [projRes, famRes] = await Promise.all([
-          fetch("/api/projects", { cache: "no-store" }),
+          fetch("/api/projects?launchable=1", { cache: "no-store" }),
           fetch("/api/familiars", { cache: "no-store" }),
         ]);
         const proj = (await projRes.json().catch(() => null)) as { ok?: boolean; projects?: CaveProject[] } | null;
         const fam = (await famRes.json().catch(() => null)) as { ok?: boolean; familiars?: Familiar[] } | null;
         if (cancelled) return;
+        if (!projRes.ok || proj?.ok !== true) {
+          setPhase({ kind: "error", message: "Couldn’t check project folders." });
+          return;
+        }
+        if (!famRes.ok || fam?.ok !== true) {
+          setPhase({ kind: "error", message: "Couldn’t load familiars." });
+          return;
+        }
         const projectRows = proj?.ok && Array.isArray(proj.projects) ? proj.projects : [];
         const familiarRows = fam?.ok && Array.isArray(fam.familiars) ? fam.familiars : [];
         setProjects(projectRows);
         setFamiliars(familiarRows);
-        setProjectId((prev) => prev || (projectRows[0]?.id ?? ""));
-        setFamiliarId((prev) => prev || (familiarRows[0]?.id ?? ""));
+        setProjectId((prev) =>
+          projectRows.some((project) => project.id === prev)
+            ? prev
+            : (projectRows[0]?.id ?? ""),
+        );
+        setFamiliarId((prev) =>
+          familiarRows.some((familiar) => familiar.id === prev)
+            ? prev
+            : (familiarRows[0]?.id ?? ""),
+        );
+        if (projectRows.length === 0) {
+          setPhase({
+            kind: "error",
+            message: "No available project folders. Update a project folder before starting a session.",
+          });
+        }
       } catch {
-        if (!cancelled) setPhase({ kind: "error", message: "Couldn’t load projects/familiars." });
+        if (!cancelled) setPhase({ kind: "error", message: "Couldn’t check project folders or load familiars." });
       }
     })();
     return () => {
