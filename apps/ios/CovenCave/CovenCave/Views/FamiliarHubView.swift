@@ -834,8 +834,10 @@ private struct FamiliarReminderEditor: View {
                         in: Date()..., displayedComponents: [.date, .hourAndMinute]
                     )
                 }
-                Section("Familiar") {
+                Section {
                     LabeledContent("Assigned to", value: familiarName)
+                } header: {
+                    Text("Familiar")
                 } footer: {
                     Text("This reminder stays with \(familiarName).")
                 }
