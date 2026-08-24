@@ -91,6 +91,7 @@ struct Reminder: Identifiable, Codable, Hashable {
     var firedAt: String?
     var createdAt: String?
     var updatedAt: String?
+    var familiarId: String?
     var link: Link?
 
     /// Best timestamp to show / sort by.
@@ -106,6 +107,7 @@ struct Reminder: Identifiable, Codable, Hashable {
         case firedAt
         case createdAt
         case updatedAt
+        case familiarId
         case link
     }
 
@@ -119,6 +121,7 @@ struct Reminder: Identifiable, Codable, Hashable {
         firedAt: String? = nil,
         createdAt: String? = nil,
         updatedAt: String? = nil,
+        familiarId: String? = nil,
         link: Link? = nil
     ) {
         self.id = id
@@ -130,6 +133,7 @@ struct Reminder: Identifiable, Codable, Hashable {
         self.firedAt = firedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.familiarId = familiarId
         self.link = link
     }
 
@@ -144,6 +148,7 @@ struct Reminder: Identifiable, Codable, Hashable {
         firedAt = try container.decodeIfPresent(String.self, forKey: .firedAt)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+        familiarId = try container.decodeIfPresent(String.self, forKey: .familiarId)
         link = try? container.decode(Link.self, forKey: .link)
     }
 }

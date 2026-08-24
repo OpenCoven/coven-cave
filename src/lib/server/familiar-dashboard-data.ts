@@ -59,7 +59,9 @@ import {
   type FamiliarDashboardIssue,
   type FamiliarDashboardSuccess,
   type OverviewMemoryInput,
+  type OverviewReminderInput,
   type OverviewSessionInput,
+  type OverviewTaskInput,
   type ProfileContractInput,
 } from "@/lib/familiar-dashboard";
 import { bindingFor, loadConfig, type CaveConfig } from "@/lib/cave-config";
@@ -79,6 +81,10 @@ import { redactSecretsDeep } from "@/lib/secret-redaction";
 import { buildFamiliarProfile } from "@/lib/familiar-dashboard";
 import type { SessionRow } from "@/lib/types";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
+import { loadBoard } from "@/lib/cave-board";
+import { loadInbox } from "@/lib/cave-inbox";
+import type { Card } from "@/lib/cave-board-types";
+import type { InboxItem } from "@/lib/cave-inbox";
 
 export type FamiliarDashboardSessions = {
   sessions: SessionRow[];
@@ -91,6 +97,8 @@ export type FamiliarDashboardDependencies = {
   loadConfig: () => Promise<CaveConfig>;
   resolveAvatar: (familiarId: string) => Promise<{ mtimeMs: number } | null>;
   loadSessions: (familiarId: string) => Promise<FamiliarDashboardSessions>;
+  loadTasks: () => Promise<Card[]>;
+  loadReminders: () => Promise<InboxItem[]>;
   loadMemory: () => Promise<CanonicalMemorySummary[]>;
   loadContract: (familiarId: string) => Promise<ProfileContractInput>;
   loadSelfReports: (
@@ -118,6 +126,8 @@ export function familiarDashboardDependencies(): FamiliarDashboardDependencies {
       };
     },
     loadMemory: canonicalMemoryList,
+    loadTasks: async () => (await loadBoard()).cards,
+    loadReminders: async () => (await loadInbox()).items,
     loadContract: async (familiarId: string) => {
       const { files } = await readFamiliarContractFiles(familiarId);
       const report = evaluateFamiliarContract(files);
@@ -199,11 +209,13 @@ export async function loadFamiliarDashboard(input: {
   const entry = roster.data.roster.find((candidate) => candidate.id === familiarId);
   if (!entry) return { outcome: "not_found" };
 
-  const [config, avatar, sessions, memory, contract, selfReports] = await Promise.all([
+  const [config, avatar, sessions, memory, tasks, reminders, contract, selfReports] = await Promise.all([
     capture(dependencies.loadConfig),
     capture(() => dependencies.resolveAvatar(familiarId)),
     capture(() => dependencies.loadSessions(familiarId)),
     capture(dependencies.loadMemory),
+    capture(dependencies.loadTasks),
+    capture(dependencies.loadReminders),
     capture(() => dependencies.loadContract(familiarId)),
     capture(() => dependencies.loadSelfReports(familiarId)),
   ]);
@@ -245,6 +257,12 @@ export async function loadFamiliarDashboard(input: {
   if (!memory.ok) {
     overviewIssues.push({ source: "memory", code: "memory_unavailable", retryable: true });
   }
+  if (!tasks.ok) {
+    overviewIssues.push({ source: "tasks", code: "tasks_unavailable", retryable: true });
+  }
+  if (!reminders.ok) {
+    overviewIssues.push({ source: "reminders", code: "reminders_unavailable", retryable: true });
+  }
 
   const sessionInputs: OverviewSessionInput[] = sessions.ok
     ? sessions.data.sessions.map((session) => {
@@ -273,11 +291,65 @@ export async function loadFamiliarDashboard(input: {
         })
     : [];
 
+  const taskInputs: OverviewTaskInput[] = tasks.ok
+    ? tasks.data.map((task) => {
+        const safe = redactSecretsDeep(task);
+        return {
+          id: String(safe.id ?? task.id),
+          title: typeof safe.title === "string" ? safe.title : "",
+          status: task.status,
+          priority: task.priority,
+          familiarId: task.familiarId,
+          projectId: task.projectId ?? null,
+          sessionId: task.sessionId,
+          updatedAt: task.updatedAt,
+          dependencies: (task.dependencies ?? []).map((dependency) => ({
+            id: dependency.id,
+            kind: dependency.kind,
+            label: clampDashboardText(dependency.label),
+            state: dependency.state,
+          })),
+          primaryBlockerId: task.primaryBlockerId ?? null,
+          nextStep: task.nextStep
+            ? {
+                summary: clampDashboardText(task.nextStep.summary),
+                requiresApproval: task.nextStep.requiresApproval,
+              }
+            : null,
+        };
+      })
+    : [];
+
+  const reminderInputs: OverviewReminderInput[] = reminders.ok
+    ? reminders.data.map((reminder) => {
+        const safe = redactSecretsDeep(reminder);
+        return {
+          id: String(safe.id ?? reminder.id),
+          kind: reminder.kind,
+          title: typeof safe.title === "string" ? safe.title : "",
+          body: typeof safe.body === "string" ? safe.body : null,
+          status: reminder.status,
+          fireAt: reminder.fireAt,
+          firedAt: reminder.firedAt,
+          updatedAt: reminder.updatedAt,
+          familiarId: reminder.familiarId,
+        };
+      })
+    : [];
+
+  const overviewBinding = effectiveConfig ? bindingFor(effectiveConfig, familiarId) : null;
+
   const overviewData = buildFamiliarOverview({
     sessions: sessionInputs,
     memory: memoryInputs,
+    tasks: taskInputs,
+    reminders: reminderInputs,
     presence: identity.presence,
+    familiarId,
+    harness: overviewBinding?.harness ?? null,
+    model: overviewBinding?.model ?? null,
     sessionsAvailable: sessions.ok,
+    tasksAvailable: tasks.ok,
   });
 
   const overview = buildDashboardSection({
@@ -290,7 +362,13 @@ export async function loadFamiliarDashboard(input: {
     hasContent:
       overviewData.sessions.active.total > 0 ||
       overviewData.sessions.recent.total > 0 ||
-      overviewData.memory.entries.total > 0,
+      overviewData.memory.entries.total > 0 ||
+      overviewData.tasks.total > 0 ||
+      overviewData.reminders.total > 0 ||
+      overviewData.attention.total > 0 ||
+      overviewData.presence !== null ||
+      overviewData.live.harness !== null ||
+      overviewData.live.model !== null,
   });
 
   // --- profile -------------------------------------------------------------

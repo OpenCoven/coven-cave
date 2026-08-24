@@ -18,6 +18,30 @@ enum FamiliarDashboardFixtures {
         "updatedAt": "2026-08-23T11:59:00.000Z"
       },
       "presence": "active",
+      "live": {
+        "harness": "codex",
+        "model": "gpt-5.6",
+        "activeSessionCount": 1,
+        "memoryFreshestAt": "2026-08-20T10:00:00.000Z"
+      },
+      "tasks": {
+        "items": [{
+          "id": "task-1",
+          "title": "Repair the loader",
+          "status": "blocked",
+          "priority": "high",
+          "projectId": "project-1",
+          "sessionId": null,
+          "updatedAt": "2026-08-23T11:57:00.000Z",
+          "unresolvedDependencies": {
+            "items": [{ "id": "dep-1", "kind": "task", "label": "Land prerequisite" }],
+            "total": 1
+          },
+          "primaryBlockerId": "dep-1",
+          "nextStep": { "summary": "Re-run the focused tests", "requiresApproval": false }
+        }],
+        "total": 1
+      },
       "sessions": {
         "active": {
           "items": [
@@ -46,6 +70,22 @@ enum FamiliarDashboardFixtures {
           "total": 9
         },
         "freshestAt": "2026-08-20T10:00:00.000Z"
+      },
+      "attention": {
+        "items": [{
+          "id": "task:task-1", "source": "task", "kind": "blocked",
+          "title": "Repair the loader", "targetId": "task-1"
+        }],
+        "total": 1
+      },
+      "reminders": {
+        "items": [{
+          "id": "reminder-1", "title": "Review the result", "body": null,
+          "status": "pending", "fireAt": "2026-08-24T15:00:00.000Z",
+          "firedAt": null, "updatedAt": "2026-08-23T12:00:00.000Z",
+          "familiarId": "nova"
+        }],
+        "total": 1
       }
     }
     """

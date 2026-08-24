@@ -1481,10 +1481,18 @@ final class AppModel {
     /// Ask the Tasks destination to open a card's detail (selects Tasks first).
     @discardableResult
     func requestOpenTask(_ card: BoardCard) -> Bool {
+        requestOpenTask(id: card.id, projectId: card.projectId)
+    }
+
+    /// Open a task projected by a bounded dashboard response. The dashboard
+    /// intentionally does not duplicate the complete BoardCard shape; Tasks
+    /// owns the authoritative detail load after this navigation handoff.
+    @discardableResult
+    func requestOpenTask(id: String, projectId: String?) -> Bool {
         beginProjectNavigation(ProjectNavigationIntent(
-            entity: .task(id: card.id),
+            entity: .task(id: id),
             destination: .tasks,
-            projectId: card.projectId
+            projectId: projectId
         ))
     }
 

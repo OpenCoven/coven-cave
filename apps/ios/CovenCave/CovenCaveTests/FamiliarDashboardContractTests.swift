@@ -29,6 +29,14 @@ final class FamiliarDashboardContractTests: XCTestCase {
             updatedAt: "2026-08-23T11:59:00.000Z"))
         XCTAssertEqual(overview.sessions.active.items.first?.status, "running")
         XCTAssertEqual(overview.memory.freshestAt, "2026-08-20T10:00:00.000Z")
+        XCTAssertEqual(overview.live.harness, "codex")
+        XCTAssertEqual(overview.tasks.items.first?.primaryBlockerId, "dep-1")
+        XCTAssertEqual(
+            overview.tasks.items.first?.unresolvedDependencies.items.first?.label,
+            "Land prerequisite")
+        XCTAssertEqual(overview.tasks.items.first?.nextStep?.summary, "Re-run the focused tests")
+        XCTAssertEqual(overview.attention.items.first?.kind, "blocked")
+        XCTAssertEqual(overview.reminders.items.first?.familiarId, "nova")
 
         let profile = try XCTUnwrap(payload.sections.profile.data)
         XCTAssertEqual(profile.runtime.model, "opus")
@@ -144,6 +152,23 @@ final class FamiliarDashboardContractTests: XCTestCase {
 
         let payload = try decode(json)
         XCTAssertEqual(payload.sections.overview.data?.now, .unknown)
+    }
+
+    func testTaskNowPreservesItsImperativeNextStep() throws {
+        let overviewData = FamiliarDashboardFixtures.overviewData.replacingOccurrences(
+            of: "\"kind\": \"session\",\n        \"id\": \"s1\",\n        \"title\": \"Refactor the loader\",\n        \"updatedAt\": \"2026-08-23T11:59:00.000Z\"",
+            with: "\"kind\": \"task\",\n        \"id\": \"task-1\",\n        \"title\": \"Repair the loader\",\n        \"nextStep\": \"Re-run the focused tests\",\n        \"updatedAt\": \"2026-08-23T11:59:00.000Z\""
+        )
+        let payload = try decode(FamiliarDashboardFixtures.successJSON(
+            overview: FamiliarDashboardFixtures.section(state: "fresh", data: overviewData)
+        ))
+        XCTAssertEqual(
+            payload.sections.overview.data?.now,
+            .task(
+                id: "task-1", title: "Repair the loader",
+                nextStep: "Re-run the focused tests",
+                updatedAt: "2026-08-23T11:59:00.000Z")
+        )
     }
 
     func testAServerReportedUnknownNowSurvivesDecoding() throws {
