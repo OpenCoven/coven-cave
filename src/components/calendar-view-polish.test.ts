@@ -170,8 +170,13 @@ assert.match(
 );
 assert.match(
   source,
-  /calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b[\s\S]{0,120}py-1[\s\S]{0,120}md:flex-nowrap/,
-  "Calendar chrome stays in one flush desktop command rail",
+  /calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b[\s\S]{0,120}py-1/,
+  "Calendar chrome uses the compact command rail",
+);
+assert.doesNotMatch(
+  source,
+  /calendar-toolbar[^"]*md:flex-nowrap/,
+  "The calendar rail can wrap inside narrow desktop split panes",
 );
 assert.doesNotMatch(
   source,

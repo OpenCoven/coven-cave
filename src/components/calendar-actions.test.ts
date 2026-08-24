@@ -140,7 +140,11 @@ assert.match(view, /function MiniMonthPopover[\s\S]*?useFocusTrap\(true, ref, \{
 assert.ok((view.match(/aria-current=\{isToday \? "date" : undefined\}/g) ?? []).length >= 2, "today is marked with aria-current=\"date\"");
 // Horizontal arrows don't page the period out from under a focused grid event
 // or month day-cell (both own their arrows via roving nav).
-assert.match(view, /if \(target\.closest\('\[data-calendar-event="true"\], \[data-month-cell="true"\]'\)\) break;/, "a focused event or month cell keeps its own Arrow handling");
+assert.match(
+  view,
+  /if \(target\.closest\('\[data-calendar-event="true"\], \[data-month-cell="true"\], \[role="tablist"\]'\)\) break;/,
+  "focused events, month cells, and calendar tabs keep their own Arrow handling",
+);
 
 // ───────── Detail panel reconciles with live items (cave-latd) ─────────
 // `selectedItem` is a snapshot captured at click; an effect keyed on

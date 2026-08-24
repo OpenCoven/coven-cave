@@ -1590,11 +1590,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       const tag = target.tagName.toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
       switch (e.key) {
-        // A focused grid event or month day-cell owns its own Arrow handling
-        // (roving nav + Alt+↑/↓ reschedule); don't also page the whole period
-        // out from under it.
-        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(-1); break;
-        case "ArrowRight": if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(1);  break;
+        // Roving calendar widgets own their Arrow handling; don't also page
+        // the whole period out from under the focused event, day, or tab.
+        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"], [data-month-cell="true"], [role="tablist"]')) break; e.preventDefault(); navigate(-1); break;
+        case "ArrowRight": if (target.closest('[data-calendar-event="true"], [data-month-cell="true"], [role="tablist"]')) break; e.preventDefault(); navigate(1);  break;
         case "t": case "T": if (e.metaKey || e.ctrlKey || e.altKey) break; setAnchor(new Date()); break;
         case "d": case "D": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("day");    break;
         case "w": case "W": if (e.metaKey || e.ctrlKey || e.altKey) break; setViewMode("week");   break;
@@ -1671,7 +1670,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     <FamiliarNameContext.Provider value={nameFor}>
     <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
-      <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1 sm:px-4 md:flex-nowrap">
+      <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1 sm:px-4">
         <div className="flex shrink-0 items-center gap-1">
           {/* Nav arrows */}
           <IconButton
