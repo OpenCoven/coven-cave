@@ -88,6 +88,11 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
+  /<label[\s\S]{0,240}?chat-list-search-control[\s\S]{0,1400}?aria-label="Search sessions"/,
+  "the session search keeps the full control surface clickable through its label",
+);
+assert.match(
+  source,
   /<Button[\s\S]{0,120}?variant="ghost"[\s\S]{0,120}?size="sm"[\s\S]{0,160}?className="chat-status-chip"/,
   "status filters should reuse the compact shared Button geometry",
 );

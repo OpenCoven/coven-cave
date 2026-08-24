@@ -892,7 +892,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
             stay on one line. Work-kind and view controls live in the overflow
             menu so adding a filter cannot wrap the primary reading path. */}
         <div className="chat-sessions-toolbar mt-3 flex flex-wrap items-center gap-2 px-4 pb-3">
-          <div
+          <label
             role="search"
             className={[
               "chat-list-search-control flex h-8 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]",
@@ -935,7 +935,7 @@ export function ChatList({ familiar, familiars = [], sessions, selection, expand
                 className="shrink-0"
               />
             )}
-          </div>
+          </label>
 
           {!compact && (
             <>
