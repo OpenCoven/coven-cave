@@ -2942,12 +2942,12 @@ exit 0
   assert.equal(directLanding.updatedAtMs, Date.parse("2026-08-10T21:30:00Z"));
   assert.equal(directLanding.mergedPr, null);
   const postLandingCooldown = JSON.parse(
-    patrol(["--json", "--now", "2026-08-11T05:30:00Z"]),
+    patrol(["--json", "--now", "2026-08-11T00:30:00Z"]),
   ).items.find((item) => item.branch === "feat/direct-landing");
   assert.equal(
     postLandingCooldown.lane,
     "retire-after-gate",
-    "the stable direct landing becomes eligible after 8 hours",
+    "the stable direct landing becomes eligible after 3 hours",
   );
   assert.deepEqual(report.budgets, {
     // cave-oenag: 8 registered, one of them detached, so 7 are assessed.

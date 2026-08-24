@@ -5,6 +5,10 @@
 **Bead:** `cave-ox3ky`
 **Depends on:** `cave-wqa0b`
 
+> Recency amendment: `cave-vwt75` reduced the mandatory retirement cooldown
+> from 8 hours to 3 hours on 2026-08-24. All other safety gates in this design
+> remain unchanged.
+
 ## Goal
 
 Prevent local branch and worktree buildup, then automatically retire only

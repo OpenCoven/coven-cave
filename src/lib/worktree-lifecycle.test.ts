@@ -21,8 +21,8 @@ const DAY = 24 * 60 * 60 * 1000;
 
 assert.equal(
   RETIREMENT_COOLDOWN_MS,
-  8 * HOUR,
-  "retirement cooldown remains the mandatory eight-hour window",
+  3 * HOUR,
+  "retirement cooldown remains the mandatory three-hour window",
 );
 
 {
@@ -409,7 +409,7 @@ function legacyObservation(overrides = {}) {
     NOW,
   );
   assert.equal(item.lane, "cooldown");
-  assert.match(item.reasons.join("\n"), /8-hour cooldown/);
+  assert.match(item.reasons.join("\n"), /3-hour cooldown/);
 }
 
 {
@@ -422,7 +422,7 @@ function legacyObservation(overrides = {}) {
     NOW,
   );
   assert.equal(item.lane, "retire-after-gate", "old exact merged heads become owner-actionable");
-  assert.match(item.reasons.join("\n"), /older than 8 hours/);
+  assert.match(item.reasons.join("\n"), /older than 3 hours/);
   assert.match(item.reasons.join("\n"), /maintenance gate/);
 }
 
