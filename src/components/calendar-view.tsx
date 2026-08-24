@@ -13,6 +13,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow } from "@/lib/calendar-layout";
@@ -1646,12 +1647,12 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     return "Upcoming";
   }
 
-  const VIEW_MODES: { id: ViewMode; label: string }[] = [
+  const VIEW_MODES = [
     { id: "agenda", label: "Agenda" },
     { id: "day", label: "Day" },
     { id: "week", label: "Week" },
     { id: "month", label: "Month" },
-  ];
+  ] satisfies ReadonlyArray<TabItem<ViewMode>>;
 
   // Announce view + period changes to screen readers — the grids convey the
   // current view and date visually only. Skips the initial mount.
@@ -1670,7 +1671,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     <FamiliarNameContext.Provider value={nameFor}>
     <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
-      <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
+      <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1 sm:px-4 md:flex-nowrap">
         <div className="flex shrink-0 items-center gap-1">
           {/* Nav arrows */}
           <IconButton
@@ -1696,7 +1697,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         </div>
 
         {/* Heading + pending pill + jump-to-date popover */}
-        <div className="relative min-w-[120px] flex flex-1 items-center gap-2 min-w-0">
+        <div className="relative flex min-w-[120px] flex-1 items-center gap-2">
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
@@ -1722,26 +1723,20 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
         {/* View mode toggle — hidden on phones (only agenda is usable
             there; see the useEffect that pins viewMode to "agenda"). */}
-        <div role="group" aria-label="Calendar view" className="hidden max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)] md:flex">
-          {VIEW_MODES.map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => setViewMode(id)}
-              aria-pressed={viewMode === id}
-              className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[length:var(--text-xs)] transition-colors sm:px-3 ${
-                viewMode === id
-                  ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          items={VIEW_MODES}
+          value={viewMode}
+          onChange={setViewMode}
+          ariaLabel="Calendar view"
+          size="sm"
+          variant="segment"
+          bordered={false}
+          className="calendar-view-switcher hidden max-w-full shrink-0 md:flex"
+        />
 
         {onAddEntry ? (
           <Button
-            variant="secondary"
+            variant="primary"
             size="sm"
             leadingIcon="ph:plus-bold"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}

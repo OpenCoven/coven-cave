@@ -65,6 +65,15 @@
   filter: drop-shadow(0 0 7px color-mix(in oklch, var(--accent-presence) 55%, transparent));
 }
 
+.rituals-command-tabs {
+  align-self: stretch;
+}
+
+.rituals-command-tabs [role="tab"] {
+  min-height: 100%;
+  padding-block: var(--space-1);
+}
+
 .rituals-overview__events,
 .rituals-overview__lower {
   width: 100%;
