@@ -8,7 +8,7 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Changes
-- Correct the port-claim occupant docs and harden the two contracts that pin them (cave-q1gb5)
+- Correct the port-claim occupant docs and harden the two contracts that pin them (#4980)
 
 ## [0.3.10] - 2026-08-24
 
