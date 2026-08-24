@@ -162,6 +162,8 @@ export const SUITES = {
     "src/components/role-surfaces/review-progress.test.ts",
     "src/components/role-surfaces/review-preferences.test.ts",
     "src/components/role-surfaces/review-workbench-model.test.ts",
+    "src/components/role-surfaces/review-cockpit.test.ts",
+    "src/components/role-surfaces/use-review-toast.test.ts",
     "src/components/role-surfaces/review-readiness.test.ts",
     "src/components/role-surfaces/review-file-tree.test.ts",
     "src/lib/review-landing.test.ts",
@@ -1440,6 +1442,7 @@ export const SUITES = {
     "src/app/api/x/research-routes.test.ts",
     "src/app/api/x/sources-route-behavior.test.ts",
     "src/app/api/research/recommendations/route.test.ts",
+    "src/app/api/research/recommendations-x-capability.test.ts",
     "src/app/api/hermes-profiles/route.test.ts",
     "src/lib/server/x-oauth.test.ts",
     "src/app/api/coven-memory/route.test.ts",
@@ -1552,6 +1555,7 @@ export const SUITES = {
     "src/app/api/chat/send/route-claude-availability.integration.test.ts",
     "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
+    "src/app/api/chat/send/route-openclaw-gateway.integration.test.ts",
     "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
     "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
@@ -1997,6 +2001,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/board/[id]/enhance/route.test.ts",
   "src/lib/research-topic-recommendations.test.ts",
   "src/app/api/research/recommendations/route.test.ts",
+  "src/app/api/research/recommendations-x-capability.test.ts",
   "src/lib/chat-live-generation-identity.test.ts",
   // imports the hook, which resolves "@/lib/chat-projects" and sidebar helpers.
   "src/lib/use-auto-expand-new-groups.test.ts",
@@ -2016,6 +2021,8 @@ const ALIAS_LOADER = new Set([
   "src/components/role-surfaces/researcher-status.test.ts",
   // review-readiness resolves "@/lib/github-checks" for its check rollups.
   "src/components/role-surfaces/review-readiness.test.ts",
+  // review-cockpit imports review-readiness types, which reach "@/lib/icon".
+  "src/components/role-surfaces/review-cockpit.test.ts",
   // the diff route resolves "@/lib/github-token".
   "src/app/api/github/diff/route.test.ts",
   // imports the store, which resolves "@/lib/coven-paths" and "@/lib/server/…".
@@ -2048,6 +2055,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/chat/send/route-claude-rate-limit-frame.integration.test.ts",
   "src/app/api/chat/send/harness-routing-codex-direct.test.ts",
   "src/app/api/chat/send/route-openclaw-bridge.integration.test.ts",
+  "src/app/api/chat/send/route-openclaw-gateway.integration.test.ts",
   "src/app/api/chat/send/route-openclaw-resume-harness.integration.test.ts",
   "src/app/api/chat/send/offline-queue-replay.integration.test.ts",
   "src/app/api/chat/send/route-body-validation.test.ts",

@@ -77,6 +77,14 @@ export type Blocker = {
   tone: ReviewTone;
   /** What is wrong, in one line. */
   title: string;
+  /**
+   * The specific evidence behind the title — the failing check names, the
+   * conflicting paths, the thread's location. Kept apart from `fix` so the
+   * inspector can set it in mono at the blocker's own tone: a reader scanning
+   * for "which check" should not have to read a sentence about who fixes it.
+   * Empty when the title already carries everything known.
+   */
+  detail: string;
   /** Who clears it and how — never an instruction the deck itself can carry out. */
   fix: string;
   /** Which rail disclosure reveals the evidence, when there is one. */
@@ -110,6 +118,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       icon: "ph:pencil-simple",
       tone: "muted",
       title: "Pull request is a draft",
+      detail: "",
       fix: "The author marks it ready for review before a verdict counts.",
       reveal: null,
       revealLabel: null,
@@ -121,6 +130,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       icon: "ph:git-merge",
       tone: "muted",
       title: `Pull request is ${pr.merged ? "merged" : pr.state}`,
+      detail: "",
       fix: "Closed and merged pull requests leave the deck on the next read.",
       reveal: null,
       revealLabel: null,
@@ -133,18 +143,21 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       id: "checks",
       icon: "ph:x-circle-fill",
       tone: "danger",
-      title: `${failing.length} required check ${failing.length === 1 ? "is" : "are"} failing`,
-      fix: `${failing.join(", ")} — the author pushes a fix; the deck can't merge past a red check.`,
+      title: `${failing.length} required check${failing.length === 1 ? " is" : "s are"} failing`,
+      detail: failing.join(" · "),
+      fix: "The author pushes a fix; the deck can't merge past a red check.",
       reveal: "checks",
       revealLabel: "show the checks",
     });
   }
   if (pr.threads.unresolved > 0) {
+    const first = pr.threads.items[0];
     out.push({
       id: "threads",
       icon: "ph:chat-circle-dots",
       tone: "warning",
       title: `${pr.threads.unresolved} unresolved review ${pr.threads.unresolved === 1 ? "thread" : "threads"}`,
+      detail: first ? `${first.where} — ${first.excerpt}` : "",
       fix: pr.threads.canResolve
         ? "Resolve them on GitHub, or ask the author to address them."
         : "Resolving threads needs a GitHub token — read-only here.",
@@ -158,6 +171,10 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       icon: "ph:arrow-bend-up-left",
       tone: "warning",
       title: "Changes requested and not yet dismissed",
+      detail:
+        pr.latestReview?.state === "CHANGES_REQUESTED"
+          ? `@${pr.latestReview.author}`
+          : "",
       fix: "The requesting reviewer re-reviews, or dismisses the review on GitHub.",
       reveal: "checks",
       revealLabel: "show the reviews",
@@ -169,6 +186,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       icon: "ph:warning-circle-fill",
       tone: "danger",
       title: `Merge conflicts with ${pr.baseRef}`,
+      detail: "",
       fix: "The author resolves conflicts locally — the deck never edits a working tree.",
       reveal: null,
       revealLabel: null,
@@ -180,6 +198,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       icon: "ph:git-commit",
       tone: "warning",
       title: `Branch is behind ${pr.baseRef}`,
+      detail: "",
       fix: `Update the branch on GitHub so checks run against current ${pr.baseRef}.`,
       reveal: null,
       revealLabel: null,
@@ -385,12 +404,33 @@ export function readinessBanner(pr: PrFacts | null, blockers: readonly Blocker[]
   };
 }
 
-export type MergeChecklistRow = { label: string; detail: string; ok: boolean };
+export type MergeChecklistRow = {
+  label: string;
+  detail: string;
+  ok: boolean;
+  /**
+   * A row the reviewer owns rather than a gate GitHub enforces. Only "Your
+   * pass" is soft: not having read every file is a reason to keep reading, not
+   * a reason the merge would be refused, and rendering it in the same alarmed
+   * tone as a red check teaches the reader to discount both.
+   */
+  soft: boolean;
+};
 
-/** The pre-merge checklist shown in the squash-merge confirmation. */
-export function mergeChecklist(pr: PrFacts | null): MergeChecklistRow[] {
+/**
+ * The pre-merge checklist.
+ *
+ * `progress` is the reviewer's own file-reading pass. It is optional because
+ * the checklist is also read where no revision is open; when it is supplied
+ * the list gains a soft row so the inspector can answer "have I actually read
+ * this?" in the same place it answers "will GitHub take it?".
+ */
+export function mergeChecklist(
+  pr: PrFacts | null,
+  progress?: { reviewed: number; readable: number },
+): MergeChecklistRow[] {
   if (!pr) return [];
-  return [
+  const gates: Array<Omit<MergeChecklistRow, "soft">> = [
     { label: "Checks green", detail: checksMeta(pr).title, ok: pr.checks.rollup === "passing" },
     {
       label: "Approved",
@@ -413,6 +453,28 @@ export function mergeChecklist(pr: PrFacts | null): MergeChecklistRow[] {
       ok: !pr.draft,
     },
   ];
+  const rows: MergeChecklistRow[] = gates.map((row) => ({ ...row, soft: false }));
+  if (progress) {
+    const done = progress.reviewed >= progress.readable && progress.readable > 0;
+    rows.push({
+      label: "Your pass",
+      detail: done
+        ? `${progress.reviewed} of ${progress.readable} files read`
+        : `${progress.reviewed} of ${progress.readable} files read — yours to finish, not a merge blocker`,
+      ok: done,
+      soft: true,
+    });
+  }
+  return rows;
+}
+
+/** How many gates GitHub would actually enforce are satisfied, and how many there are. */
+export function mergeChecklistScore(rows: readonly MergeChecklistRow[]): {
+  passed: number;
+  total: number;
+} {
+  const gates = rows.filter((row) => !row.soft);
+  return { passed: gates.filter((row) => row.ok).length, total: gates.length };
 }
 
 // ── Request-changes evidence ─────────────────────────────────────────────────
