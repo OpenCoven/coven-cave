@@ -1288,8 +1288,15 @@ pub(super) fn publish_sidecar_startup_status(
     status: SidecarStartupStatus,
 ) -> Result<(), String> {
     control.set_status(status.clone())?;
-    app.emit_to("main", SIDECAR_STARTUP_EVENT, status)
-        .map_err(|error| format!("could not publish sidecar startup status: {error}"))
+    let mut first_error = None;
+    for window in main_webview_windows(app) {
+        if let Err(error) = window.emit(SIDECAR_STARTUP_EVENT, status.clone()) {
+            if first_error.is_none() {
+                first_error = Some(format!("could not publish sidecar startup status: {error}"));
+            }
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 #[cfg(all(desktop, target_os = "windows"))]

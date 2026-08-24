@@ -42,6 +42,45 @@ pub(super) fn browser_owner(
         .ok_or_else(|| format!("browser webview '{native_label}' has no registered owner"))
 }
 
+pub(super) fn remove_browser_owner_resources(
+    inner: &mut BrowserLifecycleInner,
+    window_label: &str,
+) -> Vec<String> {
+    let owner_prefix = native_browser_owner_prefix(window_label);
+    let mut native_labels = inner
+        .owners
+        .iter()
+        .filter_map(|(native_label, owner)| {
+            (owner.window_label == window_label).then(|| native_label.clone())
+        })
+        .chain(
+            inner
+                .labels
+                .keys()
+                .chain(inner.worker_locks.keys())
+                .chain(inner.worker_signals.keys())
+                .chain(inner.event_trackers.keys())
+                .filter(|native_label| native_label.starts_with(&owner_prefix))
+                .cloned(),
+        )
+        .collect::<Vec<_>>();
+    native_labels.sort();
+    native_labels.dedup();
+
+    for native_label in &native_labels {
+        inner.labels.remove(native_label);
+        inner.worker_locks.remove(native_label);
+        inner.worker_signals.remove(native_label);
+        inner.event_trackers.remove(native_label);
+        inner.owners.remove(native_label);
+    }
+    inner
+        .scope_barriers
+        .retain(|prefix, _| !prefix.starts_with(&owner_prefix));
+
+    native_labels
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct BrowserBoundsIntent {
     pub(super) sequence: u64,

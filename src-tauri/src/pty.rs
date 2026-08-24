@@ -47,13 +47,15 @@ struct PtySession {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct PtySessionKey {
     window_label: String,
+    window_generation: u64,
     thread_id: String,
 }
 
 impl PtySessionKey {
-    fn new(window_label: &str, thread_id: &str) -> Self {
+    fn new(window_label: &str, window_generation: u64, thread_id: &str) -> Self {
         Self {
             window_label: window_label.to_string(),
+            window_generation,
             thread_id: thread_id.to_string(),
         }
     }
@@ -87,6 +89,39 @@ pub fn terminate_all_owned_processes() {
     }
 }
 
+pub fn retire_window_sessions(window_label: &str) {
+    let retired = {
+        let mut sessions = SESSIONS.lock();
+        let keys = sessions
+            .keys()
+            .filter(|key| key.window_label == window_label)
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.into_iter()
+            .filter_map(|key| sessions.remove(&key).map(|session| (key, session)))
+            .collect::<Vec<_>>()
+    };
+    for (key, _session) in &retired {
+        info!(
+            "retiring PTY for destroyed window generation {}/{}/{}",
+            key.window_label, key.window_generation, key.thread_id
+        );
+        #[cfg(target_os = "windows")]
+        if let Err(error) = _session.process_job.terminate() {
+            warn!(
+                "pty teardown[{}/{}]: could not terminate process job: {}",
+                key.window_label, key.thread_id, error
+            );
+        }
+    }
+    #[cfg(target_os = "windows")]
+    if !retired.is_empty() {
+        thread::spawn(move || drop(retired));
+    }
+    #[cfg(not(target_os = "windows"))]
+    drop(retired);
+}
+
 const DEFAULT_PTY_COLS: u16 = 120;
 const DEFAULT_PTY_ROWS: u16 = 40;
 
@@ -107,18 +142,21 @@ pub fn trust_main_origin(url: &Url) {
     }
 }
 
-fn ensure_trusted_pty_caller(webview: &Webview) -> Result<String, String> {
-    if !crate::main_window::is_registered_main_window(webview.app_handle(), webview.label()) {
+fn ensure_trusted_pty_caller(webview: &Webview) -> Result<(String, u64), String> {
+    let Some(window_generation) = crate::main_window::registered_main_window_generation(
+        webview.app_handle(),
+        webview.label(),
+    ) else {
         warn!("denied PTY IPC from non-main webview: {}", webview.label());
         return Err("PTY commands are only available to the main app webview".to_string());
-    }
+    };
 
     let url = webview
         .url()
         .map_err(|e| format!("could not resolve caller URL: {e}"))?;
     let origin = url_origin(&url).ok_or_else(|| format!("untrusted PTY caller URL: {url}"))?;
     if TRUSTED_MAIN_ORIGINS.lock().contains(&origin) {
-        Ok(webview.label().to_string())
+        Ok((webview.label().to_string(), window_generation))
     } else {
         warn!(
             "denied PTY IPC from untrusted main webview origin: {}",
@@ -182,7 +220,7 @@ pub async fn pty_start(
     // Authenticate against the caller's current main-WebView URL before any
     // blocking work is dispatched. The worker receives no Webview handle or
     // authority-bearing renderer state.
-    let owner_label = ensure_trusted_pty_caller(&webview)?;
+    let (owner_label, owner_generation) = ensure_trusted_pty_caller(&webview)?;
 
     // Tauri dispatches synchronous commands inline from WebView2's
     // WebResourceRequested callback on Windows. ConPTY creation and process
@@ -193,7 +231,10 @@ pub async fn pty_start(
     // Keep all fallible/blocking PTY startup work on the runtime's dedicated
     // blocking pool. Awaiting the JoinHandle also turns a worker panic into a
     // normal command error instead of letting it escape through WebView2.
-    run_pty_start_worker(move || pty_start_blocking(app, owner_label, options)).await
+    run_pty_start_worker(move || {
+        pty_start_blocking(app, owner_label, owner_generation, options)
+    })
+    .await
 }
 
 async fn run_pty_start_worker<F, T>(start: F) -> Result<T, String>
@@ -209,6 +250,7 @@ where
 fn pty_start_blocking(
     app: AppHandle,
     owner_label: String,
+    owner_generation: u64,
     options: StartOptions,
 ) -> Result<(), String> {
     let thread_id = options.thread_id.clone();
@@ -216,7 +258,7 @@ fn pty_start_blocking(
         "pty_start: thread_id={} project_root={:?} cols={:?} rows={:?}",
         thread_id, options.project_root, options.cols, options.rows
     );
-    let session_key = PtySessionKey::new(&owner_label, &thread_id);
+    let session_key = PtySessionKey::new(&owner_label, owner_generation, &thread_id);
     let pending = PendingPtyStart::reserve(session_key.clone())?;
 
     let pty_system = native_pty_system();
@@ -315,6 +357,14 @@ fn pty_start_blocking(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
     let scrollback = Arc::new(Mutex::new(Vec::new()));
+    if crate::main_window::registered_main_window_generation(&app, &owner_label)
+        != Some(owner_generation)
+    {
+        #[cfg(target_os = "windows")]
+        let _ = process_job.terminate();
+        let _ = child.kill();
+        return Err("main window closed while PTY startup was in progress".to_string());
+    }
     {
         let mut guard = SESSIONS.lock();
         guard.insert(
@@ -410,8 +460,8 @@ fn pty_start_blocking(
 
 #[tauri::command]
 pub fn pty_write(webview: Webview, thread_id: String, bytes: Vec<u8>) -> Result<(), String> {
-    let owner_label = ensure_trusted_pty_caller(&webview)?;
-    let key = PtySessionKey::new(&owner_label, &thread_id);
+    let (owner_label, owner_generation) = ensure_trusted_pty_caller(&webview)?;
+    let key = PtySessionKey::new(&owner_label, owner_generation, &thread_id);
     debug!("pty_write[{}]: {} bytes", thread_id, bytes.len());
     let writer = {
         let sessions = SESSIONS.lock();
@@ -430,8 +480,8 @@ pub fn pty_write(webview: Webview, thread_id: String, bytes: Vec<u8>) -> Result<
 
 #[tauri::command]
 pub fn pty_resize(webview: Webview, thread_id: String, cols: u16, rows: u16) -> Result<(), String> {
-    let owner_label = ensure_trusted_pty_caller(&webview)?;
-    let key = PtySessionKey::new(&owner_label, &thread_id);
+    let (owner_label, owner_generation) = ensure_trusted_pty_caller(&webview)?;
+    let key = PtySessionKey::new(&owner_label, owner_generation, &thread_id);
     let sessions = SESSIONS.lock();
     let session = sessions
         .get(&key)
@@ -444,13 +494,17 @@ pub fn pty_resize(webview: Webview, thread_id: String, cols: u16, rows: u16) -> 
 
 #[tauri::command]
 pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
-    let owner_label = ensure_trusted_pty_caller(&webview)?;
+    let (owner_label, owner_generation) = ensure_trusted_pty_caller(&webview)?;
     // Dropping the PtySession drops the master, which closes the slave's
     // controlling tty; the child receives SIGHUP and exits. The waiter
     // thread cleans up SESSIONS and emits pty:exit.
     let session = SESSIONS
         .lock()
-        .remove(&PtySessionKey::new(&owner_label, &thread_id));
+        .remove(&PtySessionKey::new(
+            &owner_label,
+            owner_generation,
+            &thread_id,
+        ));
     #[cfg(target_os = "windows")]
     if let Some(session) = session {
         let _ = session.process_job.terminate();
@@ -465,11 +519,13 @@ pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn pty_list(webview: Webview) -> Result<Vec<String>, String> {
-    let owner_label = ensure_trusted_pty_caller(&webview)?;
+    let (owner_label, owner_generation) = ensure_trusted_pty_caller(&webview)?;
     Ok(SESSIONS
         .lock()
         .keys()
-        .filter(|key| key.window_label == owner_label)
+        .filter(|key| {
+            key.window_label == owner_label && key.window_generation == owner_generation
+        })
         .map(|key| key.thread_id.clone())
         .collect())
 }
@@ -478,10 +534,14 @@ pub fn pty_list(webview: Webview) -> Result<Vec<String>, String> {
 /// reattaches after a remount. Empty when the session is unknown.
 #[tauri::command]
 pub fn pty_snapshot(webview: Webview, thread_id: String) -> Result<Vec<u8>, String> {
-    let owner_label = ensure_trusted_pty_caller(&webview)?;
+    let (owner_label, owner_generation) = ensure_trusted_pty_caller(&webview)?;
     let sessions = SESSIONS.lock();
     Ok(sessions
-        .get(&PtySessionKey::new(&owner_label, &thread_id))
+        .get(&PtySessionKey::new(
+            &owner_label,
+            owner_generation,
+            &thread_id,
+        ))
         .map(|session| session.scrollback.lock().clone())
         .unwrap_or_default())
 }
@@ -812,12 +872,20 @@ mod tests {
 
     #[test]
     fn terminal_session_keys_are_isolated_by_main_window() {
-        let primary = PtySessionKey::new("main", "cave.comux.test");
-        let secondary = PtySessionKey::new("main-2", "cave.comux.test");
+        let primary = PtySessionKey::new("main", 1, "cave.comux.test");
+        let secondary = PtySessionKey::new("main-2", 1, "cave.comux.test");
 
         assert_ne!(primary, secondary);
         let sessions = HashSet::from([primary, secondary]);
         assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn terminal_session_keys_do_not_cross_recreated_window_generations() {
+        assert_ne!(
+            PtySessionKey::new("main-2", 7, "cave.comux.test"),
+            PtySessionKey::new("main-2", 8, "cave.comux.test"),
+        );
     }
 
     #[test]

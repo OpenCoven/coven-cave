@@ -3,7 +3,8 @@
   "identifier": "loopback-browser",
   "description": "allows only the trusted main loopback webview to control native browser and terminal surfaces",
   "webviews": [
-    "main"
+    "main",
+    "main-*"
   ],
   "remote": {
     "urls": [

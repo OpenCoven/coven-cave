@@ -899,6 +899,8 @@ pub fn run() {
                     .app_handle()
                     .state::<MainWindowRegistry>()
                     .remove(window.label());
+                pty::retire_window_sessions(window.label());
+                browser::retire_window_resources(window.app_handle(), window.label());
                 if window.label() == PRIMARY_MAIN_WINDOW_LABEL {
                     // Before the stop, never after: the supervisor polls every
                     // couple of seconds, and a flag set afterwards races it

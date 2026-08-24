@@ -6,7 +6,8 @@
     "macOS"
   ],
   "webviews": [
-    "main"
+    "main",
+    "main-*"
   ],
   "remote": {
     "urls": [

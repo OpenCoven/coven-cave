@@ -65,9 +65,37 @@ pub use browser_state::BrowserLifecycleState;
 use browser_state::{
     advance_scope_barrier, browser_owner, effective_browser_intent, record_bounds_intent,
     record_navigation_intent, record_reload_intent, record_scope_intent, record_visibility_intent,
-    register_browser_owner, BrowserBoundsIntent, BrowserLifecycleInner, BrowserOwner,
+    register_browser_owner, remove_browser_owner_resources, BrowserBoundsIntent,
+    BrowserLifecycleInner, BrowserOwner,
     BrowserScopeAction, BrowserVisibility, BrowserWorkerSignal,
 };
+
+pub(crate) fn retire_window_resources(app: &AppHandle, window_label: &str) {
+    let native_labels = match app.state::<BrowserLifecycleState>().lock() {
+        Ok(mut lifecycle) => remove_browser_owner_resources(&mut lifecycle, window_label),
+        Err(error) => {
+            log::warn!(
+                "[cave] could not retire browser resources for destroyed window '{window_label}': {error}"
+            );
+            return;
+        }
+    };
+
+    for native_label in native_labels {
+        if let Some(webview) = app.get_webview(&native_label) {
+            if let Err(error) = hide_webview(&webview) {
+                log::warn!(
+                    "[cave] could not hide browser webview '{native_label}' during window teardown: {error}"
+                );
+            }
+            if let Err(error) = webview.close() {
+                log::warn!(
+                    "[cave] could not close browser webview '{native_label}' during window teardown: {error}"
+                );
+            }
+        }
+    }
+}
 
 use browser_reconciliation::{
     ensure_browser_controller, event_sequence_for_label_url, event_tracker_for_label,

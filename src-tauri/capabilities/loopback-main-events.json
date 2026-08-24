@@ -3,7 +3,8 @@
   "identifier": "loopback-main-events",
   "description": "allows only the trusted main loopback webview to subscribe to app events",
   "webviews": [
-    "main"
+    "main",
+    "main-*"
   ],
   "remote": {
     "urls": [

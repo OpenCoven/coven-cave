@@ -9,6 +9,7 @@
   ],
   "webviews": [
     "main",
+    "main-*",
     "quick-chat"
   ],
   "remote": {

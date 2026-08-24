@@ -3,7 +3,8 @@
   "identifier": "loopback-speech",
   "description": "allows only the trusted main loopback webview to run native speech recognition for local voice calls",
   "webviews": [
-    "main"
+    "main",
+    "main-*"
   ],
   "remote": {
     "urls": [

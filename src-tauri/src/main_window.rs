@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -9,6 +9,8 @@ const SECONDARY_MAIN_WINDOW_PREFIX: &str = "main-";
 #[derive(Default)]
 struct MainWindowRegistryInner {
     labels: BTreeSet<String>,
+    generations: BTreeMap<String, u64>,
+    next_generation: u64,
     focused: Option<String>,
 }
 
@@ -48,7 +50,14 @@ impl MainWindowRegistry {
             .0
             .lock()
             .map_err(|_| "main-window registry lock is poisoned".to_string())?;
-        inner.labels.insert(label.to_string());
+        if inner.labels.insert(label.to_string()) {
+            inner.next_generation = inner
+                .next_generation
+                .checked_add(1)
+                .ok_or_else(|| "main-window generation overflow".to_string())?;
+            let generation = inner.next_generation;
+            inner.generations.insert(label.to_string(), generation);
+        }
         inner.focused = Some(label.to_string());
         Ok(())
     }
@@ -67,13 +76,23 @@ impl MainWindowRegistry {
             .is_ok_and(|inner| inner.labels.contains(label))
     }
 
-    pub(super) fn remove(&self, label: &str) {
+    pub(super) fn generation(&self, label: &str) -> Option<u64> {
+        self.0
+            .lock()
+            .ok()
+            .and_then(|inner| inner.generations.get(label).copied())
+    }
+
+    pub(super) fn remove(&self, label: &str) -> Option<u64> {
         if let Ok(mut inner) = self.0.lock() {
             inner.labels.remove(label);
+            let generation = inner.generations.remove(label);
             if inner.focused.as_deref() == Some(label) {
                 inner.focused = None;
             }
+            return generation;
         }
+        None
     }
 
     fn preferred_label(&self, live_labels: &BTreeSet<String>) -> Option<String> {
@@ -98,6 +117,10 @@ pub(super) fn register_main_window(app: &AppHandle, label: &str) -> Result<(), S
 
 pub(super) fn is_registered_main_window(app: &AppHandle, label: &str) -> bool {
     app.state::<MainWindowRegistry>().is_registered(label)
+}
+
+pub(super) fn registered_main_window_generation(app: &AppHandle, label: &str) -> Option<u64> {
+    app.state::<MainWindowRegistry>().generation(label)
 }
 
 pub(super) fn main_webview_windows(app: &AppHandle) -> Vec<WebviewWindow> {
@@ -160,6 +183,9 @@ mod tests {
         registry.register("main").expect("register primary");
         registry.register("main-2").expect("register secondary");
         assert!(registry.is_registered("main-2"));
+        let first_generation = registry
+            .generation("main-2")
+            .expect("registered secondary generation");
 
         let both = BTreeSet::from(["main".to_string(), "main-2".to_string()]);
         assert_eq!(registry.preferred_label(&both).as_deref(), Some("main-2"));
@@ -172,5 +198,9 @@ mod tests {
 
         registry.remove("main-2");
         assert!(!registry.is_registered("main-2"));
+        registry.register("main-2").expect("re-register secondary");
+        assert!(registry
+            .generation("main-2")
+            .is_some_and(|generation| generation > first_generation));
     }
 }
