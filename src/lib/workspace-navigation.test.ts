@@ -60,8 +60,8 @@ assert.match(
 );
 assert.match(
   destinationPolicy,
-  /WORKSPACE_NAV_ITEMS\.find\(\(item\) => item\.id === definition\.id\)/,
-  "the destination policy reuses shared navigation metadata for every consumer row",
+  /WORKSPACE_NAV_ITEMS_BY_ID\.get\(definition\.id\)/,
+  "the destination policy reuses indexed shared navigation metadata for every consumer row",
 );
 assert.match(
   destinationPolicy,
