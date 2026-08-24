@@ -14,6 +14,7 @@ assert.match(styles, /\.ui-btn-spinner\.is-visible\s*\{[\s\S]*display:\s*inline-
 assert.match(styles, /\.ui-btn-icon-slot\.is-hidden\s*\{[\s\S]*display:\s*none/, "Button icon slots are hidden by CSS while loading");
 assert.match(iconSource, /type Variant = "ghost" \| "secondary" \| "primary"/, "IconButton exposes the canonical action hierarchy");
 assert.match(iconSource, /variant = "ghost"/, "IconButton defaults to the quiet chrome treatment");
+assert.match(iconSource, /variant === "ghost" \? "" : `ui-icon-btn--\$\{variant\}`/, "IconButton uses its base class for the default ghost treatment");
 assert.match(styles, /\.ui-icon-btn--primary\s*\{[\s\S]*background:\s*var\(--accent-presence\)/, "primary IconButton uses the shared accent treatment");
 assert.match(styles, /\.ui-icon-btn--secondary\s*\{[\s\S]*border:\s*1px solid var\(--border-strong\)/, "secondary IconButton uses the shared raised treatment");
 

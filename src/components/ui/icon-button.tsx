@@ -37,7 +37,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   const classes = [
     "ui-icon-btn",
     sizeClass[size],
-    `ui-icon-btn--${variant}`,
+    variant === "ghost" ? "" : `ui-icon-btn--${variant}`,
     active ? "ui-icon-btn--active" : "",
     danger ? "ui-icon-btn--danger" : "",
     className ?? "",
