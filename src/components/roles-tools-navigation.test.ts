@@ -89,7 +89,7 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
+  /state=\{sidebarRowState\(destination\.id, mode, props\.splitPageModes\)\}/,
   "Sidebar rows derive their highlight (marketplace + journal aliasing, cave-s9p6) from sidebarRowState",
 );
 

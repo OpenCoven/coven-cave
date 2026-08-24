@@ -13,7 +13,11 @@ assert.doesNotMatch(sidebar, /githubAssignedCount\?: number/, "sidebar no longer
 assert.match(sidebar, /board: \(props\) => badgeText\(props\.boardOpenCount\)/, "Board nav badge wired");
 assert.match(sidebar, /inbox: \(props\) => badgeText\(props\.scheduleNeedsCount\)/, "Rituals nav badge wired");
 assert.doesNotMatch(sidebar, /github: \(props\) => badgeText\(props\.githubAssignedCount\)/, "GitHub nav badge removed with the standalone row");
-assert.match(sidebar, /badge=\{MODE_BADGES\[fm\.id\]\?\.\(props\)\}/, "registry rows receive host-specific badges");
+assert.match(
+  sidebar,
+  /badge=\{MODE_BADGES\[destination\.id\]\?\.\(props\)\}/,
+  "policy-derived destination rows receive host-specific badges",
+);
 
 assert.match(workspace, /boardOpenCount=\{boardTaskCount\}/, "board count passed to sidebar");
 assert.match(workspace, /scheduleNeedsCount=\{scheduleNeedsCount\}/, "schedules count passed");

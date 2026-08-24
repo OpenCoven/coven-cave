@@ -154,18 +154,43 @@ assert.match(
 );
 assert.match(
   source,
-  /import \{ WORKSPACE_NAV_ITEMS, type WorkspaceNavMode \} from "@\/lib\/workspace-navigation"/,
-  "surface rows are built from the shared workspace navigation registry",
+  /import \{ paletteDestinations \} from "@\/lib\/workspace-destination-policy"/,
+  "surface rows are built from the shared destination policy",
 );
 assert.match(
   source,
-  /name:\s*`Go to \$\{fm\.label\}`/,
+  /name:\s*`Go to \$\{destination\.title\}`/,
   "each navigable surface renders a 'Go to <label>' row",
+);
+assert.match(
+  source,
+  /paletteDestinations\(\)/,
+  "surface rows iterate the shared palette destination selector",
+);
+assert.match(
+  source,
+  /destination\.description\.toLowerCase\(\)\.includes\(q\)/,
+  "surface rows fuzzy-match the shared long-form destination descriptions",
+);
+assert.match(
+  source,
+  /destination\.kbd \? `\$\{destination\.description\} · \$\{destination\.kbd\}` : destination\.description/,
+  "surface rows build hints from the shared destination metadata",
 );
 assert.doesNotMatch(
   source,
   /addons\?\.github|addons\?\.browser|addons\?\.flow|addons\?\.journal|addons\?: AddonsConfig/,
   "surface rows are no longer hidden behind add-on config",
+);
+assert.doesNotMatch(
+  source,
+  /WORKSPACE_NAV_ITEMS[\s\S]*Go to \$\{fm\.label\}/,
+  "surface rows no longer rebuild their visible destinations from a private nav array",
+);
+assert.doesNotMatch(
+  source,
+  /if \(!metadata\) return false;/,
+  "surface rows do not silently filter out destinations when metadata is missing",
 );
 assert.match(
   source,
