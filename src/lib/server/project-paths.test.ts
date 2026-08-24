@@ -53,7 +53,12 @@ try {
     }),
   );
 
-  const { isAllowedNewProjectRoot, resolveAllowedProjectPath, validateCaveProjectRoot } = await import("./project-paths.ts");
+  const {
+    isAllowedNewProjectRoot,
+    resolveAllowedProjectPath,
+    validateCaveProjectRoot,
+    validateCaveProjectRootAsync,
+  } = await import("./project-paths.ts");
   const legacy = path.join(process.env.COVEN_HOME, "workspace", "familiars", "sage");
 
   assert.equal(
@@ -193,6 +198,21 @@ try {
     validateCaveProjectRoot(sensitiveFileRoot),
     { ok: false, error: "root must be a directory" },
     "project roots must be existing directories",
+  );
+  assert.deepEqual(
+    await validateCaveProjectRootAsync(sensitiveFileRoot),
+    { ok: false, error: "root must be a directory" },
+    "async project validation rejects files without blocking a list endpoint",
+  );
+  assert.deepEqual(
+    await validateCaveProjectRootAsync(savedProjectRoot),
+    { ok: true, root: await realpath(savedProjectRoot) },
+    "async project validation resolves existing directories canonically",
+  );
+  assert.deepEqual(
+    await validateCaveProjectRootAsync(path.join(tmp, "missing-project")),
+    { ok: false, error: "root does not exist" },
+    "async project validation rejects missing roots",
   );
 
   assert.equal(

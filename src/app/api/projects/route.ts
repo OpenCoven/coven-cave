@@ -9,21 +9,36 @@ import {
 import { listAccessibleProjects } from "@/lib/project-permissions";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
-import { isAllowedNewProjectRoot, validateCaveProjectRoot } from "@/lib/server/project-paths";
+import {
+  isAllowedNewProjectRoot,
+  validateCaveProjectRoot,
+  validateCaveProjectRootAsync,
+} from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   await seedDefaultProjectsIfEmpty();
   const projects = await loadProjects();
-  const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim() || null;
-  if (!familiarId) return NextResponse.json({ ok: true, projects });
-  if (!isValidFamiliarId(familiarId)) {
+  const searchParams = new URL(req.url).searchParams;
+  const familiarId = searchParams.get("familiarId")?.trim() || null;
+  const launchableOnly = searchParams.get("launchable") === "1";
+  if (!familiarId && !launchableOnly) return NextResponse.json({ ok: true, projects });
+  if (familiarId && !isValidFamiliarId(familiarId)) {
     return NextResponse.json({ ok: false, error: "invalid familiar id" }, { status: 400 });
   }
-  const accessibleProjects = await listAccessibleProjects(projects, familiarId);
-  const launchableProjects = accessibleProjects.flatMap(({ project, access }) =>
-    validateCaveProjectRoot(project.root).ok ? [{ ...project, access }] : [],
+  const accessibleProjects = familiarId
+    ? await listAccessibleProjects(projects, familiarId)
+    : projects.map((project) => ({ project, access: undefined }));
+  const validatedProjects = await Promise.all(
+    accessibleProjects.map(async ({ project, access }) => ({
+      project,
+      access,
+      valid: (await validateCaveProjectRootAsync(project.root)).ok,
+    })),
+  );
+  const launchableProjects = validatedProjects.flatMap(({ project, access, valid }) =>
+    valid ? [access ? { ...project, access } : project] : [],
   );
   return NextResponse.json({
     ok: true,

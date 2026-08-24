@@ -24,6 +24,7 @@ assert.doesNotMatch(
 );
 assert.match(listRoute, /export async function GET\(req: Request\)/, "projects route should expose GET");
 assert.match(listRoute, /searchParams\.get\("familiarId"\)/, "GET /api/projects should accept familiar-scoped listing");
+assert.match(listRoute, /searchParams\.get\("launchable"\) === "1"/, "GET /api/projects should offer a launchable-only listing");
 assert.match(listRoute, /isValidFamiliarId\(familiarId\)/, "GET /api/projects should validate familiar id before scoping");
 assert.match(
   listRoute,
@@ -32,8 +33,8 @@ assert.match(
 );
 assert.match(
   listRoute,
-  /validateCaveProjectRoot\(project\.root\)/,
-  "familiar-scoped project choices should omit roots that no longer resolve to directories",
+  /Promise\.all\([\s\S]*validateCaveProjectRootAsync\(project\.root\)/,
+  "launchable project choices should validate roots concurrently without blocking the event loop",
 );
 assert.match(
   listRoute,
