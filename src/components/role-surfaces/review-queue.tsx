@@ -11,6 +11,7 @@
  * silently absent heading cannot say it.
  */
 
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import {
@@ -197,9 +198,9 @@ export function ReviewQueue({
             </span>
             <strong>{emptyTitle}</strong>
             <span>{emptyHint}</span>
-            <button type="button" className="rd-btn rd-btn--xs focus-ring" onClick={onClearFilters}>
+            <Button size="xs" onClick={onClearFilters}>
               Clear filters
-            </button>
+            </Button>
           </div>
         ) : (
           rendered.map(({ bucket, items, empty }) => {

@@ -7,6 +7,7 @@
  * in the top bar, so a control's position tells you what it acts on.
  */
 
+import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
@@ -187,9 +188,9 @@ export function ReviewWorkbenchHeader({
         onClose={onCloseShortcuts}
         breadcrumb={["Review Deck", "Keyboard shortcuts"]}
         footerActions={
-          <button type="button" className="rd-btn focus-ring" onClick={onCloseShortcuts}>
+          <Button variant="ghost" size="sm" onClick={onCloseShortcuts}>
             Close
-          </button>
+          </Button>
         }
       >
         <div className="rd-shortcuts">

@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import { GITHUB_REVIEW_BODY_MAX_LENGTH } from "@/lib/github-review";
@@ -301,13 +302,9 @@ export function ReviewVerdictDock({
         }
         footerActions={
           <>
-            <button
-              type="button"
-              className="rd-btn focus-ring"
-              onClick={() => setReviewMode(null)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setReviewMode(null)}>
               Cancel
-            </button>
+            </Button>
             <button
               type="button"
               className="rd-verdict-primary rd-verdict-primary--inline focus-ring"
@@ -375,9 +372,9 @@ export function ReviewVerdictDock({
                 })}
               </div>
               <div className="rd-composer-actions">
-                <button
-                  type="button"
-                  className="rd-btn rd-btn--xs focus-ring"
+                <Button
+                  size="xs"
+                  leadingIcon="ph:pencil-simple"
                   disabled={keptEvidence.length === 0}
                   onClick={() =>
                     facts &&
@@ -389,9 +386,8 @@ export function ReviewVerdictDock({
                     )
                   }
                 >
-                  <Icon name="ph:pencil-simple" width={12} height={12} aria-hidden />
                   {note ? "Redraft from evidence" : "Draft note from evidence"}
-                </button>
+                </Button>
                 <span>Every cited item is this pull request&apos;s live GitHub state.</span>
               </div>
             </section>
@@ -453,13 +449,9 @@ export function ReviewVerdictDock({
         }
         footerActions={
           <>
-            <button
-              type="button"
-              className="rd-btn focus-ring"
-              onClick={() => setMergeOpen(false)}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setMergeOpen(false)}>
               Cancel
-            </button>
+            </Button>
             <button
               type="button"
               className="rd-verdict-primary rd-verdict-primary--inline focus-ring"
@@ -529,9 +521,9 @@ export function ReviewVerdictDock({
         onClose={onCloseCheckpoints}
         breadcrumb={["Review Deck", "Local checkpoints"]}
         footerActions={
-          <button type="button" className="rd-btn focus-ring" onClick={onCloseCheckpoints}>
+          <Button variant="ghost" size="sm" onClick={onCloseCheckpoints}>
             Close
-          </button>
+          </Button>
         }
       >
         <p className="rd-hint">
