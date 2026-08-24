@@ -9,6 +9,7 @@ const read = (relativePath: string) =>
 const source = read("./chat-view.tsx");
 const css = read("../styles/cave-composer.css");
 const transcriptCss = read("../styles/cave-chat/transcript.css");
+const activityCss = read("../styles/cave-chat/activity.css");
 
 assert.match(
   source,
@@ -41,18 +42,23 @@ assert.match(
   "the active access mode uses the design-system accent recipe",
 );
 assert.match(
-  transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*?max-width:\s*var\(--cave-chat-measure\);/,
-  "the composer aligns to the same readable measure as the chat transcript",
+  activityCss,
+  /--cave-chat-measure:\s*64rem;[\s\S]*?--cave-composer-measure:\s*calc\(var\(--space-10\) \* 21\);/,
+  "the transcript keeps its wide reading measure while the composer uses a focused, text-scale-independent measure",
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-input \{[\s\S]*?min-height:\s*calc\(var\(--space-10\) \+ var\(--space-9\)\);/,
-  "Chat uses the compact 76px writing field derived from the spacing grid",
+  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*?max-width:\s*var\(--cave-composer-measure\);/,
+  "the composer uses its compact intent-entry measure",
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-send--busy[\s\S]*?width:\s*auto;[\s\S]*?padding-inline:\s*var\(--space-3\);/,
+  /\.cave-chat-linear \.cave-composer-input \{[\s\S]*?min-height:\s*calc\(var\(--space-10\) \+ var\(--space-4\)\);/,
+  "Chat uses a compact 56px writing field derived from the spacing grid",
+);
+assert.match(
+  transcriptCss,
+  /\.cave-chat-linear \.cave-composer-send--busy[\s\S]*?width:\s*auto;[\s\S]*?padding-inline:\s*var\(--space-2\);[\s\S]*?font-size:\s*var\(--text-xs\);/,
   "the stop action expands into a readable danger pill while streaming",
 );
 

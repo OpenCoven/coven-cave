@@ -548,30 +548,36 @@
 
 
 .cave-chat-linear .cave-composer-shell {
-  /* Match the chat's readable column instead of expanding into a window-wide
-     command slab. */
-  max-width: var(--cave-chat-measure);
+  max-width: var(--cave-composer-measure);
 }
 
 .cave-chat-linear .cave-composer-panel {
-  /* Slightly rounder than the base --radius-xl (1.4×), but still derived from
-     --radius so the Appearance → Corner radius setting applies: 18px at the
-     default 10px base, squarer at sharp, fuller at round. */
-  border-radius: calc(var(--radius) * 1.8);
-  border-color: color-mix(in oklch, var(--accent-presence) 36%, var(--border-strong));
+  border-radius: var(--radius-panel);
+  border-color: var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 92%, var(--bg-panel));
+  backdrop-filter: none;
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--accent-presence) 16%, transparent),
-    0 16px 42px oklch(0 0 0 / 24%),
-    0 0 28px color-mix(in oklch, var(--accent-presence) 12%, transparent),
+    0 var(--space-4) var(--space-10) color-mix(in oklch, var(--bg-panel) 64%, transparent),
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
+.cave-chat-linear .cave-composer-panel:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-strong));
+  box-shadow:
+    0 var(--space-4) var(--space-10) color-mix(in oklch, var(--bg-panel) 64%, transparent),
+    0 0 0 1px var(--ring-focus-soft);
+}
+
 .cave-chat-linear .cave-composer-input {
-  min-height: calc(var(--space-10) + var(--space-9));
+  min-height: calc(var(--space-10) + var(--space-4));
+}
+
+.cave-chat-linear .cave-composer-controls {
+  padding: 0 var(--space-2) var(--space-2);
 }
 
 .cave-chat-linear .cave-composer-footer-band {
-  border-radius: 0 0 calc(var(--radius) * 1.8) calc(var(--radius) * 1.8);
+  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
 }
 
 /* The in-chat action chrome stays compact so the full-width writing surface
@@ -583,7 +589,7 @@
 }
 
 .cave-chat-linear .cave-composer-control-row {
-  min-height: var(--space-10);
+  min-height: calc(var(--space-8) + var(--space-1));
 }
 
 .cave-chat-linear .cave-composer-send {
@@ -615,9 +621,9 @@
 
 .cave-chat-linear .cave-composer-send--busy {
   width: auto;
-  padding-inline: var(--space-3);
+  padding-inline: var(--space-2);
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: 650;
   white-space: nowrap;
 }

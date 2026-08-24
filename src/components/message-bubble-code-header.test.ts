@@ -141,8 +141,8 @@ assert.doesNotMatch(
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearComposerShell,
-  /max-width:\s*var\(--cave-chat-measure\)/,
-  "Linear composer shell should align with the readable chat column",
+  /max-width:\s*var\(--cave-composer-measure\)/,
+  "Linear composer shell should use the focused composer measure",
 );
 
 // ---------------------------------------------------------------------------
