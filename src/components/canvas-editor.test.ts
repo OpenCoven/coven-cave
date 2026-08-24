@@ -143,6 +143,25 @@ assert.doesNotMatch(
   /\.canvas-editor__play-(?:card|row)\b/,
   "retired Play mode does not leave dead stylesheet selectors",
 );
+assert.match(editor, /GitHub source → project → pull request/, "the editor owns the source-to-PR delivery flow");
+assert.match(editor, /fetch\("\/api\/canvas\/project-file"/, "the visible sketch can be applied to its connected project file");
+assert.match(
+  editor,
+  /artifactId: artifactRef\.current\.id,[\s\S]{0,100}?expectedUpdatedAt/,
+  "project application is pinned to the exact persisted sketch revision",
+);
+assert.match(
+  editor,
+  /action: "commit"[\s\S]{0,200}?paths: \[source\.filePath\],[\s\S]{0,80}?requireDefaultBranch: true/,
+  "Canvas commits only its connected source file",
+);
+assert.match(editor, /action: "create-pr"/, "a committed Canvas change can open a pull request");
+assert.match(
+  editor,
+  /expectedBranch: commitResult\.branch,[\s\S]{0,80}?expectedHead: commitResult\.headOid/,
+  "PR creation is pinned to the exact branch and commit produced by Canvas",
+);
+assert.match(editorStyles, /\.canvas-editor__delivery-route/, "the editor renders the provenance strip");
 
 // Inspector wiring replicates the viewer's deliberate security boundary.
 assert.match(

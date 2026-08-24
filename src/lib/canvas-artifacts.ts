@@ -6,6 +6,7 @@
 
 import { injectCanvasInspector } from "./canvas-inspector.ts";
 import { injectPreviewCsp } from "./canvas-preview-csp.ts";
+import { parseGitHubFileUrl } from "./github-repo-link.ts";
 
 // An artifact is either a self-contained HTML document or a single React
 // component (transpiled + rendered by the sandbox runtime). Older records
@@ -26,6 +27,16 @@ export type CanvasAnnotation = {
   updatedAt: string;
 };
 
+export type CanvasArtifactSource = {
+  kind: "github";
+  url: string;
+  repoUrl: string;
+  filePath: string;
+  ref: string;
+  projectFileHash: string;
+  projectId?: string;
+};
+
 export type CanvasArtifact = {
   id: string;
   /** Short human label, derived from the prompt (editable later). */
@@ -37,6 +48,7 @@ export type CanvasArtifact = {
   /** How `code` should be previewed. Absent ⇒ "html" (back-compat). */
   kind?: ArtifactKind;
   annotations?: CanvasAnnotation[];
+  source?: CanvasArtifactSource;
   createdAt: string;
   updatedAt: string;
 };
@@ -57,6 +69,7 @@ const MAX_ANNOTATION_SELECTOR_CHARS = 500;
 const MAX_ANNOTATION_LABEL_CHARS = 200;
 const MAX_ANNOTATION_EXCERPT_CHARS = 1_000;
 const MAX_ANNOTATION_NOTE_CHARS = 4_000;
+const MAX_PROJECT_ID_CHARS = 200;
 
 /**
  * Pull the HTML document out of a familiar's chat response.
@@ -441,6 +454,31 @@ export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
     ? new Date(v.updatedAt).toISOString()
     : createdAt;
   const annotations = sanitizeAnnotations(v.annotations);
+  let source: CanvasArtifactSource | undefined;
+  if (v.source && typeof v.source === "object") {
+    const rawSource = v.source as Record<string, unknown>;
+    const parsed = rawSource.kind === "github" && typeof rawSource.url === "string"
+      ? parseGitHubFileUrl(rawSource.url)
+      : null;
+    const projectId = typeof rawSource.projectId === "string"
+      ? rawSource.projectId.trim().slice(0, MAX_PROJECT_ID_CHARS)
+      : "";
+    const projectFileHash = typeof rawSource.projectFileHash === "string"
+      && /^[0-9a-f]{64}$/i.test(rawSource.projectFileHash)
+      ? rawSource.projectFileHash.toLowerCase()
+      : "";
+    if (parsed && projectFileHash) {
+      source = {
+        kind: "github",
+        url: parsed.sourceUrl,
+        repoUrl: parsed.repoUrl,
+        filePath: parsed.filePath,
+        ref: parsed.ref,
+        projectFileHash,
+        ...(projectId ? { projectId } : {}),
+      };
+    }
+  }
   return {
     id,
     title,
@@ -448,6 +486,7 @@ export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
     code,
     kind,
     ...(annotations.length > 0 ? { annotations } : {}),
+    ...(source ? { source } : {}),
     createdAt,
     updatedAt,
   };

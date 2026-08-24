@@ -618,6 +618,14 @@ assert.doesNotMatch(addTile, /allow-same-origin/, "preview remains opaque-origin
 assert.match(addTile, /detectPastedKind\(state\.pastedCode\)/, "pasted code kind is detected, not asked");
 assert.match(addTile, /useAnnouncer/, "completion and saves are announced to AT");
 assert.match(addTile, /aria-haspopup="menu"/, "Start from code is an accessible secondary menu");
+assert.match(addTile, /label: "GitHub file"/, "Start from code includes a GitHub file route");
+assert.match(addTile, /<CanvasGitHubImportModal/, "the GitHub route opens the project-aware importer");
+assert.match(addTile, /pendingSource \? \{ source: pendingSource \}/, "imported repository provenance is saved with the sketch");
+assert.match(
+  addTile,
+  /onArtifactsChanged\(data\.artifacts \?\? \[\], data\.savedId \?\? artifact\.id\)/,
+  "a deduplicated imported sketch highlights the server-settled artifact id",
+);
 assert.match(addTile, /Blank HTML/, "explicit blank HTML remains available");
 assert.match(addTile, /Blank React component/, "explicit blank React remains available");
 assert.doesNotMatch(addTile, /const MODES/, "equal-weight implementation mode switcher is removed");

@@ -53,6 +53,61 @@ function parseOwnerRepo(input: string): { owner: string; repo: string } | null {
   return null;
 }
 
+export type GitHubFileLocation = {
+  owner: string;
+  repo: string;
+  ref: string;
+  filePath: string;
+  repoUrl: string;
+  sourceUrl: string;
+};
+
+/**
+ * Parse a GitHub blob URL into the repository, ref, and repository-relative
+ * file path needed by the Canvas importer. Branch names containing `/` are
+ * intentionally unsupported because a blob URL cannot distinguish the ref
+ * boundary without another GitHub API request.
+ */
+export function parseGitHubFileUrl(input: string | null | undefined): GitHubFileLocation | null {
+  if (typeof input !== "string") return null;
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || !/^(?:www\.)?github\.com$/i.test(url.hostname)) return null;
+  const encodedParts = url.pathname.split("/").filter(Boolean);
+  if (encodedParts.length < 5 || encodedParts[2] !== "blob") return null;
+  let parts: string[];
+  try {
+    parts = encodedParts.map((part) => decodeURIComponent(part));
+  } catch {
+    return null;
+  }
+  const [owner, repoRaw, , ref, ...fileParts] = parts;
+  const repo = repoRaw.replace(/\.git$/i, "");
+  if (!OWNER_RE.test(owner) || !REPO_RE.test(repo) || !ref || fileParts.length === 0) return null;
+  if (
+    [ref, ...fileParts].some(
+      (part) => !part || part === "." || part === ".." || part.includes("\0") || /[\\/]/.test(part),
+    )
+  ) {
+    return null;
+  }
+  const filePath = fileParts.join("/");
+  if (filePath.length > 1_000) return null;
+  const repoUrl = `https://github.com/${owner}/${repo}`;
+  return {
+    owner,
+    repo,
+    ref,
+    filePath,
+    repoUrl,
+    sourceUrl: `${repoUrl}/blob/${encodeURIComponent(ref)}/${fileParts.map(encodeURIComponent).join("/")}`,
+  };
+}
+
 /**
  * Normalize any accepted GitHub repository spelling to the canonical
  * `https://github.com/{owner}/{repo}` link, or null when the input is not a
