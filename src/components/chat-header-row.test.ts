@@ -85,16 +85,17 @@ assert.match(
   'chatContextControls passes ariaLabel={inlineComposer ? "New chat context" : "Session context"}',
 );
 // The context div must be immediately after </MetaLine> — interactive controls
-// must not be nested inside MetaLine's live region.
+// must not be nested inside MetaLine's live region. Offline history is read-only,
+// so it must not expose session-context mutations.
 assert.match(
   source,
-  /<\/MetaLine>\s*\{!inlineComposer \? \(\s*<div className="cave-chat-header-context">\{chatContextControls\}<\/div>/,
+  /<\/MetaLine>\s*\{!inlineComposer && !offlineReadOnly \? \(\s*<div className="cave-chat-header-context">\{chatContextControls\}<\/div>/,
   ".cave-chat-header-context appears immediately after </MetaLine>, outside the live region",
 );
 assert.match(
   source,
-  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "the active-chat header carries chatContextControls after MetaLine",
+  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "the writable active-chat header carries chatContextControls after MetaLine",
 );
 assert.match(
   source,

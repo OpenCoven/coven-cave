@@ -192,12 +192,12 @@ assert.doesNotMatch(
   /linkedContextRow/,
   "the header never carries the linked-context strip (that always stays in the band)",
 );
-// For active chats (!inlineComposer) the header hosts chatContextControls in
+// For writable active chats the header hosts chatContextControls in
 // .cave-chat-header-context; for new chats they move to the footer band.
 assert.match(
   source,
-  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "active chats (!inlineComposer) mount context controls in .cave-chat-header-context inside the header",
+  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "writable active chats mount context controls in .cave-chat-header-context inside the header",
 );
 // Interactive controls must not be nested inside MetaLine's live region —
 // the context div is placed *after* </MetaLine>, not inside it.

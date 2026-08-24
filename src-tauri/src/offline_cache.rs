@@ -69,6 +69,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::Webview;
 use zeroize::Zeroizing;
 
 /// Bumped whenever the envelope or the derivation changes. Entries written by
@@ -522,6 +523,39 @@ fn decode_envelope(
 /// Stage-and-rename. The staging name is unique per process and call so two
 /// writers never share one, and a failure removes the staging file and leaves
 /// the previous entry in place.
+#[cfg(not(target_os = "windows"))]
+fn replace_file(staging: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(staging, destination)
+        .map_err(|_| "could not replace the offline cache entry".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn replace_file(staging: &Path, destination: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let staging_wide: Vec<u16> = staging.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination_wide: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let replaced = unsafe {
+        MoveFileExW(
+            staging_wide.as_ptr(),
+            destination_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        Err("could not replace the offline cache entry".to_string())
+    } else {
+        Ok(())
+    }
+}
+
 fn write_entry_file(path: &Path, contents: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
@@ -553,11 +587,7 @@ fn write_entry_file(path: &Path, contents: &[u8]) -> Result<(), String> {
             .and_then(|_| file.sync_all())
             .map_err(|_| "could not write the offline cache staging file".to_string())?;
         drop(file);
-        // `rename` replaces an existing destination on every platform we ship,
-        // and a cache entry needs no backup copy: if the swap fails the
-        // previous entry is still the one on disk.
-        std::fs::rename(&staging, path)
-            .map_err(|_| "could not replace the offline cache entry".to_string())
+        replace_file(&staging, path)
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&staging);
@@ -1035,10 +1065,12 @@ impl OfflineCacheState {
 
 #[tauri::command]
 pub(super) fn offline_cache_read(
+    webview: Webview,
     state: tauri::State<'_, Arc<OfflineCacheState>>,
     scope: String,
     key: String,
 ) -> Result<OfflineCacheReadResult, String> {
+    crate::pty::ensure_trusted_main_caller(&webview, "Offline cache")?;
     validate_name(&scope, "scope")?;
     validate_name(&key, "key")?;
     let result = state.with_context(|context| Ok(read_entry(context, &scope, &key)))?;
@@ -1050,12 +1082,14 @@ pub(super) fn offline_cache_read(
 
 #[tauri::command]
 pub(super) fn offline_cache_write(
+    webview: Webview,
     state: tauri::State<'_, Arc<OfflineCacheState>>,
     scope: String,
     key: String,
     payload: String,
     revision: String,
 ) -> Result<(), String> {
+    crate::pty::ensure_trusted_main_caller(&webview, "Offline cache")?;
     validate_name(&scope, "scope")?;
     validate_name(&key, "key")?;
     if revision.len() > MAX_REVISION_LEN {
@@ -1067,9 +1101,11 @@ pub(super) fn offline_cache_write(
 
 #[tauri::command]
 pub(super) fn offline_cache_clear(
+    webview: Webview,
     state: tauri::State<'_, Arc<OfflineCacheState>>,
     scope: Option<String>,
 ) -> Result<(), String> {
+    crate::pty::ensure_trusted_main_caller(&webview, "Offline cache")?;
     if let Some(scope) = scope.as_deref() {
         validate_name(scope, "scope")?;
     }
@@ -1078,8 +1114,10 @@ pub(super) fn offline_cache_clear(
 
 #[tauri::command]
 pub(super) fn offline_cache_status(
+    webview: Webview,
     state: tauri::State<'_, Arc<OfflineCacheState>>,
 ) -> Result<OfflineCacheStatus, String> {
+    crate::pty::ensure_trusted_main_caller(&webview, "Offline cache")?;
     let (entries, bytes) = state.with_context(|context| {
         let files = collect_entries(context)?;
         Ok((files.len(), files.iter().map(|file| file.bytes).sum::<u64>()))
