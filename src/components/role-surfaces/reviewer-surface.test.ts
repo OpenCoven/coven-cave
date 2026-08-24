@@ -26,6 +26,7 @@ const diff = read("./review-diff-workbench.tsx");
 const navigator = read("./review-file-navigator.tsx");
 const inspector = read("./review-inspector.tsx");
 const verdict = read("./review-verdict-dock.tsx");
+const toast = read("./review-toast.tsx");
 const docs = read("../../../docs/role-surfaces.md");
 const cssFacade = read("../../styles/review-deck.css");
 const cssFiles = [
@@ -49,6 +50,7 @@ const renderSources = [
   navigator,
   inspector,
   verdict,
+  toast,
 ];
 
 function session(overrides = {}) {
@@ -354,6 +356,34 @@ test("the narrow-width switcher is a sibling of the layout, never inside a pane"
   const switcher = surface.indexOf("<ReviewMobileTabs");
   const layout = surface.indexOf('<div className="rd-layout">');
   assert.ok(switcher > 0 && layout > switcher, "the switcher must precede the layout");
+});
+
+test("a verdict confirms on BOTH channels, and is read aloud only once", () => {
+  // `announce` writes into an sr-only live region: assistive tech heard every
+  // verdict while a sighted reviewer got nothing but a closing dialog. The
+  // toast is the visible half — so it must be aria-hidden, or the same
+  // sentence is announced twice.
+  assert.match(surface, /const confirm = useCallback\(/);
+  assert.match(surface, /announce\(message\);\s*\n\s*toast\.show\(message\);/);
+  assert.match(toast, /aria-hidden/);
+  assert.doesNotMatch(toast, /aria-live|role="status"|role="alert"/);
+  // Every mutation that posts to GitHub confirms visibly.
+  for (const verb of ["Approved", "Requested changes on", "Merged"]) {
+    assert.match(surface, new RegExp(`confirm\\(\\s*\`${verb}`));
+  }
+  // …and a stale confirmation never outlives the item it described.
+  assert.match(surface, /toast\.clear\(\);/);
+});
+
+test("the toast anchors to the deck, and does not slide under reduced motion", () => {
+  // `.rd-stage` sets `container: review-deck / inline-size`, and a container
+  // type traps `position: fixed` descendants — so the frame's fixed toast would
+  // anchor to the stage regardless. Say so outright instead.
+  assert.match(css, /\.rd-toast \{[^}]*position: absolute/);
+  assert.match(css, /\.rd-stage \{\s*\n\s*position: relative;/);
+  // The blanket reduced-motion rule only flattens transitions; a keyframe
+  // animation needs its own opt-out.
+  assert.match(css, /\.rd-toast \{\s*\n\s*animation: none;\s*\n\s*\}/);
 });
 
 test("responsive and accessibility contracts are explicit", () => {

@@ -8,6 +8,7 @@
  */
 
 .rd-stage {
+  position: relative;
   --rd-tone: var(--text-muted);
   --rd-queue-width: calc(var(--space-12) * 6);
   --rd-inspector-width: calc(var(--space-12) * 6.5);
@@ -389,6 +390,55 @@ body[data-rd-resizing="true"] {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rd-toast {
+  position: absolute;
+  z-index: 6;
+  inset-block-end: var(--space-6);
+  inset-inline-start: 50%;
+  display: flex;
+  max-width: min(30rem, calc(100% - var(--space-8)));
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  box-shadow: 0 var(--space-3) var(--space-8)
+    color-mix(in oklch, var(--shadow-color) 50%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transform: translateX(-50%);
+  animation: rd-toast-rise var(--duration-base) var(--ease-decelerate);
+}
+
+.rd-toast svg {
+  flex: none;
+  color: var(--color-success);
+}
+
+@keyframes rd-toast-rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, var(--space-2));
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * The blanket rule below only flattens transitions. The toast arrives on a
+   * keyframe animation, so it needs its own opt-out or it still slides.
+   */
+  .rd-toast {
+    animation: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

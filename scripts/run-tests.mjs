@@ -163,6 +163,7 @@ export const SUITES = {
     "src/components/role-surfaces/review-preferences.test.ts",
     "src/components/role-surfaces/review-workbench-model.test.ts",
     "src/components/role-surfaces/review-cockpit.test.ts",
+    "src/components/role-surfaces/use-review-toast.test.ts",
     "src/components/role-surfaces/review-readiness.test.ts",
     "src/components/role-surfaces/review-file-tree.test.ts",
     "src/lib/review-landing.test.ts",

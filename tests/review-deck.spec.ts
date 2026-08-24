@@ -207,6 +207,15 @@ test.describe("Review Deck cockpit — the verdict actually posts", () => {
       body: "Please keep the reviewed-file identity tied to this head.",
     });
     await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // The verdict must confirm VISIBLY, not only into the sr-only live region.
+    // Before cave-06qka a sighted reviewer got nothing here but a closed dialog.
+    await expect(deck.locator(".rd-toast")).toContainText("Requested changes on", {
+      timeout: 5_000,
+    });
+    // …and the toast is hidden from assistive tech, because the announcer
+    // already speaks the same sentence.
+    await expect(deck.locator(".rd-toast")).toHaveAttribute("aria-hidden", "true");
   });
 
   test("every narrow-width pane stays reachable, including the one you just left", async ({
