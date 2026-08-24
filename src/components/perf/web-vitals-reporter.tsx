@@ -12,6 +12,7 @@
 
 import { useReportWebVitals } from "next/web-vitals";
 import { rateWebVital, type WebVitalRating } from "@/lib/perf/web-vitals-format";
+import { recordPerfSample } from "@/lib/perf/perf-store";
 
 export type CaveVital = {
   name: string;
@@ -37,6 +38,18 @@ export function WebVitalsReporter() {
     if (typeof window !== "undefined") {
       window.__caveVitals = { ...window.__caveVitals, [metric.name]: entry };
       window.dispatchEvent(new CustomEvent("cave:web-vital", { detail: entry }));
+      // `window.__caveVitals` is inspectable but dies with the page, and the
+      // console.debug below is development-only, so neither could ever support
+      // a before/after comparison. Persist alongside them rather than instead:
+      // the overlay listens for the event and the console line is still the
+      // fastest read during development.
+      recordPerfSample({
+        kind: "vital",
+        name: entry.name,
+        value: entry.value,
+        at: entry.at,
+        rating: entry.rating,
+      });
     }
     if (process.env.NODE_ENV === "development") {
       // eslint-disable-next-line no-console
