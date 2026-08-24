@@ -103,7 +103,7 @@ pub(super) fn coven_tray_icon() -> Image<'static> {
 
 #[cfg(desktop)]
 pub(super) fn focus_main_window(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
+    if let Some(w) = preferred_main_window(app) {
         let _ = w.show();
         let _ = w.set_focus();
     }
@@ -151,10 +151,7 @@ pub(super) fn main_url_for_child_windows(app: &tauri::AppHandle) -> Option<Url> 
         .lock()
         .ok()
         .and_then(|remembered| remembered.clone())
-        .or_else(|| {
-            app.get_webview_window("main")
-                .and_then(|window| window.url().ok())
-        })
+        .or_else(|| preferred_main_window(app).and_then(|window| window.url().ok()))
 }
 
 #[cfg(desktop)]

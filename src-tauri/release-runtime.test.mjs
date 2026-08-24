@@ -413,7 +413,7 @@ test("Windows native close remains authoritative when the WebView is unresponsiv
 
   assert.match(
     launcher,
-    /#\[cfg\(target_os = "windows"\)\][\s\S]*WindowEvent::CloseRequested[\s\S]*window\.label\(\) == "main"[\s\S]*shutdown_owned_processes\(window\.app_handle\(\)\)[\s\S]*window\.app_handle\(\)\.exit\(0\)/,
+    /#\[cfg\(target_os = "windows"\)\][\s\S]*WindowEvent::CloseRequested[\s\S]*window\.label\(\) == PRIMARY_MAIN_WINDOW_LABEL[\s\S]*shutdown_owned_processes\(window\.app_handle\(\)\)[\s\S]*window\.app_handle\(\)\.exit\(0\)/,
     "the Windows title-bar close must exit natively without waiting for a wedged JS close listener",
   );
   assert.match(
@@ -447,7 +447,7 @@ test("Windows native Browser children fail closed before WebView2 registration",
 
   assert.match(
     browser,
-    /offscreen_browser_position\([\s\S]*with_main_webview2_environment\(app, builder\)[\s\S]*PhysicalPosition::new\(offscreen_x, offscreen_y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*hide_webview/,
+    /offscreen_browser_position\([\s\S]*with_owner_webview2_environment\(app, &owner\.window_label, builder\)[\s\S]*PhysicalPosition::new\(offscreen_x, offscreen_y\)[\s\S]*PhysicalSize::new\(w, h\)[\s\S]*hide_webview/,
     "a child must reuse the main environment and remain offscreen/hidden until registration finishes",
   );
   assert.match(
@@ -882,7 +882,7 @@ test("macOS tray exposes quick chat as a separate floating window", async () => 
   );
   assert.match(
     launcher,
-    /if window\.label\(\) == "main"[\s\S]*try_state::<SidecarState>/,
+    /if window\.label\(\) == PRIMARY_MAIN_WINDOW_LABEL[\s\S]*try_state::<SidecarState>/,
     "closing the quick chat window must not stop the desktop sidecar",
   );
 });

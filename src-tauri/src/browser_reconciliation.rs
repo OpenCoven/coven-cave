@@ -49,20 +49,24 @@ impl std::fmt::Display for EnsureBrowserError {
 fn ensure_browser(
     app: &AppHandle,
     event_tracker: Arc<Mutex<BrowserEventTracker>>,
+    owner: &BrowserOwner,
     label: &str,
     w: f64,
     h: f64,
     url: &str,
     read_only_url: Option<&str>,
 ) -> Result<bool, EnsureBrowserError> {
+    if !is_registered_main_window(app, &owner.window_label) {
+        return Err(format!("owner window '{}' was retired", owner.window_label).into());
+    }
     if app.webviews().keys().any(|existing| existing == label) {
         return Ok(false);
     }
 
-    let main = app
-        .get_window("main")
-        .ok_or_else(|| "main window missing".to_string())?;
-    let client = main.inner_size().map_err(|e| e.to_string())?;
+    let owner_window = app
+        .get_window(&owner.window_label)
+        .ok_or_else(|| format!("owner window '{}' is missing", owner.window_label))?;
+    let client = owner_window.inner_size().map_err(|e| e.to_string())?;
     let (w, h) =
         offscreen_browser_creation_bounds(f64::from(client.width), f64::from(client.height), w, h)?;
     let (offscreen_x, offscreen_y) =
@@ -71,8 +75,8 @@ fn ensure_browser(
     let parsed_url = Url::parse(url).map_err(|e| e.to_string())?;
     let read_only_target = read_only_url.and_then(|raw| Url::parse(raw).ok());
     let initial_load_finished = Arc::new(AtomicBool::new(false));
-    let browser_label = label.to_string();
-    let app_for_load = app.clone();
+    let client_label = owner.client_label.clone();
+    let owner_window_for_load = owner_window.clone();
     let load_finished_for_event = Arc::clone(&initial_load_finished);
     let tracker_for_load = Arc::clone(&event_tracker);
     let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed_url))
@@ -99,10 +103,10 @@ fn ensure_browser(
                 PageLoadEvent::Started => "started",
                 PageLoadEvent::Finished => "finished",
             };
-            let _ = app_for_load.emit(
+            let _ = owner_window_for_load.emit(
                 "browser:page-load",
                 BrowserPageLoadEvent {
-                    label: browser_label.clone(),
+                    label: client_label.clone(),
                     url: payload.url().to_string(),
                     phase: phase.to_string(),
                     sequence,
@@ -113,7 +117,7 @@ fn ensure_browser(
                 // Emit title event from Rust so it reaches the main window's
                 // event bus. Child webview JS → main window event propagation
                 // is unreliable in Tauri v2; Rust-side emit is the safe path.
-                let label_json = serde_json::to_string(&browser_label)
+                let label_json = serde_json::to_string(&client_label)
                     .unwrap_or_else(|_| "null".to_string());
                 let url_str = payload.url().to_string();
 
@@ -257,10 +261,10 @@ fn ensure_browser(
                         Err(_) => url_str.clone(),
                     }
                 };
-                let _ = app_for_load.emit(
+                let _ = owner_window_for_load.emit(
                     "browser:title",
                     BrowserTitleEvent {
-                        label: browser_label.clone(),
+                        label: client_label.clone(),
                         title: title_fallback,
                         url: url_str,
                         sequence,
@@ -291,30 +295,36 @@ fn ensure_browser(
     // pump. Reuse the already-running main environment so child creation only
     // needs a controller and cannot conflict with the main profile/options.
     #[cfg(target_os = "windows")]
-    let builder = with_main_webview2_environment(app, builder)?;
+    let builder = with_owner_webview2_environment(app, &owner.window_label, builder)?;
 
-    main.add_child(
-        builder,
-        PhysicalPosition::new(offscreen_x, offscreen_y),
-        PhysicalSize::new(w, h),
-    )
-    .map_err(|e| e.to_string())?;
+    owner_window
+        .add_child(
+            builder,
+            PhysicalPosition::new(offscreen_x, offscreen_y),
+            PhysicalSize::new(w, h),
+        )
+        .map_err(|e| e.to_string())?;
 
     if let Some(webview) = app.get_webview(label) {
         hide_webview(&webview)?;
+        if !is_registered_main_window(app, &owner.window_label) {
+            webview.close().map_err(|error| error.to_string())?;
+            return Err(format!("owner window '{}' was retired", owner.window_label).into());
+        }
     }
 
     Ok(true)
 }
 
 #[cfg(target_os = "windows")]
-fn with_main_webview2_environment<R: tauri::Runtime>(
+fn with_owner_webview2_environment<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    owner_label: &str,
     builder: WebviewBuilder<R>,
 ) -> Result<WebviewBuilder<R>, EnsureBrowserError> {
     let main = app
-        .get_webview("main")
-        .ok_or_else(|| "main webview missing".to_string())?;
+        .get_webview(owner_label)
+        .ok_or_else(|| format!("owner webview '{owner_label}' is missing"))?;
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     main.with_webview(move |platform| {
         let _ = sender.send(builder.with_environment(platform.environment()));
@@ -411,11 +421,11 @@ impl EnvironmentCallbackTimeoutRetryState {
     }
 }
 
-pub(super) fn ensure_browser_controller(caller: &tauri::Webview) -> Result<(), String> {
-    if caller.label() != "main" {
+pub(super) fn ensure_browser_controller(caller: &tauri::Webview) -> Result<String, String> {
+    if !is_registered_main_window(caller.app_handle(), caller.label()) {
         return Err("native browser controls are restricted to the main webview".to_string());
     }
-    Ok(())
+    Ok(caller.label().to_string())
 }
 
 fn worker_lock_for_label(
@@ -423,6 +433,9 @@ fn worker_lock_for_label(
     label: &str,
 ) -> Result<Arc<Mutex<()>>, String> {
     let mut inner = state.lock()?;
+    if !inner.owners.contains_key(label) {
+        return Err(format!("browser webview '{label}' has no registered owner"));
+    }
     Ok(Arc::clone(
         inner
             .worker_locks
@@ -436,6 +449,9 @@ fn worker_signal_for_label(
     label: &str,
 ) -> Result<Arc<BrowserWorkerSignal>, String> {
     let mut inner = state.lock()?;
+    if !inner.owners.contains_key(label) {
+        return Err(format!("browser webview '{label}' has no registered owner"));
+    }
     Ok(Arc::clone(
         inner
             .worker_signals
@@ -449,6 +465,9 @@ pub(super) fn event_tracker_for_label(
     label: &str,
 ) -> Result<Arc<Mutex<BrowserEventTracker>>, String> {
     let mut inner = state.lock()?;
+    if !inner.owners.contains_key(label) {
+        return Err(format!("browser webview '{label}' has no registered owner"));
+    }
     Ok(Arc::clone(
         inner
             .event_trackers
@@ -588,6 +607,7 @@ fn reconcile_browser(
                 continue;
             }
             let event_tracker = event_tracker_for_label(state, label)?;
+            let owner = browser_owner(state, label)?;
             if app.get_webview(label).is_none()
                 || snapshot.applied_navigation_sequence != Some(navigation.sequence)
             {
@@ -599,6 +619,7 @@ fn reconcile_browser(
             let created = ensure_browser(
                 app,
                 Arc::clone(&event_tracker),
+                &owner,
                 label,
                 bounds.w,
                 bounds.h,
@@ -707,13 +728,17 @@ pub(super) fn schedule_browser_reconcile(
                     }
                     let error = error.to_string();
                     log::warn!("browser lifecycle reconciliation failed for {label}: {error}");
-                    let _ = app.emit(
-                        "browser:lifecycle-error",
-                        BrowserLifecycleErrorEvent {
-                            label: label.clone(),
-                            error,
-                        },
-                    );
+                    if let Ok(owner) = browser_owner(&state, &label) {
+                        if let Some(target) = app.get_webview_window(&owner.window_label) {
+                            let _ = target.emit(
+                                "browser:lifecycle-error",
+                                BrowserLifecycleErrorEvent {
+                                    label: owner.client_label,
+                                    error,
+                                },
+                            );
+                        }
+                    }
                     timeout_revision
                 }
             };
@@ -741,6 +766,7 @@ pub(super) fn schedule_browser_reconcile(
 pub(super) fn schedule_scope_reconcile(
     app: AppHandle,
     state: BrowserLifecycleState,
+    window_label: &str,
     prefix: String,
     sequence: u64,
     action: BrowserScopeAction,
@@ -755,6 +781,9 @@ pub(super) fn schedule_scope_reconcile(
         .collect::<Vec<_>>();
     {
         let inner = state.lock()?;
+        if inner.retired_window_labels.contains(window_label) {
+            return Err(format!("browser owner window '{window_label}' was retired"));
+        }
         labels.extend(
             inner
                 .labels
@@ -769,6 +798,9 @@ pub(super) fn schedule_scope_reconcile(
     labels.dedup();
     {
         let mut inner = state.lock()?;
+        if inner.retired_window_labels.contains(window_label) {
+            return Err(format!("browser owner window '{window_label}' was retired"));
+        }
         if !record_scope_intent(
             &mut inner,
             &prefix,

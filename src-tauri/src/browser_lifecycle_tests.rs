@@ -1,11 +1,14 @@
 use super::{
     advance_scope_barrier, browser_bounds_within_client, effective_browser_intent,
-    offscreen_browser_creation_bounds, offscreen_browser_position, record_bounds_intent,
-    record_navigation_intent, record_scope_intent, record_visibility_intent, BrowserBounds,
-    BrowserBoundsIntent, BrowserEventTracker, BrowserLifecycleInner, BrowserScopeAction,
-    BrowserVisibility, EnvironmentCallbackTimeoutAction, EnvironmentCallbackTimeoutRetryState, Url,
+    native_browser_label, native_browser_owner_prefix, offscreen_browser_creation_bounds,
+    offscreen_browser_position, record_bounds_intent, record_navigation_intent,
+    record_scope_intent, record_visibility_intent, register_browser_owner,
+    remove_browser_owner_resources, BrowserBounds, BrowserBoundsIntent, BrowserEventTracker,
+    BrowserLifecycleInner, BrowserScopeAction, BrowserVisibility, BrowserWorkerSignal,
+    EnvironmentCallbackTimeoutAction, EnvironmentCallbackTimeoutRetryState, Url,
     MAX_TRACKED_BROWSER_URLS, USER_NAVIGATION_MARKER_TTL,
 };
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const LABEL: &str = "cave-browser-main-tab-home";
@@ -18,6 +21,101 @@ fn bounds(sequence: u64) -> BrowserBoundsIntent {
         w: 800.0,
         h: 600.0,
     }
+}
+
+#[test]
+fn native_browser_labels_are_isolated_by_main_window() {
+    let client_label = "cave-browser-main-tab-home";
+    let primary = native_browser_label("main", client_label);
+    let secondary = native_browser_label("main-2", client_label);
+
+    assert_ne!(primary, secondary);
+    assert!(primary.starts_with(&native_browser_owner_prefix("main")));
+    assert!(secondary.starts_with(&native_browser_owner_prefix("main-2")));
+    assert!(!secondary.starts_with(&native_browser_owner_prefix("main")));
+}
+
+#[test]
+fn browser_owner_registration_rejects_cross_window_reassignment() {
+    let mut lifecycle = BrowserLifecycleInner::default();
+    let native_label = native_browser_label("main", LABEL);
+    register_browser_owner(&mut lifecycle, &native_label, "main", LABEL)
+        .expect("initial owner registration");
+    register_browser_owner(&mut lifecycle, &native_label, "main", LABEL)
+        .expect("idempotent owner registration");
+
+    let error = register_browser_owner(&mut lifecycle, &native_label, "main-2", LABEL)
+        .expect_err("native labels cannot be reassigned across windows");
+    assert!(error.contains("already owned"));
+}
+
+#[test]
+fn removing_a_main_window_retires_only_its_browser_lifecycle_state() {
+    let mut lifecycle = BrowserLifecycleInner::default();
+    let primary = native_browser_label("main", LABEL);
+    let secondary = native_browser_label("main-2", LABEL);
+    let secondary_orphan = format!("{}orphan", native_browser_owner_prefix("main-2"));
+    register_browser_owner(&mut lifecycle, &primary, "main", LABEL).expect("primary owner");
+    register_browser_owner(&mut lifecycle, &secondary, "main-2", LABEL).expect("secondary owner");
+    assert!(record_navigation_intent(
+        &mut lifecycle,
+        &primary,
+        40,
+        "https://primary.example".to_string(),
+        None,
+        bounds(40),
+    ));
+    assert!(record_navigation_intent(
+        &mut lifecycle,
+        &secondary,
+        90,
+        "https://secondary.example".to_string(),
+        None,
+        bounds(90),
+    ));
+    assert!(advance_scope_barrier(
+        &mut lifecycle,
+        &native_browser_owner_prefix("main-2"),
+        91,
+        BrowserScopeAction::Hide,
+        None,
+    ));
+    lifecycle
+        .worker_locks
+        .insert(secondary.clone(), Arc::new(Mutex::new(())));
+    lifecycle
+        .worker_signals
+        .insert(secondary.clone(), Arc::new(BrowserWorkerSignal::default()));
+    lifecycle.event_trackers.insert(
+        secondary_orphan.clone(),
+        Arc::new(Mutex::new(BrowserEventTracker::default())),
+    );
+
+    assert_eq!(
+        remove_browser_owner_resources(&mut lifecycle, "main-2"),
+        vec![secondary.clone(), secondary_orphan],
+    );
+    assert!(lifecycle.owners.contains_key(&primary));
+    assert!(lifecycle.labels.contains_key(&primary));
+    assert!(!lifecycle.owners.contains_key(&secondary));
+    assert!(!lifecycle.labels.contains_key(&secondary));
+    for remaining_labels in [
+        lifecycle.worker_locks.keys().collect::<Vec<_>>(),
+        lifecycle.worker_signals.keys().collect::<Vec<_>>(),
+        lifecycle.event_trackers.keys().collect::<Vec<_>>(),
+    ] {
+        assert!(remaining_labels
+            .into_iter()
+            .all(|label| !label.starts_with(&native_browser_owner_prefix("main-2"))));
+    }
+    assert!(lifecycle
+        .scope_barriers
+        .keys()
+        .all(|prefix| !prefix.starts_with(&native_browser_owner_prefix("main-2"))));
+
+    let error = register_browser_owner(&mut lifecycle, &secondary, "main-2", LABEL)
+        .expect_err("a late command cannot repopulate a retired browser owner");
+    assert!(error.contains("was retired"));
 }
 
 fn navigate(lifecycle: &mut BrowserLifecycleInner, sequence: u64, url: &str) -> bool {
