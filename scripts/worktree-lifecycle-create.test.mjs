@@ -277,7 +277,7 @@ case "$*" in
     printf '%s\\n' '[[]]'
     ;;
   *"/pulls?state=all&per_page=100"*)
-    printf '%s\\n' '[[{"number":1,"html_url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"closed","draft":false,"merged_at":"2026-07-31T12:00:00Z","head":{"ref":"fixture-main","sha":"${initialOid}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}]]'
+    printf '%s\\n' '{"number":1,"html_url":"https://github.com/OpenCoven/coven-cave/pull/1","state":"closed","draft":false,"merged_at":"2026-07-31T12:00:00Z","head":{"ref":"fixture-main","sha":"${initialOid}","repo":{"full_name":"OpenCoven/coven-cave"}},"base":{"ref":"main","repo":{"full_name":"OpenCoven/coven-cave"}}}'
     ;;
   *"graphql"*)
     printf '%s\\n' 'unexpected GraphQL call' >&2
