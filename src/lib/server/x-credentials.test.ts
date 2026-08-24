@@ -61,26 +61,34 @@ process.env.COVEN_CAVE_LOCAL_VAULT_FILE = vaultFile;
 process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = vaultKeyFile;
 
 try {
-// Production custody is deliberately backed by the direct encrypted-secret
-// getter, setter, and deleter contract; the snapshot/CAS seam remains only
-// available to injected services that need it.
+// Production custody is backed by the revision-guarded snapshot/CAS seam, so
+// concurrent processes or module instances sharing the real vault file commit
+// through one compare-and-swap rather than clobbering each other's writes.
+// (Source assertions here are documentation only - the behavioural proof that
+// this wiring actually prevents a clobber lives further down, driving real
+// service instances over the real on-disk vault.)
 {
   const source = await readFile(
     new URL("./x-credentials.ts", import.meta.url),
     "utf8",
   );
   const productionWiring = source.slice(
-    source.indexOf("export const xCredentialService"),
+    source.indexOf("export function createProductionXCredentialDependencies"),
   );
   assert.match(
     productionWiring,
-    /getSecret:\s*\(\)\s*=>\s*getLocalEncryptedSecret\(X_OAUTH_TOKEN_BUNDLE_KEY\)/,
-    "the production singleton reads X custody through getLocalEncryptedSecret",
+    /getSecretSnapshot:\s*\(\)\s*=>\s*getLocalEncryptedSecretSnapshot\(X_OAUTH_TOKEN_BUNDLE_KEY\)/,
+    "the production singleton reads X custody through the revision-carrying snapshot getter",
   );
   assert.match(
     productionWiring,
     /setSecret:\s*\(value\)\s*=>\s*setLocalEncryptedSecret\(X_OAUTH_TOKEN_BUNDLE_KEY, value\)/,
-    "the production singleton writes X custody through setLocalEncryptedSecret",
+    "the production singleton still writes unconditionally through setLocalEncryptedSecret",
+  );
+  assert.match(
+    productionWiring,
+    /setSecretIfRevision:\s*\(expectedRevision, value\)\s*=>[\s\S]*?setLocalEncryptedSecretIfRevision\(\s*X_OAUTH_TOKEN_BUNDLE_KEY,\s*expectedRevision,\s*value,?\s*\)/,
+    "the production singleton commits refreshed custody through the opaque-revision CAS seam",
   );
   assert.match(
     productionWiring,
@@ -89,29 +97,15 @@ try {
   );
   assert.match(
     productionWiring,
-    /refreshBundle:\s*\(refreshToken\)\s*=>\s*refreshXToken\(\{ refreshToken \}\)/,
-    "the production singleton refreshes through the strict X client",
-  );
-  assert.doesNotMatch(
-    productionWiring,
-    /getLocalEncryptedSecretSnapshot/,
-    "the production singleton does not require the snapshot getter",
-  );
-  assert.match(
-    source,
-    /function refresh\(\s*current: XTokenBundle,\s*startingRevision: string \| null,/,
-    "refresh accepts the direct getter's revisionless custody path",
-  );
-  assert.match(
-    source,
-    /function currentBundle\(requiredScopes: unknown\): \{\s*bundle: XTokenBundle;\s*revision: string \| null;/,
-    "currentBundle preserves a revisionless direct getter result",
+    /refreshBundle,\s*\n\s*now,/,
+    "the production singleton's refresh and clock dependencies stay overridable for tests",
   );
 }
 
 const {
   X_OAUTH_TOKEN_BUNDLE_KEY,
   createXCredentialService,
+  createProductionXCredentialDependencies,
   xCredentialService,
 } = await import("./x-credentials.ts");
 const {
@@ -1416,6 +1410,102 @@ function storedBundle(storage: MemoryStorage): XTokenBundle {
     "the production placeholder fails safely without a network call",
   );
   xCredentialService.disconnect();
+  assert.equal(getLocalEncryptedSecret(X_OAUTH_TOKEN_BUNDLE_KEY), null);
+}
+
+// Regression: two "processes"/module instances - each its own
+// createXCredentialService instance, wired through
+// createProductionXCredentialDependencies exactly like the exported
+// xCredentialService singleton - refresh concurrently against the SAME real,
+// on-disk encrypted vault file. Only the refresh call is swapped for a
+// controllable double; the storage custody wiring is the real production
+// path. If that wiring ever regresses to the unconditional getSecret/setSecret
+// pair (dropping getSecretSnapshot/setSecretIfRevision), readBundle() always
+// reports a null revision, so BOTH refreshes take writeBundleIfRevision's
+// unconditional branch and whichever completes last silently overwrites the
+// other's already-rotated (and now dead, since X rotates refresh tokens)
+// token instead of failing. This test fails on that regression and passes
+// once the production dependencies are wired through the revision-guarded
+// snapshot/CAS seam.
+{
+  let resolveA!: (value: XTokenRefreshResult) => void;
+  let resolveB!: (value: XTokenRefreshResult) => void;
+  const pendingA = new Promise<XTokenRefreshResult>((resolve) => {
+    resolveA = resolve;
+  });
+  const pendingB = new Promise<XTokenRefreshResult>((resolve) => {
+    resolveB = resolve;
+  });
+
+  const serviceA = createXCredentialService(
+    createProductionXCredentialDependencies(async () => pendingA, () => NOW),
+  );
+  const serviceB = createXCredentialService(
+    createProductionXCredentialDependencies(async () => pendingB, () => NOW),
+  );
+
+  const seedBundle = cloneBundle({
+    ...COMPLETE_BUNDLE,
+    accessToken: "synthetic-test-access-token-cas-seed",
+    refreshToken: "synthetic-test-refresh-token-cas-seed",
+  });
+  serviceA.replaceBundle(seedBundle);
+
+  // Both "processes" begin refreshing while custody still matches the seed,
+  // so each captures the same starting revision - exactly like two servers
+  // refreshing concurrently after a shared restart.
+  const refreshA = serviceA.forceRefresh(["tweet.read"]);
+  await Promise.resolve();
+  const refreshB = serviceB.forceRefresh(["tweet.read"]);
+  await Promise.resolve();
+
+  // B completes first and rotates the refresh token on the real vault file.
+  resolveB({
+    accessToken: "synthetic-test-access-token-cas-b",
+    refreshToken: "synthetic-test-refresh-token-cas-b-rotated",
+    expiresAt: "2026-07-27T22:00:00.000Z",
+  });
+  const tokenB = await refreshB;
+  tokenMatches(
+    tokenB,
+    "synthetic-test-access-token-cas-b",
+    "the first process to complete commits its refresh normally",
+  );
+
+  // A completes second, still holding the pre-rotation revision. Its write
+  // must be rejected by the real vault's CAS rather than silently clobbering
+  // B's already-rotated token.
+  resolveA({
+    accessToken: "synthetic-test-access-token-cas-a-stale",
+    refreshToken: "synthetic-test-refresh-token-cas-a-stale",
+    expiresAt: "2026-07-27T22:30:00.000Z",
+  });
+  await assert.rejects(
+    refreshA,
+    (error: unknown) =>
+      assertSafeError(
+        error,
+        "upstream-unavailable",
+        "X authorization could not be refreshed",
+      ),
+    "a second process's stale-revision refresh is rejected by the real vault's CAS, not written",
+  );
+
+  const survivingRaw = getLocalEncryptedSecret(X_OAUTH_TOKEN_BUNDLE_KEY);
+  assert.ok(survivingRaw, "custody remains present after the stale write is rejected");
+  const survivingBundle = JSON.parse(survivingRaw as string) as XTokenBundle;
+  tokenMatches(
+    survivingBundle.refreshToken,
+    "synthetic-test-refresh-token-cas-b-rotated",
+    "the winning process's rotated refresh token survives on the real vault",
+  );
+  assert.notEqual(
+    survivingBundle.refreshToken,
+    "synthetic-test-refresh-token-cas-a-stale",
+    "the losing process's stale refresh token never clobbers the real vault",
+  );
+
+  serviceA.disconnect();
   assert.equal(getLocalEncryptedSecret(X_OAUTH_TOKEN_BUNDLE_KEY), null);
 }
 
