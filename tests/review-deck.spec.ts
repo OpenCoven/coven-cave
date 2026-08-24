@@ -152,94 +152,84 @@ async function mockReviewDeck(page: Page) {
   };
 }
 
-async function enterReviewDeck(page: Page) {
-  await page.locator(".shell-frame").waitFor({ timeout: 60_000 });
-  await expect(async () => {
-    await page.evaluate(() =>
-      window.dispatchEvent(
-        new CustomEvent("cave:navigate-mode", {
-          detail: { mode: "surface:reviewer-review-deck" },
-        }),
-      ),
-    );
-    await expect(page.locator(".rd-stage")).toBeVisible({ timeout: 3_000 });
-  }).toPass({ timeout: 90_000 });
-}
-
+/** Deterministic entry: `?mode=` is applied once on mount, where a dispatched
+ *  `cave:navigate-mode` races the shell's own mode restore. */
 async function openReviewDeck(page: Page) {
   const handles = await mockReviewDeck(page);
-  await page.goto("/");
-  await enterReviewDeck(page);
+  await page.goto("/?mode=surface:reviewer-review-deck");
+  await expect(page.locator(".rd-stage")).toBeVisible({ timeout: 180_000 });
   return handles;
 }
 
-test.describe("Review Deck focused review run", () => {
+test.describe("Review Deck cockpit — the verdict actually posts", () => {
   test.describe.configure({ timeout: 180_000 });
 
-  test("keeps the diff dominant, records head-scoped progress, and submits a verdict note", async ({
+  // This file predates the cockpit and pinned the surface it replaced. What is
+  // worth keeping is the thing no other spec covers: that a verdict composed in
+  // the UI arrives at /api/github/review with the exact body the reviewer typed.
+  // The IA assertions it used to carry (an "Evidence" tab, an evidence dock, a
+  // deck with no visible textbox) described the old three-tab layout and are now
+  // wrong by design — the note is deliberately reachable without opening a
+  // dialog, and the third pane is the Inspector.
+
+  test("head-scoped progress, then a request-changes note reaches GitHub verbatim", async ({
     page,
   }) => {
     const handles = await openReviewDeck(page);
     const deck = page.locator(".rd-stage");
 
-    await deck
-      .getByRole("button", { name: /Focus the Review Deck/ })
-      .click();
+    await deck.locator(".rd-row", { hasText: "Focus the Review Deck" }).click();
     await expect(deck.getByText(`head ${HEAD_SHA.slice(0, 7)}`)).toBeVisible();
-    await expect(
-      deck.getByRole("region", { name: "Changed files and diff" }),
-    ).toBeVisible();
+    await expect(deck.getByRole("region", { name: "Unified diff" })).toBeVisible();
     await expect(deck.getByText("export const title = 'Focused';")).toBeVisible();
-    await expect(deck.getByText("0 of 2", { exact: true })).toBeVisible();
-    await expect(deck.getByRole("textbox")).toHaveCount(0);
 
-    await deck.getByRole("button", { name: "Mark reviewed" }).click();
-    await expect(deck.getByText("1 of 2", { exact: true })).toBeVisible();
-    await expect(
-      deck.getByRole("button", { name: "Reviewed", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
+    // Progress is scoped to the exact head, and marking a file moves it.
+    await expect(deck.locator(".rd-file-progress-label")).toHaveText("0/2");
+    await deck.getByRole("button", { name: /Mark reviewed/ }).click();
+    await expect(deck.locator(".rd-file-progress-label")).toHaveText("1/2");
+    await expect(deck.getByRole("button", { name: /Reviewed/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
-    await deck.getByRole("button", { name: "Request changes" }).click();
+    await deck.getByRole("button", { name: "Request changes" }).first().click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByText("Evidence from GitHub")).toBeVisible();
+    await expect(dialog.getByText("Cited evidence")).toBeVisible();
     await dialog
-      .getByLabel("Review note")
+      .locator("#rd-review-body")
       .fill("Please keep the reviewed-file identity tied to this head.");
     await dialog.getByRole("button", { name: "Send request" }).click();
 
-    await expect
-      .poll(handles.review)
-      .toMatchObject({
-        repo: "OpenCoven/coven-cave",
-        number: 4812,
-        event: "REQUEST_CHANGES",
-        body: "Please keep the reviewed-file identity tied to this head.",
-      });
+    await expect.poll(handles.review).toMatchObject({
+      repo: "OpenCoven/coven-cave",
+      number: 4812,
+      event: "REQUEST_CHANGES",
+      body: "Please keep the reviewed-file identity tied to this head.",
+    });
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
-  test("reflows to Queue, Files, and Evidence tabs without hiding the code path", async ({
+  test("every narrow-width pane stays reachable, including the one you just left", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 640, height: 800 });
     await openReviewDeck(page);
     const deck = page.locator(".rd-stage");
     const tabs = deck.getByRole("tablist", { name: "Review Deck views" });
-
     await expect(tabs).toBeVisible();
+
+    // The switcher used to live inside the pane the diff view owns, so leaving
+    // that view hid the control that switches back. Walk every tab and return.
     await tabs.getByRole("tab", { name: "Queue" }).click();
     await expect(deck.getByRole("navigation", { name: "Review queue" })).toBeVisible();
-    await deck
-      .getByRole("button", { name: /Focus the Review Deck/ })
-      .click();
-    await expect(
-      deck.getByRole("region", { name: "Changed files and diff" }),
-    ).toBeVisible();
+    await expect(tabs).toBeVisible();
 
-    await tabs.getByRole("tab", { name: "Evidence" }).click();
-    await expect(
-      deck.getByRole("complementary", { name: "Review evidence" }),
-    ).toBeVisible();
-    await expect(deck.getByText("Waiting on GitHub")).toBeVisible();
+    await tabs.getByRole("tab", { name: "Inspector" }).click();
+    await expect(deck.getByRole("complementary", { name: "Review inspector" })).toBeVisible();
+    await expect(tabs).toBeVisible();
+
+    await tabs.getByRole("tab", { name: "Diff" }).click();
+    await expect(deck.getByRole("region", { name: "Unified diff" })).toBeVisible();
+    await expect(tabs).toBeVisible();
   });
 });
