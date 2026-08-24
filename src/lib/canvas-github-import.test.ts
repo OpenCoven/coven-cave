@@ -18,6 +18,7 @@ const source: GitHubFileLocation = {
   repoUrl: "https://github.com/OpenCoven/coven-cave",
   sourceUrl: "https://github.com/OpenCoven/coven-cave/blob/main/src/App.tsx",
 };
+const sourceWithoutFilePath: GitHubFileLocation = { ...source, filePath: "" };
 
 const project = (id: string, name: string, repoUrl?: string): CaveProject => ({
   id,
@@ -28,12 +29,13 @@ const project = (id: string, name: string, repoUrl?: string): CaveProject => ({
   updatedAt: "2026-08-24T10:00:00.000Z",
 });
 
-for (const filePath of ["page.html", "page.htm", "src/App.jsx", "src/App.tsx"]) {
+for (const filePath of ["page.html", "page.htm", "src/App.jsx", "src/App.tsx", "src/App.TSX"]) {
   assert.equal(isSupportedCanvasGitHubFile(filePath), true, `${filePath} is supported`);
 }
 for (const filePath of ["README.md", "src/App.ts"]) {
   assert.equal(isSupportedCanvasGitHubFile(filePath), false, `${filePath} is unsupported`);
 }
+assert.equal(CREATE_CANVAS_IMPORT_PROJECT, "__create_canvas_import_project__");
 
 const exactSecond = project("exact-second", "Zulu", "https://github.com/opencoven/COVEN-CAVE");
 const unlinkedSecond = project("unlinked-second", "Yellow");
@@ -70,5 +72,10 @@ assert.equal(
   "creating a project is selected when no exact linked project exists",
 );
 assert.equal(canvasGitHubImportFileName(source), "App.tsx");
+assert.equal(
+  canvasGitHubImportFileName(sourceWithoutFilePath),
+  source.repo,
+  "the repository name is used when the file path is empty",
+);
 
 console.log("canvas GitHub import rules: ok");
