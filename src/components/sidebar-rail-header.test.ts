@@ -203,20 +203,13 @@ for (const [label, rule] of [
     `the ${label} shares the rail control height`,
   );
   assert.doesNotMatch(rule, /\n\s*height:\s*\d+px/, `the ${label} does not pin a fixed height`);
-  // Border-compensated leading padding: both are bordered boxes, and their
-  // glyphs have to land on the same icon column as the border-less nav rows.
-  assert.match(
-    rule,
-    /padding: 0 calc\(var\(--rail-lead\) - 1px\);/,
-    `the ${label} leads its glyph from the shared icon column`,
-  );
 }
 
 assert.match(newRule, /font-size: var\(--text-base\);/, "the New chat label uses the rail's base type size");
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__label \{[\s\S]*?font-size: var\(--text-base\);/,
-  "the scope trigger's label uses the same base type size as the button below it",
+  /\.sidebar-scope-selector__label \{[\s\S]*?font-size: var\(--text-sm\);/,
+  "the compact scope trigger uses the denser sidebar label size",
 );
 assert.match(
   scopeRule,
@@ -230,18 +223,23 @@ assert.match(
 );
 assert.match(
   scopeRule,
-  /width: var\(--rail-control\);/,
-  "the scope selector rests as one icon-width control",
+  /width: fit-content;/,
+  "the scope selector remains content-sized instead of becoming another full-width row",
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__trigger:hover,[\s\S]*?width: 100%;/,
-  "hover, focus, and open state reveal the title without changing row height",
+  /\.sidebar-scope-selector__project \{[\s\S]*?width: var\(--rail-control\);[\s\S]*?border-right: 1px solid var\(--border-hairline\);/,
+  "the project segment keeps the rail icon column and a quiet divider",
 );
 assert.match(
   workspaceContextSwitcherCss,
-  /\.sidebar-scope-selector__trigger:is\(:hover, :focus-visible, \[aria-expanded="true"\]\)[\s\S]*?\.sidebar-scope-selector__label \{[\s\S]*?visibility: visible;[\s\S]*?opacity: 1;/,
-  "the selector label becomes visible for pointer and keyboard interaction",
+  /\.sidebar-scope-selector__familiar \{[\s\S]*?background: color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\);[\s\S]*?box-shadow: inset 0 0 0 1px color-mix\(in oklch, var\(--accent-presence\) 40%, transparent\);/,
+  "the active familiar segment derives its selected tint and inset ring from one accent token",
+);
+assert.match(
+  sidebarScopeSelector,
+  /sidebar-scope-selector__project[\s\S]*?ph:globe[\s\S]*?sidebar-scope-selector__familiar[\s\S]*?\{familiarLabel\}/,
+  "the trigger presents project first and the active familiar second",
 );
 assert.match(
   sectionTabsCss,
@@ -454,11 +452,11 @@ assert.doesNotMatch(
   "workspace-context-switcher.css gap uses spacing tokens, not raw 10px",
 );
 
-// ── Collapsed caret: stable class, not generated icon class ─────────────────
+// ── Collapsed segmented control ─────────────────────────────────────────────
 assert.match(
   workspaceContextSwitcherCss,
-  /\.shell-nav--rail :is\(\.sidebar-scope-selector__label, \.sidebar-scope-selector__caret\)/,
-  "collapsed CSS targets the stable caret class",
+  /\.shell-nav--rail \.sidebar-scope-selector__project,[\s\S]*?\.shell-nav--rail \.sidebar-scope-selector__label \{[\s\S]*?display: none;/,
+  "the collapsed rail hides the project segment and familiar label",
 );
 assert.doesNotMatch(
   workspaceContextSwitcherCss,

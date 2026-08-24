@@ -98,7 +98,7 @@ export function SidebarScopeSelector({
         title={scopeLabel}
         disabled={disabled}
       >
-        <span className="sidebar-scope-selector__icon" aria-hidden>
+        <span className="sidebar-scope-selector__project" aria-hidden>
           {project ? (
             <ProjectAvatar
               name={project.name}
@@ -106,19 +106,20 @@ export function SidebarScopeSelector({
               color={project.color}
               size="sm"
             />
-          ) : activeFamiliar && !multiScope ? (
-            <FamiliarAvatar familiar={activeFamiliar} size="sm" />
           ) : (
-            <Icon name="ph:squares-four" width={14} />
+            <Icon name="ph:globe" width={14} />
           )}
         </span>
-        <span className="sidebar-scope-selector__label">{scopeLabel}</span>
-        <Icon
-          name="ph:caret-up-down-bold"
-          width={10}
-          className="sidebar-scope-selector__caret"
-          aria-hidden
-        />
+        <span className="sidebar-scope-selector__familiar">
+          <span className="sidebar-scope-selector__icon" aria-hidden>
+            {activeFamiliar && !multiScope ? (
+              <FamiliarAvatar familiar={activeFamiliar} size="sm" />
+            ) : (
+              <Icon name="ph:sparkle" width={14} />
+            )}
+          </span>
+          <span className="sidebar-scope-selector__label">{familiarLabel}</span>
+        </span>
       </button>
 
       <Popover
