@@ -2,8 +2,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+const automationsView = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
 const source = [
-  readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8"),
+  automationsView,
   readFileSync(new URL("./automations/status-icon.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/cron-detail-primitives.tsx", import.meta.url), "utf8"),
   readFileSync(new URL("./automations/cron-detail-panel.tsx", import.meta.url), "utf8"),
@@ -258,14 +259,18 @@ assert.match(source, /onClick=\{\(\) => void load\(true\)\}[\s\S]{0,180}>\s*Retr
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedItem\)\) setSelectedItem\(fresh\)/, "reminder detail panel re-syncs after polls");
 assert.match(
-  source,
-  /const openInboxItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*?item\.kind === "daily-summary"[\s\S]*?item\.link[\s\S]*?onOpenLink\(item\.link\);[\s\S]*?setSelectedItem\(item\)/,
+  automationsView,
+  /const openInboxItem = useCallback\(\(item: InboxItem\) => \{\s*if \(item\.kind === "daily-summary" && item\.link && onOpenLink\) \{\s*onOpenLink\(item\.link\);\s*return;\s*\}\s*setSelectedItem\(item\);\s*setSelectedCodex\(null\);/,
   "daily summaries open their canonical report link while other inbox items keep the detail panel",
 );
-assert.match(
-  source,
-  /onSelect=\{openInboxItem\}/,
-  "every Rituals list presentation shares the daily-summary navigation boundary",
+assert.match(automationsView, /<InboxFeedList[\s\S]*?onSelect=\{openInboxItem\}/, "the grouped inbox feed uses the daily-summary navigation boundary");
+assert.match(automationsView, /<RitualNeedsRow[\s\S]*?onSelect=\{openInboxItem\}/, "Needs you uses the daily-summary navigation boundary");
+assert.match(automationsView, /<RitualItemRow[\s\S]*?onSelect=\{openInboxItem\}/, "the ritual log uses the daily-summary navigation boundary");
+assert.match(automationsView, /<RitualAgendaThread[\s\S]*?onSelect=\{openInboxItem\}/, "the agenda thread uses the daily-summary navigation boundary");
+assert.equal(
+  [...automationsView.matchAll(/onSelect=\{openInboxItem\}/g)].length,
+  4,
+  "all four Rituals inbox presentations use the shared navigation boundary",
 );
 
 // ── 2026-07-03 a11y batch ─────────────────────────────────────────────────────
