@@ -721,7 +721,7 @@ describe("StreamingTurnResponse", () => {
       }),
     );
     expect(buttons(live, "Stop response")).toHaveLength(1);
-    expect(buttons(live, "Copy completed text")).toHaveLength(1);
+    expect(buttons(live, "Copy current response")).toHaveLength(1);
     expect(buttons(live, "Continue response")).toHaveLength(0);
     expect(buttons(live, "Retry response")).toHaveLength(0);
 
@@ -738,7 +738,7 @@ describe("StreamingTurnResponse", () => {
         onRetry: vi.fn(),
       }),
     );
-    expect(buttons(completed, "Copy completed text")).toHaveLength(1);
+    expect(buttons(completed, "Copy completed response")).toHaveLength(1);
     expect(buttons(completed, "Stop response")).toHaveLength(0);
 
     const interruptedWithoutCapability = await render(
@@ -787,7 +787,7 @@ describe("StreamingTurnResponse", () => {
     const renderer = await render(response({ onCopyCompleted }));
 
     await act(async () => {
-      buttons(renderer, "Copy completed text")[0]!.props.onClick();
+      buttons(renderer, "Copy current response")[0]!.props.onClick();
       await Promise.resolve();
     });
     expect(onCopyCompleted).toHaveBeenCalledTimes(1);
@@ -796,27 +796,35 @@ describe("StreamingTurnResponse", () => {
     await act(async () => {
       vi.advanceTimersByTime(1_500);
     });
-    expect(buttons(renderer, "Copy completed text")).toHaveLength(1);
+    expect(buttons(renderer, "Copy current response")).toHaveLength(1);
     vi.useRealTimers();
   });
 
   it("distinguishes failed and interrupted state copy from completed responses", async () => {
     const failed = await render(
-      response({ model: model({ status: "failed", activeBlock: null }) }),
+      response({
+        model: model({ status: "failed", activeBlock: null }),
+        onCopyCompleted: vi.fn(),
+      }),
     );
     expect(textContent(failed.root)).toContain("Nova · Failed");
     expect(textContent(failed.root)).not.toContain("Nova · Stopped");
+    expect(buttons(failed, "Copy partial response")).toHaveLength(1);
 
     const interrupted = await render(
-      response({ model: model({ status: "interrupted", activeBlock: null }) }),
+      response({
+        model: model({ status: "interrupted", activeBlock: null }),
+        onCopyCompleted: vi.fn(),
+      }),
     );
     expect(textContent(interrupted.root)).toContain("Nova · Stopped");
     expect(textContent(interrupted.root)).not.toContain("Nova · Failed");
+    expect(buttons(interrupted, "Copy partial response")).toHaveLength(1);
     const interruptedRegions = interrupted.root.findAll(
       (node) => node.props.role === "status" || node.props["aria-live"] !== undefined,
     );
     expect(interruptedRegions).toHaveLength(1);
-    expect(interruptedRegions[0].props.className).toBe("streaming-turn-current");
+    expect(interruptedRegions[0].props.className).toBe("streaming-turn-current__phase");
 
     const completed = await render(
       response({ model: model({ status: "complete", activeBlock: null }) }),
@@ -833,7 +841,7 @@ describe("StreamingTurnResponse", () => {
     expect(textContent(working.root)).toContain("Sage · Using tools");
     expect(working.root.findAllByProps({ role: "status" })).toHaveLength(1);
     expect(working.root.findByProps({ role: "status" }).props.className).toBe(
-      "streaming-turn-current",
+      "streaming-turn-current__phase",
     );
 
     const answering = await render(
@@ -841,6 +849,50 @@ describe("StreamingTurnResponse", () => {
     );
     expect(textContent(answering.root)).toContain("Echo · Responding");
     expect(answering.root.findAllByProps({ role: "status" })).toHaveLength(1);
+  });
+
+  it("keeps the ticking elapsed time outside the live status region", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-23T12:00:18Z"));
+    const renderer = await render(response({
+      startedAt: "2026-08-23T12:00:00Z",
+      model: model({ status: "working" }),
+    }));
+    const liveRegion = renderer.root.findByProps({ role: "status" });
+    expect(textContent(liveRegion)).toBe("Nova · Using tools");
+
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+    });
+
+    expect(textContent(renderer.root.findByProps({ role: "status" }))).toBe("Nova · Using tools");
+    expect(textContent(renderer.root.findByType("time"))).toBe("0:20");
+    expect(renderer.root.findByType("time").props["aria-hidden"]).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it("announces a live-to-failed transition once without making failed history live", async () => {
+    const renderer = await render(response({
+      announceLifecycle: true,
+      model: model({ status: "answering" }),
+    }));
+
+    await act(async () => {
+      renderer.update(response({
+        announceLifecycle: true,
+        model: model({ status: "failed", activeBlock: null, currentActivity: null }),
+      }));
+    });
+
+    const alerts = renderer.root.findAllByProps({ role: "alert" });
+    expect(alerts).toHaveLength(1);
+    expect(textContent(alerts[0])).toBe("Nova response failed");
+
+    const failedHistory = await render(response({
+      announceLifecycle: true,
+      model: model({ status: "failed", activeBlock: null, currentActivity: null }),
+    }));
+    expect(failedHistory.root.findAllByProps({ role: "alert" })).toHaveLength(0);
   });
 
   it("shows elapsed and completed timing in the same status row", async () => {
@@ -851,6 +903,7 @@ describe("StreamingTurnResponse", () => {
       model: model({ status: "working" }),
     }));
     expect(textContent(renderer.root)).toContain("Nova · Using tools0:18");
+    expect(renderer.root.findByType("time").props["aria-hidden"]).toBe(true);
 
     await act(async () => {
       renderer.update(response({
@@ -861,6 +914,16 @@ describe("StreamingTurnResponse", () => {
     });
     expect(textContent(renderer.root)).toContain("Nova · Completed in 0:24");
     vi.useRealTimers();
+  });
+
+  it("rounds a nonzero sub-second completed duration up instead of showing 0:00", async () => {
+    const renderer = await render(response({
+      durationMs: 200,
+      model: model({ status: "complete", activeBlock: null, currentActivity: null }),
+    }));
+
+    expect(textContent(renderer.root)).toContain("Nova · Completed in 0:01");
+    expect(textContent(renderer.root)).not.toContain("Completed in 0:00");
   });
 
   it("moves a short process preamble into the live detail and restores it when settled", async () => {
@@ -889,6 +952,25 @@ describe("StreamingTurnResponse", () => {
         proseContent: <p data-prose={true}>{preamble}</p>,
       }));
     });
+    expect(renderer.root.findAllByProps({ "data-prose": true })).toHaveLength(1);
+  });
+
+  it.each([
+    "I'll review the code. The bug is in the retry path.",
+    "Let me inspect the logs! The timeout is upstream.",
+    "I'll check the request? The response is malformed.",
+  ])("never hides substantive multi-sentence prose as transient activity: %s", async (prose) => {
+    const renderer = await render(response({
+      model: model({
+        status: "answering",
+        committedText: prose,
+        currentActivity: null,
+        activity: [],
+      }),
+      proseContent: <p data-prose={true}>{prose}</p>,
+    }));
+
+    expect(renderer.root.findAllByProps({ "data-turn-current-activity": true })).toHaveLength(0);
     expect(renderer.root.findAllByProps({ "data-prose": true })).toHaveLength(1);
   });
 
@@ -1110,7 +1192,7 @@ describe("StreamingTurnResponse", () => {
         node.props["aria-live"] !== undefined,
     );
     expect(liveRegions).toHaveLength(1);
-    expect(liveRegions[0].props.className).toBe("streaming-turn-current");
+    expect(liveRegions[0].props.className).toBe("streaming-turn-current__phase");
     expect(textContent(renderer.root)).toContain("Unknown familiar · Stopped");
     expect(textContent(renderer.root)).toContain("Unknown familiar · Failed");
     expect(textContent(renderer.root)).toContain("No response.");
@@ -1164,7 +1246,7 @@ describe("StreamingTurnResponse", () => {
         node.props["aria-live"] !== undefined,
     );
     expect(liveRegions).toHaveLength(1);
-    expect(liveRegions[0].props.className).toBe("streaming-turn-current");
+    expect(liveRegions[0].props.className).toBe("streaming-turn-current__phase");
     expect(textContent(renderer.root)).not.toContain("Nova completed response");
   });
 

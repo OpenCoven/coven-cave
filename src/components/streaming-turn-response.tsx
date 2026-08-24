@@ -97,9 +97,14 @@ function TurnActivityDisclosure({
   );
 }
 
-function formatDuration(durationMs?: number): string | null {
+function formatDuration(durationMs?: number, roundNonzeroUp = false): string | null {
   if (durationMs === undefined || !Number.isFinite(durationMs)) return null;
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1_000));
+  const totalSeconds = Math.max(
+    0,
+    roundNonzeroUp && durationMs > 0
+      ? Math.ceil(durationMs / 1_000)
+      : Math.floor(durationMs / 1_000),
+  );
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
@@ -108,8 +113,7 @@ function formatDuration(durationMs?: number): string | null {
 function transientPreambleFrom(text: string): string | null {
   const candidate = text.trim();
   if (!candidate || candidate.length > 120 || candidate.includes("\n")) return null;
-  if (!/[.!…]$/.test(candidate)) return null;
-  return /^(?:let me|i(?:'ll| will)|i'm going to)\s+(?:take a look|look|check|inspect|review|search|open|read)\b/i.test(candidate)
+  return /^(?:let me|i(?:'ll| will)|i'm going to)\s+(?:take a look|look|check|inspect|review|search|open|read)\b[^.!?…]*[.!?…]$/i.test(candidate)
     ? candidate
     : null;
 }
@@ -134,6 +138,7 @@ export function StreamingTurnResponse({
   const live = isLive(model);
   const [activityOpen, setActivityOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [announceFailure, setAnnounceFailure] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const userToggledActivityRef = useRef(false);
   const previousStatusRef = useRef(model.status);
@@ -141,7 +146,7 @@ export function StreamingTurnResponse({
   const elapsedMs = live && Number.isFinite(startedAtMs)
     ? Math.max(0, now - startedAtMs)
     : durationMs;
-  const elapsedLabel = formatDuration(elapsedMs);
+  const elapsedLabel = formatDuration(elapsedMs, !live);
   const statusLabel =
     model.status === "working"
       ? "Using tools"
@@ -157,15 +162,25 @@ export function StreamingTurnResponse({
   const transientPreamble = live && !model.currentActivity
     ? transientPreambleFrom(model.committedText)
     : null;
+  const copyLabel = copied
+    ? "Copied"
+    : live
+      ? "Copy current response"
+      : model.status === "complete"
+        ? "Copy completed response"
+        : "Copy partial response";
 
   useEffect(() => {
     const enteredComplete =
       previousStatusRef.current !== "complete" && model.status === "complete";
+    const enteredFailure =
+      previousStatusRef.current !== "failed" && model.status === "failed";
     if (enteredComplete && !userToggledActivityRef.current) {
       setActivityOpen(false);
     }
+    setAnnounceFailure(announceLifecycle && enteredFailure);
     previousStatusRef.current = model.status;
-  }, [model.status]);
+  }, [announceLifecycle, model.status]);
 
   useEffect(() => {
     if (!live || !startedAt) return;
@@ -192,10 +207,7 @@ export function StreamingTurnResponse({
       data-streaming-turn-response={true}
       data-streaming-turn-id={turnId}
     >
-      <div
-        className="streaming-turn-current"
-        role={announceLifecycle && (live || model.status === "interrupted") ? "status" : undefined}
-      >
+      <div className="streaming-turn-current">
         <div className="streaming-turn-current__row">
           <Icon
             name={
@@ -211,13 +223,16 @@ export function StreamingTurnResponse({
             aria-hidden
             className={live ? "streaming-turn-current__spinner" : undefined}
           />
-          <div className="streaming-turn-current__phase">
+          <div
+            className="streaming-turn-current__phase"
+            role={announceLifecycle && (live || model.status === "interrupted") ? "status" : undefined}
+          >
             <strong>{familiarName}</strong>
             <span aria-hidden> · </span>
             {statusLabel}
           </div>
           {live && elapsedLabel ? (
-            <time className="streaming-turn-current__time">{elapsedLabel}</time>
+            <time className="streaming-turn-current__time" aria-hidden={true}>{elapsedLabel}</time>
           ) : null}
           <div className="streaming-turn-current__actions">
             {live && onStop ? (
@@ -236,7 +251,7 @@ export function StreamingTurnResponse({
                 size="xs"
                 variant="ghost"
                 className="focus-ring"
-                aria-label={copied ? "Copied" : "Copy completed text"}
+                aria-label={copyLabel}
                 onClick={() => {
                   void Promise.resolve(onCopyCompleted()).then((succeeded) => {
                     if (succeeded !== false) setCopied(true);
@@ -274,6 +289,11 @@ export function StreamingTurnResponse({
           {announceLifecycle && model.status === "complete" ? (
             <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
               {`${familiarName} completed response`}
+            </span>
+          ) : null}
+          {announceFailure ? (
+            <span className="sr-only" role="alert">
+              {`${familiarName} response failed`}
             </span>
           ) : null}
         </div>
