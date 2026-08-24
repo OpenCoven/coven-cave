@@ -209,6 +209,17 @@ test("chat-view mounts the left turn spine over the transcript's own activePath"
     /<ChatThreadSpine\s+turns=\{activePath\}\s+scrollRef=\{scrollRef\}/,
     "the spine reads the branch-aware visible path and the transcript's own scroller",
   );
+  // The props alone are not the property. A spine wired perfectly but mounted
+  // behind `false` — or behind a resurrected preference — still renders
+  // nothing, and every other assertion in this test keeps passing. Read the
+  // mount condition itself.
+  const mount = chatView.match(/\{([^{}]*?)\?\s*\(\s*\n\s*<ChatThreadSpine/);
+  assert.ok(mount, "the spine's mount condition is readable");
+  assert.equal(
+    mount[1].trim(),
+    "activePath.length > 0",
+    "the ONLY condition on the spine is that a transcript exists — it is retained, not re-gated",
+  );
   // Inside the scroller, not beside it: the spine is an overlay in the left
   // gutter, so it must be mounted within the element it measures and scrolls
   // with. Mounted outside, it would render against the wrong box and jump
