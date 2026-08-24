@@ -341,6 +341,8 @@ describe("useQuickChat send cancellation", () => {
       text: "Final answer",
       pending: false,
       lifecycle: "complete",
+      startedAt: expect.any(String),
+      durationMs: expect.any(Number),
       error: null,
     });
     expect(state!.sendState).toBe("done");

@@ -83,6 +83,19 @@ export function canonicalize(token: string): string | null {
   return CANONICAL_BY_NAME.get(token) ?? null;
 }
 
+/** Split a submitted slash prompt without normalizing its argument body.
+ *  Markdown and code blocks after the command must retain their line breaks. */
+export function splitSlashCommandPrompt(prompt: string): { token: string; args: string } {
+  const trimmed = prompt.trim();
+  const separator = trimmed.search(/\s/);
+  return separator < 0
+    ? { token: trimmed, args: "" }
+    : {
+        token: trimmed.slice(0, separator),
+        args: trimmed.slice(separator).trim(),
+      };
+}
+
 /** Typeahead match — also matches aliases so `/h` autocompletes to /help. */
 export function matchSlash(prefix: string): SlashCommand[] {
   if (!prefix.startsWith("/")) return [];

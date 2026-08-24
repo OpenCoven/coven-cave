@@ -26,7 +26,9 @@ import { Icon } from "@/lib/icon";
 import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
   resolveSkillInvocation,
-  buildSkillPrompt,
+  buildComposerSkillPrompt,
+  skillCarryOverText,
+  skillComposerInsertion,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
@@ -44,7 +46,7 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { canonicalize, inlineSlashCommandPrompt } from "@/lib/slash-commands";
+import { canonicalize, inlineSlashCommandPrompt, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -355,14 +357,22 @@ export function HomeComposer({
   });
 
   // Invoke a skill from home = open a new chat that asks the familiar to run
-  // it. A skill with an argument-hint autofills `/skill <id> ` for argument
-  // editing instead of starting immediately; picking again on the filled text
-  // (or a hint-less skill) starts the chat. Mirrors chat-view's
+  // it. Whatever is already in the composer is CARRIED into the invocation as
+  // the operator's message rather than discarded. A skill with an
+  // argument-hint autofills `/skill <id> ` for argument editing instead of
+  // starting immediately, but only over scaffolding; picking again on the
+  // filled text (or a hint-less skill) starts the chat. Mirrors chat-view's
   // invokeSkillOption.
   const invokeSkill = useCallback(
     async (skill: SkillOption, args = "") => {
       const filled = `/skill ${skill.id}`;
-      if (skill.argumentHint && !args && text.trim().toLowerCase() !== filled.toLowerCase()) {
+      const carried = skillCarryOverText(text);
+      if (
+        skill.argumentHint &&
+        !args &&
+        !carried &&
+        text.trim().toLowerCase() !== filled.toLowerCase()
+      ) {
         setText(`${filled} `);
         textareaRef.current?.focus();
         return false;
@@ -380,7 +390,7 @@ export function HomeComposer({
       }
       if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return false;
       setText("");
-      onStartChat(buildSkillPrompt(skill, args), actionFamiliarId, selectedProjectRoot, {
+      onStartChat(buildComposerSkillPrompt(skill, text, args), actionFamiliarId, selectedProjectRoot, {
         initialControls: initialChatControls,
       });
       return true;
@@ -526,9 +536,8 @@ export function HomeComposer({
     // Slash commands bypass the destination model entirely — same contract
     // as the chat composer's slash dispatch.
     if (prompt.startsWith("/")) {
-      const [rawCmd, ...rest] = prompt.split(/\s+/);
+      const { token: rawCmd, args } = splitSlashCommandPrompt(prompt);
       const command = canonicalize(rawCmd) ?? rawCmd;
-      const args = rest.join(" ");
       if (command === "/model") {
         if (!selectedFamiliarId) {
           onToast("Choose one familiar in the rail before changing models.");
@@ -572,8 +581,9 @@ export function HomeComposer({
         }
         const invocation = resolveSkillInvocation(args, skills);
         if (!invocation) {
+          // Keep the text so a typo is fixable — clearing it would discard the
+          // operator's message along with the command.
           pushHistory(prompt);
-          setText("");
           onToast(`Unknown skill "${args.trim()}".`);
           return;
         }
@@ -1062,8 +1072,14 @@ export function HomeComposer({
                 }}
                 skills={{
                   onPickSkill: (skill) => {
-                    setText(`/skill ${skill.id} `);
+                    // Keep whatever is already typed — it becomes the skill's
+                    // arguments on send instead of being overwritten.
+                    const ins = skillComposerInsertion(text, skill);
+                    setText(ins.text);
                     textareaRef.current?.focus();
+                    requestAnimationFrame(() =>
+                      textareaRef.current?.setSelectionRange(ins.caret, ins.caret),
+                    );
                   },
                 }}
                 connectors

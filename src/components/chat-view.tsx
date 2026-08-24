@@ -116,7 +116,7 @@ import {
 } from "@/lib/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
-import { canonicalize, formatHelp } from "@/lib/slash-commands";
+import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
@@ -126,6 +126,8 @@ import {
 import { useCopy } from "@/lib/use-copy";
 import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
@@ -182,6 +184,8 @@ import {
   resolveSkillInvocation,
   formatSkillList,
   buildSkillPrompt,
+  skillCarryOverText,
+  skillComposerInsertion,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
@@ -1196,44 +1200,48 @@ function ChatHistorySkeleton() {
 }
 
 function ChatHistoryNotice({
+  variant,
   title,
   body,
   onRetry,
   onBack,
 }: {
+  variant: "empty" | "error";
   title: string;
   body: string;
   onRetry?: (() => void) | null;
   onBack?: (() => void) | null;
 }) {
-  return (
-    <div className="mx-auto flex max-w-sm flex-col items-center justify-center rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-6 py-7 text-center">
-      <Icon name="ph:chats" width={20} className="mb-3 text-[var(--text-muted)]" />
-      <p className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">{title}</p>
-      <p className="mt-1.5 max-w-[28ch] text-[length:var(--text-sm)] leading-[1.55] text-[var(--text-muted)]">{body}</p>
-      {(onRetry || onBack) && (
-        <div className="mt-4 flex gap-2">
-          {onBack && (
-            <button
-              type="button"
-              className="cave-btn cave-btn--ghost cave-btn--sm"
-              onClick={onBack}
-            >
-              Back to sessions
-            </button>
-          )}
-          {onRetry && (
-            <button
-              type="button"
-              className="cave-btn cave-btn--primary cave-btn--sm"
-              onClick={onRetry}
-            >
-              Retry
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+  const actions = onRetry || onBack ? (
+    <>
+      {onBack ? (
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          Back to chats
+        </Button>
+      ) : null}
+      {onRetry ? (
+        <Button variant="primary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      ) : null}
+    </>
+  ) : undefined;
+
+  return variant === "error" ? (
+    <ErrorState
+      className="mx-auto w-full max-w-sm"
+      headline={title}
+      subtitle={body}
+      actions={actions}
+    />
+  ) : (
+    <EmptyState
+      className="mx-auto w-full max-w-sm"
+      icon="ph:chats"
+      headline={title}
+      subtitle={body}
+      actions={actions}
+    />
   );
 }
 
@@ -4769,29 +4777,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   };
 
   // Invoke a picked skill (from the /skill picker or the command menu's Skills
-  // group). A skill with an argument-hint autofills `/skill <id> ` so the user
-  // can type arguments; picking again on the filled text (or a hint-less
-  // skill) sends the invocation directive. Mirrors the command menu's
-  // autocomplete-then-run Enter pattern.
+  // group). Anything the operator has already typed is CARRIED into the
+  // invocation as their message — picking a skill augments the outgoing
+  // message, it never replaces it. A skill with an argument-hint autofills
+  // `/skill <id> ` so the user can type arguments, but only when the composer
+  // holds nothing but scaffolding; picking again on the filled text (or a
+  // hint-less skill) sends the invocation directive.
   const invokeSkillOption = (s: SkillOption) => {
     const filled = `/skill ${s.id}`;
-    if (s.argumentHint && input.trim().toLowerCase() !== filled.toLowerCase()) {
+    const carried = skillCarryOverText(input);
+    if (s.argumentHint && !carried && input.trim().toLowerCase() !== filled.toLowerCase()) {
       setInput(`${filled} `);
       inputRef.current?.focus();
       return;
     }
     setInput("");
     setSlashIdx(0);
-    setTimeout(() => sendRaw(buildSkillPrompt(s)), 0);
+    setTimeout(() => sendRaw(buildSkillPrompt(s, "", carried)), 0);
     inputRef.current?.focus();
   };
 
   const intentFromSlash = (raw: string): boolean => {
     const trimmed = raw.trim();
     if (!trimmed.startsWith("/")) return false;
-    const space = trimmed.indexOf(" ");
-    const token = space < 0 ? trimmed : trimmed.slice(0, space);
-    const args = space < 0 ? "" : trimmed.slice(space + 1).trim();
+    const { token, args } = splitSlashCommandPrompt(trimmed);
     const command = canonicalize(token) ?? token;
 
     if (command === "/clear") {
@@ -4953,8 +4962,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       const invocation = resolveSkillInvocation(args, skills);
       if (!invocation) {
+        // Keep the draft: an unknown skill is usually a typo, and clearing the
+        // composer would destroy whatever else the operator had written.
         appendSystem(`Unknown skill "${args.trim()}". Type /skills to list the options.`);
-        setInput("");
         return true;
       }
       const { skill, args: skillArgs } = invocation;
@@ -7561,8 +7571,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                   skills={{
                     onPickSkill: (skill) => {
-                      setInput(`/skill ${skill.id} `);
+                      // Keep whatever is already typed — it becomes the skill's
+                      // arguments on send instead of being overwritten.
+                      const ins = skillComposerInsertion(input, skill);
+                      setInput(ins.text);
                       inputRef.current?.focus();
+                      requestAnimationFrame(() =>
+                        inputRef.current?.setSelectionRange(ins.caret, ins.caret),
+                      );
                     },
                   }}
                   context={{
@@ -8126,17 +8142,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
+                variant="empty"
                 title={flowBackedSession ? "Flow output unavailable" : "Chat history unavailable"}
                 body={flowBackedSession
-                  ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
-                  : "This session exists, but CovenCave could not find a saved transcript for it yet."}
+                  ? "This flow run exists, but Coven Cave couldn't find saved chat history or output yet."
+                  : "This chat exists, but Coven Cave couldn't find a saved transcript yet."}
                 onRetry={retryHistory}
                 onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "error" ? (
               <ChatHistoryNotice
-                title="Could not load chat history"
-                body="The transcript request failed. You can still continue this session."
+                variant="error"
+                title="Couldn't load chat history"
+                body="The transcript request failed. You can still continue this chat."
                 onRetry={retryHistory}
                 onBack={onBack ? () => onBack(sessionId) : undefined}
               />
@@ -9406,9 +9424,9 @@ function TurnRowImpl({
               trailing cluster that reveals on turn hover / keyboard focus
               (reveal-scope on the turn content above). Nothing is removed; the
               default view just reads "Name · 2h ago" like ChatGPT. */}
-          <div className="cave-linear-turn-meta">
+          <div className={`cave-linear-turn-meta${turn.pending ? " cave-linear-turn-meta--streaming" : ""}`}>
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus !== "complete" && !indicatorVisible && (
+            {turnStatus !== "complete" && !indicatorVisible && !turn.pending && (
               <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
                 {lifecycleLabel(turnStatus)}
               </span>
@@ -9467,6 +9485,7 @@ function TurnRowImpl({
                 timestamp={turn.createdAt}
                 showTimestamp={false}
                 pending={turn.pending}
+                hideCopyAction
                 isError={Boolean(turn.error) || showEmptySuccessfulFallback}
                 label={familiar.display_name}
                 messageId={turn.id}
@@ -9487,12 +9506,14 @@ function TurnRowImpl({
                       model={streamingModel}
                       density="full"
                       announceLifecycle={announceLifecycle}
+                      startedAt={turn.createdAt}
+                      durationMs={turn.durationMs}
                       onStop={pending ? () => handlersRef.current.cancelSend?.() : undefined}
                       canContinue={false}
                       onRetry={turn.error ? onRegenerate : undefined}
                       onCopyCompleted={
-                        pending && streamingModel.committedText
-                          ? () => { void copyText(streamingModel.committedText); }
+                        streamingModel.committedText
+                          ? () => copyText(streamingModel.committedText)
                           : undefined
                       }
                       proseContent={proseContent}
