@@ -28,6 +28,44 @@ import {
 } from "./familiar-dashboard.ts";
 
 const ISSUE = { source: "sessions", code: "sessions_unavailable", retryable: true };
+const NOW = new Date("2026-08-24T12:00:00.000Z");
+
+function report(overrides = {}) {
+  return {
+    id: "report-1",
+    familiarId: "nova",
+    sessionId: "session-1",
+    reportedAt: "2026-08-22T10:00:00.000Z",
+    overallConfidence: 70,
+    toolReliability: { score: 80, failedTools: [], unreliableTools: [] },
+    contextPressure: "adequate",
+    skillsUsed: [],
+    skillsNeedingClarity: [],
+    skillsNeedingAccess: [],
+    capabilitiesLacking: [],
+    capabilitiesVital: [],
+    memoryRecallScore: 60,
+    fileLocatabilityScore: 90,
+    persistentBlockers: [],
+    ...overrides,
+  };
+}
+
+function analyticsInput(overrides = {}) {
+  return {
+    reports: [],
+    reportsTotal: 0,
+    activeSessions: 0,
+    recentSessions: 0,
+    sessions: [],
+    sessionsAvailable: true,
+    metricSnapshots: [],
+    metricSnapshotsAvailable: true,
+    contractGapCount: 0,
+    now: NOW,
+    ...overrides,
+  };
+}
 
 test("the published version and byte budget are the ones the contract promises", () => {
   assert.equal(FAMILIAR_DASHBOARD_VERSION, 1);
@@ -298,35 +336,114 @@ test("bounded lists report the pre-cap total so a client knows what it is not se
 });
 
 test("analytics reports null averages rather than zero when nothing was measured", () => {
-  const digest = buildFamiliarAnalyticsDigest({
-    reports: [],
-    reportsTotal: 0,
-    activeSessions: 0,
-    recentSessions: 0,
-  });
+  const digest = buildFamiliarAnalyticsDigest(analyticsInput());
   assert.equal(digest.sampleSize, 0);
   for (const [name, value] of Object.entries(digest.averages)) {
     assert.equal(value, null, `${name} must be null, not 0, when there is no sample`);
   }
   assert.equal(digest.windowStart, null);
+  assert.equal(digest.confidence.state, "insufficient");
+  assert.equal(digest.confidence.band, null);
+  assert.equal(digest.memory.state, "insufficient");
 });
 
 test("analytics figures are tied to the sample they were computed from", () => {
-  const digest = buildFamiliarAnalyticsDigest({
+  const digest = buildFamiliarAnalyticsDigest(analyticsInput({
     reports: [
-      { reportedAt: "2026-08-20T10:00:00.000Z", overallConfidence: 0.5 },
-      { reportedAt: "2026-08-22T10:00:00.000Z", overallConfidence: 0.9 },
+      report({ id: "r1", reportedAt: "2026-08-20T10:00:00.000Z", overallConfidence: 50 }),
+      report({ id: "r2", reportedAt: "2026-08-22T10:00:00.000Z", overallConfidence: 90 }),
     ],
     reportsTotal: 17,
     activeSessions: 1,
     recentSessions: 2,
-  });
+  }));
   assert.equal(digest.sampleSize, 2, "the digest states how many reports it used");
   assert.equal(digest.reportsTotal, 17, "and how many exist beyond that sample");
-  assert.equal(digest.averages.overallConfidence, 0.7);
-  assert.equal(digest.averages.memoryRecall, null, "an unmeasured axis stays null");
+  assert.equal(digest.averages.overallConfidence, 70);
+  assert.equal(digest.confidence.band, "Reliable");
+  assert.equal(digest.confidence.sampleCount, 2);
   assert.equal(digest.windowStart, "2026-08-20T10:00:00.000Z");
   assert.equal(digest.windowEnd, "2026-08-22T10:00:00.000Z");
+});
+
+test("analytics activity excludes generated runs and never turns source failure into zero", () => {
+  const sessions = [
+    { status: "running", updatedAt: "2026-08-24T10:00:00.000Z", generated: false },
+    { status: "completed", updatedAt: "2026-08-23T10:00:00.000Z", generated: false },
+    { status: "running", updatedAt: "2026-08-24T11:00:00.000Z", generated: true },
+  ];
+  const available = buildFamiliarAnalyticsDigest(analyticsInput({ sessions }));
+  assert.equal(available.activity.totalSessions, 2);
+  assert.equal(available.activity.activeSessions, 1);
+  assert.equal(available.activity.days.at(-1).count, 1);
+  assert.equal(available.activity.days.length, 14);
+
+  const unavailable = buildFamiliarAnalyticsDigest(analyticsInput({
+    sessions,
+    sessionsAvailable: false,
+  }));
+  assert.equal(unavailable.activity.availability, "unavailable");
+  assert.equal(unavailable.activity.totalSessions, null);
+  assert.deepEqual(unavailable.activity.days, []);
+});
+
+test("analytics trends require two evidence buckets and expose no composite score", () => {
+  const snapshot = (id, reportedAt, confidence) => ({
+    id,
+    sessionId: id,
+    reportedAt,
+    confidence,
+    toolReliability: confidence,
+    memoryRecall: confidence,
+    fileLocatability: confidence,
+    contextPressure: "adequate",
+  });
+  const digest = buildFamiliarAnalyticsDigest(analyticsInput({
+    metricSnapshots: [
+      snapshot("old", "2026-08-10T10:00:00.000Z", 50),
+      snapshot("new", "2026-08-24T10:00:00.000Z", 70),
+    ],
+  }));
+  assert.equal(digest.signalTrends.periodDays, 30);
+  assert.equal(digest.signalTrends.sampleCount, 2);
+  assert.equal(digest.signalTrends.metrics[0].direction, "improving");
+  assert.ok(!("overall" in digest.signalTrends), "the mobile DTO exposes no composite score");
+
+  const unavailable = buildFamiliarAnalyticsDigest(analyticsInput({
+    metricSnapshotsAvailable: false,
+  }));
+  assert.equal(unavailable.signalTrends.availability, "unavailable");
+  assert.deepEqual(unavailable.signalTrends.metrics, []);
+});
+
+test("analytics capabilities and blockers stay bounded and evidence-scoped", () => {
+  const blockers = Array.from({ length: 8 }, (_, index) => ({
+    id: `blocker-${index}`,
+    title: `Blocker ${index}`,
+    category: "tooling",
+    impact: "blocking",
+    detail: "Still blocked",
+  }));
+  const reports = Array.from({ length: 8 }, (_, index) => report({
+    id: `r${index}`,
+    sessionId: `s${index}`,
+    reportedAt: `2026-08-${String(24 - index).padStart(2, "0")}T10:00:00.000Z`,
+    skillsUsed: [`skill-${index}`, "shared"],
+    capabilitiesLacking: [{ name: `missing-${index}`, importance: "important", detail: "Needed" }],
+    capabilitiesVital: [{ name: `vital-${index}`, currentState: "available" }],
+    persistentBlockers: index === 0 ? blockers : [],
+  }));
+  const digest = buildFamiliarAnalyticsDigest(analyticsInput({
+    reports,
+    reportsTotal: reports.length,
+    contractGapCount: 3,
+  }));
+  assert.equal(digest.capabilities.sampleCount, reports.length);
+  assert.equal(digest.capabilities.used.items[0].name, "shared");
+  assert.equal(digest.capabilities.used.items.length, 5);
+  assert.ok(digest.capabilities.used.total > digest.capabilities.used.items.length);
+  assert.equal(digest.attention.contractGaps, 3);
+  assert.equal(digest.attention.persistentBlockers.items.length, 5);
 });
 
 test("model provenance distinguishes a deliberate pin from an inherited default", () => {

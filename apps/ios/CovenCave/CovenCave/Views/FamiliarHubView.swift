@@ -790,47 +790,10 @@ struct FamiliarHubView: View {
     }
 
     private func analyticsTab(_ snapshot: FamiliarDashboardSnapshot) -> some View {
-        FamiliarDashboardSectionView(
-            title: "Analytics",
+        FamiliarAnalyticsDigestView(
             section: snapshot.analytics,
-            emptyMessage:
-                "No self-reports yet. Complete more sessions before a trend can be claimed.",
+            displayName: displayName,
             retry: { Task { await refreshNow() } }
-        ) { analytics in
-            FamiliarDashboardCard {
-                // The sample count leads on purpose: an average shown without
-                // it invites the reader to trust one report as though it were
-                // thirty.
-                labelledValue(
-                    "Reports sampled",
-                    value: analytics.reportsTotal > analytics.sampleSize
-                        ? "\(analytics.sampleSize) of \(analytics.reportsTotal)"
-                        : "\(analytics.sampleSize)",
-                    systemImage: "doc.text.magnifyingglass"
-                )
-                if let window = windowLabel(analytics) {
-                    Divider()
-                    labelledValue("Window", value: window, systemImage: "calendar")
-                }
-                Divider()
-                labelledValue(
-                    "Sessions",
-                    value: "\(analytics.sessionPulse.active) active · "
-                        + "\(analytics.sessionPulse.recent) recent",
-                    systemImage: "bubble.left.and.bubble.right"
-                )
-            }
-        }
-    }
-
-    private func windowLabel(_ analytics: FamiliarDashboardAnalytics) -> String? {
-        guard
-            let start = caveParseISO(analytics.windowStart),
-            let end = caveParseISO(analytics.windowEnd)
-        else { return nil }
-        let first = start.formatted(date: .abbreviated, time: .omitted)
-        let last = end.formatted(date: .abbreviated, time: .omitted)
-        return first == last ? first : "\(first) – \(last)"
     }
 }
 

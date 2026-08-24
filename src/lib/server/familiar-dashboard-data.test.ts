@@ -20,6 +20,26 @@ import {
 
 const NOW = new Date("2026-08-23T12:00:00.000Z");
 
+function selfReport(index = 0) {
+  return {
+    id: `r${index}`,
+    familiarId: "sage",
+    sessionId: `s${index}`,
+    reportedAt: "2026-08-22T10:00:00.000Z",
+    overallConfidence: 80,
+    toolReliability: { score: 90, failedTools: [], unreliableTools: [] },
+    contextPressure: "adequate",
+    skillsUsed: [],
+    skillsNeedingClarity: [],
+    skillsNeedingAccess: [],
+    capabilitiesLacking: [],
+    capabilitiesVital: [],
+    memoryRecallScore: 70,
+    fileLocatabilityScore: 60,
+    persistentBlockers: [],
+  };
+}
+
 const CONFIG = {
   version: 1,
   defaults: { harness: "claude", model: "claude-sonnet" },
@@ -69,6 +89,7 @@ function healthyDependencies(overrides = {}) {
     loadMemory: async () => [],
     loadContract: async () => ({ properties: [], violations: [], warnings: [] }),
     loadSelfReports: async () => ({ reports: [], total: 0 }),
+    loadMetricSnapshots: async () => ({ snapshots: [], total: 0 }),
     ...overrides,
   };
 }
@@ -171,6 +192,7 @@ test("every source failing still yields a truthful 200-shaped payload", async ()
     loadMemory: async () => boom(),
     loadContract: async () => boom(),
     loadSelfReports: async () => boom(),
+    loadMetricSnapshots: async () => boom(),
   });
 
   assert.equal(result.outcome, "ok");
@@ -274,6 +296,9 @@ test("no raw error text, path, or secret from a failing source reaches the paylo
     loadSelfReports: async () => {
       throw new Error(`path not allowed: ${PATH}/self-reports`);
     },
+    loadMetricSnapshots: async () => {
+      throw new Error(`path not allowed: ${PATH}/metric-snapshots`);
+    },
   });
 
   assert.equal(result.outcome, "ok");
@@ -354,16 +379,7 @@ test("an enormous source is bounded and the response stays under 128 KiB", async
         verification: { state: "verified" },
       })),
     loadSelfReports: async () => ({
-      reports: Array.from({ length: 500 }, (_, index) => ({
-        id: `r${index}`,
-        familiarId: "sage",
-        sessionId: `s${index}`,
-        reportedAt: "2026-08-22T10:00:00.000Z",
-        overallConfidence: 0.8,
-        toolReliability: { score: 0.9, failedTools: [], unreliableTools: [] },
-        memoryRecallScore: 0.7,
-        fileLocatabilityScore: 0.6,
-      })),
+      reports: Array.from({ length: 500 }, (_, index) => selfReport(index)),
       total: 500,
     }),
   });

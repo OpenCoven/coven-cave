@@ -2052,6 +2052,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/sessions/[id]/route.test.ts",
   "src/app/api/familiars/route.test.ts",
   "src/app/api/familiars/[id]/dashboard/route.test.ts",
+  "src/lib/familiar-dashboard.test.ts",
   "src/lib/server/familiar-dashboard-data.test.ts",
   "src/lib/familiar-reminder-scope.test.ts",
   "src/lib/server/sessions-list.test.ts",

@@ -136,12 +136,59 @@ enum FamiliarDashboardFixtures {
       "windowStart": "2026-08-01T00:00:00.000Z",
       "windowEnd": "2026-08-22T00:00:00.000Z",
       "averages": {
-        "overallConfidence": 0.82,
-        "toolReliability": 0.9,
+        "overallConfidence": 82,
+        "toolReliability": 90,
         "memoryRecall": null,
-        "fileLocatability": 0.5
+        "fileLocatability": 50
       },
-      "sessionPulse": { "active": 1, "recent": 4 }
+      "sessionPulse": { "active": 1, "recent": 4 },
+      "activity": {
+        "availability": "available",
+        "periodDays": 14,
+        "days": [
+          { "date": "2026-08-22", "count": 2 },
+          { "date": "2026-08-23", "count": 0 }
+        ],
+        "activeSessions": 1,
+        "totalSessions": 4,
+        "lastActiveAt": "2026-08-22T12:00:00.000Z"
+      },
+      "confidence": {
+        "state": "measured",
+        "band": "high",
+        "sampleCount": 12,
+        "latestReportAt": "2026-08-22T12:00:00.000Z"
+      },
+      "signalTrends": {
+        "availability": "available",
+        "periodDays": 30,
+        "sampleCount": 8,
+        "metrics": [
+          { "key": "confidence", "label": "Confidence", "direction": "improving", "delta": 8 },
+          { "key": "memoryRecall", "label": "Memory recall", "direction": "insufficient", "delta": null }
+        ]
+      },
+      "memory": {
+        "state": "measured",
+        "sampleCount": 6,
+        "recall": 75,
+        "fileLocatability": 50,
+        "latestReportAt": "2026-08-22T12:00:00.000Z"
+      },
+      "capabilities": {
+        "sampleCount": 12,
+        "used": { "items": [{ "name": "shell", "count": 8 }], "total": 1 },
+        "lacking": { "items": [{ "name": "simulator", "importance": "high" }], "total": 1 },
+        "vital": { "items": [{ "name": "memory", "state": "healthy" }], "total": 1 }
+      },
+      "attention": {
+        "sampleCount": 12,
+        "contractGaps": 2,
+        "persistentBlockers": {
+          "items": [{ "id": "b1", "title": "Simulator unavailable", "impact": "Native visual pass blocked" }],
+          "total": 1
+        }
+      }
     }
     """
 
