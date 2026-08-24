@@ -92,14 +92,14 @@ final class FamiliarProfilePresentationTests: XCTestCase {
             "Unavailable")
 
         let unavailable = FamiliarDashboardClientSection<FamiliarDashboardOverview>(
-            wire: .init(
-                state: .unavailable,
-                generatedAt: FamiliarDashboardFixtures.generatedAt,
-                data: nil,
-                issues: [.init(
-                    source: .memory,
-                    code: .memoryUnavailable,
-                    retryable: true)]))
+            presentation: .unavailable,
+            serverState: .unavailable,
+            generatedAt: FamiliarDashboardFixtures.generatedAt,
+            data: nil,
+            issues: [FamiliarDashboardIssue(
+                source: .memory,
+                code: .memoryUnavailable,
+                retryable: true)])
         XCTAssertEqual(FamiliarProfilePresentation.memory(unavailable), "Unavailable")
 
         let emptyPayload = try FamiliarDashboardFixtures.payload(
