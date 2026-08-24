@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const historyNotice =
-  chatView.match(/function ChatHistoryNotice[\s\S]*?\n}\n\nfunction FlowSessionTranscriptFallback/)?.[0]
-  ?? "";
+const chatViewSource = ts.createSourceFile(
+  "chat-view.tsx",
+  chatView,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TSX,
+);
+const historyNoticeDeclaration = chatViewSource.statements.find(
+  (statement) =>
+    ts.isFunctionDeclaration(statement)
+    && statement.name?.text === "ChatHistoryNotice",
+);
+const historyNotice = historyNoticeDeclaration
+  ? chatView.slice(
+      historyNoticeDeclaration.getStart(chatViewSource),
+      historyNoticeDeclaration.getEnd(),
+    )
+  : "";
 assert.ok(historyNotice, "ChatHistoryNotice source block is extractable");
 
 test("chat history empty and failure states use semantic UI primitives", () => {

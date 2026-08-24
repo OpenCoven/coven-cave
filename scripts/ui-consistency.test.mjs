@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,32 +130,28 @@ const allowedBeautifulUiPaths = [
   "src/app/aesthetic/beautiful/",
 ];
 const allowedBeautifulUiFiles = new Set(["src/styles/beautiful-ui.css"]);
-const buiLeakage = [];
-const sourceRoot = fileURLToPath(new URL("src/", repoRoot));
-
-function collectSourceFiles(directory) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) return collectSourceFiles(entryPath);
-    return /\.(?:css|js|jsx|mdx|mjs|ts|tsx)$/.test(entry.name) ? [entryPath] : [];
-  });
+const buiMatches = spawnSync(
+  "git",
+  ["grep", "--untracked", "-n", "-I", "-E", "\\bbui-[a-z0-9-]+\\b", "--", "src"],
+  {
+    cwd: fileURLToPath(repoRoot),
+    encoding: "utf8",
+  },
+);
+if (buiMatches.status !== 0 && buiMatches.status !== 1) {
+  throw new Error(`git grep failed while checking bui-* isolation: ${buiMatches.stderr.trim()}`);
 }
-
-for (const filePath of collectSourceFiles(sourceRoot)) {
-  const relativePath = path.relative(fileURLToPath(repoRoot), filePath).split(path.sep).join("/");
-  if (
-    allowedBeautifulUiFiles.has(relativePath)
-    || allowedBeautifulUiPaths.some((allowedPath) => relativePath.startsWith(allowedPath))
-  ) {
-    continue;
-  }
-  const source = readFileSync(filePath, "utf8");
-  source.split("\n").forEach((line, index) => {
-    if (/\bbui-[a-z0-9-]+\b/.test(line)) {
-      buiLeakage.push(`${relativePath}:${index + 1}: ${line.trim()}`);
-    }
+const buiLeakage = buiMatches.stdout
+  .trim()
+  .split("\n")
+  .filter(Boolean)
+  .filter((match) => {
+    const relativePath = match.slice(0, match.indexOf(":"));
+    return (
+      !allowedBeautifulUiFiles.has(relativePath)
+      && !allowedBeautifulUiPaths.some((allowedPath) => relativePath.startsWith(allowedPath))
+    );
   });
-}
 assert.deepEqual(
   buiLeakage,
   [],
