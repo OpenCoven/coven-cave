@@ -320,9 +320,10 @@ export async function proxy(req: NextRequest) {
   // The local-peer stamp distinguishes direct from forwarded traffic. Direct,
   // unforwarded loopback is the browser's no-prompt path; remote traffic still
   // requires a mobile or sidecar credential.
+  const localPeerSecret = process.env.COVEN_CAVE_LOCAL_PEER_SECRET?.trim();
   const trustedLocalPeer = isTrustedLocalPeer(
     req.headers.get(LOCAL_PEER_HEADER),
-    process.env.COVEN_CAVE_LOCAL_PEER_SECRET,
+    localPeerSecret,
   );
   if (isAuthenticatedDevReadinessProbe(req, trustedLocalPeer)) {
     const response = NextResponse.next();
@@ -545,7 +546,7 @@ export async function proxy(req: NextRequest) {
       req,
       remoteIngress,
       isClientV1AdminPath(req.nextUrl.pathname)
-        ? process.env.COVEN_CAVE_LOCAL_PEER_SECRET
+        ? localPeerSecret
         : undefined,
     );
   }

@@ -363,6 +363,30 @@ test("proxy replaces caller-supplied development admin markers", async () => {
   }
 });
 
+test("tokenless development normalizes the local peer secret before stamping admin authority", async () => {
+  const root = await mkdtemp(scratchPrefix);
+  try {
+    const paddedSecret = `  ${loopbackSecret}  `;
+    setEnv({ COVEN_CAVE_LOCAL_PEER_SECRET: paddedSecret });
+    const runtime = createClientV1Runtime({
+      credentialRoot: root,
+      loopbackSecret,
+      now: () => 27_000,
+    });
+    const response = await throughProxy(
+      request("GET", "/api/client/v1/admin/credentials", {
+        headers: { [LOCAL_PEER_HEADER]: paddedSecret },
+      }),
+      createAdminCredentialsGetHandler(runtime),
+    );
+    assert.equal(response.status, 200);
+  } finally {
+    restoreEnv();
+    assert.equal(resolve(root).startsWith(scratchPrefix), true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("configured Cave admin authorization works and mutations require CSRF", async () => {
   const root = await mkdtemp(scratchPrefix);
   try {
