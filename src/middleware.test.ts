@@ -94,7 +94,12 @@ assert.match(
 );
 assert.match(
   source,
-  /isClientV1AdminPath\(req\.nextUrl\.pathname\)\s*\?\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET/,
+  /const localPeerSecret = process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET\?\.trim\(\)/,
+  "proxy should normalize the per-boot secret once before validating or forwarding it",
+);
+assert.match(
+  source,
+  /isClientV1AdminPath\(req\.nextUrl\.pathname\)\s*\?\s*localPeerSecret/,
   "tokenless local Client v1 admin requests must receive only the proxy's verified per-boot secret",
 );
 assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "API origin gate should read the source origin header once");
@@ -231,7 +236,7 @@ assert.match(
 // needs the mobile or sidecar credential.
 assert.match(
   source,
-  /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*process\.env\.COVEN_CAVE_LOCAL_PEER_SECRET,?\s*\)/,
+  /isTrustedLocalPeer\(\s*req\.headers\.get\(LOCAL_PEER_HEADER\),\s*localPeerSecret,?\s*\)/,
   "local-peer classification must verify the server-stamped per-boot secret",
 );
 assert.doesNotMatch(
