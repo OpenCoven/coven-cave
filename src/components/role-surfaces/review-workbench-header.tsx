@@ -14,8 +14,6 @@ import type { CockpitBucket } from "./review-cockpit";
 import { COCKPIT_BUCKETS } from "./review-cockpit";
 import type { ReviewWorkItem } from "@/lib/review-landing";
 
-export type ReviewMobileView = "queue" | "files" | "evidence";
-
 const SHORTCUTS = [
   ["j / k", "Next or previous file"],
   ["[ / ]", "Previous or next review item"],
@@ -50,13 +48,11 @@ export function ReviewWorkbenchHeader({
   pullRequestUrl,
   queueCollapsed,
   inspectorOpen,
-  mobileView,
   shortcutsOpen,
   onExpandQueue,
   onToggleInspector,
   onOpenPullRequest,
   onOpenSession,
-  onMobileView,
   onCloseShortcuts,
 }: {
   workItem: ReviewWorkItem | null;
@@ -73,13 +69,11 @@ export function ReviewWorkbenchHeader({
   pullRequestUrl: string | null;
   queueCollapsed: boolean;
   inspectorOpen: boolean;
-  mobileView: ReviewMobileView;
   shortcutsOpen: boolean;
   onExpandQueue: () => void;
   onToggleInspector: () => void;
   onOpenPullRequest: () => void;
   onOpenSession: () => void;
-  onMobileView: (view: ReviewMobileView) => void;
   onCloseShortcuts: () => void;
 }) {
   const state = bucket ? COCKPIT_BUCKETS[bucket] : null;
@@ -187,21 +181,6 @@ export function ReviewWorkbenchHeader({
           )}
         </div>
       </header>
-
-      <div className="rd-mobile-tabs" role="tablist" aria-label="Review Deck views">
-        {(["queue", "files", "evidence"] as const).map((view) => (
-          <button
-            key={view}
-            type="button"
-            role="tab"
-            className="rd-mobile-tab focus-ring"
-            aria-selected={mobileView === view}
-            onClick={() => onMobileView(view)}
-          >
-            {view === "queue" ? "Queue" : view === "files" ? "Diff" : "Inspector"}
-          </button>
-        ))}
-      </div>
 
       <Modal
         open={shortcutsOpen}

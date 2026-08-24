@@ -107,7 +107,6 @@ export function ReviewQueue({
   selectedId,
   sort,
   sourceFilter,
-  collapsed,
   total,
   mix,
   showEmptyGroups,
@@ -118,14 +117,12 @@ export function ReviewQueue({
   onSourceFilter,
   onSelect,
   onCollapse,
-  onExpand,
   onClearFilters,
 }: {
   groups: readonly ReviewQueueGroupView[];
   selectedId: string | null;
   sort: ReviewQueueSort;
   sourceFilter: ReviewSourceFilter;
-  collapsed: boolean;
   total: number;
   mix: readonly QueueMixSegment[];
   /**
@@ -141,25 +138,8 @@ export function ReviewQueue({
   onSourceFilter: (filter: ReviewSourceFilter) => void;
   onSelect: (id: string) => void;
   onCollapse: () => void;
-  onExpand: () => void;
   onClearFilters: () => void;
 }) {
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        className="rd-queue-spine focus-ring-inset"
-        title={`Show queue (f) — ${total} items`}
-        aria-label={`Show review queue, ${total} items`}
-        onClick={onExpand}
-      >
-        <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
-        <span className="rd-queue-spine-badge">{total}</span>
-        <span className="rd-queue-spine-label">Queue</span>
-      </button>
-    );
-  }
-
   const byId = new Map(groups.map((group) => [group.id, group]));
   const rendered = COCKPIT_BUCKET_ORDER.flatMap((bucket) => {
     const items = byId.get(bucket)?.items ?? [];

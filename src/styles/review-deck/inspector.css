@@ -163,7 +163,7 @@
 }
 
 .rd-blocker-detail {
-  margin: 3px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--rd-tone);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -272,7 +272,7 @@
 }
 
 .rd-checklist--boxed {
-  gap: 3px;
+  gap: var(--space-1);
   padding: var(--space-2);
   border-radius: var(--radius-control);
   background: var(--bg-sunken);
@@ -306,7 +306,7 @@
 .rd-threads li {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--rd-tight);
   padding: var(--space-2);
   border-inline-start: 2px solid var(--color-warning);
   border-radius: 0 var(--radius-control) var(--radius-control) 0;

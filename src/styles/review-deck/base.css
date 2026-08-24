@@ -12,6 +12,16 @@
   --rd-queue-width: calc(var(--space-12) * 6);
   --rd-inspector-width: calc(var(--space-12) * 6.5);
   --rd-gutter: var(--space-1);
+  /*
+   * Sub-grid marks. The 4px grid governs space between *things*; these two
+   * name the only two places a dense review surface needs less than that, so
+   * the value is editable in one spot rather than copied as a literal:
+   * the hairline that makes an inset well read as inset rather than as a
+   * bordered box, and the tight cluster that keeps `3 / 12` — or a queue
+   * row's three lines — reading as ONE unit instead of three.
+   */
+  --rd-hairline: 1px;
+  --rd-tight: 2px;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -200,9 +210,9 @@ body[data-rd-resizing="true"] {
 .rd-well {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: var(--rd-hairline);
   flex: none;
-  padding: 1px;
+  padding: var(--rd-hairline);
   border-radius: var(--radius-sm);
   background: var(--bg-base);
   box-shadow: 0 1px 1px

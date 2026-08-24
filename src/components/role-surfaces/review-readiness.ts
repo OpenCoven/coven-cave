@@ -143,7 +143,7 @@ export function prBlockers(pr: PrFacts | null): Blocker[] {
       id: "checks",
       icon: "ph:x-circle-fill",
       tone: "danger",
-      title: `${failing.length} required check ${failing.length === 1 ? "is" : "are"} failing`,
+      title: `${failing.length} required check${failing.length === 1 ? " is" : "s are"} failing`,
       detail: failing.join(" · "),
       fix: "The author pushes a fix; the deck can't merge past a red check.",
       reveal: "checks",

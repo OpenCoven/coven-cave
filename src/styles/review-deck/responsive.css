@@ -101,14 +101,12 @@
   }
 
   .rd-queue,
-  .rd-queue-spine,
   .rd-main,
   .rd-inspector {
     display: none;
   }
 
   .rd-stage[data-mobile-view="queue"] .rd-queue,
-  .rd-stage[data-mobile-view="queue"] .rd-queue-spine,
   .rd-stage[data-mobile-view="files"] .rd-main,
   .rd-stage[data-mobile-view="evidence"] .rd-inspector {
     display: flex;

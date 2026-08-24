@@ -25,7 +25,7 @@
   align-items: center;
   gap: var(--space-1);
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: var(--space-1);
 }
 
 .rd-file-chip {
@@ -100,7 +100,6 @@
   min-width: var(--space-4);
   min-height: var(--space-4);
   place-items: center;
-  padding: 0 3px;
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--color-warning) 18%, transparent);
   color: var(--color-warning);
@@ -431,7 +430,7 @@
 }
 
 .rd-diff-thread p {
-  margin: 3px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--text-secondary);
   font-family: var(--font-sans);
   font-size: var(--text-sm);

@@ -20,6 +20,7 @@ const deckModel = read("./use-review-deck-model.ts");
 const topbar = read("./review-cockpit-topbar.tsx");
 const queue = read("./review-queue.tsx");
 const header = read("./review-workbench-header.tsx");
+const tabs = read("./review-mobile-tabs.tsx");
 const rail = read("./review-file-rail.tsx");
 const diff = read("./review-diff-workbench.tsx");
 const navigator = read("./review-file-navigator.tsx");
@@ -42,6 +43,7 @@ const renderSources = [
   topbar,
   queue,
   header,
+  tabs,
   rail,
   diff,
   navigator,
@@ -252,7 +254,7 @@ test("keyboard shortcuts ignore editable targets and expose help", () => {
   assert.match(surface, /isEditableTarget\(event\.target\)/);
   assert.match(surface, /event\.isComposing/);
   assert.match(surface, /resolveReviewShortcut/);
-  assert.match(header, /role="tablist" aria-label="Review Deck views"/);
+  assert.match(tabs, /role="tablist" aria-label="Review Deck views"/);
   assert.match(header, /Character shortcuts pause while you type/);
   assert.match(navigator, /tabIndex=\{0\}/);
   assert.match(navigator, /aria-activedescendant=/);
@@ -328,6 +330,19 @@ test("tone is one custom property, never a second hue per state", () => {
   assert.match(css, /\[data-tone="danger"\]\s*\{\s*--rd-tone: var\(--color-danger\);/);
   assert.match(css, /\[data-tone="accent"\]\s*\{\s*--rd-tone: var\(--accent-presence\);/);
   assert.match(css, /background: color-mix\(in oklch, var\(--rd-tone\) 14%, transparent\)/);
+});
+
+test("the narrow-width switcher is a sibling of the layout, never inside a pane", () => {
+  // It used to render inside the workspace header, which lives in `.rd-main` —
+  // and the ≤58rem rules hide `.rd-main` in the queue and inspector views. So
+  // switching away from the diff hid the control that switches back. Nothing
+  // in a source-text assertion could see that; driving the surface at 820px
+  // could, and did.
+  assert.doesNotMatch(header, /rd-mobile-tabs/);
+  assert.match(tabs, /rd-mobile-tabs/);
+  const switcher = surface.indexOf("<ReviewMobileTabs");
+  const layout = surface.indexOf('<div className="rd-layout">');
+  assert.ok(switcher > 0 && layout > switcher, "the switcher must precede the layout");
 });
 
 test("responsive and accessibility contracts are explicit", () => {

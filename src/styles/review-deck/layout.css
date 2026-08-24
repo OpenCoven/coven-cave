@@ -50,11 +50,11 @@
 .rd-segments {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: var(--rd-hairline);
   flex: 0 1 auto;
   min-width: 0;
   overflow-x: auto;
-  padding: 2px;
+  padding: var(--rd-tight);
   border-radius: var(--radius-control);
   background: var(--bg-base);
   box-shadow: 0 1px 1px
@@ -117,7 +117,7 @@
 .rd-topbar-position {
   display: inline-flex;
   align-items: baseline;
-  gap: 2px;
+  gap: var(--rd-tight);
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);

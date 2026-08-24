@@ -57,9 +57,10 @@ import {
 import { ReviewQueue, type ReviewSourceFilter } from "./review-queue";
 import { ReviewVerdictDock } from "./review-verdict-dock";
 import {
-  ReviewWorkbenchHeader,
+  ReviewMobileTabs,
   type ReviewMobileView,
-} from "./review-workbench-header";
+} from "./review-mobile-tabs";
+import { ReviewWorkbenchHeader } from "./review-workbench-header";
 import {
   nextReviewItemId,
   resolveReviewShortcut,
@@ -624,6 +625,15 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
         onRefresh={readiness.refresh}
       />
 
+      <ReviewMobileTabs
+        view={mobileView}
+        onView={(view) => {
+          setMobileView(view);
+          if (view === "evidence") panes.setInspectorOpen(true);
+          if (view === "queue") panes.setQueueOpen(true);
+        }}
+      />
+
       <div className="rd-layout">
         {panes.queueOpen ? (
           <>
@@ -632,7 +642,6 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
               selectedId={state.selectedSessionId}
               sort={sort}
               sourceFilter={sourceFilter}
-              collapsed={false}
               total={ordered.length}
               mix={deck.mix}
               showEmptyGroups={bucketFilter == null && sourceFilter === "all"}
@@ -656,7 +665,6 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
                 setMobileView("files");
               }}
               onCollapse={panes.toggleQueue}
-              onExpand={panes.toggleQueue}
               onClearFilters={() => {
                 setBucketFilter(null);
                 setSourceFilter("all");
@@ -701,7 +709,6 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             pullRequestUrl={selectedPullRequestUrl}
             queueCollapsed={!panes.queueOpen}
             inspectorOpen={panes.inspectorOpen}
-            mobileView={mobileView}
             shortcutsOpen={shortcutsOpen}
             onExpandQueue={panes.toggleQueue}
             onToggleInspector={panes.toggleInspector}
@@ -710,11 +717,6 @@ export function ReviewerSurface({ context }: { context: RoleSurfaceContext }) {
             }}
             onOpenSession={() => {
               if (selected) context.openSession(selected.session.id, familiarId);
-            }}
-            onMobileView={(view) => {
-              setMobileView(view);
-              if (view === "evidence") panes.setInspectorOpen(true);
-              if (view === "queue") panes.setQueueOpen(true);
             }}
             onCloseShortcuts={() => setShortcutsOpen(false)}
           />

@@ -114,6 +114,21 @@ test("a blocker with nothing more to say carries an empty detail, never a filler
   assert.equal(blockers.find((blocker) => blocker.id === "behind")!.detail, "");
 });
 
+test("more than one failing check pluralises the noun, not just the verb", () => {
+  const blockers = prBlockers(
+    facts({
+      checks: {
+        rollup: "failing",
+        runs: [run("Rust check", "failure"), run("Frontend build", "failure")],
+      },
+    }),
+  );
+  assert.equal(
+    blockers.find((blocker) => blocker.id === "checks")!.title,
+    "2 required checks are failing",
+  );
+});
+
 test("a running check is not a failing one", () => {
   const runs = [run("E2E", null, "in_progress"), run("CodeQL", "success")];
   assert.deepEqual(failingCheckNames(runs), []);
