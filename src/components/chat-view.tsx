@@ -65,6 +65,7 @@ import {
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
+import { readOfflineCache, writeOfflineCache } from "@/lib/offline-cache";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
@@ -486,7 +487,7 @@ export type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
-type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
+type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error" | "offline";
 
 function isFlowBackedSession(session: SessionRow | null | undefined): boolean {
   const origin = session?.origin as string | undefined;
@@ -1580,6 +1581,7 @@ function MetaLine({
   projectRoot,
   onSessionsChanged,
   generateTitle,
+  readOnly = false,
   children,
 }: {
   session: SessionRow | null;
@@ -1600,6 +1602,7 @@ function MetaLine({
   onSessionsChanged?: () => void;
   /** Derives a title from the live transcript for the title row's sparkle. */
   generateTitle?: () => string | null;
+  readOnly?: boolean;
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
@@ -1675,6 +1678,7 @@ function MetaLine({
           displayTitleOverride={titleOverride}
           onSessionsChanged={onSessionsChanged}
           generateTitle={generateTitle}
+          readOnly={readOnly}
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
@@ -4222,6 +4226,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     let cancelled = false;
     void (async () => {
       if (!cachedConversation) setHistoryState("loading");
+      let durableConversation: ConversationHistoryPayload | null = null;
+      if (!cachedConversation) {
+        const cached = await readOfflineCache<ConversationHistoryPayload>("conversation", sessionId);
+        if (cancelled) return;
+        if (cached?.data.ok && cached.data.conversation) {
+          durableConversation = cached.data;
+          setLinkedContext(durableConversation.context ?? null);
+          applyConversationPayload(durableConversation);
+          setHistoryState("offline");
+        }
+      }
       try {
         const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
         if (!res.ok) {
@@ -4247,6 +4262,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             }
           }
           if (!cancelled) {
+            if ((durableConversation || cachedConversation) && res.status !== 404) {
+              setHistoryState("offline");
+              return;
+            }
             setTurns([]);
             setActiveLeafId("");
             setFlowTranscriptFallback(null);
@@ -4263,6 +4282,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           storeConversation(sessionId, json);
+          void writeOfflineCache(
+            "conversation",
+            sessionId,
+            json,
+            res.headers.get("etag") ?? json.conversation.activeLeafId ?? "conversation",
+          );
           // Revalidation no-op guard: when the cache already painted this exact
           // conversation, skip re-applying it. applyConversationPayload maps
           // fresh turn objects every call, so an identical re-apply rebuilds the
@@ -4301,6 +4326,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (!cancelled) {
           if (keepLiveSession()) {
             setHistoryState("loaded");
+            return;
+          }
+          if (durableConversation || cachedConversation) {
+            setHistoryState("offline");
             return;
           }
           setFlowTranscriptFallback(null);
@@ -6020,6 +6049,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const send = async (override?: string) => {
+    if (historyState === "offline") {
+      announce("Offline copies are read only. Reconnect before sending.", "assertive");
+      return;
+    }
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
@@ -7115,6 +7148,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // before the daemon assigns a session id. The new-chat dashboard disappears
   // as soon as that happens, so move the same composer into the reply dock.
   const inlineComposer = sessionId === null && turns.length === 0;
+  const offlineReadOnly = historyState === "offline";
   const composerPopoverPlacement = inlineComposer ? "bottom-start" : undefined;
   const composerAutocompletePosition = inlineComposer ? "top-full mt-2" : "bottom-full mb-2";
   const chatContextControls = (
@@ -7144,10 +7178,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     />
   );
   const composerNode = (
-        <footer
-          className="cave-composer-dock"
-          style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
+    <footer
+      className="cave-composer-dock"
+      style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
+    >
+      {historyState === "offline" && sessionId ? (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[length:var(--text-sm)] text-[var(--text-secondary)]"
         >
+          <span>Offline copy · Read only. Reconnect before sending or changing this chat.</span>
+          <Button variant="ghost" onClick={retryHistory}>
+            Try live connection
+          </Button>
+        </div>
+      ) : (
+        <>
           {setupCandidateRoot && !setupBannerDismissed ? (
             <div
               role="status"
@@ -7741,7 +7787,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           </div>
-        </footer>
+        </>
+      )}
+    </footer>
   );
 
 
@@ -7749,7 +7797,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
-      {...dropHandlers}
+      {...(offlineReadOnly ? {} : dropHandlers)}
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
@@ -7810,6 +7858,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           projectRoot={projectRoot}
           onSessionsChanged={onSessionsChanged}
           generateTitle={generateTitleFromTranscript}
+          readOnly={offlineReadOnly}
         >
           <div className="cave-chat-session-actions">
             {/* cave-zolo: lifecycle + call verbs are direct icons (the kebab
@@ -7817,14 +7866,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 Archive stays always-visible (the design's "Mark done" slot,
                 chat-revamp 1b) and flips to Unarchive on archived sessions so
                 restore is one click too. Delete keeps its confirm popover. */}
-            {sessionId && session ? (
+            {sessionId && session && !offlineReadOnly ? (
               <VoiceCallButton
                 familiar={familiar}
                 voiceActive={voiceCallOpen}
                 onOpenVoice={() => setVoiceCallOpen(true)}
               />
             ) : null}
-            {sessionId && session ? (
+            {sessionId && session && !offlineReadOnly ? (
               <ArchiveChatButton
                 archived={Boolean(session.archived_at)}
                 archiving={archiving}
@@ -7844,10 +7893,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <Icon name="ph:magnifying-glass" width={12} aria-hidden />
               </button>
             ) : null}
-            {sessionId ? (
+            {sessionId && !offlineReadOnly ? (
               <DeleteChatButton deleting={deleting} onDelete={() => void deleteChat()} />
             ) : null}
-            {sessionId && (
+            {sessionId && !offlineReadOnly && (
               <SessionOverflowMenu
                 key={sessionId}
                 projects={projects}
@@ -7885,7 +7934,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
           </div>
         </MetaLine>
-        {!inlineComposer ? (
+        {!inlineComposer && !offlineReadOnly ? (
           <div className="cave-chat-header-context">{chatContextControls}</div>
         ) : null}
       </header>
@@ -7949,11 +7998,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ref={scrollRef}
         tabIndex={0}
         className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto"
-        onDragOver={familiarDrag ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropHover(true); } : undefined}
-        onDragLeave={familiarDrag ? () => setDropHover(false) : undefined}
-        onDrop={familiarDrag ? handleFamiliarDrop : undefined}
+        onDragOver={!offlineReadOnly && familiarDrag ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropHover(true); } : undefined}
+        onDragLeave={!offlineReadOnly && familiarDrag ? () => setDropHover(false) : undefined}
+        onDrop={!offlineReadOnly && familiarDrag ? handleFamiliarDrop : undefined}
       >
-        {familiarDrag ? (
+        {!offlineReadOnly && familiarDrag ? (
           <div className="cave-chat-drop" data-hover={dropHover ? "true" : undefined} aria-hidden>
             <span className="cave-chat-drop__hint">
               <Icon name="ph:users-three" width={20} height={20} aria-hidden />
@@ -8064,6 +8113,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onToggleFold={toggleFold}
             familiar={familiar}
             busy={busy}
+            readOnly={offlineReadOnly}
             foundTurnId={foundTurnId}
             feedbackContext={feedbackContext}
             expandedAvatarTurnId={expandedAvatarTurnId}
@@ -8072,7 +8122,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenPreview={onOpenPreview}
             handlersRef={transcriptHandlersRef}
           />
-          {shouldShowChatArchiveNudge({
+          {!offlineReadOnly && shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
             sessionArchived: Boolean(session?.archived_at),
             dismissed: archiveNudgeDismissed,
@@ -8241,7 +8291,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
 
       {inlineComposer ? null : composerNode}
-      {taskSuggestion && sessionId ? (
+      {taskSuggestion && sessionId && !offlineReadOnly ? (
         <FollowUpTaskReview
           open
           sessionId={sessionId}
@@ -8255,7 +8305,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onClose={() => setTaskSuggestion(null)}
         />
       ) : null}
-      {voiceCallOpen && sessionId && (
+      {voiceCallOpen && sessionId && !offlineReadOnly && (
         <VoiceCallOverlay
           familiar={familiar}
           sessionId={sessionId}
@@ -8582,6 +8632,7 @@ const TranscriptRows = memo(function TranscriptRows({
   familiar,
   // Presence input for regenerateFor (see doc comment); unused directly.
   busy: _busy,
+  readOnly,
   foundTurnId,
   feedbackContext,
   expandedAvatarTurnId,
@@ -8600,6 +8651,7 @@ const TranscriptRows = memo(function TranscriptRows({
   onToggleFold: () => void;
   familiar: Familiar;
   busy: boolean;
+  readOnly: boolean;
   foundTurnId: string | null;
   feedbackContext: FeedbackContext;
   expandedAvatarTurnId: string | null;
@@ -8652,6 +8704,7 @@ const TranscriptRows = memo(function TranscriptRows({
         return prev.role !== t.role;
       })();
       const singleBranchNav = (() => {
+        if (readOnly) return undefined;
         const { siblings, index } = handlers().siblingsFor(t.id);
         if (siblings.length <= 1) return undefined;
         return {
@@ -8669,17 +8722,17 @@ const TranscriptRows = memo(function TranscriptRows({
           announceLifecycle={t.id === latestAssistantId}
           showTimestamp={showTimestamp}
           found={foundTurnId === t.id}
-          onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
-          onRegenerate={handlers().regenerateFor(t)}
-          onReply={handlers().replyFor(t)}
-          onAskAbout={handlers().askAboutFor(t)}
+          onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+          onRegenerate={readOnly ? undefined : handlers().regenerateFor(t)}
+          onReply={readOnly ? undefined : handlers().replyFor(t)}
+          onAskAbout={readOnly ? undefined : handlers().askAboutFor(t)}
           readerPrompt={handlers().readerPromptFor(t)}
-          onRerunWith={handlers().rerunWithFor(t)}
+          onRerunWith={readOnly ? undefined : handlers().rerunWithFor(t)}
           onOpenUrl={onOpenUrl}
           onOpenPreview={onOpenPreview}
-          onRequest={(prompt) => void handlers().send(prompt)}
+          onRequest={readOnly ? undefined : (prompt) => void handlers().send(prompt)}
           handlersRef={handlersRef}
-          feedbackContext={feedbackContext}
+          feedbackContext={readOnly ? undefined : feedbackContext}
           expanded={expandedAvatarTurnId === t.id}
           onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
           branchNav={singleBranchNav}
@@ -8720,6 +8773,7 @@ const TranscriptRows = memo(function TranscriptRows({
             return prev.role !== t.role;
           })();
           const groupBranchNav = (() => {
+            if (readOnly) return undefined;
             const { siblings, index } = handlers().siblingsFor(t.id);
             if (siblings.length <= 1) return undefined;
             return {
@@ -8737,17 +8791,17 @@ const TranscriptRows = memo(function TranscriptRows({
               announceLifecycle={t.id === latestAssistantId}
               showTimestamp={showTimestamp}
               found={foundTurnId === t.id}
-              onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
-              onRegenerate={handlers().regenerateFor(t)}
-              onReply={handlers().replyFor(t)}
-              onAskAbout={handlers().askAboutFor(t)}
+              onEdit={!readOnly && t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+              onRegenerate={readOnly ? undefined : handlers().regenerateFor(t)}
+              onReply={readOnly ? undefined : handlers().replyFor(t)}
+              onAskAbout={readOnly ? undefined : handlers().askAboutFor(t)}
               readerPrompt={handlers().readerPromptFor(t)}
-              onRerunWith={handlers().rerunWithFor(t)}
+              onRerunWith={readOnly ? undefined : handlers().rerunWithFor(t)}
               onOpenUrl={onOpenUrl}
               onOpenPreview={onOpenPreview}
-              onRequest={(prompt) => void handlers().send(prompt)}
+              onRequest={readOnly ? undefined : (prompt) => void handlers().send(prompt)}
               handlersRef={handlersRef}
-              feedbackContext={feedbackContext}
+              feedbackContext={readOnly ? undefined : feedbackContext}
               expanded={expandedAvatarTurnId === t.id}
               onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
               branchNav={groupBranchNav}

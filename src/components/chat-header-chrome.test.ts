@@ -73,8 +73,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /className="cave-chat-transcript[^\"]*"[\s\S]{0,500}?onDrop=\{familiarDrag \? handleFamiliarDrop : undefined\}/,
-  "the solo transcript must retain the familiar-drop handler binding",
+  /className="cave-chat-transcript[^\"]*"[\s\S]{0,500}?onDrop=\{!offlineReadOnly && familiarDrag \? handleFamiliarDrop : undefined\}/,
+  "the writable solo transcript must retain the familiar-drop handler binding",
 );
 assert.match(
   chatView,

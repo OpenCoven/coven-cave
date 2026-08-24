@@ -199,8 +199,8 @@ assert.match(
 );
 assert.match(
   source,
-  /!inlineComposer[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
-  "the context controls ride the header for active chats (!inlineComposer)",
+  /!inlineComposer && !offlineReadOnly[\s\S]{0,200}cave-chat-header-context[\s\S]{0,200}\{chatContextControls\}/,
+  "the context controls ride the header for writable active chats",
 );
 assert.doesNotMatch(source, /<ComposerOptionsMenu/, "legacy options-menu composition should be gone");
 
