@@ -119,6 +119,7 @@ import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import { useFollowUpsCollapsed } from "@/lib/use-followups-collapsed";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
   claimInitialPromptHandoff,
@@ -4108,6 +4109,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return suggestions.length ? { suggestions } : empty;
   }, [activePath, linkedContext?.task?.id]);
 
+  const followUpsCollapsed = useFollowUpsCollapsed();
+  const followUpsPanelId = `chat-followups-${useId().replaceAll(":", "")}`;
+
   const handleFollowUp = useCallback((path: NextPath) => {
     if (path.kind === "reply") {
       setInput(path.prompt);
@@ -7932,8 +7936,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 ) : null}
                 {linkedContextRow}
                 {followUp.suggestions.length > 0 && !busy ? (
-                  <div className="cave-chat-followups">
-                    <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
+                  <div
+                    className="cave-chat-followups"
+                    data-collapsed={followUpsCollapsed.collapsed ? "" : undefined}
+                  >
+                    {/* The toggle is a SIBLING of the cards, never inside them:
+                        a control rendered within the collapsed region would
+                        disappear along with it and strand the reader with no
+                        way back. Collapsed still shows this strip and the
+                        count, so the suggestions stay discoverable rather than
+                        silently gone. */}
+                    <button
+                      type="button"
+                      className="cave-chat-followups__toggle focus-ring"
+                      aria-expanded={!followUpsCollapsed.collapsed}
+                      aria-controls={followUpsPanelId}
+                      onClick={followUpsCollapsed.toggle}
+                    >
+                      <Icon
+                        name={followUpsCollapsed.collapsed ? "ph:caret-right" : "ph:caret-down"}
+                        width={12}
+                        height={12}
+                        aria-hidden
+                      />
+                      <span>
+                        {followUp.suggestions.length === 1
+                          ? "1 suggestion"
+                          : `${followUp.suggestions.length} suggestions`}
+                      </span>
+                    </button>
+                    <div id={followUpsPanelId} hidden={followUpsCollapsed.collapsed}>
+                      <FollowUpCards paths={followUp.suggestions} onActivate={handleFollowUp} />
+                    </div>
                   </div>
                 ) : null}
               </div>
