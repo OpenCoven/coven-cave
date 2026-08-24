@@ -4,12 +4,14 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 
 type Size = "xs" | "sm" | "md" | "lg";
+type Variant = "ghost" | "secondary" | "primary";
 
 export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
   icon: IconName;
   /** Required for screen readers. */
   "aria-label": string;
   size?: Size;
+  variant?: Variant;
   active?: boolean;
   danger?: boolean;
 };
@@ -29,12 +31,13 @@ const iconWidth: Record<Size, number> = {
 };
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, size = "md", active, danger, className, type = "button", ...rest },
+  { icon, size = "md", variant = "ghost", active, danger, className, type = "button", ...rest },
   ref,
 ) {
   const classes = [
     "ui-icon-btn",
     sizeClass[size],
+    `ui-icon-btn--${variant}`,
     active ? "ui-icon-btn--active" : "",
     danger ? "ui-icon-btn--danger" : "",
     className ?? "",

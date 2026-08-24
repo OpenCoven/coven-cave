@@ -78,11 +78,26 @@ assert.match(
 // scopedFamiliarId when the silent familiars[0] default was retired.
 assert.match(
   source,
-  /<h1 className="chat-sessions-title[\s\S]{0,400}?onNewChat\(undefined, scopedFamiliarId\)[\s\S]{0,1200}?New session\s*\n\s*<\/button>/,
+  /<h1 className="chat-sessions-title[\s\S]{0,400}?<Button[\s\S]{0,240}?variant="primary"[\s\S]{0,160}?size="sm"[\s\S]{0,240}?onNewChat\(undefined, scopedFamiliarId\)[\s\S]{0,400}?New session\s*\n\s*<\/Button>/,
   "The surface title row carries the one New session CTA",
 );
 assert.doesNotMatch(
   source,
   /\{familiar && \(\s*<button[\s\S]{0,200}?onNewChat\(undefined, scopedFamiliarId\)/,
   "the old familiar-conditional duplicate CTA is gone — one surface, one primary action",
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,120}?variant="ghost"[\s\S]{0,120}?size="sm"[\s\S]{0,160}?className="chat-status-chip"/,
+  "status filters should reuse the compact shared Button geometry",
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,120}?variant="secondary"[\s\S]{0,120}?size="sm"[\s\S]{0,320}?className="chat-sessions-sort"/,
+  "the sort menu trigger should reuse the shared secondary Button",
+);
+assert.match(
+  source,
+  /<IconButton[\s\S]{0,160}?icon="ph:plus-bold"[\s\S]{0,160}?variant="primary"[\s\S]{0,240}?aria-label="New session"/,
+  "compact layouts should use the shared primary IconButton",
 );
