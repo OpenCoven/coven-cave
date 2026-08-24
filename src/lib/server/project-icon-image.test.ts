@@ -58,6 +58,13 @@ function recordingDecoder(
 
 const b64 = (buf: Buffer) => buf.toString("base64");
 
+/** True when `bytes` carry the PNG signature — used to validate a fixture. */
+function detectableAsPng(bytes: Buffer): boolean {
+  return bytes.subarray(0, 8).equals(
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  );
+}
+
 // ── the format gate ─────────────────────────────────────────────────────────
 
 test("accepts the three raster formats and always emits canonical WebP", async () => {
@@ -181,6 +188,28 @@ test("refuses empty, non-string and non-base64 payloads", async () => {
     if (!result.ok) assert.equal(result.reason, reason, `${label} reason`);
     assert.equal(calls.length, 0, `${label} must not reach the decoder`);
   }
+});
+
+test("stray non-base64 characters are refused, not silently dropped", async () => {
+  // `Buffer.from(s, "base64")` SKIPS characters it does not recognise, so a
+  // corrupt payload decodes to plausible bytes instead of failing. Here the
+  // interlopers sit inside otherwise-valid base64 for a real PNG: a lenient
+  // decode yields a perfectly good image and would be accepted. Only a strict
+  // check on the encoded text refuses it, so this is the case that
+  // distinguishes the two — a payload we cannot faithfully reproduce is not a
+  // payload we should store.
+  const corrupted = b64(PNG).replace(/^(.{8})/, "$1!!!!");
+  assert.ok(
+    detectableAsPng(Buffer.from(corrupted, "base64")),
+    "fixture must decode leniently to a valid PNG, or it proves nothing",
+  );
+
+  const { decode, calls } = recordingDecoder();
+  const result = await validateProviderIconImage(corrupted, decode);
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, "unsupported_image_format");
+  assert.equal(calls.length, 0, "a payload with stray characters must not be decoded");
 });
 
 test("tolerates base64 wrapped in whitespace, as providers sometimes send it", async () => {
