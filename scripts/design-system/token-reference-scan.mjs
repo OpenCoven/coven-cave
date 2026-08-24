@@ -442,7 +442,7 @@ export const BANKED_UNDEFINED_NO_FALLBACK = new Map([
   ["--focus-ring", 2],
   // Scale steps that do not exist: the space scale is 1/2/3/4/5/6/8/10.
   ["--space-7", 8],
-  ["--space-9", 4],
+  ["--space-9", 3],
   // Shadow and motion vocabularies that were never defined here.
   ["--shadow-elevated", 1],
   ["--motion-fast", 13],

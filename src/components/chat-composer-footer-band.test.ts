@@ -235,8 +235,8 @@ assert.doesNotMatch(css, /\.cave-context-pill/, "the combined pill's CSS is reti
 // ── The reading measure stays on content while the composer uses the full dock
 assert.match(
   activityCss,
-  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;/,
-  "chat activity should define the shared wide-column 64rem measure token",
+  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;[\s\S]*--cave-composer-measure:\s*calc\(var\(--space-10\) \* 21\);/,
+  "chat activity should keep the 64rem reading column and define a narrower spacing-derived composer",
 );
 assert.match(
   activityCss,
@@ -250,8 +250,8 @@ assert.match(
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*100%;/,
-  "composer shell should use the full dock width",
+  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*var\(--cave-composer-measure\);/,
+  "composer shell should use the focused intent-entry width",
 );
 
 // ── Footer action family + circular send ────────────────────────────────────
