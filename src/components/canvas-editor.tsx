@@ -12,6 +12,7 @@ import "@/styles/canvas-editor.css";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import {
   buildPreviewSrcDoc,
   buildRefinePrompt,
@@ -38,6 +39,9 @@ import {
   resolveViewportScale,
   type CanvasViewportPresetId,
 } from "@/lib/canvas-viewport";
+import { gitHubRepoSlug } from "@/lib/github-repo-link";
+import { openExternalUrl } from "@/lib/open-external";
+import { useProjects } from "@/lib/use-projects";
 
 type EditorMode = "interact" | "select" | "comment" | "edit";
 
@@ -192,6 +196,23 @@ export function CanvasEditor(props: {
   // message. Picking a component attaches it (that's why you picked it); the
   // chip's detach lets you ask a general question without losing the pick.
   const [attached, setAttached] = useState(true);
+  const [appliedRevision, setAppliedRevision] = useState<string | null>(null);
+  const [deliveryBusy, setDeliveryBusy] = useState<"apply" | "commit" | "pr" | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [commitMessage, setCommitMessage] = useState(`Update ${artifact.title}`);
+  const [commitResult, setCommitResult] = useState<{ sha: string; headOid: string; branch: string; base: string } | null>(null);
+  const [prTitle, setPrTitle] = useState(`Update ${artifact.title}`);
+  const [prBody, setPrBody] = useState(
+    artifact.source?.kind === "github"
+      ? `Updates the Canvas sketch imported from ${artifact.source.url}.`
+      : "",
+  );
+  const [prUrl, setPrUrl] = useState<string | null>(null);
+  const source = artifact.source?.kind === "github" ? artifact.source : null;
+  const { projects, loading: projectsLoading } = useProjects({ enabled: Boolean(source?.projectId) });
+  const sourceProject = source?.projectId
+    ? projects.find((project) => project.id === source.projectId) ?? null
+    : null;
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const frameShellRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +243,13 @@ export function CanvasEditor(props: {
   styleDraftsRef.current = styleDrafts;
   attachedRef.current = attached;
   onArtifactUpdatedRef.current = onArtifactUpdated;
+
+  useEffect(() => {
+    if (appliedRevision === null || appliedRevision === artifact.updatedAt) return;
+    setCommitResult(null);
+    setPrUrl(null);
+    setAppliedRevision(null);
+  }, [appliedRevision, artifact.updatedAt]);
 
   const inspectorGeneration = useMemo(() => crypto.randomUUID(), [kind, code]);
   const srcDoc = useMemo(
@@ -780,6 +808,119 @@ export function CanvasEditor(props: {
     });
   }, [dirtyStyleDescription, familiarId, pushMessage, runRefine]);
 
+  // ── GitHub source → project → pull request ───────────────────────────────
+
+  const applyToProject = useCallback(async () => {
+    if (!source || !sourceProject || deliveryBusy || codeRef.current !== artifactRef.current.code) return;
+    const expectedUpdatedAt = artifactRef.current.updatedAt;
+    setDeliveryBusy("apply");
+    setDeliveryError(null);
+    try {
+      const response = await fetch("/api/canvas/project-file", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          artifactId: artifactRef.current.id,
+          expectedUpdatedAt,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        error?: string;
+        artifact?: CanvasArtifact;
+        artifacts?: CanvasArtifact[];
+      } | null;
+      if (!response.ok || !data?.artifact || !data.artifacts) {
+        throw new Error(data?.error ?? `Couldn't update the project (${response.status}).`);
+      }
+      adoptServerArtifact(data.artifact, data.artifacts);
+      setAppliedRevision(data.artifact.updatedAt);
+      setCommitResult(null);
+      setPrUrl(null);
+      setAnnouncement(`Applied the sketch to ${source.filePath}.`);
+    } catch (error) {
+      setDeliveryError(error instanceof Error ? error.message : "Couldn't update the project.");
+    } finally {
+      setDeliveryBusy(null);
+    }
+  }, [adoptServerArtifact, deliveryBusy, source, sourceProject]);
+
+  const commitProjectFile = useCallback(async () => {
+    if (
+      !source
+      || !sourceProject
+      || appliedRevision !== artifact.updatedAt
+      || code !== artifact.code
+      || deliveryBusy
+      || !commitMessage.trim()
+    ) return;
+    setDeliveryBusy("commit");
+    setDeliveryError(null);
+    try {
+      const response = await fetch("/api/changes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectRoot: sourceProject.root,
+          action: "commit",
+          message: commitMessage.trim(),
+          paths: [source.filePath],
+          requireDefaultBranch: true,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        error?: string;
+        sha?: string;
+        headOid?: string;
+        branch?: string;
+        defaultBranch?: string;
+      } | null;
+      if (!response.ok || !data?.sha || !data.headOid || !data.branch) {
+        throw new Error(data?.error ?? `Couldn't commit the sketch (${response.status}).`);
+      }
+      setCommitResult({
+        sha: data.sha,
+        headOid: data.headOid,
+        branch: data.branch,
+        base: data.defaultBranch ?? "main",
+      });
+      setAnnouncement(`Committed ${source.filePath} on ${data.branch}.`);
+    } catch (error) {
+      setDeliveryError(error instanceof Error ? error.message : "Couldn't commit the sketch.");
+    } finally {
+      setDeliveryBusy(null);
+    }
+  }, [appliedRevision, artifact.code, artifact.updatedAt, code, commitMessage, deliveryBusy, source, sourceProject]);
+
+  const createPullRequest = useCallback(async () => {
+    if (!sourceProject || !commitResult || deliveryBusy || !prTitle.trim()) return;
+    setDeliveryBusy("pr");
+    setDeliveryError(null);
+    try {
+      const response = await fetch("/api/changes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectRoot: sourceProject.root,
+          action: "create-pr",
+          title: prTitle.trim(),
+          prBody,
+          expectedBranch: commitResult.branch,
+          expectedHead: commitResult.headOid,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string; url?: string } | null;
+      if (!response.ok || !data?.url) {
+        throw new Error(data?.error ?? `Couldn't create the pull request (${response.status}).`);
+      }
+      setPrUrl(data.url);
+      setAnnouncement("Pull request opened.");
+    } catch (error) {
+      setDeliveryError(error instanceof Error ? error.message : "Couldn't create the pull request.");
+    } finally {
+      setDeliveryBusy(null);
+    }
+  }, [commitResult, deliveryBusy, prBody, prTitle, sourceProject]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const selectionLabel = selection ? selection.label || selection.selector : "Nothing selected";
@@ -938,6 +1079,119 @@ export function CanvasEditor(props: {
           </div>
 
           <div className="canvas-editor__panel-body">
+            {source ? (
+              <section className="canvas-editor__delivery" aria-label="Sketch delivery">
+                <div className="canvas-editor__delivery-route" aria-label="GitHub delivery path">
+                  <span data-ready><Icon name="ph:github-logo" width={12} aria-hidden /> {gitHubRepoSlug(source.repoUrl)}</span>
+                  <span aria-hidden>→</span>
+                  <span data-ready={Boolean(sourceProject) || undefined}>{sourceProject?.name ?? "Cave project"}</span>
+                  <span aria-hidden>→</span>
+                  <span data-ready={Boolean(commitResult) || undefined}>{commitResult?.branch ?? "Sketch branch"}</span>
+                  <span aria-hidden>→</span>
+                  <span data-ready={Boolean(prUrl) || undefined}>Pull request</span>
+                </div>
+                <div className="canvas-editor__delivery-file">
+                  <code>{source.filePath}</code>
+                  <button type="button" className="focus-ring" onClick={() => openExternalUrl(source.url)}>
+                    Source <Icon name="ph:arrow-square-out" width={11} aria-hidden />
+                  </button>
+                </div>
+                {projectsLoading ? (
+                  <p className="canvas-editor__hint">Loading the connected project…</p>
+                ) : !sourceProject ? (
+                  <p className="canvas-editor__delivery-error" role="alert">
+                    The connected Cave project is unavailable. Import the file again and choose an active project.
+                  </p>
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      leadingIcon="ph:download-simple"
+                      disabled={deliveryBusy !== null || code !== artifactRef.current.code}
+                      onClick={() => void applyToProject()}
+                    >
+                      {deliveryBusy === "apply"
+                        ? "Applying…"
+                        : code !== artifactRef.current.code
+                          ? "Save sketch before applying"
+                          : appliedRevision === artifact.updatedAt && code === artifact.code
+                            ? "Applied to project"
+                            : "Apply to project"}
+                    </Button>
+                    {appliedRevision === artifact.updatedAt && code === artifact.code ? (
+                      <div className="canvas-editor__delivery-form">
+                        <label>
+                          <span>Commit message</span>
+                          <input
+                            className="focus-ring"
+                            value={commitMessage}
+                            onChange={(event) => setCommitMessage(event.target.value)}
+                            placeholder="Describe the UI change"
+                          />
+                        </label>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          leadingIcon="ph:git-commit"
+                          disabled={!commitMessage.trim() || deliveryBusy !== null || Boolean(commitResult)}
+                          onClick={() => void commitProjectFile()}
+                        >
+                          {deliveryBusy === "commit" ? "Committing…" : commitResult ? `${commitResult.sha} committed` : "Commit this file"}
+                        </Button>
+                      </div>
+                    ) : null}
+                    {commitResult ? (
+                      <div className="canvas-editor__delivery-form">
+                        <p className="canvas-editor__delivery-branch">
+                          <code>{commitResult.branch}</code> → <code>{commitResult.base}</code>
+                        </p>
+                        <label>
+                          <span>Pull request title</span>
+                          <input
+                            className="focus-ring"
+                            value={prTitle}
+                            onChange={(event) => setPrTitle(event.target.value)}
+                            placeholder="Pull request title"
+                          />
+                        </label>
+                        <label>
+                          <span>Description</span>
+                          <textarea
+                            className="focus-ring"
+                            value={prBody}
+                            onChange={(event) => setPrBody(event.target.value)}
+                            placeholder="Describe the UI change"
+                            rows={3}
+                          />
+                        </label>
+                        {prUrl ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            leadingIcon="ph:arrow-square-out"
+                            onClick={() => openExternalUrl(prUrl)}
+                          >
+                            Open pull request
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            leadingIcon="ph:git-pull-request"
+                            disabled={!prTitle.trim() || deliveryBusy !== null}
+                            onClick={() => void createPullRequest()}
+                          >
+                            {deliveryBusy === "pr" ? "Opening…" : "Create pull request"}
+                          </Button>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+                {deliveryError ? <p className="canvas-editor__delivery-error" role="alert">{deliveryError}</p> : null}
+              </section>
+            ) : null}
             {mode === "interact" ? (
               <p className="canvas-editor__hint">
                 Use the sketch normally. Switch to Select, Comment, or Edit to inspect components.

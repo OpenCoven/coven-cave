@@ -203,6 +203,15 @@ function parseResolvedAnnotations(value: unknown): CanvasAnnotationResolutionTok
   return tokens;
 }
 
+function sameArtifactSource(a: CanvasArtifact, b: CanvasArtifact): boolean {
+  if (!a.source && !b.source) return true;
+  if (!a.source || !b.source) return false;
+  return a.source.kind === b.source.kind
+    && a.source.url === b.source.url
+    && a.source.projectId === b.source.projectId
+    && a.source.projectFileHash === b.source.projectFileHash;
+}
+
 export async function upsertCanvasArtifact(
   artifact: CanvasArtifact,
   options: {
@@ -287,7 +296,11 @@ export async function upsertCanvasArtifact(
     // saves that arrive under a newly minted id.
     const twin = incumbent
       ? undefined
-      : without.find((a) => a.kind === clean.kind && a.code === clean.code);
+      : without.find((a) => (
+          a.kind === clean.kind
+          && a.code === clean.code
+          && sameArtifactSource(a, clean)
+        ));
     let settled = twin
       ? {
           ...twin,
@@ -329,6 +342,10 @@ export async function upsertCanvasArtifact(
     } else if (!guardedRevision && twin && annotationsProvided) {
       if (clean.annotations) settled.annotations = clean.annotations;
       else delete settled.annotations;
+    }
+    if (twin) {
+      if (clean.source) settled.source = clean.source;
+      else delete settled.source;
     }
     const rest = twin ? without.filter((a) => a.id !== twin.id) : without;
     const next: CanvasFile = { ...current, artifacts: [...rest, settled] };

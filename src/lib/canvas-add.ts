@@ -10,6 +10,7 @@ import {
   titleFromPrompt,
   type ArtifactKind,
   type CanvasArtifact,
+  type CanvasArtifactSource,
 } from "@/lib/canvas-artifacts";
 
 export type AddTileMode = "describe" | "paste" | "blank-html" | "blank-react";
@@ -272,6 +273,7 @@ export function buildAddArtifact(opts: {
   pastedTitle: string;
   code: string;
   kind: ArtifactKind;
+  source?: CanvasArtifactSource;
 }): CanvasArtifact {
   const title =
     opts.pastedTitle.trim() ||
@@ -282,6 +284,7 @@ export function buildAddArtifact(opts: {
     prompt: opts.mode === "describe" ? opts.prompt : "",
     code: clampArtifactCode(opts.code),
     kind: opts.kind,
+    ...(opts.source ? { source: opts.source } : {}),
     createdAt: opts.now,
     updatedAt: opts.now,
   };

@@ -8,6 +8,7 @@ import {
   projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
+import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
 
 const MAX_TEXT_SIZE = 512 * 1024; // 512KB
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8MB
@@ -194,7 +195,7 @@ type ProjectFileWriteResult = {
  * un-writable (it's read-redacted), and content is byte-capped at the same
  * MAX_TEXT_SIZE as reads.
  */
-export function projectFileWrite(filePath: string | null, content: unknown): ProjectFileWriteResult {
+export async function projectFileWrite(filePath: string | null, content: unknown): Promise<ProjectFileWriteResult> {
   if (!filePath) {
     return { body: { ok: false, error: "missing path param" }, status: 400 };
   }
@@ -206,7 +207,8 @@ export function projectFileWrite(filePath: string | null, content: unknown): Pro
   if (!allowed) {
     return { body: { ok: false, error: "path not allowed" }, status: 403 };
   }
-  const resolved = path.join(allowed.root, allowed.relativePath);
+  return withRepositoryMutation(allowed.root, async () => {
+    const resolved = path.join(allowed.root, allowed.relativePath);
 
   const ext = path.extname(resolved).toLowerCase();
   // Editing is text-only: reject image formats and any unknown extension.
@@ -244,7 +246,8 @@ export function projectFileWrite(filePath: string | null, content: unknown): Pro
     const message = err instanceof Error ? err.message : String(err);
     return { body: { ok: false, error: message }, status: 500 };
   }
-  return { body: { ok: true, size: byteLength }, status: 200 };
+    return { body: { ok: true, size: byteLength }, status: 200 };
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -269,6 +272,6 @@ export async function POST(req: NextRequest) {
     }
     throw error;
   }
-  const result = projectFileWrite(filePath, payload.content);
+  const result = await projectFileWrite(filePath, payload.content);
   return NextResponse.json(result.body, { status: result.status });
 }
