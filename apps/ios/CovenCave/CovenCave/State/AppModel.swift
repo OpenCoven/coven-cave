@@ -365,7 +365,7 @@ final class AppModel {
                 connectedAt = Date()
                 if lastConnectedAt != nil, hasLoadedSurfaces {
                     showToast(
-                        "Reconnected to Cave",
+                        "Reconnected",
                         systemImage: "antenna.radiowaves.left.and.right"
                     )
                 }
