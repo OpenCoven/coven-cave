@@ -10,6 +10,10 @@ const globalPrimitives = readFileSync(
   new URL("../styles/globals/primitives.css", import.meta.url),
   "utf8",
 );
+const paletteStyles = readFileSync(
+  new URL("../styles/globals/command-palette.css", import.meta.url),
+  "utf8",
+);
 const workspace = readFileSync(
   new URL("./workspace.tsx", import.meta.url),
   "utf8",
@@ -84,6 +88,16 @@ assert.doesNotMatch(
   source,
   /@familiar scopes results/,
   "the footer does not repeat scope syntax as persistent visual noise",
+);
+assert.match(
+  paletteStyles,
+  /@supports \(height: 100dvh\) \{[\s\S]*?\.command-palette \{[\s\S]*?100dvh/,
+  "the palette progressively uses the dynamic viewport height on supported browsers",
+);
+assert.match(
+  paletteStyles,
+  /@supports \(height: 100dvh\) \{[\s\S]*?\.command-palette__results \{[\s\S]*?dvh/,
+  "the result region stays bounded by the dynamic viewport",
 );
 
 // (cave-lzk2) Archived chats never resurface in the browse-mode "Recent chats"

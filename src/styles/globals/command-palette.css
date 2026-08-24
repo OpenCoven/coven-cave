@@ -194,3 +194,25 @@
     min-height: var(--touch-target);
   }
 }
+
+/* Dynamic viewport units keep the palette above mobile browser chrome and the
+   on-screen keyboard. The vh declarations above remain the fallback. */
+@supports (height: 100dvh) {
+  .command-palette {
+    max-height: calc(100dvh - var(--space-12) - var(--space-12));
+  }
+
+  .command-palette__results {
+    max-height: 54dvh;
+  }
+
+  @media (max-width: 767px) {
+    .command-palette {
+      max-height: calc(100dvh - var(--space-4) - var(--sai-top));
+    }
+
+    .command-palette__results {
+      max-height: 58dvh;
+    }
+  }
+}
