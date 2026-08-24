@@ -124,12 +124,15 @@ test("candidate validation requires signed tag provenance and calls every deferr
   );
   assert.ok(
     full.jobs.e2e.steps.some(
-      (step) => step.run === "pnpm exec playwright test --shard=${{ matrix.shard }}/4",
+      (step) =>
+        step.run ===
+        "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
     ),
-    "candidate E2E shards the default Chromium and WebKit coverage",
+    "candidate E2E isolates each worker behind its own dev server",
   );
+  assert.equal(full.jobs.e2e.name, "Validate candidate E2E (${{ matrix.shard }}/8)");
   assert.equal(full.jobs.e2e.strategy["fail-fast"], false);
-  assert.deepEqual(full.jobs.e2e.strategy.matrix.shard, [1, 2, 3, 4]);
+  assert.deepEqual(full.jobs.e2e.strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.equal(full.jobs.e2e["timeout-minutes"], 30);
   const agenticE2e = full.jobs["e2e-agentic"];
   assert.equal(agenticE2e.name, "Validate candidate E2E (agentic)");
