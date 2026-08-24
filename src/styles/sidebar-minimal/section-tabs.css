@@ -75,20 +75,21 @@
 .nav-sections--titlebar {
   display: inline-flex;
   align-items: center;
-  gap: 0;
+  gap: 2px;
   margin: 0;
   padding: 2px;
+  height: 28px;
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-pill);
-  background: var(--bg-subtle);
+  border-radius: var(--radius-control);
+  background: transparent;
 }
 
 .nav-sections--titlebar .nav-sections__tab {
-  width: 28px;
-  min-height: 28px;
+  width: 24px;
+  min-height: 22px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: calc(var(--radius-control) - 2px);
 }
 
 .nav-sections--titlebar .nav-sections__tab.is-active {

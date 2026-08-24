@@ -130,6 +130,26 @@ assert.match(
 assert.match(styles, /\.nav-sections\b/, "the switcher ships its own tokenized styles");
 assert.match(
   styles,
+  /\.nav-sections--titlebar \{[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*var\(--radius-control\);/,
+  "the title-bar switcher matches the height and control radius of adjacent chrome",
+);
+assert.match(
+  styles,
+  /\.nav-sections--titlebar \.nav-sections__tab \{[\s\S]*?min-height:\s*22px;[\s\S]*?border-radius:\s*calc\(var\(--radius-control\) - 2px\);/,
+  "the title-bar segments fit inside the shared control geometry",
+);
+assert.match(
+  workspaceContextSwitcherCss,
+  /\.workspace-context-switcher--titlebar \{[\s\S]*?padding-inline-start:\s*var\(--space-2\);[\s\S]*?border-inline-start:\s*1px solid var\(--border-hairline\);/,
+  "workspace scope is quietly separated from room navigation",
+);
+assert.match(
+  workspaceContextSwitcherCss,
+  /\.workspace-context-switcher--titlebar \.workspace-context-switcher__project \.cave-project-picker__trigger,\s*\.workspace-context-switcher--titlebar \.workspace-context-switcher__crew \.familiar-switcher__trigger--labeled \{[\s\S]*?max-width:\s*144px;[\s\S]*?height:\s*28px;/,
+  "title-bar project and familiar controls stay compact and align with adjacent chrome",
+);
+assert.match(
+  styles,
   /color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\)/,
   "the active tint derives from one solid token per the state-tint recipe",
 );
