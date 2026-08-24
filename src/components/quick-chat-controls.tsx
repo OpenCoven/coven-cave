@@ -28,12 +28,13 @@ import type {
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
-import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
+import { SLASH_COMMANDS, canonicalize, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
-  buildSkillPrompt,
+  buildComposerSkillPrompt,
   formatSkillList,
   resolveSkillInvocation,
+  skillCarryOverText,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
@@ -386,20 +387,28 @@ export function QuickChatComposer({
   );
 
   // Invoke a skill in-thread: the harness owns Skill execution, so this sends
-  // the shared invocation prompt through the quick-chat pipeline. A skill with
-  // an argument-hint autofills `/skill <id> ` for argument editing first —
-  // picking again (or a hint-less skill) sends (mirrors home's invokeSkill).
+  // the shared invocation prompt through the quick-chat pipeline. Anything
+  // already in the draft rides along as the operator's message — the skill is
+  // added to what they wrote, never swapped in for it. A skill with an
+  // argument-hint autofills `/skill <id> ` for argument editing first, but
+  // only over scaffolding; picking again (or a hint-less skill) sends.
   const invokeSkillOption = useCallback(
     (skill: SkillOption, args = "") => {
       const filled = `/skill ${skill.id}`;
-      if (skill.argumentHint && !args && draft.trim().toLowerCase() !== filled.toLowerCase()) {
+      const carried = skillCarryOverText(draft);
+      if (
+        skill.argumentHint &&
+        !args &&
+        !carried &&
+        draft.trim().toLowerCase() !== filled.toLowerCase()
+      ) {
         onDraftChange(`${filled} `);
         composerRef?.current?.focus();
         return;
       }
       if (!launchReady) return;
       onDraftChange("");
-      onSendText?.(buildSkillPrompt(skill, args));
+      onSendText?.(buildComposerSkillPrompt(skill, draft, args));
     },
     [draft, launchReady, onDraftChange, composerRef, onSendText],
   );
@@ -409,9 +418,8 @@ export function QuickChatComposer({
   // /board) get a pointer to the full app; typos keep the draft for fixing.
   const runSlash = useCallback(
     (prompt: string) => {
-      const [rawCmd = "", ...rest] = prompt.split(/\s+/);
+      const { token: rawCmd, args } = splitSlashCommandPrompt(prompt);
       const command = canonicalize(rawCmd) ?? rawCmd;
-      const args = rest.join(" ").trim();
       switch (command) {
         case "/help":
           onDraftChange("");
@@ -463,7 +471,8 @@ export function QuickChatComposer({
           }
           const invocation = resolveSkillInvocation(args, menu.skills);
           if (!invocation) {
-            onDraftChange("");
+            // Typos keep the draft for fixing — clearing it would throw away
+            // whatever the operator wrote alongside the command.
             onLocalNote?.(`Unknown skill "${args}".`);
             return;
           }
