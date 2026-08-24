@@ -73,7 +73,7 @@ assert.match(
 
 assert.match(
   chatView,
-  /setHistoryState\("loading"\)[\s\S]*fetch\(`\/api\/chat\/conversation\/\$\{sessionId\}`[\s\S]*setLinkedContext\(json\.context \?\? null\)[\s\S]*setHistoryState\("loaded"\)/,
+  /setHistoryState\("loading"\)[\s\S]*loadConversation\(sessionId\)[\s\S]*setLinkedContext\(json\?\.context \?\? null\)[\s\S]*setHistoryState\("loaded"\)/,
   "ChatView should show loading state and capture API context when opening a chat",
 );
 

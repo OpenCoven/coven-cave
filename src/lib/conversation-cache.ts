@@ -4,8 +4,8 @@
 // so every switch showed the history skeleton for a network round-trip. This
 // module keeps the last few successfully loaded payloads in memory so a
 // revisit (or a hover-prefetched row) paints instantly; chat-view still
-// refetches in the background as revalidation, so the cache only removes the
-// blank gap — it is never the source of truth.
+// revalidates in the background and joins a prefetch already in flight, so the
+// cache only removes the blank gap — it is never the source of truth.
 //
 // Invalidation: entries expire after a short TTL, are evicted LRU beyond a
 // small cap, and are explicitly dropped when a send starts or a conversation
@@ -23,7 +23,37 @@ const MAX_ENTRIES = 24;
 const HOVER_DELAY_MS = 90;
 
 const cache = new Map<string, { payload: CachedConversationPayload; at: number }>();
-const inflight = new Map<string, Promise<CachedConversationPayload | null>>();
+type RequestEpoch = { clear: number; session: number };
+type InflightConversation = {
+  epoch: RequestEpoch;
+  promise: Promise<CachedConversationPayload | null>;
+};
+
+const inflight = new Map<string, InflightConversation>();
+const sessionGenerations = new Map<string, number>();
+let clearGeneration = 0;
+
+function requestEpoch(sessionId: string): RequestEpoch {
+  return {
+    clear: clearGeneration,
+    session: sessionGenerations.get(sessionId) ?? 0,
+  };
+}
+
+function requestEpochIsCurrent(sessionId: string, epoch: RequestEpoch): boolean {
+  const current = requestEpoch(sessionId);
+  return current.clear === epoch.clear && current.session === epoch.session;
+}
+
+export class ConversationLoadError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ConversationLoadError";
+    this.status = status;
+  }
+}
 
 /** Returns the cached payload for a session, or null when absent/expired. */
 export function readCachedConversation(
@@ -60,42 +90,73 @@ export function storeConversation(
 
 export function invalidateConversation(sessionId: string): void {
   cache.delete(sessionId);
+  sessionGenerations.set(sessionId, (sessionGenerations.get(sessionId) ?? 0) + 1);
 }
 
 export function clearConversationCache(): void {
   cache.clear();
   inflight.clear();
+  sessionGenerations.clear();
+  clearGeneration += 1;
   cancelHoverPrefetch();
+}
+
+/** Fetches a conversation and shares an existing request for the same session. */
+export function loadConversation(
+  sessionId: string,
+): Promise<CachedConversationPayload | null> {
+  if (!sessionId) return Promise.resolve(null);
+  const epoch = requestEpoch(sessionId);
+  const pending = inflight.get(sessionId);
+  if (
+    pending
+    && pending.epoch.clear === epoch.clear
+    && pending.epoch.session === epoch.session
+  ) return pending.promise;
+  const entry = { epoch, promise: null as unknown as Promise<CachedConversationPayload | null> };
+  entry.promise = (async () => {
+    try {
+      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
+        cache: "no-store",
+      });
+      const json = (await res.json().catch(() => null)) as CachedConversationPayload & {
+        error?: string;
+      } | null;
+      if (!res.ok) {
+        throw new ConversationLoadError(
+          json?.error ?? `Request failed (${res.status})`,
+          res.status,
+        );
+      }
+      if (!json) {
+        throw new ConversationLoadError(
+          "Conversation response was not valid JSON",
+          res.status,
+        );
+      }
+      if (requestEpochIsCurrent(sessionId, epoch)) storeConversation(sessionId, json);
+      return json;
+    } finally {
+      if (inflight.get(sessionId) === entry) inflight.delete(sessionId);
+    }
+  })();
+  inflight.set(sessionId, entry);
+  return entry.promise;
 }
 
 /**
  * Fetches a conversation into the cache. Deduped: a fresh cache entry resolves
- * immediately and a concurrent prefetch of the same session shares one request.
+ * immediately and a concurrent load of the same session shares one request.
  * Never throws — prefetch failures are silent (the real load surfaces errors).
  */
 export function prefetchConversation(sessionId: string): Promise<CachedConversationPayload | null> {
   if (!sessionId) return Promise.resolve(null);
   const cached = readCachedConversation(sessionId);
   if (cached) return Promise.resolve(cached);
-  const pending = inflight.get(sessionId);
-  if (pending) return pending;
-  const request = (async () => {
-    try {
-      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return null;
-      const json = (await res.json()) as CachedConversationPayload;
-      storeConversation(sessionId, json);
-      return json.ok === true && json.conversation ? json : null;
-    } catch {
-      return null;
-    } finally {
-      inflight.delete(sessionId);
-    }
-  })();
-  inflight.set(sessionId, request);
-  return request;
+  return loadConversation(sessionId).then(
+    (payload) => payload?.ok === true && payload.conversation ? payload : null,
+    () => null,
+  );
 }
 
 // Only one element is hovered at a time, so a module-level singleton timer is
@@ -104,7 +165,7 @@ export function prefetchConversation(sessionId: string): Promise<CachedConversat
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 let hoverSessionId: string | null = null;
 
-/** Arms a hover-intent prefetch for a session row (onMouseEnter/onFocus). */
+/** Arms a hover-intent prefetch for a session row. */
 export function hoverPrefetchConversation(sessionId: string): void {
   if (!sessionId) return;
   if (hoverSessionId === sessionId && hoverTimer !== null) return;

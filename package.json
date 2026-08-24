@@ -48,6 +48,7 @@
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
     "test:bundle": "node scripts/bundle-budget.mjs",
     "bench:conversation-list": "node --experimental-strip-types scripts/conversation-list-benchmark.mjs",
+    "bench:chat-projects": "node --experimental-strip-types scripts/chat-project-grouping-benchmark.mjs",
     "bench:daemon-reliability": "node --experimental-strip-types scripts/daemon-reliability-benchmark.mjs",
     "performance:report": "node --experimental-strip-types scripts/cave-performance-report.mjs",
     "test:performance-report": "node --test scripts/cave-performance-report.test.mjs",

@@ -41,8 +41,8 @@ assert.match(
 
 assert.match(
   chatList,
-  /deriveChatProjectGroups\(applyProjectOverrides\(filtered, projectOverrides\), projects\)/,
-  "ChatList should group from the live project registry, with Cave-local project overrides applied",
+  /createChatProjectIndex\(projects\)[\s\S]*deriveChatProjectGroups\(\s*applyProjectOverrides\(filtered, projectOverrides\),\s*projects,\s*projectIndex/,
+  "ChatList should group from the live project registry through its shared index, with Cave-local project overrides applied",
 );
 
 assert.match(

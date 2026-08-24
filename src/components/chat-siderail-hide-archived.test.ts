@@ -55,7 +55,7 @@ assert.match(
 );
 assert.match(
   chatList,
-  /const sidebarGroups = useMemo\(\(\) => deriveChatProjectGroups\(applyProjectOverrides\(railSessions, projectOverrides\), projects\)/,
+  /const sidebarGroups = useMemo\([\s\S]{0,160}?deriveChatProjectGroups\(\s*applyProjectOverrides\(railSessions, projectOverrides\),\s*projects,\s*projectIndex/,
   "sidebar groups must derive from the archive-free railSessions view",
 );
 

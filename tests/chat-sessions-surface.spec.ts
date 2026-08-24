@@ -208,6 +208,51 @@ test.describe("sessions list", () => {
     await expect(failed).toHaveAttribute("data-status", "failed");
   });
 
+  test("opening a hover-prefetched chat reuses the in-flight transcript request", async ({ page }) => {
+    let requestCount = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/chat/conversation/s-run", async (route) => {
+      requestCount += 1;
+      await gate;
+      await route.fulfill({
+        json: {
+          ok: true,
+          conversation: {
+            sessionId: "s-run",
+            familiarId: FAMILIAR.id,
+            harness: "copilot",
+            title: "Prune the merged worktrees",
+            createdAt: iso(40),
+            updatedAt: iso(0),
+            activeLeafId: "turn-1",
+            turns: [{
+              id: "turn-1",
+              parentId: null,
+              role: "assistant",
+              text: "Ready.",
+              createdAt: iso(0),
+            }],
+          },
+          context: null,
+        },
+      });
+    });
+
+    const running = rows(page).first();
+    await running.hover();
+    await expect.poll(() => requestCount).toBe(1);
+    await running.click();
+    await page.waitForTimeout(150);
+    expect(requestCount).toBe(1);
+    release();
+    await expect(page).toHaveURL(/#chat-s-run$/);
+    await expect(page.getByText("Ready.", { exact: true })).toBeVisible();
+    expect(requestCount).toBe(1);
+  });
+
   test("the list never presents an order it has not named", async ({ page }) => {
     // Default: recency, which is the order that earns activity bands.
     await expect(page.locator(".chat-sessions-sort")).toContainText("Recent activity");
