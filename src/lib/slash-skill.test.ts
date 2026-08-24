@@ -6,6 +6,8 @@ import {
   resolveSkillArg,
   resolveSkillInvocation,
   buildSkillPrompt,
+  skillCarryOverText,
+  skillComposerInsertion,
   skillCommandMatches,
   formatSkillList,
 } from "./slash-skill.ts";
@@ -58,6 +60,53 @@ assert.equal(
   'Use the "code-review" skill with: src/foo.ts',
   "typed arguments ride along after the directive",
 );
+
+// A skill is ADDED to the operator's message, never swapped in for it — the
+// whole reason for the third parameter (picking a skill mid-sentence used to
+// clear the composer and send only the directive).
+assert.equal(
+  buildSkillPrompt(SKILLS[1], "", "look at the token refresh path"),
+  'Use the "code-review" skill.\n\nlook at the token refresh path',
+  "composer text is carried into the invocation",
+);
+assert.equal(
+  buildSkillPrompt(SKILLS[1], "src/foo.ts", "focus on the auth layer"),
+  'Use the "code-review" skill with: src/foo.ts\n\nfocus on the auth layer',
+  "arguments and the carried message both survive",
+);
+assert.equal(
+  buildSkillPrompt(SKILLS[1], "line one\nline two"),
+  'Use the "code-review" skill.\n\nline one\nline two',
+  "multi-line arguments become the body instead of being mangled into the directive line",
+);
+assert.equal(
+  buildSkillPrompt(SKILLS[0], "  ", "   "),
+  'Use the "deep-research" skill.',
+  "blank message → plain directive",
+);
+
+// ── skillCarryOverText: the operator's own words vs picker scaffolding ───────
+assert.equal(skillCarryOverText("check the auth path"), "check the auth path", "plain prose carries");
+assert.equal(skillCarryOverText("  padded  "), "padded", "carried text is trimmed");
+assert.equal(skillCarryOverText(""), "", "empty draft carries nothing");
+assert.equal(skillCarryOverText("/skill code-review "), "", "/skill scaffolding is not a message");
+assert.equal(skillCarryOverText("/skills rev"), "", "/skills filter text is not a message");
+assert.equal(skillCarryOverText("/revi"), "", "a command token still being typed is not a message");
+assert.equal(
+  skillCarryOverText("summarize this:\n\n/skill notes"),
+  "summarize this:\n\n/skill notes",
+  "prose that merely contains a slash line still carries",
+);
+assert.equal(
+  skillCarryOverText("/skill code-review\n\nlook at the auth path"),
+  "look at the auth path",
+  "a multi-line /skill draft keeps the paragraph, dropping only the command and name",
+);
+assert.equal(
+  skillCarryOverText("/skill code-review focus on auth"),
+  "focus on auth",
+  "typed arguments carry when a different skill is picked",
+);
 const list = formatSkillList(SKILLS);
 assert.match(list, /Available skills/, "list has a header");
 assert.match(list, /deep-research/, "list includes each skill");
@@ -69,6 +118,23 @@ assert.equal(
   ]).match(/brainstorming/g).length,
   2, // once in "name — `id`" form on a single line
   "the bare /skills system message lists a multi-root skill once",
+);
+
+// ── skillComposerInsertion: the ＋ menu fills the command WITHOUT clobbering ─
+assert.deepEqual(
+  skillComposerInsertion("", SKILLS[1]),
+  { text: "/skill code-review ", caret: 19 },
+  "an empty composer just gets the command",
+);
+assert.deepEqual(
+  skillComposerInsertion("check the token refresh path", SKILLS[1]),
+  { text: "/skill code-review check the token refresh path", caret: 19 },
+  "an existing draft survives and becomes the skill's arguments",
+);
+assert.deepEqual(
+  skillComposerInsertion("/skill verify ", SKILLS[1]),
+  { text: "/skill code-review ", caret: 19 },
+  "re-picking replaces the previous command rather than nesting it",
 );
 
 // ── resolveSkillInvocation: whole name first, then first-token + args ────────
@@ -84,6 +150,14 @@ assert.deepEqual(
 );
 assert.equal(resolveSkillInvocation("nope at-all", SKILLS), null, "unknown head → null");
 assert.equal(resolveSkillInvocation("zzz", SKILLS), null, "unknown single token → null");
+// A newline between the skill name and the operator's paragraph used to leave
+// the first " " deep inside the prose, so the head token was nonsense, nothing
+// resolved, and the whole message was discarded as "unknown skill".
+assert.deepEqual(
+  resolveSkillInvocation("code-review\n\nplease focus on the auth path", SKILLS),
+  { skill: SKILLS[1], args: "please focus on the auth path" },
+  "a newline after the skill name splits the head, keeping the message",
+);
 
 // ── skillCommandMatches: top-level menu discovery ────────────────────────────
 assert.deepEqual(skillCommandMatches("/revi", SKILLS).map((s) => s.id), ["code-review"], "3+ chars matches by substring");
@@ -111,10 +185,11 @@ assert.match(menusHook, /skillSlashOptions\(activeInvocation\?\.input \?\? "", s
 assert.match(menusHook, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "menuOpen includes the skill picker and the Skills group");
 assert.match(chatView, /command === "\/skill" \|\| command === "\/skills"/, "chat-view dispatches /skill and /skills");
 assert.match(chatView, /sendRaw\(buildSkillPrompt\(skill, skillArgs\)\)/, "typed /skill arguments are forwarded into the invocation");
-assert.match(chatView, /sendRaw\(buildSkillPrompt\(s\)\)/, "picking a skill sends the invocation directive");
+assert.match(chatView, /sendRaw\(buildSkillPrompt\(s, "", carried\)\)/, "picking a skill sends the invocation directive with the composer text carried");
+assert.match(chatView, /const carried = skillCarryOverText\(input\);/, "chat-view reads the operator's own text out of the composer before invoking");
 assert.match(chatView, /const invokeSkillOption = \(s: SkillOption\)/, "chat-view shares one skill-invoke helper across picker, menu and clicks");
 assert.match(chatView, /onPickSkill: \(s\) => invokeSkillOption\(s\)/, "the hook's skill picks route through chat-view's invoke helper");
-assert.match(chatView, /s\.argumentHint && input\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/, "a hinted skill autofills /skill <id> for argument editing instead of sending");
+assert.match(chatView, /s\.argumentHint && !carried && input\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/, "a hinted skill autofills /skill <id> only over scaffolding, never over a typed message");
 assert.match(menusHook, /skillCommandMatches\(activeInvocation\.commandToken, skills\)/, "the shared hook surfaces skills at the active slash token");
 assert.match(chatView, /role="listbox" aria-label="Skills"/, "chat-view renders a Skills listbox");
 assert.match(menusHook, /fetch\("\/api\/skills\/local"/, "the shared hook sources skills from the local skill scan");
@@ -138,6 +213,42 @@ for (const [label, src] of [["chat-view", chatView], ["home-composer", homeCompo
     src,
     /<SkillDetailPreview skill=\{skillOptions\[slashIdx\] \?\? skillOptions\[0\] \?\? null\}/,
     `${label} renders the detail preview for the highlighted skill`,
+  );
+}
+
+// Every composer that can invoke a skill carries the draft instead of clearing
+// it, and none of them wipes the composer on an unresolved skill name.
+const quickChat = await readFile(new URL("../components/quick-chat-controls.tsx", import.meta.url), "utf8");
+for (const [label, src, draftExpr] of [
+  ["home-composer", homeComposer, "text"],
+  ["quick-chat-controls", quickChat, "draft"],
+]) {
+  assert.match(
+    src,
+    new RegExp(`const carried = skillCarryOverText\\(${draftExpr}\\);`),
+    `${label} reads the operator's own text before invoking a skill`,
+  );
+  assert.match(
+    src,
+    /buildSkillPrompt\(skill, args, carried\)/,
+    `${label} sends the carried message with the skill directive`,
+  );
+  assert.match(
+    src,
+    /!args &&\s*!carried &&/,
+    `${label} only autofills an argument-hint over scaffolding, never over a typed message`,
+  );
+}
+for (const [label, src, clearExpr] of [
+  ["chat-view", chatView, 'setInput("")'],
+  ["home-composer", homeComposer, 'setText("")'],
+  ["quick-chat-controls", quickChat, 'onDraftChange("")'],
+]) {
+  const unknownBranch = src.slice(src.indexOf("if (!invocation)"));
+  assert.equal(
+    unknownBranch.slice(0, unknownBranch.indexOf("return")).includes(clearExpr),
+    false,
+    `${label} keeps the draft when a skill name doesn't resolve`,
   );
 }
 

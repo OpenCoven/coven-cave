@@ -27,6 +27,8 @@ import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
   resolveSkillInvocation,
   buildSkillPrompt,
+  skillCarryOverText,
+  skillComposerInsertion,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
@@ -355,14 +357,22 @@ export function HomeComposer({
   });
 
   // Invoke a skill from home = open a new chat that asks the familiar to run
-  // it. A skill with an argument-hint autofills `/skill <id> ` for argument
-  // editing instead of starting immediately; picking again on the filled text
-  // (or a hint-less skill) starts the chat. Mirrors chat-view's
+  // it. Whatever is already in the composer is CARRIED into the invocation as
+  // the operator's message rather than discarded. A skill with an
+  // argument-hint autofills `/skill <id> ` for argument editing instead of
+  // starting immediately, but only over scaffolding; picking again on the
+  // filled text (or a hint-less skill) starts the chat. Mirrors chat-view's
   // invokeSkillOption.
   const invokeSkill = useCallback(
     async (skill: SkillOption, args = "") => {
       const filled = `/skill ${skill.id}`;
-      if (skill.argumentHint && !args && text.trim().toLowerCase() !== filled.toLowerCase()) {
+      const carried = skillCarryOverText(text);
+      if (
+        skill.argumentHint &&
+        !args &&
+        !carried &&
+        text.trim().toLowerCase() !== filled.toLowerCase()
+      ) {
         setText(`${filled} `);
         textareaRef.current?.focus();
         return false;
@@ -380,7 +390,7 @@ export function HomeComposer({
       }
       if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return false;
       setText("");
-      onStartChat(buildSkillPrompt(skill, args), actionFamiliarId, selectedProjectRoot, {
+      onStartChat(buildSkillPrompt(skill, args, carried), actionFamiliarId, selectedProjectRoot, {
         initialControls: initialChatControls,
       });
       return true;
@@ -572,8 +582,9 @@ export function HomeComposer({
         }
         const invocation = resolveSkillInvocation(args, skills);
         if (!invocation) {
+          // Keep the text so a typo is fixable — clearing it would discard the
+          // operator's message along with the command.
           pushHistory(prompt);
-          setText("");
           onToast(`Unknown skill "${args.trim()}".`);
           return;
         }
@@ -1062,8 +1073,14 @@ export function HomeComposer({
                 }}
                 skills={{
                   onPickSkill: (skill) => {
-                    setText(`/skill ${skill.id} `);
+                    // Keep whatever is already typed — it becomes the skill's
+                    // arguments on send instead of being overwritten.
+                    const ins = skillComposerInsertion(text, skill);
+                    setText(ins.text);
                     textareaRef.current?.focus();
+                    requestAnimationFrame(() =>
+                      textareaRef.current?.setSelectionRange(ins.caret, ins.caret),
+                    );
                   },
                 }}
                 connectors

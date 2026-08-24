@@ -182,6 +182,8 @@ import {
   resolveSkillInvocation,
   formatSkillList,
   buildSkillPrompt,
+  skillCarryOverText,
+  skillComposerInsertion,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
@@ -4769,20 +4771,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   };
 
   // Invoke a picked skill (from the /skill picker or the command menu's Skills
-  // group). A skill with an argument-hint autofills `/skill <id> ` so the user
-  // can type arguments; picking again on the filled text (or a hint-less
-  // skill) sends the invocation directive. Mirrors the command menu's
-  // autocomplete-then-run Enter pattern.
+  // group). Anything the operator has already typed is CARRIED into the
+  // invocation as their message — picking a skill augments the outgoing
+  // message, it never replaces it. A skill with an argument-hint autofills
+  // `/skill <id> ` so the user can type arguments, but only when the composer
+  // holds nothing but scaffolding; picking again on the filled text (or a
+  // hint-less skill) sends the invocation directive.
   const invokeSkillOption = (s: SkillOption) => {
     const filled = `/skill ${s.id}`;
-    if (s.argumentHint && input.trim().toLowerCase() !== filled.toLowerCase()) {
+    const carried = skillCarryOverText(input);
+    if (s.argumentHint && !carried && input.trim().toLowerCase() !== filled.toLowerCase()) {
       setInput(`${filled} `);
       inputRef.current?.focus();
       return;
     }
     setInput("");
     setSlashIdx(0);
-    setTimeout(() => sendRaw(buildSkillPrompt(s)), 0);
+    setTimeout(() => sendRaw(buildSkillPrompt(s, "", carried)), 0);
     inputRef.current?.focus();
   };
 
@@ -4953,8 +4958,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       const invocation = resolveSkillInvocation(args, skills);
       if (!invocation) {
+        // Keep the draft: an unknown skill is usually a typo, and clearing the
+        // composer would destroy whatever else the operator had written.
         appendSystem(`Unknown skill "${args.trim()}". Type /skills to list the options.`);
-        setInput("");
         return true;
       }
       const { skill, args: skillArgs } = invocation;
@@ -7561,8 +7567,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   }}
                   skills={{
                     onPickSkill: (skill) => {
-                      setInput(`/skill ${skill.id} `);
+                      // Keep whatever is already typed — it becomes the skill's
+                      // arguments on send instead of being overwritten.
+                      const ins = skillComposerInsertion(input, skill);
+                      setInput(ins.text);
                       inputRef.current?.focus();
+                      requestAnimationFrame(() =>
+                        inputRef.current?.setSelectionRange(ins.caret, ins.caret),
+                      );
                     },
                   }}
                   context={{

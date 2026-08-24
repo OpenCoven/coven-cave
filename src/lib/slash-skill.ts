@@ -88,19 +88,66 @@ export function resolveSkillInvocation(
   const whole = resolveSkillArg(arg, skills);
   if (whole) return { skill: whole, args: "" };
   const t = arg.trim();
-  const sp = t.indexOf(" ");
+  // Split on the first WHITESPACE run, not the first " ": `/skill code-review`
+  // followed by a newline and a paragraph put the first space deep inside the
+  // prose, so a space-only split built a nonsense head token, resolved to
+  // nothing, and the operator's whole message was discarded as "unknown skill".
+  const sp = t.search(/\s/);
   if (sp <= 0) return null;
   const skill = resolveSkillArg(t.slice(0, sp), skills);
-  return skill ? { skill, args: t.slice(sp + 1).trim() } : null;
+  return skill ? { skill, args: t.slice(sp).trim() } : null;
 }
 
 /** The message sent to the active familiar to invoke a skill. The harness owns
  *  Skill execution, so this is a plain directive naming the skill; typed
- *  arguments (from `/skill <name> <args>`) ride along after it. */
-export function buildSkillPrompt(skill: SkillOption, args?: string): string {
-  const a = args?.trim();
-  if (!a) return `Use the "${skill.name}" skill.`;
-  return `Use the "${skill.name}" skill with: ${a}`;
+ *  arguments (from `/skill <name> <args>`) ride along after it, and anything
+ *  the operator had already written (`message`) is CARRIED, never replaced —
+ *  a skill is part of the outgoing message, not a substitute for it. */
+export function buildSkillPrompt(skill: SkillOption, args?: string, message?: string): string {
+  const a = args?.trim() ?? "";
+  // Only a single-line argument reads as a directive suffix; anything spanning
+  // lines is the operator's own prose and belongs in the body, unmangled.
+  const inline = a.includes("\n") ? "" : a;
+  const head = inline
+    ? `Use the "${skill.name}" skill with: ${inline}`
+    : `Use the "${skill.name}" skill.`;
+  const body = [inline ? "" : a, message?.trim() ?? ""].filter(Boolean).join("\n\n");
+  return body ? `${head}\n\n${body}` : head;
+}
+
+/** The part of a composer draft that is the operator's OWN message rather than
+ *  the `/skill …` scaffolding a picker autofilled. Composers pass this into
+ *  buildSkillPrompt so picking a skill mid-sentence keeps the sentence.
+ *  Returns "" for a draft that is only a slash command being typed. */
+export function skillCarryOverText(draft: string): string {
+  const t = draft.trim();
+  if (!t.startsWith("/")) return t;
+  const cmd = t.match(/^\/skills?\b\s*/i);
+  if (cmd) {
+    // Drop the command AND the skill name it names — whatever follows is the
+    // operator's own text and survives the pick. Newline-safe, so
+    // `/skill code-review\n\nlook at auth` keeps the paragraph.
+    const rest = t.slice(cmd[0].length);
+    const sp = rest.search(/\s/);
+    return sp < 0 ? "" : rest.slice(sp).trim();
+  }
+  // A lone `/token` is a command still being typed — which is how the
+  // top-level Skills group is reached (`/revi`).
+  return t.search(/\s/) < 0 ? "" : t;
+}
+
+/** Composer text for a skill picked from the ＋ menu, which fills `/skill <id>`
+ *  for argument editing instead of sending. Anything already typed is kept
+ *  after the command (it becomes the skill's arguments on send) rather than
+ *  being overwritten; the caret parks between the two so typed arguments land
+ *  ahead of the carried text. */
+export function skillComposerInsertion(
+  draft: string,
+  skill: SkillOption,
+): { text: string; caret: number } {
+  const head = `/skill ${skill.id} `;
+  const carried = skillCarryOverText(draft);
+  return { text: carried ? `${head}${carried}` : head, caret: head.length };
 }
 
 /** Skills surfaced directly in the top-level slash menu — typing `/revi`
