@@ -177,12 +177,14 @@ to describe current behavior. For deeper design context, start with
 [`docs/multi-session-coordination.md`](docs/multi-session-coordination.md).
 
 For interface direction explored outside this repository,
-[**OpenCoven UI**](https://ui.opencoven.ai) is a standalone, dependency-free
-browser of chat-surface specimens — composer, messages, context, and actions.
-It is an exploration workspace
-([`OpenCoven/ui`](https://github.com/OpenCoven/ui)), not a component library and
-not the canonical source for anything in `src/components/`; shipped Cave code
-and `docs/coven-design-language.md` remain authoritative.
+[**OpenCoven UI**](https://ui.opencoven.ai) is a self-contained,
+dependency-free component library and specimen lab for exploring agent-surface
+direction — composer, messages, context, actions, and run rails. Its
+[`OpenCoven/ui`](https://github.com/OpenCoven/ui) repository is a reference
+workspace, not an installable package, production application, or canonical
+source for Cave components; shipped code in `src/components/ui/`,
+`src/styles/globals/primitives.css`, and `docs/coven-design-language.md` remains
+authoritative.
 
 ### Local client access
 

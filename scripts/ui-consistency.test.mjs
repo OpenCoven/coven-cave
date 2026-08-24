@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,6 +82,22 @@ assert.match(
   /\*\*Couldn't load <object>\*\*/,
   "failure grammar names the failed object",
 );
+assert.match(
+  designLanguage,
+  exactHeadingPattern("### OpenCoven UI reference boundary"),
+  "design language defines the cross-repository reference boundary",
+);
+for (const decision of ["**Adopt**", "**Adapt**", "**Reject**"]) {
+  assert.ok(
+    designLanguage.includes(`| ${decision} |`),
+    `OpenCoven UI boundary records the ${decision.slice(2, -2).toLowerCase()} decision`,
+  );
+}
+assert.match(
+  designLanguage,
+  /Cave's production authority remains this\s+document plus `src\/components\/ui\/` and\s+`src\/styles\/globals\/primitives\.css`/,
+  "Cave code and design language remain production authority",
+);
 
 // ── fact pins: the design doc must match the shipped code ──────────────────
 // docs/coven-design-language.md quotes token values, palette counts, and file
@@ -90,11 +106,60 @@ assert.match(
 // carried a full palette's worth of stale values before cave-kf3x).
 
 const repoRoot = new URL("../", import.meta.url);
+const caveReadme = readFileSync(new URL("README.md", repoRoot), "utf8");
 const foundations = readFileSync(
   new URL("src/styles/globals/foundations.css", repoRoot),
   "utf8",
 );
 const agentsNotes = readFileSync(new URL("AGENTS.md", repoRoot), "utf8");
+
+assert.match(
+  caveReadme,
+  /self-contained,\s+dependency-free component library and specimen lab/,
+  "README describes OpenCoven UI's current role",
+);
+assert.match(
+  caveReadme,
+  /reference\s+workspace, not an installable package, production application, or canonical\s+source for Cave components/,
+  "README does not imply OpenCoven UI is an installable Cave dependency",
+);
+
+const allowedBeautifulUiPaths = [
+  "src/components/ui/beautiful/",
+  "src/app/aesthetic/beautiful/",
+];
+const allowedBeautifulUiFiles = new Set(["src/styles/beautiful-ui.css"]);
+const buiLeakage = [];
+const sourceRoot = fileURLToPath(new URL("src/", repoRoot));
+
+function collectSourceFiles(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return collectSourceFiles(entryPath);
+    return /\.(?:css|js|jsx|mdx|mjs|ts|tsx)$/.test(entry.name) ? [entryPath] : [];
+  });
+}
+
+for (const filePath of collectSourceFiles(sourceRoot)) {
+  const relativePath = path.relative(fileURLToPath(repoRoot), filePath).split(path.sep).join("/");
+  if (
+    allowedBeautifulUiFiles.has(relativePath)
+    || allowedBeautifulUiPaths.some((allowedPath) => relativePath.startsWith(allowedPath))
+  ) {
+    continue;
+  }
+  const source = readFileSync(filePath, "utf8");
+  source.split("\n").forEach((line, index) => {
+    if (/\bbui-[a-z0-9-]+\b/.test(line)) {
+      buiLeakage.push(`${relativePath}:${index + 1}: ${line.trim()}`);
+    }
+  });
+}
+assert.deepEqual(
+  buiLeakage,
+  [],
+  "bui-* vocabulary stays inside the Beautiful UI adapter and explicit gallery",
+);
 
 /** First definition wins = the :root dark value. */
 function tokenValue(css, name) {
