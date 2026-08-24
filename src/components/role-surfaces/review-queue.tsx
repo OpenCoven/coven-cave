@@ -1,228 +1,300 @@
 "use client";
 
+/**
+ * review-queue — the cockpit's left pane: what is waiting, in what order.
+ *
+ * Three things distinguish it from a list of pull requests. The **mix bar**
+ * answers "what is this queue made of?" before any row is read. The **sticky
+ * group heads** keep the bucket you are inside named while you scroll. And an
+ * **empty group is still drawn** when the whole deck is in view, because
+ * "nothing blocked" is the answer a reviewer opens this pane hoping for, and a
+ * silently absent heading cannot say it.
+ */
+
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
-import { Segmented } from "@/components/ui/settings-controls";
-import { SurfaceEmpty } from "./surface-room";
-import type { DeckSummary, ReviewTone } from "./review-readiness";
+import type { IconName } from "@/lib/icon";
+import {
+  COCKPIT_BUCKETS,
+  COCKPIT_BUCKET_ORDER,
+  REVIEW_QUEUE_SORT_TITLES,
+  type CockpitBucket,
+  type QueueMixSegment,
+  type ReviewQueueSort,
+} from "./review-cockpit";
+import type { ReviewTone } from "./review-readiness";
 
 export type ReviewSourceFilter = "all" | "prs" | "local";
 
-const SOURCE_FILTERS: readonly ReviewSourceFilter[] = ["all", "prs", "local"];
-const SOURCE_FILTER_LABELS: Record<ReviewSourceFilter, string> = {
-  all: "All",
-  prs: "PRs",
-  local: "Local",
+const SOURCE_FILTERS: readonly {
+  id: ReviewSourceFilter;
+  label: string;
+  title: string;
+}[] = [
+  { id: "all", label: "ALL", title: "Every session carrying review material" },
+  { id: "prs", label: "PR", title: "Only sessions with a linked pull request" },
+  { id: "local", label: "LOC", title: "Only sessions with local changes and no pull request" },
+];
+
+const BUCKET_ICON: Record<CockpitBucket, IconName> = {
+  blocked: "ph:prohibit",
+  changes: "ph:arrow-bend-up-left",
+  awaiting: "ph:eye",
+  ready: "ph:check-circle-fill",
+  draft: "ph:pencil-simple",
 };
 
 export type ReviewQueueRowView = {
   id: string;
+  bucket: CockpitBucket;
   title: string;
   reference: string;
   hasPullRequest: boolean;
   additions: number;
   deletions: number;
   age: string;
+  /** The short "why is this here", derived from the queue's one GitHub read. */
+  reason: string;
+  /** Model that produced the work, when the session recorded one. */
+  agent: string | null;
   stateLabel: string;
   stateTitle: string;
   stateTone: ReviewTone;
 };
 
 export type ReviewQueueGroupView = {
-  id: keyof DeckSummary;
-  label: string;
+  id: CockpitBucket;
   items: ReviewQueueRowView[];
 };
 
-const FILTER_LABELS: Record<keyof DeckSummary, string> = {
-  awaiting: "Needs review",
-  changes: "Changes requested",
-  blocked: "Blocked",
-  ready: "Ready",
-};
-
-const FILTER_TONES: Record<keyof DeckSummary, ReviewTone> = {
-  awaiting: "accent",
-  changes: "warning",
-  blocked: "danger",
-  ready: "success",
-};
-
-export function ReviewQueueScopeBar({
-  summary,
-  bucketFilter,
-  queueCount,
-  scope,
-  oldest,
-  refreshLabel,
-  caption,
-  onToggleBucket,
+function QueueMixBar({
+  segments,
+  total,
 }: {
-  summary: DeckSummary;
-  bucketFilter: keyof DeckSummary | null;
-  queueCount: number;
-  scope: string | null;
-  oldest: string | null;
-  refreshLabel: string;
-  caption: string;
-  onToggleBucket: (bucket: keyof DeckSummary) => void;
+  segments: readonly QueueMixSegment[];
+  total: number;
 }) {
+  if (segments.length === 0) return <span className="rd-mix rd-mix--empty" />;
+  const summary = segments
+    .map((segment) => `${segment.count} ${segment.label.toLowerCase()}`)
+    .join(" · ");
   return (
-    <section className="rd-scopebar" aria-label="Review queue attention">
-      <span className="rd-scopebar-title">
-        <span className="rd-eyebrow">Review run</span>
-        <strong>{queueCount} to review</strong>
-        {scope ? <span>{scope}</span> : null}
+    <span className="rd-mix" tabIndex={0} role="img" aria-label={`Queue mix: ${summary}`}>
+      <span className="rd-mix-track" aria-hidden>
+        {segments.map((segment) => (
+          <i
+            key={segment.bucket}
+            data-rd-tone={segment.tone}
+            style={{ flexGrow: segment.count }}
+          />
+        ))}
       </span>
-      <span className="rd-attention-filters" role="group" aria-label="Filter by attention">
-        {(Object.keys(summary) as Array<keyof DeckSummary>).map((bucket) => {
-          const active = bucketFilter === bucket;
-          return (
-            <button
-              key={bucket}
-              type="button"
-              className="rd-attention-filter focus-ring"
-              data-tone={FILTER_TONES[bucket]}
-              data-active={active ? "true" : undefined}
-              aria-pressed={active}
-              onClick={() => onToggleBucket(bucket)}
-            >
-              <span aria-hidden className="rd-attention-mark" />
-              {FILTER_LABELS[bucket]}
-              <span className="rd-attention-count">{summary[bucket]}</span>
-            </button>
-          );
-        })}
+      <span className="rd-mix-detail" aria-hidden>
+        {segments.map((segment) => (
+          <span key={segment.bucket}>
+            <i data-rd-tone={segment.tone} />
+            <span>{segment.label}</span>
+            <b>{segment.count}</b>
+          </span>
+        ))}
+        <small>{total} in view</small>
       </span>
-      <span className="rd-scopebar-meta" title={caption}>
-        {oldest ? <span>oldest {oldest}</span> : null}
-        <span>{refreshLabel}</span>
-      </span>
-    </section>
+    </span>
   );
 }
 
 export function ReviewQueue({
   groups,
   selectedId,
+  sort,
   sourceFilter,
-  collapsed,
   total,
+  mix,
+  showEmptyGroups,
+  footnote,
   emptyTitle,
   emptyHint,
+  onSort,
   onSourceFilter,
   onSelect,
   onCollapse,
-  onExpand,
+  onClearFilters,
 }: {
   groups: readonly ReviewQueueGroupView[];
   selectedId: string | null;
+  sort: ReviewQueueSort;
   sourceFilter: ReviewSourceFilter;
-  collapsed: boolean;
   total: number;
+  mix: readonly QueueMixSegment[];
+  /**
+   * Whether an empty bucket still gets a heading. True only when nothing is
+   * filtered out — inside a filter, "Nothing blocked" would describe the
+   * filter rather than the deck.
+   */
+  showEmptyGroups: boolean;
+  footnote: string;
   emptyTitle: string;
   emptyHint: string;
+  onSort: (sort: ReviewQueueSort) => void;
   onSourceFilter: (filter: ReviewSourceFilter) => void;
   onSelect: (id: string) => void;
   onCollapse: () => void;
-  onExpand: () => void;
+  onClearFilters: () => void;
 }) {
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        className="rd-panel rd-collapsed rd-queue-spine focus-ring-inset"
-        title="Expand review queue"
-        aria-label={`Expand review queue, ${total} items`}
-        onClick={onExpand}
-      >
-        <Icon name="ph:sidebar-simple" width={16} height={16} aria-hidden />
-        <span className="rd-collapsed-badge">{total}</span>
-        <span className="rd-collapsed-label">Queue</span>
-      </button>
-    );
-  }
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const rendered = COCKPIT_BUCKET_ORDER.flatMap((bucket) => {
+    const items = byId.get(bucket)?.items ?? [];
+    if (items.length > 0) return [{ bucket, items, empty: false }];
+    // The draft group has no reassuring empty state — "Outside the counts" is
+    // a container, not an outcome, so an empty one is simply absent.
+    if (!showEmptyGroups || bucket === "draft") return [];
+    return [{ bucket, items, empty: true }];
+  });
 
   return (
-    <nav className="rd-panel rd-queue" aria-label="Review queue">
+    <nav className="rd-queue" aria-label="Review queue">
       <div className="rd-queue-head">
-        <div className="rd-queue-head-row">
-          <span className="rd-eyebrow">Attention queue</span>
-          <span className="rd-count">{total}</span>
-          <span className="rd-spacer" />
+        <span className="rd-eyebrow">Queue</span>
+        <span className="rd-queue-count">{total}</span>
+        <QueueMixBar segments={mix} total={total} />
+        <span className="rd-well rd-well--pill" role="group" aria-label="Queue order">
           <button
             type="button"
-            className="rd-icon-btn focus-ring"
-            title="Collapse queue"
-            aria-label="Collapse review queue"
-            onClick={onCollapse}
+            className="rd-well-seg focus-ring"
+            data-active={sort === "attention" ? "true" : undefined}
+            aria-pressed={sort === "attention"}
+            title={REVIEW_QUEUE_SORT_TITLES.attention}
+            onClick={() => onSort("attention")}
           >
-            <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+            ATTN
           </button>
-        </div>
-        <Segmented
-          options={SOURCE_FILTERS}
-          value={sourceFilter}
-          onChange={onSourceFilter}
-          getLabel={(option) => SOURCE_FILTER_LABELS[option]}
-          ariaLabel="Filter review queue by source"
-        />
+          <button
+            type="button"
+            className="rd-well-seg focus-ring"
+            data-active={sort === "repo" ? "true" : undefined}
+            aria-pressed={sort === "repo"}
+            title={REVIEW_QUEUE_SORT_TITLES.repo}
+            onClick={() => onSort("repo")}
+          >
+            REPO
+          </button>
+        </span>
+        <button
+          type="button"
+          className="rd-pane-toggle rd-pane-toggle--flip focus-ring"
+          title="Collapse queue (f)"
+          aria-label="Collapse review queue"
+          onClick={onCollapse}
+        >
+          <Icon name="ph:sidebar-simple" width={14} height={14} aria-hidden />
+        </button>
       </div>
+
       <div className="rd-queue-list rd-scroll">
-        {groups.length === 0 ? (
-          <SurfaceEmpty
-            iconName="ph:check-circle-fill"
-            title={emptyTitle}
-            hint={emptyHint}
-          />
+        {total === 0 ? (
+          <div className="rd-queue-empty">
+            <span className="rd-queue-empty-mark" aria-hidden>
+              <Icon name="ph:check-circle-fill" width={19} height={19} />
+            </span>
+            <strong>{emptyTitle}</strong>
+            <span>{emptyHint}</span>
+            <Button size="xs" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          </div>
         ) : (
-          groups.map((group) => (
-            <section key={group.id} className="rd-queue-group" aria-labelledby={`rd-group-${group.id}`}>
-              <h3 id={`rd-group-${group.id}`} className="rd-queue-group-head" data-tone={FILTER_TONES[group.id]}>
-                <span className="rd-attention-mark" aria-hidden />
-                {group.label}
-                <span>{group.items.length}</span>
-              </h3>
-              <ul className="role-surface-list">
-                {group.items.map((item) => {
-                  const active = item.id === selectedId;
-                  return (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        className="rd-row focus-ring-inset"
-                        data-active={active ? "true" : undefined}
-                        aria-current={active ? "true" : undefined}
-                        title={`${item.title} — ${item.hasPullRequest ? "reviewed as the GitHub pull-request diff" : "reviewed as the local working tree"}`}
-                        onClick={() => onSelect(item.id)}
-                      >
-                        <span className="rd-row-top">
-                          <Icon
-                            name={item.hasPullRequest ? "ph:git-pull-request" : "ph:git-diff"}
-                            width={11}
-                            height={11}
-                            aria-hidden
-                          />
-                          <span className="rd-row-ref">{item.reference}</span>
-                          <span className="rd-spacer" />
-                          <span className="rd-pill" data-tone={item.stateTone} title={item.stateTitle}>
-                            {item.stateLabel}
-                          </span>
-                        </span>
-                        <span className="rd-row-title">{item.title}</span>
-                        <span className="rd-row-meta">
-                          <span className="rd-add">+{item.additions}</span>
-                          <span className="rd-del">−{item.deletions}</span>
-                          <span className="rd-spacer" />
-                          <span>{item.age}</span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))
+          rendered.map(({ bucket, items, empty }) => {
+            const meta = COCKPIT_BUCKETS[bucket];
+            return (
+              <section
+                key={bucket}
+                className="rd-queue-group"
+                aria-labelledby={`rd-group-${bucket}`}
+              >
+                <h3
+                  id={`rd-group-${bucket}`}
+                  className="rd-queue-group-head"
+                  data-rd-tone={meta.tone}
+                >
+                  <Icon name={BUCKET_ICON[bucket]} width={13} height={13} aria-hidden />
+                  <span className="rd-queue-group-label">{meta.label}</span>
+                  <span className="rd-queue-group-count">{items.length}</span>
+                  <span className="rd-spacer" />
+                  <span className="rd-queue-group-hint">{meta.hint}</span>
+                </h3>
+                {empty ? (
+                  <p className="rd-queue-group-empty">{meta.empty}</p>
+                ) : (
+                  <ul className="rd-queue-rows">
+                    {items.map((item) => {
+                      const active = item.id === selectedId;
+                      return (
+                        <li key={item.id}>
+                          <button
+                            type="button"
+                            className="rd-row focus-ring-inset"
+                            data-rd-tone={meta.tone}
+                            data-active={active ? "true" : undefined}
+                            aria-current={active ? "true" : undefined}
+                            title={`${item.title} — ${item.stateTitle}`}
+                            onClick={() => onSelect(item.id)}
+                          >
+                            <span className="rd-row-line">
+                              <i className="rd-row-dot" data-rd-tone={meta.tone} aria-hidden />
+                              <span className="rd-row-title">{item.title}</span>
+                              <span className="rd-row-age">{item.age}</span>
+                            </span>
+                            <span className="rd-row-line">
+                              <span
+                                className="rd-row-ref"
+                                data-local={item.hasPullRequest ? undefined : "true"}
+                              >
+                                {item.reference}
+                              </span>
+                              {item.reason ? (
+                                <span className="rd-row-reason" data-rd-tone={meta.tone}>
+                                  {item.reason}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="rd-row-line rd-row-meta">
+                              <span className="rd-add">+{item.additions}</span>
+                              <span className="rd-del">−{item.deletions}</span>
+                              {item.agent ? <span>· {item.agent}</span> : null}
+                              <span className="rd-spacer" />
+                              <span className="rd-visually-hidden">{item.stateLabel}</span>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            );
+          })
         )}
+      </div>
+
+      <div className="rd-queue-foot">
+        <span className="rd-well rd-well--pill" role="group" aria-label="Filter queue by source">
+          {SOURCE_FILTERS.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className="rd-well-seg focus-ring"
+              data-active={sourceFilter === filter.id ? "true" : undefined}
+              aria-pressed={sourceFilter === filter.id}
+              title={filter.title}
+              onClick={() => onSourceFilter(filter.id)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </span>
+        <span className="rd-queue-footnote" title={footnote}>
+          {footnote}
+        </span>
       </div>
     </nav>
   );

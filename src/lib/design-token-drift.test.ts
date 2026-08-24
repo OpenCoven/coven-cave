@@ -90,7 +90,25 @@ const BASELINES = {
 // -1: the compact Research mode picker replaces an off-grid spacing literal
 // with the shared control rhythm.
 BASELINES.offScaleSpacingPx = 1607;
-BASELINES.inlineTsxStyles = 280;
+// +5: the Review Deck cockpit ("Review Deck Cockpit v2.dc.html" handoff,
+// cave-8dj4q) binds five numbers no stylesheet can hold, and no more than
+// five: the two rail widths the USER DRAGS (one `style` object carrying
+// --rd-queue-width and --rd-inspector-width, re-clamped against the live
+// window), the two segments of the workspace header's added/removed bar (each
+// a share of THIS change's own diff), the queue mix bar's per-bucket segment
+// (a share of what is in view right now), and the reviewed-file progress
+// fill's percentage. Every one is a per-item or per-user measurement, which is
+// the same category the Coding Desk, Research Desk and chat run-rail entries
+// banked above; `coven-design/no-static-inline-style` is AST-accurate about
+// exactly this question and reports zero findings across the seven new and
+// rewritten cockpit components. The frame's *fixed* numbers deliberately did
+// NOT come here — pane minimums and initial widths are constants in
+// review-cockpit.ts, and every colour, size, radius and spacing value in the
+// seven rewritten stylesheets is a token: the sheets went from 15 off-scale
+// spacing literals to ZERO in this PR (two named sub-grid marks,
+// --rd-hairline and --rd-tight, replaced the repeated 1/2px well insets), so
+// offScaleSpacingPx is unchanged rather than raised.
+BASELINES.inlineTsxStyles = 285;
 
 // ── unit sanity for the codemod transform ───────────────────────────────────
 

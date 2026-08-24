@@ -1449,6 +1449,23 @@ fn the_gated_and_stranger_refusals_prescribe_different_actions() {
         "a refusal that will not identify itself is most often another CovenCave — telling the \
          operator to quit it is not the same move as telling them to switch to it"
     );
+
+    // `assert_ne!` alone permits the very drift it names. Rewrite Gated's
+    // instruction to Stranger's ("quit it") with one trailing word changed and
+    // the two stay unequal, so this test passes while the distinction it exists
+    // to protect is gone. Pin the action each one prescribes, not merely that
+    // they differ.
+    assert!(
+        gated.contains("Switch to it"),
+        "Gated is most often another CovenCave, which the operator can switch to: {gated}"
+    );
+    // The phrase, not the bare word: a Stranger instruction may legitimately
+    // say "switch to a free port", which is advice about us rather than about
+    // the occupant. What it must never do is offer switching TO the occupant.
+    assert!(
+        !stranger.contains("Switch to it"),
+        "a Stranger is not ours and never can be; its instruction must be to quit it: {stranger}"
+    );
 }
 
 #[test]
@@ -1462,6 +1479,52 @@ fn a_lost_claim_names_the_copy_that_won_it() {
     let anonymous = already_running_message(3020, None);
     assert!(anonymous.contains("already running"), "{anonymous}");
     assert!(!anonymous.contains("process"), "{anonymous}");
+}
+
+#[test]
+fn the_windows_dialog_file_is_wholly_crlf_whatever_the_message_arrives_as() {
+    // The Windows arm of `show_startup_dialog` sits behind
+    // `#[cfg(target_os = "windows")]`, and routine PR CI compiles src-tauri on
+    // ubuntu-latest only (.github/workflows/ci.yml, job "Frontend build"), so
+    // that block is not type-checked until a release tag builds on
+    // windows-latest. `windows_dialog_file_text` was lifted out of it so the
+    // one part that is pure text is verified on every platform, every PR.
+    let lf = windows_dialog_file_text("CovenCave", "one\n\ntwo");
+    assert_eq!(lf, "CovenCave\r\n\r\none\r\n\r\ntwo");
+
+    assert_eq!(
+        windows_dialog_file_text("CovenCave", "one\r\n\r\ntwo"),
+        lf,
+        "a message that already carries CRLF must not come out as CR CR LF"
+    );
+    assert_eq!(
+        windows_dialog_file_text("CovenCave", "one\rtwo"),
+        "CovenCave\r\n\r\none\r\ntwo",
+        "a lone CR is a break classic Notepad also drops, so it converts too"
+    );
+
+    // The real payload: no bare LF may survive, or classic Notepad shows the
+    // whole refusal as one run-on paragraph.
+    let real = windows_dialog_file_text("CovenCave", &already_running_message(3020, Some(4242)));
+    assert!(
+        !real.replace("\r\n", "").contains('\n'),
+        "every line break must be CRLF: {real:?}"
+    );
+
+    // The case the lone-CR pass exists for, and it is reachable rather than
+    // theoretical: `SidecarStartError::failed` splices the bounded node output
+    // tail into the message verbatim, and node tooling emits \r-terminated
+    // progress lines. `already_running_message` above can never carry one, so
+    // it does not exercise this.
+    let tail = windows_dialog_file_text(
+        "CovenCave failed to start",
+        "Sidecar (node v22) failed on port 3020.\n\nBounded sidecar output tail:\nProgress: 12%\rProgress: 47%\rdone\n",
+    );
+    let stripped = tail.replace("\r\n", "");
+    assert!(
+        !stripped.contains('\n') && !stripped.contains('\r'),
+        "a spliced node tail must come out wholly CRLF, carrying no lone CR: {tail:?}"
+    );
 }
 
 #[test]
