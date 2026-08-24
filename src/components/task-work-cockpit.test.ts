@@ -107,7 +107,7 @@ assert.match(
 );
 
 // The collapsed code rail is an in-flow flex child sized against a flex ROW
-// (44px wide, full height). The cockpit root is a flex COLUMN, so hosting it
+// (32px wide, full height). The cockpit root is a flex COLUMN, so hosting it
 // there docked it as a stub in the bottom-left corner under the composer.
 // It belongs inside the body row, before the body closes.
 const bodyStart = source.indexOf('<div className="task-work-cockpit__body">');
@@ -121,6 +121,6 @@ assert.ok(bodyEnd > bodyStart, "the cockpit body row closes before the rail shee
 assert.ok(railStart < bodyEnd, "the reopen rail renders inside the cockpit body row, not as a column child");
 assert.match(
   cockpitCss,
-  /\.task-work-cockpit__body > \.workspace-rail-reopen \{[\s\S]{0,200}?flex: 0 0 44px;[\s\S]{0,200}?align-self: stretch;/,
-  "the reopen rail reserves a full-height 44px column beside the conversation",
+  /\.task-work-cockpit__body > \.workspace-rail-reopen \{[\s\S]{0,200}?flex: 0 0 32px;[\s\S]{0,200}?align-self: stretch;/,
+  "the reopen rail reserves an ultra-minimal full-height column beside the conversation",
 );
