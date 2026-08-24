@@ -126,6 +126,8 @@ import {
 import { useCopy } from "@/lib/use-copy";
 import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
@@ -1198,44 +1200,48 @@ function ChatHistorySkeleton() {
 }
 
 function ChatHistoryNotice({
+  variant,
   title,
   body,
   onRetry,
   onBack,
 }: {
+  variant: "empty" | "error";
   title: string;
   body: string;
   onRetry?: (() => void) | null;
   onBack?: (() => void) | null;
 }) {
-  return (
-    <div className="mx-auto flex max-w-sm flex-col items-center justify-center rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-6 py-7 text-center">
-      <Icon name="ph:chats" width={20} className="mb-3 text-[var(--text-muted)]" />
-      <p className="text-[length:var(--text-base)] font-semibold text-[var(--text-primary)]">{title}</p>
-      <p className="mt-1.5 max-w-[28ch] text-[length:var(--text-sm)] leading-[1.55] text-[var(--text-muted)]">{body}</p>
-      {(onRetry || onBack) && (
-        <div className="mt-4 flex gap-2">
-          {onBack && (
-            <button
-              type="button"
-              className="cave-btn cave-btn--ghost cave-btn--sm"
-              onClick={onBack}
-            >
-              Back to sessions
-            </button>
-          )}
-          {onRetry && (
-            <button
-              type="button"
-              className="cave-btn cave-btn--primary cave-btn--sm"
-              onClick={onRetry}
-            >
-              Retry
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+  const actions = onRetry || onBack ? (
+    <>
+      {onBack ? (
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          Back to chats
+        </Button>
+      ) : null}
+      {onRetry ? (
+        <Button variant="primary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      ) : null}
+    </>
+  ) : undefined;
+
+  return variant === "error" ? (
+    <ErrorState
+      className="mx-auto w-full max-w-sm"
+      headline={title}
+      subtitle={body}
+      actions={actions}
+    />
+  ) : (
+    <EmptyState
+      className="mx-auto w-full max-w-sm"
+      icon="ph:chats"
+      headline={title}
+      subtitle={body}
+      actions={actions}
+    />
   );
 }
 
@@ -8138,17 +8144,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
+                variant="empty"
                 title={flowBackedSession ? "Flow output unavailable" : "Chat history unavailable"}
                 body={flowBackedSession
-                  ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
-                  : "This session exists, but CovenCave could not find a saved transcript for it yet."}
+                  ? "This flow run exists, but Coven Cave couldn't find saved chat history or output yet."
+                  : "This chat exists, but Coven Cave couldn't find a saved transcript yet."}
                 onRetry={retryHistory}
                 onBack={onBack ? () => onBack(sessionId) : undefined}
               />
             ) : historyState === "error" ? (
               <ChatHistoryNotice
-                title="Could not load chat history"
-                body="The transcript request failed. You can still continue this session."
+                variant="error"
+                title="Couldn't load chat history"
+                body="The transcript request failed. You can still continue this chat."
                 onRetry={retryHistory}
                 onBack={onBack ? () => onBack(sessionId) : undefined}
               />

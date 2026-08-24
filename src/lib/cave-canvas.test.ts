@@ -209,26 +209,46 @@ const art = (id, code, extra = {}) => ({
     "newly minted byte-identical saves preserve incumbent annotations when annotations are omitted",
   );
 
+  const sourcedDuplicate = await upsertCanvasArtifact(
+    art("art-github", "<!doctype html>same", {
+      source: {
+        kind: "github",
+        url: "https://github.com/OpenCoven/coven-cave/blob/main/src/App.tsx",
+        repoUrl: "https://github.com/OpenCoven/coven-cave",
+        filePath: "src/App.tsx",
+        ref: "main",
+        projectFileHash: "a".repeat(64),
+        projectId: "project-1",
+      },
+    }),
+  );
+  assert.equal(
+    sourcedDuplicate.savedId,
+    "art-github",
+    "identical code with different delivery provenance remains a distinct sketch",
+  );
+  assert.equal(sourcedDuplicate.file.artifacts.length, 3);
+
   // Same code but a DIFFERENT kind is a different artifact — no dedupe.
   const otherKind = await upsertCanvasArtifact(art("art-react", "<!doctype html>same", { kind: "react" }));
-  assert.equal(otherKind.file.artifacts.length, 3, "same code under another kind stays separate");
+  assert.equal(otherKind.file.artifacts.length, 4, "same code under another kind stays separate");
   assert.equal(otherKind.savedId, "art-react");
 
   // Different content is a plain insert.
   const different = await upsertCanvasArtifact(art("art-three", "<!doctype html>other"));
-  assert.equal(different.file.artifacts.length, 4, "distinct content inserts normally");
+  assert.equal(different.file.artifacts.length, 5, "distinct content inserts normally");
 
   // Same-id replace (the refine/update path) still wins over content dedupe.
   const replaced = await upsertCanvasArtifact(art("art-three", "<!doctype html>edited"));
   assert.equal(replaced.savedId, "art-three", "same-id update replaces in place");
-  assert.equal(replaced.file.artifacts.length, 4, "same-id update does not grow the store");
+  assert.equal(replaced.file.artifacts.length, 5, "same-id update does not grow the store");
 
   // Same-id replacement remains authoritative even if the replacement now
   // matches another artifact's content. It must not delete the edited record
   // and settle under the other id.
   const matchingReplace = await upsertCanvasArtifact(art("art-three", "<!doctype html>same"));
   assert.equal(matchingReplace.savedId, "art-three", "same-id update does not settle under a twin");
-  assert.equal(matchingReplace.file.artifacts.length, 4, "same-id update does not collapse distinct records");
+  assert.equal(matchingReplace.file.artifacts.length, 5, "same-id update does not collapse distinct records");
   assert.equal(
     matchingReplace.file.artifacts.find((artifact) => artifact.id === "art-three")?.code,
     "<!doctype html>same",
@@ -237,10 +257,10 @@ const art = (id, code, extra = {}) => ({
   // Unusable payload leaves the store untouched and reports no saved id.
   const junk = await upsertCanvasArtifact({ nope: true });
   assert.equal(junk.savedId, null, "an unusable payload settles nowhere");
-  assert.equal(junk.file.artifacts.length, 4);
+  assert.equal(junk.file.artifacts.length, 5);
 
   await deleteCanvasArtifact("art-react");
-  assert.equal((await loadCanvas()).artifacts.length, 3, "delete by id still works");
+  assert.equal((await loadCanvas()).artifacts.length, 4, "delete by id still works");
 }
 
 // ── Incremental annotation mutations ────────────────────────────────────────

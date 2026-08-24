@@ -35,6 +35,8 @@ import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/ref
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { Tabs } from "@/components/ui/tabs";
+import { CanvasGitHubImportModal } from "@/components/canvas-github-import-modal";
+import type { CanvasArtifactSource } from "@/lib/canvas-artifacts";
 
 const CREATE_SUGGESTIONS = [
   "A pricing page with three plans",
@@ -45,7 +47,13 @@ const CREATE_SUGGESTIONS = [
 // The three ways past the familiar. Each row states what it expects from you,
 // because "Blank React component" alone doesn't say you're leaving the
 // describe-it flow for a hand editor.
-const CODE_SOURCES: { mode: AddTileMode; label: string; description: string; icon: IconName }[] = [
+const CODE_SOURCES: { mode: AddTileMode | "github"; label: string; description: string; icon: IconName }[] = [
+  {
+    mode: "github",
+    label: "GitHub file",
+    icon: "ph:github-logo",
+    description: "Import HTML or React from a repository and connect its project.",
+  },
   {
     mode: "paste",
     label: "Paste code",
@@ -96,6 +104,8 @@ export function CanvasAddTile({
     coalesceMs: 700,
   });
   const [codeMenuOpen, setCodeMenuOpen] = useState(false);
+  const [githubImportOpen, setGitHubImportOpen] = useState(false);
+  const [pendingSource, setPendingSource] = useState<CanvasArtifactSource | null>(null);
   const [familiarMenuOpen, setFamiliarMenuOpen] = useState(false);
   const [codeSaving, setCodeSaving] = useState(false);
   const [codeSaveError, setCodeSaveError] = useState<string | null>(null);
@@ -429,6 +439,7 @@ export function CanvasAddTile({
       pastedTitle: state.pastedTitle,
       code: state.pastedCode,
       kind,
+      ...(pendingSource ? { source: pendingSource } : {}),
     });
     setCodeSaving(true);
     setCodeSaveError(null);
@@ -439,9 +450,10 @@ export function CanvasAddTile({
         body: JSON.stringify({ artifact }),
       });
       if (!response.ok) throw new Error(String(response.status));
-      const data = (await response.json()) as { artifacts?: CanvasArtifact[] };
-      onArtifactsChanged(data.artifacts ?? [], artifact.id);
+      const data = (await response.json()) as { artifacts?: CanvasArtifact[]; savedId?: string };
+      onArtifactsChanged(data.artifacts ?? [], data.savedId ?? artifact.id);
       dispatch({ type: "code-saved" });
+      setPendingSource(null);
       announce(`Saved '${artifact.title}' to Canvas.`);
     } catch {
       setCodeSaveError("Couldn’t save this code to Canvas. Try again.");
@@ -449,10 +461,15 @@ export function CanvasAddTile({
     } finally {
       setCodeSaving(false);
     }
-  }, [announce, codeSaving, onArtifactsChanged, state.mode, state.pastedCode, state.pastedTitle]);
+  }, [announce, codeSaving, onArtifactsChanged, pendingSource, state.mode, state.pastedCode, state.pastedTitle]);
 
-  const chooseCodeMode = useCallback((mode: AddTileMode) => {
+  const chooseCodeMode = useCallback((mode: AddTileMode | "github") => {
     setCodeMenuOpen(false);
+    if (mode === "github") {
+      setGitHubImportOpen(true);
+      return;
+    }
+    setPendingSource(null);
     dispatch({ type: "set-mode", mode });
   }, []);
 
@@ -493,6 +510,16 @@ export function CanvasAddTile({
 
   return (
     <div role="listitem" className="chat-canvas-add__li">
+      <CanvasGitHubImportModal
+        open={githubImportOpen}
+        onClose={() => setGitHubImportOpen(false)}
+        onImported={({ code, title, source }) => {
+          setPendingSource(source);
+          dispatch({ type: "set-mode", mode: "paste" });
+          dispatch({ type: "set-pasted-code", code });
+          dispatch({ type: "set-pasted-title", title });
+        }}
+      />
       <section
         ref={sectionRef}
         className={`chat-canvas-add chat-canvas-add--expanded${hero ? " chat-canvas-add--hero" : ""}`}
@@ -833,11 +860,28 @@ export function CanvasAddTile({
         ) : (
           <>
             <div className="chat-canvas-add__code-head">
-              <button type="button" className="chat-canvas-add__start-code focus-ring" onClick={() => dispatch({ type: "set-mode", mode: "describe" })}>
+              <button
+                type="button"
+                className="chat-canvas-add__start-code focus-ring"
+                onClick={() => {
+                  setPendingSource(null);
+                  dispatch({ type: "set-mode", mode: "describe" });
+                }}
+              >
                 <Icon name="ph:arrow-left" aria-hidden /> Back to description
               </button>
               <span className="chat-canvas-add__kind">{pastedKind === "react" ? "React" : "HTML"}</span>
             </div>
+            {pendingSource ? (
+              <div className="chat-canvas-add__provenance" aria-label="Connected sketch source">
+                <Icon name="ph:github-logo" width={13} aria-hidden />
+                <span>{pendingSource.repoUrl.replace("https://github.com/", "")}</span>
+                <span aria-hidden>→</span>
+                <span>{pendingSource.filePath}</span>
+                <span aria-hidden>→</span>
+                <span>Cave project</span>
+              </div>
+            ) : null}
             <textarea
               ref={editorRef}
               className="chat-canvas-add__editor focus-ring"

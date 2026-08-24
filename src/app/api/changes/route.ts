@@ -9,7 +9,13 @@ import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/sess
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
 import { isSafeBranchName } from "@/lib/issue-worktree";
 import { normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import {
+  canvasCommitRequiresDefaultBranch,
+  exactBranchPushRef,
+  remoteBranchMatchesExpectedHead,
+} from "@/lib/canvas-git-delivery";
 import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
+import { withRepositoryMutation } from "@/lib/server/keyed-transaction-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -599,6 +605,10 @@ export async function POST(req: NextRequest) {
     message?: string;
     title?: string;
     prBody?: string;
+    paths?: unknown;
+    expectedBranch?: string;
+    expectedHead?: string;
+    requireDefaultBranch?: boolean;
     branch?: string;
     baseRef?: string;
   };
@@ -638,13 +648,43 @@ export async function POST(req: NextRequest) {
     if (!message) {
       return NextResponse.json({ ok: false, error: "commit message is required" }, { status: 400 });
     }
-    try {
-      const { stdout: statusOut } = await git(root.repoRoot, ["status", "--porcelain"]);
+    let targetedPaths: string[] | null = null;
+    if (body.paths !== undefined) {
+      if (
+        !Array.isArray(body.paths)
+        || body.paths.length === 0
+        || body.paths.length > 20
+        || body.paths.some((entry) => typeof entry !== "string")
+      ) {
+        return NextResponse.json({ ok: false, error: "paths must be a non-empty list of file paths" }, { status: 400 });
+      }
+      targetedPaths = [...new Set(body.paths.map((entry) => entry.trim().replaceAll("\\", "/")))];
+      if (
+        targetedPaths.some((entry) => !entry || !resolveContainedFile(root.repoRoot, entry))
+      ) {
+        return NextResponse.json({ ok: false, error: "invalid commit path" }, { status: 400 });
+      }
+    }
+    return withRepositoryMutation(root.repoRoot, async () => {
+      try {
+        const pathArgs = targetedPaths ? ["--", ...targetedPaths] : [];
+      const { stdout: statusOut } = await git(
+        root.repoRoot,
+        targetedPaths
+          ? ["--literal-pathspecs", "status", "--porcelain", ...pathArgs]
+          : ["status", "--porcelain"],
+      );
       if (!statusOut.trim()) {
         return NextResponse.json({ ok: false, error: "nothing to commit — the working tree is clean" }, { status: 400 });
       }
       const cur = await currentBranch(root.repoRoot);
       const def = await defaultBranch(root.repoRoot);
+      if (canvasCommitRequiresDefaultBranch(cur, def, body.requireDefaultBranch === true)) {
+        return NextResponse.json(
+          { ok: false, error: `Canvas commits must start from ${def}; switch to ${def} and try again` },
+          { status: 409 },
+        );
+      }
       let branch = cur;
       let branchCreated = false;
       if (cur === def || cur === "HEAD") {
@@ -652,9 +692,19 @@ export async function POST(req: NextRequest) {
         await git(root.repoRoot, ["checkout", "-b", branch]);
         branchCreated = true;
       }
-      await git(root.repoRoot, ["add", "-A"]);
+      await git(
+        root.repoRoot,
+        targetedPaths
+          ? ["--literal-pathspecs", "add", "--", ...targetedPaths]
+          : ["add", "-A"],
+      );
       try {
-        await gitLong(root.repoRoot, ["commit", "-S", "-m", message]);
+        await gitLong(
+          root.repoRoot,
+          targetedPaths
+            ? ["--literal-pathspecs", "commit", "-S", "--only", "-m", message, "--", ...targetedPaths]
+            : ["commit", "-S", "-m", message],
+        );
       } catch (err) {
         // Roll back the just-created branch so a failed commit doesn't strand it.
         if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
@@ -666,17 +716,20 @@ export async function POST(req: NextRequest) {
         );
       }
       const { stdout: sha } = await git(root.repoRoot, ["rev-parse", "--short", "HEAD"]);
+      const { stdout: headOid } = await git(root.repoRoot, ["rev-parse", "HEAD"]);
       return NextResponse.json({
         ok: true,
         sha: sha.trim(),
+        headOid: headOid.trim(),
         branch,
         branchCreated,
         onDefaultBranch: branch === def,
         defaultBranch: def,
       });
-    } catch (err) {
-      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
-    }
+      } catch (err) {
+        return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
+      }
+    });
   }
   // Push the current feature branch and open a GitHub pull request via `gh`.
   // Refuses to run from the default branch (there'd be nothing to PR and the
@@ -688,8 +741,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "PR title is required" }, { status: 400 });
     }
     const prBody = typeof body.prBody === "string" ? body.prBody : "";
-    try {
-      const branch = await currentBranch(root.repoRoot);
+    const expectedBranch = typeof body.expectedBranch === "string" ? body.expectedBranch.trim() : "";
+    const expectedHead = typeof body.expectedHead === "string" ? body.expectedHead.trim() : "";
+    if (expectedBranch && !isSafeBranchName(expectedBranch)) {
+      return NextResponse.json({ ok: false, error: "invalid expected branch" }, { status: 400 });
+    }
+    if (expectedHead && !/^[0-9a-f]{40}$/i.test(expectedHead)) {
+      return NextResponse.json({ ok: false, error: "invalid expected head" }, { status: 400 });
+    }
+    return withRepositoryMutation(root.repoRoot, async () => {
+      try {
+        const branch = await currentBranch(root.repoRoot);
       const def = await defaultBranch(root.repoRoot);
       if (branch === def || branch === "HEAD") {
         return NextResponse.json(
@@ -697,8 +759,43 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
+      if (expectedBranch && branch !== expectedBranch) {
+        return NextResponse.json(
+          { ok: false, error: `the project moved to ${branch}; switch back to ${expectedBranch} before opening the PR` },
+          { status: 409 },
+        );
+      }
+      if (expectedHead) {
+        const { stdout } = await git(root.repoRoot, ["rev-parse", "HEAD"]);
+        if (stdout.trim() !== expectedHead) {
+          return NextResponse.json(
+            { ok: false, error: "the branch changed after the Canvas commit; review the new commit before opening the PR" },
+            { status: 409 },
+          );
+        }
+      }
       try {
-        await gitLong(root.repoRoot, ["push", "-u", "origin", branch]);
+        const pushSource = expectedHead || branch;
+        await gitLong(root.repoRoot, [
+          "push",
+          "-u",
+          "origin",
+          exactBranchPushRef(branch, pushSource),
+        ]);
+        if (expectedHead) {
+          const { stdout } = await gitLong(root.repoRoot, [
+            "ls-remote",
+            "--heads",
+            "origin",
+            `refs/heads/${branch}`,
+          ]);
+          if (!remoteBranchMatchesExpectedHead(stdout, expectedHead)) {
+            return NextResponse.json(
+              { ok: false, error: "the remote branch changed before the pull request could be opened" },
+              { status: 409 },
+            );
+          }
+        }
       } catch (err) {
         return NextResponse.json({ ok: false, error: `git push failed: ${stderrOf(err)}` }, { status: 502 });
       }
@@ -719,9 +816,10 @@ export async function POST(req: NextRequest) {
         if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base: def, existed: true });
         return NextResponse.json({ ok: false, error: `gh pr create failed: ${detail}` }, { status: 502 });
       }
-    } catch (err) {
-      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
-    }
+      } catch (err) {
+        return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
+      }
+    });
   }
   // Switch the checkout's branch — the chat composer's branch menu. `git
   // switch` carries clean local edits along and refuses (with a precise
@@ -732,16 +830,18 @@ export async function POST(req: NextRequest) {
     if (!isSafeBranchName(branch)) {
       return NextResponse.json({ ok: false, error: "invalid branch name" }, { status: 400 });
     }
-    const isLocal = await refExists(root.repoRoot, `refs/heads/${branch}`);
-    if (!isLocal && !(await refExists(root.repoRoot, `refs/remotes/origin/${branch}`))) {
-      return NextResponse.json({ ok: false, error: "branch not found" }, { status: 404 });
-    }
-    try {
-      await git(root.repoRoot, ["switch", branch]);
-      return NextResponse.json({ ok: true, branch: await currentBranch(root.repoRoot) });
-    } catch (err) {
-      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 409 });
-    }
+    return withRepositoryMutation(root.repoRoot, async () => {
+      const isLocal = await refExists(root.repoRoot, `refs/heads/${branch}`);
+      if (!isLocal && !(await refExists(root.repoRoot, `refs/remotes/origin/${branch}`))) {
+        return NextResponse.json({ ok: false, error: "branch not found" }, { status: 404 });
+      }
+      try {
+        await git(root.repoRoot, ["switch", branch]);
+        return NextResponse.json({ ok: true, branch: await currentBranch(root.repoRoot) });
+      } catch (err) {
+        return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 409 });
+      }
+    });
   }
   // Provision a `.worktrees/<branch>` checkout for a user-named branch (the
   // chat composer's "New worktree…" flow) — idempotent; new branches start
@@ -752,20 +852,22 @@ export async function POST(req: NextRequest) {
     if (!isSafeBranchName(branch)) {
       return NextResponse.json({ ok: false, error: "invalid branch name" }, { status: 400 });
     }
-    const result = await provisionBranchWorktree(
-      root.repoRoot,
-      branch,
-      typeof body.baseRef === "string" ? body.baseRef : null,
-    );
-    if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
-    }
-    return NextResponse.json({
-      ok: true,
-      worktree: result.worktree,
-      branch: result.branch,
-      created: result.created,
-      baseRef: result.baseRef,
+    return withRepositoryMutation(root.repoRoot, async () => {
+      const result = await provisionBranchWorktree(
+        root.repoRoot,
+        branch,
+        typeof body.baseRef === "string" ? body.baseRef : null,
+      );
+      if (!result.ok) {
+        return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+      }
+      return NextResponse.json({
+        ok: true,
+        worktree: result.worktree,
+        branch: result.branch,
+        created: result.created,
+        baseRef: result.baseRef,
+      });
     });
   }
   if (action === "restore-checkpoint" || action === "delete-checkpoint") {
@@ -781,13 +883,16 @@ export async function POST(req: NextRequest) {
         fs.unlinkSync(/* turbopackIgnore: true */ abs);
         return NextResponse.json({ ok: true, deleted: body.checkpoint });
       }
-      await restoreCheckpoint(root.repoRoot, abs);
-      return NextResponse.json({ ok: true, restored: body.checkpoint });
+      return await withRepositoryMutation(root.repoRoot, async () => {
+        await restoreCheckpoint(root.repoRoot, abs);
+        return NextResponse.json({ ok: true, restored: body.checkpoint });
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }
+  return withRepositoryMutation(root.repoRoot, async () => {
   if (typeof body.path !== "string") {
     return NextResponse.json(
       { ok: false, error: "projectRoot and path are required" },
@@ -854,4 +959,5 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
+  });
 }

@@ -16,6 +16,24 @@ assert.doesNotMatch(
   "changes route should use gitDiff for every git diff invocation",
 );
 
+for (const action of ["switch-branch", "create-worktree"] as const) {
+  assert.match(
+    source,
+    new RegExp(`if \\(action === "${action}"\\)[\\s\\S]*?return withRepositoryMutation\\(root\\.repoRoot`),
+    `${action} must share the repository mutation lock`,
+  );
+}
+assert.match(
+  source,
+  /action === "restore-checkpoint"[\s\S]*?return await withRepositoryMutation\(root\.repoRoot[\s\S]*?restoreCheckpoint/,
+  "checkpoint restore must share the repository mutation lock and preserve the surrounding error handler",
+);
+assert.match(
+  source,
+  /return withRepositoryMutation\(root\.repoRoot, async \(\) => \{\s*if \(typeof body\.path !== "string"\)/,
+  "file revert must share the repository mutation lock",
+);
+
 assert.match(
   source,
   /function gitStatus[\s\S]*\["-c", "core\.fsmonitor=false", "status", \.\.\.args\]/,

@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./session-changes-panel.tsx", import.meta.url), "utf8");
 const rows = readFileSync(new URL("./session-changes-rows.tsx", import.meta.url), "utf8");
+const changesRoute = readFileSync(new URL("../app/api/changes/route.ts", import.meta.url), "utf8");
 
 assert.match(
   src,
@@ -82,6 +83,31 @@ assert.equal(
 );
 // The bordered icon-button recipe is gone (normalized to the borderless primitive).
 assert.doesNotMatch(src, /const btn =/, "the bordered icon-button recipe (const btn) is removed");
+assert.match(
+  changesRoute,
+  /paths\?: unknown/,
+  "commit requests can scope staging to an explicit file list",
+);
+assert.match(
+  changesRoute,
+  /\["--literal-pathspecs", "commit", "-S", "--only", "-m", message, "--", \.\.\.targetedPaths\]/,
+  "targeted commits exclude unrelated staged and working-tree changes",
+);
+assert.match(
+  changesRoute,
+  /expectedBranch[\s\S]{0,1000}?expectedHead[\s\S]{0,1500}?branch !== expectedBranch[\s\S]{0,1000}?stdout\.trim\(\) !== expectedHead/,
+  "PR creation refuses a checkout that moved after the originating commit",
+);
+assert.match(
+  changesRoute,
+  /const pushSource = expectedHead \|\| branch;[\s\S]{0,400}?exactBranchPushRef\(branch, pushSource\)[\s\S]{0,600}?"ls-remote"/,
+  "PR creation pushes and verifies the exact reviewed commit rather than a mutable branch tip",
+);
+assert.match(
+  changesRoute,
+  /canvasCommitRequiresDefaultBranch\(cur, def, body\.requireDefaultBranch === true\)/,
+  "Canvas can require a dedicated branch from the repository default",
+);
 // Refresh stays a raw <button> so its inner-glyph spin animation survives.
 assert.match(
   src,
