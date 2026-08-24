@@ -676,7 +676,7 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Section and scope controls live in the persistent title bar. */}
+        {/* Desktop gets one compact scope row; mobile keeps the full controls. */}
         <SidebarRailHeader
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
@@ -700,7 +700,7 @@ export function WorkspaceSidebar({
           projectCrewError={workspaceProjectCrewError}
           reloadProjectCrew={reloadWorkspaceProjectCrew}
           contextNotice={workspaceContextNotice}
-          contextMode="mobile"
+          contextMode="all"
         />
 
         <div className="cnav__search-wrap">
