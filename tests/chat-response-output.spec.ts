@@ -131,8 +131,9 @@ test("completed assistant responses render editorial Markdown and accessible con
     "status",
   );
   await expect(bubble.getByText("threads-dgg")).toBeVisible();
-  await expect(bubble.locator("strong")).toContainText("bold");
-  await expect(bubble.locator("em")).toContainText("italics");
+  const prose = bubble.locator(".streaming-turn-prose");
+  await expect(prose.locator("strong")).toContainText("bold");
+  await expect(prose.locator("em")).toContainText("italics");
 
   const width = await bubble.locator(".cave-response-frame").evaluate(
     (element) => element.getBoundingClientRect().width,
@@ -140,7 +141,9 @@ test("completed assistant responses render editorial Markdown and accessible con
   expect(width).toBeLessThanOrEqual(768);
 
   await bubble.hover();
-  await expect(bubble.getByRole("button", { name: "Copy message" })).toBeVisible();
+  await expect(
+    bubble.getByRole("button", { name: "Copy completed response" }),
+  ).toBeVisible();
   await expect(bubble.getByRole("button", { name: "Retry response" })).toBeVisible();
   await bubble.getByRole("button", { name: "Collapse", exact: true }).click();
   await expect(bubble.getByText("Response collapsed")).toBeVisible();

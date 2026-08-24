@@ -587,8 +587,8 @@ assert.match(
 );
 assert.match(
   source,
-  /\{turnStatus !== "complete" && !indicatorVisible && \(/,
-  "Lifecycle chip is suppressed while the turn's own ThinkingIndicator is visible (CHAT-D12-01)",
+  /\{turnStatus !== "complete" && !indicatorVisible && !turn\.pending && \(/,
+  "Lifecycle chip is suppressed while the unified response status or ThinkingIndicator is visible (CHAT-D12-01)",
 );
 assert.match(
   source,

@@ -982,8 +982,14 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
 }
 
 .cave-response-frame[data-state="streaming"]::before {
+  bottom: auto;
+  height: calc(var(--space-12) + var(--space-10));
   background: var(--accent-presence);
   animation: cave-response-presence var(--duration-slow) var(--ease-standard) infinite alternate;
+}
+
+.cave-linear-turn-meta--streaming {
+  display: none;
 }
 
 .cave-response-frame[data-state="error"]::before {
