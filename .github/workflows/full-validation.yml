@@ -98,9 +98,13 @@ jobs:
           cargo test --locked --lib
 
   e2e:
-    name: Validate candidate E2E
+    name: Validate candidate E2E (${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -116,11 +120,30 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test
-      - name: Validate flag-enabled agentic journeys
-        env:
-          NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
-        run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/4
+
+  e2e-agentic:
+    name: Validate candidate E2E (agentic)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm exec playwright test tests/agentic-enhance.spec.ts tests/research-desk-tabs.spec.ts --project=desktop --workers=1 --no-deps
 
   runtime:
     name: Validate candidate runtime (${{ matrix.os }})
@@ -300,7 +323,7 @@ jobs:
   release-candidate-validated:
     name: Release candidate validated
     if: always()
-    needs: [frontend, rust, e2e, runtime, windows-native]
+    needs: [frontend, rust, e2e, e2e-agentic, runtime, windows-native]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every deferred validation job
@@ -308,6 +331,7 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           RUST_RESULT: ${{ needs.rust.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
+          E2E_AGENTIC_RESULT: ${{ needs.e2e-agentic.result }}
           RUNTIME_RESULT: ${{ needs.runtime.result }}
           WINDOWS_NATIVE_RESULT: ${{ needs.windows-native.result }}
         run: |
@@ -315,6 +339,7 @@ jobs:
           test "$FRONTEND_RESULT" = "success"
           test "$RUST_RESULT" = "success"
           test "$E2E_RESULT" = "success"
+          test "$E2E_AGENTIC_RESULT" = "success"
           test "$RUNTIME_RESULT" = "success"
           test "$WINDOWS_NATIVE_RESULT" = "success"
 
@@ -324,6 +349,7 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           RUST_RESULT: ${{ needs.rust.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
+          E2E_AGENTIC_RESULT: ${{ needs.e2e-agentic.result }}
           RUNTIME_RESULT: ${{ needs.runtime.result }}
           WINDOWS_NATIVE_RESULT: ${{ needs.windows-native.result }}
         run: |
@@ -334,7 +360,8 @@ jobs:
             echo "| --- | --- |"
             echo "| Frontend | $FRONTEND_RESULT |"
             echo "| Rust | $RUST_RESULT |"
-            echo "| Playwright | $E2E_RESULT |"
+            echo "| Playwright shards | $E2E_RESULT |"
+            echo "| Playwright agentic | $E2E_AGENTIC_RESULT |"
             echo "| Ubuntu / Windows / macOS runtime | $RUNTIME_RESULT |"
             echo "| Windows native | $WINDOWS_NATIVE_RESULT |"
           } >> "$GITHUB_STEP_SUMMARY"
