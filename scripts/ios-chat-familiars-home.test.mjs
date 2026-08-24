@@ -78,18 +78,8 @@ assert.match(
 );
 assert.match(
   familiarList,
-  /FamiliarDetailStatsModel\.make\(app: app, familiar: familiar, context: scopedContext\)/,
-  "familiar detail stats should be derived from the explicit active project context",
-);
-assert.match(
-  familiarList,
-  /app\.lastActivity\(for: familiar\.id, in: \$0\)/,
-  "familiar detail activity should stay scoped to the explicit project context",
-);
-assert.match(
-  familiarList,
-  /return "No activity yet"/,
-  "familiar detail stats should fall back cleanly when the active project has no activity for a familiar",
+  /FamiliarHubView\(familiar: familiar\)/,
+  "the roster opens the dashboard-backed Familiar hub",
 );
 
 const home = await read("apps/ios/CovenCave/CovenCave/Views/ChatsHomeView.swift");
