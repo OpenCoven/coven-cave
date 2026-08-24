@@ -461,8 +461,13 @@
   min-width: 0;
 }
 
+/* Reserves the lane the absolutely-positioned trigger sits in, so card text
+   never runs under it. Shrunk with the trigger when it became icon-only
+   (cave-w387r) — this rule is the trigger's width plus its right offset, and
+   leaving it at the old pill width would have left a dead gap the text could
+   not use and nothing occupied. */
 .cave-followup-card__entry:has(.cave-followup-card__why-trigger) .cave-followup-card {
-  padding-right: calc(var(--space-10) + var(--space-2));
+  padding-right: calc(var(--space-6) + var(--space-3));
 }
 
 .cave-followup-card {
@@ -503,10 +508,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1);
-  min-width: var(--space-8);
+  /* Square icon button (cave-w387r). `gap` and `padding-inline` existed to
+     space the icon from the word "Why"; with no label they would only make it
+     oblong, and `min-width: var(--space-8)` would hold the old pill's width. */
+  width: var(--space-6);
   height: var(--space-6);
-  padding-inline: var(--space-2);
   transform: translateY(-50%);
   border: 1px solid transparent;
   border-radius: var(--radius-pill);

@@ -59,8 +59,11 @@ function FollowUpRationale({
         aria-haspopup="dialog"
         onClick={() => setOpen((current) => !current)}
       >
-        <Icon name="ph:info" width={12} aria-hidden />
-        <span>Why</span>
+        {/* Icon-only. The accessible name is unaffected: `aria-label` above
+            already reads "Why this suggestion: <label>", which is strictly
+            more informative than the word it replaces, and the visible "Why"
+            was never the accessible name anyway. */}
+        <Icon name="ph:info" width={14} height={14} aria-hidden />
       </button>
       <Popover
         open={open}
