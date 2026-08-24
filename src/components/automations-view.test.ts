@@ -257,6 +257,16 @@ assert.match(source, /onClick=\{\(\) => void load\(true\)\}[\s\S]{0,180}>\s*Retr
 // reference would re-fire the form reset (cron) or is pointless churn (reminder).
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedItem\)\) setSelectedItem\(fresh\)/, "reminder detail panel re-syncs after polls");
+assert.match(
+  source,
+  /const openInboxItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*?item\.kind === "daily-summary"[\s\S]*?item\.link[\s\S]*?onOpenLink\(item\.link\);[\s\S]*?setSelectedItem\(item\)/,
+  "daily summaries open their canonical report link while other inbox items keep the detail panel",
+);
+assert.match(
+  source,
+  /onSelect=\{openInboxItem\}/,
+  "every Rituals list presentation shares the daily-summary navigation boundary",
+);
 
 // ── 2026-07-03 a11y batch ─────────────────────────────────────────────────────
 assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "AutomationsView consumes the shared announcer");
