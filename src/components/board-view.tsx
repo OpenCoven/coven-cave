@@ -24,6 +24,7 @@ import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { SurfaceToolbar } from "@/components/ui/surface-toolbar";
 import { Tabs } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -1052,34 +1053,37 @@ export function BoardView({
 
   return (
     <section className="board-shell">
-      {/* Header */}
-      <header className="board-header">
-        <span className="board-header-title">Tasks</span>
-        {queueSlot ? (
-          <Tabs
-            className="board-header-tabs"
-            variant="segment"
-            size="sm"
-            ariaLabel="Tasks tabs"
-            idPrefix="tasks"
-            value={activeTab}
-            onChange={selectActiveTab}
-            items={[
-              { id: "tasks" as const, label: "Tasks" },
-              { id: "queue" as const, label: "Queue" },
-            ]}
+      <SurfaceToolbar
+        title="Tasks"
+        className="board-header"
+        search={activeTab === "tasks" ? (
+          <BoardTokenSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            familiars={familiars}
+            cards={cards}
+            inputRef={searchRef}
           />
-        ) : null}
-        {activeTab === "tasks" ? (
-        <>
-        <BoardTokenSearch
-          value={searchQuery}
-          onChange={setSearchQuery}
-          familiars={familiars}
-          cards={cards}
-          inputRef={searchRef}
-        />
-        <div className="board-header-controls">
+        ) : undefined}
+        filters={(
+          <>
+            {queueSlot ? (
+              <Tabs
+                className="board-header-tabs"
+                variant="segment"
+                size="sm"
+                ariaLabel="Tasks tabs"
+                idPrefix="tasks"
+                value={activeTab}
+                onChange={selectActiveTab}
+                items={[
+                  { id: "tasks" as const, label: "Tasks" },
+                  { id: "queue" as const, label: "Queue" },
+                ]}
+              />
+            ) : null}
+            {activeTab === "tasks" ? (
+              <>
           {/* Grouping drives status columns (kanban) / status rows (table) when
               "Status", and swimlanes / grouped rows when "Familiar" or
               "Project". The Familiar option is dropped while the board is
@@ -1168,24 +1172,6 @@ export function BoardView({
             </button>
           </div>
 
-          {/* Redesign: Select-multiple is a first-class toolbar verb (a
-              visible icon button), not an overflow item. It applies to the
-              kanban + table surfaces (the gantt has no row selection). */}
-          {!isMobile && (viewMode === "kanban" || viewMode === "table") ? (
-            <button
-              type="button"
-              className={`board-icon-btn${cardSelect.selectMode ? " board-icon-btn--active" : ""}`}
-              title="Select multiple"
-              aria-pressed={cardSelect.selectMode}
-              onClick={() => cardSelect.setSelectMode(!cardSelect.selectMode)}
-            >
-              <Icon name="ph:check-square" width={16} />
-              {cardSelect.selectMode && selectionCount > 0 ? (
-                <span className="board-icon-btn-count">{selectionCount}</span>
-              ) : null}
-            </button>
-          ) : null}
-
           {/* Redesign: Filter dropdown narrows by the grouped dimension. */}
           {showGroupToggle ? (
             <BoardFilterMenu
@@ -1201,13 +1187,6 @@ export function BoardView({
               totalCount={effectiveGroupBy === "project" ? projectFilterLabels.length : STATUSES.length}
             />
           ) : null}
-
-          {/* The trash button owns both destructive verbs: in select mode it
-              deletes the selection (inline confirm popover); otherwise it
-              clears the done tasks in view (the confirm group replaces it
-              while deciding). That keeps clear-done reachable on every
-              surface — table/gantt/phone included — without an overflow menu;
-              the kanban Done column also exposes it inline. */}
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
@@ -1226,51 +1205,56 @@ export function BoardView({
                 Cancel
               </button>
             </div>
-          ) : (
+          ) : null}
+          {toolbarDeleteConfirm && hasSelection ? (
             <div className="board-icon-wrap">
-              <button
-                type="button"
-                className={`board-icon-btn${hasSelection ? " board-icon-btn--danger" : ""}`}
-                title={cardSelect.selectMode ? "Delete selected" : "Clear done"}
-                disabled={cardSelect.selectMode ? !hasSelection : doneCards.length === 0}
-                onClick={() => {
-                  if (cardSelect.selectMode) {
-                    if (hasSelection) setToolbarDeleteConfirm(true);
-                  } else if (doneCards.length > 0) {
-                    setClearConfirm(true);
-                  }
-                }}
-              >
-                <Icon name="ph:trash" width={16} />
-              </button>
-              {toolbarDeleteConfirm && hasSelection ? (
-                <>
-                  <div className="board-confirm-scrim" onClick={() => setToolbarDeleteConfirm(false)} />
-                  <div className="board-confirm-pop" role="dialog" aria-label="Confirm delete tasks">
-                    <div className="board-confirm-title">Delete {selectionCount} {selectionCount === 1 ? "task" : "tasks"}?</div>
-                    <div className="board-confirm-desc">This removes them from the queue. Undo is available briefly.</div>
-                    <div className="board-confirm-actions">
-                      <button type="button" className="board-toolbar-btn" onClick={() => setToolbarDeleteConfirm(false)}>Cancel</button>
-                      <button type="button" className="board-confirm-delete" onClick={() => { bulkDelete(); setToolbarDeleteConfirm(false); }}>Delete</button>
-                    </div>
-                  </div>
-                </>
-              ) : null}
+              <div className="board-confirm-scrim" onClick={() => setToolbarDeleteConfirm(false)} />
+              <div className="board-confirm-pop" role="dialog" aria-label="Confirm delete tasks">
+                <div className="board-confirm-title">Delete {selectionCount} {selectionCount === 1 ? "task" : "tasks"}?</div>
+                <div className="board-confirm-desc">This removes them from the queue. Undo is available briefly.</div>
+                <div className="board-confirm-actions">
+                  <button type="button" className="board-toolbar-btn" onClick={() => setToolbarDeleteConfirm(false)}>Cancel</button>
+                  <button type="button" className="board-confirm-delete" onClick={() => { bulkDelete(); setToolbarDeleteConfirm(false); }}>Delete</button>
+                </div>
+              </div>
             </div>
-          )}
-
-          <button
-            type="button"
-            className="board-new-card-btn"
-            onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
-          >
-            <Icon name="ph:plus" width={15} />
-            New task
-          </button>
-        </div>
-        </>
-        ) : null}
-      </header>
+          ) : null}
+              </>
+            ) : null}
+          </>
+        )}
+        actions={activeTab === "tasks" ? [
+          {
+            id: "new-task",
+            label: "New task",
+            placement: "primary",
+            icon: "ph:plus",
+            onSelect: () => { setModalDefaultStatus("backlog"); setModalOpen(true); },
+          },
+          ...(!isMobile && (viewMode === "kanban" || viewMode === "table") ? [{
+            id: "select-tasks",
+            label: cardSelect.selectMode ? "Stop selecting" : "Select tasks",
+            placement: "visible" as const,
+            icon: "ph:check-square" as const,
+            onSelect: () => cardSelect.setSelectMode(!cardSelect.selectMode),
+          }] : []),
+          {
+            id: "clear-or-delete-tasks",
+            label: cardSelect.selectMode ? "Delete selected" : "Clear done",
+            placement: "overflow",
+            icon: "ph:trash",
+            disabled: cardSelect.selectMode ? !hasSelection : doneCards.length === 0,
+            onSelect: () => {
+              if (cardSelect.selectMode) {
+                if (hasSelection) setToolbarDeleteConfirm(true);
+              } else if (doneCards.length > 0) {
+                setClearConfirm(true);
+              }
+            },
+          },
+        ] : []}
+        overflowAriaLabel="More task actions"
+      />
 
       {activeTab === "queue" && queueSlot ? (
         <div

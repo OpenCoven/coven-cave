@@ -153,6 +153,16 @@ assert.match(
 // primitive (underline variant) supplies role=tablist/tab, aria-selected,
 // the roving tabindex + arrow keys, and the marketplace-tab-* /
 // marketplace-panel-* aria wiring via idPrefix; the hub only feeds it items.
+assert.match(
+  marketplaceView,
+  /import \{ SurfaceToolbar \} from "@\/components\/ui\/surface-toolbar"/,
+  "Marketplace composes the shared primary-surface toolbar",
+);
+assert.match(
+  marketplaceView,
+  /<SurfaceToolbar[\s\S]*className="surface-compact-header"[\s\S]*filters=\{[\s\S]*<Tabs[\s\S]*search=\{/,
+  "Marketplace routes its section filter and scoped search through SurfaceToolbar",
+);
 assert.match(marketplaceView, /<Tabs\s*\n\s*items=\{sectionTabs\}/, "the section bar delegates to the shared Tabs primitive");
 assert.match(marketplaceView, /ariaLabel="Marketplace sections"/, "the section tablist keeps its accessible name");
 assert.match(marketplaceView, /idPrefix="marketplace"/, "idPrefix wires marketplace-tab-* ids + aria-controls to the panels");
