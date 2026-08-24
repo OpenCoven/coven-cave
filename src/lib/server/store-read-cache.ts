@@ -140,7 +140,15 @@ export async function readCachedStore<T>(
 
   let stats: { mtimeNs: bigint; ctimeNs: bigint; size: bigint } | null = null;
   try {
-    const raw = await stat(filePath, { bigint: true });
+    // `turbopackIgnore` because this path is a runtime value, and Turbopack
+    // otherwise treats a dynamic filesystem access as a reason to trace the
+    // whole project ("Dynamic filesystem access causes tracing of the whole
+    // project"). That matters more here than at most call sites: `writeFileAtomic`
+    // imports this module, so without the annotation every route that writes a
+    // store would inherit whole-project tracing — and in this checkout
+    // `.worktrees` alone matches ~237k files. Same convention as
+    // `server/agent-attachments.ts` and `server/assist-runner.ts`.
+    const raw = await stat(/* turbopackIgnore: true */ filePath, { bigint: true });
     stats = { mtimeNs: raw.mtimeNs, ctimeNs: raw.ctimeNs, size: raw.size };
   } catch {
     // ENOENT is the ordinary cold-start shape: the loader returns defaults.
