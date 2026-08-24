@@ -64,4 +64,22 @@ test("registry management: rename and remove (with confirm) when handlers are gi
   assert.match(modal, /variant="danger"/, "the confirmed remove is a danger action");
 });
 
+test("project icons generate, regenerate, and remove through the shared image store", () => {
+  assert.match(modal, /generateProjectIcon/, "uses the tested icon action helper");
+  assert.match(modal, /saveImage: setProjectImage/, "persists generated images through the shared store");
+  assert.match(modal, /clearProjectImage\(project\.root\)/, "offers removal for an existing icon");
+  assert.match(modal, /<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="xl" \/>/, "previews the result at a legible size");
+  assert.match(modal, /hasIcon \? "Regenerate icon" : "Generate icon"/, "names the action for the current state");
+});
+
+test("icon mutations expose progress, errors, and screen-reader feedback", () => {
+  assert.match(modal, /useAnnouncer\(\)/, "uses the shared live-region announcer");
+  assert.match(modal, /loading=\{generatingIcon\}/, "generation has an in-flight state");
+  assert.match(modal, /loading=\{removingIcon\}/, "removal has an in-flight state");
+  assert.match(modal, /announce\(hasIcon \? "Project icon regenerated\." : "Project icon generated\."\)/, "successful generation is announced");
+  assert.match(modal, /announce\(result\.message, "assertive"\)/, "generation failures are announced assertively");
+  assert.match(modal, /announce\(result\.reason, "assertive"\)/, "removal failures are announced assertively");
+  assert.match(modal, /announce\("Project icon removed\."\)/, "removal is announced");
+});
+
 console.log("project-settings-modal.test.ts: ok");

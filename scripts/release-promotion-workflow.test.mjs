@@ -189,8 +189,10 @@ test("candidate validation requires signed tag provenance and calls every deferr
 test("final publishing is final-tag-only and transitively promotion-authorized", async () => {
   const release = await workflow("release.yml");
   const authorization = release.jobs["authorize-release-promotion"];
+  const releaseWeb = release.jobs["release-web-validation"];
 
   assert.deepEqual(release.on.push.tags, ["v*.*.*", "!v*.*.*-*"]);
+  assert.ok(releaseWeb, "release workflow keeps the web validation gate");
   assert.equal(authorization.name, "Authorize release promotion");
   assert.deepEqual(authorization.permissions, { actions: "read", contents: "read" });
   const authorizationCheckout = authorization.steps.find((step) =>
@@ -208,6 +210,11 @@ test("final publishing is final-tag-only and transitively promotion-authorized",
   );
   assert.equal(release.jobs["daemon-package"].needs, "authorize-release-promotion");
   assert.equal(release.jobs["source-version"].needs, "authorize-release-promotion");
+  assert.equal(releaseWeb["timeout-minutes"], 90);
+  assert.ok(
+    releaseWeb.steps.some((step) => step.run === "pnpm exec playwright test --workers=1"),
+    "final release E2E isolates the browser behind one dev-server worker",
+  );
   assert.equal(
     release.jobs["source-version"].outputs["release-commit"],
     "${{ steps.release.outputs.commit }}",
