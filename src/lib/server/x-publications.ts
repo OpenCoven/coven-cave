@@ -55,6 +55,18 @@ const MAX_TEXT_BYTES = 16 * 1024;
 const MAX_NOTE_LENGTH = 500;
 const LOCK_TIMEOUT_MS = 15_000;
 const CONFIRMATION_KEY_BYTES = 32;
+/**
+ * How long a confirmation stays good for. Ten minutes, matching the design
+ * document's exact-preview window.
+ *
+ * The token is already bound to the exact wording, so this does not exist to
+ * stop an approval carrying to different text — that is covered. It bounds
+ * *staleness*: without it, a wording someone reviewed in the morning could be
+ * published from a tab left open all day, and the last thing anyone saw before
+ * an irreversible external write would be hours old. Re-confirming costs one
+ * click and puts the text back in front of a person.
+ */
+const CONFIRMATION_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 const POST_ID = /^\d+$/;
 const PUBLICATION_ID = /^[0-9a-f-]{36}$/;
@@ -285,6 +297,17 @@ async function writeConfirmationKey(target: string, exclusive: boolean): Promise
  * This is not a proof of humanity — nothing server-side can be — and the key
  * is not a secret worth protecting beyond local file permissions. It is a
  * proof that this exact text, on this install, was minted for review.
+ *
+ * Why a keyed digest rather than the random in-memory token the design
+ * document sketched (cave-uajyn): the two differ in where the binding lives.
+ * A random token is an opaque handle that *points at* a frozen payload the
+ * server has to hold; the digest IS the binding, recomputed from the record on
+ * disk at publish time, so there is no second copy of the text to drift and
+ * nothing to lose on restart. The properties the random design bought are all
+ * still here, obtained elsewhere: unguessability from the 32-byte key,
+ * one-time use from the record's own status transition under the
+ * cross-process lock (which a restart cannot forget and an in-memory map
+ * cannot span), and the bounded window from `CONFIRMATION_TOKEN_TTL_MS`.
  */
 async function confirmationKey(): Promise<Buffer> {
   await ensureRealDirectory(publicationsRoot());
@@ -312,17 +335,33 @@ async function confirmationKey(): Promise<Buffer> {
   return writeConfirmationKey(target, false);
 }
 
-async function mintConfirmationToken(
+async function confirmationDigest(
   familiarId: string,
   publicationId: string,
   text: string,
+  mintedAt: number,
 ): Promise<string> {
   const key = await confirmationKey();
   return createHmac("sha256", key)
     // Length-prefixed, so an id cannot be shifted across a delimiter to mint
-    // a token that validates against a different record.
-    .update(`${familiarId.length}:${familiarId}|${publicationId.length}:${publicationId}|${text}`)
+    // a token that validates against a different record. `mintedAt` is inside
+    // the MAC rather than beside it: it travels in the clear so verification
+    // can read it without server-side state, and covering it is what stops a
+    // holder from simply rewriting the timestamp to refresh their own window.
+    .update(
+      `${familiarId.length}:${familiarId}|${publicationId.length}:${publicationId}`
+      + `|${mintedAt}|${text}`,
+    )
     .digest("hex");
+}
+
+async function mintConfirmationToken(
+  familiarId: string,
+  publicationId: string,
+  text: string,
+  mintedAt: number,
+): Promise<string> {
+  return `${mintedAt}.${await confirmationDigest(familiarId, publicationId, text, mintedAt)}`;
 }
 
 function tokensMatch(expected: string, provided: unknown): boolean {
@@ -335,6 +374,56 @@ function tokensMatch(expected: string, provided: unknown): boolean {
   // comparison instead of failing it, turning a refusal into a 500.
   if (providedBytes.length !== expectedBytes.length) return false;
   return timingSafeEqual(expectedBytes, providedBytes);
+}
+
+function splitConfirmationToken(
+  provided: unknown,
+): { mintedAt: number; digest: string } | null {
+  if (typeof provided !== "string") return null;
+  const separator = provided.indexOf(".");
+  if (separator <= 0) return null;
+  const stamp = provided.slice(0, separator);
+  // Digits only, and short enough that `Number` cannot lose precision. A
+  // malformed stamp is a mismatch, never an exception.
+  if (!/^\d{1,15}$/.test(stamp)) return null;
+  const mintedAt = Number(stamp);
+  if (!Number.isSafeInteger(mintedAt)) return null;
+  return { mintedAt, digest: provided.slice(separator + 1) };
+}
+
+/**
+ * `mismatch` — this token was not minted for this record's current wording, so
+ * nothing about it can be trusted, including its timestamp.
+ * `expired` — genuinely minted here, but outside the confirmation window.
+ *
+ * The order matters: authenticity is settled first, so a caller can never
+ * steer the answer by supplying a timestamp of their choosing.
+ */
+type ConfirmationVerdict = "ok" | "mismatch" | "expired";
+
+async function verifyConfirmationToken(input: {
+  familiarId: string;
+  publicationId: string;
+  text: string;
+  provided: unknown;
+  now: Date;
+}): Promise<ConfirmationVerdict> {
+  const parsed = splitConfirmationToken(input.provided);
+  if (!parsed) return "mismatch";
+  const expected = await confirmationDigest(
+    input.familiarId,
+    input.publicationId,
+    input.text,
+    parsed.mintedAt,
+  );
+  if (!tokensMatch(expected, parsed.digest)) return "mismatch";
+  const age = input.now.getTime() - parsed.mintedAt;
+  // A negative age means the clock moved backwards between mint and publish.
+  // Refusing is the fail-closed direction and costs one re-confirmation;
+  // honouring it would make the window unbounded on any machine whose clock
+  // drifts forward and back.
+  if (age < 0 || age > CONFIRMATION_TOKEN_TTL_MS) return "expired";
+  return "ok";
 }
 
 export type XPublicationDraft = { publication: XPublication; confirmationToken: string };
@@ -365,7 +454,8 @@ export async function upsertXPublicationDraft(input: {
 
   return withPublicationsLock(familiarId, async () => {
     const file = await loadPublicationsFile(familiarId);
-    const timestamp = (input.now ?? new Date()).toISOString();
+    const mintedAt = input.now ?? new Date();
+    const timestamp = mintedAt.toISOString();
 
     let publication: XPublication;
     if (input.publicationId === undefined) {
@@ -398,7 +488,12 @@ export async function upsertXPublicationDraft(input: {
     await savePublicationsFile(familiarId, file);
     return {
       publication,
-      confirmationToken: await mintConfirmationToken(familiarId, publication.id, publication.text),
+      confirmationToken: await mintConfirmationToken(
+        familiarId,
+        publication.id,
+        publication.text,
+        mintedAt.getTime(),
+      ),
     };
   });
 }
@@ -464,15 +559,32 @@ export async function publishXPublication(
       throw new XApiError("invalid-request", `A ${existing.status} X post cannot be published`);
     }
 
-    const expected = await mintConfirmationToken(familiarId, existing.id, existing.text);
-    if (!tokensMatch(expected, input.confirmationToken)) {
+    // Recomputed from the text ON DISK, never from anything the caller sent.
+    // This is what makes replacement text structurally impossible here rather
+    // than merely unimplemented: there is no parameter to carry it, and the
+    // only wording any token can validate against is the stored one.
+    const dispatchAt = now();
+    const verdict = await verifyConfirmationToken({
+      familiarId,
+      publicationId: existing.id,
+      text: existing.text,
+      provided: input.confirmationToken,
+      now: dispatchAt,
+    });
+    if (verdict === "expired") {
+      throw new XApiError(
+        "invalid-request",
+        "This confirmation has expired. Review the wording and confirm again.",
+      );
+    }
+    if (verdict !== "ok") {
       throw new XApiError(
         "invalid-request",
         "This post text has not been confirmed. Review it and confirm again.",
       );
     }
 
-    const timestamp = now().toISOString();
+    const timestamp = dispatchAt.toISOString();
     const dispatched: XPublication = {
       ...existing,
       status: "uncertain",

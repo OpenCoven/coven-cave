@@ -11,6 +11,22 @@ vi.mock("@/lib/icon", () => ({
   Icon: () => createElement("span"),
 }));
 
+// The confirmation Modal (cave-uajyn) portals via `createPortal`, which needs
+// a real DOM `container` argument — react-test-renderer never provides real
+// DOM nodes, and this suite runs under Node's default (non-jsdom) vitest
+// environment, matching every other test in this file. Rather than pull in a
+// DOM environment for one component, the portal is short-circuited to return
+// its child in place: React never sees a Portal marker, so the Modal's actual
+// output — header, body, footer, the real props threaded through — lands in
+// the ordinary component tree exactly where `<Modal>` was written, which is
+// what `renderer.root`/`renderer.toJSON()` below already know how to walk.
+// `useFocusTrap`'s DOM-manipulating effect still no-ops safely: its `ref`
+// resolves to `null` under react-test-renderer (no `createNodeMock`
+// configured), so the effect's `if (!container) return;` guard exits before
+// touching anything DOM-shaped.
+vi.mock("react-dom", () => ({ createPortal: (node: unknown) => node }));
+(globalThis as Record<string, unknown>).document = { body: {} };
+
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { XPublishPanel } from "./x-publish-panel";
 
@@ -151,15 +167,21 @@ test("publishing sends the token minted for the exact text that was confirmed", 
   expect(textarea.props.className).toContain("role-surface-notes");
   await act(async () => textarea.props.onChange({ target: { value: "ship it" } }));
 
-  // Before confirming there is nothing to publish with.
-  expect(button(renderer, "Publish to X").props.disabled).toBe(true);
+  // Before confirming there is nothing to publish with — "Publish to X" lives
+  // only inside the confirmation modal, so it does not exist at all yet.
+  expect(button(renderer, "Publish to X")).toBeUndefined();
 
   await act(async () => button(renderer, "Review this wording").props.onClick());
+  // Confirming opens the modal, and "Publish to X" now lives inside it.
   expect(button(renderer, "Publish to X").props.disabled).toBe(false);
   // The confirmation step is worth nothing unless the exact wording is put in
   // front of the person separately from the box they typed it in.
   expect(panelText(renderer)).toContain("This exact text is confirmed");
   expect(previews(renderer)).toEqual(["ship it"]);
+  // The three things the modal exists to put in front of a person before an
+  // irreversible external write: the exact wording (above), the account it
+  // goes out as, and what is explicitly not attached.
+  expect(panelText(renderer)).toContain("No location will be added.");
 
   await act(async () => button(renderer, "Publish to X").props.onClick());
   const published = requests.find((request) => request.body?.action === "publish");
@@ -195,7 +217,11 @@ test("editing after confirming withdraws the approval before it can be used", as
   expect(button(renderer, "Publish to X").props.disabled).toBe(false);
 
   await act(async () => textarea.props.onChange({ target: { value: "ship it now" } }));
-  expect(button(renderer, "Publish to X").props.disabled).toBe(true);
+  // The approval is withdrawn outright — not merely disabled — which is what
+  // closes the confirmation modal the moment the reviewed wording no longer
+  // matches what is on screen.
+  expect(button(renderer, "Publish to X")).toBeUndefined();
+  expect(panelText(renderer)).not.toContain("This exact text is confirmed");
 });
 
 test("an unresolved attempt holds the composer until a human settles it", async () => {
@@ -223,7 +249,9 @@ test("an unresolved attempt holds the composer until a human settles it", async 
   // for cannot be settled honestly.
   expect(previews(renderer)).toEqual(["did this go out?"]);
   expect(renderer.root.find((node) => node.type === "textarea").props.disabled).toBe(true);
-  expect(button(renderer, "Publish to X").props.disabled).toBe(true);
+  // Held before any wording is even confirmable — "Publish to X" lives only
+  // inside a confirmation modal that never opens while the composer is held.
+  expect(button(renderer, "Publish to X")).toBeUndefined();
 
   await act(async () => button(renderer, "It did not post").props.onClick());
   expect(requests.at(-2)?.body).toMatchObject({
@@ -377,7 +405,8 @@ test("settling the attempt leaves the composer usable, not wedged on a spent id"
   // not, because the record it names can no longer be published or edited.
   expect(textarea(renderer).props.value).toBe("ship it");
   expect(textarea(renderer).props.disabled).toBe(false);
-  expect(button(renderer, "Publish to X").props.disabled).toBe(true);
+  // The spent approval's modal is gone along with it — not merely disabled.
+  expect(button(renderer, "Publish to X")).toBeUndefined();
   expect(button(renderer, "Review this wording").props.disabled).toBe(false);
 
   await act(async () => button(renderer, "Review this wording").props.onClick());
@@ -478,4 +507,105 @@ test("an approval survives a list that does not name its record", async () => {
 
   expect(button(renderer, "Publish to X").props.disabled).toBe(false);
   expect(previews(renderer)).toEqual(["ship it"]);
+});
+
+test("the confirmation modal names the account the post would go out as", async () => {
+  handler = (url, init) => {
+    if (init?.method !== "POST") {
+      // The connection check the confirmation step makes, and the initial
+      // publications load — distinguished by URL, since both are GETs.
+      if (String(url).includes("/api/x/connection")) {
+        return {
+          body: {
+            configured: true,
+            connected: true,
+            account: { id: "42", username: "novaops", name: "Nova Ops" },
+            scopes: ["tweet.write"],
+            activeFlow: false,
+          },
+        };
+      }
+      return { body: { ok: true, publications: [] } };
+    }
+    const body = JSON.parse(String(init.body));
+    if (body.action === "draft") {
+      return {
+        body: { ok: true, publication: { ...DRAFT, text: body.text }, confirmationToken: "t" },
+      };
+    }
+    return { body: { ok: true, publication: { ...DRAFT, status: "published" } } };
+  };
+  const renderer = await render();
+
+  await act(async () => textarea(renderer).props.onChange({ target: { value: "ship it" } }));
+  await act(async () => button(renderer, "Review this wording").props.onClick());
+
+  // The account is captured with the confirmation, not read again at publish
+  // time — the same words posted as a different account is a different act,
+  // so it belongs to what a person is approving, not to a separate status line.
+  expect(panelText(renderer)).toContain("novaops");
+  expect(panelText(renderer)).toContain("No location will be added.");
+});
+
+test("a connection read that fails states the account is unknown rather than guessing or blocking", async () => {
+  // The connection check itself answers a 500 — nothing about the draft or the
+  // token is at fault, so confirming must still succeed. Only the account line
+  // in the modal is affected.
+  handler = (url, init) => {
+    if (init?.method !== "POST") {
+      if (String(url).includes("/api/x/connection")) return { status: 500, body: null };
+      return { body: { ok: true, publications: [] } };
+    }
+    const body = JSON.parse(String(init.body));
+    return {
+      body: { ok: true, publication: { ...DRAFT, text: body.text }, confirmationToken: "t" },
+    };
+  };
+  const renderer = await render();
+
+  await act(async () => textarea(renderer).props.onChange({ target: { value: "ship it" } }));
+  await act(async () => button(renderer, "Review this wording").props.onClick());
+
+  expect(button(renderer, "Publish to X").props.disabled).toBe(false);
+  expect(panelText(renderer)).toContain("could not be confirmed");
+  // The unknown account must not be reported as a settled refusal to publish —
+  // the confirmation still succeeded and Publish is still available.
+  expect(panelText(renderer)).not.toContain("not available for this familiar");
+});
+
+test("two rapid Publish clicks dispatch exactly one request", async () => {
+  // Fired back-to-back with no `act()` boundary between them — the scenario a
+  // DOM `disabled` attribute alone cannot rule out, because React has not yet
+  // committed the re-render from the first click's `setBusy(true)` when the
+  // second one lands (cave-uajyn: the design document's in-flight-request-map
+  // requirement — this is what proves `run`'s own reentrancy guard, not the
+  // button's `disabled` prop, is what makes "exactly one" true).
+  let publishCalls = 0;
+  handler = (url, init) => {
+    if (init?.method !== "POST") return { body: { ok: true, publications: [] } };
+    const body = JSON.parse(String(init.body));
+    if (body.action === "draft") {
+      return {
+        body: { ok: true, publication: { ...DRAFT, text: body.text }, confirmationToken: "t" },
+      };
+    }
+    publishCalls += 1;
+    return { body: { ok: true, publication: { ...DRAFT, status: "published" } } };
+  };
+  const renderer = await render();
+
+  await act(async () => textarea(renderer).props.onChange({ target: { value: "ship it" } }));
+  await act(async () => button(renderer, "Review this wording").props.onClick());
+
+  const onClick = button(renderer, "Publish to X").props.onClick;
+  await act(async () => {
+    // Both fired within the same synchronous tick, before either call's own
+    // `setBusy(true)` has been committed — the closest a test can get to two
+    // real clicks landing on the same not-yet-repainted frame.
+    onClick();
+    onClick();
+  });
+
+  expect(publishCalls).toBe(1);
+  expect(requests.filter((request) => request.body?.action === "publish")).toHaveLength(1);
 });

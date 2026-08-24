@@ -551,6 +551,111 @@ test("a stored record contradicting itself is quarantined, not offered for publi
   }
 });
 
+test("a confirmation older than ten minutes is refused, and sends nothing", async () => {
+  const mintedAt = new Date("2026-08-01T12:00:00.000Z");
+  const { publication, confirmationToken } = await upsertXPublicationDraft({
+    familiarId: FAMILIAR,
+    text: "Reviewed this morning.",
+    now: mintedAt,
+  });
+
+  const sent: string[] = [];
+  // Ten minutes and one second later. The wording is untouched and the record
+  // is still a draft — the ONLY thing wrong is that nobody has looked at this
+  // text recently, which is the whole point of the window.
+  await assert.rejects(
+    publishXPublication(
+      { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken },
+      {
+        ...recordingSend(sent),
+        now: () => new Date(mintedAt.getTime() + 10 * 60 * 1000 + 1000),
+      },
+    ),
+    (error: unknown) =>
+      error instanceof XApiError
+      && error.code === "invalid-request"
+      // Distinct from the "has not been confirmed" refusal: a stale approval
+      // is repaired by re-reading the text, not by hunting for a lost token.
+      && /expired/i.test(error.message),
+  );
+
+  assert.deepEqual(sent, []);
+  assert.equal((await statusOf(publication.id))?.status, "draft", "still publishable after review");
+});
+
+test("a confirmation inside the window still publishes", async () => {
+  const mintedAt = new Date("2026-08-01T12:00:00.000Z");
+  const { publication, confirmationToken } = await upsertXPublicationDraft({
+    familiarId: FAMILIAR,
+    text: "Reviewed nine minutes ago.",
+    now: mintedAt,
+  });
+
+  const sent: string[] = [];
+  const ok = await publishXPublication(
+    { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken },
+    {
+      ...recordingSend(sent),
+      now: () => new Date(mintedAt.getTime() + 9 * 60 * 1000),
+    },
+  );
+
+  assert.equal(ok.publication.status, "published");
+  assert.deepEqual(sent, ["Reviewed nine minutes ago."]);
+});
+
+test("the confirmation window cannot be extended by rewriting the token's timestamp", async () => {
+  const mintedAt = new Date("2026-08-01T12:00:00.000Z");
+  const { publication, confirmationToken } = await upsertXPublicationDraft({
+    familiarId: FAMILIAR,
+    text: "Stale, and someone wants it fresh.",
+    now: mintedAt,
+  });
+
+  // The stamp travels in the clear so verification needs no server-side state.
+  // It is inside the MAC, so moving it forward invalidates the whole token
+  // rather than buying another ten minutes.
+  const digest = confirmationToken.slice(confirmationToken.indexOf(".") + 1);
+  const now = new Date(mintedAt.getTime() + 60 * 60 * 1000);
+  const forwarded = `${now.getTime()}.${digest}`;
+
+  const sent: string[] = [];
+  await assert.rejects(
+    publishXPublication(
+      { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken: forwarded },
+      { ...recordingSend(sent), now: () => now },
+    ),
+    (error: unknown) =>
+      error instanceof XApiError
+      && error.code === "invalid-request"
+      // Not "expired": a rewritten stamp is not a token this install minted at
+      // all, so it is refused as unconfirmed rather than as merely stale.
+      && !/expired/i.test(error.message),
+  );
+  assert.deepEqual(sent, []);
+});
+
+test("a token whose timestamp is in the future is refused rather than trusted", async () => {
+  const mintedAt = new Date("2026-08-01T12:00:00.000Z");
+  const { publication, confirmationToken } = await upsertXPublicationDraft({
+    familiarId: FAMILIAR,
+    text: "Minted after the clock went back.",
+    now: mintedAt,
+  });
+
+  const sent: string[] = [];
+  await assert.rejects(
+    publishXPublication(
+      { familiarId: FAMILIAR, publicationId: publication.id, confirmationToken },
+      // The machine's clock moved backwards between mint and publish. Honouring
+      // this would make the window unbounded on any drifting clock.
+      { ...recordingSend(sent), now: () => new Date(mintedAt.getTime() - 60 * 1000) },
+    ),
+    (error: unknown) => error instanceof XApiError && error.code === "invalid-request",
+  );
+  assert.deepEqual(sent, []);
+});
+
 test("a stored record claiming published without its post id is rejected wholesale", async () => {
   const { publication } = await draft("Half a record.");
   const target = path.join(publicationsDir, `${FAMILIAR}.json`);

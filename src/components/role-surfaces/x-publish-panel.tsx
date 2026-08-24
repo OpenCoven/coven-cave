@@ -16,6 +16,13 @@
  *    a draft covers exactly the text it was minted over. Editing after
  *    confirming drops back to "confirm", visibly, rather than letting an
  *    approval ride from the wording someone read to a later one.
+ *
+ *    That confirmation is a **modal**, and deliberately so: publishing is the
+ *    final irreversible external action this room can take, and the modal is
+ *    what makes the review a step rather than a glance at a panel the person
+ *    is already scrolling past. It carries the three things someone needs to
+ *    approve the act rather than the words — the exact server-returned text,
+ *    the account it goes out as, and what is NOT being attached (cave-uajyn).
  *  - **Nothing retries.** A dispatched write with an unknown outcome leaves an
  *    `uncertain` record. This panel holds the whole composer on that, not just
  *    the record — see `composerGate` for why the wider hold is the right one
@@ -31,8 +38,9 @@
  *    fallback path, because the point of the grant is that there isn't one.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import {
@@ -83,6 +91,31 @@ const NO_PUBLICATIONS: readonly XPublicationRecord[] = [];
  */
 const POST_ID = /^\d+$/;
 
+/**
+ * The handle the confirmed post would go out as, or `null` if nothing answered.
+ *
+ * Never throws. This runs inside the confirmation step, and a connection read
+ * that failed must not turn a successfully minted approval into an error —
+ * the modal states the unknown instead. The publish itself is still gated by
+ * the server's own write preflight, which is where a genuinely missing
+ * connection is refused in the server's own words.
+ */
+async function readConnectedAccount(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/x/connection", { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as {
+      connected?: unknown;
+      account?: { username?: unknown } | null;
+    } | null;
+    if (!json || json.connected !== true) return null;
+    const username = json.account?.username;
+    return typeof username === "string" && username !== "" ? username : null;
+  } catch {
+    return null;
+  }
+}
+
 async function postPublishAction(body: Record<string, unknown>): Promise<PublishWire> {
   const res = await fetch("/api/x/publish", {
     method: "POST",
@@ -105,6 +138,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [postIdDrafts, setPostIdDrafts] = useState<Record<string, string>>({});
   const { announce } = useAnnouncer();
+  const noLocationId = useId();
 
   const load = useCallback(async (): Promise<PublicationsState> => {
     const res = await fetch(
@@ -154,8 +188,25 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
    * would mean the room never learned about it: the composer would stay
    * unheld, the resolve form would never render, and the only way to reach the
    * record would be to leave the room and come back.
+   *
+   * `busyRef` is what actually makes "no two can interleave" true, rather than
+   * merely advertised. The `busy` STATE alone only disables the DOM button —
+   * real, but not airtight: a second dispatch reaching this function before
+   * React has committed and painted that disabled attribute (a fast repeat
+   * click, a held Enter key) would see the stale, not-yet-busy render and run
+   * anyway, sending a second `/api/x/publish` request for the same confirmed
+   * text. The server's own lock still turns that into `alreadyPublished` or
+   * `ambiguous-write` rather than a duplicate post, but the exact-once
+   * property this room advertises should not depend on winning that race
+   * server-side when refusing the reentrant call costs one synchronous check
+   * (cave-uajyn — the design document asks for exactly this: "An in-memory
+   * in-flight request map ... prevent[s] a double click from dispatching a
+   * second create-post call").
    */
+  const busyRef = useRef(false);
   const run = useCallback(async (action: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setActionError(null);
     setNotice(null);
@@ -167,22 +218,31 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       announce(message, "assertive");
     } finally {
       await reload({ retainData: true });
+      busyRef.current = false;
       setBusy(false);
     }
   }, [announce, reload]);
 
   const confirm = useCallback(() => run(async () => {
-    const result = await postPublishAction({
-      action: "draft",
-      familiarId,
-      text,
-      // Reuse this composer's own draft record rather than accumulating one
-      // per keystroke-session. Only a record still in `draft` can be reused —
-      // the store refuses to edit anything else — and the reconciliation
-      // effect below drops the confirmation the moment a reload shows the
-      // record has left `draft`, so a settled id is never re-sent here.
-      ...(confirmation ? { publicationId: confirmation.publicationId } : {}),
-    });
+    // Requested together: the account is part of what the confirmation modal
+    // asks a person to approve, not a separate fact fetched after the fact.
+    // `readConnectedAccount` never throws — a failed read shows as "could not
+    // be confirmed" in the modal rather than blocking a mint that otherwise
+    // succeeded.
+    const [result, account] = await Promise.all([
+      postPublishAction({
+        action: "draft",
+        familiarId,
+        text,
+        // Reuse this composer's own draft record rather than accumulating one
+        // per keystroke-session. Only a record still in `draft` can be reused —
+        // the store refuses to edit anything else — and the reconciliation
+        // effect below drops the confirmation the moment a reload shows the
+        // record has left `draft`, so a settled id is never re-sent here.
+        ...(confirmation ? { publicationId: confirmation.publicationId } : {}),
+      }),
+      readConnectedAccount(),
+    ]);
     if (!result.publication || typeof result.confirmationToken !== "string") {
       throw new Error("The Cave did not return a confirmation for that draft.");
     }
@@ -190,9 +250,20 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       publicationId: result.publication.id,
       text: result.publication.text,
       token: result.confirmationToken,
+      account,
     });
-    announce("This wording is confirmed. Publishing sends it once.");
+    announce("This wording is confirmed. Review it in the dialog, then publish.");
   }), [announce, confirmation, familiarId, run, text]);
+
+  // Withdraws the approval without touching the server: the token stays valid
+  // server-side (nothing there knows a person changed their mind), but the
+  // room simply stops offering to spend it. Dropping `confirmation` puts the
+  // gate back to "confirm", which is what closes the modal AND re-enables
+  // "Review this wording" for another look.
+  const withdraw = useCallback(() => {
+    if (busy) return;
+    setConfirmation(null);
+  }, [busy]);
 
   const publish = useCallback(() => run(async () => {
     if (gate.kind !== "publish") return;
@@ -420,16 +491,6 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
           : ""}
       </p>
 
-      {gate.kind === "publish" && (
-        <div className="role-surface-notice">
-          <p>
-            <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
-            This exact text is confirmed. Publishing sends it once.
-          </p>
-          <pre className="role-surface-content">{gate.confirmation.text}</pre>
-        </div>
-      )}
-
       {/*
         Neither of these carries `role="alert"`. Both are announced through
         `useAnnouncer` at the moment they are set, which is the room's idiom
@@ -451,15 +512,61 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         >
           Review this wording
         </button>
-        <button
-          type="button"
-          className="role-surface-chip role-surface-chip--accent focus-ring"
-          disabled={busy || gate.kind !== "publish"}
-          onClick={() => void publish()}
-        >
-          Publish to X
-        </button>
       </div>
+
+      {/*
+        The confirmation modal — the final, irreversible external action gets
+        a modal rather than an inline notice a person could scroll past. It is
+        the only place "Publish to X" appears: the dispatch action lives here,
+        not in the row above, so publishing is always a deliberate second step
+        after "Review this wording" rather than a second click on a button
+        that was already on screen.
+      */}
+      {gate.kind === "publish" && (
+        <Modal
+          open
+          onClose={withdraw}
+          dismissOnEscape={!busy}
+          dismissOnBackdrop={!busy}
+          ariaLabel="Confirm X post"
+          ariaDescribedBy={noLocationId}
+          footerActions={(
+            <>
+              <button
+                type="button"
+                className="role-surface-chip focus-ring"
+                disabled={busy}
+                onClick={withdraw}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="role-surface-chip role-surface-chip--accent focus-ring"
+                disabled={busy}
+                onClick={() => void publish()}
+              >
+                Publish to X
+              </button>
+            </>
+          )}
+        >
+          <p className="role-surface-notice">
+            <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
+            This exact text is confirmed. Publishing sends it once.
+          </p>
+          <pre className="role-surface-content">{gate.confirmation.text}</pre>
+          <p className="role-surface-hint">
+            {gate.confirmation.account
+              ? <>Posting as <strong>@{gate.confirmation.account}</strong>.</>
+              : "The connected account could not be confirmed."}
+          </p>
+          <p className="role-surface-metric">
+            {weightedPostLength(gate.confirmation.text)} / {X_POST_WEIGHTED_LIMIT} weighted characters
+          </p>
+          <p id={noLocationId} className="role-surface-hint">No location will be added.</p>
+        </Modal>
+      )}
 
       {published.length > 0 && (
         <ul className="role-surface-list">
