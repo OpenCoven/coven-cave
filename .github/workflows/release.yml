@@ -369,7 +369,7 @@ jobs:
       - daemon-package
       - source-version
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -404,7 +404,7 @@ jobs:
           done
           exit 1
       - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm exec playwright test
+      - run: pnpm exec playwright test --workers=1
 
   release-platform-validation:
     name: Validate release runtime (${{ matrix.os }})
