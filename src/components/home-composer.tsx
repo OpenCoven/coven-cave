@@ -46,7 +46,7 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useDictation } from "@/lib/voice/use-dictation";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
-import { canonicalize, inlineSlashCommandPrompt } from "@/lib/slash-commands";
+import { canonicalize, inlineSlashCommandPrompt, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ComposerPlusMenu } from "@/components/composer-plus-menu";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -536,9 +536,8 @@ export function HomeComposer({
     // Slash commands bypass the destination model entirely — same contract
     // as the chat composer's slash dispatch.
     if (prompt.startsWith("/")) {
-      const [rawCmd, ...rest] = prompt.split(/\s+/);
+      const { token: rawCmd, args } = splitSlashCommandPrompt(prompt);
       const command = canonicalize(rawCmd) ?? rawCmd;
-      const args = rest.join(" ");
       if (command === "/model") {
         if (!selectedFamiliarId) {
           onToast("Choose one familiar in the rail before changing models.");

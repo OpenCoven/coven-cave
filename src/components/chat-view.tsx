@@ -116,7 +116,7 @@ import {
 } from "@/lib/chat-new-session-defaults";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
-import { canonicalize, formatHelp } from "@/lib/slash-commands";
+import { canonicalize, formatHelp, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import {
   CHAT_VIEW_HANDOFF_SCOPE,
@@ -4800,9 +4800,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const intentFromSlash = (raw: string): boolean => {
     const trimmed = raw.trim();
     if (!trimmed.startsWith("/")) return false;
-    const space = trimmed.indexOf(" ");
-    const token = space < 0 ? trimmed : trimmed.slice(0, space);
-    const args = space < 0 ? "" : trimmed.slice(space + 1).trim();
+    const { token, args } = splitSlashCommandPrompt(trimmed);
     const command = canonicalize(token) ?? token;
 
     if (command === "/clear") {

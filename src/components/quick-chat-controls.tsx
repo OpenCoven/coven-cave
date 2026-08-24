@@ -28,7 +28,7 @@ import type {
 import { inventoryProvenanceLabel, useRuntimeModelInventory } from "@/lib/use-runtime-model-options";
 import { canonicalHarnessId } from "@/lib/harness-adapters";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
-import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
+import { SLASH_COMMANDS, canonicalize, splitSlashCommandPrompt } from "@/lib/slash-commands";
 import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
   buildComposerSkillPrompt,
@@ -418,9 +418,8 @@ export function QuickChatComposer({
   // /board) get a pointer to the full app; typos keep the draft for fixing.
   const runSlash = useCallback(
     (prompt: string) => {
-      const [rawCmd = "", ...rest] = prompt.split(/\s+/);
+      const { token: rawCmd, args } = splitSlashCommandPrompt(prompt);
       const command = canonicalize(rawCmd) ?? rawCmd;
-      const args = rest.join(" ").trim();
       switch (command) {
         case "/help":
           onDraftChange("");

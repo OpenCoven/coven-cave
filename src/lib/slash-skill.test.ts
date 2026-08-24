@@ -240,6 +240,11 @@ for (const [label, src, draftExpr] of [
 ]) {
   assert.match(
     src,
+    /splitSlashCommandPrompt\(prompt\)/,
+    `${label} preserves multiline slash-command arguments before invoking a skill`,
+  );
+  assert.match(
+    src,
     new RegExp(`const carried = skillCarryOverText\\(${draftExpr}\\);`),
     `${label} reads the operator's own text before invoking a skill`,
   );
