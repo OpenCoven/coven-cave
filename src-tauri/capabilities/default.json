@@ -9,8 +9,7 @@
     "windows"
   ],
   "webviews": [
-    "main",
-    "main-*"
+    "main"
   ],
   "permissions": [
     "core:default",

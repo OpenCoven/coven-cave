@@ -8,8 +8,7 @@
     "windows"
   ],
   "webviews": [
-    "main",
-    "main-*"
+    "main"
   ],
   "remote": {
     "urls": [

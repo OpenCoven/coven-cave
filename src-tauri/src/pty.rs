@@ -70,6 +70,26 @@ static STARTING_SESSIONS: Lazy<Mutex<HashSet<PtySessionKey>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
 static TRUSTED_MAIN_ORIGINS: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
+static PTY_WINDOW_LIFECYCLE: Lazy<PtyWindowLifecycle> = Lazy::new(PtyWindowLifecycle::default);
+
+#[derive(Default)]
+struct PtyWindowLifecycle(Mutex<()>);
+
+impl PtyWindowLifecycle {
+    fn commit_if_current<T>(
+        &self,
+        is_current: impl FnOnce() -> bool,
+        commit: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let _lifecycle = self.0.lock();
+        is_current().then(commit)
+    }
+
+    fn retire<T>(&self, retire: impl FnOnce() -> T) -> T {
+        let _lifecycle = self.0.lock();
+        retire()
+    }
+}
 
 /// Terminate every owned PTY process tree without dropping ConPTY masters on
 /// the Windows UI thread. ClosePseudoConsole could block indefinitely before
@@ -90,7 +110,7 @@ pub fn terminate_all_owned_processes() {
 }
 
 pub fn retire_window_sessions(window_label: &str) {
-    let retired = {
+    let retired = PTY_WINDOW_LIFECYCLE.retire(|| {
         let mut sessions = SESSIONS.lock();
         let keys = sessions
             .keys()
@@ -100,7 +120,7 @@ pub fn retire_window_sessions(window_label: &str) {
         keys.into_iter()
             .filter_map(|key| sessions.remove(&key).map(|session| (key, session)))
             .collect::<Vec<_>>()
-    };
+    });
     for (key, _session) in &retired {
         info!(
             "retiring PTY for destroyed window generation {}/{}/{}",
@@ -231,10 +251,8 @@ pub async fn pty_start(
     // Keep all fallible/blocking PTY startup work on the runtime's dedicated
     // blocking pool. Awaiting the JoinHandle also turns a worker panic into a
     // normal command error instead of letting it escape through WebView2.
-    run_pty_start_worker(move || {
-        pty_start_blocking(app, owner_label, owner_generation, options)
-    })
-    .await
+    run_pty_start_worker(move || pty_start_blocking(app, owner_label, owner_generation, options))
+        .await
 }
 
 async fn run_pty_start_worker<F, T>(start: F) -> Result<T, String>
@@ -357,26 +375,33 @@ fn pty_start_blocking(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
     let scrollback = Arc::new(Mutex::new(Vec::new()));
-    if crate::main_window::registered_main_window_generation(&app, &owner_label)
-        != Some(owner_generation)
-    {
+    let mut session = Some(PtySession {
         #[cfg(target_os = "windows")]
-        let _ = process_job.terminate();
+        process_job,
+        master: pair.master,
+        writer: Arc::new(Mutex::new(writer)),
+        scrollback: scrollback.clone(),
+    });
+    let committed = PTY_WINDOW_LIFECYCLE
+        .commit_if_current(
+            || {
+                crate::main_window::registered_main_window_generation(&app, &owner_label)
+                    == Some(owner_generation)
+            },
+            || {
+                SESSIONS.lock().insert(
+                    session_key.clone(),
+                    session.take().expect("PTY session exists"),
+                );
+            },
+        )
+        .is_some();
+    if !committed {
+        let _uncommitted = session.take().expect("uncommitted PTY session exists");
+        #[cfg(target_os = "windows")]
+        let _ = _uncommitted.process_job.terminate();
         let _ = child.kill();
         return Err("main window closed while PTY startup was in progress".to_string());
-    }
-    {
-        let mut guard = SESSIONS.lock();
-        guard.insert(
-            session_key.clone(),
-            PtySession {
-                #[cfg(target_os = "windows")]
-                process_job,
-                master: pair.master,
-                writer: Arc::new(Mutex::new(writer)),
-                scrollback: scrollback.clone(),
-            },
-        );
     }
     // PTY committed to SESSIONS; pending guard can release without rolling back.
     drop(pending);
@@ -498,13 +523,11 @@ pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
     // Dropping the PtySession drops the master, which closes the slave's
     // controlling tty; the child receives SIGHUP and exits. The waiter
     // thread cleans up SESSIONS and emits pty:exit.
-    let session = SESSIONS
-        .lock()
-        .remove(&PtySessionKey::new(
-            &owner_label,
-            owner_generation,
-            &thread_id,
-        ));
+    let session = SESSIONS.lock().remove(&PtySessionKey::new(
+        &owner_label,
+        owner_generation,
+        &thread_id,
+    ));
     #[cfg(target_os = "windows")]
     if let Some(session) = session {
         let _ = session.process_job.terminate();
@@ -523,9 +546,7 @@ pub fn pty_list(webview: Webview) -> Result<Vec<String>, String> {
     Ok(SESSIONS
         .lock()
         .keys()
-        .filter(|key| {
-            key.window_label == owner_label && key.window_generation == owner_generation
-        })
+        .filter(|key| key.window_label == owner_label && key.window_generation == owner_generation)
         .map(|key| key.thread_id.clone())
         .collect())
 }
@@ -822,6 +843,74 @@ fn augmented_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn window_retirement_cannot_miss_a_concurrent_session_commit() {
+        let lifecycle = Arc::new(PtyWindowLifecycle::default());
+        let current = Arc::new(AtomicBool::new(true));
+        let session_exists = Arc::new(AtomicBool::new(false));
+        let (commit_entered_tx, commit_entered_rx) = mpsc::channel();
+        let (release_commit_tx, release_commit_rx) = mpsc::channel();
+
+        let commit_thread = {
+            let lifecycle = Arc::clone(&lifecycle);
+            let current = Arc::clone(&current);
+            let session_exists = Arc::clone(&session_exists);
+            thread::spawn(move || {
+                lifecycle.commit_if_current(
+                    || current.load(Ordering::SeqCst),
+                    || {
+                        commit_entered_tx.send(()).expect("signal commit");
+                        release_commit_rx.recv().expect("release commit");
+                        session_exists.store(true, Ordering::SeqCst);
+                    },
+                )
+            })
+        };
+        commit_entered_rx.recv().expect("commit entered lifecycle");
+
+        let (retired_tx, retired_rx) = mpsc::channel();
+        current.store(false, Ordering::SeqCst);
+        let retire_thread = {
+            let lifecycle = Arc::clone(&lifecycle);
+            let session_exists = Arc::clone(&session_exists);
+            thread::spawn(move || {
+                lifecycle.retire(|| session_exists.store(false, Ordering::SeqCst));
+                retired_tx.send(()).expect("signal retirement");
+            })
+        };
+        assert!(
+            retired_rx.recv_timeout(Duration::from_millis(25)).is_err(),
+            "retirement must wait while a session commit owns the lifecycle gate"
+        );
+
+        release_commit_tx.send(()).expect("release commit");
+        assert!(commit_thread.join().expect("commit thread").is_some());
+        retired_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("retirement completes after commit");
+        retire_thread.join().expect("retire thread");
+        assert!(!session_exists.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn session_commit_is_rejected_after_window_generation_is_retired() {
+        let lifecycle = PtyWindowLifecycle::default();
+        let current = AtomicBool::new(false);
+        let session_exists = AtomicBool::new(false);
+
+        lifecycle.retire(|| session_exists.store(false, Ordering::SeqCst));
+        let committed = lifecycle.commit_if_current(
+            || current.load(Ordering::SeqCst),
+            || session_exists.store(true, Ordering::SeqCst),
+        );
+
+        assert!(committed.is_none());
+        assert!(!session_exists.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn pty_start_worker_returns_dependency_panics_as_errors() {

@@ -5,6 +5,17 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 
 pub(super) const PRIMARY_MAIN_WINDOW_LABEL: &str = "main";
 const SECONDARY_MAIN_WINDOW_PREFIX: &str = "main-";
+const MAIN_WINDOW_CAPABILITY_TEMPLATES: [&str; 9] = [
+    include_str!("../capabilities/default.json"),
+    include_str!("../capabilities/loopback-browser.json"),
+    include_str!("../capabilities/loopback-main-events.json"),
+    include_str!("../capabilities/loopback-microphone.json"),
+    include_str!("../capabilities/loopback-speech.json"),
+    include_str!("../capabilities/loopback-updater.json"),
+    include_str!("../capabilities/loopback-window-controls.json"),
+    include_str!("../capabilities/loopback-window-drag.json"),
+    include_str!("../capabilities/loopback-x-oauth.json"),
+];
 
 #[derive(Default)]
 struct MainWindowRegistryInner {
@@ -112,7 +123,39 @@ impl MainWindowRegistry {
 }
 
 pub(super) fn register_main_window(app: &AppHandle, label: &str) -> Result<(), String> {
+    if label != PRIMARY_MAIN_WINDOW_LABEL && !app.state::<MainWindowRegistry>().is_registered(label)
+    {
+        grant_secondary_main_window_capabilities(app, label)?;
+    }
     app.state::<MainWindowRegistry>().register(label)
+}
+
+fn grant_secondary_main_window_capabilities(app: &AppHandle, label: &str) -> Result<(), String> {
+    let capabilities = secondary_main_window_capabilities(label)?;
+    let serialized = serde_json::to_string(&capabilities)
+        .map_err(|error| format!("could not serialize main-window capabilities: {error}"))?;
+    app.add_capability(serialized)
+        .map_err(|error| format!("could not grant '{label}' main-window authority: {error}"))
+}
+
+fn secondary_main_window_capabilities(label: &str) -> Result<Vec<serde_json::Value>, String> {
+    if !is_main_window_label(label) || label == PRIMARY_MAIN_WINDOW_LABEL {
+        return Err(format!(
+            "'{label}' is not a valid secondary main-window label"
+        ));
+    }
+    let mut capabilities = Vec::with_capacity(MAIN_WINDOW_CAPABILITY_TEMPLATES.len());
+    for template in MAIN_WINDOW_CAPABILITY_TEMPLATES {
+        let mut capability: serde_json::Value = serde_json::from_str(template)
+            .map_err(|error| format!("could not parse main-window capability: {error}"))?;
+        let identifier = capability["identifier"]
+            .as_str()
+            .ok_or_else(|| "main-window capability has no identifier".to_string())?;
+        capability["identifier"] = serde_json::json!(format!("{identifier}-{label}"));
+        capability["webviews"] = serde_json::json!([label]);
+        capabilities.push(capability);
+    }
+    Ok(capabilities)
 }
 
 pub(super) fn is_registered_main_window(app: &AppHandle, label: &str) -> bool {
@@ -173,6 +216,21 @@ mod tests {
         assert!(!is_main_window_label("main-alpha-"));
         assert!(!is_main_window_label("main-project.alpha"));
         assert!(!is_main_window_label("main-project/alpha"));
+    }
+
+    #[test]
+    fn secondary_capabilities_target_only_the_exact_registered_label() {
+        let capabilities =
+            secondary_main_window_capabilities("main-2").expect("secondary capabilities");
+        assert_eq!(capabilities.len(), MAIN_WINDOW_CAPABILITY_TEMPLATES.len());
+        for capability in capabilities {
+            assert_eq!(capability["webviews"], serde_json::json!(["main-2"]));
+            assert!(capability["identifier"]
+                .as_str()
+                .is_some_and(|identifier| identifier.ends_with("-main-2")));
+        }
+        assert!(secondary_main_window_capabilities("main--unmanaged").is_err());
+        assert!(secondary_main_window_capabilities(PRIMARY_MAIN_WINDOW_LABEL).is_err());
     }
 
     #[test]

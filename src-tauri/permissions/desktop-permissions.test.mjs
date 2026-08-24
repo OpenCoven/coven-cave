@@ -51,7 +51,7 @@ const bottomTerminal = readFileSync(new URL("../../src/components/bottom-termina
 const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
 const trayQuickChat = readFileSync(new URL("../../src/components/tray-quick-chat.tsx", import.meta.url), "utf8");
 const updateAvailable = readFileSync(new URL("../../src/components/update-available.tsx", import.meta.url), "utf8");
-const managedMainWebviews = ["main", "main-*"];
+const managedMainWebviews = ["main"];
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -308,6 +308,25 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-retry-sidecar-startup",
     "allow-cancel-sidecar-startup",
   ]);
+});
+
+test("secondary main-window authority is granted only to exact native-registered labels", () => {
+  for (const capability of [
+    defaultCapability,
+    loopbackBrowserCapability,
+    loopbackMainEventsCapability,
+    loopbackWindowControlsCapability,
+    loopbackUpdaterCapability,
+    loopbackSpeechCapability,
+    loopbackMicrophoneCapability,
+    loopbackXOAuthCapability,
+  ]) {
+    assert.ok(!capability.webviews.includes("main-*"), `${capability.identifier} must not grant wildcard main authority`);
+  }
+  assert.ok(!loopbackWindowDragCapability.webviews.includes("main-*"));
+  assert.match(mainWindowRust, /grant_secondary_main_window_capabilities\(app, label\)\?/);
+  assert.match(mainWindowRust, /capability\["webviews"\] = serde_json::json!\(\[label\]\)/);
+  assert.match(mainWindowRust, /app\.add_capability\(serialized\)/);
 });
 
 test("Windows sidecar startup status reaches every managed main window", () => {
