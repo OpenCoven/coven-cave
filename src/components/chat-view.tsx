@@ -70,7 +70,13 @@ import {
 } from "@/lib/familiar-drag";
 import { loadGroups, saveGroups } from "@/lib/group-chat";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
-import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
+import {
+  ConversationLoadError,
+  invalidateConversation,
+  loadConversation,
+  readCachedConversation,
+} from "@/lib/conversation-cache";
+import { sameConversationRevision } from "@/lib/conversation-revision";
 import { publishBoardChanged } from "@/lib/board-cache-events";
 import {
   advanceLiveChatGeneration,
@@ -4310,46 +4316,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     void (async () => {
       if (!cachedConversation) setHistoryState("loading");
       try {
-        const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
-        if (!res.ok) {
-          if (cancelled) return;
-          if (keepLiveSession()) {
-            setHistoryState("loaded");
-            return;
-          }
-          if (res.status === 404 && flowBackedSession) {
-            const transcript = await loadFlowSessionTranscript(sessionId);
-            if (cancelled) return;
-            if (keepLiveSession()) {
-              setHistoryState("loaded");
-              return;
-            }
-            const cleanedTranscript = transcript ? stripStepMarkers(transcript) : "";
-            if (cleanedTranscript) {
-              setTurns([]);
-              setActiveLeafId("");
-              setFlowTranscriptFallback(cleanedTranscript);
-              setHistoryState("loaded");
-              return;
-            }
-          }
-          if (!cancelled) {
-            setTurns([]);
-            setActiveLeafId("");
-            setFlowTranscriptFallback(null);
-            setHistoryState(res.status === 404 ? "missing" : "error");
-          }
-          return;
-        }
-        const json = await res.json() as ConversationHistoryPayload;
+        const json = await loadConversation(sessionId) as ConversationHistoryPayload | null;
         if (cancelled) return;
-        setLinkedContext(json.context ?? null);
-        if (json.ok && json.conversation) {
+        setLinkedContext(json?.context ?? null);
+        if (json?.ok && json.conversation) {
           if (hasLiveGeneration()) {
             setHistoryState("loaded");
             return;
           }
-          storeConversation(sessionId, json);
           // Revalidation no-op guard: when the cache already painted this exact
           // conversation, skip re-applying it. applyConversationPayload maps
           // fresh turn objects every call, so an identical re-apply rebuilds the
@@ -4358,13 +4332,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // painted turns untouched; only a real change re-renders.
           if (
             cachedConversation &&
-            JSON.stringify(json.conversation) === JSON.stringify(cachedConversation.conversation)
+            sameConversationRevision(
+              json.conversation,
+              cachedConversation.conversation as ConversationHistoryPayload["conversation"],
+            )
           ) {
             setHistoryState("loaded");
             return;
           }
           applyConversationPayload(json);
-        } else if (json.ok && json.context) {
+        } else if (json?.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.
           if (keepLiveSession()) {
             setHistoryState("loaded");
@@ -4384,16 +4361,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setActiveLeafId("");
           setHistoryState("missing");
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
           if (keepLiveSession()) {
             setHistoryState("loaded");
             return;
           }
+          if (
+            error instanceof ConversationLoadError
+            && error.status === 404
+            && flowBackedSession
+          ) {
+            const transcript = await loadFlowSessionTranscript(sessionId);
+            if (cancelled) return;
+            if (keepLiveSession()) {
+              setHistoryState("loaded");
+              return;
+            }
+            const cleanedTranscript = transcript ? stripStepMarkers(transcript) : "";
+            if (cleanedTranscript) {
+              setTurns([]);
+              setActiveLeafId("");
+              setFlowTranscriptFallback(cleanedTranscript);
+              setHistoryState("loaded");
+              return;
+            }
+          }
           setFlowTranscriptFallback(null);
           setTurns([]);
           setActiveLeafId("");
-          setHistoryState("error");
+          setHistoryState(
+            error instanceof ConversationLoadError && error.status === 404
+              ? "missing"
+              : "error",
+          );
         }
       }
     })();

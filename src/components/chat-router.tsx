@@ -14,6 +14,7 @@ import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex
 import { caveChatoutCodex } from "@/lib/feature-flags";
 import { useIsMobile } from "@/lib/use-viewport";
 import {
+  createChatProjectIndex,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
   normalizeChatProjectRoot,
@@ -321,17 +322,27 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     () => filterVisibleChatSessions(sessions, familiar?.id ?? null),
     [familiar?.id, sessions],
   );
+  const projectIndex = useMemo(() => createChatProjectIndex(projects), [projects]);
   const sidebarGroups = useMemo(
-    () => deriveChatProjectGroups(applyProjectOverrides(sidebarSessions, projectOverrides), projects),
-    [sidebarSessions, projects, projectOverrides],
-  );
-  const migrationSessions = useMemo(
-    () => filterVisibleChatSessions(sessions, null),
-    [sessions],
+    () => deriveChatProjectGroups(
+      applyProjectOverrides(sidebarSessions, projectOverrides),
+      projects,
+      projectIndex,
+      { sessionsNewestFirst: true },
+    ),
+    [sidebarSessions, projects, projectOverrides, projectIndex],
   );
   const migrationGroups = useMemo(
-    () => deriveChatProjectGroups(applyProjectOverrides(migrationSessions, projectOverrides), projects),
-    [migrationSessions, projects, projectOverrides],
+    () => {
+      if (!sidebarHydrated || !sidebarOrganizationMigrationPendingRef.current) return [];
+      return deriveChatProjectGroups(
+        applyProjectOverrides(filterVisibleChatSessions(sessions, null), projectOverrides),
+        projects,
+        projectIndex,
+        { sessionsNewestFirst: true },
+      );
+    },
+    [sidebarHydrated, sessions, projects, projectOverrides, projectIndex],
   );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),

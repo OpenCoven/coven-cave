@@ -440,7 +440,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!res\.ok\) \{[\s\S]*if \(keepLiveSession\(\)\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
+  /catch \(error\) \{[\s\S]*if \(!cancelled\) \{[\s\S]*if \(keepLiveSession\(\)\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
   "A stale missing-history response must not clear an in-flight transcript for the same promoted session",
 );
 assert.match(

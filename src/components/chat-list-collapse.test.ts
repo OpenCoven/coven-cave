@@ -24,7 +24,7 @@ assert.match(src, /!rowCollapsed && \(/, "collapsed section's rows are not rende
 // "Select all" + Delete can never remove chats hidden in a collapsed section.
 assert.match(
   src,
-  /const visibleIds = useMemo\(\(\) => \{[\s\S]{0,400}?if \(effectiveSelection !== "all" \|\| groupBy !== "none" \|\| collapsedSections\.size === 0\) return displayIds;\s*\n\s*return displayIds\.filter\(\(id\) => \{\s*\n\s*const key = isSessionPinned\(pinnedIds, id\) \? "pinned" : "sessions";/,
+  /const pinnedIdSet = useMemo\(\(\) => new Set\(pinnedIds\), \[pinnedIds\]\)[\s\S]*const visibleIds = useMemo\(\(\) => \{[\s\S]{0,400}?if \(effectiveSelection !== "all" \|\| groupBy !== "none" \|\| collapsedSections\.size === 0\) return displayIds;\s*\n\s*return displayIds\.filter\(\(id\) => \{\s*\n\s*const key = pinnedIdSet\.has\(id\) \? "pinned" : "sessions";/,
   "visibleIds excludes rows in a collapsed section (sections exist only in the flat ungrouped view)",
 );
 // A collapsed-"sessions" flag left over from before activity banding must not

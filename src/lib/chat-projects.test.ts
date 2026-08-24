@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   chatProjectName,
+  createChatProjectIndex,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
   isGeneratedChatSession,
@@ -125,6 +126,35 @@ assert.deepEqual(
 }
 
 const groups = deriveChatProjectGroups(filterVisibleChatSessions(sessions, null), projects);
+const indexedGroups = deriveChatProjectGroups(
+  filterVisibleChatSessions(sessions, null),
+  projects,
+  createChatProjectIndex(projects),
+);
+
+assert.deepEqual(
+  indexedGroups,
+  groups,
+  "the indexed project lookup preserves the canonical grouping result",
+);
+
+{
+  const duplicateRootProjects = [
+    ...projects,
+    {
+      id: "alpha-duplicate",
+      name: "Alpha duplicate",
+      root: "/work/alpha/",
+      createdAt: "2026-06-02T00:00:00.000Z",
+      updatedAt: "2026-06-02T00:00:00.000Z",
+    },
+  ];
+  assert.equal(
+    createChatProjectIndex(duplicateRootProjects).byRoot.get("/work/alpha")?.id,
+    "alpha",
+    "indexed lookup preserves projectForRoot's first-match behavior for duplicate roots",
+  );
+}
 
 assert.deepEqual(
   groups.filter((group) => group.sessions.length > 0).map((group) => ({

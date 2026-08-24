@@ -12,10 +12,13 @@ import {
   organizationExpansionKey,
 } from "@/lib/project-organizations";
 import { sessionRailTitle } from "@/lib/session-rail-title";
-import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
+import {
+  cancelHoverPrefetch,
+  hoverPrefetchConversation,
+  prefetchConversation,
+} from "@/lib/conversation-cache";
 import { relativeTime } from "@/lib/relative-time";
 import {
-  isSessionPinned,
   toggleStoredPinnedSession,
 } from "@/lib/chat-session-prefs";
 import { usePinnedSessions } from "@/lib/use-pinned-sessions";
@@ -205,7 +208,15 @@ function ThreadRow({
         onClick={onOpen}
         onMouseEnter={() => hoverPrefetchConversation(session.id)}
         onMouseLeave={cancelHoverPrefetch}
-        onFocus={() => hoverPrefetchConversation(session.id)}
+        onPointerDown={() => {
+          cancelHoverPrefetch();
+          void prefetchConversation(session.id);
+        }}
+        onFocus={(event) => {
+          if (event.target !== event.currentTarget) return;
+          cancelHoverPrefetch();
+          void prefetchConversation(session.id);
+        }}
         onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
@@ -323,7 +334,15 @@ function FolderChatRow({
         onClick={onOpen}
         onMouseEnter={() => hoverPrefetchConversation(session.id)}
         onMouseLeave={cancelHoverPrefetch}
-        onFocus={() => hoverPrefetchConversation(session.id)}
+        onPointerDown={() => {
+          cancelHoverPrefetch();
+          void prefetchConversation(session.id);
+        }}
+        onFocus={(event) => {
+          if (event.target !== event.currentTarget) return;
+          cancelHoverPrefetch();
+          void prefetchConversation(session.id);
+        }}
         onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
@@ -397,7 +416,15 @@ function RecentChatRow({
         onClick={onOpen}
         onMouseEnter={() => hoverPrefetchConversation(session.id)}
         onMouseLeave={cancelHoverPrefetch}
-        onFocus={() => hoverPrefetchConversation(session.id)}
+        onPointerDown={() => {
+          cancelHoverPrefetch();
+          void prefetchConversation(session.id);
+        }}
+        onFocus={(event) => {
+          if (event.target !== event.currentTarget) return;
+          cancelHoverPrefetch();
+          void prefetchConversation(session.id);
+        }}
         onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
           if (e.key !== "Enter") return;
@@ -444,6 +471,7 @@ export function ChatProjectSidebar({
   // Pins come from the shared cross-surface store; the manual drag order is
   // still local (this rail is its only writer).
   const pinnedIds = usePinnedSessions();
+  const pinnedIdSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const [order, setOrder] = useState<string[]>([]);
   // By project (folder tree, default) vs Recent (flat recency list) — the
   // rail's presentation mode, persisted as a plain string.
@@ -792,7 +820,7 @@ export function ChatProjectSidebar({
                             key={session.id}
                             session={session}
                             active={activeSessionId === session.id}
-                            pinned={isSessionPinned(pinnedIds, session.id)}
+                            pinned={pinnedIdSet.has(session.id)}
                             onOpen={() => onOpenSession(session)}
                             onOpenInSplit={
                               onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
