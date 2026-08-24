@@ -64,6 +64,27 @@ assert.match(source, /aria-live="polite"/, "result summaries are announced witho
 assert.match(source, /recentSearches\.map/, "empty-query browse mode exposes recent searches");
 assert.match(source, /Clear recent searches/, "recent search history is explicitly clearable");
 assert.match(source, /aria-label="Clear search query"/, "the palette offers a visible clear-query action");
+assert.match(source, /placeholder="Search Cave…"/, "the palette uses concise search-first placeholder copy");
+assert.match(
+  source,
+  /ph:magnifying-glass[\s\S]*?<input/,
+  "the compact search beam leads with a stable search icon",
+);
+assert.match(
+  source,
+  /className="command-palette__filter focus-ring"/,
+  "category filters use the compact palette control instead of oversized pills",
+);
+assert.match(
+  source,
+  /data-active=\{active\}[\s\S]*?className="command-palette-row focus-ring-inset"/,
+  "result selection is exposed to the compact row styling without weakening listbox semantics",
+);
+assert.doesNotMatch(
+  source,
+  /@familiar scopes results/,
+  "the footer does not repeat scope syntax as persistent visual noise",
+);
 
 // (cave-lzk2) Archived chats never resurface in the browse-mode "Recent chats"
 // jump list; only an explicit typed query can find them.
