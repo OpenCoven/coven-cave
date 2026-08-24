@@ -63,10 +63,13 @@ assert.equal(
   "a 200 that is not our JSON is somebody else's server",
 );
 
-// A dev server started WITH a sidecar token (pnpm mobile:tailscale:app) answers
-// 401 through src/proxy.ts. That is indistinguishable from a stranger's 401, so
-// it is reported separately and the launcher refuses rather than guessing —
-// attaching to a server we cannot identify is how a wrong port gets trusted.
+// A direct loopback probe is no longer gated by a configured token — server.ts
+// stamps it as a trusted local peer and src/proxy.ts admits that through the
+// ordinary app APIs — so a 401 here now means Next answered without server.ts in
+// front, or a pre-stamp CovenCave build, or someone else's authenticated server.
+// All of those are indistinguishable from one another, so the verdict is kept
+// separate and the launcher refuses rather than guessing — attaching to a server
+// we cannot identify is how a wrong port gets trusted.
 for (const status of [401, 403]) {
   assert.equal(
     await classifyPortOwner({ port: 3000, fetchImpl: async () => jsonResponse(status, {}) }),
