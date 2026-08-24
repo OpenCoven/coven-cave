@@ -347,6 +347,64 @@ assert.match(
   "the executed-count floor is derived from the unit-test sources rather than hardcoded",
 );
 
+// ── The simulator guard must fail CLOSED ────────────────────────────────────
+//
+// "No simulator, so nothing ran" is the silent-green shape this whole change
+// exists to remove, and it is the one failure mode that looks like a runner
+// problem rather than a code problem — which is exactly how it would get
+// waved through. The step's existence was already pinned above; what was NOT
+// pinned is that it stops the job.
+const bootStep = stepRunning((run) => run.includes("simctl bootstatus"));
+const bootRun = String(bootStep.run ?? "");
+assert.match(
+  bootRun,
+  /^\s*exit 1$/m,
+  "the simulator step must exit non-zero when no iPhone simulator resolves — a suite that could not run must never read as a pass",
+);
+assert.match(
+  bootRun,
+  /set -euo pipefail/,
+  "the simulator step must abort on the first failing command, including a failed bootstatus",
+);
+assert.notEqual(
+  bootStep["continue-on-error"],
+  true,
+  "the simulator step is a hard prerequisite; it must not be allowed to fail softly",
+);
+
+// ── The verify step is the SOLE verdict, and knows it ───────────────────────
+//
+// The test step runs with `continue-on-error` so a run whose only failures are
+// enumerated in QUARANTINED_FAILURES can be green. That is safe only while all
+// three of the following hold, so all three are pinned: the test step records
+// an outcome, the verify step consumes that exact outcome, and the verify step
+// itself can still fail the job.
+assert.equal(
+  testStep["continue-on-error"],
+  true,
+  "the test step defers its verdict to the verify step, which alone can tell a deferred failure from a new one",
+);
+assert.ok(
+  typeof testStep.id === "string" && testStep.id.length > 0,
+  "the test step needs an id so its outcome can be handed to the verify step",
+);
+const verifyRun = String(verifyStep.run);
+assert.ok(
+  verifyRun.includes(`steps.${testStep.id}.outcome`),
+  `the verify step must receive steps.${testStep.id}.outcome — without it, a test step that died without ` +
+    "writing a bad bundle (a build error, a lost simulator, a cancelled step) would pass unnoticed",
+);
+assert.match(
+  verifyRun,
+  /--xcodebuild-outcome/,
+  "the verify step must cross-check the result bundle against xcodebuild's own exit status",
+);
+assert.notEqual(
+  verifyStep["continue-on-error"],
+  true,
+  "the verify step IS the gate — allowing it to fail softly would switch the whole check off",
+);
+
 // `Frontend build` is the one required context, so the execution gate only
 // blocks if that job keeps consuming the iOS job's result.
 assert.ok(
