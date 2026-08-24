@@ -24,6 +24,7 @@ import {
 import { listResearchMissions } from "../../../../lib/server/research-mission-store.ts";
 import { listSavedLinks } from "../../../../lib/server/research-links.ts";
 import { listSavedXSources, type SavedXSource } from "../../../../lib/server/x-sources.ts";
+import { hasXCapability } from "../../../../lib/server/x-access.ts";
 import { rejectNonLocalRequest } from "../../../../lib/server/api-security.ts";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export type ResearchRecommendationsRouteDeps = {
   listMissions: () => Promise<readonly ResearchMission[]>;
   listSavedLinks: () => Promise<readonly SavedLink[]>;
   listSavedXSources: (familiarId: string) => Promise<readonly SavedXSource[]>;
+  hasXResearchCapability: (familiarId: string) => Promise<boolean>;
   listVaultEntries: (familiarId: string) => Promise<readonly KnowledgeEntry[]>;
   diagnostics?: AgenticDiagnosticSink;
 };
@@ -41,6 +43,7 @@ const productionDeps: ResearchRecommendationsRouteDeps = {
   listMissions: listResearchMissions,
   listSavedLinks,
   listSavedXSources,
+  hasXResearchCapability: (familiarId) => hasXCapability(familiarId, "research"),
   listVaultEntries: async (familiarId) => selectKnowledgeForFamiliar(await listKnowledgeEntries(), familiarId),
 };
 
@@ -71,6 +74,25 @@ function boundedMissions(values: readonly ResearchMission[]): ResearchMission[] 
   return [...values]
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
     .slice(0, MAX_RESEARCH_TOPIC_MISSIONS);
+}
+
+/**
+ * Authorize before reading. Saved X sources are X-derived data, so they are
+ * readable only for a familiar that holds the X research capability — the same
+ * fail-closed grant every `/api/x/*` handler gates on, resolved from persisted
+ * config and never from the request. Without the grant the read is not issued
+ * at all, rather than issued and filtered afterwards.
+ *
+ * The rest of this route's context — Research Desk missions, saved links and
+ * Vault entries — is not X-scoped, so a disabled capability suppresses the X
+ * slice instead of failing the whole recommendation read.
+ */
+async function readSavedXSourcesIfGranted(
+  deps: ResearchRecommendationsRouteDeps,
+  familiarId: string,
+): Promise<readonly SavedXSource[]> {
+  if (!await deps.hasXResearchCapability(familiarId)) return [];
+  return deps.listSavedXSources(familiarId);
 }
 
 async function readVaultWithOneRetry(
@@ -116,7 +138,7 @@ export function createResearchRecommendationsRoute(deps: ResearchRecommendations
     const [missions, savedLinks, xSources, vault] = await Promise.all([
       deps.listMissions(),
       deps.listSavedLinks(),
-      deps.listSavedXSources(familiarId),
+      readSavedXSourcesIfGranted(deps, familiarId),
       readVaultWithOneRetry(deps.listVaultEntries, familiarId, deps.diagnostics),
     ]);
     if (req.signal.aborted) return cancelled(deps.diagnostics);
