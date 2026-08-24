@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { resolveSecret } from "@/lib/vault";
-import { readJsonBody } from "@/lib/server/api-security";
+import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { loadConfig } from "@/lib/cave-config";
 import { buildProjectIconPrompt } from "@/lib/project-icon-prompt";
 import {
@@ -9,6 +9,7 @@ import {
   type IconImageProvider,
 } from "@/lib/project-icon-image-provider";
 import { validateProviderIconImage } from "@/lib/server/project-icon-image";
+import { projectIconRateLimiter } from "@/lib/server/project-icon-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -143,6 +144,9 @@ const GENERATORS: Record<
  * everywhere chats show a ProjectAvatar.
  */
 export async function POST(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const parsed = await readJsonBody<{
     name?: string;
     root?: string;
@@ -181,6 +185,25 @@ export async function POST(req: Request) {
         hint: `Set ${resolved.missingKey} in Vault settings to generate project icons.`,
       },
       { status: 400 },
+    );
+  }
+
+  // Charge only a request that is otherwise ready to call a paid provider.
+  // Invalid input and a missing vault key remain free and repairable.
+  const budget = projectIconRateLimiter.consume(root);
+  if (!budget.allowed) {
+    const wait = `${budget.retryAfterSeconds} ${budget.retryAfterSeconds === 1 ? "second" : "seconds"}`;
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "rate_limited",
+        retryAfterSeconds: budget.retryAfterSeconds,
+        hint: `Try again in ${wait}.`,
+      },
+      {
+        status: 429,
+        headers: { "Retry-After": String(budget.retryAfterSeconds) },
+      },
     );
   }
 

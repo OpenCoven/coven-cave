@@ -62,6 +62,15 @@ function messageForError(body: Record<string, unknown>): string {
       ? `Set ${missingKey} in Vault settings to generate project icons.`
       : GENERIC_FAILURE);
   }
+  if (error === "rate_limited") {
+    const retryAfterSeconds =
+      typeof body.retryAfterSeconds === "number" && Number.isFinite(body.retryAfterSeconds)
+        ? Math.max(1, Math.ceil(body.retryAfterSeconds))
+        : null;
+    return hint || (retryAfterSeconds
+      ? `Try again in ${retryAfterSeconds} ${retryAfterSeconds === 1 ? "second" : "seconds"}.`
+      : "Try generating this icon again in a minute.");
+  }
   // Everything the untrusted-image gate can refuse reads the same way to a
   // user: the provider sent something unusable. The specific reason is the
   // server's diagnostic, not a user-facing distinction.

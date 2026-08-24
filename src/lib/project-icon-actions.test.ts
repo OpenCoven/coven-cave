@@ -258,6 +258,28 @@ test("a provider refusal surfaces the provider's own message", async () => {
   if (!result.ok) assert.match(result.message, /Billing hard limit reached/);
 });
 
+test("a rate limit surfaces the endpoint's retry guidance", async () => {
+  const save = recordingSave();
+  const net = recordingFetch(
+    jsonResponse(
+      {
+        ok: false,
+        error: "rate_limited",
+        retryAfterSeconds: 37,
+        hint: "Try again in 37 seconds.",
+      },
+      429,
+    ),
+  );
+  const result = await generateProjectIcon(
+    { name: "app", root: "/tmp/app", variant: 0 },
+    { fetchImpl: net.fetchImpl, saveImage: save.saveImage },
+  );
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.message, "Try again in 37 seconds.");
+  assert.equal(save.calls.length, 0);
+});
+
 test("every untrusted-image refusal reads as one unusable-image message", async () => {
   for (const error of [
     "unsupported_image_format",

@@ -14,6 +14,7 @@ import {
 import { ProjectAvatar } from "@/components/project-avatar";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 /**
  * Per-project settings sheet — the registry-management surface behind both the
@@ -48,9 +49,11 @@ export function ProjectSettingsModal({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [generatingIcon, setGeneratingIcon] = useState(false);
+  const [removingIcon, setRemovingIcon] = useState(false);
   const [iconError, setIconError] = useState<string | null>(null);
 
   const projectImages = useProjectImages();
+  const { announce } = useAnnouncer();
 
   // Re-seed the fields whenever a (different) project opens the sheet.
   const projectId = project?.id ?? null;
@@ -64,6 +67,7 @@ export function ProjectSettingsModal({
     setConfirmingDelete(false);
     setDeleting(false);
     setGeneratingIcon(false);
+    setRemovingIcon(false);
     setIconError(null);
   }, [projectId, projectName, projectRepoUrl]);
 
@@ -73,7 +77,8 @@ export function ProjectSettingsModal({
   const normalizedRepo = trimmedRepo ? normalizeGitHubRepoUrl(trimmedRepo) : null;
   const linkedSlug = project.repoUrl ? gitHubRepoSlug(project.repoUrl) : null;
   const trimmedName = nameDraft.trim();
-  const busy = saving || deleting;
+  const iconBusy = generatingIcon || removingIcon;
+  const busy = saving || deleting || iconBusy;
 
   const save = async () => {
     if (busy) return;
@@ -116,7 +121,7 @@ export function ProjectSettingsModal({
    * comes from its root and therefore does not move between regenerations.
    */
   const generateIcon = async () => {
-    if (busy || generatingIcon) return;
+    if (busy) return;
     setGeneratingIcon(true);
     setIconError(null);
     const result = await generateProjectIcon(
@@ -124,13 +129,26 @@ export function ProjectSettingsModal({
       { saveImage: setProjectImage },
     );
     setGeneratingIcon(false);
-    if (!result.ok) setIconError(result.message);
+    if (!result.ok) {
+      setIconError(result.message);
+      announce(result.message, "assertive");
+      return;
+    }
+    announce(hasIcon ? "Project icon regenerated." : "Project icon generated.");
   };
 
   const removeIcon = async () => {
-    if (busy || generatingIcon) return;
+    if (busy) return;
+    setRemovingIcon(true);
     setIconError(null);
-    await clearProjectImage(project.root);
+    const result = await clearProjectImage(project.root);
+    setRemovingIcon(false);
+    if (!result.ok) {
+      setIconError(result.reason);
+      announce(result.reason, "assertive");
+      return;
+    }
+    announce("Project icon removed.");
   };
 
   const remove = async () => {
@@ -161,8 +179,8 @@ export function ProjectSettingsModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => void save()} loading={saving} disabled={deleting}>
-            Save
+          <Button variant="primary" onClick={() => void save()} loading={saving} disabled={deleting || iconBusy}>
+            Save changes
           </Button>
         </>
       }
@@ -192,9 +210,10 @@ export function ProjectSettingsModal({
               variant="ghost"
               size="sm"
               onClick={() => void removeIcon()}
-              disabled={busy || generatingIcon}
+              loading={removingIcon}
+              disabled={saving || deleting || generatingIcon}
             >
-              Remove
+              Remove icon
             </Button>
           ) : null}
           <Button
@@ -202,10 +221,10 @@ export function ProjectSettingsModal({
             size="sm"
             leadingIcon="ph:sparkle"
             loading={generatingIcon}
-            disabled={busy}
+            disabled={saving || deleting || removingIcon}
             onClick={() => void generateIcon()}
           >
-            {hasIcon ? "Regenerate" : "Generate"}
+            {hasIcon ? "Regenerate icon" : "Generate icon"}
           </Button>
         </div>
         {iconError ? (

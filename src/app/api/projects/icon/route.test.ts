@@ -18,7 +18,7 @@
  */
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { beforeEach, test } from "node:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -32,6 +32,7 @@ process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = path.join(secretRoot, "local-vault
 const sharp = (await import("sharp")).default;
 const { POST } = await import("./route.ts");
 const { projectTint } = await import("@/lib/comux-projects");
+const { projectIconRateLimiter } = await import("@/lib/server/project-icon-rate-limit");
 
 const ROOT = "/Users/dev/coven-cave";
 const OPENAI_KEY = "sk-test-openai-key";
@@ -87,10 +88,16 @@ function geminiReply(image: Buffer, mimeType: string): Response {
 function request(body: unknown, contentType = "application/json"): Request {
   return new Request("http://localhost:3000/api/projects/icon", {
     method: "POST",
-    headers: { "Content-Type": contentType },
+    headers: {
+      "Content-Type": contentType,
+      Host: "localhost:3000",
+      Origin: "http://localhost:3000",
+    },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
+
+beforeEach(() => projectIconRateLimiter.reset());
 
 /** Run `fn` with exactly the given vault keys present in the environment. */
 async function withKeys<T>(keys: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
@@ -114,6 +121,26 @@ const withOpenAI = <T>(fn: () => Promise<T>) =>
   withKeys({ OPENAI_API_KEY: OPENAI_KEY, GOOGLE_API_KEY: undefined }, fn);
 
 // ── guards that must not spend money ────────────────────────────────────────
+
+test("a non-local request is refused before any provider call", async () => {
+  const net = stubFetch(() => openaiReply(PNG));
+  try {
+    const req = new Request("https://example.com/api/projects/icon", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Host: "example.com",
+        Origin: "https://example.com",
+      },
+      body: JSON.stringify({ name: "coven-cave", root: ROOT }),
+    });
+    const res = await withOpenAI(() => POST(req));
+    assert.equal(res.status, 403);
+    assert.equal(net.calls.length, 0, "a non-local request must not bill the provider");
+  } finally {
+    net.restore();
+  }
+});
 
 test("a non-JSON request is refused before any provider call", async () => {
   const net = stubFetch(() => openaiReply(PNG));
@@ -154,6 +181,28 @@ test("with no image-capable vault key, nothing is requested and the key is named
     assert.equal(body.missingKey, "OPENAI_API_KEY");
     assert.match(body.hint, /Vault/);
     assert.equal(net.calls.length, 0, "an unresolved key must not bill the provider");
+  } finally {
+    net.restore();
+  }
+});
+
+test("a repeated generation is rate limited before a second provider call", async () => {
+  const net = stubFetch(() => openaiReply(PNG));
+  try {
+    const first = await withOpenAI(() =>
+      POST(request({ name: "coven-cave", root: ROOT, model: "openai/gpt-5.5" })),
+    );
+    assert.equal(first.status, 200);
+
+    const repeated = await withOpenAI(() =>
+      POST(request({ name: "coven-cave", root: ROOT, model: "openai/gpt-5.5" })),
+    );
+    assert.equal(repeated.status, 429);
+    assert.equal(repeated.headers.get("retry-after"), "60");
+    const body = await repeated.json();
+    assert.equal(body.error, "rate_limited");
+    assert.equal(body.retryAfterSeconds, 60);
+    assert.equal(net.calls.length, 1, "the throttled request must not bill the provider");
   } finally {
     net.restore();
   }

@@ -297,6 +297,7 @@ export const SUITES = {
     "src/lib/project-icon-image-provider.test.ts",
     "src/lib/project-icon-actions.test.ts",
     "src/lib/server/project-icon-image.test.ts",
+    "src/lib/server/project-icon-rate-limit.test.ts",
     "src/lib/permissions-console.test.ts",
     "src/lib/github-checks.test.ts",
     "src/lib/github-activity.test.ts",
