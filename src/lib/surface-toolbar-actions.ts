@@ -4,6 +4,8 @@ export type SurfaceToolbarActionBase = {
   id: string;
   placement: SurfaceToolbarActionPlacement;
   disabled?: boolean;
+  /** Whether the button is in a toggled/active state (sets aria-pressed). */
+  active?: boolean;
 };
 
 export type PartitionedSurfaceToolbarActions<T extends SurfaceToolbarActionBase> = {

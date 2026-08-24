@@ -197,6 +197,27 @@ test("renders title metadata, enforces the three-action chrome budget, and prese
   );
 });
 
+test("sets aria-pressed on visible buttons when active is true and omits it when unset", async () => {
+  let renderer = null;
+
+  await act(async () => {
+    renderer = create(
+      createElement(SurfaceToolbar, {
+        title: "Tasks",
+        actions: [
+          { id: "select", label: "Select", placement: "visible", active: true, onSelect() {} },
+          { id: "filter", label: "Filter", placement: "visible", onSelect() {} },
+        ],
+      }),
+    );
+  });
+
+  const buttons = renderer.root.findAllByType(Button);
+  assert.equal(buttons.length, 2);
+  assert.equal(buttons[0].props["aria-pressed"], true, "active:true sets aria-pressed=true");
+  assert.equal(buttons[1].props["aria-pressed"], undefined, "active unset leaves aria-pressed absent");
+});
+
 test("omits the overflow trigger when every action fits within the visible budget", async () => {
   let renderer = null;
 

@@ -1363,11 +1363,6 @@
   .ui-surface-toolbar__filters,
   .ui-surface-toolbar__visible-actions {
     width: 100%;
-  }
-
-  .ui-surface-toolbar__controls,
-  .ui-surface-toolbar__filters,
-  .ui-surface-toolbar__visible-actions {
     justify-content: flex-start;
   }
 }
