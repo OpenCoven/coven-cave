@@ -352,12 +352,65 @@
 }
 
 /* ── Typed follow-up options in the composer footer ───────────────────────── */
+/* The toggle shares the pills' row rather than sitting above it. Stacking it
+   made the DEFAULT state 19px TALLER (panel 211 -> 230, measured), which is the
+   opposite of the point: nobody should have to collapse the row just to get
+   back the height the control itself cost. Side by side, the row is
+   max(toggle, pills) = the pills' own touch-target height, so expanded is no
+   worse than before and collapsing is pure gain. */
 .cave-chat-followups {
+  display: flex;
   flex: 0 0 100%;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   min-width: 0;
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-hairline);
+}
+
+/* The cards take the remaining width; the toggle keeps its intrinsic size. */
+.cave-chat-followups > [id^="chat-followups-"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Collapse control (cave-vgj6z). The pills below cannot be made shorter —
+   they carry min-height: var(--touch-target) and chat-follow-up-layout.test.ts
+   pins it as a touch-safety contract — so the only way to give the composer
+   its ~29px back is to let the reader put the row away. The strip stays when
+   collapsed, which is why it renders as a sibling of the cards rather than
+   inside them. */
+.cave-chat-followups__toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cave-chat-followups__toggle:hover {
+  color: var(--text-primary);
+}
+
+/* Expanded, the strip is redundant with the pills it labels, so it stays out
+   of the way until hover/focus rather than spending a permanent row on a count
+   the reader can already see. Collapsed, it is the only thing left and must
+   always read clearly. */
+.cave-chat-followups:not([data-collapsed]) .cave-chat-followups__toggle {
+  opacity: 0.55;
+}
+
+.cave-chat-followups:not([data-collapsed]) .cave-chat-followups__toggle:hover,
+.cave-chat-followups:not([data-collapsed]) .cave-chat-followups__toggle:focus-visible {
+  opacity: 1;
 }
 
 .cave-chat-followups .cave-followup-cards__grid {
@@ -667,6 +720,12 @@
   height: var(--space-8);
 }
 
+/* The governing control-row height for the chat surface — two classes deep, so
+   it beats the one-class rule in cave-composer.css (cave-9v4qt).
+   Left at 36px deliberately. Lowering it to 32 was measured and changed
+   nothing: the row's CONTENT (send button, mic, mode pill) renders 38px tall,
+   so min-height is not the binding constraint and shrinking it is a no-op.
+   Anyone shortening this row has to shrink those controls, not this number. */
 .cave-chat-linear .cave-composer-control-row {
   min-height: calc(var(--space-8) + var(--space-1));
 }
