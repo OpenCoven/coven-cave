@@ -207,7 +207,14 @@ assert.match(
 // non-spanning; the count assertion is the backstop, not the anchor. Closing
 // on `fatal_exit(` rather than `fatal_exit(&error)` keeps the window
 // argument-agnostic and identical to the sibling contract in
-// scripts/port-contract.test.mjs, which pins the release on these same arms.
+// scripts/port-contract.test.mjs, which pins the release on these same arms.//
+// What this still cannot see: both assertions read ORDER IN THE SOURCE TEXT,
+// so wrapping a call in `if claimed_the_port { … }` leaves the text ordered
+// while the call may never run. Verified — that mutation passes both files.
+// It is the ceiling of a source-text contract, not a gap this anchor
+// introduced; the old forms missed it identically. Unconditional execution is
+// what `sidecar_port_lock`'s own unit tests are for. Do not read either
+// contract as promising more than sequence.
 const startupFailureArms = [
   ...setup.matchAll(
     /Err\(SidecarStartError::(?:(?!Err\(SidecarStartError::)[\s\S])*?fatal_exit\(/g,
