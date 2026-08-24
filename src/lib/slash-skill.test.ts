@@ -6,6 +6,7 @@ import {
   resolveSkillArg,
   resolveSkillInvocation,
   buildSkillPrompt,
+  buildComposerSkillPrompt,
   skillCarryOverText,
   skillComposerInsertion,
   skillCommandMatches,
@@ -73,6 +74,20 @@ assert.equal(
   buildSkillPrompt(SKILLS[1], "src/foo.ts", "focus on the auth layer"),
   'Use the "code-review" skill with: src/foo.ts\n\nfocus on the auth layer',
   "arguments and the carried message both survive",
+);
+assert.equal(
+  buildComposerSkillPrompt(
+    SKILLS[1],
+    "/skill code-review focus on auth",
+    "focus on auth",
+  ),
+  'Use the "code-review" skill with: focus on auth',
+  "a submitted slash invocation does not duplicate its arguments as carried text",
+);
+assert.equal(
+  buildComposerSkillPrompt(SKILLS[1], "focus on auth"),
+  'Use the "code-review" skill.\n\nfocus on auth',
+  "a picker invocation still carries plain operator prose",
 );
 assert.equal(
   buildSkillPrompt(SKILLS[1], "line one\nline two"),
@@ -230,8 +245,8 @@ for (const [label, src, draftExpr] of [
   );
   assert.match(
     src,
-    /buildSkillPrompt\(skill, args, carried\)/,
-    `${label} sends the carried message with the skill directive`,
+    new RegExp(`buildComposerSkillPrompt\\(skill, ${draftExpr}, args\\)`),
+    `${label} sends explicit arguments or carried text exactly once`,
   );
   assert.match(
     src,

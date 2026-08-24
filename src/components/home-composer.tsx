@@ -26,7 +26,7 @@ import { Icon } from "@/lib/icon";
 import { isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
   resolveSkillInvocation,
-  buildSkillPrompt,
+  buildComposerSkillPrompt,
   skillCarryOverText,
   skillComposerInsertion,
   type SkillOption,
@@ -390,7 +390,7 @@ export function HomeComposer({
       }
       if (!(await onValidateActingFamiliar(actionFamiliarId, authorityId))) return false;
       setText("");
-      onStartChat(buildSkillPrompt(skill, args, carried), actionFamiliarId, selectedProjectRoot, {
+      onStartChat(buildComposerSkillPrompt(skill, text, args), actionFamiliarId, selectedProjectRoot, {
         initialControls: initialChatControls,
       });
       return true;

@@ -31,7 +31,7 @@ import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
 import { formatModelList, isRuntimeDefaultModelArg, resolveModelArg } from "@/lib/slash-model";
 import {
-  buildSkillPrompt,
+  buildComposerSkillPrompt,
   formatSkillList,
   resolveSkillInvocation,
   skillCarryOverText,
@@ -408,7 +408,7 @@ export function QuickChatComposer({
       }
       if (!launchReady) return;
       onDraftChange("");
-      onSendText?.(buildSkillPrompt(skill, args, carried));
+      onSendText?.(buildComposerSkillPrompt(skill, draft, args));
     },
     [draft, launchReady, onDraftChange, composerRef, onSendText],
   );

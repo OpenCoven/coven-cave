@@ -136,6 +136,23 @@ export function skillCarryOverText(draft: string): string {
   return t.search(/\s/) < 0 ? "" : t;
 }
 
+/** Build a skill prompt from a composer draft. Explicit slash-command
+ *  arguments already came from that draft, so they must not be appended a
+ *  second time as carried operator text. Picker invocations have no explicit
+ *  args and carry the operator's prose instead. */
+export function buildComposerSkillPrompt(
+  skill: SkillOption,
+  draft: string,
+  args = "",
+): string {
+  const explicitArgs = args.trim();
+  return buildSkillPrompt(
+    skill,
+    explicitArgs,
+    explicitArgs ? "" : skillCarryOverText(draft),
+  );
+}
+
 /** Composer text for a skill picked from the ＋ menu, which fills `/skill <id>`
  *  for argument editing instead of sending. Anything already typed is kept
  *  after the command (it becomes the skill's arguments on send) rather than
