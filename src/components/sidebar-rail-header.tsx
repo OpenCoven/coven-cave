@@ -73,6 +73,7 @@ export type SidebarRailHeaderProps = {
   projectCrewError?: string | null;
   reloadProjectCrew?: () => void;
   contextNotice?: string | null;
+  showContext?: boolean;
 };
 
 export function SidebarRailHeader({
@@ -100,6 +101,7 @@ export function SidebarRailHeader({
   projectCrewError,
   reloadProjectCrew,
   contextNotice,
+  showContext = true,
 }: SidebarRailHeaderProps) {
   // Context is ready when every required Task6 prop has been supplied. A prop
   // that is null or false is supplied; undefined means the caller has not wired
@@ -120,7 +122,7 @@ export function SidebarRailHeader({
 
   return (
     <div className="rail-header">
-      <div className="rail-header__scope">
+      {showContext ? <div className="rail-header__scope">
         <WorkspaceContextSwitcher
           projects={workspaceContextReady ? projects! : EMPTY_PROJECTS}
           projectId={workspaceContextReady ? projectId! : null}
@@ -142,7 +144,7 @@ export function SidebarRailHeader({
           onSelectFamiliar={onSelectFamiliar}
           contextNotice={contextNotice}
         />
-      </div>
+      </div> : null}
       <div className="rail-header__actions">
         <button type="button" className="rail-header__new focus-ring" onClick={onNewChat} title={newChatTitle}>
           <Icon

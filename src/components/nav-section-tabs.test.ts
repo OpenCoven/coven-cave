@@ -1,7 +1,7 @@
 // @ts-nocheck
-// Pins the global Home | Chat section switcher (cave-24d2r): both siderail
-// hosts mount it, the tabs carry real tab semantics, and the shell derives the
-// section from the active surface rather than storing a second source of truth.
+// Pins the global Home | Chat section switcher (cave-24d2r): Workspace mounts
+// it in the title bar, the tabs carry real tab semantics, and the shell derives
+// the section from the active surface rather than storing a second source of truth.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -36,12 +36,7 @@ assert.match(tabs, /tabIndex=\{active \? 0 : -1\}/, "the switcher is one tab sto
 assert.match(tabs, /ArrowLeft|ArrowRight/, "arrow keys move between sections");
 assert.match(tabs, /focus-ring/, "tabs carry the shared focus ring");
 
-assert.match(sidebar, /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}/, "the Home rail hosts the switcher");
-assert.match(
-  sidebar,
-  /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}[\s\S]*?<SidebarRailHeader[\s\S]*?onNewChat=\{onNewChat\}/,
-  "the Home rail keeps section tabs and the shared scope + New chat header in order",
-);
+assert.doesNotMatch(sidebar, /<NavSectionTabs/, "the Home rail no longer hosts the switcher");
 assert.match(sidebar, /role="tabpanel"/, "the destination list is the switcher's panel");
 assert.match(
   sidebar,
@@ -67,16 +62,7 @@ assert.match(
   "the shared New chat action is a tinted quiet button, not a solid accent fill",
 );
 
-assert.match(
-  chatSidebar,
-  /<NavSectionTabs section="code" onSectionChange=\{onSectionChange\}/,
-  "the Chat-time rail hosts the same switcher so it never moves between rooms",
-);
-assert.match(
-  chatSidebar,
-  /<NavSectionTabs section="code" onSectionChange=\{onSectionChange\}[\s\S]*?<SidebarRailHeader[\s\S]*?onNewChat=\{onNewChat\}[\s\S]*?newChatTitle="New chat \(⌘N\)"/,
-  "the Chat rail keeps section tabs and the same shared scope + New chat header in order",
-);
+assert.doesNotMatch(chatSidebar, /<NavSectionTabs/, "the Chat rail no longer hosts the switcher");
 assert.doesNotMatch(
   chatSidebar,
   /<SidebarRailHeader[\s\S]{0,600}?Sidebar options/,
@@ -122,6 +108,16 @@ assert.match(
 );
 
 assert.match(workspace, /const navSection = navSectionForMode\(mode\)/, "the shell derives the section from the surface");
+assert.match(
+  workspace,
+  /workspace-titlebar-context[\s\S]*?<NavSectionTabs[\s\S]*?variant="titlebar"/,
+  "Workspace mounts the compact section switcher in the title bar",
+);
+assert.match(
+  workspace,
+  /workspace-titlebar-context[\s\S]*?<WorkspaceContextSwitcher[\s\S]*?variant="titlebar"/,
+  "project and familiar scope sit beside the title-bar section switcher",
+);
 assert.match(
   workspace,
   /setMode\(next === "code" \? "chat" : "home"\)/,

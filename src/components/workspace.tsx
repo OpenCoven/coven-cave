@@ -66,6 +66,8 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
+import { NavSectionTabs } from "@/components/nav-section-tabs";
+import { WorkspaceContextSwitcher } from "@/components/workspace-context-switcher";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { useSurfacePreference } from "@/lib/surface-preferences";
@@ -4699,6 +4701,34 @@ export function Workspace() {
         onRightChatOpenChange={setRightChatOpen}
         topBar={({ navDrawerOpen }) => (
           <>
+            <div className="workspace-titlebar-context">
+              <NavSectionTabs
+                section={navSection}
+                onSectionChange={handleSectionChange}
+                variant="titlebar"
+              />
+              <WorkspaceContextSwitcher
+                projects={registeredProjects}
+                projectId={selectedWorkspaceProjectId}
+                onProjectChange={selectWorkspaceProject}
+                projectLoading={projectsLoading}
+                projectError={projectsError}
+                reloadProjects={reloadProjects}
+                project={selectedWorkspaceProject}
+                createProjectOrThrow={createProjectOrThrow}
+                allFamiliars={resolvedFamiliars}
+                projectCrew={resolvedProjectCrew}
+                projectCrewLoading={effectiveProjectCrewLoading}
+                projectCrewError={projectCrewError}
+                reloadProjectCrew={reloadProjectCrew}
+                activeFamiliarId={activeId}
+                selectedFamiliarIds={scopeIds}
+                onSelectFamiliar={selectFamiliarScope}
+                sessions={sessions}
+                responseNeeded={responseNeeded}
+                variant="titlebar"
+              />
+            </div>
             <FamiliarMenuBar
               activeFamiliarId={activeId}
               // Running processes: clicking the waveform trigger lists each

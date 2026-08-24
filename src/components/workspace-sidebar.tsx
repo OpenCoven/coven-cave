@@ -39,7 +39,6 @@ import {
 } from "@/lib/chat-split";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { type CreateProjectOptions } from "@/lib/chat-add-project";
-import { NavSectionTabs } from "@/components/nav-section-tabs";
 import type { NavSection } from "@/lib/nav-section";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -677,17 +676,7 @@ export function WorkspaceSidebar({
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Global section switcher — Home | Chat (cave-24d2r). This sidebar IS
-            the Code room, so switching to Home hands the rail back to the
-            standard destination list. */}
-        {onSectionChange ? <NavSectionTabs section="code" onSectionChange={onSectionChange} /> : null}
-        {/* Header — the labeled familiar switcher (#2747) and New chat, SHARED
-            with the Home section via SidebarRailHeader so the two controls
-            cannot drift apart across the Home/Chat toggle. WorkspaceSidebar
-            owns the primary Shell nav during Chat; Home exits Chat and restores
-            the normal navigation. This scope control was restored by cave-l3ay
-            after #2750 removed it as a supposed duplicate. The ⌘N hint rides
-            the shared button's trailing slot rather than forking it. */}
+        {/* Section and scope controls live in the persistent title bar. */}
         <SidebarRailHeader
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
@@ -711,6 +700,7 @@ export function WorkspaceSidebar({
           projectCrewError={workspaceProjectCrewError}
           reloadProjectCrew={reloadWorkspaceProjectCrew}
           contextNotice={workspaceContextNotice}
+          showContext={false}
         />
 
         <div className="cnav__search-wrap">

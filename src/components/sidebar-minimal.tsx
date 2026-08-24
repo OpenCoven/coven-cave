@@ -21,7 +21,6 @@ import {
 } from "@/lib/page-drag";
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
-import { NavSectionTabs } from "@/components/nav-section-tabs";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import {
   DEFAULT_NAV_SECTION,
@@ -194,7 +193,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
     section = DEFAULT_NAV_SECTION,
-    onSectionChange,
     onNewChat,
     onOpenSettings,
     onModeChange,
@@ -234,13 +232,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
-      {onSectionChange ? <NavSectionTabs section={section} onSectionChange={onSectionChange} /> : null}
-
-      {/* Familiar scope + New chat (cave-vtk9) — SHARED with the Chat section
-          via SidebarRailHeader, so the two controls cannot drift apart across
-          the Home/Chat toggle the way the forked copies did. The collapsed rail
-          keeps the avatar-only trigger; the mobile top bar keeps its own
-          switcher (the drawer hides this one). */}
+      {/* New chat remains in the rail; section and scope controls live in the
+          persistent title bar so they do not move with the drawer. */}
       <SidebarRailHeader
         familiars={familiars}
         activeFamiliarId={activeFamiliarId ?? null}
@@ -262,6 +255,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         projectCrewError={props.projectCrewError}
         reloadProjectCrew={props.reloadProjectCrew}
         contextNotice={props.contextNotice}
+        showContext={false}
       />
 
       <div

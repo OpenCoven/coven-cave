@@ -32,6 +32,7 @@ export type WorkspaceContextSwitcherProps = {
   sessions: SessionRow[];
   responseNeeded?: Set<string>;
   contextNotice?: string | null;
+  variant?: "rail" | "titlebar";
 };
 
 /**
@@ -62,9 +63,10 @@ export function WorkspaceContextSwitcher({
   sessions,
   responseNeeded,
   contextNotice,
+  variant = "rail",
 }: WorkspaceContextSwitcherProps) {
   return (
-    <div className="workspace-context-switcher">
+    <div className={`workspace-context-switcher workspace-context-switcher--${variant}`}>
       {projectError ? (
         <div className="workspace-context-switcher__error" role="alert">
           <span>{projectError}</span>

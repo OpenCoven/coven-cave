@@ -22,21 +22,21 @@ assert.doesNotMatch(source, /computeQuickSwitch/, "the strip's pin/recency selec
 assert.doesNotMatch(familiarStyles, /\.familiar-quickswitch__strip \{/, "strip CSS removed");
 assert.match(familiarStyles, /\.familiar-quickswitch \{/, "wrapper CSS remains for the top-bar call site");
 
-// ── Familiar selection follows the active primary sidebar ─────────────────────
-// WorkspaceSidebar replaces SidebarMinimal as the primary contextual nav in the
-// Code section. Each host keeps a labeled switcher for the section where it is
-// active, and SidebarMinimal returns outside Code.
+// ── Familiar selection stays in persistent title-bar context ─────────────────
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
-// Chat reaches the labeled switcher through the shared SidebarRailHeader and
-// WorkspaceContextSwitcher, so project and crew stay one stable shell block.
-assert.match(sidebar, /<SidebarRailHeader[\s\S]*?familiars=\{familiars\}/, "the Chats list header keeps a labeled familiar switcher beside thread navigation");
+assert.match(sidebar, /<SidebarRailHeader[\s\S]*?showContext=\{false\}/, "the Chats list header suppresses duplicate scope controls");
 assert.match(railHeader, /<WorkspaceContextSwitcher/, "the shared header mounts the project-and-crew context switcher");
 assert.match(contextSwitcher, /<FamiliarSwitcher[\s\S]*?labeled/, "the context switcher mounts the crew switcher in its labeled form");
 const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 assert.match(
   sidenav,
-  /<SidebarRailHeader[\s\S]*?onSelectFamiliar=\{onFamiliarScopeChange\}/,
-  "the normal sidenav header keeps the labeled familiar switcher when Chat is inactive",
+  /<SidebarRailHeader[\s\S]*?showContext=\{false\}/,
+  "the normal sidenav header also suppresses duplicate scope controls",
+);
+assert.match(
+  workspace,
+  /<WorkspaceContextSwitcher[\s\S]*?variant="titlebar"/,
+  "Workspace owns the persistent title-bar familiar selector",
 );
 assert.match(
   workspace,

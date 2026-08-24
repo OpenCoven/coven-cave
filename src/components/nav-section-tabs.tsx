@@ -1,13 +1,7 @@
 "use client";
 
 /**
- * NavSectionTabs — the global Home / Chat switcher that tops the left siderail
- * (cave-24d2r).
- *
- * Rendered by both siderail hosts (SidebarMinimal and the Chat-time
- * WorkspaceSidebar) so the switcher stays in the same place no matter which
- * room is open. It is presentation only: the active section and the change
- * handler are owned by the workspace shell.
+ * NavSectionTabs — the global Home / Chat switcher.
  */
 
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
@@ -16,12 +10,14 @@ import { NAV_SECTIONS, type NavSection } from "@/lib/nav-section";
 export function NavSectionTabs({
   section,
   onSectionChange,
+  variant = "rail",
 }: {
   section: NavSection;
   onSectionChange: (section: NavSection) => void;
+  variant?: "rail" | "titlebar";
 }) {
   return (
-    <div className="nav-sections" role="tablist" aria-label="Workspace sections">
+    <div className={`nav-sections nav-sections--${variant}`} role="tablist" aria-label="Workspace sections">
       {NAV_SECTIONS.map((entry) => {
         const active = entry.id === section;
         return (
