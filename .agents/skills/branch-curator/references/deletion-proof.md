@@ -68,7 +68,7 @@ Delete only when all of these remain true under the gate:
 3. Configuration-independent inspection finds no staged, unstaged, untracked,
    ignored, submodule, assume-unchanged, or skip-worktree state.
 4. The local ref is not symbolic.
-5. The tip and every recovery record are older than 3 hours.
+5. The tip and every recovery record are at least 3 hours old.
 6. Every local and remote tip is redundant on the freshly fetched default
    branch or exactly matches the recorded head of a merged PR.
 7. Every recovery OID is reachable from that default branch or from an

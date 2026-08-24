@@ -798,7 +798,7 @@ function classifyLifecycleUnitInternal(
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is older than 3 hours",
+    "clean landed work is at least 3 hours old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
     ...reviewAfterReasons(observation.metadata, nowMs),
   ]);
@@ -846,7 +846,7 @@ function classifyLifecycleUnitWithoutMetadata(
   }
 
   return withReasons(observation, "retire-after-gate", [
-    "clean landed work is older than 3 hours",
+    "clean landed work is at least 3 hours old",
     "removal still requires the repository-wide maintenance gate and final deletion proof",
   ]);
 }

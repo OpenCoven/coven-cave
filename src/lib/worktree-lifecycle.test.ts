@@ -422,7 +422,7 @@ function legacyObservation(overrides = {}) {
     NOW,
   );
   assert.equal(item.lane, "retire-after-gate", "old exact merged heads become owner-actionable");
-  assert.match(item.reasons.join("\n"), /older than 3 hours/);
+  assert.match(item.reasons.join("\n"), /at least 3 hours old/);
   assert.match(item.reasons.join("\n"), /maintenance gate/);
 }
 
