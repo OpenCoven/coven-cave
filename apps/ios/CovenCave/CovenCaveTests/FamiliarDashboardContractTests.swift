@@ -155,10 +155,23 @@ final class FamiliarDashboardContractTests: XCTestCase {
     }
 
     func testTaskNowPreservesItsImperativeNextStep() throws {
-        let overviewData = FamiliarDashboardFixtures.overviewData.replacingOccurrences(
-            of: "\"kind\": \"session\",\n        \"id\": \"s1\",\n        \"title\": \"Refactor the loader\",\n        \"updatedAt\": \"2026-08-23T11:59:00.000Z\"",
-            with: "\"kind\": \"task\",\n        \"id\": \"task-1\",\n        \"title\": \"Repair the loader\",\n        \"nextStep\": \"Re-run the focused tests\",\n        \"updatedAt\": \"2026-08-23T11:59:00.000Z\""
-        )
+        let overviewData = """
+        {
+          "now": {
+            "kind": "task",
+            "id": "task-1",
+            "title": "Repair the loader",
+            "nextStep": "Re-run the focused tests",
+            "updatedAt": "2026-08-23T11:59:00.000Z"
+          },
+          "presence": null,
+          "sessions": {
+            "active": { "items": [], "total": 0 },
+            "recent": { "items": [], "total": 0 }
+          },
+          "memory": { "entries": { "items": [], "total": 0 }, "freshestAt": null }
+        }
+        """
         let payload = try decode(FamiliarDashboardFixtures.successJSON(
             overview: FamiliarDashboardFixtures.section(state: "fresh", data: overviewData)
         ))
