@@ -48,7 +48,7 @@ struct FamiliarAnalyticsDigestView: View {
         value: String,
         evidence: String,
         detail selected: Detail,
-        @ViewBuilder content: () -> some View = { EmptyView() }
+        @ViewBuilder content: @escaping () -> some View = { EmptyView() }
     ) -> some View {
         Button { detail = selected } label: {
             FamiliarDashboardCard {
