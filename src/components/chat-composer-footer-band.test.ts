@@ -235,9 +235,10 @@ assert.doesNotMatch(css, /\.cave-context-pill/, "the combined pill's CSS is reti
 // ── The reading measure stays on content while the composer uses the full dock
 assert.match(
   activityCss,
-  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;[\s\S]*--cave-composer-measure:\s*calc\(var\(--space-10\) \* 21\);/,
-  "chat activity should keep the 64rem reading column and define a narrower spacing-derived composer",
+  /\.cave-chat-linear \{[\s\S]*--cave-chat-measure:\s*64rem;/,
+  "chat activity should keep the 64rem reading column",
 );
+assert.doesNotMatch(activityCss, /--cave-composer-measure/, "the retired narrow composer measure stays removed");
 assert.match(
   activityCss,
   /\.cave-chat-linear \.cave-chat-thread \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
@@ -250,8 +251,13 @@ assert.match(
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*var\(--cave-composer-measure\);/,
-  "composer shell should use the focused intent-entry width",
+  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*100%;/,
+  "composer shell should span the full dock width",
+);
+assert.match(
+  transcriptCss,
+  /\.cave-followup-card__why-popover \{[\s\S]*width:\s*min\(/,
+  "follow-up rationale should render in a bounded overlay instead of resizing the footer",
 );
 
 // ── Footer action family + circular send ────────────────────────────────────

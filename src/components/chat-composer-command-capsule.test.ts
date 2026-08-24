@@ -43,18 +43,19 @@ assert.match(
 );
 assert.match(
   activityCss,
-  /--cave-chat-measure:\s*64rem;[\s\S]*?--cave-composer-measure:\s*calc\(var\(--space-10\) \* 21\);/,
-  "the transcript keeps its wide reading measure while the composer uses a focused, text-scale-independent measure",
+  /--cave-chat-measure:\s*64rem;/,
+  "the transcript keeps its wide reading measure",
+);
+assert.doesNotMatch(activityCss, /--cave-composer-measure/, "the retired narrow composer measure stays removed");
+assert.match(
+  transcriptCss,
+  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*?max-width:\s*100%;/,
+  "the composer spans the available chat dock",
 );
 assert.match(
   transcriptCss,
-  /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*?max-width:\s*var\(--cave-composer-measure\);/,
-  "the composer uses its compact intent-entry measure",
-);
-assert.match(
-  transcriptCss,
-  /\.cave-chat-linear \.cave-composer-input \{[\s\S]*?min-height:\s*calc\(var\(--space-10\) \+ var\(--space-4\)\);/,
-  "Chat uses a compact 56px writing field derived from the spacing grid",
+  /\.cave-chat-linear \.cave-composer-input \{[\s\S]*?min-height:\s*var\(--space-10\);/,
+  "desktop Chat uses a compact 40px writing field",
 );
 assert.match(
   transcriptCss,
