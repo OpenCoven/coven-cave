@@ -422,7 +422,10 @@ export function ChatTitleEditable({
   }, [baseTitle, editing]);
 
   useEffect(() => {
-    if (readOnly) setEditing(false);
+    if (readOnly) {
+      submittedRef.current = true;
+      setEditing(false);
+    }
   }, [readOnly]);
 
   useEffect(() => {
@@ -528,6 +531,9 @@ export function ChatTitleEditable({
   const buttonClassName = headline
     ? "min-w-0 flex-1 truncate text-left text-[length:var(--text-base)] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
     : "min-w-0 truncate text-left text-[length:var(--text-md)] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
+  const readOnlyTitleClassName = headline
+    ? "min-w-0 flex-1 truncate text-left text-[length:var(--text-base)] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)]"
+    : "min-w-0 truncate text-left text-[length:var(--text-md)] font-semibold leading-tight text-[var(--text-primary)]";
 
   if (editing && !readOnly) {
     return (
@@ -582,7 +588,7 @@ export function ChatTitleEditable({
         </button>
       ) : null}
       {readOnly ? (
-        <span className={buttonClassName} title={display}>
+        <span className={readOnlyTitleClassName} title={display}>
           {display}
         </span>
       ) : (
