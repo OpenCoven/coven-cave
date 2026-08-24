@@ -223,21 +223,23 @@ async function mockDeck(page: Page) {
   );
 }
 
-/** The room is code-split, so the first entry also pays a cold `next dev`
- *  compile of its chunk; re-fire the mode event until the stage appears. */
+/**
+ * Enter by URL, not by event.
+ *
+ * `?mode=<page id>` is applied once on mount from `readModeParam()`, and a role
+ * surface is a valid page id — so entry is deterministic. Dispatching
+ * `cave:navigate-mode` instead races the shell's own mode restore: the deck
+ * mounted, the restore ran, and the surface was replaced by Home mid-test.
+ *
+ * The room is still code-split, so the first entry pays a cold `next dev`
+ * compile of its chunk. CI absorbs that once in the `warmup` project; a local
+ * `--no-deps` run pays it here, hence the budget.
+ */
 async function openReviewDeck(page: Page) {
   await mockDeck(page);
-  await page.goto("/");
-  await page.getByRole("navigation").first().waitFor({ timeout: 60_000 });
-  await expect(async () => {
-    await page.evaluate(() =>
-      window.dispatchEvent(
-        new CustomEvent("cave:navigate-mode", { detail: { mode: "surface:reviewer-review-deck" } }),
-      ),
-    );
-    await expect(page.locator(".rd-stage")).toBeVisible({ timeout: 3_000 });
-  }).toPass({ timeout: 90_000 });
-  await expect(page.locator(".rd-row")).toHaveCount(SESSIONS.length, { timeout: 30_000 });
+  await page.goto("/?mode=surface:reviewer-review-deck");
+  await expect(page.locator(".rd-stage")).toBeVisible({ timeout: 180_000 });
+  await expect(page.locator(".rd-row")).toHaveCount(SESSIONS.length, { timeout: 60_000 });
 }
 
 test.describe("Review Deck cockpit", () => {
@@ -254,15 +256,22 @@ test.describe("Review Deck cockpit", () => {
     await expect(diff).toBeVisible();
     await expect(inspector).toBeVisible();
 
-    const boxes = async () => ({
-      queue: await queue.boundingBox(),
-      diff: await diff.boundingBox(),
-      inspector: await inspector.boundingBox(),
-    });
-    const wide = await boxes();
+    // Measure only what is mounted. `boundingBox()` on a detached element
+    // waits for the full test timeout rather than returning null, so a helper
+    // that measures all three panes hangs the moment one of them collapses.
+    const box = async (locator: ReturnType<typeof page.locator>) => {
+      const rect = await locator.boundingBox();
+      if (!rect) throw new Error("expected a mounted, laid-out element");
+      return rect;
+    };
+    const wide = {
+      queue: await box(queue),
+      diff: await box(diff),
+      inspector: await box(inspector),
+    };
     // Left to right, non-overlapping: the layout is a grid, not a stack.
-    expect(wide.queue!.x + wide.queue!.width).toBeLessThanOrEqual(wide.diff!.x + 1);
-    expect(wide.diff!.x + wide.diff!.width).toBeLessThanOrEqual(wide.inspector!.x + 1);
+    expect(wide.queue.x + wide.queue.width).toBeLessThanOrEqual(wide.diff.x + 1);
+    expect(wide.diff.x + wide.diff.width).toBeLessThanOrEqual(wide.inspector.x + 1);
     // The body never scrolls sideways, whatever the rails are doing.
     expect(
       await page.evaluate(
@@ -273,15 +282,14 @@ test.describe("Review Deck cockpit", () => {
     // Collapsing the queue must give its width to the diff, not to nothing.
     await page.getByRole("button", { name: "Collapse review queue" }).click();
     await expect(queue).toBeHidden();
-    const collapsed = await boxes();
-    expect(collapsed.diff!.width).toBeGreaterThan(wide.diff!.width);
+    expect((await box(diff)).width).toBeGreaterThan(wide.diff.width);
 
     await page.getByRole("button", { name: "Show review queue" }).click();
     await expect(queue).toBeVisible();
 
     await page.getByRole("button", { name: "Collapse the review inspector" }).click();
     await expect(inspector).toBeHidden();
-    expect((await boxes()).diff!.width).toBeGreaterThan(wide.diff!.width);
+    expect((await box(diff)).width).toBeGreaterThan(wide.diff.width);
   });
 
   test("the inspector's decision and blockers come from the mocked GitHub state", async ({ page }) => {
