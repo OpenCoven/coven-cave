@@ -93,7 +93,7 @@ assert.match(
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
-assert.match(source, /<NavSectionTabs section=\{section\} onSectionChange=\{onSectionChange\}/, "sidebar destinations use the shared Home and Code tabs");
+assert.doesNotMatch(source, /<NavSectionTabs/, "sidebar destinations no longer duplicate the title-bar section switcher");
 assert.match(source, /navItemsForSection\(section\)\.map/, "the active tab filters destination rows through the shared registry");
 assert.match(source, /sectionRooms\.map\(\(room\) =>/, "dynamic role-surface rooms follow the active section");
 assert.match(source, /itemSelector: "\.sidebar-folder-row"/, "visible destinations share one roving keyboard sequence");
