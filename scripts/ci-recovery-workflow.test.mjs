@@ -82,11 +82,11 @@ const defaultE2e = ciWorkflow.jobs["frontend-e2e"].steps.find(
   (step) => step.name === "Validate end-to-end behavior",
 );
 assert.ok(defaultE2e, "CI keeps default-off end-to-end coverage");
-assert.deepEqual(ciWorkflow.jobs["frontend-e2e"].strategy.matrix.shard, [1, 2, 3, 4]);
+assert.deepEqual(ciWorkflow.jobs["frontend-e2e"].strategy.matrix.shard, [1, 2, 3, 4, 5, 6, 7, 8]);
 assert.equal(ciWorkflow.jobs["frontend-e2e"].strategy["fail-fast"], false);
 assert.equal(
   defaultE2e.run,
-  "pnpm exec playwright test --shard=${{ matrix.shard }}/4",
+  "pnpm exec playwright test --shard=${{ matrix.shard }}/8 --workers=1",
   "default end-to-end coverage is distributed across independently retryable runners",
 );
 assert.equal(defaultE2e.env, undefined, "default end-to-end coverage does not enable agentic recommendations");
