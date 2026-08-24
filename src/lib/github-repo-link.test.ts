@@ -91,3 +91,18 @@ test("GitHub blob URLs resolve to a bounded Canvas source location", () => {
   assert.equal(parseGitHubFileUrl("https://evil.example/OpenCoven/coven-cave/blob/main/App.tsx"), null);
   assert.equal(parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/main/../secret.tsx"), null);
 });
+
+test("GitHub blob URLs reject separators reintroduced by percent decoding", () => {
+  assert.equal(
+    parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/feature%2Fcanvas/App.tsx"),
+    null,
+  );
+  assert.equal(
+    parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/main/src%2F..%2Fsecret.tsx"),
+    null,
+  );
+  assert.equal(
+    parseGitHubFileUrl("https://github.com/OpenCoven/coven-cave/blob/main/src%5Csecret.tsx"),
+    null,
+  );
+});

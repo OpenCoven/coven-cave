@@ -88,7 +88,11 @@ export function parseGitHubFileUrl(input: string | null | undefined): GitHubFile
   const [owner, repoRaw, , ref, ...fileParts] = parts;
   const repo = repoRaw.replace(/\.git$/i, "");
   if (!OWNER_RE.test(owner) || !REPO_RE.test(repo) || !ref || fileParts.length === 0) return null;
-  if ([ref, ...fileParts].some((part) => !part || part === "." || part === ".." || part.includes("\0"))) {
+  if (
+    [ref, ...fileParts].some(
+      (part) => !part || part === "." || part === ".." || part.includes("\0") || /[\\/]/.test(part),
+    )
+  ) {
     return null;
   }
   const filePath = fileParts.join("/");
