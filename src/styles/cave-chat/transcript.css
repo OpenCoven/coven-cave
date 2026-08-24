@@ -456,9 +456,13 @@
 }
 
 .cave-followup-card__entry {
+  position: relative;
   display: grid;
   min-width: 0;
-  gap: var(--space-1);
+}
+
+.cave-followup-card__entry:has(.cave-followup-card__why-trigger) .cave-followup-card {
+  padding-right: calc(var(--space-10) + var(--space-2));
 }
 
 .cave-followup-card {
@@ -492,24 +496,83 @@
   color: var(--text-secondary);
 }
 
-.cave-followup-card__details {
-  border-top: 1px solid var(--border-hairline);
-  padding-top: var(--space-1);
+.cave-followup-card__why-trigger {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: var(--space-8);
+  height: var(--space-6);
+  padding-inline: var(--space-2);
+  transform: translateY(-50%);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cave-followup-card__why-trigger:hover,
+.cave-followup-card__why-trigger[aria-expanded="true"] {
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-followup-card__why-popover {
+  width: min(calc(var(--space-10) * 9), calc(100vw - var(--space-8)));
+}
+
+.cave-followup-card__why-body {
+  padding: var(--space-3);
+}
+
+.cave-followup-card__why-panel {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cave-followup-card__why-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  font-weight: 750;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.cave-followup-card__why-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cave-followup-card__why-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.cave-followup-card__why-panel p {
+  margin: 0;
   color: var(--text-secondary);
   font-size: var(--text-xs);
   line-height: var(--leading-relaxed);
-}
-
-.cave-followup-card__details summary {
-  width: fit-content;
-  border-radius: var(--radius-control);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.cave-followup-card__details p {
-  margin: var(--space-1) 0 0;
 }
 
 .cave-followup-card__evidence {
@@ -542,13 +605,23 @@
 
   .cave-chat-followups .cave-followup-card {
     min-height: var(--touch-target);
-    padding-inline: var(--space-2);
+    padding-left: var(--space-2);
+  }
+
+  .cave-followup-card__entry:has(.cave-followup-card__why-trigger) .cave-followup-card {
+    padding-right: calc(var(--touch-target) + var(--space-2));
+  }
+
+  .cave-followup-card__why-trigger {
+    min-width: var(--touch-target);
+    height: var(--touch-target);
   }
 }
 
 
 .cave-chat-linear .cave-composer-shell {
-  max-width: var(--cave-composer-measure);
+  width: 100%;
+  max-width: 100%;
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -569,11 +642,11 @@
 }
 
 .cave-chat-linear .cave-composer-input {
-  min-height: calc(var(--space-10) + var(--space-4));
+  min-height: var(--space-10);
 }
 
 .cave-chat-linear .cave-composer-controls {
-  padding: 0 var(--space-2) var(--space-2);
+  padding: 0 var(--space-2) var(--space-1);
 }
 
 .cave-chat-linear .cave-composer-footer-band {

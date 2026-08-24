@@ -72,6 +72,37 @@
   text-overflow: ellipsis;
 }
 
+.nav-sections--titlebar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  height: 28px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: transparent;
+}
+
+.nav-sections--titlebar .nav-sections__tab {
+  width: 24px;
+  min-height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-control) - 2px);
+}
+
+.nav-sections--titlebar .nav-sections__tab.is-active {
+  padding: 0;
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 3px color-mix(in oklch, var(--shadow-color) 18%, transparent);
+}
+
+.nav-sections--titlebar .nav-sections__label {
+  display: none;
+}
+
 /* Collapsed 56px rail: labels drop, the control stacks so both rooms stay
    reachable as icons (same treatment as the destination rows), and each tab
    takes the rail's shared --rail-control width so the strip sits on the same

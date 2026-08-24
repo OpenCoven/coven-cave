@@ -99,12 +99,11 @@ test("desktop keeps the panel across surfaces and supports a second Chat convers
   await expect(panel).toContainText("Newest Cody chat");
   await expect(panel).not.toContainText("Nova must not be selected");
 
-  await page.getByRole("button", { name: "Expand navigation" }).click();
-  const navigation = page.locator(".shell-nav");
-  await expect(navigation).toHaveAttribute("aria-hidden", "false");
+  const titlebarContext = page.locator(".workspace-titlebar-context");
+  await expect(titlebarContext).toBeVisible();
 
   const chooseFamiliar = async (name: string) => {
-    await navigation.locator('button[aria-label^="Switch familiar"]').click();
+    await titlebarContext.locator('button[aria-label^="Switch familiar"]').click();
     await page.getByRole("dialog", { name: "Familiars" }).getByText(name, { exact: true }).last().click();
   };
 

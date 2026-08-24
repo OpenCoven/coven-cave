@@ -11,18 +11,18 @@ assert.match(
   "doneCards memo filters the current-scope `filtered` list by status done",
 );
 
-// Toolbar control + gating + inline confirm. The trash icon button owns the
-// destructive verbs: outside select mode it is Clear done, gated on the
-// done-card count; the confirm group replaces it inline while deciding.
+// Shared toolbar action + gating + inline confirm. The bounded overflow action
+// owns both destructive verbs: outside select mode it is Clear done, gated on
+// the done-card count; inside select mode it becomes Delete selected.
 assert.match(source, /Clear done/, "Clear done control label present");
 assert.match(
   source,
-  /title=\{cardSelect\.selectMode \? "Delete selected" : "Clear done"\}/,
-  "the trash button reads Clear done outside select mode, Delete selected inside",
+  /id: "clear-or-delete-tasks",[\s\S]*?label: cardSelect\.selectMode \? "Delete selected" : "Clear done",[\s\S]*?placement: "overflow"/,
+  "the overflow action reads Clear done outside select mode, Delete selected inside",
 );
 assert.match(
   source,
-  /disabled=\{cardSelect\.selectMode \? !hasSelection : doneCards\.length === 0\}/,
+  /disabled: cardSelect\.selectMode \? !hasSelection : doneCards\.length === 0/,
   "Clear done gated on done-card count; Delete selected on the selection",
 );
 assert.match(source, /setClearConfirm\(true\)/, "clicking the control opens an inline confirm");

@@ -1,4 +1,5 @@
 import {
+  CLIENT_V1_ADMIN_HEADER,
   TOKEN_HEADER,
   expectedRequestOrigins,
   isAllowedRequestSourceAny,
@@ -54,9 +55,10 @@ export function requireClientV1Admin(
   options: { mutation?: boolean } = {},
 ): Response | null {
   // The listener's loopback stamp proves transport locality, not the Cave
-  // administrator. Only the configured per-launch sidecar credential grants
-  // this route family, so that is what this function checks — and it still
-  // reads no stamp of its own.
+  // administrator. Packaged Cave therefore requires its configured per-launch
+  // sidecar credential. Tokenless browser development has no such credential,
+  // so proxy() converts its verified direct-loopback decision into a separate,
+  // secret-valued admin marker after stripping any caller-supplied value.
   //
   // Locality is now required as well, one layer up: proxy() answers
   // `403 forbidden peer: client v1 admin requires direct loopback` for
@@ -69,7 +71,21 @@ export function requireClientV1Admin(
   // could read the credential list and the pending-pairing queue from off the
   // machine.
   const secret = process.env.COVEN_CAVE_AUTH_TOKEN?.trim();
-  if (!secret) return adminAuthorizationUnavailable();
+  if (!secret) {
+    const localPeerSecret = process.env.COVEN_CAVE_LOCAL_PEER_SECRET?.trim();
+    const suppliedLocalAdmin = req.headers.get(CLIENT_V1_ADMIN_HEADER);
+    if (
+      process.env.COVEN_CAVE_BUNDLE !== "1"
+      && localPeerSecret
+      && suppliedLocalAdmin
+      && timingSafeEqualString(suppliedLocalAdmin, localPeerSecret)
+    ) {
+      return options.mutation && !hasValidMutationSource(req)
+        ? adminMutationSourceRequired()
+        : null;
+    }
+    return adminAuthorizationUnavailable();
+  }
 
   const supplied = req.headers.get(TOKEN_HEADER);
   if (!supplied || !timingSafeEqualString(supplied, secret)) {

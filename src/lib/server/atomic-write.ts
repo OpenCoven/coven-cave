@@ -1,6 +1,8 @@
 import { rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 
+import { invalidateCachedStore } from "./store-read-cache.ts";
+
 const TRANSIENT_RENAME_ERRORS = new Set(["EACCES", "EBUSY", "EPERM"]);
 
 async function renameReplacing(source: string, target: string): Promise<void> {
@@ -43,6 +45,14 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array): 
     // the same unique-temp + rename safety as JSON stores.
     await writeFile(tmp, data);
     await renameReplacing(tmp, path);
+    // Any cached read of this path is stale by construction now. The stat key
+    // in store-read-cache would catch the change on the next read regardless;
+    // dropping it here is what makes a same-process write-then-read exact
+    // whatever the filesystem's timestamp resolution turns out to be. Doing it
+    // at the single point every store write funnels through beats editing the
+    // eight call sites and hoping the ninth remembers. A no-op for paths the
+    // cache has never seen, which is most of them.
+    invalidateCachedStore(path);
   } catch (err) {
     await rm(tmp, { force: true }).catch(() => {});
     throw err;

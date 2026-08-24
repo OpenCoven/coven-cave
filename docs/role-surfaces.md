@@ -204,16 +204,43 @@ never fake production data.
   Generation and verified normalizations pass through `cave-board` mutators in
   one lock-checked atomic batch, so a stale or failed apply leaves the proposal
   reviewable and preserves the explicit error.
-- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a focused review
-  run built from sessions carrying PRs, working changes, or branches. A compact
-  attention queue sits at the edge while the line-numbered unified diff remains
-  dominant. A proof ribbon and explicit reviewed-file controls persist progress
-  against the exact PR head SHA (or an honest local working-tree revision);
-  progress resets when that identity changes. Overview, comments, merge status,
-  and session context move into an adaptive evidence dock. Reviewer notes appear
-  only inside approve/request-changes flows and remain per-session drafts.
-  Checkpoints appear only for local reviews. PR sessions always read GitHub;
-  only sessions without a linked PR read the local working tree. Unknown
-  readiness stays non-actionable, and approve / request-changes / squash-merge
-  continue to dispatch through the real GitHub routes. The deck never edits the
-  working tree.
+- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a three-column
+  cockpit built from sessions carrying PRs, working changes, or branches. Each
+  column answers exactly one question, so a control's position tells you what
+  it acts on: the **queue** says what is waiting, the **centre** says what
+  changed, the **inspector** says whether it can land and what to do about it.
+  Deck-scoped chrome — attention filters, item navigation, help, refresh —
+  lives in the one top bar and nowhere else. Both rails drag to resize and
+  collapse with `f` / `e`; the diff keeps the centre column and every pixel of
+  height the rails do not need.
+
+  The queue leads with a proportional **mix bar** (what the queue is made of,
+  before any row is read), orders blocked-first-then-oldest, and groups under
+  sticky headings that stay drawn while empty when nothing is filtered —
+  "Nothing blocked" is the answer a reviewer opens the pane hoping for. Each
+  row's reason is derived from the single `item?pull=1` read the queue can
+  afford, so it names GitHub's own `mergeable_state` and never a failing-check
+  count it has not fetched.
+
+  A file rail replaces the file column: chips window around the open file, the
+  overflow chip opens the full navigator (search, tree, keyboard traversal),
+  and the reviewed-file progress persists against the exact PR head SHA (or an
+  honest local working-tree revision), resetting when that identity changes.
+  Unresolved review threads render inline at the line they were left on; one
+  the deck cannot place — folded away, or past the route's per-file patch
+  budget — is listed rather than dropped or pinned to the wrong line.
+
+  The inspector leads with **one decision sentence** (headline, sub, and the
+  single next action) and the blockers behind it, each carrying a derived
+  severity and owner: an unresolved thread is only ever "yours" when the token
+  can actually resolve it. Checks, threads, the merge checklist and session
+  context sit behind disclosures underneath, and a blocker's own reveal control
+  opens the one holding its evidence. The review note is always reachable
+  there, and again inside the approve / request-changes composer. A sticky
+  verdict dock carries one primary action chosen by state; an unavailable Merge
+  keeps its place and names its blockers rather than disappearing.
+
+  PR sessions always read GitHub; only sessions without a linked PR read the
+  local working tree. Unknown readiness stays non-actionable, and approve /
+  request-changes / squash-merge continue to dispatch through the real GitHub
+  routes. The deck never edits the working tree.

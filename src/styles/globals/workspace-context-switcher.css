@@ -92,6 +92,74 @@
   font-size: var(--text-xs);
 }
 
+.workspace-titlebar-context {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-inline-end: var(--space-2);
+}
+
+.workspace-context-switcher--titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: auto;
+  min-width: 0;
+  padding-inline-start: var(--space-2);
+  border-inline-start: 1px solid var(--border-hairline);
+}
+
+.workspace-context-switcher--titlebar :is(
+  .workspace-context-switcher__empty,
+  .workspace-context-switcher__notice
+) {
+  display: none;
+}
+
+.workspace-context-switcher--titlebar .workspace-context-switcher__error {
+  max-width: 200px;
+  white-space: nowrap;
+}
+
+.workspace-context-switcher--titlebar .workspace-context-switcher__error > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-context-switcher--titlebar .workspace-context-switcher__project .cave-project-picker__trigger,
+.workspace-context-switcher--titlebar .workspace-context-switcher__crew .familiar-switcher__trigger--labeled {
+  width: auto;
+  min-width: 120px;
+  max-width: 144px;
+  height: 28px;
+  min-height: 28px;
+  padding-block: 0;
+  padding-inline: var(--space-2);
+  gap: var(--space-1);
+  border-color: transparent;
+  background: transparent;
+}
+
+.workspace-context-switcher--titlebar .workspace-context-switcher__project .cave-project-picker__trigger:hover,
+.workspace-context-switcher--titlebar .workspace-context-switcher__crew .familiar-switcher__trigger--labeled:hover {
+  border-color: var(--border-hairline);
+  background: var(--bg-hover);
+}
+
+.workspace-context-switcher--titlebar :is(
+  .cave-project-picker__trigger-label,
+  .familiar-switcher__trigger-label
+) {
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 1023px) {
+  .workspace-titlebar-context {
+    display: none;
+  }
+}
+
 /* ── Collapsed 56px icon rail ─────────────────────────────────────────────── */
 /* Both context controls collapse to --rail-control squares centred on the rail,
    labels and carets hidden. Status rows are suppressed since there is no room. */

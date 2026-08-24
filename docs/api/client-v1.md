@@ -176,7 +176,9 @@ has to consult a table to avoid calling something it can never reach:
   `.admin.` that is not one of the four above. **This is the only class an
   external application can ever hold.**
 - **admin** — any id containing **`.admin.`**. These require the Cave's own
-  per-launch sidecar token over direct loopback and back the Cave's settings UI.
+  per-launch sidecar token over direct loopback in packaged Cave. Tokenless
+  local development instead accepts only the proxy's secret-valued
+  direct-loopback admin marker. These routes back the Cave's settings UI.
   **A paired bearer never satisfies one, whatever scopes it holds.** An SDK
   should treat a `.admin.` id as present-but-not-yours.
 
@@ -269,7 +271,7 @@ are reachable on the thirteen routes that exist.
 | `pairing_expired` | 410 | yes | Terminal for this request. Start a new pairing request. |
 | `rate_limited` | 429 | yes | Retryable. Honour `Retry-After`; `details.limit` and `details.resetAt` (epoch ms) carry the budget. |
 | `internal_error` | 500 | yes | Retryable where the route says so — see the exchange route, where a failed credential write restores the pairing precisely so a retry works. On the canonical reads it is **not** retryable: it means a stored record could not be projected, and the store answers the same way next second. |
-| `service_unavailable` | 503 | yes | The Cave cannot answer right now. On admin routes it means `COVEN_CAVE_AUTH_TOKEN` is unset and is not fixable by retrying; on `GET /familiars` it means the daemon roster could not be read and **is** retryable. |
+| `service_unavailable` | 503 | yes | The Cave cannot answer right now. On admin routes it means neither packaged sidecar authorization nor the proxy's tokenless-development authorization is available, and is not fixable by retrying; on `GET /familiars` it means the daemon roster could not be read and **is** retryable. |
 | `reconcile_required` | 409 | yes | The client's position is no longer valid against canonical state. Today that is exactly one case: a messages cursor naming a turn that has left the conversation's active branch (`details.reason: "resume_from_canonical_state"`). Not retryable — restart the read. |
 | `incompatible_version` | 426 | no | Reserved. Version incompatibility is currently discovered by reading `minimumClientVersion` off `/health`, not by being told. |
 
@@ -1073,13 +1075,12 @@ business calling them and holds nothing that would authenticate it if it tried.
 
 All four call `requireClientV1Admin`, which:
 
-1. Reads `COVEN_CAVE_AUTH_TOKEN`. **If it is unset or blank, every admin route
-   answers `503 service_unavailable`** with *"Cave admin authorization is not
-   configured. Start Cave through the desktop app."* This is a fail-closed
-   default, and it is the state a plain `pnpm dev` is in. The practical
-   consequence is worth stating plainly: on a tokenless Cave, a client can open
-   a pairing request and can never get it approved, because the approval route
-   is 503. The exchange keeps answering `pairing_pending` until the TTL expires.
+1. Reads `COVEN_CAVE_AUTH_TOKEN`. If it is unset or blank in non-bundled
+   development, it accepts only the secret-valued internal admin marker that
+   `proxy.ts` stamps after proving a direct-loopback peer and stripping any
+   caller-supplied marker. This keeps the Settings page and local pairing flow
+   usable under plain `pnpm dev`. Bundled Cave still fails closed with a missing
+   sidecar token before the route runs.
 2. Compares the `x-coven-cave-token` header against it in constant time.
    Mismatch or absence is `401 unauthorized`.
 

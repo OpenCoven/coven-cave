@@ -36,7 +36,7 @@ async function gotoChatFamiliarSettings(page: Page) {
     const nav = page.locator('aside[aria-label="Sidebar"]');
     const chatDestination = nav.getByRole("button", { name: /^Chat\b/ }).first();
     if (!(await chatDestination.isVisible().catch(() => false))) {
-      const openNav = page.getByRole("button", { name: "Open navigation (⌘B)" });
+      const openNav = page.getByRole("button", { name: /^Open navigation \((?:⌘|Ctrl)B\)$/ });
       if (await openNav.isVisible().catch(() => false)) await openNav.click();
     }
     // The Chat row lives in the rail's second section (cave-24d2r); when the

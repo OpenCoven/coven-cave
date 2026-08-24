@@ -83,13 +83,15 @@ reason to guess a field shape.
 - Upgrade only after the schema diff and fixtures pass. Unknown wire versions
   fail closed to CLI; a new Cave release adds a tested profile.
 
-## Current release boundary (2026-07-26)
+## Current release boundary (2026-07-31)
 
-The only published protocol/client release is the `2026.7.2-beta.4` beta
-package pair, negotiating wire protocol v4. It publishes `HelloOkSchema`,
-`ChatEventSchema`, `chat.send`, `chat.abort`, and
-`sessions.messages.subscribe`. Cave validates that exact chat-only contract in
-its dispatcher, including the accepted `(sessionKey, agentId, runId)` tuple.
+Cave pins the `2026.7.2-beta.5` protocol/client package pair and negotiates
+wire protocol v4. It validates `HelloOkSchema`, `ChatEventSchema`, and
+`AgentEventSchema`, then selects an exact compatibility profile for
+`chat.send`, `chat.abort`, `sessions.messages.subscribe`, `chat`, `agent`, and
+`session.tool`. The built-in profile is pinned to the upstream source revision
+that defines the tool lifecycle aliases and phases; no observed payload can
+expand that contract at runtime.
 
 The reference client delegates device identity, challenge signing, and token
 lifecycle to host-owned `GatewayClientHostDeps`. Cave backs those with an
@@ -107,29 +109,26 @@ fallback everywhere the store (or the Gateway) is unavailable. An invalid
 persisted identity fails loudly and is never silently regenerated, because
 regeneration would silently unpair the device.
 
-The release also does **not** publish a `session.tool` event name, payload
-schema, or validator. Cave emits no Gateway tool card for this release and does
-not request an unpublished tool-event capability. A method/event capability
-string is not a substitute for a versioned payload contract.
-
 | Package profile | Wire protocol | Runtime projection | Tool cards | Upgrade rule |
 | --- | --- | --- | --- | --- |
-| `2026.7.2-beta.4` | v4 only | Correlated `chat` frames on macOS via the keychain-backed paired-device store; all other platforms fail closed | Disabled: no published schema (re-verified against `2026.7.2-beta.5`, whose `AgentEvent.data` is unchanged and whose typed `tool.*` events belong to the Talk surface only) | Add a fixture and explicit profile only when OpenClaw publishes a stable tool payload validator. |
+| `2026.7.2-beta.4` | v4 only | Unsupported by the current tool profile | Disabled | Keep CLI/plain chat. |
+| `2026.7.2-beta.5` + source profile `d66b514a7e7565d89c87ab6f1a509623128093f0` | v4 only | Correlated `chat` plus schema-validated `agent` / `session.tool` frames on macOS via the keychain-backed paired-device store; all other platforms fail closed | Enabled only for the exact accepted `(sessionKey, agentId, runId)` and pinned lifecycle profile | Add a new fixture and explicit profile for every package or source-contract change. |
 | Any other version/profile | Not assumed | None | Disabled | Keep CLI/plain chat with a visible compatibility diagnostic. |
 
-Before enabling tool cards, record the package release, exported validator,
-schema diff, and fixtures for lifecycle, foreign-run rejection, malformed
-payload, replay, gap, disconnect, and cancellation. Do not infer a tool shape
-from an observed Gateway frame.
+The conformance suite records the package release, schema hash, source revision,
+and lifecycle fixtures. It covers foreign-run rejection, malformed payloads,
+replay, gaps, disconnects, reconnects, cancellation, compatibility quarantine,
+and route-level WebSocket-to-SSE/persistence projection. Do not infer a tool
+shape from an observed Gateway frame.
 
 ## Verification
 
-Add a route-level Gateway fixture that performs the real authenticated
-handshake, subscription, `chat.send` acknowledgement, and emitted chat
-lifecycle. It must prove that matching chat frames reach SSE and persistence
-and that otherwise-valid concurrent-session frames are rejected. Once a
-published tool validator exists, extend it with start/update/result cards,
-history reconciliation, and every fallback boundary above.
+The route-level Gateway fixture performs the real WebSocket challenge/connect
+handshake, subscription, `chat.send` acknowledgement, and emitted chat/tool
+lifecycle. It proves that one accepted run reaches SSE and persistence with
+start/update/result cards while an otherwise-valid concurrent run is rejected.
+History reconciliation remains disabled until OpenClaw publishes that contract;
+gaps therefore terminate the owned Gateway path instead of guessing.
 
 ## Delivery slices
 
