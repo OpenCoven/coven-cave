@@ -3,6 +3,7 @@ import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { withCaveHomeReconciledStore, withCaveHomeReconciledStores } from "./server/cave-home-migration.ts";
+import { readCachedStore } from "./server/store-read-cache.ts";
 import { invalidateSessionsListCache } from "./server/sessions-list-cache.ts";
 import {
   reconcileHubAccessTokenForOrigin,
@@ -539,8 +540,21 @@ async function loadConfigUnlocked(): Promise<CaveConfig> {
   }
 }
 
+/**
+ * Read the config, serving an unchanged file from the stat-keyed cache.
+ *
+ * A miss takes the original locked path below, unchanged. The cache exists
+ * because this is the single hottest store read in the app: one
+ * `computeSessionsList` calls it three times — via `callDaemon` ->
+ * `loadDaemonTarget`, `sweepAutoArchive`, and `sweepMergedPrAutoArchive` — on a
+ * four-second poll, and each call was measured at 8.0ms p50 / 49.4ms p95 for a
+ * file of a few dozen bytes. That cost is the reconciliation lock, not the
+ * parse. See `server/store-read-cache.ts`.
+ */
 export function loadConfig(): Promise<CaveConfig> {
-  return withCaveHomeReconciledStore("cave-config.json", loadConfigUnlocked);
+  return readCachedStore(CONFIG_PATH, () =>
+    withCaveHomeReconciledStore("cave-config.json", loadConfigUnlocked),
+  );
 }
 
 /** Reconcile the configured hub URL with origin-bound vault custody, splitting
@@ -885,7 +899,9 @@ async function loadStateUnlocked(): Promise<CaveState> {
 }
 
 export function loadState(): Promise<CaveState> {
-  return withCaveHomeReconciledStore("cave-state.json", loadStateUnlocked);
+  return readCachedStore(STATE_PATH, () =>
+    withCaveHomeReconciledStore("cave-state.json", loadStateUnlocked),
+  );
 }
 
 /** A coherent, lock-protected snapshot for the frequent daemon status poll. */
