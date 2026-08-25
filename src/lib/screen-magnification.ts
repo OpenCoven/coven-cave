@@ -2,7 +2,21 @@ import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";
 
 export const SCREEN_SCALE_KEY = "cave:screen-scale";
 
-export const SCREEN_SCALE_OPTIONS = [100, 110, 125, 150] as const;
+export const SCREEN_SCALE_OPTIONS = [100, 105, 125, 150] as const;
+
+/**
+ * Steps this app used to offer, mapped to the nearest surviving one.
+ *
+ * The first step above 100 was 110 — a 10% jump off the default, which reads
+ * as dramatic rather than as the gentle nudge a first step should be. Moving
+ * it to 105 would otherwise be silently destructive: `normalizeScreenScale`
+ * answers anything outside SCREEN_SCALE_OPTIONS with the DEFAULT, so every
+ * user already sitting on 110 would come back at 100 with their magnification
+ * gone. For an accessibility setting, losing it is a worse outcome than the
+ * step being coarse, so a legacy value lands on the nearest step that still
+ * exists instead of resetting.
+ */
+const LEGACY_SCREEN_SCALES: Record<number, ScreenScale> = { 110: 105 };
 
 export type ScreenScale = (typeof SCREEN_SCALE_OPTIONS)[number];
 
@@ -12,9 +26,8 @@ export const SCREEN_SCALE_EVENT = "cave:screen-scale-change";
 
 export function normalizeScreenScale(value: unknown): ScreenScale {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
-  return SCREEN_SCALE_OPTIONS.includes(parsed as ScreenScale)
-    ? (parsed as ScreenScale)
-    : DEFAULT_SCREEN_SCALE;
+  if (SCREEN_SCALE_OPTIONS.includes(parsed as ScreenScale)) return parsed as ScreenScale;
+  return LEGACY_SCREEN_SCALES[parsed] ?? DEFAULT_SCREEN_SCALE;
 }
 
 export function readScreenScale(): ScreenScale {
