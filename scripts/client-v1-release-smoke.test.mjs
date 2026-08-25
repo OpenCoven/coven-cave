@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -19,6 +18,7 @@ import {
 } from "./client-v1-release-smoke.mjs";
 
 const expected = { apiVersion: "1.0", minimumClientVersion: "0.1.0", releaseVersion: "0.3.6" };
+const scratchPrefix = path.resolve(process.cwd(), ".scratch-client-v1-release-smoke-");
 
 function healthEnvelope(overrides = {}, dataOverrides = {}) {
   return {
@@ -70,6 +70,7 @@ test("reads the expected versions from the reviewed contract fixture", () => {
   assert.deepEqual(contractExpectations(), {
     apiVersion: fixture.contract.apiVersion,
     minimumClientVersion: fixture.contract.minimumClientVersion,
+    authorityDefaultMode: "off",
   });
   assert.deepEqual(checkHealthEnvelope(healthEnvelope(), { ...contractExpectations(), releaseVersion: "0.3.6" }), []);
 });
@@ -114,17 +115,48 @@ test("still judges every expectation-independent field under a broken expectatio
 test("names the fixture when it cannot supply the expected versions", () => {
   // The fixture lives in this checkout, not in the build being probed, so a
   // failure to read it must not be reported as a broken release.
-  const root = mkdtempSync(path.join(tmpdir(), "client-v1-smoke-root-"));
+  const root = mkdtempSync(scratchPrefix);
   try {
     assert.throws(() => contractExpectations(root), /cannot read the contract fixture at .*contract-fixture\.json/);
     const fixture = contractFixturePath(root);
     mkdirSync(path.dirname(fixture), { recursive: true });
     writeFileSync(fixture, "{ truncated", "utf8");
     assert.throws(() => contractExpectations(root), /cannot read the contract fixture at/);
-    writeFileSync(fixture, JSON.stringify({ contract: { apiVersion: "1.0" } }), "utf8");
+    writeFileSync(fixture, JSON.stringify({
+      contract: {
+        apiVersion: "1.0",
+        authority: { defaultMode: "off" },
+      },
+    }), "utf8");
     assert.throws(() => contractExpectations(root), /declares no usable minimumClientVersion/);
-    writeFileSync(fixture, JSON.stringify({ contract: { apiVersion: "", minimumClientVersion: "0.1.0" } }), "utf8");
+    writeFileSync(fixture, JSON.stringify({
+      contract: {
+        apiVersion: "",
+        minimumClientVersion: "0.1.0",
+        authority: { defaultMode: "off" },
+      },
+    }), "utf8");
     assert.throws(() => contractExpectations(root), /declares no usable apiVersion/);
+    writeFileSync(fixture, JSON.stringify({
+      contract: {
+        apiVersion: "1.0",
+        minimumClientVersion: "0.1.0",
+      },
+    }), "utf8");
+    assert.equal(contractExpectations(root).authorityDefaultMode, "off");
+    for (const defaultMode of ["", "advertise", "enforce"]) {
+      writeFileSync(fixture, JSON.stringify({
+        contract: {
+          apiVersion: "1.0",
+          minimumClientVersion: "0.1.0",
+          authority: { defaultMode },
+        },
+      }), "utf8");
+      assert.throws(
+        () => contractExpectations(root),
+        /authority\.defaultMode must be exactly "off"/,
+      );
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -135,7 +167,7 @@ test("names the manifest when it cannot supply the expected release version", ()
   // version produced `undefined`, and checkHealthEnvelope announced that on the
   // FAIL channel — a broken harness reported to the operator as a broken
   // release. It reads from this checkout, not from the build being probed.
-  const root = mkdtempSync(path.join(tmpdir(), "client-v1-smoke-manifest-"));
+  const root = mkdtempSync(scratchPrefix);
   try {
     assert.throws(() => packageVersion(root), /cannot read the release manifest at .*package\.json/);
     const manifest = path.join(root, "package.json");
