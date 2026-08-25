@@ -64,10 +64,10 @@ export function createClientV1ConversationMessagesGetHandler(
   clientV1: ClientV1Runtime,
   sources: ClientV1ReadSources,
 ) {
-  return async function clientV1ConversationMessagesGet(
+  const serve = async (
     request: Request,
     { params }: RouteContext,
-  ): Promise<Response> {
+  ): Promise<Response> => {
     const stamp = request.headers.get(LOCAL_PEER_HEADER);
     if (!clientV1.authenticator.isTrustedLoopback(stamp)) {
       return clientV1ErrorResponse("unauthorized", "Unauthorized.");
@@ -125,6 +125,17 @@ export function createClientV1ConversationMessagesGetHandler(
     } catch {
       return clientV1ReadFailure();
     }
+  };
+
+  return async function clientV1ConversationMessagesGet(
+    request: Request,
+    context: RouteContext,
+  ): Promise<Response> {
+    return clientV1.authority.handle({
+      operation: "messages.list",
+      request,
+      invoke: (authorizedRequest) => serve(authorizedRequest, context),
+    });
   };
 }
 

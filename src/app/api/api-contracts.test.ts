@@ -846,6 +846,19 @@ for (const { file, route } of clientV1Routes) {
     )?.file;
     assert.ok(file, `client-v1 operation ${operation.id} resolved no route file`);
     const routeSource = executableSource(effectiveRouteSource(file, readFileSync(file, "utf8")));
+    if (operation.binding === "hpke-bound-v1") {
+      assert.match(
+        routeSource,
+        /authority\.handle\s*\(/,
+        `client-v1 operation ${operation.id} declares hpke-bound-v1 but its route never calls authority.handle`,
+      );
+    } else {
+      assert.doesNotMatch(
+        routeSource,
+        /authority\.handle\s*\(/,
+        `client-v1 operation ${operation.id} is not part of hpke-bound-v1`,
+      );
+    }
     if (operation.ingress === "admin") {
       assert.match(
         routeSource,
