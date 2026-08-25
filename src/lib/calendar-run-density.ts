@@ -124,3 +124,52 @@ export function runCountLabel(count: number, noun = "runs"): string | null {
   if (count <= 0) return null;
   return `${count} ${count === 1 ? noun.replace(/s$/, "") : noun}`;
 }
+
+export type RunCluster = {
+  /** Minutes from midnight — where the marker sits on the grid. */
+  minutes: number;
+  /** Every run firing at this minute, in the order given. */
+  runs: ProjectedCronRun[];
+};
+
+/**
+ * Group a day's runs by the exact minute they fire.
+ *
+ * Two crons on the same schedule land on the same pixel, and a per-run marker
+ * then draws two labels on top of each other — measured in the browser with
+ * real data: "Daily bug scan" and "Follow-up monitor" both at the same offset,
+ * both illegible. Nudging them apart would be a lie about when they run, so
+ * they are collapsed into one marker instead: the same instant IS one moment,
+ * and the marker can name the extras.
+ */
+export function clusterRunsByMinute(
+  runs: readonly ProjectedCronRun[],
+  day: Date,
+): RunCluster[] {
+  const byMinute = new Map<number, ProjectedCronRun[]>();
+  for (const run of runs) {
+    const at = new Date(run.atIso);
+    if (Number.isNaN(at.getTime())) continue;
+    if (
+      at.getFullYear() !== day.getFullYear() ||
+      at.getMonth() !== day.getMonth() ||
+      at.getDate() !== day.getDate()
+    ) {
+      continue;
+    }
+    const minutes = at.getHours() * 60 + at.getMinutes();
+    const bucket = byMinute.get(minutes);
+    if (bucket) bucket.push(run);
+    else byMinute.set(minutes, [run]);
+  }
+  return [...byMinute.entries()]
+    .map(([minutes, group]) => ({ minutes, runs: group }))
+    .sort((a, b) => a.minutes - b.minutes);
+}
+
+/** "Daily brief" alone, or "Daily brief +2" when others share the minute. */
+export function clusterLabel(cluster: RunCluster): string {
+  const [first, ...rest] = cluster.runs;
+  if (!first) return "";
+  return rest.length > 0 ? `${first.name} +${rest.length}` : first.name;
+}

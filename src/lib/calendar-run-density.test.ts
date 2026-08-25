@@ -4,6 +4,8 @@ import type { ProjectedCronRun } from "./calendar-cron-projection.ts";
 import {
   RUN_DENSITY_BANDS,
   RUN_DENSITY_MAX_LEVEL,
+  clusterLabel,
+  clusterRunsByMinute,
   runCountLabel,
   runCountOn,
   runDensityBands,
@@ -101,5 +103,56 @@ describe("runCountLabel", () => {
     // Week says "ritual runs", Month says "runs" — both come from the frame.
     assert.equal(runCountLabel(2, "ritual runs"), "2 ritual runs");
     assert.equal(runCountLabel(1, "ritual runs"), "1 ritual run");
+  });
+});
+
+describe("clusterRunsByMinute", () => {
+  it("collapses runs sharing a minute into one marker", () => {
+    // Regression: measured in the browser, "Daily bug scan" and "Follow-up
+    // monitor" rendered at the same offset and their labels sat on top of each
+    // other. One marker per instant is the fix.
+    const clusters = clusterRunsByMinute(
+      [at(9, 0, { name: "Daily bug scan" }), at(9, 0, { name: "Follow-up monitor" })],
+      DAY,
+    );
+    assert.equal(clusters.length, 1);
+    assert.equal(clusters[0].minutes, 9 * 60);
+    assert.equal(clusters[0].runs.length, 2);
+  });
+
+  it("keeps different minutes apart, in chronological order", () => {
+    const clusters = clusterRunsByMinute([at(22), at(9, 30), at(9)], DAY);
+    assert.deepEqual(clusters.map((c) => c.minutes), [9 * 60, 9 * 60 + 30, 22 * 60]);
+  });
+
+  it("does not merge across the hour boundary", () => {
+    const clusters = clusterRunsByMinute([at(9, 59), at(10, 0)], DAY);
+    assert.equal(clusters.length, 2);
+  });
+
+  it("ignores other days and unparseable instants", () => {
+    const other = { ...at(9), atIso: new Date(2026, 7, 26, 9).toISOString() };
+    const bad = { ...at(9), atIso: "nonsense" };
+    assert.equal(clusterRunsByMinute([at(9), other, bad], DAY).length, 1);
+  });
+
+  it("loses no run: clusters account for exactly the day's runs", () => {
+    const runs = [at(9), at(9), at(9, 30), at(22)];
+    const clustered = clusterRunsByMinute(runs, DAY).reduce((n, c) => n + c.runs.length, 0);
+    assert.equal(clustered, runCountOn(runs, DAY));
+  });
+});
+
+describe("clusterLabel", () => {
+  it("names a lone run plainly", () => {
+    assert.equal(clusterLabel(clusterRunsByMinute([at(9, 0, { name: "Daily brief" })], DAY)[0]), "Daily brief");
+  });
+
+  it("counts the extras rather than overprinting them", () => {
+    const c = clusterRunsByMinute(
+      [at(9, 0, { name: "Daily brief" }), at(9, 0, { name: "B" }), at(9, 0, { name: "C" })],
+      DAY,
+    )[0];
+    assert.equal(clusterLabel(c), "Daily brief +2");
   });
 });

@@ -1,7 +1,14 @@
 "use client";
 
 import "@/styles/calendar.css";
-import { RUN_DENSITY_MAX_LEVEL, runCountLabel, runCountOn, runDensityBands } from "@/lib/calendar-run-density";
+import {
+  RUN_DENSITY_MAX_LEVEL,
+  clusterLabel,
+  clusterRunsByMinute,
+  runCountLabel,
+  runCountOn,
+  runDensityBands,
+} from "@/lib/calendar-run-density";
 
 import { useCallback, useContext, useId, useMemo, useState, useRef, useEffect, type SetStateAction } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -676,22 +683,22 @@ function TimeGrid({
                 point in time and AutomationRunRecord records no duration; a
                 block would imply one. Outside the lane packer for the same
                 reason, so a forecast never displaces a real event. */}
-            {(col.projectedRuns ?? []).map((run) => {
-              const at = new Date(run.atIso);
-              if (Number.isNaN(at.getTime())) return null;
-              const mins = at.getHours() * 60 + at.getMinutes();
+            {clusterRunsByMinute(col.projectedRuns ?? [], col.date).map((cluster) => {
+              const first = cluster.runs[0];
+              const names = cluster.runs.map((r) => r.name).join(", ");
               return (
                 <div
-                  key={`${run.automationId}-${run.atIso}`}
+                  key={cluster.minutes}
                   className="cal-run-mark"
-                  style={{ top: (mins / 60) * HOUR_HEIGHT }}
-                  title={`${fmtTime(run.atIso)} · ${run.name} (projected)`}
+                  style={{ top: (cluster.minutes / 60) * HOUR_HEIGHT }}
+                  title={`${fmtTime(first.atIso)} · ${names} (projected)`}
                 >
                   <span className="sr-only">
-                    Projected run, {run.name}, {fmtTime(run.atIso)}
+                    {cluster.runs.length === 1 ? "Projected run" : `${cluster.runs.length} projected runs`},{" "}
+                    {names}, {fmtTime(first.atIso)}
                   </span>
                   <span aria-hidden className="cal-run-mark__tick" />
-                  <span aria-hidden className="cal-run-mark__label">{run.name}</span>
+                  <span aria-hidden className="cal-run-mark__label">{clusterLabel(cluster)}</span>
                 </div>
               );
             })}
@@ -1980,7 +1987,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
         {/* Only offered when there is something to project. A dead toggle
             teaches a reader to ignore part of the toolbar. */}
-        {effectiveView === "agenda" && cronAutomations.some((a) => a.status === "ACTIVE") ? (
+        {PROJECTING_VIEWS.has(effectiveView) && cronAutomations.some((a) => a.status === "ACTIVE") ? (
           <Button
             variant="ghost"
             size="sm"
