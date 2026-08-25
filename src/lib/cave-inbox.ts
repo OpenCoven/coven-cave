@@ -254,6 +254,101 @@ export async function dismissItem(id: string): Promise<InboxItem | null> {
   return updateItem(id, { status: "dismissed" });
 }
 
+export type FamiliarReminderEdit = {
+  title?: string;
+  body?: string | null;
+  fireAt?: string;
+};
+
+/**
+ * Mutate one path-scoped Familiar reminder inside the same lock that proves
+ * its kind and owner. A read-then-update composition would leave a race where
+ * another writer could reassign or replace the item between those operations.
+ */
+export async function updateFamiliarReminder(
+  familiarId: string,
+  id: string,
+  patch: FamiliarReminderEdit,
+): Promise<InboxItem | null> {
+  return withInboxLock(async ({ load, save }) => {
+    const file = await load();
+    const index = file.items.findIndex(
+      (item) => item.id === id && item.kind === "reminder" && item.familiarId === familiarId,
+    );
+    if (index < 0) return null;
+    const current = file.items[index]!;
+    const next: InboxItem = {
+      ...current,
+      ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+      ...(patch.body !== undefined ? { body: patch.body?.trim() || undefined } : {}),
+      ...(patch.fireAt !== undefined
+        ? { fireAt: patch.fireAt, snoozeUntil: null, status: "pending" as const }
+        : {}),
+      updatedAt: new Date().toISOString(),
+      // These are stated again so no future spread may turn this helper into a
+      // reassignment or general inbox mutation boundary.
+      id: current.id,
+      kind: "reminder",
+      familiarId,
+      createdAt: current.createdAt,
+      recurrence: current.recurrence,
+    };
+    file.items[index] = next;
+    await save(file);
+    return next;
+  });
+}
+
+export async function actOnFamiliarReminder(
+  familiarId: string,
+  id: string,
+  action: "done" | "dismiss" | "snooze",
+  snoozeUntil?: string,
+): Promise<InboxItem | null> {
+  return withInboxLock(async ({ load, save }) => {
+    const file = await load();
+    const index = file.items.findIndex(
+      (item) => item.id === id && item.kind === "reminder" && item.familiarId === familiarId,
+    );
+    if (index < 0) return null;
+    const current = file.items[index]!;
+    const now = new Date().toISOString();
+    const next: InboxItem = action === "snooze"
+      ? {
+          ...current,
+          status: "pending",
+          fireAt: snoozeUntil!,
+          snoozeUntil,
+          updatedAt: now,
+        }
+      : {
+          ...current,
+          status: action === "done" ? "done" : "dismissed",
+          readAt: current.readAt ?? now,
+          updatedAt: now,
+        };
+    file.items[index] = next;
+    await save(file);
+    return next;
+  });
+}
+
+export async function deleteFamiliarReminder(
+  familiarId: string,
+  id: string,
+): Promise<boolean> {
+  return withInboxLock(async ({ load, save }) => {
+    const file = await load();
+    const index = file.items.findIndex(
+      (item) => item.id === id && item.kind === "reminder" && item.familiarId === familiarId,
+    );
+    if (index < 0) return false;
+    file.items.splice(index, 1);
+    await save(file);
+    return true;
+  });
+}
+
 export type BulkAction = "read" | "unread" | "dismiss" | "done" | "delete";
 
 export type BulkResult = {

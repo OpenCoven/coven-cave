@@ -109,6 +109,29 @@ final class FamiliarDashboardClientTests: XCTestCase {
         XCTAssertEqual(payload.sections.analytics.data?.sampleSize, 12)
     }
 
+    func testFamiliarReminderCreateUsesTheScopedPathAndLockedAssociation() async throws {
+        FamiliarDashboardURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            let components = request.url.flatMap {
+                URLComponents(url: $0, resolvingAgainstBaseURL: false)
+            }
+            XCTAssertEqual(components?.percentEncodedPath, "/api/familiars/nova%2Ffamiliar/reminders")
+            let body = try JSONSerialization.jsonObject(
+                with: try request.bodyDataForTesting()) as? [String: Any]
+            XCTAssertEqual(body?["title"] as? String, "Review result")
+            XCTAssertNil(body?["familiarId"], "association comes only from the URL scope")
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url), statusCode: 201, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]))
+            return (response, Data(#"{"ok":true,"item":{"id":"r1","kind":"reminder","title":"Review result","status":"pending","fireAt":"2026-08-25T12:00:00Z","familiarId":"nova/familiar"}}"#.utf8))
+        }
+
+        let reminder = try await client().createFamiliarReminder(
+            familiarId: "nova/familiar", title: "Review result", body: nil,
+            fireAt: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-25T12:00:00Z")))
+        XCTAssertEqual(reminder.familiarId, "nova/familiar")
+    }
+
     // MARK: - Refusals
 
     /// The 403 is a path REFUSAL, not a credential problem. Classifying it as
