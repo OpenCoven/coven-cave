@@ -450,6 +450,7 @@ export function PopoverSubmenu({
   hint,
   disabled,
   minWidth = 200,
+  panelRole = "menu",
   className,
   children,
 }: {
@@ -459,6 +460,7 @@ export function PopoverSubmenu({
   hint?: ReactNode;
   disabled?: boolean;
   minWidth?: number;
+  panelRole?: "menu" | "dialog";
   className?: string;
   children: ReactNode;
 }) {
@@ -593,7 +595,7 @@ export function PopoverSubmenu({
         type="button"
         className={["ui-popover-item ui-popover-subtrigger", className ?? ""].filter(Boolean).join(" ")}
         role="menuitem"
-        aria-haspopup="menu"
+        aria-haspopup={panelRole}
         aria-expanded={open}
         disabled={disabled}
         data-active={open || undefined}
@@ -643,7 +645,7 @@ export function PopoverSubmenu({
                 ref={panelRef}
                 className="ui-popover ui-popover-submenu"
                 style={style}
-                role="menu"
+                role={panelRole}
                 aria-label={typeof label === "string" ? label : undefined}
                 onKeyDown={(e) => {
                   // ArrowLeft/Escape step back to the trigger row; Escape stops
