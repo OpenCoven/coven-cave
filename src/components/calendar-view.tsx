@@ -691,7 +691,6 @@ function TimeGrid({
                   key={cluster.minutes}
                   className="cal-run-mark"
                   style={{ top: (cluster.minutes / 60) * HOUR_HEIGHT }}
-                  title={`${fmtTime(first.atIso)} · ${names} (projected)`}
                 >
                   <span className="sr-only">
                     {cluster.runs.length === 1 ? "Projected run" : `${cluster.runs.length} projected runs`},{" "}
@@ -1769,7 +1768,14 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     // the month contains, or the trailing cells render empty.
     else if (effectiveView === "month") end.setDate(end.getDate() + 42);
     else end.setDate(end.getDate() + 14); // the fortnight the agenda renders
-    return projectCronRuns(cronAutomations, start.getTime(), end.getTime());
+    // projectCronRuns treats its window as INCLUSIVE of the end instant
+    // (walkWindow returns on `t > endMs`), while every end computed above is an
+    // exclusive midnight boundary. Without the -1 a cron firing at exactly
+    // 00:00 the next day joins this window: the per-day filters keep it from
+    // being drawn, but projectionSummary still counts its cron, so the footer
+    // overstates what the view shows — the exact dishonesty PROJECTING_VIEWS
+    // exists to prevent.
+    return projectCronRuns(cronAutomations, start.getTime(), end.getTime() - 1);
   }, [showRuns, cronAutomations, anchor, effectiveView]);
 
   const projectionNote = projectionSummary(projection);
