@@ -22,7 +22,6 @@ import type {
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
-import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -33,10 +32,11 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
 import { useMultiSelect } from "@/lib/use-multi-select";
-import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { buildRitualWeek, ritualAgendaItems, ritualLogItems, type RitualDay } from "@/lib/rituals-overview";
+import { failingCronIds } from "@/lib/automations/cron-health";
+import { FamiliarCarousel } from "@/components/automations/familiar-carousel";
 import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
 import { CodexDetailPanel } from "@/components/automations/cron-detail-panel";
 import { DetailPanel } from "@/components/automations/reminder-detail-panel";
@@ -92,10 +92,6 @@ function navigateToMode(mode: string) {
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
 }
 
-function relTime(iso: string | undefined | null): string {
-  if (!iso) return "—";
-  return relativeTimeSigned(iso);
-}
 // ── Ritual overview ──────────────────────────────────────────────────────────
 
 // ── Root ──────────────────────────────────────────────────────────────────────
@@ -628,20 +624,42 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     setStoredFamiliarFilter([...next].sort().join(","));
   }, [setStoredFamiliarFilter]);
 
+  // "Failing" means the newest run this app recorded ended in failure — the
+  // header chip, its filter and the Active group's count all read this one set,
+  // so they can never disagree. See cron-health.ts for why there is no "stale".
+  const failingIds = useMemo(() => failingCronIds(codexAutos, lastRunById), [codexAutos, lastRunById]);
+  const [failingOnly, setFailingOnly] = useState(false);
+  // A filter with nothing left to match is a dead toggle: drop it the moment
+  // the last failure clears, rather than showing an empty list with no cause.
+  useEffect(() => {
+    if (failingOnly && failingIds.size === 0) setFailingOnly(false);
+  }, [failingOnly, failingIds.size]);
+
   const codexActive = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
+        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!failingOnly || failingIds.has(a.id)) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, hiddenIds, q],
+    [codexAutos, familiarFilter, failingIds, failingOnly, hiddenIds, q],
   );
   const codexPaused = useMemo(
+    // A paused cron is off, not failing, so the failing filter hides the whole
+    // Paused group rather than pretending none of them match.
     () =>
-      codexAutos.filter(
+      failingOnly ? [] : codexAutos.filter(
         (a) => a.status === "PAUSED" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, hiddenIds, q],
+    [codexAutos, familiarFilter, failingOnly, hiddenIds, q],
   );
+  // Cron counts per familiar for the carousel cards — unfiltered, so the strip
+  // keeps reporting the whole picture while a scope is active.
+  const cronCountByFamiliar = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const auto of codexAutos) {
+      for (const id of auto.familiars) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  }, [codexAutos]);
 
   // Inbox tab: the FULL feed (every kind). `inboxVisible` is the search-filtered
   // flat list — the selection universe, so "select all" always means "all
@@ -738,13 +756,17 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
   // At-a-glance operational summary for the header: how many automations are
   // live vs paused. Crons fire server-side, so they don't contribute a next-fire
   // timestamp in this narrowed Calendar/Crons surface.
+  // Counted off the unfiltered set, not the visible rows: these chips describe
+  // the surface, and a chip that shrank because you scoped to one familiar
+  // would be reporting the filter back at you instead of the crons.
   const summary = useMemo(() => {
     return {
-      active: codexActive.length,
-      paused: codexPaused.length,
+      active: codexAutos.filter((a) => a.status === "ACTIVE" && !hiddenIds.has(a.id)).length,
+      paused: codexAutos.filter((a) => a.status === "PAUSED" && !hiddenIds.has(a.id)).length,
+      failing: failingIds.size,
       soonest: undefined as string | undefined,
     };
-  }, [codexActive.length, codexPaused.length]);
+  }, [codexAutos, failingIds.size, hiddenIds]);
 
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
@@ -786,9 +808,18 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
     >
     <section className="flex h-full [background:var(--bg-base)]!">
       {/* ── Main list ──────────────────────────────────────────────────────── */}
-      <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
-        <div className="surface-compact-header rituals-overview__header">
-          <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
+      {/* @container on the wrapper, not just the panel: the header's status
+          chips and search have to collapse against the width the LIST actually
+          gets, which halves the moment a detail rail opens beside it. */}
+      <div className={`@container ${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
+        <div className={`surface-compact-header rituals-overview__header${activeTab === "crons" ? " rituals-crons-header" : ""}`}>
+          {activeTab === "crons" ? (
+            <span aria-hidden className="rituals-crons-badge">
+              <Icon name="ph:moon" width={15} aria-hidden />
+            </span>
+          ) : (
+            <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
+          )}
           <h1 className="surface-compact-title">Rituals</h1>
           <Tabs
             items={RITUAL_TABS}
@@ -804,16 +835,34 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
             <p className="surface-compact-summary">{ritualWeekLabel(ritualWeek)}</p>
           ) : null}
           {activeTab === "crons" && initialLoadDone && summary.active + summary.paused > 0 && (
-            <p className="surface-compact-summary">
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full [background:var(--accent-presence)]!" />
+            /* Three chips, not a sentence: active and paused are readouts,
+               failing is a real filter toggle. Below the header's own wrap
+               point the two readouts drop and only the failing toggle stays —
+               it is the one that costs something to miss. */
+            <div className="rituals-crons-chips">
+              <span className="rituals-crons-chip @max-[780px]:hidden">
+                <span aria-hidden className="rituals-crons-chip__dot" />
                 {summary.active} active
               </span>
-              {summary.paused > 0 && <span>· {summary.paused} paused</span>}
-              {summary.soonest && (
-                <span title={`Next fire: ${summary.soonest}`}>· next fire {relTime(summary.soonest)}</span>
+              {summary.paused > 0 && (
+                <span className="rituals-crons-chip rituals-crons-chip--paused @max-[780px]:hidden">
+                  <span aria-hidden className="rituals-crons-chip__dot rituals-crons-chip__dot--paused" />
+                  {summary.paused} paused
+                </span>
               )}
-            </p>
+              {summary.failing > 0 && (
+                <button
+                  type="button"
+                  className="rituals-crons-chip rituals-crons-chip--failing focus-ring"
+                  aria-pressed={failingOnly}
+                  title={failingOnly ? "Show every cron" : "Show only failing crons"}
+                  onClick={() => setFailingOnly((value) => !value)}
+                >
+                  <span aria-hidden className="rituals-crons-chip__triangle" />
+                  {summary.failing} failing
+                </button>
+              )}
+            </div>
           )}
           <div className="surface-compact-actions">
             {activeTab === "overview" && searchOpen && initialLoadDone ? (
@@ -837,15 +886,42 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
               />
             ) : null}
             {activeTab === "crons" && initialLoadDone && codexAutos.length > 0 ? (
-              <div className="surface-compact-search">
-                <SearchInput
-                  value={query}
-                  onValueChange={setQuery}
-                  onClear={() => setQuery("")}
-                  placeholder="Filter crons…"
-                  aria-label="Filter crons"
-                />
-              </div>
+              /* Below 700px the field collapses to its magnifier, which then
+                 opens it — the CTA beside it must never be the thing that
+                 wraps. */
+              <>
+                {searchOpen ? (
+                  <div className="surface-compact-search">
+                    <SearchInput
+                      value={query}
+                      onValueChange={setQuery}
+                      onClear={() => { setQuery(""); setSearchOpen(false); }}
+                      placeholder="Filter crons…"
+                      aria-label="Filter crons"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="surface-compact-search @max-[700px]:hidden">
+                      <SearchInput
+                        value={query}
+                        onValueChange={setQuery}
+                        onClear={() => setQuery("")}
+                        placeholder="Filter crons…"
+                        aria-label="Filter crons"
+                      />
+                    </div>
+                    <Button
+                      aria-label="Filter crons"
+                      size="sm"
+                      variant="ghost"
+                      className="@min-[700px]:hidden"
+                      leadingIcon="ph:magnifying-glass"
+                      onClick={() => setSearchOpen(true)}
+                    />
+                  </>
+                )}
+              </>
             ) : null}
             {activeTab === "overview" ? (
               <>
@@ -957,7 +1033,7 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
           id={`automations-panel-${activeTab}`}
           aria-labelledby={`automations-tab-${activeTab}`}
           aria-label={activeTab === "overview" ? "Rituals overview" : activeTab === "calendar" ? "Rituals calendar" : "Rituals crons"}
-          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : activeTab === "overview" ? "@container flex-1 overflow-y-auto rituals-overview" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
+          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : activeTab === "overview" ? "@container flex-1 overflow-y-auto rituals-overview" : "@container rituals-crons-panel flex-1 overflow-y-auto"}>
           {activeTab === "calendar" ? (
             calendarSlot
           ) : !initialLoadDone ? (
@@ -1148,23 +1224,28 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
           ) : (
             <>
               {resolvedFamiliars.length > 0 && (
-                <FamiliarMultiSelect
+                <FamiliarCarousel
                   familiars={resolvedFamiliars}
                   selected={familiarFilter}
                   onChange={updateFamiliarFilter}
+                  countById={cronCountByFamiliar}
+                  totalCount={codexAutos.length}
                 />
               )}
               <AutomationsPanel
                 active={codexActive}
                 paused={codexPaused}
+                failingCount={summary.failing}
                 selectedId={selectedAutomationId}
                 familiarsById={familiarsById}
                 lastRunById={lastRunById}
                 onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
               />
-              {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
+              {codexActive.length === 0 && codexPaused.length === 0 && (
                 <p className="mt-2 text-[length:var(--text-sm)] [color:var(--text-muted)]!">
-                  No crons match this familiar filter.
+                  {failingOnly
+                    ? "No failing crons — clear the failing filter to see the rest."
+                    : "No crons match this familiar filter."}
                 </p>
               )}
             </>
