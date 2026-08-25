@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./right-chat-panel.tsx", import.meta.url), "utf8");
+const shellCss = await readFile(new URL("../styles/globals/shell-navigation.css", import.meta.url), "utf8");
 
 assert.match(source, /<aside[^>]+aria-label="Chat panel"/, "desktop content is a named complementary landmark");
 assert.match(
@@ -30,17 +31,37 @@ assert.match(
   /routerRef\.current\?\.newChat\(undefined, undefined, activeFamiliar\.id\)/,
   "no eligible chat opens a familiar-bound blank compose",
 );
-// The switcher is the design system's StandardSelect, whose `label` prop
-// becomes the trigger button's aria-label — a native <select> here would trip
-// the `components/no-native-select` drift ratchet.
 assert.match(
   source,
-  /<StandardSelect\b[\s\S]*?label="Switch Chat panel thread"/,
-  "the compact header exposes a labelled thread switcher",
+  /<nav className="right-chat__rail" aria-label="Chat panel controls">/,
+  "Chat actions live in a dedicated vertical control rail",
+);
+assert.doesNotMatch(source, /right-chat__header/, "the redundant horizontal header stays removed");
+// The switcher is the design system's StandardSelect, whose dynamic `label`
+// names the current thread for assistive technology.
+assert.match(
+  source,
+  /<StandardSelect\b[\s\S]*?label=\{`Switch Chat panel thread, current: \$\{title\}`\}[\s\S]*?showCaret=\{false\}/,
+  "the control rail exposes a labelled icon-only thread switcher",
 );
 assert.doesNotMatch(source, /<select\b/, "the thread switcher never regresses to a native select");
 assert.match(source, /aria-label="New Chat panel chat"/, "the compact header exposes New chat");
 assert.match(source, /aria-label="Close Chat panel"/, "the compact header exposes Close");
+assert.match(
+  shellCss,
+  /\.right-chat \.home-dash__board-head,[\s\S]*?\.right-chat \.cave-sf,[\s\S]*?display: none;/,
+  "the narrow new-chat panel keeps the composer and removes the full-width dashboard chrome",
+);
+assert.match(
+  shellCss,
+  /\.right-chat \.home-dash__board \{[\s\S]*?padding: 0 var\(--space-3\);/,
+  "the side-chat composer uses compact panel gutters",
+);
+assert.match(
+  shellCss,
+  /\.right-chat \.cave-chat-linear \.cave-chat-transcript \{[\s\S]*?padding-inline: var\(--space-2\);/,
+  "the auxiliary transcript releases the full-width reading gutters",
+);
 assert.doesNotMatch(
   source,
   /RightPanelKind|companionTabs|agent\?: ReactNode/,

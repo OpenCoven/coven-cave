@@ -1,8 +1,8 @@
 export const RIGHT_CHAT_OPEN_PREF_KEY = "cave:shell:right-chat-open";
 export const RIGHT_CHAT_WIDTH_PREF_KEY = "cave:shell:right-chat-width";
-export const RIGHT_CHAT_DEFAULT_PX = 360;
-export const RIGHT_CHAT_MIN_PX = 320;
-export const RIGHT_CHAT_MAX_PX = 640;
+export const RIGHT_CHAT_DEFAULT_PX = 320;
+export const RIGHT_CHAT_MIN_PX = 280;
+export const RIGHT_CHAT_MAX_PX = 520;
 export const SHELL_DETAIL_MIN_PX = 320;
 
 const SHELL_SEPARATOR_PX = 4;

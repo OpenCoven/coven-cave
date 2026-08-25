@@ -82,9 +82,10 @@ assert.match(
 // New chats (inlineComposer): cluster mounts in footer band; active chats: session header
 assert.match(
   source,
-  /className="cave-composer-footer-band">[\s\S]*?\{inlineComposer \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}[\s\S]*?<FollowUpCards/,
-  "the band conditionally mounts the context cluster (inlineComposer only); linked work and follow-ups always follow",
+  /className="cave-composer-footer-band">[\s\S]*?\{inlineComposer \? \([\s\S]*?<div className="cave-composer-footer-band__cluster">[\s\S]*?\{chatContextControls\}[\s\S]*?<\/div>[\s\S]*?\) : null\}[\s\S]*?\{linkedContextRow\}/,
+  "the band conditionally mounts the context cluster (inlineComposer only) and linked work",
 );
+assert.doesNotMatch(source, /<FollowUpCards|cave-chat-followups/, "the footer has no recommendation section");
 assert.match(
   source,
   /cave-chat-header-context">\{chatContextControls\}/,
@@ -245,11 +246,7 @@ assert.match(
   /\.cave-chat-linear \.cave-chat-thread \{[\s\S]*max-width:\s*var\(--cave-chat-measure\);/,
   "chat thread should cap itself with the shared measure token",
 );
-assert.match(
-  transcriptCss,
-  /\.cave-chat-followups \{[\s\S]*flex:\s*0 0 100%;[\s\S]*border-top:\s*1px solid var\(--border-hairline\);/,
-  "follow-up options should span the attached footer below its context row",
-);
+assert.doesNotMatch(transcriptCss, /\.cave-chat-followups/, "removed recommendation styles do not reserve footer height");
 assert.match(
   transcriptCss,
   /\.cave-chat-linear \.cave-composer-shell \{[\s\S]*max-width:\s*100%;/,

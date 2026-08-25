@@ -352,7 +352,7 @@ test("conversation loading persists live history and falls back to a labelled re
   );
   assert.match(chatView, /readOnly=\{offlineReadOnly\}/);
   assert.match(chatView, /feedbackContext=\{readOnly \? undefined : feedbackContext\}/);
-  assert.match(chatView, /taskSuggestion && sessionId && !offlineReadOnly/);
+  assert.doesNotMatch(chatView, /taskSuggestion|FollowUpTaskReview/);
   assert.match(chatView, /voiceCallOpen && sessionId && !offlineReadOnly/);
   const chatHeader = readFileSync(
     new URL("../components/chat-session-header.tsx", import.meta.url),
