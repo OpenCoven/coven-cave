@@ -135,6 +135,66 @@ test("Coven client fails closed for malformed or unavailable CLI responses", () 
   );
 });
 
+test("a command that never ran is reported as such, not as an unavailable version", () => {
+  // cave-a8uza. A spawn that timed out used to arrive at commandFailure with no
+  // stderr and be reported as a bare `coven-version-unavailable` — a message
+  // about the CLI's VERSION for a failure that was a timeout, and one that
+  // reads exactly like the deterministic "too old" refusal. A session spent
+  // ~40 minutes auditing three coven installs because of it. These two cases
+  // must stay distinguishable.
+  const timedOut = createCovenMaintenanceClient({
+    run: () => ({
+      ok: false,
+      stdout: "",
+      stderr: "",
+      status: null,
+      binary: "/usr/local/bin/coven",
+      spawnFailure: {
+        kind: "timeout",
+        code: "ETIMEDOUT",
+        timeoutMs: 35_000,
+        elapsedMs: 35_004,
+        binary: "/usr/local/bin/coven",
+      },
+    }),
+  });
+  const result = timedOut.acquire({ ownerId: "cave-maintenance", repoDir });
+  assert.equal(result.ok, false);
+  assert.match(
+    result.reason,
+    /^coven-version-did-not-run: /,
+    "a spawn that never produced output must not be reported as a version verdict",
+  );
+  assert.match(result.reason, /timed out after 35000ms/, "says what actually happened");
+  assert.match(result.reason, /transient — retry/, "says the remedy, unlike the version refusal");
+  assert.match(result.reason, /\/usr\/local\/bin\/coven/, "names the binary it tried");
+  assert.doesNotMatch(
+    result.reason,
+    /unavailable/,
+    "must not reuse the vocabulary of a genuine version failure",
+  );
+});
+
+test("a command that RAN and failed still reports the version vocabulary", () => {
+  // The other side of the same contract: a real non-zero exit with stderr is a
+  // version verdict and must keep saying so, or the fix above would just move
+  // the ambiguity rather than remove it.
+  const ranAndFailed = createCovenMaintenanceClient({
+    run: () => ({
+      ok: false,
+      stdout: "",
+      stderr: "coven: unknown subcommand 'owner'\n",
+      status: 2,
+      binary: "/usr/local/bin/coven",
+    }),
+  });
+  const result = ranAndFailed.acquire({ ownerId: "cave-maintenance", repoDir });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /^coven-version-unavailable: /);
+  assert.match(result.reason, /unknown subcommand/, "keeps the client's own first stderr line");
+  assert.doesNotMatch(result.reason, /did-not-run/);
+});
+
 test("Coven client rejects maintenance protocols below the reviewed release", () => {
   assert.equal(supportsCovenMaintenanceVersion("coven 0.2.5"), true);
   assert.equal(supportsCovenMaintenanceVersion("coven v0.3.0"), true);
