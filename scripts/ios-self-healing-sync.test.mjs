@@ -68,7 +68,7 @@ assert.match(
 // --- New host handoff: do not show stale old-host data while probing the new one
 assert.match(
   model,
-  /func configure\(host: String, token: String\? = nil\) async \{[\s\S]*?let isSameEndpoint[\s\S]*?if !isSameEndpoint \{[\s\S]*?resetHostScopedStateForNewConnection\(\)/,
+  /func configure\(host: String, token: String\? = nil\) async -> ConnectionDispatchLease\? \{[\s\S]*?let isSameEndpoint[\s\S]*?if !isSameEndpoint \{[\s\S]*?resetHostScopedStateForNewConnection\(\)/,
   "configuring a different host should clear host-scoped data before probing it",
 );
 assert.match(

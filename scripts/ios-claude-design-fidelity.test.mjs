@@ -112,8 +112,8 @@ assert.match(
 );
 assert.match(
   appModel,
-  /guard let intent = ProjectNavigationIntent\(url: url\) else \{ return \}[\s\S]*pendingProjectNavigationIntent = intent[\s\S]*resolvePendingProjectNavigationIntent\([^)]*\)/,
-  "runtime links queue one project-aware navigation intent until hydration can resolve it",
+  /guard let intent = ProjectNavigationIntent\(url: url\) else \{ return \}[\s\S]*beginProjectNavigation\(intent\)/,
+  "runtime links enter the centralized project-navigation authority so they queue until hydration can resolve them",
 );
 assert.match(
   appModel,
