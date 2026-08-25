@@ -1422,6 +1422,7 @@ export const SUITES = {
     "src/app/api/canvas/route.test.ts",
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
+    "src/lib/server/client-v1/authority-contract.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
     "src/lib/server/client-v1/operations.test.ts",
     "src/lib/server/client-v1/instance-id.test.ts",
