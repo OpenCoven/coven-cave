@@ -7,6 +7,7 @@ import {
   callDaemonTarget,
   daemonTargetForConfig,
   extractDaemonError,
+  localDaemonTarget,
   type DaemonResponse,
   type DaemonTarget,
 } from "@/lib/coven-daemon";
@@ -18,6 +19,7 @@ import { daemonHealthRequest, daemonHealthResponseSucceeded } from "@/lib/server
 import { assessDaemonStartupCompatibility, type DaemonStartupHealth } from "@/lib/daemon-startup-contract";
 import { classifyHubFailure } from "@/lib/server/daemon-probe";
 import { reconcileDaemonTravelState } from "@/lib/server/daemon-travel-reconcile";
+import { supportsSessionLaunchPolicy } from "@/lib/server/research-launch-policy";
 import {
   daemonDiagnosticContextFromRequest,
   DAEMON_DIAGNOSTIC_CORRELATION_HEADER,
@@ -92,6 +94,22 @@ export async function GET(request: Request) {
         },
       },
     );
+  const scope = new URL(request.url).searchParams.get("scope");
+  if (scope === "research-local") {
+    const target = localDaemonTarget();
+    const res = await callDaemonTarget<Health>(target, {
+      ...daemonHealthRequest(),
+      diagnostics,
+      diagnosticOperation: "research-local-capability",
+    });
+    const health = daemonHealthResponseSucceeded(res) ? res.data : null;
+    const sessionLaunchPolicy = supportsSessionLaunchPolicy(health);
+    return respond({
+      running: health !== null,
+      target: targetSummary(target),
+      research: { sessionLaunchPolicy },
+    });
+  }
   let snapshot: Awaited<ReturnType<typeof loadDaemonStatusSnapshot>>;
   try {
     snapshot = await loadDaemonStatusSnapshot();

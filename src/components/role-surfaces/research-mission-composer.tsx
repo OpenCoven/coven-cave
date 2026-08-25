@@ -261,18 +261,31 @@ export function ResearchMissionComposer({
 
   useEffect(() => {
     modelSelectionDirtyRef.current = false;
+    setHarness(RESEARCH_RUNTIME_DEFAULT_HARNESS);
+    setModel("");
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(
-          `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
-          { cache: "no-store" },
-        );
+        const [response, researchStatus] = await Promise.all([
+          fetch(
+            `/api/chat/model-state?familiarId=${encodeURIComponent(familiarId)}`,
+            { cache: "no-store" },
+          ),
+          fetch("/api/daemon/status?scope=research-local", { cache: "no-store" })
+            .then((result) => result.json() as Promise<{
+              research?: { sessionLaunchPolicy?: boolean };
+            }>)
+            .catch(() => null),
+        ]);
         const json = (await response.json()) as {
           ok?: boolean;
           state?: ChatModelState;
         };
         if (cancelled || modelSelectionDirtyRef.current || !json.ok || !json.state) return;
+        if (
+          json.state.harness === "codex"
+          && researchStatus?.research?.sessionLaunchPolicy !== true
+        ) return;
         setHarness(json.state.harness);
         setModel(json.state.effectiveModel);
       } catch {
@@ -282,7 +295,7 @@ export function ResearchMissionComposer({
     return () => {
       cancelled = true;
     };
-  }, [familiarId]);
+  }, [familiarId, daemonRunning]);
 
   useEffect(() => {
     if (
