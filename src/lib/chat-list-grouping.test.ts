@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NO_CHAT_ATTENTION } from "./chat-attention.ts";
 import { createChatProjectIndex, type CaveProject } from "./chat-projects.ts";
 import { deriveChatListProjectGroups } from "./chat-list-grouping.ts";
 import type { SessionRow } from "./types.ts";
@@ -33,6 +34,7 @@ function session(id: string, projectRoot: string): SessionRow {
     archived_at: null,
     created_at: "2026-08-24T00:00:00.000Z",
     updated_at: "2026-08-24T00:00:00.000Z",
+    attention: NO_CHAT_ATTENTION,
     familiarId: "nova",
     origin: "chat",
   };
