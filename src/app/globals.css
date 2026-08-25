@@ -22,6 +22,7 @@
 @import "../styles/globals/rail-header.css";
 @import "../styles/globals/workspace-context-switcher.css";
 @import "../styles/globals/primitives.css";
+@import "../styles/globals/command-palette.css";
 @import "../styles/globals/themes.css";
 @import "../styles/globals/desktop-chrome.css";
 @import "../styles/globals/shell-responsive.css";
