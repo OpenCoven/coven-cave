@@ -19,7 +19,10 @@ final class PairingIntentTests: XCTestCase {
     }
 
     func testNonConnectDeepLinkStillRoutesWithoutCreatingPairingIntent() throws {
-        let app = AppModel()
+        let suiteName = "PairingIntentTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let app = AppModel(defaults: defaults, restoreLocalState: false)
         app.selectedTab = .settings
         let url = try XCTUnwrap(URL(string: "covencave://tasks"))
 
