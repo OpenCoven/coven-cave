@@ -264,6 +264,7 @@ export const SUITES = {
     "scripts/branch-cap-workflow.test.mjs",
     "scripts/check-opencode-registry-release.test.mjs",
     "scripts/check-grok-registry-release.test.mjs",
+    "scripts/check-openclaw-registry-release.test.mjs",
     "scripts/check-x-app-release.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/opencoven-tools-state.test.ts",
