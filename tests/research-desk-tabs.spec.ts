@@ -1,9 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-const agenticRecommendationsEnabled = ["1", "true", "yes", "on"].includes(
-  process.env.NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS?.trim().toLowerCase() ?? "",
-);
-
 // Research Desk five-tab surface (cave-dl74) — Prompt / Desk / Library /
 // Studio / Resources inside the researcher role room (surface:researcher-desk).
 //
@@ -1358,19 +1354,7 @@ test.describe("research desk tabs", () => {
     await expect(intake.getByText("1 ready for the first pass")).toBeVisible();
   });
 
-  test("keeps Research recommendations hidden and idle when the capability is disabled", async ({ page }) => {
-    test.skip(agenticRecommendationsEnabled, "this behavioral gate runs in the disabled capability build");
-    const handles = await openResearchDesk(page);
-
-    await deskTab(page, /^Prompt/).click();
-    await expect(page.getByRole("heading", { name: "Suggested next topics" })).toHaveCount(0);
-    await page.waitForTimeout(1_200);
-    expect(handles.recommendationRequests).toBe(0);
-  });
-
   test.describe("agentic topic recommendations", () => {
-    test.skip(!agenticRecommendationsEnabled, "run with NEXT_PUBLIC_CAVE_AGENTIC_RECOMMENDATIONS=1");
-
     test("grounds next topics in Desk evidence, ignores prompt typing, and only starts after activation", async ({ page }) => {
       const handles = await openResearchDesk(page);
       handles.recommendationResponse = {
