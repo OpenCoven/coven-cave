@@ -4098,6 +4098,7 @@ final class AppModelProjectContextTests: XCTestCase {
         )
         let app = makeApp(coreResourceClientFactory: { _ in initialClient })
         _ = connect(app, host: "http://127.0.0.1:1")
+        await app.loadProjectContext(using: initialClient)
         app.projects = [alpha]
         app.projectsLoaded = true
         app.projectMembership = ProjectMembershipIndex(
@@ -4106,6 +4107,7 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectMembershipLoaded = true
         app.familiars = [familiar("nova", "Nova")]
         app.projectContext = .project(alpha)
+        let baselineInitialCalls = await initialClient.callLog.snapshot()
 
         let existing = ChatThread(
             title: "Recovered local copy",
@@ -4146,7 +4148,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertEqual(app.threads.count, 1)
         let initialCalls = await initialClient.callLog.snapshot()
-        XCTAssertEqual(initialCalls.sessions, 1)
+        XCTAssertEqual(initialCalls.sessions, baselineInitialCalls.sessions + 1)
         let refreshedCalls = await refreshedClient.callLog.snapshot()
         XCTAssertEqual(refreshedCalls.sessions, 1)
     }

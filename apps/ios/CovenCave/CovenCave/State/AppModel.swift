@@ -273,8 +273,14 @@ final class AppModel {
     }
 
     private struct CoordinatedLoadToken: Equatable {
+        enum Scope: Equatable {
+            case standalone
+            case projectContext
+        }
+
         let generation: UInt64?
         let requestId: UInt64
+        let scope: Scope
     }
 
     private struct CoordinatedLoadOutput<Value>: @unchecked Sendable {
@@ -924,20 +930,23 @@ final class AppModel {
     private func beginCoordinatedLoad<Value>(
         _ state: inout CoordinatedLoadState<Value>,
         generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope,
         operation: @escaping @Sendable () async throws -> Value
     ) -> (
         token: CoordinatedLoadToken,
         task: Task<CoordinatedLoadOutput<Value>, Never>
     ) {
         if let inFlight = state.inFlight,
-           inFlight.token.generation == generation {
+           inFlight.token.generation == generation,
+           inFlight.token.scope == scope {
             return inFlight
         }
 
         state.nextRequestId &+= 1
         let token = CoordinatedLoadToken(
             generation: generation,
-            requestId: state.nextRequestId
+            requestId: state.nextRequestId,
+            scope: scope
         )
         state.freshest = token
         let task = Task {
@@ -994,12 +1003,17 @@ final class AppModel {
 
     private func coordinatedSessionsLoad(
         using client: any ProjectContextLoadingClient,
-        generation: UInt64?
+        generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope = .standalone
     ) async -> (
         token: CoordinatedLoadToken,
         result: Result<[SessionRow], any Error>
     ) {
-        let handle = beginCoordinatedLoad(&sessionsLoadState, generation: generation) {
+        let handle = beginCoordinatedLoad(
+            &sessionsLoadState,
+            generation: generation,
+            scope: scope
+        ) {
             try await client.sessions()
         }
         let output = await handle.task.value
@@ -1009,12 +1023,17 @@ final class AppModel {
 
     private func coordinatedTasksLoad(
         using client: any ProjectContextLoadingClient,
-        generation: UInt64?
+        generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope = .standalone
     ) async -> (
         token: CoordinatedLoadToken,
         result: Result<[BoardCard], any Error>
     ) {
-        let handle = beginCoordinatedLoad(&tasksLoadState, generation: generation) {
+        let handle = beginCoordinatedLoad(
+            &tasksLoadState,
+            generation: generation,
+            scope: scope
+        ) {
             try await client.tasks()
         }
         let output = await handle.task.value
@@ -3803,7 +3822,8 @@ final class AppModel {
         if !haveUsableSessions {
             let loadedSessions = await coordinatedSessionsLoad(
                 using: client,
-                generation: navigationGeneration
+                generation: navigationGeneration,
+                scope: .projectContext
             )
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
                 throw CancellationError()
@@ -3857,7 +3877,8 @@ final class AppModel {
         ) {
             let loadedTasks = await coordinatedTasksLoad(
                 using: client,
-                generation: navigationGeneration
+                generation: navigationGeneration,
+                scope: .projectContext
             )
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
                 throw CancellationError()
