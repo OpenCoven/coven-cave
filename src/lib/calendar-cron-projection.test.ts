@@ -122,3 +122,16 @@ describe("projectionSummary", () => {
     assert.equal(projectionSummary({ runs: [], projectedCount: 0, truncated: false }), null);
   });
 });
+
+// Regression, found by driving the real calendar rather than by a unit test:
+// the default view is Week, which draws no projected rows, yet the footer
+// still read "13 active crons project onto this calendar". A surface that
+// announces a projection it is not rendering is the same class of defect as a
+// status it cannot know. The chrome is now scoped to the view that draws it —
+// see the `effectiveView !== "agenda"` guard in calendar-view.tsx — and this
+// asserts the model's half of that contract: no runs means no sentence.
+describe("projection chrome contract", () => {
+  it("says nothing when there is nothing drawn", () => {
+    assert.equal(projectionSummary({ runs: [], projectedCount: 0, truncated: false }), null);
+  });
+});

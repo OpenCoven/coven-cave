@@ -1581,16 +1581,18 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   // The window the current view actually shows, so a month view projects a
   // month and an agenda projects the fortnight it renders — projecting a fixed
   // span would either under-fill the month or over-compute the agenda.
+  // Agenda only, for now. Day/Week/Month do not draw projected runs yet, and a
+  // footer claiming "13 active crons project onto this calendar" over a view
+  // that renders none of them is the surface lying about itself — caught by
+  // driving it: the default view is Week, where the note appeared over zero
+  // rows. Extending the projection to the other three is cave-9f3i3 follow-up.
   const projection: CronProjection = useMemo(() => {
-    if (!showRuns || cronAutomations.length === 0) {
+    if (!showRuns || effectiveView !== "agenda" || cronAutomations.length === 0) {
       return { runs: [], projectedCount: 0, truncated: false };
     }
     const start = startOfDay(anchor);
     const end = new Date(start);
-    if (effectiveView === "day") end.setDate(end.getDate() + 1);
-    else if (effectiveView === "week") end.setDate(end.getDate() + 7);
-    else if (effectiveView === "month") end.setMonth(end.getMonth() + 1);
-    else end.setDate(end.getDate() + 14); // agenda reads two weeks ahead
+    end.setDate(end.getDate() + 14); // the fortnight the agenda renders
     return projectCronRuns(cronAutomations, start.getTime(), end.getTime());
   }, [showRuns, cronAutomations, anchor, effectiveView]);
 
@@ -1809,7 +1811,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
         {/* Only offered when there is something to project. A dead toggle
             teaches a reader to ignore part of the toolbar. */}
-        {cronAutomations.some((a) => a.status === "ACTIVE") ? (
+        {effectiveView === "agenda" && cronAutomations.some((a) => a.status === "ACTIVE") ? (
           <Button
             variant="ghost"
             size="sm"
