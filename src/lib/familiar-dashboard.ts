@@ -59,6 +59,10 @@ export const FAMILIAR_DASHBOARD_LIMITS = {
   responseBytes: 128 * 1024,
   activeSessions: 3,
   recentSessions: 5,
+  assignedTasks: 6,
+  taskDependencies: 8,
+  attention: 6,
+  reminders: 5,
   memoryEntries: 8,
   reports: 30,
   contractFindings: 10,
@@ -97,6 +101,8 @@ export type ClientDashboardSectionState =
 export const FAMILIAR_DASHBOARD_SOURCES = [
   "familiar",
   "sessions",
+  "tasks",
+  "reminders",
   "memory",
   "contract",
   "self_reports",
@@ -124,6 +130,8 @@ export const FAMILIAR_DASHBOARD_ISSUE_CODES = [
   "familiar_unavailable",
   "sessions_unavailable",
   "sessions_degraded",
+  "tasks_unavailable",
+  "reminders_unavailable",
   "memory_unavailable",
   "contract_unavailable",
   "self_reports_unavailable",
@@ -184,6 +192,44 @@ export type FamiliarDashboardMemoryEntry = {
   verification: string;
 };
 
+export type FamiliarDashboardTaskDependency = {
+  id: string;
+  kind: string;
+  label: string;
+};
+
+export type FamiliarDashboardTask = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  projectId: string | null;
+  sessionId: string | null;
+  updatedAt: string;
+  unresolvedDependencies: BoundedList<FamiliarDashboardTaskDependency>;
+  primaryBlockerId: string | null;
+  nextStep: { summary: string; requiresApproval: boolean } | null;
+};
+
+export type FamiliarDashboardReminder = {
+  id: string;
+  title: string;
+  body: string | null;
+  status: string;
+  fireAt: string | null;
+  firedAt: string | null;
+  updatedAt: string;
+  familiarId: string;
+};
+
+export type FamiliarDashboardAttention = {
+  id: string;
+  source: "task" | "reminder";
+  kind: "blocked" | "review" | "fired_reminder";
+  title: string;
+  targetId: string;
+};
+
 /**
  * What this Familiar is doing right now.
  *
@@ -197,12 +243,20 @@ export type FamiliarDashboardMemoryEntry = {
  */
 export type FamiliarDashboardNow =
   | { kind: "session"; id: string; title: string; updatedAt: string }
+  | { kind: "task"; id: string; title: string; nextStep: string; updatedAt: string }
   | { kind: "idle" }
   | { kind: "unknown" };
 
 export type FamiliarOverview = {
   now: FamiliarDashboardNow;
   presence: string | null;
+  live: {
+    harness: string | null;
+    model: string | null;
+    activeSessionCount: number;
+    memoryFreshestAt: string | null;
+  };
+  tasks: BoundedList<FamiliarDashboardTask>;
   sessions: {
     active: BoundedList<FamiliarDashboardSession>;
     recent: BoundedList<FamiliarDashboardSession>;
@@ -212,6 +266,8 @@ export type FamiliarOverview = {
     /** Newest canonical-memory update for this familiar, or null. */
     freshestAt: string | null;
   };
+  attention: BoundedList<FamiliarDashboardAttention>;
+  reminders: BoundedList<FamiliarDashboardReminder>;
 };
 
 export type FamiliarProfile = {
@@ -421,6 +477,37 @@ export type OverviewMemoryInput = {
   verification?: { state?: string | null } | null;
 };
 
+export type OverviewTaskInput = {
+  id: string;
+  title?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  familiarId?: string | null;
+  projectId?: string | null;
+  sessionId?: string | null;
+  updatedAt?: string | null;
+  dependencies?: readonly {
+    id: string;
+    kind?: string | null;
+    label?: string | null;
+    state?: string | null;
+  }[];
+  primaryBlockerId?: string | null;
+  nextStep?: { summary?: string | null; requiresApproval?: boolean } | null;
+};
+
+export type OverviewReminderInput = {
+  id: string;
+  kind?: string | null;
+  title?: string | null;
+  body?: string | null;
+  status?: string | null;
+  fireAt?: string | null;
+  firedAt?: string | null;
+  updatedAt?: string | null;
+  familiarId?: string | null;
+};
+
 function projectSession(session: OverviewSessionInput): FamiliarDashboardSession {
   return {
     id: clampDashboardText(session.id),
@@ -449,23 +536,35 @@ const RUNNING_STATUSES = new Set(["running", "starting"]);
 export function buildFamiliarOverview(input: {
   sessions: readonly OverviewSessionInput[];
   memory: readonly OverviewMemoryInput[];
+  tasks?: readonly OverviewTaskInput[];
+  reminders?: readonly OverviewReminderInput[];
   presence: string | null;
+  familiarId?: string;
+  harness?: string | null;
+  model?: string | null;
   /**
    * False when the session source failed. Drives `now` to `unknown` rather than
    * letting an empty list masquerade as `idle` — see FamiliarDashboardNow.
    */
   sessionsAvailable?: boolean;
+  tasksAvailable?: boolean;
 }): FamiliarOverview {
   const sessionsAvailable = input.sessionsAvailable ?? true;
+  const tasksAvailable = input.tasksAvailable ?? true;
   const ordered = [...input.sessions].sort(byUpdatedAtDesc);
-  const active = ordered.filter((s) => RUNNING_STATUSES.has((s.status ?? "").toLowerCase()));
-  const recent = ordered.filter((s) => !RUNNING_STATUSES.has((s.status ?? "").toLowerCase()));
+  const humanSessions = ordered.filter((session) => session.generated !== true);
+  const active = humanSessions.filter((s) =>
+    RUNNING_STATUSES.has((s.status ?? "").toLowerCase()),
+  );
+  const recent = humanSessions.filter(
+    (s) => !RUNNING_STATUSES.has((s.status ?? "").toLowerCase()),
+  );
 
   // "Now" prefers a running session a HUMAN is in. A generated run (a flow, an
   // automation, a journal narrative) is real work but it is not what the
   // operator is doing, and surfacing it as "now" makes the hub read as busy
   // when the person has nothing in flight.
-  const nowSession = active.find((s) => s.generated !== true) ?? null;
+  const nowSession = active[0] ?? null;
 
   const memoryOrdered = [...input.memory].sort((a, b) => {
     const left = Date.parse(a.updatedAt ?? "");
@@ -481,20 +580,118 @@ export function buildFamiliarOverview(input: {
     return Number.isFinite(parsed);
   });
 
-  const now: FamiliarDashboardNow = !sessionsAvailable
-    ? { kind: "unknown" }
-    : nowSession
+  const statusRank = new Map([
+    ["running", 0], ["review", 1], ["blocked", 2], ["inbox", 3], ["backlog", 4],
+  ]);
+  const priorityRank = new Map([["urgent", 0], ["high", 1], ["medium", 2], ["low", 3]]);
+  const assigned = (input.tasks ?? [])
+    .filter((task) => task.familiarId === input.familiarId && task.status !== "done")
+    .sort((a, b) => {
+      const status = (statusRank.get(a.status ?? "") ?? 99) - (statusRank.get(b.status ?? "") ?? 99);
+      if (status !== 0) return status;
+      const priority = (priorityRank.get(a.priority ?? "") ?? 99) - (priorityRank.get(b.priority ?? "") ?? 99);
+      if (priority !== 0) return priority;
+      return byTimestampDesc(a.updatedAt, b.updatedAt) || a.id.localeCompare(b.id);
+    });
+  const projectedTasks = assigned.map((task): FamiliarDashboardTask => {
+    const unresolved = (task.dependencies ?? []).filter((dependency) => dependency.state === "unresolved");
+    return {
+      id: clampDashboardText(task.id),
+      title: clampDashboardText(task.title ?? ""),
+      status: clampDashboardText(task.status ?? "backlog") || "backlog",
+      priority: clampDashboardText(task.priority ?? "medium") || "medium",
+      projectId: clampDashboardTextOrNull(task.projectId),
+      sessionId: clampDashboardTextOrNull(task.sessionId),
+      updatedAt: clampDashboardText(task.updatedAt ?? ""),
+      unresolvedDependencies: {
+        items: unresolved.slice(0, FAMILIAR_DASHBOARD_LIMITS.taskDependencies).map((dependency) => ({
+          id: clampDashboardText(dependency.id),
+          kind: clampDashboardText(dependency.kind ?? "external") || "external",
+          label: clampDashboardText(dependency.label ?? ""),
+        })),
+        total: unresolved.length,
+      },
+      primaryBlockerId: clampDashboardTextOrNull(task.primaryBlockerId),
+      nextStep: task.nextStep?.summary
+        ? {
+            summary: clampDashboardText(task.nextStep.summary),
+            requiresApproval: task.nextStep.requiresApproval === true,
+          }
+        : null,
+    };
+  });
+  const scopedReminders = (input.reminders ?? [])
+    .filter((reminder) => reminder.kind === "reminder" && reminder.familiarId === input.familiarId)
+    .sort((a, b) => byTimestampAsc(a.fireAt, b.fireAt) || a.id.localeCompare(b.id))
+    .map((reminder): FamiliarDashboardReminder => ({
+      id: clampDashboardText(reminder.id),
+      title: clampDashboardText(reminder.title ?? ""),
+      body: clampDashboardTextOrNull(reminder.body),
+      status: clampDashboardText(reminder.status ?? "pending") || "pending",
+      fireAt: clampDashboardTextOrNull(reminder.fireAt),
+      firedAt: clampDashboardTextOrNull(reminder.firedAt),
+      updatedAt: clampDashboardText(reminder.updatedAt ?? ""),
+      familiarId: clampDashboardText(reminder.familiarId ?? ""),
+    }));
+
+  const activeTask = projectedTasks.find((task) => task.status === "running" && task.nextStep !== null)
+    ?? projectedTasks.find((task) => task.nextStep !== null)
+    ?? null;
+  const now: FamiliarDashboardNow = nowSession
       ? {
           kind: "session",
           id: clampDashboardText(nowSession.id),
           title: clampDashboardText(nowSession.title ?? ""),
           updatedAt: clampDashboardText(nowSession.updated_at ?? ""),
         }
-      : { kind: "idle" };
+      : !sessionsAvailable
+        ? { kind: "unknown" }
+        : activeTask
+        ? {
+            kind: "task",
+            id: activeTask.id,
+            title: activeTask.title,
+            nextStep: activeTask.nextStep!.summary,
+            updatedAt: activeTask.updatedAt,
+          }
+        : tasksAvailable
+          ? { kind: "idle" }
+          : { kind: "unknown" };
+
+  const attention = [
+    ...projectedTasks
+      .filter((task) => task.status === "blocked" || task.status === "review")
+      .map((task): FamiliarDashboardAttention => ({
+        id: `task:${task.id}`,
+        source: "task",
+        kind: task.status === "blocked" ? "blocked" : "review",
+        title: task.title,
+        targetId: task.id,
+      })),
+    ...scopedReminders
+      .filter((reminder) => reminder.status === "fired")
+      .map((reminder): FamiliarDashboardAttention => ({
+        id: `reminder:${reminder.id}`,
+        source: "reminder",
+        kind: "fired_reminder",
+        title: reminder.title,
+        targetId: reminder.id,
+      })),
+  ];
 
   return {
     now,
     presence: clampDashboardTextOrNull(input.presence),
+    live: {
+      harness: clampDashboardTextOrNull(input.harness),
+      model: clampDashboardTextOrNull(input.model),
+      activeSessionCount: active.length,
+      memoryFreshestAt: freshest ? clampDashboardText(freshest.updatedAt ?? "") : null,
+    },
+    tasks: {
+      items: projectedTasks.slice(0, FAMILIAR_DASHBOARD_LIMITS.assignedTasks),
+      total: projectedTasks.length,
+    },
     sessions: {
       active: {
         items: active
@@ -523,7 +720,28 @@ export function buildFamiliarOverview(input: {
       },
       freshestAt: freshest ? clampDashboardText(freshest.updatedAt ?? "") : null,
     },
+    attention: {
+      items: attention.slice(0, FAMILIAR_DASHBOARD_LIMITS.attention),
+      total: attention.length,
+    },
+    reminders: {
+      items: scopedReminders.slice(0, FAMILIAR_DASHBOARD_LIMITS.reminders),
+      total: scopedReminders.length,
+    },
   };
+}
+
+function byTimestampDesc(left: string | null | undefined, right: string | null | undefined): number {
+  const a = Date.parse(left ?? "");
+  const b = Date.parse(right ?? "");
+  return (Number.isFinite(b) ? b : 0) - (Number.isFinite(a) ? a : 0);
+}
+
+function byTimestampAsc(left: string | null | undefined, right: string | null | undefined): number {
+  const a = Date.parse(left ?? "");
+  const b = Date.parse(right ?? "");
+  return (Number.isFinite(a) ? a : Number.MAX_SAFE_INTEGER)
+    - (Number.isFinite(b) ? b : Number.MAX_SAFE_INTEGER);
 }
 
 export type ProfileFamiliarInput = {

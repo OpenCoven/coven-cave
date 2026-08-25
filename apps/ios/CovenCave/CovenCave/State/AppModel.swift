@@ -273,8 +273,14 @@ final class AppModel {
     }
 
     private struct CoordinatedLoadToken: Equatable {
+        enum Scope: Hashable {
+            case standalone
+            case projectContext
+        }
+
         let generation: UInt64?
         let requestId: UInt64
+        let scope: Scope
     }
 
     private struct CoordinatedLoadOutput<Value>: @unchecked Sendable {
@@ -285,10 +291,10 @@ final class AppModel {
         var nextRequestId: UInt64 = 0
         var freshest: CoordinatedLoadToken?
         var lastApplied: CoordinatedLoadToken?
-        var inFlight: (
+        var inFlightByScope: [CoordinatedLoadToken.Scope: (
             token: CoordinatedLoadToken,
             task: Task<CoordinatedLoadOutput<Value>, Never>
-        )?
+        )] = [:]
     }
 
     nonisolated static let projectContextStorageKeyPrefix = "cave.project-context.v2"
@@ -924,12 +930,13 @@ final class AppModel {
     private func beginCoordinatedLoad<Value>(
         _ state: inout CoordinatedLoadState<Value>,
         generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope,
         operation: @escaping @Sendable () async throws -> Value
     ) -> (
         token: CoordinatedLoadToken,
         task: Task<CoordinatedLoadOutput<Value>, Never>
     ) {
-        if let inFlight = state.inFlight,
+        if let inFlight = state.inFlightByScope[scope],
            inFlight.token.generation == generation {
             return inFlight
         }
@@ -937,7 +944,8 @@ final class AppModel {
         state.nextRequestId &+= 1
         let token = CoordinatedLoadToken(
             generation: generation,
-            requestId: state.nextRequestId
+            requestId: state.nextRequestId,
+            scope: scope
         )
         state.freshest = token
         let task = Task {
@@ -946,7 +954,7 @@ final class AppModel {
             )
         }
         let handle = (token: token, task: task)
-        state.inFlight = handle
+        state.inFlightByScope[scope] = handle
         return handle
     }
 
@@ -957,8 +965,9 @@ final class AppModel {
         ),
         state: inout CoordinatedLoadState<Value>
     ) {
-        guard state.inFlight?.token == handle.token else { return }
-        state.inFlight = nil
+        let scope = handle.token.scope
+        guard state.inFlightByScope[scope]?.token == handle.token else { return }
+        state.inFlightByScope.removeValue(forKey: scope)
     }
 
     private func coordinatedLoadShouldApply<Value>(
@@ -994,12 +1003,17 @@ final class AppModel {
 
     private func coordinatedSessionsLoad(
         using client: any ProjectContextLoadingClient,
-        generation: UInt64?
+        generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope = .standalone
     ) async -> (
         token: CoordinatedLoadToken,
         result: Result<[SessionRow], any Error>
     ) {
-        let handle = beginCoordinatedLoad(&sessionsLoadState, generation: generation) {
+        let handle = beginCoordinatedLoad(
+            &sessionsLoadState,
+            generation: generation,
+            scope: scope
+        ) {
             try await client.sessions()
         }
         let output = await handle.task.value
@@ -1009,12 +1023,17 @@ final class AppModel {
 
     private func coordinatedTasksLoad(
         using client: any ProjectContextLoadingClient,
-        generation: UInt64?
+        generation: UInt64?,
+        scope: CoordinatedLoadToken.Scope = .standalone
     ) async -> (
         token: CoordinatedLoadToken,
         result: Result<[BoardCard], any Error>
     ) {
-        let handle = beginCoordinatedLoad(&tasksLoadState, generation: generation) {
+        let handle = beginCoordinatedLoad(
+            &tasksLoadState,
+            generation: generation,
+            scope: scope
+        ) {
             try await client.tasks()
         }
         let output = await handle.task.value
@@ -1481,10 +1500,18 @@ final class AppModel {
     /// Ask the Tasks destination to open a card's detail (selects Tasks first).
     @discardableResult
     func requestOpenTask(_ card: BoardCard) -> Bool {
+        requestOpenTask(id: card.id, projectId: card.projectId)
+    }
+
+    /// Open a task projected by a bounded dashboard response. The dashboard
+    /// intentionally does not duplicate the complete BoardCard shape; Tasks
+    /// owns the authoritative detail load after this navigation handoff.
+    @discardableResult
+    func requestOpenTask(id: String, projectId: String?) -> Bool {
         beginProjectNavigation(ProjectNavigationIntent(
-            entity: .task(id: card.id),
+            entity: .task(id: id),
             destination: .tasks,
-            projectId: card.projectId
+            projectId: projectId
         ))
     }
 
@@ -3803,7 +3830,8 @@ final class AppModel {
         if !haveUsableSessions {
             let loadedSessions = await coordinatedSessionsLoad(
                 using: client,
-                generation: navigationGeneration
+                generation: navigationGeneration,
+                scope: .projectContext
             )
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
                 throw CancellationError()
@@ -3857,7 +3885,8 @@ final class AppModel {
         ) {
             let loadedTasks = await coordinatedTasksLoad(
                 using: client,
-                generation: navigationGeneration
+                generation: navigationGeneration,
+                scope: .projectContext
             )
             guard !Task.isCancelled, loadNonce == projectContextLoadNonce else {
                 throw CancellationError()

@@ -295,6 +295,9 @@ export const SUITES = {
     "src/lib/project-access-levels.test.ts",
     "src/lib/project-icon-prompt.test.ts",
     "src/lib/project-icon-image-provider.test.ts",
+    "src/lib/project-icon-actions.test.ts",
+    "src/lib/server/project-icon-image.test.ts",
+    "src/lib/server/project-icon-rate-limit.test.ts",
     "src/lib/permissions-console.test.ts",
     "src/lib/github-checks.test.ts",
     "src/lib/github-activity.test.ts",
@@ -596,6 +599,7 @@ export const SUITES = {
     "src/components/chat-list-delete.test.ts",
     "src/components/chat-list-filter-defaults.test.ts",
     "src/lib/chat-list-model.test.ts",
+    "src/lib/chat-list-grouping.test.ts",
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-list-render-optimization.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
@@ -1014,6 +1018,7 @@ export const SUITES = {
     "src/lib/file-ref-open.test.ts",
     "src/lib/gh-card-commands.test.ts",
     "src/lib/gh-review-draft.test.ts",
+    "src/components/skill-stage-card.test.tsx",
     "src/components/skill-stage-card-wiring.test.ts",
     "src/lib/github-stage.test.ts",
     "src/components/familiar-no-silent-default.test.ts",
@@ -1630,6 +1635,7 @@ export const SUITES = {
     "src/lib/swr-cache.test.ts",
     "src/lib/server/sessions-list-cache.test.ts",
     "src/lib/familiar-dashboard.test.ts",
+    "src/lib/familiar-reminder-scope.test.ts",
     "src/lib/server/familiar-dashboard-data.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
@@ -1798,6 +1804,7 @@ export const SUITES = {
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-project-contract.test.mjs",
     "scripts/ios-chat-familiars-home.test.mjs",
+    "scripts/ios-familiar-profile.test.mjs",
     "scripts/ios-project-generation.test.mjs",
     "scripts/ios-chat-restyle.test.mjs",
     "scripts/ios-claude-design-fidelity.test.mjs",
@@ -1850,6 +1857,7 @@ export const SUITES = {
     "scripts/ios-swipe-reply.test.mjs",
     "scripts/ios-unread-badges.test.mjs",
     "scripts/ios-familiar-row-actions.test.mjs",
+    "scripts/ios-familiar-attention-overflow.test.mjs",
     "scripts/ios-accessible-controls.test.mjs",
     "scripts/ios-group-mentions.test.mjs",
     "scripts/ios-reply-feedback.test.mjs",
@@ -1952,6 +1960,11 @@ const ALIAS_LOADER = new Set([
   // dynamically imports every pre-authorized route module — each of which
   // resolves "@/lib/server/..." as a runtime value.
   "src/app/api/client/v1/authenticated-route-refusal.test.ts",
+  // Drives the icon route's real POST handler, which resolves "@/lib/vault",
+  // "@/lib/server/api-security" and the icon libs as runtime values; the suite
+  // itself reads "@/lib/comux-projects" to compare the prompt hue with the
+  // colour projectTint actually paints.
+  "src/app/api/projects/icon/route.test.ts",
   // onboarding diagnostics and core tools resolve shared server/API aliases.
   "src/lib/server/onboarding-diagnostics.test.ts",
   "src/lib/server/onboarding-core-tools.test.ts",
@@ -2041,6 +2054,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/familiars/route.test.ts",
   "src/app/api/familiars/[id]/dashboard/route.test.ts",
   "src/lib/server/familiar-dashboard-data.test.ts",
+  "src/lib/familiar-reminder-scope.test.ts",
   "src/lib/server/sessions-list.test.ts",
   "src/lib/dev-shell-recovery.test.ts",
   "src/lib/opencode-models.test.ts",
@@ -2258,6 +2272,7 @@ const VITEST_TESTS = new Set([
   "src/components/settings-client-access.test.tsx",
   "src/components/settings-save-feedback.behavior.test.tsx",
   "src/components/chat-preview-card.test.tsx",
+  "src/components/skill-stage-card.test.tsx",
   "src/components/composer-markdown-layer.test.tsx",
   "src/components/document-reader-view.test.ts",
   "src/components/document-reader-text-size.test.ts",

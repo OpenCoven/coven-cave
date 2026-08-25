@@ -3,10 +3,18 @@
 import { useEffect, useState } from "react";
 
 import { Icon } from "@/lib/icon";
-import type { CaveProject } from "@/lib/cave-projects-types";
+import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
 import { gitHubRepoSlug, normalizeGitHubRepoUrl } from "@/lib/github-repo-link";
+import { generateProjectIcon } from "@/lib/project-icon-actions";
+import {
+  clearProjectImage,
+  setProjectImage,
+  useProjectImages,
+} from "@/lib/cave-project-images";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 /**
  * Per-project settings sheet — the registry-management surface behind both the
@@ -40,6 +48,12 @@ export function ProjectSettingsModal({
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [generatingIcon, setGeneratingIcon] = useState(false);
+  const [removingIcon, setRemovingIcon] = useState(false);
+  const [iconError, setIconError] = useState<string | null>(null);
+
+  const projectImages = useProjectImages();
+  const { announce } = useAnnouncer();
 
   // Re-seed the fields whenever a (different) project opens the sheet.
   const projectId = project?.id ?? null;
@@ -52,6 +66,9 @@ export function ProjectSettingsModal({
     setSaving(false);
     setConfirmingDelete(false);
     setDeleting(false);
+    setGeneratingIcon(false);
+    setRemovingIcon(false);
+    setIconError(null);
   }, [projectId, projectName, projectRepoUrl]);
 
   if (!project) return null;
@@ -60,7 +77,8 @@ export function ProjectSettingsModal({
   const normalizedRepo = trimmedRepo ? normalizeGitHubRepoUrl(trimmedRepo) : null;
   const linkedSlug = project.repoUrl ? gitHubRepoSlug(project.repoUrl) : null;
   const trimmedName = nameDraft.trim();
-  const busy = saving || deleting;
+  const iconBusy = generatingIcon || removingIcon;
+  const busy = saving || deleting || iconBusy;
 
   const save = async () => {
     if (busy) return;
@@ -95,6 +113,44 @@ export function ProjectSettingsModal({
     }
   };
 
+  const hasIcon = Boolean(projectImages[normalizeProjectRoot(project.root)]);
+
+  /**
+   * Ask the icon endpoint for an image and persist it. `variant` is seeded
+   * from the clock so each press yields a fresh composition; the project's hue
+   * comes from its root and therefore does not move between regenerations.
+   */
+  const generateIcon = async () => {
+    if (busy) return;
+    setGeneratingIcon(true);
+    setIconError(null);
+    const result = await generateProjectIcon(
+      { name: project.name, root: project.root, variant: Date.now() },
+      { saveImage: setProjectImage },
+    );
+    setGeneratingIcon(false);
+    if (!result.ok) {
+      setIconError(result.message);
+      announce(result.message, "assertive");
+      return;
+    }
+    announce(hasIcon ? "Project icon regenerated." : "Project icon generated.");
+  };
+
+  const removeIcon = async () => {
+    if (busy) return;
+    setRemovingIcon(true);
+    setIconError(null);
+    const result = await clearProjectImage(project.root);
+    setRemovingIcon(false);
+    if (!result.ok) {
+      setIconError(result.reason);
+      announce(result.reason, "assertive");
+      return;
+    }
+    announce("Project icon removed.");
+  };
+
   const remove = async () => {
     if (busy || !onDelete) return;
     if (!confirmingDelete) {
@@ -123,8 +179,8 @@ export function ProjectSettingsModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => void save()} loading={saving} disabled={deleting}>
-            Save
+          <Button variant="primary" onClick={() => void save()} loading={saving} disabled={deleting || iconBusy}>
+            Save changes
           </Button>
         </>
       }
@@ -134,6 +190,48 @@ export function ProjectSettingsModal({
         <span className="truncate" title={project.root}>
           {project.root}
         </span>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <ProjectAvatar name={project.name} root={project.root} size="xl" />
+          <div className="min-w-0">
+            <div className="text-[length:var(--text-sm)] text-foreground">Project icon</div>
+            <p className="text-xs text-muted-foreground">
+              {hasIcon
+                ? "Generated for this project. Regenerate for a new composition."
+                : "Generate a distinct icon in this project’s own colour."}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {hasIcon ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void removeIcon()}
+              loading={removingIcon}
+              disabled={saving || deleting || generatingIcon}
+            >
+              Remove icon
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:sparkle"
+            loading={generatingIcon}
+            disabled={saving || deleting || removingIcon}
+            onClick={() => void generateIcon()}
+          >
+            {hasIcon ? "Regenerate icon" : "Generate icon"}
+          </Button>
+        </div>
+        {iconError ? (
+          <p className="w-full text-xs text-muted-foreground" role="alert">
+            {iconError}
+          </p>
+        ) : null}
       </div>
 
       {onRename ? (

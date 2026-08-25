@@ -4098,6 +4098,7 @@ final class AppModelProjectContextTests: XCTestCase {
         )
         let app = makeApp(coreResourceClientFactory: { _ in initialClient })
         _ = connect(app, host: "http://127.0.0.1:1")
+        await app.loadProjectContext(using: initialClient)
         app.projects = [alpha]
         app.projectsLoaded = true
         app.projectMembership = ProjectMembershipIndex(
@@ -4106,6 +4107,7 @@ final class AppModelProjectContextTests: XCTestCase {
         app.projectMembershipLoaded = true
         app.familiars = [familiar("nova", "Nova")]
         app.projectContext = .project(alpha)
+        let baselineInitialCalls = await initialClient.callLog.snapshot()
 
         let existing = ChatThread(
             title: "Recovered local copy",
@@ -4146,7 +4148,7 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.selectedTab, .chats)
         XCTAssertEqual(app.threads.count, 1)
         let initialCalls = await initialClient.callLog.snapshot()
-        XCTAssertEqual(initialCalls.sessions, 1)
+        XCTAssertEqual(initialCalls.sessions, baselineInitialCalls.sessions + 1)
         let refreshedCalls = await refreshedClient.callLog.snapshot()
         XCTAssertEqual(refreshedCalls.sessions, 1)
     }
@@ -5896,6 +5898,57 @@ final class AppModelProjectContextTests: XCTestCase {
         XCTAssertEqual(app.tasks.map(\.id), ["alpha-task"])
         XCTAssertTrue(app.tasksLoaded)
         XCTAssertNil(app.tasksError)
+    }
+
+    @MainActor
+    func testTaskLoadsRemainSingleFlightPerScopeWhenScopesInterleave() async {
+        let alpha = project("alpha", "Alpha")
+        let standaloneStarted = Gate()
+        let standaloneRelease = Gate()
+        let standaloneClient = ControlledCoreClient(
+            projects: [alpha],
+            grants: grants(),
+            familiars: [familiar("nova", "Nova")],
+            tasks: [card("standalone-task", familiarId: "nova", projectId: alpha.id)],
+            taskStarted: standaloneStarted,
+            taskRelease: standaloneRelease
+        )
+        let contextStarted = Gate()
+        let contextRelease = Gate()
+        let contextClient = ControlledCoreClient(
+            projects: [alpha],
+            grants: grants(),
+            familiars: [familiar("nova", "Nova")],
+            sessions: [],
+            tasks: [card("context-task", familiarId: "nova", projectId: alpha.id)],
+            taskStarted: contextStarted,
+            taskRelease: contextRelease
+        )
+        let app = makeApp(coreResourceClientFactory: { _ in standaloneClient })
+        _ = connect(app, host: "http://127.0.0.1:1")
+
+        let firstStandalone = Task { await app.loadTasks(using: standaloneClient) }
+        await standaloneStarted.wait()
+        let contextLoad = Task { await app.loadProjectContext(using: contextClient) }
+        await contextStarted.wait()
+
+        let thirdLoadStarted = expectation(description: "third task load started")
+        let secondStandalone = Task {
+            thirdLoadStarted.fulfill()
+            await app.loadTasks(using: standaloneClient)
+        }
+        await fulfillment(of: [thirdLoadStarted], timeout: 1)
+        await Task.yield()
+
+        await standaloneRelease.open()
+        await firstStandalone.value
+        await secondStandalone.value
+
+        let standaloneCalls = await standaloneClient.callLog.snapshot()
+        XCTAssertEqual(standaloneCalls.tasks, 1)
+
+        await contextRelease.open()
+        await contextLoad.value
     }
 
     @MainActor

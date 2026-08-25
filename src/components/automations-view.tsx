@@ -790,10 +790,19 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
         <div className="surface-compact-header rituals-overview__header">
           <Icon name="ph:moon" width={15} className="rituals-overview__moon" aria-hidden />
           <h1 className="surface-compact-title">Rituals</h1>
+          <Tabs
+            items={RITUAL_TABS}
+            value={activeTab}
+            onChange={selectTabTracked}
+            ariaLabel="Rituals sections"
+            idPrefix="automations"
+            size="sm"
+            bordered={false}
+            className="rituals-command-tabs"
+          />
           {activeTab === "overview" ? (
             <p className="surface-compact-summary">{ritualWeekLabel(ritualWeek)}</p>
           ) : null}
-          {activeTab === "calendar" ? <p className="surface-compact-summary">Calendar</p> : null}
           {activeTab === "crons" && initialLoadDone && summary.active + summary.paused > 0 && (
             <p className="surface-compact-summary">
               <span className="inline-flex items-center gap-1.5">
@@ -908,16 +917,6 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
                 </Popover>
               </>
             ) : null}
-            {activeTab === "calendar" && onNewReminder ? (
-              <Button
-                size="sm"
-                className="automation-create-chat-btn"
-                leadingIcon="ph:plus"
-                onClick={onNewReminder}
-              >
-                New reminder
-              </Button>
-            ) : null}
             {activeTab === "crons" ? (
               <Button ref={newCronBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
                 New cron
@@ -925,15 +924,6 @@ export function AutomationsView({ familiars, onNewReminder, onEdit, onOpenLink, 
             ) : null}
           </div>
         </div>
-        <Tabs
-          items={RITUAL_TABS}
-          value={activeTab}
-          onChange={selectTabTracked}
-          ariaLabel="Rituals sections"
-          idPrefix="automations"
-          size="sm"
-          className="shrink-0 px-3"
-        />
         {RITUAL_TABS.filter((tab) => tab.id !== activeTab).map((tab) => (
           <div
             key={tab.id}

@@ -3,7 +3,7 @@ import { GitHubActionCard } from "@/components/github-action-card";
 import { GitHubCard } from "@/components/github-card";
 import { ProgressiveMarkdownBlock } from "@/components/message-bubble";
 import { ResearchRunInlineCard } from "@/components/research-run-surface";
-import { SkillStageCard } from "@/components/skill-stage-card";
+import { SkillRunSummary } from "@/components/skill-stage-card";
 import { StreamingTurnResponse } from "@/components/streaming-turn-response";
 import { Button } from "@/components/ui/button";
 import { shouldUseEmptySuccessfulFallback } from "@/lib/chat-assistant-output";
@@ -188,16 +188,7 @@ function QuickChatBubble({
       ) : null}
 
       {skillUpdates.length ? (
-        <div className="mt-2 space-y-2">
-          {skillUpdates.map((update) => (
-            <SkillStageCard
-              key={update.name}
-              name={update.name}
-              stage={update.stage}
-              note={update.note}
-            />
-          ))}
-        </div>
+        <SkillRunSummary skills={skillUpdates} />
       ) : null}
 
       {message.error ? <p className="quick-chat-turn__error">{message.error}</p> : null}

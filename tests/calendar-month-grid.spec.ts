@@ -23,9 +23,9 @@ async function gotoMonthGrid(page: Page) {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "calendar" } })),
     );
-    await expect(page.getByRole("group", { name: "Calendar view" })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByRole("tablist", { name: "Calendar view" })).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 60_000 });
-  await page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Month" }).click();
+  await page.getByRole("tablist", { name: "Calendar view" }).getByRole("tab", { name: "Month" }).click();
   await page.getByRole("grid").waitFor({ timeout: 10_000 });
 }
 
@@ -90,8 +90,21 @@ test.describe("calendar month grid keyboard model", () => {
     });
     await page.keyboard.press("Shift+Enter");
     await expect(
-      page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Day" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      page.getByRole("tablist", { name: "Calendar view" }).getByRole("tab", { name: "Day" }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("view-tab arrows move focus without paging the calendar", async ({ page }) => {
+    await gotoMonthGrid(page);
+    const monthLabel = await page.getByRole("grid").getAttribute("aria-label");
+    const monthTab = page.getByRole("tablist", { name: "Calendar view" }).getByRole("tab", { name: "Month" });
+
+    await monthTab.focus();
+    await page.keyboard.press("ArrowLeft");
+
+    await expect(page.getByRole("tab", { name: "Week" })).toBeFocused();
+    await expect(monthTab).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("grid")).toHaveAttribute("aria-label", monthLabel!);
   });
 
   test("arrows outside the grid still page the month", async ({ page }) => {

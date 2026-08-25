@@ -807,8 +807,10 @@ export function createClientV1ContractFixture(): ClientV1ContractFixture {
     updatedAt: "2026-08-15T00:00:01.000Z",
   };
   const cursor: ClientV1Cursor = {
-    current: "conversation-list:cursor:0",
-    next: "conversation-list:cursor:1",
+    // Keep contract.ts data-only for the proxy import graph. contract.test.ts
+    // verifies these reviewed literals against the runtime cursor encoder.
+    current: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0",
+    next: "eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNFQwMDowMDowMC4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlLW5leHQifQ",
     hasMore: true,
   };
 

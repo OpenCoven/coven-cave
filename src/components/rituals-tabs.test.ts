@@ -93,6 +93,39 @@ assert.match(
   /<Tabs[\s\S]{0,200}items=\{RITUAL_TABS\}[\s\S]{0,120}value=\{activeTab\}[\s\S]{0,120}onChange=\{selectTabTracked\}[\s\S]{0,120}ariaLabel="Rituals sections"[\s\S]{0,120}idPrefix="automations"/,
   "Rituals tabs should be driven by the shared Tabs component with accessible wiring",
 );
+const ritualsHeaderStart = automations.indexOf(
+  '<div className="surface-compact-header rituals-overview__header">',
+);
+const ritualsTabsStart = automations.indexOf("<Tabs", ritualsHeaderStart);
+const hiddenPanelsStart = automations.indexOf(
+  "{RITUAL_TABS.filter((tab) => tab.id !== activeTab)",
+  ritualsHeaderStart,
+);
+assert.ok(ritualsHeaderStart >= 0, "Rituals compact header must exist");
+assert.ok(
+  ritualsTabsStart > ritualsHeaderStart && ritualsTabsStart < hiddenPanelsStart,
+  "Rituals tabs live inside the compact header instead of consuming a second chrome row",
+);
+assert.match(
+  automations.slice(ritualsTabsStart, hiddenPanelsStart),
+  /bordered=\{false\}[\s\S]{0,120}className="rituals-command-tabs"/,
+  "Inline Rituals tabs reuse the header divider for a flush active indicator",
+);
+assert.match(
+  compactCalendarStyles,
+  /\.rituals-command-tabs\s*\{[^}]*margin-bottom:\s*-5px;/,
+  "Inline Rituals tabs offset the compact header inset so their indicator meets the divider",
+);
+assert.doesNotMatch(
+  automations,
+  /activeTab === "calendar" \? <p className="surface-compact-summary">Calendar<\/p>/,
+  "The active Calendar tab is not repeated as redundant header copy",
+);
+assert.doesNotMatch(
+  automations,
+  /activeTab === "calendar" && onNewReminder/,
+  "Calendar exposes one contextual add action instead of duplicating it in the surface header",
+);
 assert.match(
   automations,
   /role="tabpanel"[\s\S]{0,160}id=\{`automations-panel-\$\{activeTab\}`\}[\s\S]{0,160}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}/,

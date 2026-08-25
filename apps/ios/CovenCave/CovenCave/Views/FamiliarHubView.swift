@@ -77,6 +77,9 @@ struct FamiliarHubView: View {
     /// Starts `true` so the first `.task` pass loads immediately instead of
     /// racing `onAppear`.
     @State private var isVisible = true
+    @State private var reminderDraft: FamiliarReminderDraft?
+    @State private var reminderMutationError: String?
+    @State private var reminderPendingDeletion: FamiliarDashboardReminder?
 
     private var store: FamiliarDashboardStore { app.familiarDashboards }
     private var entry: FamiliarDashboardEntry { store.entry(for: familiar.id) }
@@ -110,6 +113,29 @@ struct FamiliarHubView: View {
         .onAppear { isVisible = true }
         .onDisappear { isVisible = false }
         .task(id: refreshLoopKey) { await runRefreshLoop() }
+        .sheet(item: $reminderDraft) { draft in
+            FamiliarReminderEditor(
+                familiarName: displayName,
+                draft: draft,
+                save: { title, body, fireAt in
+                    await saveReminder(draft, title: title, body: body, fireAt: fireAt)
+                }
+            )
+        }
+        .confirmationDialog(
+            "Delete this reminder?",
+            isPresented: Binding(
+                get: { reminderPendingDeletion != nil },
+                set: { if !$0 { reminderPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete reminder", role: .destructive) {
+                guard let reminder = reminderPendingDeletion else { return }
+                Task { await deleteReminder(reminder) }
+            }
+            Button("Cancel", role: .cancel) { reminderPendingDeletion = nil }
+        }
     }
 
     // MARK: - Refresh lifecycle
@@ -332,18 +358,79 @@ struct FamiliarHubView: View {
             title: "Overview",
             section: snapshot.overview,
             emptyMessage:
-                "No sessions or memory yet. Start a chat to give \(displayName) something to work on.",
+                "Nothing is assigned yet. Start a chat or assign a task to \(displayName).",
             retry: { Task { await refreshNow() } }
         ) { overview in
-            FamiliarDashboardCard {
-                nowRow(overview.now)
-                Divider()
-                FamiliarDashboardCountRow(
-                    label: "Active sessions", list: overview.sessions.active)
-                FamiliarDashboardCountRow(
-                    label: "Recent sessions", list: overview.sessions.recent)
-                FamiliarDashboardCountRow(
-                    label: "Memory entries", list: overview.memory.entries)
+            VStack(alignment: .leading, spacing: 20) {
+                overviewSection("Live state") {
+                    FamiliarDashboardCard {
+                        labelledValue("Presence", value: overview.presence ?? "Unknown", systemImage: "circle.fill")
+                        Divider()
+                        labelledValue("Harness", value: overview.live.harness ?? "Not configured", systemImage: "terminal")
+                        Divider()
+                        labelledValue("Model", value: overview.live.model ?? "Not configured", systemImage: "cpu")
+                        Divider()
+                        labelledValue(
+                            "Activity",
+                            value: "\(overview.live.activeSessionCount) active · memory \(freshness(overview.live.memoryFreshestAt))",
+                            systemImage: "waveform.path.ecg"
+                        )
+                    }
+                }
+                overviewSection("Now") { nowRow(overview.now) }
+                if !overview.tasks.items.isEmpty {
+                    overviewSection(boundedTitle("Assigned work", overview.tasks)) {
+                        overviewList { ForEach(overview.tasks.items) { task in taskRow(task) } }
+                    }
+                }
+                if !overview.sessions.active.items.isEmpty || !overview.sessions.recent.items.isEmpty {
+                    overviewSection("Sessions") {
+                        overviewList {
+                            ForEach(overview.sessions.active.items) { session in
+                                sessionRow(session, prefix: "Active")
+                            }
+                            ForEach(overview.sessions.recent.items) { session in
+                                sessionRow(session, prefix: "Recent")
+                            }
+                        }
+                    }
+                }
+                if !overview.attention.items.isEmpty {
+                    overviewSection(boundedTitle("Needs attention", overview.attention)) {
+                        overviewList {
+                            ForEach(overview.attention.items) { item in
+                                attentionRow(item, overview: overview)
+                            }
+                        }
+                    }
+                }
+                overviewSection(boundedTitle("Reminders", overview.reminders)) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Spacer()
+                            Button { reminderDraft = .new } label: {
+                                Label("Add reminder", systemImage: "plus").frame(minHeight: 44)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        if overview.reminders.items.isEmpty {
+                            Text("No reminders for \(displayName).")
+                                .font(.subheadline)
+                                .foregroundStyle(chrome.textSecondary)
+                        } else {
+                            overviewList {
+                                ForEach(overview.reminders.items) { reminder in
+                                    reminderRow(reminder)
+                                }
+                            }
+                        }
+                        if let reminderMutationError {
+                            Label(reminderMutationError, systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
             }
         }
     }
@@ -354,16 +441,299 @@ struct FamiliarHubView: View {
     @ViewBuilder
     private func nowRow(_ now: FamiliarDashboardNow) -> some View {
         switch now {
-        case .session(_, let title, _):
-            labelledValue(
-                "Now",
-                value: title.isEmpty ? "In a session" : title,
-                systemImage: "waveform"
-            )
+        case .session(let id, let title, let updatedAt):
+            Button { openSession(id: id, title: title, updatedAt: updatedAt) } label: {
+                commandRow(
+                    eyebrow: "In a session", title: title.isEmpty ? "Untitled chat" : title,
+                    detail: "Open chat", systemImage: "waveform")
+            }.buttonStyle(.plain)
+        case .task(let id, let title, let nextStep, _):
+            Button { app.requestOpenTask(id: id, projectId: nil) } label: {
+                commandRow(
+                    eyebrow: "Working on", title: title, detail: nextStep,
+                    systemImage: "checklist")
+            }.buttonStyle(.plain)
         case .idle:
-            labelledValue("Now", value: "Nothing in flight", systemImage: "moon.zzz")
+            commandRow(
+                eyebrow: "Available", title: "Nothing in flight",
+                detail: "Start a chat when you’re ready.", systemImage: "moon.zzz")
         case .unknown:
-            labelledValue("Now", value: "Current work unknown", systemImage: "questionmark.circle")
+            commandRow(
+                eyebrow: "Unavailable", title: "Current work unknown",
+                detail: "Pull to refresh before acting.", systemImage: "questionmark.circle")
+        }
+    }
+
+    private func overviewSection<Content: View>(
+        _ title: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline).foregroundStyle(chrome.textPrimary)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func overviewList<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) { content() }
+            .background(chrome.bgRaised)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(chrome.border.opacity(0.7), lineWidth: 1)
+            }
+    }
+
+    private func commandRow(
+        eyebrow: String, title: String, detail: String, systemImage: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage).foregroundStyle(chrome.accent).frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(eyebrow).font(.caption).foregroundStyle(chrome.textSecondary)
+                Text(title).font(.body.weight(.semibold)).foregroundStyle(chrome.textPrimary)
+                Text(detail).font(.footnote).foregroundStyle(chrome.textSecondary)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                .foregroundStyle(chrome.textSecondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(chrome.bgRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(chrome.border.opacity(0.7), lineWidth: 1)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func taskRow(_ task: FamiliarDashboardTask) -> some View {
+        Button { app.requestOpenTask(id: task.id, projectId: task.projectId) } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: task.status == "blocked" ? "exclamationmark.octagon" : "checklist")
+                    .foregroundStyle(task.status == "blocked" ? Color.red : chrome.textSecondary)
+                    .frame(width: 24, height: 24)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(task.title).font(.body.weight(.medium)).foregroundStyle(chrome.textPrimary)
+                    Text("\(task.status.capitalized) · \(task.priority.capitalized)")
+                        .font(.caption).foregroundStyle(chrome.textSecondary)
+                    if let blocker = primaryBlocker(task) {
+                        Text("Blocked by: \(blocker)").font(.footnote).foregroundStyle(.red)
+                    }
+                    if let next = task.nextStep {
+                        Text("Next: \(next.summary)").font(.footnote).foregroundStyle(chrome.textSecondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(chrome.textSecondary)
+            }
+            .padding(12).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func sessionRow(_ session: FamiliarDashboardSession, prefix: String) -> some View {
+        Button { openSession(id: session.id, title: session.title, updatedAt: session.updatedAt) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: prefix == "Active" ? "waveform" : "bubble.left")
+                    .foregroundStyle(chrome.textSecondary).frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.title.isEmpty ? "Untitled chat" : session.title)
+                        .font(.body.weight(.medium)).foregroundStyle(chrome.textPrimary)
+                    Text("\(prefix) · \(relativeDate(session.updatedAt))")
+                        .font(.caption).foregroundStyle(chrome.textSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(chrome.textSecondary)
+            }
+            .padding(12).frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func attentionRow(
+        _ item: FamiliarDashboardAttention, overview: FamiliarDashboardOverview
+    ) -> some View {
+        if item.source == "task",
+           let task = overview.tasks.items.first(where: { $0.id == item.targetId }) {
+            taskRow(task)
+        } else if let reminder = overview.reminders.items.first(where: { $0.id == item.targetId }) {
+            reminderRow(reminder)
+        } else if item.source == "task" {
+            Button { app.requestOpenTask(id: item.targetId, projectId: nil) } label: {
+                attentionFallbackLabel(item, systemImage: "exclamationmark.octagon")
+            }
+            .buttonStyle(.plain)
+        } else {
+            HStack(spacing: 12) {
+                attentionFallbackLabel(item, systemImage: "bell.badge")
+                Menu {
+                    Button("Done", systemImage: "checkmark") {
+                        Task { await actOnReminder(id: item.targetId, action: "done") }
+                    }
+                    Button("Snooze 1 hour", systemImage: "clock.arrow.circlepath") {
+                        Task { await actOnReminder(id: item.targetId, action: "snooze", minutes: 60) }
+                    }
+                    Button("Dismiss", systemImage: "xmark") {
+                        Task { await actOnReminder(id: item.targetId, action: "dismiss") }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Actions for \(item.title)")
+            }
+        }
+    }
+
+    private func attentionFallbackLabel(
+        _ item: FamiliarDashboardAttention, systemImage: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .foregroundStyle(chrome.accent)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title).font(.body.weight(.medium)).foregroundStyle(chrome.textPrimary)
+                Text(item.kind == "fired_reminder" ? "Reminder needs attention" : "Task needs attention")
+                    .font(.caption).foregroundStyle(chrome.textSecondary)
+            }
+            Spacer(minLength: 4)
+            if item.source == "task" {
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(chrome.textSecondary)
+            }
+        }
+        .padding(12).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func reminderRow(_ reminder: FamiliarDashboardReminder) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: reminder.status == "fired" ? "bell.badge" : "bell")
+                .foregroundStyle(reminder.status == "fired" ? chrome.accent : chrome.textSecondary)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(reminder.title).font(.body.weight(.medium)).foregroundStyle(chrome.textPrimary)
+                if let body = reminder.body {
+                    Text(body).font(.footnote).foregroundStyle(chrome.textSecondary)
+                }
+                Text(reminder.fireAt.map(relativeDate) ?? reminder.status.capitalized)
+                    .font(.caption).foregroundStyle(chrome.textSecondary)
+            }
+            Spacer(minLength: 4)
+            Menu {
+                Button("Edit", systemImage: "pencil") { reminderDraft = .editing(reminder) }
+                Button("Done", systemImage: "checkmark") {
+                    Task { await actOnReminder(reminder, action: "done") }
+                }
+                Button("Snooze 1 hour", systemImage: "clock.arrow.circlepath") {
+                    Task { await actOnReminder(reminder, action: "snooze", minutes: 60) }
+                }
+                Button("Dismiss", systemImage: "xmark") {
+                    Task { await actOnReminder(reminder, action: "dismiss") }
+                }
+                Divider()
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    reminderPendingDeletion = reminder
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle").frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Actions for \(reminder.title)")
+        }
+        .padding(12).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+
+    private func boundedTitle<T: Decodable & Hashable & Sendable>(
+        _ title: String, _ list: FamiliarDashboardBoundedList<T>
+    ) -> String {
+        list.isBounded ? "\(title) · showing \(list.items.count) of \(list.total)" : title
+    }
+
+    private func primaryBlocker(_ task: FamiliarDashboardTask) -> String? {
+        guard let blockerId = task.primaryBlockerId else { return nil }
+        return task.unresolvedDependencies.items.first(where: { $0.id == blockerId })?.label
+            ?? "Unresolved dependency"
+    }
+
+    private func openSession(id: String, title: String, updatedAt: String) {
+        app.requestOpenServerSession(
+            SessionRow(
+                id: id, title: title, harness: nil, model: nil, runtime: nil,
+                status: nil, familiarId: familiar.id, createdAt: nil,
+                updatedAt: updatedAt, archivedAt: nil
+            ),
+            fallbackFamiliarId: familiar.id
+        )
+    }
+
+    private func relativeDate(_ value: String) -> String {
+        caveParseISO(value)?.formatted(.relative(presentation: .named)) ?? "Time unavailable"
+    }
+
+    private func freshness(_ value: String?) -> String {
+        guard let value else { return "not yet recorded" }
+        return relativeDate(value)
+    }
+
+    @MainActor
+    private func saveReminder(
+        _ draft: FamiliarReminderDraft, title: String, body: String?, fireAt: Date
+    ) async -> Bool {
+        guard let client = app.client else { return false }
+        do {
+            if let reminderId = draft.reminderId {
+                _ = try await client.updateFamiliarReminder(
+                    familiarId: familiar.id, reminderId: reminderId,
+                    title: title, body: body, fireAt: fireAt)
+            } else {
+                _ = try await client.createFamiliarReminder(
+                    familiarId: familiar.id, title: title, body: body, fireAt: fireAt)
+            }
+            reminderMutationError = nil
+            await refreshNow()
+            return true
+        } catch {
+            reminderMutationError = "The reminder couldn’t be saved. Try again."
+            return false
+        }
+    }
+
+    @MainActor
+    private func actOnReminder(
+        _ reminder: FamiliarDashboardReminder, action: String, minutes: Int? = nil
+    ) async {
+        await actOnReminder(id: reminder.id, action: action, minutes: minutes)
+    }
+
+    @MainActor
+    private func actOnReminder(id: String, action: String, minutes: Int? = nil) async {
+        guard let client = app.client else { return }
+        do {
+            _ = try await client.actOnFamiliarReminder(
+                familiarId: familiar.id, reminderId: id,
+                action: action, minutes: minutes)
+            reminderMutationError = nil
+            await refreshNow()
+        } catch {
+            reminderMutationError = "The reminder couldn’t be updated. Try again."
+        }
+    }
+
+    @MainActor
+    private func deleteReminder(_ reminder: FamiliarDashboardReminder) async {
+        reminderPendingDeletion = nil
+        guard let client = app.client else { return }
+        do {
+            try await client.deleteFamiliarReminder(
+                familiarId: familiar.id, reminderId: reminder.id)
+            reminderMutationError = nil
+            await refreshNow()
+        } catch {
+            reminderMutationError = "The reminder couldn’t be deleted. Try again."
         }
     }
 
@@ -387,20 +757,36 @@ struct FamiliarHubView: View {
         .accessibilityLabel("\(label): \(value)")
     }
 
-    /// The Profile tab keeps the identity, defaults and access surfaces that
-    /// already shipped, driven by the paths that own those mutations today
-    /// (the model inventory, `FamiliarPermissionsSheet`). `cave-9rwd.4`
-    /// replaces this with the dashboard-driven profile — showing nothing here
-    /// meanwhile would be a regression from what the roster used to open.
+    /// Profile intentionally renders a successfully-read EMPTY section instead
+    /// of replacing it with a generic empty note. Identity and configuration
+    /// rows still have truthful "Not set" answers, and model/access controls
+    /// remain useful even when no optional profile prose is configured.
     @ViewBuilder
     private func profileTab(_ snapshot: FamiliarDashboardSnapshot) -> some View {
-        if snapshot.profile.isStale {
-            FamiliarDashboardStaleBanner(
-                generatedAt: snapshot.profile.generatedAt,
-                issues: snapshot.profile.refreshIssues
+        let section = snapshot.profile
+        if let profile = section.data {
+            if section.isStale {
+                FamiliarDashboardStaleBanner(
+                    generatedAt: section.generatedAt,
+                    issues: section.refreshIssues
+                )
+            }
+            FamiliarDetailView(
+                familiar: familiar,
+                identity: snapshot.identity,
+                profile: profile,
+                overview: snapshot.overview
+            )
+            if !section.issues.isEmpty, !section.isStale {
+                FamiliarDashboardIssueNote(issues: section.issues)
+            }
+        } else {
+            FamiliarDashboardUnavailableView(
+                title: "Profile",
+                issues: section.visibleIssues,
+                retry: section.isRetryable ? { Task { await refreshNow() } } : nil
             )
         }
-        FamiliarDetailView(familiar: familiar)
     }
 
     private func analyticsTab(_ snapshot: FamiliarDashboardSnapshot) -> some View {
@@ -445,5 +831,107 @@ struct FamiliarHubView: View {
         let first = start.formatted(date: .abbreviated, time: .omitted)
         let last = end.formatted(date: .abbreviated, time: .omitted)
         return first == last ? first : "\(first) – \(last)"
+    }
+}
+
+private struct FamiliarReminderDraft: Identifiable {
+    var id: String { reminderId ?? "new" }
+    var reminderId: String?
+    var title: String
+    var body: String
+    var fireAt: Date
+
+    static var new: Self {
+        .init(
+            reminderId: nil,
+            title: "",
+            body: "",
+            fireAt: Date().addingTimeInterval(60 * 60)
+        )
+    }
+
+    static func editing(_ reminder: FamiliarDashboardReminder) -> Self {
+        .init(
+            reminderId: reminder.id,
+            title: reminder.title,
+            body: reminder.body ?? "",
+            fireAt: reminder.fireAt.flatMap(caveParseISO) ?? Date().addingTimeInterval(60 * 60)
+        )
+    }
+}
+
+private struct FamiliarReminderEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chrome) private var chrome
+
+    let familiarName: String
+    let draft: FamiliarReminderDraft
+    let save: @MainActor (String, String?, Date) async -> Bool
+
+    @State private var title: String
+    @State private var noteText: String
+    @State private var fireAt: Date
+    @State private var isSaving = false
+
+    init(
+        familiarName: String,
+        draft: FamiliarReminderDraft,
+        save: @escaping @MainActor (String, String?, Date) async -> Bool
+    ) {
+        self.familiarName = familiarName
+        self.draft = draft
+        self.save = save
+        _title = State(initialValue: draft.title)
+        _noteText = State(initialValue: draft.body)
+        _fireAt = State(initialValue: draft.fireAt)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Reminder") {
+                    TextField("Title", text: $title)
+                        .textInputAutocapitalization(.sentences)
+                    TextField("Note (optional)", text: $noteText, axis: .vertical)
+                        .lineLimit(2...5)
+                    DatePicker(
+                        "Remind me", selection: $fireAt,
+                        in: Date()..., displayedComponents: [.date, .hourAndMinute]
+                    )
+                }
+                Section {
+                    LabeledContent("Assigned to", value: familiarName)
+                } header: {
+                    Text("Familiar")
+                } footer: {
+                    Text("This reminder stays with \(familiarName).")
+                }
+            }
+            .navigationTitle(draft.reminderId == nil ? "New reminder" : "Edit reminder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            isSaving = true
+                            let didSave = await save(
+                                title.trimmingCharacters(in: .whitespacesAndNewlines),
+                                noteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? nil : noteText,
+                                fireAt
+                            )
+                            isSaving = false
+                            if didSave { dismiss() }
+                        }
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                }
+            }
+            .tint(chrome.accent)
+        }
+        .presentationDetents([.medium, .large])
     }
 }

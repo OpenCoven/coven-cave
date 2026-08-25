@@ -5,6 +5,7 @@ import {
   deriveChatProjectGroups,
   projectForRoot,
 } from "../src/lib/chat-projects.ts";
+import { deriveChatListProjectGroups } from "../src/lib/chat-list-grouping.ts";
 
 function positiveInteger(name, fallback) {
   const raw = process.env[name];
@@ -116,6 +117,43 @@ const linearFullGroupingMs = measure(() => groupChecksum(
 const indexedFullGroupingMs = measure(() => groupChecksum(
   deriveChatProjectGroups(sessions, projects, projectIndex, { sessionsNewestFirst: true }),
 ));
+const sharedResult = deriveChatListProjectGroups(
+  sessions,
+  sessions,
+  projects,
+  projectIndex,
+  {},
+);
+assert.equal(
+  sharedResult.sidebarGroups,
+  sharedResult.grouped,
+  "the default chat list must reuse one project-grouping result",
+);
+const doubleGroupingMs = measure(() => {
+  const main = deriveChatProjectGroups(
+    sessions,
+    projects,
+    projectIndex,
+    { sessionsNewestFirst: true },
+  );
+  const rail = deriveChatProjectGroups(
+    sessions,
+    projects,
+    projectIndex,
+    { sessionsNewestFirst: true },
+  );
+  return groupChecksum(main) + groupChecksum(rail);
+});
+const sharedGroupingMs = measure(() => {
+  const { grouped, sidebarGroups } = deriveChatListProjectGroups(
+    sessions,
+    sessions,
+    projects,
+    projectIndex,
+    {},
+  );
+  return groupChecksum(grouped) + groupChecksum(sidebarGroups);
+});
 
 console.log(JSON.stringify({
   fixture: { sessionCount, projectCount, iterations },
@@ -123,6 +161,9 @@ console.log(JSON.stringify({
   indexedLookupP50Ms: indexedLookupMs,
   linearFullGroupingP50Ms: linearFullGroupingMs,
   indexedFullGroupingP50Ms: indexedFullGroupingMs,
+  doubleGroupingP50Ms: doubleGroupingMs,
+  sharedGroupingP50Ms: sharedGroupingMs,
   lookupSpeedup: Number((linearLookupMs / indexedLookupMs).toFixed(1)),
   fullGroupingSpeedup: Number((linearFullGroupingMs / indexedFullGroupingMs).toFixed(1)),
+  sharedGroupingSpeedup: Number((doubleGroupingMs / sharedGroupingMs).toFixed(1)),
 }, null, 2));
