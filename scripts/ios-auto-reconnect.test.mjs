@@ -103,7 +103,7 @@ assert.match(
 );
 assert.match(
   model,
-  /func configure\(host:[\s\S]*?let transitionGeneration = connectionConfigurationGeneration[\s\S]*?await refreshCoordinator\.cancelActiveRefresh\(\)[\s\S]{0,360}guard connectionConfigurationLeaseIsCurrent\(transitionGeneration\) else \{ return \}[\s\S]*?let configuredGeneration = connectionConfigurationGeneration[\s\S]*?await refreshConnection\(\)[\s\S]{0,180}connectionConfigurationLeaseIsCurrent\(configuredGeneration\)/,
+  /func configure\(host:[\s\S]*?let transitionGeneration = connectionConfigurationGeneration[\s\S]*?await refreshCoordinator\.cancelActiveRefresh\(\)[\s\S]{0,360}guard connectionConfigurationLeaseIsCurrent\(transitionGeneration\) else \{ return nil \}[\s\S]*?let configuredGeneration = connectionConfigurationGeneration[\s\S]*?await refreshConnection\(\)[\s\S]{0,180}connectionConfigurationLeaseIsCurrent\(configuredGeneration\)/,
   "an older configure must prove transition ownership after every suspension before it can overwrite a newer endpoint",
 );
 assert.match(

@@ -112,8 +112,28 @@ assert.match(
 // --- Connected moment ----------------------------------------------------------
 assert.match(
   src,
-  /if outcome == \.authorized, app\.connectionState == \.connected \{\s*Haptics\.success\(\)\s*\}/,
+  /if result\.outcome == \.authorized, app\.connectionState == \.connected \{\s*Haptics\.success\(\)\s*\}/,
   "an approved successful connect lands with success haptics",
+);
+assert.equal(
+  [...src.matchAll(/app\.stagePairingDestination\(pairingIntent\)/g)].length,
+  2,
+  "both manual connect and credential-bearing paste/scan flows retain the requested chat while connecting",
+);
+assert.equal(
+  [...src.matchAll(/app\.armPairingDestination\(pairingIntent, lease: lease\)/g)].length,
+  2,
+  "both manual connect and credential-bearing paste/scan flows arm the retained chat against the completed configuration",
+);
+assert.match(
+  src,
+  /@State private var pendingManualInvite: CaveInvite\?/,
+  "tokenless QR and paste flows retain their parsed invite until Connect is tapped",
+);
+assert.match(
+  src,
+  /threadId: pendingManualInvite\?\.host == parsedInvite\.host\s*\?\s*pendingManualInvite\?\.threadId/,
+  "manual confirmation restores the chat destination only when the address was not edited",
 );
 assert.match(
   src,

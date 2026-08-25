@@ -149,9 +149,32 @@ struct ProjectNavigationIntent: Equatable, Hashable, Sendable {
 }
 
 struct PairingIntent: Equatable {
-    let id = UUID()
+    let id: UUID
     let host: String
     let token: String?
+    let threadId: String?
+
+    init(
+        id: UUID = UUID(),
+        host: String,
+        token: String?,
+        threadId: String? = nil
+    ) {
+        self.id = id
+        self.host = host
+        self.token = token
+        self.threadId = threadId
+    }
+
+    init(invite: CaveInvite) {
+        self.init(host: invite.host, token: invite.token, threadId: invite.threadId)
+    }
+
+    func matches(_ connection: CaveConnection?) -> Bool {
+        guard let currentURL = connection?.baseURL,
+              let requestedURL = CaveConnection(host: host).baseURL else { return false }
+        return currentURL.host?.lowercased() == requestedURL.host?.lowercased()
+    }
 }
 
 enum PairingApprovalPolicy {
@@ -375,6 +398,7 @@ final class AppModel {
                         systemImage: "antenna.radiowaves.left.and.right"
                     )
                 }
+                resumePendingPairingDestination()
             }
         }
     }
@@ -1260,6 +1284,8 @@ final class AppModel {
 
     @discardableResult
     private func beginProjectNavigation(_ intent: ProjectNavigationIntent) -> Bool {
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
         pendingProjectNavigationIntent = intent
         lastProjectNavigationFailure = nil
         return resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true)
@@ -4226,6 +4252,8 @@ final class AppModel {
 
     var deepLink: DeepLink?
     private(set) var pendingPairingIntent: PairingIntent?
+    private var pendingPairingDestination: PairingIntent?
+    private var pendingPairingDestinationLease: ConnectionDispatchLease?
 
     func handleDeepLink(_ url: URL) {
         guard url.scheme == "covencave" else { return }
@@ -4234,7 +4262,9 @@ final class AppModel {
         // mutating credentials beneath a lock or authentication prompt.
         if url.host == "connect" {
             guard let invite = CaveInvite.parse(url.absoluteString) else { return }
-            pendingPairingIntent = PairingIntent(host: invite.host, token: invite.token)
+            let intent = PairingIntent(invite: invite)
+            pendingPairingIntent = intent
+            stagePairingDestination(intent)
             return
         }
         guard let intent = ProjectNavigationIntent(url: url) else { return }
@@ -4245,11 +4275,7 @@ final class AppModel {
         } else {
             deepLink = nil
         }
-        pendingProjectNavigationIntent = intent
-        lastProjectNavigationFailure = nil
-        if resolvePendingProjectNavigationIntent(attemptHydrationIfNeeded: true) {
-            return
-        }
+        beginProjectNavigation(intent)
     }
 
     @discardableResult
@@ -4261,6 +4287,74 @@ final class AppModel {
         guard let intent = pendingPairingIntent, intent.id == id else { return nil }
         pendingPairingIntent = nil
         return intent
+    }
+
+    func stagePairingDestination(_ intent: PairingIntent) {
+        guard intent.threadId != nil else {
+            pendingPairingDestination = nil
+            pendingPairingDestinationLease = nil
+            return
+        }
+        pendingProjectNavigationIntent = nil
+        lastProjectNavigationFailure = nil
+        pendingPairingDestination = intent
+        pendingPairingDestinationLease = nil
+    }
+
+    func cancelPairingDestination(matching id: UUID) {
+        guard pendingPairingDestination?.id == id else { return }
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
+    }
+
+    func armPairingDestination(_ intent: PairingIntent, lease: ConnectionDispatchLease) {
+        guard pendingPairingDestination?.id == intent.id,
+              connectionDispatchLeaseIsCurrent(lease),
+              intent.matches(connection) else {
+            return
+        }
+        pendingPairingDestinationLease = lease
+        resumePairingDestination(intent)
+    }
+
+    func rebasePairingDestinationLease(
+        from previousConnection: CaveConnection,
+        to relocatedConnection: CaveConnection
+    ) {
+        guard let intent = pendingPairingDestination,
+              let lease = pendingPairingDestinationLease,
+              connectionDispatchLeaseIsCurrent(lease),
+              lease.baseURL == previousConnection.baseURL,
+              intent.matches(previousConnection),
+              intent.matches(relocatedConnection) else {
+            return
+        }
+        pendingPairingDestinationLease = ConnectionDispatchLease(
+            generation: lease.generation,
+            baseURL: relocatedConnection.baseURL
+        )
+    }
+
+    func resumePairingDestination(_ intent: PairingIntent) {
+        guard pendingPairingDestination?.id == intent.id,
+              let lease = pendingPairingDestinationLease,
+              connectionDispatchLeaseIsCurrent(lease),
+              let threadId = intent.threadId,
+              connectionState == .connected,
+              intent.matches(connection) else {
+            return
+        }
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
+        beginProjectNavigation(ProjectNavigationIntent(
+            entity: .thread(id: threadId),
+            destination: .chats
+        ))
+    }
+
+    private func resumePendingPairingDestination() {
+        guard let intent = pendingPairingDestination else { return }
+        resumePairingDestination(intent)
     }
 
 
@@ -4446,7 +4540,8 @@ final class AppModel {
 
     // MARK: - Connection lifecycle
 
-    func configure(host: String, token: String? = nil) async {
+    @discardableResult
+    func configure(host: String, token: String? = nil) async -> ConnectionDispatchLease? {
         // Revoke every owner of the previous authority before touching its
         // credential. A refresh can already be past discovery and suspended in
         // bootstrap/token renewal, where cancelling the coordinator alone no
@@ -4462,7 +4557,7 @@ final class AppModel {
         // A newer configure/disconnect may have taken ownership while actor
         // cancellation suspended this call. The older transition must not save
         // credentials or overwrite the newer endpoint when it resumes.
-        guard connectionConfigurationLeaseIsCurrent(transitionGeneration) else { return }
+        guard connectionConfigurationLeaseIsCurrent(transitionGeneration) else { return nil }
 
         let conn = CaveConnection(host: host)
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4498,8 +4593,11 @@ final class AppModel {
         conn.save(defaults: projectContextDefaults)
         await refreshConnection()
         guard connectionConfigurationLeaseIsCurrent(configuredGeneration),
-              connection?.baseURL == conn.baseURL else { return }
-        requestConnectionRecovery(.foreground)
+              connection != nil else { return nil }
+        if connection?.baseURL == conn.baseURL {
+            requestConnectionRecovery(.foreground)
+        }
+        return captureConnectionDispatchLease()
     }
 
     private func resetHostScopedStateForNewConnection() {
@@ -4540,6 +4638,8 @@ final class AppModel {
         cancelQueuedMessageFlush()
         connectionConfigurationGeneration &+= 1
         advanceProjectNavigationConnectionGeneration()
+        pendingPairingDestination = nil
+        pendingPairingDestinationLease = nil
         invalidateProjectNavigationHydrations()
         invalidateProjectContextLoads()
         CaveConnection.clear(defaults: projectContextDefaults)
@@ -5031,6 +5131,12 @@ final class AppModel {
                 invalidateProjectContextLoads()
                 advanceProjectNavigationConnectionGeneration()
                 let relocated = CaveConnection(host: Self.canonicalHost(for: working))
+                if let previousConnection = self.connection {
+                    rebasePairingDestinationLease(
+                        from: previousConnection,
+                        to: relocated
+                    )
+                }
                 self.connection = relocated
                 relocated.save(defaults: projectContextDefaults)
                 if let port = working.port {
