@@ -55,7 +55,10 @@ final class MarkdownRenderSignatureTests: XCTestCase {
         )
 
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(10))
+        // Cold CI simulators can take longer than ten seconds to launch the
+        // WebContent process. Keep this order-independent while still failing
+        // boundedly if navigation never completes.
+        let deadline = clock.now.advanced(by: .seconds(30))
         while recorder.snapshot()["markdown.webview.init"] == nil, clock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
@@ -68,7 +71,6 @@ final class MarkdownRenderSignatureTests: XCTestCase {
             "IOS_PERF markdown.webview.init.latest_ms=\(initialization?.latestMilliseconds ?? -1) " +
             "markdown.render.skipped=\(recorder.counter("markdown.render.skipped"))"
         )
-        _ = coordinator.webView
     }
 
     @MainActor

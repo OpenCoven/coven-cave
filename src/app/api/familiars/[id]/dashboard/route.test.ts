@@ -56,6 +56,7 @@ function dependencies(overrides = {}, spy) {
       warnings: [],
     })),
     loadSelfReports: track("loadSelfReports", async () => ({ reports: [], total: 0 })),
+    loadMetricSnapshots: track("loadMetricSnapshots", async () => ({ snapshots: [], total: 0 })),
     ...overrides,
   };
 }

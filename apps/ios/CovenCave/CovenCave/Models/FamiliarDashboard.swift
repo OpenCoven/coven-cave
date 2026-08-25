@@ -70,6 +70,7 @@ struct FamiliarDashboardIssueCode: RawRepresentable, Hashable, Sendable, Decodab
     static let memoryUnavailable = Self(rawValue: "memory_unavailable")
     static let contractUnavailable = Self(rawValue: "contract_unavailable")
     static let selfReportsUnavailable = Self(rawValue: "self_reports_unavailable")
+    static let metricSnapshotsUnavailable = Self(rawValue: "metric_snapshots_unavailable")
     static let responseBudgetExceeded = Self(rawValue: "response_budget_exceeded")
 
     /// Exactly the codes this build's server declares. Used by the copy table
@@ -79,6 +80,7 @@ struct FamiliarDashboardIssueCode: RawRepresentable, Hashable, Sendable, Decodab
         .familiarUnavailable, .sessionsUnavailable, .sessionsDegraded,
         .tasksUnavailable, .remindersUnavailable,
         .memoryUnavailable, .contractUnavailable, .selfReportsUnavailable,
+        .metricSnapshotsUnavailable,
         .responseBudgetExceeded,
     ]
 }
@@ -100,6 +102,7 @@ struct FamiliarDashboardSource: RawRepresentable, Hashable, Sendable, Decodable 
     static let memory = Self(rawValue: "memory")
     static let contract = Self(rawValue: "contract")
     static let selfReports = Self(rawValue: "self_reports")
+    static let metricSnapshots = Self(rawValue: "metric_snapshots")
     static let budget = Self(rawValue: "budget")
 }
 
@@ -567,6 +570,78 @@ struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
         var recent: Int
     }
 
+    struct Activity: Decodable, Hashable, Sendable {
+        struct Day: Decodable, Hashable, Sendable {
+            var date: String
+            var count: Int
+        }
+        var availability: String
+        var periodDays: Int
+        var days: [Day]
+        var activeSessions: Int?
+        var totalSessions: Int?
+        var lastActiveAt: String?
+    }
+
+    struct Confidence: Decodable, Hashable, Sendable {
+        var state: String
+        var band: String?
+        var sampleCount: Int
+        var latestReportAt: String?
+    }
+
+    struct SignalTrends: Decodable, Hashable, Sendable {
+        struct Metric: Decodable, Hashable, Sendable {
+            var key: String
+            var label: String
+            var direction: String
+            var delta: Double?
+        }
+        var availability: String
+        var periodDays: Int
+        var sampleCount: Int
+        var metrics: [Metric]
+    }
+
+    struct MemoryDigest: Decodable, Hashable, Sendable {
+        var availability: String?
+        var total: Int?
+        var freshestAt: String?
+        var state: String
+        var sampleCount: Int
+        var recall: Double?
+        var fileLocatability: Double?
+        var latestReportAt: String?
+    }
+
+    struct Capability: Decodable, Hashable, Sendable { var name: String; var count: Int }
+    struct CapabilityGap: Decodable, Hashable, Sendable { var name: String; var importance: String }
+    struct VitalCapability: Decodable, Hashable, Sendable { var name: String; var state: String }
+    struct Capabilities: Decodable, Hashable, Sendable {
+        var sampleCount: Int
+        var used: FamiliarDashboardBoundedList<Capability>
+        var lacking: FamiliarDashboardBoundedList<CapabilityGap>
+        var vital: FamiliarDashboardBoundedList<VitalCapability>
+    }
+
+    struct Attention: Decodable, Hashable, Sendable {
+        struct Blocker: Decodable, Hashable, Sendable {
+            var id: String
+            var title: String
+            var impact: String
+        }
+        struct HealRequest: Decodable, Hashable, Sendable {
+            var id: String
+            var title: String
+            var severity: String
+            var actionKind: String
+        }
+        var sampleCount: Int
+        var contractGaps: Int?
+        var persistentBlockers: FamiliarDashboardBoundedList<Blocker>
+        var healRequests: FamiliarDashboardBoundedList<HealRequest>?
+    }
+
     /// Every figure below is derived from `sampleSize` reports and no others.
     /// A client that renders an average without its sample count invites the
     /// reader to trust one report as though it were thirty.
@@ -577,6 +652,14 @@ struct FamiliarDashboardAnalytics: Decodable, Hashable, Sendable {
     var windowEnd: String?
     var averages: Averages
     var sessionPulse: SessionPulse
+    // Additive v1 fields remain optional so a phone can still read a cached
+    // snapshot written by the earlier v1 server shape during an upgrade.
+    var activity: Activity? = nil
+    var confidence: Confidence? = nil
+    var signalTrends: SignalTrends? = nil
+    var memory: MemoryDigest? = nil
+    var capabilities: Capabilities? = nil
+    var attention: Attention? = nil
 }
 
 // MARK: - Wire envelopes
@@ -765,6 +848,8 @@ enum FamiliarDashboardIssueCopy {
             return "The capability contract couldn’t be evaluated."
         case .selfReportsUnavailable:
             return "Self-reports couldn’t be read, so trends are missing."
+        case .metricSnapshotsUnavailable:
+            return "Signal history couldn’t be read, so trends are missing."
         case .responseBudgetExceeded:
             return "This section was too large to send and was left out."
         default:

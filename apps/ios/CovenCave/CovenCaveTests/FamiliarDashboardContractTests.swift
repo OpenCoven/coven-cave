@@ -52,6 +52,36 @@ final class FamiliarDashboardContractTests: XCTestCase {
             analytics.averages.memoryRecall,
             "a measurement nobody took is null, never zero")
         XCTAssertEqual(analytics.sessionPulse.active, 1)
+        XCTAssertEqual(analytics.activity?.periodDays, 14)
+        XCTAssertEqual(analytics.activity?.days.first?.count, 2)
+        XCTAssertEqual(analytics.activity?.lastActiveAt, "2026-08-22T12:00:00.000Z")
+        XCTAssertEqual(analytics.confidence?.band, "high")
+        XCTAssertEqual(analytics.signalTrends?.metrics.first?.direction, "improving")
+        XCTAssertEqual(analytics.memory?.recall, 75)
+        XCTAssertEqual(analytics.memory?.total, 3)
+        XCTAssertEqual(analytics.memory?.freshestAt, "2026-08-22T13:00:00.000Z")
+        XCTAssertEqual(analytics.capabilities?.used.items.first?.name, "shell")
+        XCTAssertEqual(analytics.attention?.contractGaps, 2)
+        XCTAssertEqual(analytics.attention?.healRequests?.items.first?.actionKind, "fix-contract")
+    }
+
+    func testAdditiveAnalyticsFieldsMayBeMissingFromAnEarlierV1Snapshot() throws {
+        let legacy = """
+        {
+          "sampleSize": 1, "reportsTotal": 1,
+          "windowStart": null, "windowEnd": null,
+          "averages": {
+            "overallConfidence": null, "toolReliability": null,
+            "memoryRecall": null, "fileLocatability": null
+          },
+          "sessionPulse": { "active": 0, "recent": 0 }
+        }
+        """
+        let section = FamiliarDashboardFixtures.section(state: "fresh", data: legacy)
+        let payload = try decode(FamiliarDashboardFixtures.successJSON(analytics: section))
+        let analytics = try XCTUnwrap(payload.sections.analytics.data)
+        XCTAssertNil(analytics.activity)
+        XCTAssertNil(analytics.signalTrends)
     }
 
     /// `total` is what tells a reader how much they are NOT seeing. A bounded
