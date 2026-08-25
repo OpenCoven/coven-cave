@@ -875,6 +875,36 @@ test("checksums publishes SHA256SUMS only for a wholly successful build", async 
   );
 });
 
+test("iOS-only recovery does not run desktop release publication", async () => {
+  const release = await workflow("release.yml");
+  const iosOnly = releaseRun({
+    event: "workflow_dispatch",
+    inputs: { platform: "ios" },
+    needs: {
+      build: { result: "success" },
+      "rollback-readiness": { result: "success" },
+    },
+  });
+
+  for (const name of ["checksums", "updater-manifest"]) {
+    assert.equal(
+      evaluateCondition(release.jobs[name].if, iosOnly),
+      false,
+      `${name} must skip when an iOS-only dispatch intentionally produces no desktop release`,
+    );
+  }
+
+  assert.deepEqual(needs(release.jobs.homebrew), ["checksums"]);
+  assert.equal(
+    evaluateCondition(
+      release.jobs.homebrew.if,
+      releaseRun({ cancelled: false, needs: { checksums: { result: "skipped" } } }),
+    ),
+    false,
+    "Homebrew notification must remain transitively skipped with desktop checksums",
+  );
+});
+
 test("release-ios-build carries its platform selection once, at job level", async () => {
   const release = await workflow("release.yml");
   const ios = release.jobs["release-ios-build"];

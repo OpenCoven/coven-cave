@@ -599,6 +599,7 @@ export const SUITES = {
     "src/components/chat-list-delete.test.ts",
     "src/components/chat-list-filter-defaults.test.ts",
     "src/lib/chat-list-model.test.ts",
+    "src/lib/chat-list-grouping.test.ts",
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-list-render-optimization.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
