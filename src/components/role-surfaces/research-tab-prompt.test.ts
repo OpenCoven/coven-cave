@@ -199,7 +199,7 @@ test("Research Desk starts from the active familiar's shared agent model default
   assert.match(composer, /setModel\(json\.state\.effectiveModel\)/);
   assert.match(
     composer,
-    /if \(cancelled \|\| modelSelectionDirtyRef\.current \|\| !json\.ok \|\| !json\.state\) return;/,
+    /if\s*\(\s*cancelled\s*\|\|\s*modelSelectionDirtyRef\.current\s*\|\|\s*!json\.ok\s*\|\|\s*!json\.state\s*\)\s*return;/,
   );
   assert.match(
     composer,
