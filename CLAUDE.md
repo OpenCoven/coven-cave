@@ -999,6 +999,40 @@ command with `WT_RETENTION_PUSH_DISABLE=1`. It never blocks a tool call and
 always exits 0.
 
 
+## New surface CSS goes in its own sheet, never the globals facade
+
+**Rule:** a new stylesheet for a mode- or dialog-gated surface is
+component-imported by the component that renders it. Do **not** add it to the
+`@import` list in `src/app/globals.css`, and do not append it to an existing
+sheet that is on that list (`surface-compact-calendar.css`, `calendar-agenda.css`,
+…).
+
+**Why:** the root CSS bundle every route downloads runs at essentially zero
+headroom against `BUNDLE_MAX_HOME_CSS_KB`. A build after adding ~2 KB to a
+faceted sheet reads:
+
+```text
+✗ bundle-budget: initial / route CSS 942 KB exceeds budget 940 KB.
+```
+
+The failure is *not* about your 2 KB — every route pays for CSS only one gated
+surface uses. **This was hit three separate times in one session** (the Rituals
+crons sheet, the schedule-plan preview, the cron-detail state band), each time
+costing a full rebuild, because the mistake looks natural: the related rules
+already live in a faceted sheet, so appending seems like tidiness.
+
+**How to apply:**
+
+```ts
+// in the component that renders it
+import "@/styles/<surface>.css";
+```
+
+The `surface-research-*.css` family and `marketplace-view.tsx` are the existing
+precedents. Note the facade order is also pinned by
+`src/app/css-module-order.test.ts`, so adding an import there is a two-file
+change with a test to update — another sign it is the wrong move for surface CSS.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
 ## Beads Issue Tracker
 
