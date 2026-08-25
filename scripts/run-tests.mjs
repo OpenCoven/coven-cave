@@ -1424,6 +1424,8 @@ export const SUITES = {
     "src/lib/server/familiar-execution-analytics.test.ts",
     "src/app/api/api-contracts.test.ts",
     "src/lib/server/client-v1/authority-contract.test.ts",
+    "src/lib/server/client-v1/authority-replay.test.ts",
+    "src/lib/server/client-v1/authority-runtime.test.ts",
     "src/lib/server/client-v1/hpke-bound-v1.test.ts",
     "src/lib/server/client-v1/contract.test.ts",
     "src/lib/server/client-v1/operations.test.ts",
@@ -1950,6 +1952,8 @@ const ALIAS_LOADER = new Set([
   "src/components/running-sessions-mission-row.test.ts",
   // Imports proxy.ts, which resolves Next's extensionless next/server entry.
   "src/lib/server/client-v1/auth.test.ts",
+  // Resolves the process-local instance id through the "@/lib" Cave path.
+  "src/lib/server/client-v1/authority-runtime.test.ts",
   "src/app/api/client/v1/pairing/requests/route.test.ts",
   "src/app/api/client/v1/pairing/requests/[id]/route.test.ts",
   "src/app/api/client/v1/pairing/requests/[id]/exchange/route.test.ts",
