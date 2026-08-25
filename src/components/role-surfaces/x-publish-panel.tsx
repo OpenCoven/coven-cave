@@ -16,6 +16,13 @@
  *    a draft covers exactly the text it was minted over. Editing after
  *    confirming drops back to "confirm", visibly, rather than letting an
  *    approval ride from the wording someone read to a later one.
+ *
+ *    That confirmation is a **modal**, and deliberately so: publishing is the
+ *    final irreversible external action this room can take, and the modal is
+ *    what makes the review a step rather than a glance at a panel the person
+ *    is already scrolling past. It carries the three things someone needs to
+ *    approve the act rather than the words — the exact server-returned text,
+ *    the account it goes out as, and what is NOT being attached (cave-uajyn).
  *  - **Nothing retries.** A dispatched write with an unknown outcome leaves an
  *    `uncertain` record. This panel holds the whole composer on that, not just
  *    the record — see `composerGate` for why the wider hold is the right one
@@ -31,8 +38,9 @@
  *    fallback path, because the point of the grant is that there isn't one.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/lib/icon";
 import { useLatestAsyncData } from "@/lib/use-role-surfaces";
 import {
@@ -64,6 +72,7 @@ type PublishWire = {
   publication?: XPublicationRecord;
   confirmationToken?: string;
   alreadyPublished?: boolean;
+  account?: { id?: unknown; username?: unknown };
 };
 
 const REFUSAL_FALLBACK = "X publishing is not available for this familiar.";
@@ -105,6 +114,7 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [postIdDrafts, setPostIdDrafts] = useState<Record<string, string>>({});
   const { announce } = useAnnouncer();
+  const noLocationId = useId();
 
   const load = useCallback(async (): Promise<PublicationsState> => {
     const res = await fetch(
@@ -154,8 +164,25 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
    * would mean the room never learned about it: the composer would stay
    * unheld, the resolve form would never render, and the only way to reach the
    * record would be to leave the room and come back.
+   *
+   * `busyRef` is what actually makes "no two can interleave" true, rather than
+   * merely advertised. The `busy` STATE alone only disables the DOM button —
+   * real, but not airtight: a second dispatch reaching this function before
+   * React has committed and painted that disabled attribute (a fast repeat
+   * click, a held Enter key) would see the stale, not-yet-busy render and run
+   * anyway, sending a second `/api/x/publish` request for the same confirmed
+   * text. The server's own lock still turns that into `alreadyPublished` or
+   * `ambiguous-write` rather than a duplicate post, but the exact-once
+   * property this room advertises should not depend on winning that race
+   * server-side when refusing the reentrant call costs one synchronous check
+   * (cave-uajyn — the design document asks for exactly this: "An in-memory
+   * in-flight request map ... prevent[s] a double click from dispatching a
+   * second create-post call").
    */
+  const busyRef = useRef(false);
   const run = useCallback(async (action: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setActionError(null);
     setNotice(null);
@@ -167,11 +194,15 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       announce(message, "assertive");
     } finally {
       await reload({ retainData: true });
+      busyRef.current = false;
       setBusy(false);
     }
   }, [announce, reload]);
 
   const confirm = useCallback(() => run(async () => {
+    // The draft response carries the account identity covered by the same
+    // server-minted confirmation as the wording. A separate connection GET
+    // could race the mint and show a different account than the token covers.
     const result = await postPublishAction({
       action: "draft",
       familiarId,
@@ -190,9 +221,22 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
       publicationId: result.publication.id,
       text: result.publication.text,
       token: result.confirmationToken,
+      account: typeof result.account?.username === "string"
+        ? result.account.username
+        : null,
     });
-    announce("This wording is confirmed. Publishing sends it once.");
+    announce("This wording is confirmed. Review it in the dialog, then publish.");
   }), [announce, confirmation, familiarId, run, text]);
+
+  // Withdraws the approval without touching the server: the token stays valid
+  // server-side (nothing there knows a person changed their mind), but the
+  // room simply stops offering to spend it. Dropping `confirmation` puts the
+  // gate back to "confirm", which is what closes the modal AND re-enables
+  // "Review this wording" for another look.
+  const withdraw = useCallback(() => {
+    if (busy) return;
+    setConfirmation(null);
+  }, [busy]);
 
   const publish = useCallback(() => run(async () => {
     if (gate.kind !== "publish") return;
@@ -420,23 +464,13 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
           : ""}
       </p>
 
-      {gate.kind === "publish" && (
-        <div className="role-surface-notice">
-          <p>
-            <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
-            This exact text is confirmed. Publishing sends it once.
-          </p>
-          <pre className="role-surface-content">{gate.confirmation.text}</pre>
-        </div>
-      )}
-
       {/*
         Neither of these carries `role="alert"`. Both are announced through
         `useAnnouncer` at the moment they are set, which is the room's idiom
         and the reliable one — a live region that mounts already holding its
         text is not guaranteed to be spoken at all.
       */}
-      {actionError && (
+      {actionError && gate.kind !== "publish" && (
         <p className="role-surface-notice role-surface-notice--error">{actionError}</p>
       )}
 
@@ -451,22 +485,82 @@ export function XPublishPanel({ familiarId }: { familiarId: string }) {
         >
           Review this wording
         </button>
-        <button
-          type="button"
-          className="role-surface-chip role-surface-chip--accent focus-ring"
-          disabled={busy || gate.kind !== "publish"}
-          onClick={() => void publish()}
-        >
-          Publish to X
-        </button>
       </div>
+
+      {/*
+        The confirmation modal — the final, irreversible external action gets
+        a modal rather than an inline notice a person could scroll past. It is
+        the only place "Publish to X" appears: the dispatch action lives here,
+        not in the row above, so publishing is always a deliberate second step
+        after "Review this wording" rather than a second click on a button
+        that was already on screen.
+      */}
+      {gate.kind === "publish" && (
+        <Modal
+          open
+          onClose={withdraw}
+          dismissOnEscape={!busy}
+          dismissOnBackdrop={!busy}
+          ariaLabel="Confirm X post"
+          ariaDescribedBy={noLocationId}
+          footerActions={(
+            <>
+              <button
+                type="button"
+                className="role-surface-chip focus-ring"
+                disabled={busy}
+                onClick={withdraw}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="role-surface-chip role-surface-chip--accent focus-ring"
+                disabled={busy}
+                onClick={actionError ? () => void confirm() : () => void publish()}
+              >
+                {actionError ? "Review again" : "Publish to X"}
+              </button>
+            </>
+          )}
+        >
+          <p className="role-surface-notice">
+            <Icon name="ph:seal-check" width={13} height={13} aria-hidden />
+            This exact text is confirmed. Publishing sends it once.
+          </p>
+          {actionError && (
+            <p className="role-surface-notice role-surface-notice--error">{actionError}</p>
+          )}
+          <pre className="role-surface-content">{gate.confirmation.text}</pre>
+          <p className="role-surface-hint">
+            {gate.confirmation.account
+              ? <>Posting as <strong>@{gate.confirmation.account}</strong>.</>
+              : "The connected account could not be confirmed."}
+          </p>
+          <p className="role-surface-metric">
+            {weightedPostLength(gate.confirmation.text)} / {X_POST_WEIGHTED_LIMIT} weighted characters
+          </p>
+          <p id={noLocationId} className="role-surface-hint">No location will be added.</p>
+        </Modal>
+      )}
 
       {published.length > 0 && (
         <ul className="role-surface-list">
           {published.map((publication) => (
             <li key={publication.id} className="role-surface-list-row">
               <span className="role-surface-memory-excerpt">{publication.text}</span>
-              <span className="role-surface-tag">{publication.postId ?? "posted"}</span>
+              {publication.canonicalUrl ? (
+                <a
+                  className="role-surface-tag focus-ring"
+                  href={publication.canonicalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {publication.postId ?? "Open on X"}
+                </a>
+              ) : (
+                <span className="role-surface-tag">{publication.postId ?? "posted"}</span>
+              )}
             </li>
           ))}
         </ul>
