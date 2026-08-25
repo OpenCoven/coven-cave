@@ -104,7 +104,7 @@ Add explicit credential and binding metadata to the existing operation registry:
 - `src/lib/server/client-v1/hpke-bound-v1-vectors.sha256`
   - SHA-256 of the exact generated vector JSON.
 - `src/lib/server/client-v1/authority-replay.ts`
-  - In-memory, per-runtime replay reservation with injected time, fixed TTL, and fixed capacity.
+  - In-memory, per-runtime replay reservation with a caller-supplied time snapshot, fixed TTL, and fixed capacity.
 - `src/lib/server/client-v1/authority-replay.test.ts`
   - Freshness, duplicate, expiry, 4096-request burst capacity, retry timing, and fail-closed behavior.
 - `src/lib/server/client-v1/authority-runtime.ts`
@@ -611,12 +611,13 @@ Rules:
 
 1. `requestNonce` is 32 bytes from a cryptographically secure random generator.
 2. Accept `issuedAt >= now - 60_000` and `issuedAt <= now + 10_000`.
-3. After successful HPKE open and canonical payload validation, reserve `${keyId}:${requestNonce}` for 120 seconds.
-4. In JavaScript there must be no `await`, promise callback, logging hook, async metric, store access, or user callback between the resolved successful open and the synchronous `reserve(...)` call. Canonical payload validation completes inside the open helper before it resolves; the next runtime statement is `replay.reserve(...)`. Run-to-completion therefore lets only one concurrent continuation reserve an identical tuple.
-5. Reserve before calling pairing-secret parsing, pairing-store lookup/consume, bearer parsing, credential-store lookup, scope checks, authenticated rate-limit charging, or a read source.
-6. A duplicate is rejected even if the first handler returned an error.
-7. Purge expired reservations before checking capacity.
-8. At 4096 live entries, do not evict a live nonce; return a fail-closed capacity error with `retry-after` equal to `max(1, ceil((earliestExpiry - now) / 1000))`.
+3. The authority runtime captures exactly one `requestNow = now()` snapshot for each marked bound request. It passes that same number to `openClientV1HpkeBoundRequest({ ..., now: requestNow })` for freshness validation and then to `replay.reserve(opened.binding, requestNow)`. The replay cache never reads an independent clock.
+4. After successful HPKE open and canonical payload validation, reserve `${keyId}:${requestNonce}` for 120 seconds relative to `requestNow`.
+5. In JavaScript there must be no `await`, promise callback, logging hook, async metric, store access, or user callback between the resolved successful open and the synchronous `reserve(...)` call. Canonical payload validation completes inside the open helper before it resolves; the next runtime statement is `replay.reserve(opened.binding, requestNow)`. Run-to-completion therefore lets only one concurrent continuation reserve an identical tuple.
+6. Every non-ok reservation result is terminal before pairing-secret parsing, pairing-store lookup/consume, bearer parsing, credential-store lookup, scope checks, authenticated rate-limit charging, a read source, or any existing route callback. `"stale"` is Auth-encrypted as inner `409 conflict` with `details.reason: "authority_request_stale"`; `"replay"` and `"capacity"` use their fixed encrypted responses. No non-ok variant may fall through.
+7. A duplicate is rejected even if the first handler returned an error.
+8. Purge expired reservations before checking capacity.
+9. At 4096 live entries, do not evict a live nonce; return a fail-closed capacity error with `retry-after` equal to `max(1, ceil((earliestExpiry - requestNow) / 1000))`.
 
 The fixed capacity and TTL admit at most `4096 / 120 = 34.133...` successfully opened protected requests per second as a steady-state average in one process. An empty cache may accept a burst of 4096 unique requests at one instant; the 4097th receives an Auth-encrypted inner `503 service_unavailable` with `authority_replay_capacity` and, for a same-instant burst, `retry-after: 120`. The client preserves its credential and cursor, waits at least the authenticated `retry-after`, then seals a new request with a fresh nonce and current `issuedAt`; it never retries the rejected ciphertext/nonce. Paginated readers may retain already accepted pages, but the capacity-rejected page must not reach the bearer store, rate limiter, or read source and is resumed from the same cursor only with the fresh envelope.
 
@@ -630,6 +631,7 @@ The fixed capacity and TTL admit at most `4096 / 120 = 34.133...` successfully o
 | Instance ID is not the Cave installation currently answering | 409 | `conflict` | `authority_instance_stale` | no | Discard endpoint association and rediscover; do not send plaintext |
 | Timestamp stale or too far future | 409 | `conflict` | `authority_request_stale` | no | Retry once with a fresh nonce/time |
 | Missing field, malformed/noncanonical base64url, wrong length, oversized ciphertext, failed HPKE open, wrong method/path/body/AAD, noncanonical payload, duplicate plaintext credential header | 400 | `invalid_request` | `authority_invalid` | no | Treat as unauthenticated transport failure |
+| Replay reservation reports stale after successful open | outer 200 | inner 409 `conflict` | `authority_request_stale` | yes | Retry once with a fresh nonce/time; never invoke a credential/read handler |
 | Replay after successful open | outer 200 | inner 409 `conflict` | `authority_replayed` | yes | Do not replay; generate a fresh request nonce |
 | Replay map at 4096 live entries | outer 200 | inner 503 `service_unavailable` | `authority_replay_capacity` | yes | Honor authenticated `retry-after`; retry the same logical operation with a fresh nonce/time |
 | Existing route success/error after successful open | outer 200 | unchanged inner code/status | unchanged | yes | Apply only after Auth-mode verification |
@@ -1187,6 +1189,20 @@ export type OpenedClientV1HpkeRequest = {
   binding: ClientV1HpkeBinding;
 };
 
+export type ClientV1HpkeBoundRequestErrorKind =
+  | "stale-key"
+  | "stale-instance"
+  | "stale-request"
+  | "invalid";
+
+export class ClientV1HpkeBoundRequestError extends Error {
+  readonly name = "ClientV1HpkeBoundRequestError";
+
+  constructor(readonly kind: ClientV1HpkeBoundRequestErrorKind) {
+    super("Client v1 HPKE bound request rejected.");
+  }
+}
+
 export async function openClientV1HpkeBoundRequest(input: {
   suite: CipherSuite;
   recipientKey: CryptoKey;
@@ -1199,21 +1215,27 @@ export async function openClientV1HpkeBoundRequest(input: {
 }): Promise<OpenedClientV1HpkeRequest>;
 ```
 
-The function must:
+The function must reject only with `ClientV1HpkeBoundRequestError`; raw parser, hash, URL, HPKE, UTF-8, JSON, or canonicalization errors never escape. Its numbered contract is:
 
-1. parse and bound every header;
-2. decode `instanceId`;
-3. calculate the canonical route and exact body SHA-256;
-4. create the request recipient context with the boot private key;
-5. open with request AAD;
-6. enforce the 1024-byte limit;
-7. UTF-8 decode with `{ fatal: true }`;
-8. JSON parse;
-9. require exact keys `authorization`, `responsePublicKey`, `version`;
-10. require exact nested authorization keys;
-11. compare received UTF-8 bytes to `canonicalize(parsed)`;
-12. decode and length-check the 32-byte response public key without deserializing it yet;
-13. return the parsed values without logging them.
+1. parse and bound every required header; missing, duplicate, malformed, noncanonical, or out-of-bounds values throw kind `"invalid"`;
+2. decode `keyId` as exactly 32 bytes, compare it with `expectedKeyId` using `timingSafeEqual`, and throw `"stale-key"` for a well-formed mismatch;
+3. decode `runtimeNonce` as exactly 32 bytes, compare it with `expectedRuntimeNonce` using `timingSafeEqual`, and throw `"stale-key"` for a well-formed mismatch;
+4. decode `instanceId` from canonical base64url, enforce `1..256` bytes, UTF-8 decode with `{ fatal: true }`, require a non-empty string and exact re-encoding, compare it with `expectedInstanceId`, and throw `"stale-instance"` for a well-formed mismatch;
+5. parse `issuedAt` from its strict decimal wire form, require a positive safe integer, and throw `"invalid"` for syntax/range failure;
+6. validate `issuedAt >= input.now - 60_000` and `issuedAt <= input.now + 10_000` inclusively, using only the supplied snapshot, and throw `"stale-request"` when it is outside that window;
+7. decode and length-check the 32-byte `requestNonce`, 32-byte `enc`, and `16..2048`-byte ciphertext, mapping malformed values to `"invalid"`;
+8. calculate the canonical route and exact body SHA-256;
+9. create the request recipient context with the boot private key;
+10. open with request AAD, mapping HPKE failure to `"invalid"`;
+11. enforce the 1024-byte plaintext limit;
+12. UTF-8 decode with `{ fatal: true }` and JSON parse;
+13. require exact keys `authorization`, `responsePublicKey`, `version`;
+14. require exact nested authorization keys;
+15. compare received UTF-8 bytes to `canonicalize(parsed)`;
+16. decode and length-check the 32-byte response public key without deserializing it yet;
+17. return the parsed values without logging them.
+
+The runtime maps `"stale-key"` to `clientV1AuthorityStaleKeyResponse()`, `"stale-instance"` to `clientV1AuthorityStaleInstanceResponse()`, `"stale-request"` to `clientV1AuthorityStaleRequestResponse()`, and `"invalid"` to `clientV1AuthorityInvalidResponse()`. These open failures occur before the response public key is authenticated, so these mapped responses remain plaintext.
 
 After the one cryptographic await, keep the remainder synchronous:
 
@@ -1238,6 +1260,16 @@ function validateOpenedClientV1HpkePlaintext(input: {
 - [ ] **Step 6: Implement Auth-mode response seal**
 
 Accept the inner `Response`, read at most 8 MiB, retain only `content-type` and optional `retry-after`, build the canonical response plaintext, and create a new Auth-mode sender context with the Cave static private key.
+
+```ts
+export async function sealClientV1HpkeBoundResponse(input: {
+  suite: CipherSuite;
+  senderKey: CryptoKey;
+  responsePublicKey: CryptoKey;
+  binding: ClientV1HpkeBinding;
+  response: Response;
+}): Promise<Response>;
+```
 
 Return:
 
@@ -1499,6 +1531,14 @@ For every mutation listed under “Deterministic RFC 9180 vector,” clone only 
 - 2049-byte request ciphertext is refused before HPKE;
 - malformed/oversized inputs never appear in thrown messages.
 
+Also assert the typed open-error contract directly:
+
+- a well-formed wrong key ID and a well-formed wrong runtime nonce each throw `ClientV1HpkeBoundRequestError` with kind `"stale-key"`;
+- a well-formed wrong instance ID throws kind `"stale-instance"`;
+- `issuedAt === now - 60_000` and `issuedAt === now + 10_000` are accepted, while one millisecond outside either boundary throws kind `"stale-request"`;
+- malformed key ID, runtime nonce, instance ID, issued-at, request nonce, encapsulated key, ciphertext, route, HPKE input, or canonical plaintext throws kind `"invalid"`;
+- no underlying exception text or input value appears in the fixed error message.
+
 - [ ] **Step 10: Add the test-only client codec**
 
 Create `src/lib/server/client-v1/testing/hpke-client.ts` with:
@@ -1590,17 +1630,17 @@ git commit \
 
 - [ ] **Step 1: Write failing replay tests**
 
-Use an injected clock and assert:
+Pass the current time explicitly to every cache operation and assert:
 
 ```ts
-const replay = createClientV1AuthorityReplayCache({ now: () => now });
+const replay = createClientV1AuthorityReplayCache();
 
 assert.deepEqual(
   replay.reserve({
     keyId: "key-1",
     requestNonce: "nonce-1",
     issuedAt: 1_000,
-  }),
+  }, now),
   { ok: true },
 );
 assert.deepEqual(
@@ -1608,7 +1648,7 @@ assert.deepEqual(
     keyId: "key-1",
     requestNonce: "nonce-1",
     issuedAt: 1_000,
-  }),
+  }, now),
   { ok: false, reason: "replay" },
 );
 now = 121_001;
@@ -1617,12 +1657,12 @@ assert.deepEqual(
     keyId: "key-1",
     requestNonce: "nonce-1",
     issuedAt: 121_001,
-  }),
+  }, now),
   { ok: true },
 );
 ```
 
-Fill 4096 distinct live entries and assert the 4097th returns `{ ok: false, reason: "capacity", retryAfterSeconds: 120 }` without deleting an earlier reservation. Assert old/future timestamps return `"stale"` and do not consume capacity.
+Fill 4096 distinct live entries and assert the 4097th returns `{ ok: false, reason: "capacity", retryAfterSeconds: 120 }` without deleting an earlier reservation. Assert old/future timestamps return `"stale"` and do not consume capacity. Assert the inclusive lower and upper freshness boundaries succeed with the exact same supplied `now`, and one millisecond outside each boundary is stale.
 
 Name the capacity case `a 4096-page burst is admitted and the next page receives exact retry timing` and use:
 
@@ -1634,7 +1674,7 @@ for (let page = 0; page < 4_096; page += 1) {
       keyId: "key-1",
       requestNonce: `page-${page}`,
       issuedAt: now,
-    }),
+    }, now),
     { ok: true },
   );
 }
@@ -1643,7 +1683,7 @@ assert.deepEqual(
     keyId: "key-1",
     requestNonce: "page-4096",
     issuedAt: now,
-  }),
+  }, now),
   {
     ok: false,
     reason: "capacity",
@@ -1656,7 +1696,7 @@ assert.deepEqual(
     keyId: "key-1",
     requestNonce: "page-4096-fresh-envelope",
     issuedAt: now,
-  }),
+  }, now),
   { ok: true },
 );
 ```
@@ -1682,18 +1722,29 @@ Use one `Map<string, number>` where the value is the reservation expiry. Purge e
 ```ts
 export type ClientV1AuthorityReplayResult =
   | { ok: true }
-  | { ok: false; reason: "stale" | "replay" }
+  | { ok: false; reason: "stale" }
+  | { ok: false; reason: "replay" }
   | {
     ok: false;
     reason: "capacity";
     retryAfterSeconds: number;
   };
 
-export function createClientV1AuthorityReplayCache({
-  now,
-}: {
-  now: () => number;
-}) {
+export type ClientV1AuthorityReplayEnvelope = Pick<
+  ClientV1HpkeBinding,
+  "issuedAt" | "keyId" | "requestNonce"
+>;
+
+export interface ClientV1AuthorityReplayCache {
+  reserve(
+    envelope: ClientV1AuthorityReplayEnvelope,
+    now: number,
+  ): ClientV1AuthorityReplayResult;
+  size(now: number): number;
+}
+
+export function createClientV1AuthorityReplayCache():
+  ClientV1AuthorityReplayCache {
   const reservations = new Map<string, number>();
 
   const purge = (current: number): void => {
@@ -1703,21 +1754,21 @@ export function createClientV1AuthorityReplayCache({
   };
 
   return {
-    reserve(input: {
-      keyId: string;
-      requestNonce: string;
-      issuedAt: number;
-    }): ClientV1AuthorityReplayResult {
-      const current = now();
-      purge(current);
+    reserve(
+      envelope: ClientV1AuthorityReplayEnvelope,
+      now: number,
+    ): ClientV1AuthorityReplayResult {
+      purge(now);
       if (
-        !Number.isSafeInteger(input.issuedAt)
-        || input.issuedAt < current - CLIENT_V1_HPKE_FRESHNESS.maximumAgeMs
-        || input.issuedAt > current + CLIENT_V1_HPKE_FRESHNESS.maximumFutureSkewMs
+        !Number.isSafeInteger(envelope.issuedAt)
+        || envelope.issuedAt
+          < now - CLIENT_V1_HPKE_FRESHNESS.maximumAgeMs
+        || envelope.issuedAt
+          > now + CLIENT_V1_HPKE_FRESHNESS.maximumFutureSkewMs
       ) {
         return { ok: false, reason: "stale" };
       }
-      const key = `${input.keyId}:${input.requestNonce}`;
+      const key = `${envelope.keyId}:${envelope.requestNonce}`;
       if (reservations.has(key)) return { ok: false, reason: "replay" };
       if (
         reservations.size
@@ -1732,18 +1783,18 @@ export function createClientV1AuthorityReplayCache({
           reason: "capacity",
           retryAfterSeconds: Math.max(
             1,
-            Math.ceil((earliestExpiry - current) / 1_000),
+            Math.ceil((earliestExpiry - now) / 1_000),
           ),
         };
       }
       reservations.set(
         key,
-        current + CLIENT_V1_HPKE_FRESHNESS.replayTtlMs,
+        now + CLIENT_V1_HPKE_FRESHNESS.replayTtlMs,
       );
       return { ok: true };
     },
-    size(): number {
-      purge(now());
+    size(now: number): number {
+      purge(now);
       return reservations.size;
     },
   };
@@ -1762,12 +1813,55 @@ Create test boot material with `deriveKeyPair`, inject it into `createClientV1Ru
 6. `advertise` opens a valid bound request, injects only the expected internal credential header, strips the other credential header, and returns an Auth-mode outer 200;
 7. `advertise` never falls back when the marker is present but invalid;
 8. `enforce` rejects missing binding with 426 before invoking the callback;
-9. stale key/runtime nonce, stale instance ID, and stale timestamp reject before callback;
+9. the four `ClientV1HpkeBoundRequestError` kinds map exactly to stale-key, stale-instance, stale-request, and invalid plaintext responses before callback;
 10. replay reservation occurs before a spy pairing/bearer handler;
 11. two simultaneous `handle(...)` calls using clones of one identical valid envelope invoke the callback once, return one encrypted success, and return one encrypted inner `authority_replayed`;
 12. capacity returns encrypted inner `authority_replay_capacity` with the replay result’s exact `retry-after`;
-13. plaintext `Authorization` or `X-Coven-Pairing-Secret` accompanying a bound marker returns fixed `authority_invalid`;
-14. errors and captured diagnostics contain neither test secret nor bearer.
+13. an injected replay cache returning `{ ok: false, reason: "stale" }` invokes the callback zero times and returns encrypted inner `409 conflict` with `details.reason === "authority_request_stale"`;
+14. replay, capacity, and stale reservation results all invoke the callback zero times;
+15. a request exactly on the lower freshness boundary reads the runtime clock once, reserves successfully, and a second identical request returns encrypted `authority_replayed` without a second callback;
+16. plaintext `Authorization` or `X-Coven-Pairing-Secret` accompanying a bound marker returns fixed `authority_invalid`;
+17. errors and captured diagnostics contain neither test secret nor bearer.
+
+For the defensive stale-result path, inject:
+
+```ts
+const replay: ClientV1AuthorityReplayCache = {
+  reserve: () => ({ ok: false, reason: "stale" }),
+  size: () => 0,
+};
+```
+
+Open the returned outer response with the test client, assert inner status `409` and `error.details.reason === "authority_request_stale"`, and assert the pairing/bearer callback, store, rate limiter, and read-source spies remain at zero.
+
+For the near-boundary regression, make an independent clock read advance by one millisecond, reset its read count before each `handle(...)`, and use a request with `issuedAt = snapshot - CLIENT_V1_HPKE_FRESHNESS.maximumAgeMs`:
+
+```ts
+let clockReads = 0;
+const now = () => snapshot + clockReads++;
+const handleBoundary = () => authority.handle({
+  ...validBoundaryInput,
+  request: validBoundaryInput.request.clone(),
+});
+
+clockReads = 0;
+const first = await handleBoundary();
+assert.equal(clockReads, 1);
+assert.equal(invocations, 1);
+assert.equal((await client.open(first)).status, 200);
+
+clockReads = 0;
+const second = await handleBoundary();
+assert.equal(clockReads, 1);
+assert.equal(invocations, 1);
+assert.equal(
+  JSON.parse(new TextDecoder().decode((await client.open(second)).body))
+    .error.details.reason,
+  "authority_replayed",
+);
+```
+
+This test fails under the old two-clock flow: the open accepts at the inclusive lower boundary, the independent reservation read advances one millisecond and returns `"stale"`, and the unhandled result reaches the callback without a reservation.
 
 For the unavailable matrix, loop over `CLIENT_V1_OPERATION_DEFINITIONS.filter(({ binding }) => binding === "hpke-bound-v1")`, supply the matching plaintext credential header, and assert:
 
@@ -1878,6 +1972,20 @@ const authority =
   ?? createClientV1AuthorityRuntimeFromGlobal({ now });
 ```
 
+Give the authority factory an optional replay-cache injection for deterministic fail-closed tests while production uses one new process-local cache:
+
+```ts
+export interface ClientV1AuthorityRuntimeFactoryOptions {
+  now: () => number;
+  replay?: ClientV1AuthorityReplayCache;
+}
+
+export function createClientV1AuthorityRuntimeFromGlobal({
+  now,
+  replay = createClientV1AuthorityReplayCache(),
+}: ClientV1AuthorityRuntimeFactoryOptions): ClientV1AuthorityRuntime;
+```
+
 - [ ] **Step 7: Implement the wrapper**
 
 Expose:
@@ -1925,38 +2033,103 @@ if (
 Then:
 
 1. read and bound the body;
-2. call `openClientV1HpkeBoundRequest`, which parses pre-open binding fields, compares decoded key ID/runtime nonce to this boot in constant time, compares the supplied instance ID to `clientV1InstanceId()`, checks timestamp freshness without reserving, calculates AAD, HPKE-opens, and validates the canonical request plaintext;
-3. synchronously reserve replay as the immediately following statement, with no intervening `await`, promise, callback, log, metric, or store access:
+2. capture `requestNow = now()` exactly once, then call `openClientV1HpkeBoundRequest`, whose typed contract validates key ID, runtime nonce, instance ID, issued-at freshness, AAD, HPKE open, and canonical request plaintext;
+3. map every `ClientV1HpkeBoundRequestError` kind to its fixed plaintext response; no raw exception text is returned;
+4. define the exhaustive error-response map once at module scope; on successful open, synchronously reserve replay as the immediately following statement, with no intervening `await`, promise, callback, clock read, log, metric, or store access:
 
 ```ts
-const opened = await openClientV1HpkeBoundRequest({
-  suite: bootstrap.suite,
-  recipientKey: bootstrap.keyPair.privateKey,
-  request: input.request,
-  body,
-  expectedKeyId: bootstrap.keyId,
-  expectedRuntimeNonce: bootstrap.runtimeNonce,
-  expectedInstanceId: clientV1InstanceId(),
-  now: now(),
-});
-const reservation = replay.reserve({
-  keyId: opened.binding.keyId,
-  requestNonce: opened.binding.requestNonce,
-  issuedAt: opened.binding.issuedAt,
-});
+const clientV1AuthorityOpenErrorResponses = {
+  "stale-key": clientV1AuthorityStaleKeyResponse,
+  "stale-instance": clientV1AuthorityStaleInstanceResponse,
+  "stale-request": clientV1AuthorityStaleRequestResponse,
+  invalid: clientV1AuthorityInvalidResponse,
+} satisfies Record<
+  ClientV1HpkeBoundRequestErrorKind,
+  () => Response
+>;
+
+const requestNow = now();
+let opened: OpenedClientV1HpkeRequest;
+try {
+  opened = await openClientV1HpkeBoundRequest({
+    suite: bootstrap.suite,
+    recipientKey: bootstrap.keyPair.privateKey,
+    request: input.request,
+    body,
+    expectedKeyId: bootstrap.keyId,
+    expectedRuntimeNonce: bootstrap.runtimeNonce,
+    expectedInstanceId: clientV1InstanceId(),
+    now: requestNow,
+  });
+} catch (error) {
+  if (!(error instanceof ClientV1HpkeBoundRequestError)) {
+    return clientV1AuthorityInvalidResponse();
+  }
+  return clientV1AuthorityOpenErrorResponses[error.kind]();
+}
+const reservation = replay.reserve(opened.binding, requestNow);
 ```
 
-4. after the synchronous reservation result exists, deserialize `opened.responsePublicKeyBytes`; this is the first permitted `await` after HPKE open;
-5. verify credential kind equals `operation.credential`;
-6. on replay/capacity, construct the corresponding inner Client v1 error and Auth-seal it;
-7. because all seven current protected operations are bodyless, Auth-seal inner `400 invalid_request` with `details.reason: "authority_invalid"` if the authenticated body is non-empty;
-8. clone headers, delete all authority headers, set exactly one internal credential header;
-9. reconstruct `Request` with original URL, method, body bytes, signal, and safe headers;
-10. invoke the existing handler callback;
-11. Auth-seal its response;
-12. on response sealing failure, emit the fixed plaintext 500.
+5. after the synchronous reservation result exists, deserialize `opened.responsePublicKeyBytes`; this is the first permitted `await` after HPKE open:
 
-Use `timingSafeEqual` from `node:crypto` for raw key-ID bytes. Do not compare secret/bearer values in the wrapper.
+```ts
+const responsePublicKey = await bootstrap.suite.kem.deserializePublicKey(
+  opened.responsePublicKeyBytes,
+);
+```
+
+6. before credential parsing or any existing handler, exhaustively handle all non-ok reservation variants and Auth-seal the fixed inner response:
+
+```ts
+if (!reservation.ok) {
+  let response: Response;
+  switch (reservation.reason) {
+    case "stale":
+      response = clientV1AuthorityStaleRequestResponse();
+      break;
+    case "replay":
+      response = clientV1ErrorResponse(
+        "conflict",
+        "The authority request was already used.",
+        {
+          details: { reason: "authority_replayed" },
+          retryable: true,
+        },
+      );
+      break;
+    case "capacity":
+      response = clientV1ErrorResponse(
+        "service_unavailable",
+        "The authority replay window is full.",
+        {
+          details: { reason: "authority_replay_capacity" },
+          headers: {
+            "retry-after": String(reservation.retryAfterSeconds),
+          },
+          retryable: true,
+        },
+      );
+      break;
+  }
+  return sealClientV1HpkeBoundResponse({
+    suite: bootstrap.suite,
+    senderKey: bootstrap.keyPair.privateKey,
+    responsePublicKey,
+    binding: opened.binding,
+    response,
+  });
+}
+```
+
+7. verify credential kind equals `operation.credential`;
+8. because all seven current protected operations are bodyless, Auth-seal inner `400 invalid_request` with `details.reason: "authority_invalid"` if the authenticated body is non-empty;
+9. clone headers, delete all authority headers, set exactly one internal credential header;
+10. reconstruct `Request` with original URL, method, body bytes, signal, and safe headers;
+11. invoke the existing handler callback;
+12. Auth-seal its response;
+13. on response sealing failure, emit the fixed plaintext 500.
+
+Use `timingSafeEqual` from `node:crypto` for raw key-ID and runtime-nonce bytes inside `openClientV1HpkeBoundRequest`. Do not compare secret/bearer values in the wrapper.
 
 - [ ] **Step 8: Add fixed response helpers**
 
@@ -2023,7 +2196,7 @@ export function clientV1AuthorityResponseFailure(): Response {
 }
 ```
 
-`clientV1ErrorResponse("service_unavailable", ...)` is pinned by the existing response map to HTTP 503. Construct the encrypted replay/capacity responses exactly before sealing:
+`clientV1ErrorResponse("service_unavailable", ...)` is pinned by the existing response map to HTTP 503. `clientV1AuthorityStaleRequestResponse()` is used plaintext for a typed pre-open `"stale-request"` error and as the encrypted inner response for a post-open replay reservation `"stale"` result. Construct the encrypted replay/capacity responses exactly before sealing:
 
 ```ts
 const replayed = clientV1ErrorResponse(
@@ -2048,7 +2221,7 @@ const capacity = clientV1ErrorResponse(
 );
 ```
 
-Auth-seal either inner response with the opened request’s response key. Never expose the capacity `retry-after` as unauthenticated outer guidance.
+Auth-seal stale, replay, or capacity inner responses with the opened request’s response key. Never expose the capacity `retry-after` as unauthenticated outer guidance.
 
 - [ ] **Step 9: Wire tests and run**
 
