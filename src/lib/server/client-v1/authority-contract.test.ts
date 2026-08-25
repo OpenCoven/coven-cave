@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "typescript";
 
 import {
   CLIENT_V1_HPKE_AUTHORITY_MODES,
@@ -19,6 +20,45 @@ const authorityContractSource = readFileSync(
   new URL("./authority-contract.ts", import.meta.url),
   "utf8",
 );
+
+function runtimeModuleEdges(source: string): string[] {
+  const sourceFile = ts.createSourceFile(
+    "authority-contract-fixture.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const edges: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isImportDeclaration(node)
+      && (node.importClause === undefined || !node.importClause.isTypeOnly)
+    ) {
+      edges.push(node.getText(sourceFile));
+    } else if (ts.isImportEqualsDeclaration(node)) {
+      edges.push(node.getText(sourceFile));
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined) {
+      edges.push(node.getText(sourceFile));
+    } else if (
+      ts.isCallExpression(node)
+      && node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      edges.push(node.getText(sourceFile));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return edges;
+}
+
+function assertNoRuntimeModuleEdges(source: string): void {
+  assert.deepEqual(
+    runtimeModuleEdges(source),
+    [],
+    "pure authority contract may use only `import type`; runtime imports and export-from declarations are forbidden",
+  );
+}
 
 type Equal<Actual, Expected> =
   (<Value>() => Value extends Actual ? 1 : 2) extends
@@ -102,6 +142,7 @@ test("pins the authority wire limits and replay freshness bounds", () => {
 });
 
 test("keeps the authority contract pure, edge-safe, and public-key-only", () => {
+  assertNoRuntimeModuleEdges(authorityContractSource);
   assert.doesNotMatch(authorityContractSource, /@hpke/u);
   assert.doesNotMatch(authorityContractSource, /node:/u);
   assert.doesNotMatch(authorityContractSource, /\bBuffer\b/u);
@@ -125,4 +166,30 @@ test("keeps the authority contract pure, edge-safe, and public-key-only", () => 
     /\b(?:new\s+)?[A-Za-z_$][\w$]*\s*\(/u,
     "pure authority contract must not execute runtime calls",
   );
+});
+
+test("rejects runtime module edges while permitting only import type", () => {
+  assert.doesNotThrow(() => {
+    assertNoRuntimeModuleEdges(`
+      import type { RuntimeShape } from "./runtime.ts";
+      export type AuthorityShape = RuntimeShape;
+      const example = "import './runtime.ts'";
+    `);
+  });
+
+  const mutations = [
+    "import './runtime.ts';",
+    "import {x} from './runtime.ts';",
+    "export {x} from './runtime.ts';",
+    "export * from './runtime.ts';",
+    "void import('./runtime.ts');",
+    "import runtime = require('./runtime.ts');",
+  ];
+  for (const mutation of mutations) {
+    assert.throws(
+      () => assertNoRuntimeModuleEdges(mutation),
+      /runtime imports and export-from declarations are forbidden/u,
+      mutation,
+    );
+  }
 });

@@ -139,7 +139,7 @@ Add explicit credential and binding metadata to the existing operation registry:
 - `src/lib/server/client-v1/runtime.test.ts`
   - Prove the runtime composes one authority object and defaults it to `off`.
 - `src/lib/server/client-v1/operations.ts`
-  - Add `credential` and `binding` to every operation definition and exported fixture record.
+  - Add `credential` and `binding` to every internal operation definition in Task 2; expose them through exported fixture records only in Task 7 after handlers are operational.
 - `src/lib/server/client-v1/operations.test.ts`
   - Pin the seven protected operations and the four explicit admin exclusions.
 - `src/lib/server/client-v1/contract.ts`
@@ -838,7 +838,7 @@ git commit \
   -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
 
-## Task 2: Freeze the pure authority contract and operation inventory
+## Task 2: Freeze the pure authority contract and internal operation inventory
 
 **Files:**
 - Create: `src/lib/server/client-v1/authority-contract.ts`
@@ -899,6 +899,16 @@ assert.deepEqual(CLIENT_V1_HPKE_FRESHNESS, {
 ```
 
 Also read `authority-contract.ts` as source and assert it contains no `@hpke`, `node:`, `Buffer`, `CryptoKey`, private-key field name, or runtime side effect.
+Parse its module declarations and reject every runtime import, side-effect
+import, dynamic import, import-equals declaration, and export-from declaration.
+Permit only the exact `import type` form. Add mutation strings proving at least
+these forms are rejected:
+
+```ts
+import "./runtime.ts";
+import { x } from "./runtime.ts";
+export { x } from "./runtime.ts";
+```
 
 - [ ] **Step 2: Run the new test and verify it fails**
 
@@ -999,9 +1009,10 @@ node --require ./scripts/css-source-contract-hook.cjs \
   src/lib/server/client-v1/operations.test.ts
 ```
 
-Expected: FAIL because operation records do not yet have `credential` or `binding`.
+Expected: FAIL because the internal operation definitions do not yet have
+`credential` or `binding`.
 
-- [ ] **Step 6: Extend the operation definition and fixture record**
+- [ ] **Step 6: Extend only the internal operation definition**
 
 Add:
 
@@ -1018,7 +1029,14 @@ export type ClientV1OperationDefinition = {
 };
 ```
 
-Populate all thirteen definitions exactly as pinned above. Extend `clientV1OperationRecords()` to copy both fields.
+Populate all thirteen definitions exactly as pinned above. Do **not** extend
+`clientV1OperationRecords()` yet. `credential` and `binding`
+remain internal metadata on `CLIENT_V1_OPERATION_DEFINITIONS` for runtime
+routing and enforcement tests. Add explicit assertions that every record
+returned by `clientV1OperationRecords()` omits both fields. Do not modify
+`ClientV1OperationManifestEntry`, the generated contract fixture, its digest,
+the exporter, or public docs in this task. Existing generated contract bytes
+must remain unchanged until Task 7.
 
 - [ ] **Step 7: Wire and run the tests**
 
@@ -1033,9 +1051,10 @@ node --require ./scripts/css-source-contract-hook.cjs \
 node --require ./scripts/css-source-contract-hook.cjs \
   --experimental-strip-types \
   src/lib/server/client-v1/operations.test.ts
+node scripts/export-client-v1-contract.mjs --check
 ```
 
-Expected: PASS.
+Expected: PASS. The fixture check must pass without regeneration.
 
 - [ ] **Step 8: Commit**
 
@@ -2876,6 +2895,12 @@ git commit \
 
 ## Task 7: Export contract truth, vectors, and normative documentation
 
+This is the publication boundary. Only after Task 6 has operational handlers
+and downgrade enforcement, atomically add the public manifest types,
+`clientV1OperationRecords()` fields, exporter ratchets, generated fixture
+bytes/digest, and normative docs. None of those public compatibility bytes
+land earlier.
+
 **Files:**
 - Modify: `src/lib/server/client-v1/contract.ts`
 - Modify: `src/lib/server/client-v1/contract.test.ts`
@@ -2953,6 +2978,17 @@ Expected: FAIL because the manifest and generated fixture do not yet contain aut
 Add:
 
 ```ts
+export type ClientV1OperationManifestEntry = {
+  id: string;
+  method: string;
+  path: string;
+  ingress: string;
+  scope: string | null;
+  credential: ClientV1OperationCredential;
+  binding: ClientV1OperationBinding;
+  families: string[];
+};
+
 export type ClientV1ContractManifest = {
   apiVersion: typeof CLIENT_V1_API_VERSION;
   minimumClientVersion: typeof CLIENT_V1_MIN_CLIENT_VERSION;
@@ -2969,6 +3005,10 @@ export type ClientV1ContractManifest = {
   limits: typeof CLIENT_V1_LIMITS;
 };
 ```
+
+In the same change, extend `clientV1OperationRecords()` to copy `credential`
+and `binding`. Regenerate and review `contract-fixture.json` and
+`contract-fixture.sha256` only here, together with the exporter checks and docs.
 
 Add `examples.discoveryRecordV2`. Keep `examples.discoveryRecord` as the current v1 example so existing readers still see the default. The authority manifest carries the two vector-fixture filenames; do not add the vector payload to `ClientV1ContractFixture`.
 
