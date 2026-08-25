@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const ISO = "2026-08-24T12:00:00.000Z";
 const SESSION_ID = "composer-followup";
-const RATIONALE = "Keeps the active implementation moving without another navigation step.";
+const RECOMMENDED_REPLY = "Draft the concise follow-up";
 
 async function setup(page: Page) {
   await page.addInitScript(() => {
@@ -70,7 +70,7 @@ async function setup(page: Page) {
               text: `The composer is ready.
 
 <coven:next-paths>
-- [reply:recommended rationale="${RATIONALE}" evidence="message:assistant-1"] Draft the concise follow-up
+- [reply:recommended rationale="Keeps the active implementation moving without another navigation step." evidence="message:assistant-1"] ${RECOMMENDED_REPLY}
 - [task rationale="Captures the remaining verification as durable work." evidence="message:assistant-1"] Review the validation task
 - [action:open-tasks rationale="Shows the project queue without changing this conversation." evidence="message:assistant-1"] Open project tasks
 </coven:next-paths>`,
@@ -93,7 +93,7 @@ async function setup(page: Page) {
   );
 }
 
-test("chat composer is full-width and follow-up rationale does not reflow it", async ({
+test("chat composer is full-width and the reply recommendation stays a Tab-only ghost fill", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -104,15 +104,9 @@ test("chat composer is full-width and follow-up rationale does not reflow it", a
   const shell = main.locator(".cave-chat-linear .cave-composer-shell");
   const dock = main.locator(".cave-chat-linear .cave-composer-dock");
   const input = main.locator(".cave-chat-linear .cave-composer-input");
-  const why = main.getByRole("button", {
-    name: "Why this suggestion: Draft the concise follow-up",
-  });
-  await expect(why).toBeVisible({ timeout: 45_000 });
+  await expect(input).toHaveAttribute("placeholder", RECOMMENDED_REPLY, { timeout: 45_000 });
+  await expect(main.getByRole("group", { name: "Suggested next steps" })).toHaveCount(0);
 
-  const before = {
-    shellHeight: (await shell.boundingBox())?.height,
-    documentHeight: await page.evaluate(() => document.documentElement.scrollHeight),
-  };
   const [shellBox, dockBox, inputBox] = await Promise.all([
     shell.boundingBox(),
     dock.boundingBox(),
@@ -121,22 +115,7 @@ test("chat composer is full-width and follow-up rationale does not reflow it", a
   expect(shellBox?.width ?? 0).toBeGreaterThan((dockBox?.width ?? 0) * 0.9);
   expect(inputBox?.height).toBeLessThanOrEqual(44);
 
-  await why.click();
-  const dialog = page.getByRole("dialog", {
-    name: "Why this suggestion: Draft the concise follow-up",
-  });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText(RATIONALE);
-  await expect(page.getByRole("button", { name: "Close explanation" })).toBeFocused();
-
-  const after = {
-    shellHeight: (await shell.boundingBox())?.height,
-    documentHeight: await page.evaluate(() => document.documentElement.scrollHeight),
-  };
-  expect(after.documentHeight).toBe(before.documentHeight);
-  expect(Math.abs((after.shellHeight ?? 0) - (before.shellHeight ?? 0))).toBeLessThan(1);
-
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-  await expect(why).toBeFocused();
+  await input.focus();
+  await page.keyboard.press("Tab");
+  await expect(input).toHaveValue(RECOMMENDED_REPLY);
 });
