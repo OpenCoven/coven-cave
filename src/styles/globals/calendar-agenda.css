@@ -414,6 +414,17 @@
   border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
 }
 
+.calendar-view-switcher {
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.calendar-view-switcher [role="tab"] {
+  padding: var(--space-1) var(--space-3);
+}
+
 /* The cron detail's expand-to-full-width toggle is meaningless below md — the
    detail already owns the whole viewport there. A plain Tailwind `hidden`
    loses to `.ui-btn { display:inline-flex }` on stylesheet order, so gate it
