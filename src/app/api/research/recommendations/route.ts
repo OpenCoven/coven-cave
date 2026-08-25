@@ -49,12 +49,18 @@ const productionDeps: ResearchRecommendationsRouteDeps = {
   hasXResearchCapability: (familiarId) => hasXCapability(familiarId, "research"),
   listVaultEntries: async (familiarId) => selectKnowledgeForFamiliar(await listKnowledgeEntries(), familiarId),
   listSessions: async (familiarId) => {
-    const { computeSessionsList } = await import("../../../../lib/server/sessions-list.ts");
-    const result = await computeSessionsList(false, familiarId, false, {
-      sweepArchives: false,
-      enrichGit: false,
-    });
-    return result.payload.sessions;
+    const [{ computeSessionsList }, { sessionsListCache }] = await Promise.all([
+      import("../../../../lib/server/sessions-list.ts"),
+      import("../../../../lib/server/sessions-list-cache.ts"),
+    ]);
+    const cacheKey = `research-recommendations:sessions:active:${familiarId}`;
+    const result = await sessionsListCache.get(cacheKey, () =>
+      computeSessionsList(false, familiarId, false, {
+        sweepArchives: false,
+        enrichGit: false,
+      })
+    );
+    return result.payload.ok ? result.payload.sessions : [];
   },
 };
 
