@@ -1,0 +1,113 @@
+/* Schedule plan preview — the shared echo both scheduling dialogs render.
+
+   Component-imported by schedule-plan-preview.tsx, NOT added to the globals.css
+   facade. On the facade it put initial-route CSS 2 KB over
+   BUNDLE_MAX_HOME_CSS_KB — the root bundle every route downloads was already
+   sitting at 0.6 KB of headroom, so anything of any size tips it. This sheet
+   ships with the chunk that renders it instead (#3264 pattern).
+
+   `Scheduling Spec.dc.html` asks for a RESERVED slot: a card that appears and
+   disappears as you type shifts every control below it, which the spec files
+   as a stability P1. min-height holds the space open in all three states, so
+   the empty state costs exactly what the parsed state does. */
+
+.schedule-plan {
+  position: relative;
+  display: flex;
+  min-height: 58px;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+}
+
+.schedule-plan--parsed {
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+}
+
+.schedule-plan--unparsed {
+  border-color: color-mix(in oklch, var(--color-warning) 40%, var(--border-hairline));
+}
+
+.schedule-plan__edge {
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  left: 0;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--border-hairline);
+}
+
+.schedule-plan--parsed .schedule-plan__edge {
+  background: var(--accent-presence);
+}
+
+.schedule-plan--unparsed .schedule-plan__edge {
+  background: var(--color-warning);
+}
+
+.schedule-plan__quiet,
+.schedule-plan__hint {
+  display: flex;
+  margin: 0;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.schedule-plan__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.schedule-plan__glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent-presence);
+}
+
+.schedule-plan__sentence {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: 550;
+}
+
+.schedule-plan__pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 45%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--color-warning);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-eyebrow);
+}
+
+.schedule-plan__runs {
+  display: flex;
+  margin: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-plan__runs-label {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
