@@ -96,6 +96,22 @@ test("media configuration is controlled, readiness-backed, and kind-specific", (
   assert.match(modals, /aria-describedby="research-studio-config-length-help"/);
 });
 
+test("ElevenLabs podcast voices come from the authenticated catalog", () => {
+  assert.match(tab, /loadElevenLabsCatalog/);
+  assert.match(tab, /elevenLabsCatalog=\{elevenLabsCatalog\}/);
+  assert.match(tab, /onRetryElevenLabsCatalog=\{loadElevenLabsCatalogForStudio\}/);
+  assert.match(modals, /<StandardSelect[\s\S]*id="research-studio-config-elevenlabs-voice"/);
+  assert.match(modals, /<StandardSelect[\s\S]*id="research-studio-config-guest-voice"/);
+  assert.doesNotMatch(
+    modals,
+    /<input[\s\S]{0,220}id="research-studio-config-elevenlabs-voice"/,
+  );
+  assert.doesNotMatch(
+    modals,
+    /<input[\s\S]{0,220}id="research-studio-config-guest-voice"/,
+  );
+});
+
 test("media drafts reopen review and retry creates a replacement draft", () => {
   assert.match(tab, /generation\.status === "draft"/);
   assert.match(tab, />\s*Review draft\s*</);
