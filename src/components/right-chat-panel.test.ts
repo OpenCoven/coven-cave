@@ -33,8 +33,8 @@ assert.match(
 );
 assert.match(
   source,
-  /<nav className="right-chat__rail" aria-label="Chat panel controls">/,
-  "Chat actions live in a dedicated vertical control rail",
+  /className="right-chat__rail"[\s\S]*?role="toolbar"[\s\S]*?aria-label="Chat panel controls"[\s\S]*?aria-orientation="vertical"/,
+  "Chat actions live in a dedicated vertical toolbar rail",
 );
 assert.doesNotMatch(source, /right-chat__header/, "the redundant horizontal header stays removed");
 // The switcher is the design system's StandardSelect, whose dynamic `label`

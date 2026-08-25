@@ -69,7 +69,12 @@ function RightChatPanelFrame({
 }) {
   return (
     <aside className="right-chat" aria-label="Chat panel" aria-hidden={!open} inert={!open}>
-      <nav className="right-chat__rail" aria-label="Chat panel controls">
+      <div
+        className="right-chat__rail"
+        role="toolbar"
+        aria-label="Chat panel controls"
+        aria-orientation="vertical"
+      >
         <span className="right-chat__rail-mark" title={title}>
           <Icon name="ph:chats" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </span>
@@ -82,7 +87,7 @@ function RightChatPanelFrame({
         >
           <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
-      </nav>
+      </div>
       <div className="right-chat__body">
         <h2 className="sr-only">{title}</h2>
         <FocusTrapOwnerHiddenContext.Provider value={!open}>{children}</FocusTrapOwnerHiddenContext.Provider>
@@ -608,7 +613,12 @@ export function RightChatPanel(props: Props) {
       inert={!open}
       data-session-id={selectedSessionId ?? "new"}
     >
-      <nav className="right-chat__rail" aria-label="Chat panel controls">
+      <div
+        className="right-chat__rail"
+        role="toolbar"
+        aria-label="Chat panel controls"
+        aria-orientation="vertical"
+      >
         <span
           className="right-chat__rail-mark"
           title={`${activeFamiliar.display_name} · ${title}`}
@@ -665,7 +675,7 @@ export function RightChatPanel(props: Props) {
         >
           <Icon name="ph:x" width={CAVE_ICON_SIZE.sidePanelAction} aria-hidden />
         </button>
-      </nav>
+      </div>
       {/*
         FocusTrapOwnerHiddenContext.Provider value={!open} (cave-rl980 Task 5
         finding #2) — see RightChatPanelFrame's doc comment above for the
