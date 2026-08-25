@@ -125,7 +125,10 @@ export function familiarDashboardDependencies(): FamiliarDashboardDependencies {
       });
       if (!result.payload.ok) throw new Error("sessions unavailable");
       return {
-        sessions: result.payload.sessions,
+        // Analytics needs only the latest bounded evidence set. Keep the list
+        // route broad for its own UI, but never pass its entire history into a
+        // dashboard read.
+        sessions: result.payload.sessions.slice(0, FAMILIAR_DASHBOARD_LIMITS.metricSnapshots),
         degraded: result.payload.degraded === true,
       };
     },
@@ -139,7 +142,8 @@ export function familiarDashboardDependencies(): FamiliarDashboardDependencies {
     },
     loadSelfReports: (familiarId: string) =>
       listSelfReports(familiarId, { limit: FAMILIAR_DASHBOARD_LIMITS.reports }),
-    loadMetricSnapshots: listMetricSnapshots,
+    loadMetricSnapshots: (familiarId: string) =>
+      listMetricSnapshots(familiarId, { limit: FAMILIAR_DASHBOARD_LIMITS.metricSnapshots }),
   });
 }
 

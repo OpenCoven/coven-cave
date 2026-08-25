@@ -54,6 +54,7 @@ final class FamiliarDashboardContractTests: XCTestCase {
         XCTAssertEqual(analytics.sessionPulse.active, 1)
         XCTAssertEqual(analytics.activity?.periodDays, 14)
         XCTAssertEqual(analytics.activity?.days.first?.count, 2)
+        XCTAssertEqual(analytics.activity?.lastActiveAt, "2026-08-22T12:00:00.000Z")
         XCTAssertEqual(analytics.confidence?.band, "high")
         XCTAssertEqual(analytics.signalTrends?.metrics.first?.direction, "improving")
         XCTAssertEqual(analytics.memory?.recall, 75)

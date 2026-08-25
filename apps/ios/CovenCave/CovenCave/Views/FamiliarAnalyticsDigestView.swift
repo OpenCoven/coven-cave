@@ -85,9 +85,12 @@ struct FamiliarAnalyticsDigestView: View {
         }
         return card(
             "Activity", icon: "calendar.badge.clock", value: value,
-            evidence: evidence(period: "Last \(activity?.periodDays ?? 14) days", sample: activity?.totalSessions ?? 0),
+            evidence: evidence(period: "Last \(activity?.periodDays ?? 14) days", sample: activity?.totalSessions ?? 0, source: "sessions"),
             detail: .activity
         ) {
+            Text("Last active: \(activityLastActive(activity))")
+                .font(.caption)
+                .foregroundStyle(chrome.textSecondary)
             if let days = activity?.days, !days.isEmpty {
                 activityBars(days)
             }
@@ -101,7 +104,7 @@ struct FamiliarAnalyticsDigestView: View {
             : "Insufficient evidence"
         return card(
             "Confidence", icon: "checkmark.seal", value: value,
-            evidence: evidence(period: reportWindow(analytics), sample: confidence?.sampleCount ?? 0),
+            evidence: evidence(period: reportWindow(analytics), sample: confidence?.sampleCount ?? 0, source: "self-reports"),
             detail: .confidence)
     }
 
@@ -113,7 +116,7 @@ struct FamiliarAnalyticsDigestView: View {
             : "Unavailable"
         return card(
             "Signal trends", icon: "chart.line.uptrend.xyaxis", value: value,
-            evidence: evidence(period: "Last \(trends?.periodDays ?? 30) days", sample: trends?.sampleCount ?? 0),
+            evidence: evidence(period: "Last \(trends?.periodDays ?? 30) days", sample: trends?.sampleCount ?? 0, source: "metric snapshots"),
             detail: .signals) {
                 if let metrics = trends?.metrics {
                     ForEach(metrics.prefix(2), id: \.key) { metric in
@@ -133,7 +136,7 @@ struct FamiliarAnalyticsDigestView: View {
             : "\(memory?.total ?? 0) entries · \(measured) measured signals"
         return card(
             "Memory & recall", icon: "brain.head.profile", value: value,
-            evidence: evidence(period: reportWindow(analytics), sample: memory?.sampleCount ?? 0),
+            evidence: evidence(period: reportWindow(analytics), sample: memory?.sampleCount ?? 0, source: "canonical memory and self-reports"),
             detail: .memory)
     }
 
@@ -144,7 +147,7 @@ struct FamiliarAnalyticsDigestView: View {
         let vital = capabilities?.vital.total ?? 0
         return card(
             "Capabilities", icon: "wrench.and.screwdriver", value: "\(used) used · \(gaps) gaps · \(vital) vital",
-            evidence: evidence(period: reportWindow(analytics), sample: capabilities?.sampleCount ?? 0),
+            evidence: evidence(period: reportWindow(analytics), sample: capabilities?.sampleCount ?? 0, source: "self-reports"),
             detail: .capabilities)
     }
 
@@ -155,7 +158,7 @@ struct FamiliarAnalyticsDigestView: View {
         let gaps = attention?.contractGaps.map(String.init) ?? "Unavailable"
         return card(
             "Needs attention", icon: "exclamationmark.bubble", value: "\(heals) heals · \(blockers) blockers · \(gaps) contract gaps",
-            evidence: evidence(period: reportWindow(analytics), sample: attention?.sampleCount ?? 0),
+            evidence: evidence(period: reportWindow(analytics), sample: attention?.sampleCount ?? 0, source: "contract evaluation and self-reports"),
             detail: .attention)
     }
 
@@ -180,7 +183,7 @@ struct FamiliarAnalyticsDigestView: View {
                 detailRows(selected, analytics: analytics)
                 Section("How to read this") {
                     Text(detailDefinition(selected))
-                    Text(evidence(period: detailPeriod(selected, analytics: analytics), sample: detailSample(selected, analytics: analytics)))
+                    Text(evidence(period: detailPeriod(selected, analytics: analytics), sample: detailSample(selected, analytics: analytics), source: detailSource(selected)))
                 }
             }
             .navigationTitle(detailTitle(selected))
@@ -198,6 +201,7 @@ struct FamiliarAnalyticsDigestView: View {
         switch selected {
         case .activity:
             Section("Daily sessions") {
+                LabeledContent("Last active", value: activityLastActive(analytics.activity))
                 ForEach(analytics.activity?.days ?? [], id: \.date) { day in
                     LabeledContent(day.date, value: "\(day.count)")
                 }
@@ -264,8 +268,24 @@ struct FamiliarAnalyticsDigestView: View {
         LabeledContent(label, value: value.map { "\(Int($0.rounded())) of 100" } ?? "Not measured")
     }
 
-    private func evidence(period: String, sample: Int) -> String {
-        "\(period) · \(sample) samples · updated \(freshness) · self-reports"
+    private func evidence(period: String, sample: Int, source: String) -> String {
+        "\(period) · \(sample) samples · updated \(freshness) · \(source)"
+    }
+
+    private func activityLastActive(_ activity: FamiliarDashboardAnalytics.Activity?) -> String {
+        guard activity?.availability == "available" else { return "Unavailable" }
+        guard let date = caveParseISO(activity?.lastActiveAt) else { return "No session timestamp" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func detailSource(_ detail: Detail) -> String {
+        switch detail {
+        case .activity: return "sessions"
+        case .confidence, .capabilities: return "self-reports"
+        case .signals: return "metric snapshots"
+        case .memory: return "canonical memory and self-reports"
+        case .attention: return "contract evaluation and self-reports"
+        }
     }
 
     private var freshness: String {

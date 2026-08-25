@@ -184,6 +184,17 @@ describe("familiar self-report storage", () => {
     assert.equal(listed.snapshots[0].confidence, 55);
   });
 
+  it("listMetricSnapshots returns only the requested trailing evidence window", async () => {
+    await appendSelfReport("cody", report({ id: "old", sessionId: "s1", reportedAt: "2026-06-23T10:00:00.000Z" }));
+    await appendSelfReport("cody", report({ id: "mid", sessionId: "s2", reportedAt: "2026-06-24T10:00:00.000Z" }));
+    await appendSelfReport("cody", report({ id: "new", sessionId: "s3", reportedAt: "2026-06-25T10:00:00.000Z" }));
+
+    const listed = await listMetricSnapshots("cody", { limit: 2 });
+
+    assert.equal(listed.total, 3);
+    assert.deepEqual(listed.snapshots.map((snapshot) => snapshot.id), ["mid", "new"]);
+  });
+
   it("listMetricSnapshots dedupes by report id (newest persisted line wins) and skips malformed lines", async () => {
     await appendSelfReport("cody", report({ id: "r1", sessionId: "s1", reportedAt: "2026-06-25T10:00:00.000Z", overallConfidence: 60 }));
     const snapshotDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports", "metric-snapshots");
